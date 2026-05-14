@@ -3,7 +3,7 @@ use crate::expression_info::{read_expression_info_file, ExpressionInfo, Expressi
 use crate::expression_program::{
     read_expression_program_file, ExpressionProgram, ExpressionProgramError,
 };
-use crate::fixed::{read_fixed_columns_file, FixedColumnError, FixedColumns};
+use crate::fixed::{read_fixed_columns_file_for_setup, FixedColumnError, FixedColumns};
 use crate::global_info::{read_global_info_file, GlobalInfo, GlobalInfoError};
 use crate::metadata_validation::{
     validate_global_metadata, validate_unit_metadata, MetadataValidationError,
@@ -275,7 +275,12 @@ pub fn read_unit_artifact_bundle(
     }
     let expression_program = read_expression_program_file(&paths.expression_program)?;
     let verifier_program = read_expression_program_file(&paths.verifier_program)?;
-    let fixed_columns = read_fixed_columns_file(&paths.fixed_columns)?;
+    let fixed_columns = read_fixed_columns_file_for_setup(
+        &paths.fixed_columns,
+        &metadata.setup,
+        "",
+        fixed_unit_name(&paths.fixed_columns),
+    )?;
     validate_fixed_column_rows(&metadata, &fixed_columns)?;
     let constant_tree = read_constant_tree_file(&paths.constant_tree, &metadata.setup)?;
     validate_constant_tree_root(&constant_tree, &json_root)?;
@@ -334,4 +339,11 @@ fn append_suffix(prefix: &Path, suffix: &str) -> PathBuf {
     let mut value: OsString = prefix.as_os_str().to_owned();
     value.push(suffix);
     PathBuf::from(value)
+}
+
+fn fixed_unit_name(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_owned()
 }

@@ -6,6 +6,7 @@ use std::path::Path;
 pub struct UnitSetupInfo {
     pub n_stages: u32,
     pub n_constants: u32,
+    pub constant_columns: Vec<ConstantColumn>,
     pub n_publics: Option<u32>,
     pub n_constraints: Option<u32>,
     pub q_degree: u32,
@@ -45,6 +46,16 @@ pub struct Boundary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstantColumn {
+    pub name: String,
+    pub stage: u32,
+    pub dimension: u32,
+    pub pols_map_id: u32,
+    pub stage_id: u32,
+    pub lengths: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetupInfoError {
     Json { message: String },
     MissingField { field: &'static str },
@@ -52,6 +63,8 @@ pub enum SetupInfoError {
     MissingSectionWidth { name: String },
     InvalidDomainBits { n_bits: u32, n_bits_ext: u32 },
     InvalidFriSteps,
+    ConstantColumnCountMismatch { expected: u32, found: usize },
+    InvalidConstantColumn { index: usize },
     Io { message: String },
 }
 
@@ -69,6 +82,16 @@ impl fmt::Display for SetupInfoError {
                 "invalid setup-info domain bits: n_bits {n_bits}, n_bits_ext {n_bits_ext}"
             ),
             Self::InvalidFriSteps => write!(f, "invalid setup-info FRI steps"),
+            Self::ConstantColumnCountMismatch { expected, found } => write!(
+                f,
+                "setup-info constant-column count mismatch: expected {expected}, found {found}"
+            ),
+            Self::InvalidConstantColumn { index } => {
+                write!(
+                    f,
+                    "invalid setup-info constant-column entry at index {index}"
+                )
+            }
             Self::Io { message } => write!(f, "setup-info io error: {message}"),
         }
     }
@@ -107,6 +130,8 @@ pub fn parse_unit_setup_info_json(input: &str) -> Result<UnitSetupInfo, SetupInf
 
     let n_stages = required_u32(object, "nStages")?;
     let n_constants = required_u32(object, "nConstants")?;
+    let constant_columns = parse_constant_columns(optional_array(object, "constPolsMap")?)?;
+    validate_constant_columns(n_constants, &constant_columns)?;
     let q_degree = required_u32(object, "qDeg")?;
     let opening_points = required_i64_array(object, "openingPoints")?;
     let challenge_count = required_array(object, "challengesMap")?.len();
@@ -120,6 +145,7 @@ pub fn parse_unit_setup_info_json(input: &str) -> Result<UnitSetupInfo, SetupInf
     let info = UnitSetupInfo {
         n_stages,
         n_constants,
+        constant_columns,
         n_publics: optional_u32(object, "nPublics")?,
         n_constraints: optional_u32(object, "nConstraints")?,
         q_degree,
@@ -133,6 +159,59 @@ pub fn parse_unit_setup_info_json(input: &str) -> Result<UnitSetupInfo, SetupInf
 
     info.stage_commit_widths()?;
     Ok(info)
+}
+
+fn parse_constant_columns(
+    values: Option<&Vec<serde_json::Value>>,
+) -> Result<Vec<ConstantColumn>, SetupInfoError> {
+    let Some(values) = values else {
+        return Ok(Vec::new());
+    };
+
+    let mut out = Vec::with_capacity(values.len());
+    for value in values {
+        let object = as_object(value, "constPolsMap")?;
+        out.push(ConstantColumn {
+            name: required_string(object, "name")?,
+            stage: required_u32(object, "stage")?,
+            dimension: required_u32(object, "dim")?,
+            pols_map_id: required_u32(object, "polsMapId")?,
+            stage_id: required_u32(object, "stageId")?,
+            lengths: optional_u32_array(object, "lengths")?.unwrap_or_default(),
+        });
+    }
+    Ok(out)
+}
+
+fn validate_constant_columns(
+    n_constants: u32,
+    columns: &[ConstantColumn],
+) -> Result<(), SetupInfoError> {
+    if columns.is_empty() {
+        return Ok(());
+    }
+    if columns.len() != n_constants as usize {
+        return Err(SetupInfoError::ConstantColumnCountMismatch {
+            expected: n_constants,
+            found: columns.len(),
+        });
+    }
+
+    let mut seen = vec![false; n_constants as usize];
+    for (index, column) in columns.iter().enumerate() {
+        let id = column.pols_map_id as usize;
+        if column.stage != 0
+            || column.dimension == 0
+            || id >= seen.len()
+            || seen[id]
+            || column.stage_id != column.pols_map_id
+        {
+            return Err(SetupInfoError::InvalidConstantColumn { index });
+        }
+        seen[id] = true;
+    }
+
+    Ok(())
 }
 
 fn parse_stark_struct(value: &serde_json::Value) -> Result<StarkStruct, SetupInfoError> {
@@ -243,6 +322,30 @@ fn required_array<'a>(
         .ok_or(SetupInfoError::InvalidField { field })
 }
 
+fn optional_array<'a>(
+    object: &'a serde_json::Map<String, serde_json::Value>,
+    field: &'static str,
+) -> Result<Option<&'a Vec<serde_json::Value>>, SetupInfoError> {
+    object
+        .get(field)
+        .map(|value| {
+            value
+                .as_array()
+                .ok_or(SetupInfoError::InvalidField { field })
+        })
+        .transpose()
+}
+
+fn required_string(
+    object: &serde_json::Map<String, serde_json::Value>,
+    field: &'static str,
+) -> Result<String, SetupInfoError> {
+    required(object, field)?
+        .as_str()
+        .map(str::to_owned)
+        .ok_or(SetupInfoError::InvalidField { field })
+}
+
 fn required_u32(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -258,6 +361,20 @@ fn optional_u32(
         .get(field)
         .map(|value| value_to_u32(value, field))
         .transpose()
+}
+
+fn optional_u32_array(
+    object: &serde_json::Map<String, serde_json::Value>,
+    field: &'static str,
+) -> Result<Option<Vec<u32>>, SetupInfoError> {
+    let Some(values) = optional_array(object, field)? else {
+        return Ok(None);
+    };
+    let mut out = Vec::with_capacity(values.len());
+    for value in values {
+        out.push(value_to_u32(value, field)?);
+    }
+    Ok(Some(out))
 }
 
 fn value_to_u32(value: &serde_json::Value, field: &'static str) -> Result<u32, SetupInfoError> {

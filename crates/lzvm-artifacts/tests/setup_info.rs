@@ -18,6 +18,13 @@ fn sample_setup_info_json() -> &'static str {
             "cm2": 3,
             "cm3": 1
         },
+        "constPolsMap": [
+            {"stage": 0, "name": "main.a", "dim": 1, "polsMapId": 0, "stageId": 0},
+            {"stage": 0, "name": "main.b", "dim": 1, "polsMapId": 1, "stageId": 1},
+            {"stage": 0, "name": "main.c", "dim": 1, "polsMapId": 2, "stageId": 2},
+            {"stage": 0, "name": "main.d", "dim": 1, "polsMapId": 3, "stageId": 3},
+            {"stage": 0, "name": "main.e", "dim": 1, "polsMapId": 4, "stageId": 4, "lengths": [5]}
+        ],
         "challengesMap": [{}, {}],
         "evMap": [{}, {}, {}],
         "boundaries": [
@@ -54,6 +61,9 @@ fn parses_unit_setup_info_json() {
 
     assert_eq!(info.n_stages, 2);
     assert_eq!(info.n_constants, 5);
+    assert_eq!(info.constant_columns.len(), 5);
+    assert_eq!(info.constant_columns[4].name, "main.e");
+    assert_eq!(info.constant_columns[4].lengths, [5]);
     assert_eq!(info.n_publics, Some(3));
     assert_eq!(info.n_constraints, Some(8));
     assert_eq!(info.q_degree, 7);
