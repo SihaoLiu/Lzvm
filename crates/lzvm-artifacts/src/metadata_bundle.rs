@@ -69,6 +69,13 @@ pub enum MetadataBundleError {
     ExpressionProgram(ExpressionProgramError),
     FixedColumns(FixedColumnError),
     VerificationKey(VerificationKeyError),
+    FixedColumnDomainTooLarge {
+        n_bits: u32,
+    },
+    FixedColumnRowCountMismatch {
+        expected: u64,
+        found: u64,
+    },
     VerificationKeyMismatch {
         json_root: VerificationKeyRoot,
         binary_root: VerificationKeyRoot,
@@ -151,6 +158,13 @@ impl fmt::Display for MetadataBundleError {
             Self::VerificationKey(error) => {
                 write!(f, "verification-key metadata bundle error: {error}")
             }
+            Self::FixedColumnDomainTooLarge { n_bits } => {
+                write!(f, "fixed-column domain bit count is too large: {n_bits}")
+            }
+            Self::FixedColumnRowCountMismatch { expected, found } => write!(
+                f,
+                "fixed-column row count mismatch: expected {expected}, found {found}"
+            ),
             Self::VerificationKeyMismatch { .. } => {
                 write!(f, "verification-key companion roots do not match")
             }
@@ -241,6 +255,7 @@ pub fn read_unit_artifact_bundle(
     let expression_program = read_expression_program_file(&paths.expression_program)?;
     let verifier_program = read_expression_program_file(&paths.verifier_program)?;
     let fixed_columns = read_fixed_columns_file(&paths.fixed_columns)?;
+    validate_fixed_column_rows(&metadata, &fixed_columns)?;
 
     Ok(UnitArtifactBundle {
         metadata,
@@ -249,6 +264,24 @@ pub fn read_unit_artifact_bundle(
         verifier_program,
         fixed_columns,
     })
+}
+
+fn validate_fixed_column_rows(
+    metadata: &UnitMetadataBundle,
+    fixed_columns: &FixedColumns,
+) -> Result<(), MetadataBundleError> {
+    let expected = 1_u64.checked_shl(metadata.setup.stark.n_bits).ok_or(
+        MetadataBundleError::FixedColumnDomainTooLarge {
+            n_bits: metadata.setup.stark.n_bits,
+        },
+    )?;
+    if fixed_columns.row_count != expected {
+        return Err(MetadataBundleError::FixedColumnRowCountMismatch {
+            expected,
+            found: fixed_columns.row_count,
+        });
+    }
+    Ok(())
 }
 
 pub fn read_global_metadata_bundle(

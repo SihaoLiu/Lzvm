@@ -29,13 +29,13 @@ fn sample_setup_info_json() -> &'static str {
         "evMap": [{}],
         "boundaries": [],
         "starkStruct": {
-            "nBits": 10,
-            "nBitsExt": 13,
+            "nBits": 2,
+            "nBitsExt": 4,
             "nQueries": 4,
             "steps": [
-                {"nBits": 13},
-                {"nBits": 9},
-                {"nBits": 5}
+                {"nBits": 4},
+                {"nBits": 3},
+                {"nBits": 1}
             ],
             "hashCommits": true,
             "lastLevelVerification": 2,
@@ -152,11 +152,11 @@ fn sample_fixed_columns() -> FixedColumns {
     FixedColumns {
         group_name: "group-a".to_owned(),
         unit_name: "unit-a".to_owned(),
-        row_count: 3,
+        row_count: 4,
         columns: vec![FixedColumn {
             name: "main.value".to_owned(),
             dimensions: vec![1],
-            values: vec![7, 8, 9],
+            values: vec![7, 8, 9, 10],
         }],
     }
 }
@@ -345,7 +345,7 @@ fn reads_and_validates_unit_artifacts_from_paths() {
     );
     assert_eq!(bundle.expression_program.entries[0].expression_id, 17);
     assert_eq!(bundle.verifier_program.entries[0].expression_id, 9);
-    assert_eq!(bundle.fixed_columns.row_count, 3);
+    assert_eq!(bundle.fixed_columns.row_count, 4);
 }
 
 #[test]
@@ -416,4 +416,42 @@ fn rejects_unit_artifacts_with_missing_fixed_columns() {
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert!(matches!(error, MetadataBundleError::FixedColumns(_)));
+}
+
+#[test]
+fn rejects_unit_artifacts_with_fixed_row_count_mismatches() {
+    let dir = create_clean_dir("unit-artifacts-fixed-row-mismatch");
+    let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
+    write_unit_fixture(
+        &paths.metadata,
+        sample_setup_info_json(),
+        sample_expression_info_json(),
+        sample_verifier_info_json(),
+    );
+    write_file(&paths.verification_key_json, "[1,2,3,4]");
+    write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
+    write_expression_program(&paths.expression_program, 17);
+    write_expression_program(&paths.verifier_program, 9);
+
+    let bad_fixed = FixedColumns {
+        row_count: 3,
+        columns: vec![FixedColumn {
+            values: vec![1, 2, 3],
+            ..sample_fixed_columns().columns[0].clone()
+        }],
+        ..sample_fixed_columns()
+    };
+    let bytes = encode_fixed_columns(&bad_fixed).expect("fixture should encode");
+    fs::write(&paths.fixed_columns, bytes).expect("fixture should be written");
+
+    let error = read_unit_artifact_bundle(&paths).expect_err("bundle should be rejected");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        error,
+        MetadataBundleError::FixedColumnRowCountMismatch {
+            expected: 4,
+            found: 3
+        }
+    ));
 }
