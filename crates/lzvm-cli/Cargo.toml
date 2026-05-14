@@ -15,3 +15,5 @@ path = "src/main.rs"
 
 [dependencies]
 lzvm-artifacts = { path = "../lzvm-artifacts" }
+lzvm-setup = { path = "../lzvm-setup" }
+serde_json = "1"

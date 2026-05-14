@@ -20,6 +20,8 @@ name = "lzvm-cli"
 version = "0.1.0"
 dependencies = [
  "lzvm-artifacts",
+ "lzvm-setup",
+ "serde_json",
 ]
 
 [[package]]
