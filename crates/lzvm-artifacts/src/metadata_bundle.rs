@@ -1,3 +1,4 @@
+use crate::constant_tree::{read_constant_tree_file, ConstantTree, ConstantTreeError};
 use crate::expression_info::{read_expression_info_file, ExpressionInfo, ExpressionInfoError};
 use crate::expression_program::{
     read_expression_program_file, ExpressionProgram, ExpressionProgramError,
@@ -37,6 +38,7 @@ pub struct UnitArtifactPaths {
     pub expression_program: PathBuf,
     pub verifier_program: PathBuf,
     pub fixed_columns: PathBuf,
+    pub constant_tree: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -58,6 +60,7 @@ pub struct UnitArtifactBundle {
     pub expression_program: ExpressionProgram,
     pub verifier_program: ExpressionProgram,
     pub fixed_columns: FixedColumns,
+    pub constant_tree: ConstantTree,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,6 +71,7 @@ pub enum MetadataBundleError {
     GlobalInfo(GlobalInfoError),
     ExpressionProgram(ExpressionProgramError),
     FixedColumns(FixedColumnError),
+    ConstantTree(ConstantTreeError),
     VerificationKey(VerificationKeyError),
     FixedColumnDomainTooLarge {
         n_bits: u32,
@@ -120,6 +124,7 @@ impl UnitArtifactPaths {
         expression_program: impl Into<PathBuf>,
         verifier_program: impl Into<PathBuf>,
         fixed_columns: impl Into<PathBuf>,
+        constant_tree: impl Into<PathBuf>,
     ) -> Self {
         Self {
             metadata,
@@ -128,6 +133,7 @@ impl UnitArtifactPaths {
             expression_program: expression_program.into(),
             verifier_program: verifier_program.into(),
             fixed_columns: fixed_columns.into(),
+            constant_tree: constant_tree.into(),
         }
     }
 
@@ -140,6 +146,7 @@ impl UnitArtifactPaths {
             expression_program: append_suffix(prefix, ".bin"),
             verifier_program: append_suffix(prefix, ".verifier.bin"),
             fixed_columns: append_suffix(prefix, ".const"),
+            constant_tree: append_suffix(prefix, ".consttree"),
         }
     }
 }
@@ -155,6 +162,7 @@ impl fmt::Display for MetadataBundleError {
                 write!(f, "expression program bundle error: {error}")
             }
             Self::FixedColumns(error) => write!(f, "fixed-column bundle error: {error}"),
+            Self::ConstantTree(error) => write!(f, "constant-tree bundle error: {error}"),
             Self::VerificationKey(error) => {
                 write!(f, "verification-key metadata bundle error: {error}")
             }
@@ -211,6 +219,12 @@ impl From<FixedColumnError> for MetadataBundleError {
     }
 }
 
+impl From<ConstantTreeError> for MetadataBundleError {
+    fn from(error: ConstantTreeError) -> Self {
+        Self::ConstantTree(error)
+    }
+}
+
 impl From<VerificationKeyError> for MetadataBundleError {
     fn from(error: VerificationKeyError) -> Self {
         Self::VerificationKey(error)
@@ -256,6 +270,7 @@ pub fn read_unit_artifact_bundle(
     let verifier_program = read_expression_program_file(&paths.verifier_program)?;
     let fixed_columns = read_fixed_columns_file(&paths.fixed_columns)?;
     validate_fixed_column_rows(&metadata, &fixed_columns)?;
+    let constant_tree = read_constant_tree_file(&paths.constant_tree, &metadata.setup)?;
 
     Ok(UnitArtifactBundle {
         metadata,
@@ -263,6 +278,7 @@ pub fn read_unit_artifact_bundle(
         expression_program,
         verifier_program,
         fixed_columns,
+        constant_tree,
     })
 }
 

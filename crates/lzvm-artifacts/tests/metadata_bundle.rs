@@ -1,3 +1,4 @@
+use lzvm_artifacts::constant_tree::expected_constant_tree_byte_count;
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
@@ -202,6 +203,13 @@ fn write_fixed_columns(path: &Path) {
     fs::write(path, bytes).expect("fixture should be written");
 }
 
+fn write_constant_tree(path: &Path) {
+    let setup = lzvm_artifacts::setup_info::parse_unit_setup_info_json(sample_setup_info_json())
+        .expect("setup should parse");
+    let bytes = vec![3_u8; expected_constant_tree_byte_count(&setup).unwrap()];
+    fs::write(path, bytes).expect("fixture should be written");
+}
+
 #[test]
 fn derives_unit_metadata_paths_from_a_unit_prefix() {
     let paths = UnitMetadataPaths::from_unit_prefix(Path::new("/tmp/unit-a"));
@@ -317,6 +325,7 @@ fn derives_unit_artifact_paths_from_a_unit_prefix() {
         PathBuf::from("/tmp/unit-a.verifier.bin")
     );
     assert_eq!(paths.fixed_columns, PathBuf::from("/tmp/unit-a.const"));
+    assert_eq!(paths.constant_tree, PathBuf::from("/tmp/unit-a.consttree"));
 }
 
 #[test]
@@ -334,6 +343,7 @@ fn reads_and_validates_unit_artifacts_from_paths() {
     write_expression_program(&paths.expression_program, 17);
     write_expression_program(&paths.verifier_program, 9);
     write_fixed_columns(&paths.fixed_columns);
+    write_constant_tree(&paths.constant_tree);
 
     let bundle = read_unit_artifact_bundle(&paths).expect("bundle should load");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -346,6 +356,7 @@ fn reads_and_validates_unit_artifacts_from_paths() {
     assert_eq!(bundle.expression_program.entries[0].expression_id, 17);
     assert_eq!(bundle.verifier_program.entries[0].expression_id, 9);
     assert_eq!(bundle.fixed_columns.row_count, 4);
+    assert_eq!(bundle.constant_tree.extended_row_count, 16);
 }
 
 #[test]
@@ -363,6 +374,7 @@ fn rejects_unit_artifacts_with_mismatched_key_roots() {
     write_expression_program(&paths.expression_program, 17);
     write_expression_program(&paths.verifier_program, 9);
     write_fixed_columns(&paths.fixed_columns);
+    write_constant_tree(&paths.constant_tree);
 
     let error = read_unit_artifact_bundle(&paths).expect_err("bundle should be rejected");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -390,6 +402,7 @@ fn rejects_unit_artifacts_with_missing_verifier_programs() {
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
     write_expression_program(&paths.expression_program, 17);
     write_fixed_columns(&paths.fixed_columns);
+    write_constant_tree(&paths.constant_tree);
 
     let error = read_unit_artifact_bundle(&paths).expect_err("bundle should be rejected");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -419,6 +432,28 @@ fn rejects_unit_artifacts_with_missing_fixed_columns() {
 }
 
 #[test]
+fn rejects_unit_artifacts_with_missing_constant_trees() {
+    let dir = create_clean_dir("unit-artifacts-missing-constant-tree");
+    let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
+    write_unit_fixture(
+        &paths.metadata,
+        sample_setup_info_json(),
+        sample_expression_info_json(),
+        sample_verifier_info_json(),
+    );
+    write_file(&paths.verification_key_json, "[1,2,3,4]");
+    write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
+    write_expression_program(&paths.expression_program, 17);
+    write_expression_program(&paths.verifier_program, 9);
+    write_fixed_columns(&paths.fixed_columns);
+
+    let error = read_unit_artifact_bundle(&paths).expect_err("bundle should be rejected");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(error, MetadataBundleError::ConstantTree(_)));
+}
+
+#[test]
 fn rejects_unit_artifacts_with_fixed_row_count_mismatches() {
     let dir = create_clean_dir("unit-artifacts-fixed-row-mismatch");
     let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
@@ -443,6 +478,7 @@ fn rejects_unit_artifacts_with_fixed_row_count_mismatches() {
     };
     let bytes = encode_fixed_columns(&bad_fixed).expect("fixture should encode");
     fs::write(&paths.fixed_columns, bytes).expect("fixture should be written");
+    write_constant_tree(&paths.constant_tree);
 
     let error = read_unit_artifact_bundle(&paths).expect_err("bundle should be rejected");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
