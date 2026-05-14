@@ -4,6 +4,7 @@ pub mod expression_program;
 pub mod fixed;
 pub mod global_info;
 pub mod hint_program;
+pub mod metadata_bundle;
 pub mod metadata_validation;
 pub mod sectioned;
 pub mod setup_info;
