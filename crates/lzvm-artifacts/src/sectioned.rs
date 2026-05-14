@@ -1,0 +1,183 @@
+use std::fmt;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SectionedFile {
+    pub kind: [u8; 4],
+    pub version: u32,
+    pub sections: Vec<SectionedSection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SectionedSection {
+    pub id: u32,
+    pub data: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SectionedError {
+    InvalidKind {
+        expected: [u8; 4],
+        found: [u8; 4],
+    },
+    UnsupportedVersion {
+        found: u32,
+        max: u32,
+    },
+    UnexpectedTrailingBytes {
+        count: usize,
+    },
+    UnexpectedEof {
+        offset: usize,
+        needed: usize,
+        available: usize,
+    },
+    LengthOverflow,
+}
+
+impl fmt::Display for SectionedError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidKind { expected, found } => write!(
+                f,
+                "invalid sectioned file kind: expected {}, found {}",
+                String::from_utf8_lossy(expected),
+                String::from_utf8_lossy(found)
+            ),
+            Self::UnsupportedVersion { found, max } => {
+                write!(f, "unsupported sectioned file version {found}, max {max}")
+            }
+            Self::UnexpectedTrailingBytes { count } => {
+                write!(f, "unexpected trailing bytes in sectioned file: {count}")
+            }
+            Self::UnexpectedEof {
+                offset,
+                needed,
+                available,
+            } => write!(
+                f,
+                "unexpected end of sectioned file at {offset}, needed {needed}, available {available}"
+            ),
+            Self::LengthOverflow => write!(f, "sectioned file length overflow"),
+        }
+    }
+}
+
+impl std::error::Error for SectionedError {}
+
+pub fn parse_sectioned_file(
+    bytes: &[u8],
+    expected_kind: [u8; 4],
+    max_version: u32,
+) -> Result<SectionedFile, SectionedError> {
+    let mut reader = Reader::new(bytes);
+    let kind_bytes = reader.read_exact(4)?;
+    let kind: [u8; 4] = kind_bytes.try_into().expect("slice length checked");
+    if kind != expected_kind {
+        return Err(SectionedError::InvalidKind {
+            expected: expected_kind,
+            found: kind,
+        });
+    }
+
+    let version = reader.read_u32()?;
+    if version > max_version {
+        return Err(SectionedError::UnsupportedVersion {
+            found: version,
+            max: max_version,
+        });
+    }
+
+    let section_count = reader.read_u32()?;
+    let mut sections = Vec::with_capacity(section_count as usize);
+    for _ in 0..section_count {
+        let id = reader.read_u32()?;
+        let size = reader.read_u64()?;
+        let size = usize::try_from(size).map_err(|_| SectionedError::LengthOverflow)?;
+        let data = reader.read_exact(size)?.to_vec();
+        sections.push(SectionedSection { id, data });
+    }
+
+    if reader.position() != bytes.len() {
+        return Err(SectionedError::UnexpectedTrailingBytes {
+            count: bytes.len() - reader.position(),
+        });
+    }
+
+    Ok(SectionedFile {
+        kind,
+        version,
+        sections,
+    })
+}
+
+pub fn encode_sectioned_file(value: &SectionedFile) -> Result<Vec<u8>, SectionedError> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&value.kind);
+    write_u32(&mut out, value.version);
+    let section_count =
+        u32::try_from(value.sections.len()).map_err(|_| SectionedError::LengthOverflow)?;
+    write_u32(&mut out, section_count);
+
+    for section in &value.sections {
+        write_u32(&mut out, section.id);
+        let size = u64::try_from(section.data.len()).map_err(|_| SectionedError::LengthOverflow)?;
+        write_u64(&mut out, size);
+        out.extend_from_slice(&section.data);
+    }
+
+    Ok(out)
+}
+
+fn write_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn write_u64(out: &mut Vec<u8>, value: u64) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+struct Reader<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> Reader<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, offset: 0 }
+    }
+
+    fn position(&self) -> usize {
+        self.offset
+    }
+
+    fn read_exact(&mut self, count: usize) -> Result<&'a [u8], SectionedError> {
+        let end = self
+            .offset
+            .checked_add(count)
+            .ok_or(SectionedError::LengthOverflow)?;
+        if end > self.bytes.len() {
+            return Err(SectionedError::UnexpectedEof {
+                offset: self.offset,
+                needed: count,
+                available: self.bytes.len().saturating_sub(self.offset),
+            });
+        }
+        let out = &self.bytes[self.offset..end];
+        self.offset = end;
+        Ok(out)
+    }
+
+    fn read_u32(&mut self) -> Result<u32, SectionedError> {
+        let bytes = self.read_exact(4)?;
+        Ok(u32::from_le_bytes(
+            bytes.try_into().expect("slice length checked"),
+        ))
+    }
+
+    fn read_u64(&mut self) -> Result<u64, SectionedError> {
+        let bytes = self.read_exact(8)?;
+        Ok(u64::from_le_bytes(
+            bytes.try_into().expect("slice length checked"),
+        ))
+    }
+}
