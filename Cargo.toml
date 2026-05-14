@@ -1,9 +1,8 @@
 [workspace]
-members = ["crates/lzvm-artifacts"]
+members = ["crates/lzvm-artifacts", "crates/lzvm-field"]
 resolver = "2"
 
 [workspace.package]
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/SihaoLiu/Lzvm"
-
