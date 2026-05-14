@@ -84,6 +84,10 @@ pub enum MetadataBundleError {
         json_root: VerificationKeyRoot,
         binary_root: VerificationKeyRoot,
     },
+    ConstantTreeRootMismatch {
+        tree_root: VerificationKeyRoot,
+        verification_key: VerificationKeyRoot,
+    },
     Validation(MetadataValidationError),
 }
 
@@ -175,6 +179,9 @@ impl fmt::Display for MetadataBundleError {
             ),
             Self::VerificationKeyMismatch { .. } => {
                 write!(f, "verification-key companion roots do not match")
+            }
+            Self::ConstantTreeRootMismatch { .. } => {
+                write!(f, "constant-tree root does not match verification key")
             }
             Self::Validation(error) => write!(f, "metadata bundle validation error: {error}"),
         }
@@ -271,6 +278,7 @@ pub fn read_unit_artifact_bundle(
     let fixed_columns = read_fixed_columns_file(&paths.fixed_columns)?;
     validate_fixed_column_rows(&metadata, &fixed_columns)?;
     let constant_tree = read_constant_tree_file(&paths.constant_tree, &metadata.setup)?;
+    validate_constant_tree_root(&constant_tree, &json_root)?;
 
     Ok(UnitArtifactBundle {
         metadata,
@@ -280,6 +288,20 @@ pub fn read_unit_artifact_bundle(
         fixed_columns,
         constant_tree,
     })
+}
+
+fn validate_constant_tree_root(
+    constant_tree: &ConstantTree,
+    verification_key: &VerificationKeyRoot,
+) -> Result<(), MetadataBundleError> {
+    let tree_root = constant_tree.root()?;
+    if &tree_root != verification_key {
+        return Err(MetadataBundleError::ConstantTreeRootMismatch {
+            tree_root,
+            verification_key: verification_key.clone(),
+        });
+    }
+    Ok(())
 }
 
 fn validate_fixed_column_rows(

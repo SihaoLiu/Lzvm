@@ -1,4 +1,5 @@
 use crate::setup_info::UnitSetupInfo;
+use crate::verification_key::VerificationKeyRoot;
 use std::fmt;
 use std::path::Path;
 
@@ -51,6 +52,24 @@ impl fmt::Display for ConstantTreeError {
 }
 
 impl std::error::Error for ConstantTreeError {}
+
+impl ConstantTree {
+    pub fn root(&self) -> Result<VerificationKeyRoot, ConstantTreeError> {
+        let root_bytes = checked_usize(checked_mul(HASH_WORDS, WORD_BYTES)?)?;
+        if self.node_byte_count < root_bytes || self.bytes.len() < root_bytes {
+            return Err(ConstantTreeError::LengthOverflow);
+        }
+
+        let root_start = self.bytes.len() - root_bytes;
+        let mut values = Vec::with_capacity(HASH_WORDS as usize);
+        for chunk in self.bytes[root_start..].chunks_exact(WORD_BYTES as usize) {
+            values.push(u64::from_le_bytes(
+                chunk.try_into().expect("slice length checked"),
+            ));
+        }
+        Ok(VerificationKeyRoot::FieldElements(values))
+    }
+}
 
 pub fn read_constant_tree_file(
     path: impl AsRef<Path>,

@@ -3,6 +3,7 @@ use lzvm_artifacts::constant_tree::{
     ConstantTreeError, ConstantTreeHashKind,
 };
 use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
+use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use std::fs;
 use std::path::PathBuf;
 
@@ -70,6 +71,27 @@ fn reads_constant_tree_files_with_expected_size() {
     assert_eq!(tree.leaf_byte_count, 32);
     assert_eq!(tree.node_byte_count, 224);
     assert_eq!(tree.bytes, bytes);
+}
+
+#[test]
+fn extracts_roots_from_raw_tree_tails() {
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let path = temp_file_path("rooted-tree.bin");
+    let mut bytes = vec![7_u8; expected_constant_tree_byte_count(&setup).unwrap()];
+    let root_values = [1_u64, 2, 3, 4];
+    for (index, value) in root_values.iter().enumerate() {
+        let offset = bytes.len() - 32 + index * 8;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    fs::write(&path, &bytes).expect("fixture should be written");
+
+    let tree = read_constant_tree_file(&path, &setup).expect("fixture should parse");
+    fs::remove_file(&path).expect("fixture should be removed");
+
+    assert_eq!(
+        tree.root().expect("root should extract"),
+        VerificationKeyRoot::FieldElements(root_values.to_vec())
+    );
 }
 
 #[test]
