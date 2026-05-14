@@ -2,10 +2,11 @@ use std::fs;
 use std::path::PathBuf;
 
 use lzvm_artifacts::fixed::{
-    encode_fixed_columns, expected_raw_fixed_column_byte_count, parse_fixed_columns,
-    parse_raw_fixed_columns, raw_fixed_column_layout, read_fixed_columns_file,
+    encode_fixed_columns, encode_raw_fixed_columns, expected_raw_fixed_column_byte_count,
+    parse_fixed_columns, parse_raw_fixed_columns, raw_fixed_column_layout, read_fixed_columns_file,
     read_fixed_columns_file_for_setup, read_raw_fixed_column_file,
-    read_raw_fixed_column_layout_file, read_raw_fixed_row_file, FixedColumnError,
+    read_raw_fixed_column_layout_file, read_raw_fixed_row_file, write_raw_fixed_columns_file,
+    FixedColumn, FixedColumnError, FixedColumns,
 };
 use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
 
@@ -99,6 +100,26 @@ fn sample_raw_file() -> Vec<u8> {
     bytes
 }
 
+fn sample_raw_columns() -> FixedColumns {
+    FixedColumns {
+        group_name: "group-a".to_owned(),
+        unit_name: "unit-a".to_owned(),
+        row_count: 4,
+        columns: vec![
+            FixedColumn {
+                name: "main.right".to_owned(),
+                dimensions: vec![2],
+                values: vec![10, 20, 30, 40],
+            },
+            FixedColumn {
+                name: "main.left".to_owned(),
+                dimensions: vec![1],
+                values: vec![1, 2, 3, 4],
+            },
+        ],
+    }
+}
+
 fn temp_file_path(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("lzvm-artifacts-{}-{name}", std::process::id()))
 }
@@ -180,6 +201,62 @@ fn parses_raw_fixed_columns_using_setup_column_map() {
     assert_eq!(parsed.columns[1].name, "main.right");
     assert_eq!(parsed.columns[1].dimensions, [2]);
     assert_eq!(parsed.columns[1].values, [10, 20, 30, 40]);
+}
+
+#[test]
+fn encodes_raw_fixed_columns_using_setup_column_map() {
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let encoded =
+        encode_raw_fixed_columns(&sample_raw_columns(), &setup).expect("fixture should encode");
+
+    assert_eq!(encoded, sample_raw_file());
+    let parsed = parse_raw_fixed_columns(&encoded, &setup, "group-a", "unit-a")
+        .expect("encoded fixture should parse");
+    assert_eq!(parsed.columns[0].values, [1, 2, 3, 4]);
+    assert_eq!(parsed.columns[1].values, [10, 20, 30, 40]);
+}
+
+#[test]
+fn writes_raw_fixed_columns_to_a_file_path() {
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let path = temp_file_path("raw-fixed-columns-write.bin");
+    write_raw_fixed_columns_file(&path, &sample_raw_columns(), &setup)
+        .expect("fixture should write");
+
+    let column = read_raw_fixed_column_file(&path, &setup, "group-a", "unit-a", 0)
+        .expect("column should read");
+    fs::remove_file(&path).expect("fixture should be removed");
+
+    assert_eq!(column, [1, 2, 3, 4]);
+}
+
+#[test]
+fn rejects_raw_fixed_encoding_when_a_setup_column_is_missing() {
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let mut columns = sample_raw_columns();
+    columns.columns.retain(|column| column.name != "main.right");
+
+    assert!(matches!(
+        encode_raw_fixed_columns(&columns, &setup),
+        Err(FixedColumnError::MissingRawColumn { column })
+            if column == "main.right"
+    ));
+}
+
+#[test]
+fn rejects_raw_fixed_encoding_when_dimensions_do_not_match_setup() {
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let mut columns = sample_raw_columns();
+    columns.columns[0].dimensions = vec![3];
+
+    assert!(matches!(
+        encode_raw_fixed_columns(&columns, &setup),
+        Err(FixedColumnError::RawColumnDimensionMismatch {
+            column,
+            expected,
+            found
+        }) if column == "main.right" && expected == vec![2] && found == vec![3]
+    ));
 }
 
 #[test]

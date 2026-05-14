@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -92,6 +93,20 @@ pub enum FixedColumnError {
         index: u32,
         width: u32,
     },
+    MissingRawColumn {
+        column: String,
+    },
+    UnexpectedRawColumn {
+        column: String,
+    },
+    DuplicateRawColumn {
+        column: String,
+    },
+    RawColumnDimensionMismatch {
+        column: String,
+        expected: Vec<u32>,
+        found: Vec<u32>,
+    },
     RawRowIndexOutOfBounds {
         row: u64,
         row_count: u64,
@@ -162,6 +177,23 @@ impl fmt::Display for FixedColumnError {
             } => write!(
                 f,
                 "raw fixed-column {column} index {index} is outside row width {width}"
+            ),
+            Self::MissingRawColumn { column } => {
+                write!(f, "missing raw fixed-column {column}")
+            }
+            Self::UnexpectedRawColumn { column } => {
+                write!(f, "unexpected raw fixed-column {column}")
+            }
+            Self::DuplicateRawColumn { column } => {
+                write!(f, "duplicate raw fixed-column {column}")
+            }
+            Self::RawColumnDimensionMismatch {
+                column,
+                expected,
+                found,
+            } => write!(
+                f,
+                "raw fixed-column {column} dimensions mismatch: expected {expected:?}, found {found:?}"
             ),
             Self::RawRowIndexOutOfBounds { row, row_count } => write!(
                 f,
@@ -256,6 +288,17 @@ pub fn read_raw_fixed_column_file(
     read_raw_fixed_column(&mut file, &layout, column_index)
 }
 
+pub fn write_raw_fixed_columns_file(
+    path: impl AsRef<Path>,
+    value: &FixedColumns,
+    setup: &UnitSetupInfo,
+) -> Result<(), FixedColumnError> {
+    let bytes = encode_raw_fixed_columns(value, setup)?;
+    std::fs::write(path, bytes).map_err(|error| FixedColumnError::Io {
+        message: error.to_string(),
+    })
+}
+
 pub fn read_fixed_columns_file_for_setup(
     path: impl AsRef<Path>,
     setup: &UnitSetupInfo,
@@ -288,6 +331,69 @@ pub fn encode_fixed_columns(value: &FixedColumns) -> Result<Vec<u8>, FixedColumn
         }],
     };
     encode_sectioned_file(&file).map_err(FixedColumnError::from)
+}
+
+pub fn encode_raw_fixed_columns(
+    value: &FixedColumns,
+    setup: &UnitSetupInfo,
+) -> Result<Vec<u8>, FixedColumnError> {
+    let layout = raw_fixed_column_layout(setup, &value.group_name, &value.unit_name)?;
+    let row_count =
+        usize::try_from(layout.row_count).map_err(|_| FixedColumnError::LengthOverflow)?;
+    let expected_names = layout
+        .columns
+        .iter()
+        .map(|column| column.name.as_str())
+        .collect::<BTreeSet<_>>();
+
+    let mut by_name = BTreeMap::new();
+    for column in &value.columns {
+        if !expected_names.contains(column.name.as_str()) {
+            return Err(FixedColumnError::UnexpectedRawColumn {
+                column: column.name.clone(),
+            });
+        }
+        if by_name.insert(column.name.as_str(), column).is_some() {
+            return Err(FixedColumnError::DuplicateRawColumn {
+                column: column.name.clone(),
+            });
+        }
+    }
+
+    let mut bytes = vec![0_u8; layout.byte_count];
+    for spec in &layout.columns {
+        let column =
+            by_name
+                .get(spec.name.as_str())
+                .ok_or_else(|| FixedColumnError::MissingRawColumn {
+                    column: spec.name.clone(),
+                })?;
+        if column.dimensions != spec.dimensions {
+            return Err(FixedColumnError::RawColumnDimensionMismatch {
+                column: spec.name.clone(),
+                expected: spec.dimensions.clone(),
+                found: column.dimensions.clone(),
+            });
+        }
+        if column.values.len() != row_count {
+            return Err(FixedColumnError::ColumnValueCountMismatch {
+                column: spec.name.clone(),
+                expected: layout.row_count,
+                found: column.values.len(),
+            });
+        }
+
+        for (row, value) in column.values.iter().enumerate() {
+            let offset = row_byte_offset(row as u64, layout.column_count, spec.index)?;
+            let offset = usize::try_from(offset).map_err(|_| FixedColumnError::LengthOverflow)?;
+            let end = offset
+                .checked_add(FIELD_WORD_BYTES as usize)
+                .ok_or(FixedColumnError::LengthOverflow)?;
+            bytes[offset..end].copy_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    Ok(bytes)
 }
 
 fn encode_fixed_columns_section(value: &FixedColumns) -> Result<Vec<u8>, FixedColumnError> {
