@@ -1,22 +1,35 @@
 # Lzvm
 
-Lzvm is an early-stage zero-knowledge virtual machine project.
+Lzvm is an early-stage zero-knowledge virtual machine and proving stack.
 
-The goal is to build a ZKVM from the ground up with a Rust-first core, C++ integration for GPU acceleration, and access to LLVM infrastructure where it is useful for compilation, analysis, or execution support.
+The goal is to build a native stack with a Rust-first core, C++ integration for performance-critical runtime boundaries, and CUDA acceleration for proof construction.
 
 ## Goals
 
 - Provide a clear virtual machine architecture suitable for zero-knowledge proving.
-- Keep the core implementation in Rust for safety, maintainability, and tooling.
-- Use C++ for performance-critical interoperability with GPU runtimes and LLVM components.
-- Maintain clean boundaries between the VM, proving interfaces, compilation tooling, and acceleration backends.
+- Keep artifact formats, validation, orchestration, and command surfaces in Rust.
+- Use C++ and CUDA for backend work where native acceleration matters.
+- Maintain clean boundaries between artifact loading, setup generation, proving, verification, compilation tooling, and acceleration backends.
 
-## Technology
+## Workspace
 
-- Rust: primary implementation language.
-- C++: GPU acceleration and LLVM-related infrastructure.
-- LLVM: compilation and program analysis support where needed.
+- `crates/lzvm-field`: CPU reference field arithmetic used by artifact validation and backend parity tests.
+- `crates/lzvm-artifacts`: native readers, writers, and validators for setup and proving artifacts.
+- `crates/lzvm-cli`: repository-owned command entry points.
 
-## Current Scope
+## Current Commands
 
-This repository starts with project documentation only. The implementation will be added incrementally as the VM architecture, instruction model, proving interface, and acceleration boundaries are defined.
+Validate an existing setup directory:
+
+```sh
+cargo run -p lzvm-cli -- setup validate <setup-dir>
+```
+
+The command loads the discovered setup catalog, validates companion metadata and binary artifacts, and prints a stable summary.
+
+## Verification
+
+```sh
+cargo test
+cargo clippy --all-targets -- -D warnings
+```
