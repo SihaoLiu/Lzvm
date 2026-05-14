@@ -1,5 +1,10 @@
 [workspace]
-members = ["crates/lzvm-artifacts", "crates/lzvm-cli", "crates/lzvm-field"]
+members = [
+    "crates/lzvm-artifacts",
+    "crates/lzvm-cli",
+    "crates/lzvm-field",
+    "crates/lzvm-setup",
+]
 resolver = "2"
 
 [workspace.package]
