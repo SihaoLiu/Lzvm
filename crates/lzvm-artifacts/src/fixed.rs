@@ -1,4 +1,6 @@
 use std::fmt;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use crate::sectioned::{
@@ -21,6 +23,23 @@ pub struct FixedColumn {
     pub name: String,
     pub dimensions: Vec<u32>,
     pub values: Vec<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawFixedColumnLayout {
+    pub group_name: String,
+    pub unit_name: String,
+    pub row_count: u64,
+    pub column_count: u32,
+    pub byte_count: usize,
+    pub columns: Vec<RawFixedColumnInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawFixedColumnInfo {
+    pub name: String,
+    pub index: u32,
+    pub dimensions: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,6 +91,10 @@ pub enum FixedColumnError {
         column: String,
         index: u32,
         width: u32,
+    },
+    RawRowIndexOutOfBounds {
+        row: u64,
+        row_count: u64,
     },
     Io {
         message: String,
@@ -140,6 +163,10 @@ impl fmt::Display for FixedColumnError {
                 f,
                 "raw fixed-column {column} index {index} is outside row width {width}"
             ),
+            Self::RawRowIndexOutOfBounds { row, row_count } => write!(
+                f,
+                "raw fixed-column row {row} is outside row count {row_count}"
+            ),
             Self::Io { message } => write!(f, "fixed-column file io error: {message}"),
         }
     }
@@ -188,6 +215,45 @@ pub fn read_raw_fixed_columns_file(
         message: error.to_string(),
     })?;
     parse_raw_fixed_columns(&bytes, setup, group_name, unit_name)
+}
+
+pub fn read_raw_fixed_column_layout_file(
+    path: impl AsRef<Path>,
+    setup: &UnitSetupInfo,
+    group_name: impl Into<String>,
+    unit_name: impl Into<String>,
+) -> Result<RawFixedColumnLayout, FixedColumnError> {
+    let layout = raw_fixed_column_layout(setup, group_name, unit_name)?;
+    validate_raw_fixed_file_size(path, layout.byte_count)?;
+    Ok(layout)
+}
+
+pub fn read_raw_fixed_row_file(
+    path: impl AsRef<Path>,
+    setup: &UnitSetupInfo,
+    group_name: impl Into<String>,
+    unit_name: impl Into<String>,
+    row: u64,
+) -> Result<Vec<u64>, FixedColumnError> {
+    let layout = read_raw_fixed_column_layout_file(&path, setup, group_name, unit_name)?;
+    let mut file = File::open(path).map_err(|error| FixedColumnError::Io {
+        message: error.to_string(),
+    })?;
+    read_raw_fixed_row(&mut file, &layout, row)
+}
+
+pub fn read_raw_fixed_column_file(
+    path: impl AsRef<Path>,
+    setup: &UnitSetupInfo,
+    group_name: impl Into<String>,
+    unit_name: impl Into<String>,
+    column_index: u32,
+) -> Result<Vec<u64>, FixedColumnError> {
+    let layout = read_raw_fixed_column_layout_file(&path, setup, group_name, unit_name)?;
+    let mut file = File::open(path).map_err(|error| FixedColumnError::Io {
+        message: error.to_string(),
+    })?;
+    read_raw_fixed_column(&mut file, &layout, column_index)
 }
 
 pub fn read_fixed_columns_file_for_setup(
@@ -281,30 +347,21 @@ pub fn parse_raw_fixed_columns(
     group_name: impl Into<String>,
     unit_name: impl Into<String>,
 ) -> Result<FixedColumns, FixedColumnError> {
-    let expected = expected_raw_fixed_column_byte_count(setup)?;
-    if bytes.len() != expected {
+    let layout = raw_fixed_column_layout(setup, group_name, unit_name)?;
+    if bytes.len() != layout.byte_count {
         return Err(FixedColumnError::InvalidRawByteLength {
-            expected,
+            expected: layout.byte_count,
             found: bytes.len(),
         });
     }
 
-    let row_count = raw_row_count(setup)?;
-    let width = setup.n_constants;
     let row_count_usize =
-        usize::try_from(row_count).map_err(|_| FixedColumnError::LengthOverflow)?;
-    let width_usize = usize::try_from(width).map_err(|_| FixedColumnError::LengthOverflow)?;
-    let column_specs = constant_column_specs(setup);
-    let mut columns = Vec::with_capacity(column_specs.len());
+        usize::try_from(layout.row_count).map_err(|_| FixedColumnError::LengthOverflow)?;
+    let width_usize =
+        usize::try_from(layout.column_count).map_err(|_| FixedColumnError::LengthOverflow)?;
+    let mut columns = Vec::with_capacity(layout.columns.len());
 
-    for spec in column_specs {
-        if spec.index >= width {
-            return Err(FixedColumnError::RawColumnIndexOutOfBounds {
-                column: spec.name,
-                index: spec.index,
-                width,
-            });
-        }
+    for spec in layout.columns {
         let index = usize::try_from(spec.index).map_err(|_| FixedColumnError::LengthOverflow)?;
         let mut values = Vec::with_capacity(row_count_usize);
         for row in 0..row_count_usize {
@@ -328,9 +385,9 @@ pub fn parse_raw_fixed_columns(
     }
 
     Ok(FixedColumns {
-        group_name: group_name.into(),
-        unit_name: unit_name.into(),
-        row_count,
+        group_name: layout.group_name,
+        unit_name: layout.unit_name,
+        row_count: layout.row_count,
         columns,
     })
 }
@@ -345,6 +402,103 @@ pub fn expected_raw_fixed_column_byte_count(
         .checked_mul(FIELD_WORD_BYTES)
         .ok_or(FixedColumnError::LengthOverflow)?;
     usize::try_from(bytes).map_err(|_| FixedColumnError::LengthOverflow)
+}
+
+pub fn raw_fixed_column_layout(
+    setup: &UnitSetupInfo,
+    group_name: impl Into<String>,
+    unit_name: impl Into<String>,
+) -> Result<RawFixedColumnLayout, FixedColumnError> {
+    let row_count = raw_row_count(setup)?;
+    let column_count = setup.n_constants;
+    let byte_count = expected_raw_fixed_column_byte_count(setup)?;
+    let columns = constant_column_specs(setup);
+    for column in &columns {
+        if column.index >= column_count {
+            return Err(FixedColumnError::RawColumnIndexOutOfBounds {
+                column: column.name.clone(),
+                index: column.index,
+                width: column_count,
+            });
+        }
+    }
+
+    Ok(RawFixedColumnLayout {
+        group_name: group_name.into(),
+        unit_name: unit_name.into(),
+        row_count,
+        column_count,
+        byte_count,
+        columns,
+    })
+}
+
+pub fn read_raw_fixed_row(
+    file: &mut File,
+    layout: &RawFixedColumnLayout,
+    row: u64,
+) -> Result<Vec<u64>, FixedColumnError> {
+    if row >= layout.row_count {
+        return Err(FixedColumnError::RawRowIndexOutOfBounds {
+            row,
+            row_count: layout.row_count,
+        });
+    }
+    let width =
+        usize::try_from(layout.column_count).map_err(|_| FixedColumnError::LengthOverflow)?;
+    let byte_count = width
+        .checked_mul(FIELD_WORD_BYTES as usize)
+        .ok_or(FixedColumnError::LengthOverflow)?;
+    let offset = row_byte_offset(row, layout.column_count, 0)?;
+    file.seek(SeekFrom::Start(offset))
+        .map_err(|error| FixedColumnError::Io {
+            message: error.to_string(),
+        })?;
+    let mut bytes = vec![0_u8; byte_count];
+    file.read_exact(&mut bytes)
+        .map_err(|error| FixedColumnError::Io {
+            message: error.to_string(),
+        })?;
+
+    let mut values = Vec::with_capacity(width);
+    for chunk in bytes.chunks_exact(FIELD_WORD_BYTES as usize) {
+        values.push(u64::from_le_bytes(
+            chunk.try_into().expect("slice length checked"),
+        ));
+    }
+    Ok(values)
+}
+
+pub fn read_raw_fixed_column(
+    file: &mut File,
+    layout: &RawFixedColumnLayout,
+    column_index: u32,
+) -> Result<Vec<u64>, FixedColumnError> {
+    if column_index >= layout.column_count {
+        return Err(FixedColumnError::RawColumnIndexOutOfBounds {
+            column: format!("const_{column_index}"),
+            index: column_index,
+            width: layout.column_count,
+        });
+    }
+
+    let row_count =
+        usize::try_from(layout.row_count).map_err(|_| FixedColumnError::LengthOverflow)?;
+    let mut values = Vec::with_capacity(row_count);
+    let mut bytes = [0_u8; FIELD_WORD_BYTES as usize];
+    for row in 0..layout.row_count {
+        let offset = row_byte_offset(row, layout.column_count, column_index)?;
+        file.seek(SeekFrom::Start(offset))
+            .map_err(|error| FixedColumnError::Io {
+                message: error.to_string(),
+            })?;
+        file.read_exact(&mut bytes)
+            .map_err(|error| FixedColumnError::Io {
+                message: error.to_string(),
+            })?;
+        values.push(u64::from_le_bytes(bytes));
+    }
+    Ok(values)
 }
 
 fn parse_fixed_columns_section(bytes: &[u8]) -> Result<FixedColumns, FixedColumnError> {
@@ -403,16 +557,10 @@ fn parse_fixed_columns_section(bytes: &[u8]) -> Result<FixedColumns, FixedColumn
     })
 }
 
-struct RawColumnSpec {
-    name: String,
-    index: u32,
-    dimensions: Vec<u32>,
-}
-
-fn constant_column_specs(setup: &UnitSetupInfo) -> Vec<RawColumnSpec> {
+fn constant_column_specs(setup: &UnitSetupInfo) -> Vec<RawFixedColumnInfo> {
     if setup.constant_columns.is_empty() {
         return (0..setup.n_constants)
-            .map(|index| RawColumnSpec {
+            .map(|index| RawFixedColumnInfo {
                 name: format!("const_{index}"),
                 index,
                 dimensions: Vec::new(),
@@ -429,7 +577,7 @@ fn constant_column_specs(setup: &UnitSetupInfo) -> Vec<RawColumnSpec> {
             } else {
                 column.lengths.clone()
             };
-            RawColumnSpec {
+            RawFixedColumnInfo {
                 name: column.name.clone(),
                 index: column.pols_map_id,
                 dimensions,
@@ -444,6 +592,31 @@ fn raw_row_count(setup: &UnitSetupInfo) -> Result<u64, FixedColumnError> {
         .ok_or(FixedColumnError::RawDomainTooLarge {
             n_bits: setup.stark.n_bits,
         })
+}
+
+fn validate_raw_fixed_file_size(
+    path: impl AsRef<Path>,
+    expected: usize,
+) -> Result<(), FixedColumnError> {
+    let found = std::fs::metadata(path)
+        .map_err(|error| FixedColumnError::Io {
+            message: error.to_string(),
+        })?
+        .len();
+    if found != u64::try_from(expected).map_err(|_| FixedColumnError::LengthOverflow)? {
+        return Err(FixedColumnError::InvalidRawByteLength {
+            expected,
+            found: usize::try_from(found).unwrap_or(usize::MAX),
+        });
+    }
+    Ok(())
+}
+
+fn row_byte_offset(row: u64, width: u32, column: u32) -> Result<u64, FixedColumnError> {
+    row.checked_mul(u64::from(width))
+        .and_then(|offset| offset.checked_add(u64::from(column)))
+        .and_then(|word| word.checked_mul(FIELD_WORD_BYTES))
+        .ok_or(FixedColumnError::LengthOverflow)
 }
 
 fn write_u32(out: &mut Vec<u8>, value: u32) {

@@ -3,8 +3,9 @@ use std::path::PathBuf;
 
 use lzvm_artifacts::fixed::{
     encode_fixed_columns, expected_raw_fixed_column_byte_count, parse_fixed_columns,
-    parse_raw_fixed_columns, read_fixed_columns_file, read_fixed_columns_file_for_setup,
-    FixedColumnError,
+    parse_raw_fixed_columns, raw_fixed_column_layout, read_fixed_columns_file,
+    read_fixed_columns_file_for_setup, read_raw_fixed_column_file,
+    read_raw_fixed_column_layout_file, read_raw_fixed_row_file, FixedColumnError,
 };
 use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
 
@@ -179,6 +180,73 @@ fn parses_raw_fixed_columns_using_setup_column_map() {
     assert_eq!(parsed.columns[1].name, "main.right");
     assert_eq!(parsed.columns[1].dimensions, [2]);
     assert_eq!(parsed.columns[1].values, [10, 20, 30, 40]);
+}
+
+#[test]
+fn derives_raw_fixed_column_layout_from_setup() {
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let layout =
+        raw_fixed_column_layout(&setup, "group-a", "unit-a").expect("layout should derive");
+
+    assert_eq!(layout.group_name, "group-a");
+    assert_eq!(layout.unit_name, "unit-a");
+    assert_eq!(layout.row_count, 4);
+    assert_eq!(layout.column_count, 2);
+    assert_eq!(layout.byte_count, 64);
+    assert_eq!(layout.columns.len(), 2);
+    assert_eq!(layout.columns[0].name, "main.left");
+    assert_eq!(layout.columns[0].index, 0);
+    assert_eq!(layout.columns[0].dimensions, [1]);
+    assert_eq!(layout.columns[1].name, "main.right");
+    assert_eq!(layout.columns[1].index, 1);
+    assert_eq!(layout.columns[1].dimensions, [2]);
+}
+
+#[test]
+fn reads_raw_fixed_rows_without_full_parse() {
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let path = temp_file_path("raw-fixed-row.bin");
+    fs::write(&path, sample_raw_file()).expect("fixture should be written");
+
+    let layout = read_raw_fixed_column_layout_file(&path, &setup, "group-a", "unit-a")
+        .expect("layout should validate against file");
+    let row =
+        read_raw_fixed_row_file(&path, &setup, "group-a", "unit-a", 2).expect("row should read");
+    let out_of_bounds = read_raw_fixed_row_file(&path, &setup, "group-a", "unit-a", 4);
+    fs::remove_file(&path).expect("fixture should be removed");
+
+    assert_eq!(layout.row_count, 4);
+    assert_eq!(layout.column_count, 2);
+    assert_eq!(row, [3, 30]);
+    assert!(matches!(
+        out_of_bounds,
+        Err(FixedColumnError::RawRowIndexOutOfBounds {
+            row: 4,
+            row_count: 4
+        })
+    ));
+}
+
+#[test]
+fn reads_raw_fixed_columns_without_full_parse() {
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let path = temp_file_path("raw-fixed-column.bin");
+    fs::write(&path, sample_raw_file()).expect("fixture should be written");
+
+    let column = read_raw_fixed_column_file(&path, &setup, "group-a", "unit-a", 1)
+        .expect("column should read");
+    let out_of_bounds = read_raw_fixed_column_file(&path, &setup, "group-a", "unit-a", 2);
+    fs::remove_file(&path).expect("fixture should be removed");
+
+    assert_eq!(column, [10, 20, 30, 40]);
+    assert!(matches!(
+        out_of_bounds,
+        Err(FixedColumnError::RawColumnIndexOutOfBounds {
+            index: 2,
+            width: 2,
+            ..
+        })
+    ));
 }
 
 #[test]
