@@ -1,3 +1,6 @@
+use lzvm_artifacts::expression_program::{
+    encode_expression_program, ExpressionEntry, ExpressionProgram,
+};
 use lzvm_artifacts::metadata_bundle::{
     read_global_metadata_bundle, read_unit_artifact_bundle, read_unit_metadata_bundle,
     GlobalMetadataPaths, MetadataBundleError, UnitArtifactPaths, UnitMetadataPaths,
@@ -119,6 +122,31 @@ fn sample_global_info_json() -> &'static str {
     }"#
 }
 
+fn sample_expression_program(expression_id: u32) -> ExpressionProgram {
+    ExpressionProgram {
+        max_tmp1: 1,
+        max_tmp3: 1,
+        max_args: 1,
+        max_ops: 1,
+        entries: vec![ExpressionEntry {
+            expression_id,
+            destination_dimension: 3,
+            destination_id: 0,
+            stage: 1,
+            temp1_count: 0,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 1,
+            args_offset: 0,
+            source_line: "program-line".to_owned(),
+        }],
+        ops: vec![1],
+        args: vec![2],
+        numbers: vec![],
+    }
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
         "lzvm-metadata-bundle-{}-{name}",
@@ -145,6 +173,12 @@ fn write_unit_fixture(paths: &UnitMetadataPaths, setup: &str, expressions: &str,
 
 fn write_root_binary(path: &Path, values: Vec<u64>) {
     let bytes = encode_verification_key_binary(&VerificationKeyRoot::FieldElements(values))
+        .expect("fixture should encode");
+    fs::write(path, bytes).expect("fixture should be written");
+}
+
+fn write_expression_program(path: &Path, expression_id: u32) {
+    let bytes = encode_expression_program(&sample_expression_program(expression_id))
         .expect("fixture should encode");
     fs::write(path, bytes).expect("fixture should be written");
 }
@@ -258,6 +292,11 @@ fn derives_unit_artifact_paths_from_a_unit_prefix() {
         paths.verification_key_binary,
         PathBuf::from("/tmp/unit-a.verkey.bin")
     );
+    assert_eq!(paths.expression_program, PathBuf::from("/tmp/unit-a.bin"));
+    assert_eq!(
+        paths.verifier_program,
+        PathBuf::from("/tmp/unit-a.verifier.bin")
+    );
 }
 
 #[test]
@@ -272,6 +311,8 @@ fn reads_and_validates_unit_artifacts_from_paths() {
     );
     write_file(&paths.verification_key_json, "[1,2,3,4]");
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
+    write_expression_program(&paths.expression_program, 17);
+    write_expression_program(&paths.verifier_program, 9);
 
     let bundle = read_unit_artifact_bundle(&paths).expect("bundle should load");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -281,6 +322,8 @@ fn reads_and_validates_unit_artifacts_from_paths() {
         bundle.verification_key,
         VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4])
     );
+    assert_eq!(bundle.expression_program.entries[0].expression_id, 17);
+    assert_eq!(bundle.verifier_program.entries[0].expression_id, 9);
 }
 
 #[test]
@@ -295,6 +338,8 @@ fn rejects_unit_artifacts_with_mismatched_key_roots() {
     );
     write_file(&paths.verification_key_json, "[1,2,3,4]");
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 5]);
+    write_expression_program(&paths.expression_program, 17);
+    write_expression_program(&paths.verifier_program, 9);
 
     let error = read_unit_artifact_bundle(&paths).expect_err("bundle should be rejected");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -306,4 +351,24 @@ fn rejects_unit_artifacts_with_mismatched_key_roots() {
             binary_root: VerificationKeyRoot::FieldElements(_)
         }
     ));
+}
+
+#[test]
+fn rejects_unit_artifacts_with_missing_verifier_programs() {
+    let dir = create_clean_dir("unit-artifacts-missing-verifier-program");
+    let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
+    write_unit_fixture(
+        &paths.metadata,
+        sample_setup_info_json(),
+        sample_expression_info_json(),
+        sample_verifier_info_json(),
+    );
+    write_file(&paths.verification_key_json, "[1,2,3,4]");
+    write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
+    write_expression_program(&paths.expression_program, 17);
+
+    let error = read_unit_artifact_bundle(&paths).expect_err("bundle should be rejected");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(error, MetadataBundleError::ExpressionProgram(_)));
 }

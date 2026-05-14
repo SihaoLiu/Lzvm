@@ -1,4 +1,7 @@
 use crate::expression_info::{read_expression_info_file, ExpressionInfo, ExpressionInfoError};
+use crate::expression_program::{
+    read_expression_program_file, ExpressionProgram, ExpressionProgramError,
+};
 use crate::global_info::{read_global_info_file, GlobalInfo, GlobalInfoError};
 use crate::metadata_validation::{
     validate_global_metadata, validate_unit_metadata, MetadataValidationError,
@@ -30,6 +33,8 @@ pub struct UnitArtifactPaths {
     pub metadata: UnitMetadataPaths,
     pub verification_key_json: PathBuf,
     pub verification_key_binary: PathBuf,
+    pub expression_program: PathBuf,
+    pub verifier_program: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -48,6 +53,8 @@ pub struct GlobalMetadataBundle {
 pub struct UnitArtifactBundle {
     pub metadata: UnitMetadataBundle,
     pub verification_key: VerificationKeyRoot,
+    pub expression_program: ExpressionProgram,
+    pub verifier_program: ExpressionProgram,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +63,7 @@ pub enum MetadataBundleError {
     ExpressionInfo(ExpressionInfoError),
     VerifierInfo(VerifierInfoError),
     GlobalInfo(GlobalInfoError),
+    ExpressionProgram(ExpressionProgramError),
     VerificationKey(VerificationKeyError),
     VerificationKeyMismatch {
         json_root: VerificationKeyRoot,
@@ -98,11 +106,15 @@ impl UnitArtifactPaths {
         metadata: UnitMetadataPaths,
         verification_key_json: impl Into<PathBuf>,
         verification_key_binary: impl Into<PathBuf>,
+        expression_program: impl Into<PathBuf>,
+        verifier_program: impl Into<PathBuf>,
     ) -> Self {
         Self {
             metadata,
             verification_key_json: verification_key_json.into(),
             verification_key_binary: verification_key_binary.into(),
+            expression_program: expression_program.into(),
+            verifier_program: verifier_program.into(),
         }
     }
 
@@ -112,6 +124,8 @@ impl UnitArtifactPaths {
             metadata: UnitMetadataPaths::from_unit_prefix(prefix),
             verification_key_json: append_suffix(prefix, ".verkey.json"),
             verification_key_binary: append_suffix(prefix, ".verkey.bin"),
+            expression_program: append_suffix(prefix, ".bin"),
+            verifier_program: append_suffix(prefix, ".verifier.bin"),
         }
     }
 }
@@ -123,6 +137,9 @@ impl fmt::Display for MetadataBundleError {
             Self::ExpressionInfo(error) => write!(f, "expression metadata bundle error: {error}"),
             Self::VerifierInfo(error) => write!(f, "verifier metadata bundle error: {error}"),
             Self::GlobalInfo(error) => write!(f, "global metadata bundle error: {error}"),
+            Self::ExpressionProgram(error) => {
+                write!(f, "expression program bundle error: {error}")
+            }
             Self::VerificationKey(error) => {
                 write!(f, "verification-key metadata bundle error: {error}")
             }
@@ -157,6 +174,12 @@ impl From<VerifierInfoError> for MetadataBundleError {
 impl From<GlobalInfoError> for MetadataBundleError {
     fn from(error: GlobalInfoError) -> Self {
         Self::GlobalInfo(error)
+    }
+}
+
+impl From<ExpressionProgramError> for MetadataBundleError {
+    fn from(error: ExpressionProgramError) -> Self {
+        Self::ExpressionProgram(error)
     }
 }
 
@@ -201,10 +224,14 @@ pub fn read_unit_artifact_bundle(
             binary_root,
         });
     }
+    let expression_program = read_expression_program_file(&paths.expression_program)?;
+    let verifier_program = read_expression_program_file(&paths.verifier_program)?;
 
     Ok(UnitArtifactBundle {
         metadata,
         verification_key: json_root,
+        expression_program,
+        verifier_program,
     })
 }
 
