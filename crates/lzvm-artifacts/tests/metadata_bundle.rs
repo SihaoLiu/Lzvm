@@ -1,6 +1,7 @@
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
+use lzvm_artifacts::fixed::{encode_fixed_columns, FixedColumn, FixedColumns};
 use lzvm_artifacts::metadata_bundle::{
     read_global_metadata_bundle, read_unit_artifact_bundle, read_unit_metadata_bundle,
     GlobalMetadataPaths, MetadataBundleError, UnitArtifactPaths, UnitMetadataPaths,
@@ -147,6 +148,19 @@ fn sample_expression_program(expression_id: u32) -> ExpressionProgram {
     }
 }
 
+fn sample_fixed_columns() -> FixedColumns {
+    FixedColumns {
+        group_name: "group-a".to_owned(),
+        unit_name: "unit-a".to_owned(),
+        row_count: 3,
+        columns: vec![FixedColumn {
+            name: "main.value".to_owned(),
+            dimensions: vec![1],
+            values: vec![7, 8, 9],
+        }],
+    }
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
         "lzvm-metadata-bundle-{}-{name}",
@@ -180,6 +194,11 @@ fn write_root_binary(path: &Path, values: Vec<u64>) {
 fn write_expression_program(path: &Path, expression_id: u32) {
     let bytes = encode_expression_program(&sample_expression_program(expression_id))
         .expect("fixture should encode");
+    fs::write(path, bytes).expect("fixture should be written");
+}
+
+fn write_fixed_columns(path: &Path) {
+    let bytes = encode_fixed_columns(&sample_fixed_columns()).expect("fixture should encode");
     fs::write(path, bytes).expect("fixture should be written");
 }
 
@@ -297,6 +316,7 @@ fn derives_unit_artifact_paths_from_a_unit_prefix() {
         paths.verifier_program,
         PathBuf::from("/tmp/unit-a.verifier.bin")
     );
+    assert_eq!(paths.fixed_columns, PathBuf::from("/tmp/unit-a.const"));
 }
 
 #[test]
@@ -313,6 +333,7 @@ fn reads_and_validates_unit_artifacts_from_paths() {
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
     write_expression_program(&paths.expression_program, 17);
     write_expression_program(&paths.verifier_program, 9);
+    write_fixed_columns(&paths.fixed_columns);
 
     let bundle = read_unit_artifact_bundle(&paths).expect("bundle should load");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -324,6 +345,7 @@ fn reads_and_validates_unit_artifacts_from_paths() {
     );
     assert_eq!(bundle.expression_program.entries[0].expression_id, 17);
     assert_eq!(bundle.verifier_program.entries[0].expression_id, 9);
+    assert_eq!(bundle.fixed_columns.row_count, 3);
 }
 
 #[test]
@@ -340,6 +362,7 @@ fn rejects_unit_artifacts_with_mismatched_key_roots() {
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 5]);
     write_expression_program(&paths.expression_program, 17);
     write_expression_program(&paths.verifier_program, 9);
+    write_fixed_columns(&paths.fixed_columns);
 
     let error = read_unit_artifact_bundle(&paths).expect_err("bundle should be rejected");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -366,9 +389,31 @@ fn rejects_unit_artifacts_with_missing_verifier_programs() {
     write_file(&paths.verification_key_json, "[1,2,3,4]");
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
     write_expression_program(&paths.expression_program, 17);
+    write_fixed_columns(&paths.fixed_columns);
 
     let error = read_unit_artifact_bundle(&paths).expect_err("bundle should be rejected");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert!(matches!(error, MetadataBundleError::ExpressionProgram(_)));
+}
+
+#[test]
+fn rejects_unit_artifacts_with_missing_fixed_columns() {
+    let dir = create_clean_dir("unit-artifacts-missing-fixed");
+    let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
+    write_unit_fixture(
+        &paths.metadata,
+        sample_setup_info_json(),
+        sample_expression_info_json(),
+        sample_verifier_info_json(),
+    );
+    write_file(&paths.verification_key_json, "[1,2,3,4]");
+    write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
+    write_expression_program(&paths.expression_program, 17);
+    write_expression_program(&paths.verifier_program, 9);
+
+    let error = read_unit_artifact_bundle(&paths).expect_err("bundle should be rejected");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(error, MetadataBundleError::FixedColumns(_)));
 }

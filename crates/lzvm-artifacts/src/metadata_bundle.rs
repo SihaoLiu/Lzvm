@@ -2,6 +2,7 @@ use crate::expression_info::{read_expression_info_file, ExpressionInfo, Expressi
 use crate::expression_program::{
     read_expression_program_file, ExpressionProgram, ExpressionProgramError,
 };
+use crate::fixed::{read_fixed_columns_file, FixedColumnError, FixedColumns};
 use crate::global_info::{read_global_info_file, GlobalInfo, GlobalInfoError};
 use crate::metadata_validation::{
     validate_global_metadata, validate_unit_metadata, MetadataValidationError,
@@ -35,6 +36,7 @@ pub struct UnitArtifactPaths {
     pub verification_key_binary: PathBuf,
     pub expression_program: PathBuf,
     pub verifier_program: PathBuf,
+    pub fixed_columns: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -55,6 +57,7 @@ pub struct UnitArtifactBundle {
     pub verification_key: VerificationKeyRoot,
     pub expression_program: ExpressionProgram,
     pub verifier_program: ExpressionProgram,
+    pub fixed_columns: FixedColumns,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +67,7 @@ pub enum MetadataBundleError {
     VerifierInfo(VerifierInfoError),
     GlobalInfo(GlobalInfoError),
     ExpressionProgram(ExpressionProgramError),
+    FixedColumns(FixedColumnError),
     VerificationKey(VerificationKeyError),
     VerificationKeyMismatch {
         json_root: VerificationKeyRoot,
@@ -108,6 +112,7 @@ impl UnitArtifactPaths {
         verification_key_binary: impl Into<PathBuf>,
         expression_program: impl Into<PathBuf>,
         verifier_program: impl Into<PathBuf>,
+        fixed_columns: impl Into<PathBuf>,
     ) -> Self {
         Self {
             metadata,
@@ -115,6 +120,7 @@ impl UnitArtifactPaths {
             verification_key_binary: verification_key_binary.into(),
             expression_program: expression_program.into(),
             verifier_program: verifier_program.into(),
+            fixed_columns: fixed_columns.into(),
         }
     }
 
@@ -126,6 +132,7 @@ impl UnitArtifactPaths {
             verification_key_binary: append_suffix(prefix, ".verkey.bin"),
             expression_program: append_suffix(prefix, ".bin"),
             verifier_program: append_suffix(prefix, ".verifier.bin"),
+            fixed_columns: append_suffix(prefix, ".const"),
         }
     }
 }
@@ -140,6 +147,7 @@ impl fmt::Display for MetadataBundleError {
             Self::ExpressionProgram(error) => {
                 write!(f, "expression program bundle error: {error}")
             }
+            Self::FixedColumns(error) => write!(f, "fixed-column bundle error: {error}"),
             Self::VerificationKey(error) => {
                 write!(f, "verification-key metadata bundle error: {error}")
             }
@@ -180,6 +188,12 @@ impl From<GlobalInfoError> for MetadataBundleError {
 impl From<ExpressionProgramError> for MetadataBundleError {
     fn from(error: ExpressionProgramError) -> Self {
         Self::ExpressionProgram(error)
+    }
+}
+
+impl From<FixedColumnError> for MetadataBundleError {
+    fn from(error: FixedColumnError) -> Self {
+        Self::FixedColumns(error)
     }
 }
 
@@ -226,12 +240,14 @@ pub fn read_unit_artifact_bundle(
     }
     let expression_program = read_expression_program_file(&paths.expression_program)?;
     let verifier_program = read_expression_program_file(&paths.verifier_program)?;
+    let fixed_columns = read_fixed_columns_file(&paths.fixed_columns)?;
 
     Ok(UnitArtifactBundle {
         metadata,
         verification_key: json_root,
         expression_program,
         verifier_program,
+        fixed_columns,
     })
 }
 
