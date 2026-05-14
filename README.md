@@ -28,13 +28,21 @@ cargo run -p lzvm-cli -- setup validate <setup-dir>
 
 The command loads the discovered setup catalog, validates companion metadata and binary artifacts, and prints a stable summary.
 
-Generate a raw fixed-column artifact from setup metadata and fixed-column source JSON:
+Generate a raw fixed-column artifact from setup metadata and a native binary fixed-column source:
+
+```sh
+cargo run -p lzvm-cli -- setup write-fixed-bin <setup-info-json> <columns-bin> <out-const>
+```
+
+The binary fixed-column source uses the repository-owned sectioned fixed-column artifact codec. This path is preferred for generated setup flows because it avoids JSON parsing for fixed-column values.
+
+Generate the same raw artifact from fixed-column source JSON:
 
 ```sh
 cargo run -p lzvm-cli -- setup write-fixed <setup-info-json> <columns-json> <out-const>
 ```
 
-The fixed-column source JSON has this shape:
+This JSON path is kept for compact fixtures and debugging. The source shape is:
 
 ```json
 {

@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::path::Path;
 
-use lzvm_artifacts::fixed::{FixedColumn, FixedColumns};
+use lzvm_artifacts::fixed::{read_fixed_columns_file, FixedColumn, FixedColumns};
 use lzvm_artifacts::key_directory::read_key_directory_catalog;
 use lzvm_artifacts::setup_info::read_unit_setup_info_file;
 use lzvm_setup::write_base_fixed_columns;
@@ -15,6 +15,10 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             write_fixed_columns(setup_info, columns_json, out_const, stdout, stderr)
         }
         ["setup", "write-fixed", ..] => write_fixed_usage(stderr),
+        ["setup", "write-fixed-bin", setup_info, columns_bin, out_const] => {
+            write_fixed_columns_bin(setup_info, columns_bin, out_const, stdout, stderr)
+        }
+        ["setup", "write-fixed-bin", ..] => write_fixed_bin_usage(stderr),
         _ => write_validate_usage(stderr),
     }
 }
@@ -70,18 +74,32 @@ fn write_fixed_columns(
         }
     };
 
-    match write_base_fixed_columns(out_const, &columns, &setup) {
-        Ok(report) => {
-            let _ = writeln!(stdout, "status=ok");
-            let _ = writeln!(stdout, "bytes_written={}", report.bytes_written);
-            let _ = writeln!(stdout, "output={}", report.path.display());
-            0
-        }
+    publish_fixed_columns(out_const, &columns, &setup, stdout, stderr)
+}
+
+fn write_fixed_columns_bin(
+    setup_info: &str,
+    columns_bin: &str,
+    out_const: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let setup = match read_unit_setup_info_file(setup_info) {
+        Ok(setup) => setup,
         Err(error) => {
             let _ = writeln!(stderr, "setup fixed-column write failed: {error}");
-            1
+            return 1;
         }
-    }
+    };
+    let columns = match read_fixed_columns_file(columns_bin) {
+        Ok(columns) => columns,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup fixed-column write failed: {error}");
+            return 1;
+        }
+    };
+
+    publish_fixed_columns(out_const, &columns, &setup, stdout, stderr)
 }
 
 fn read_fixed_columns_json(path: impl AsRef<Path>) -> Result<FixedColumns, String> {
@@ -121,6 +139,27 @@ fn parse_fixed_columns_json(input: &str) -> Result<FixedColumns, String> {
         row_count,
         columns,
     })
+}
+
+fn publish_fixed_columns(
+    out_const: &str,
+    columns: &FixedColumns,
+    setup: &lzvm_artifacts::setup_info::UnitSetupInfo,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    match write_base_fixed_columns(out_const, columns, setup) {
+        Ok(report) => {
+            let _ = writeln!(stdout, "status=ok");
+            let _ = writeln!(stdout, "bytes_written={}", report.bytes_written);
+            let _ = writeln!(stdout, "output={}", report.path.display());
+            0
+        }
+        Err(error) => {
+            let _ = writeln!(stderr, "setup fixed-column write failed: {error}");
+            1
+        }
+    }
 }
 
 fn read_string_field(
@@ -177,6 +216,14 @@ fn write_fixed_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
         "usage: lzvm setup write-fixed <setup-info-json> <columns-json> <out-const>"
+    );
+    2
+}
+
+fn write_fixed_bin_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm setup write-fixed-bin <setup-info-json> <columns-bin> <out-const>"
     );
     2
 }
