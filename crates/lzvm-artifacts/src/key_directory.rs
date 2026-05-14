@@ -1,4 +1,18 @@
+use crate::constraint_program::{
+    read_global_constraint_program_file, ConstraintProgramError, GlobalConstraintProgram,
+};
+use crate::expression_program::{
+    read_expression_program_file, ExpressionProgram, ExpressionProgramError,
+};
+use crate::fixed::{expected_raw_fixed_column_byte_count, FixedColumnError};
 use crate::global_info::{read_global_info_file, GlobalInfo, GlobalInfoError};
+use crate::metadata_bundle::{
+    read_unit_metadata_bundle, MetadataBundleError, UnitMetadataBundle, UnitMetadataPaths,
+};
+use crate::verification_key::{
+    read_verification_key_binary_file, read_verification_key_json_file, VerificationKeyError,
+    VerificationKeyRoot,
+};
 use std::collections::BTreeSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -13,6 +27,13 @@ pub struct KeyDirectoryLayout {
     pub global_info: GlobalInfo,
     pub global_paths: GlobalKeyPaths,
     pub units: Vec<KeyUnitPaths>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct KeyDirectoryCatalog {
+    pub layout: KeyDirectoryLayout,
+    pub global_constraints: GlobalConstraintProgram,
+    pub units: Vec<KeyUnitCatalogEntry>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +68,18 @@ pub struct KeyUnitPaths {
     pub constant_tree: PathBuf,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct KeyUnitCatalogEntry {
+    pub paths: KeyUnitPaths,
+    pub metadata: UnitMetadataBundle,
+    pub verification_key: VerificationKeyRoot,
+    pub expression_program: ExpressionProgram,
+    pub verifier_program: ExpressionProgram,
+    pub expected_fixed_bytes: usize,
+    pub actual_fixed_bytes: u64,
+    pub constant_tree_present: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequiredPath {
     pub role: &'static str,
@@ -56,7 +89,34 @@ pub struct RequiredPath {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyDirectoryError {
     GlobalInfo(GlobalInfoError),
-    MissingPath { role: &'static str, path: PathBuf },
+    GlobalConstraints(ConstraintProgramError),
+    Metadata(MetadataBundleError),
+    ExpressionProgram(ExpressionProgramError),
+    VerificationKey(VerificationKeyError),
+    FixedColumns(FixedColumnError),
+    MissingPath {
+        role: &'static str,
+        path: PathBuf,
+    },
+    MissingDerivedPath {
+        role: &'static str,
+        unit: KeyUnitKind,
+    },
+    VerificationKeyMismatch {
+        kind: KeyUnitKind,
+        json_root: VerificationKeyRoot,
+        binary_root: VerificationKeyRoot,
+    },
+    FixedByteCountMismatch {
+        kind: KeyUnitKind,
+        path: PathBuf,
+        expected: usize,
+        found: u64,
+    },
+    Io {
+        role: &'static str,
+        message: String,
+    },
 }
 
 impl fmt::Display for KeyUnitKind {
@@ -76,9 +136,37 @@ impl fmt::Display for KeyDirectoryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::GlobalInfo(error) => write!(f, "key-directory global metadata error: {error}"),
+            Self::GlobalConstraints(error) => {
+                write!(f, "key-directory global constraint program error: {error}")
+            }
+            Self::Metadata(error) => write!(f, "key-directory unit metadata error: {error}"),
+            Self::ExpressionProgram(error) => {
+                write!(f, "key-directory expression program error: {error}")
+            }
+            Self::VerificationKey(error) => {
+                write!(f, "key-directory verification-key error: {error}")
+            }
+            Self::FixedColumns(error) => write!(f, "key-directory fixed-column error: {error}"),
             Self::MissingPath { role, path } => {
                 write!(f, "missing key-directory {role}: {}", path.display())
             }
+            Self::MissingDerivedPath { role, unit } => {
+                write!(f, "missing derived key-directory {role} for {unit}")
+            }
+            Self::VerificationKeyMismatch { kind, .. } => {
+                write!(f, "key-directory verification-key mismatch for {kind}")
+            }
+            Self::FixedByteCountMismatch {
+                kind,
+                path,
+                expected,
+                found,
+            } => write!(
+                f,
+                "key-directory fixed-column byte count mismatch for {kind} at {}: expected {expected}, found {found}",
+                path.display()
+            ),
+            Self::Io { role, message } => write!(f, "key-directory {role} io error: {message}"),
         }
     }
 }
@@ -88,6 +176,36 @@ impl std::error::Error for KeyDirectoryError {}
 impl From<GlobalInfoError> for KeyDirectoryError {
     fn from(error: GlobalInfoError) -> Self {
         Self::GlobalInfo(error)
+    }
+}
+
+impl From<ConstraintProgramError> for KeyDirectoryError {
+    fn from(error: ConstraintProgramError) -> Self {
+        Self::GlobalConstraints(error)
+    }
+}
+
+impl From<MetadataBundleError> for KeyDirectoryError {
+    fn from(error: MetadataBundleError) -> Self {
+        Self::Metadata(error)
+    }
+}
+
+impl From<ExpressionProgramError> for KeyDirectoryError {
+    fn from(error: ExpressionProgramError) -> Self {
+        Self::ExpressionProgram(error)
+    }
+}
+
+impl From<VerificationKeyError> for KeyDirectoryError {
+    fn from(error: VerificationKeyError) -> Self {
+        Self::VerificationKey(error)
+    }
+}
+
+impl From<FixedColumnError> for KeyDirectoryError {
+    fn from(error: FixedColumnError) -> Self {
+        Self::FixedColumns(error)
     }
 }
 
@@ -234,6 +352,31 @@ pub fn validate_key_directory_layout(layout: &KeyDirectoryLayout) -> Result<(), 
     Ok(())
 }
 
+pub fn read_key_directory_catalog(
+    root: impl AsRef<Path>,
+) -> Result<KeyDirectoryCatalog, KeyDirectoryError> {
+    let layout = read_key_directory_layout(root)?;
+    read_key_directory_catalog_from_layout(&layout)
+}
+
+pub fn read_key_directory_catalog_from_layout(
+    layout: &KeyDirectoryLayout,
+) -> Result<KeyDirectoryCatalog, KeyDirectoryError> {
+    validate_key_directory_layout(layout)?;
+    let global_constraints =
+        read_global_constraint_program_file(&layout.global_paths.constraints_program)?;
+    let mut units = Vec::with_capacity(layout.units.len());
+    for unit in &layout.units {
+        units.push(read_key_unit_catalog_entry(unit)?);
+    }
+
+    Ok(KeyDirectoryCatalog {
+        layout: layout.clone(),
+        global_constraints,
+        units,
+    })
+}
+
 impl GlobalKeyPaths {
     pub fn from_root(root: &Path) -> Self {
         Self {
@@ -242,6 +385,85 @@ impl GlobalKeyPaths {
             constraints_program: root.join(GLOBAL_CONSTRAINTS_BIN_FILE),
         }
     }
+}
+
+fn read_key_unit_catalog_entry(
+    paths: &KeyUnitPaths,
+) -> Result<KeyUnitCatalogEntry, KeyDirectoryError> {
+    let metadata_paths = UnitMetadataPaths::new(
+        paths
+            .setup_info()
+            .ok_or(KeyDirectoryError::MissingDerivedPath {
+                role: "setup metadata",
+                unit: paths.kind,
+            })?,
+        paths
+            .expression_info()
+            .ok_or(KeyDirectoryError::MissingDerivedPath {
+                role: "expression metadata",
+                unit: paths.kind,
+            })?,
+        paths
+            .verifier_info()
+            .ok_or(KeyDirectoryError::MissingDerivedPath {
+                role: "verifier metadata",
+                unit: paths.kind,
+            })?,
+    );
+    let metadata = read_unit_metadata_bundle(&metadata_paths)?;
+
+    let json_root = read_verification_key_json_file(paths.verification_key_json())?;
+    let binary_root = read_verification_key_binary_file(paths.verification_key_binary())?;
+    if json_root != binary_root {
+        return Err(KeyDirectoryError::VerificationKeyMismatch {
+            kind: paths.kind,
+            json_root,
+            binary_root,
+        });
+    }
+
+    let expression_program = read_expression_program_file(paths.expression_program().ok_or(
+        KeyDirectoryError::MissingDerivedPath {
+            role: "expression program",
+            unit: paths.kind,
+        },
+    )?)?;
+    let verifier_program = read_expression_program_file(paths.verifier_program().ok_or(
+        KeyDirectoryError::MissingDerivedPath {
+            role: "verifier program",
+            unit: paths.kind,
+        },
+    )?)?;
+
+    let expected_fixed_bytes = expected_raw_fixed_column_byte_count(&metadata.setup)?;
+    let actual_fixed_bytes = std::fs::metadata(&paths.fixed_columns)
+        .map_err(|error| KeyDirectoryError::Io {
+            role: "fixed-column metadata",
+            message: error.to_string(),
+        })?
+        .len();
+    if actual_fixed_bytes
+        != u64::try_from(expected_fixed_bytes)
+            .map_err(|_| KeyDirectoryError::FixedColumns(FixedColumnError::LengthOverflow))?
+    {
+        return Err(KeyDirectoryError::FixedByteCountMismatch {
+            kind: paths.kind,
+            path: paths.fixed_columns.clone(),
+            expected: expected_fixed_bytes,
+            found: actual_fixed_bytes,
+        });
+    }
+
+    Ok(KeyUnitCatalogEntry {
+        paths: paths.clone(),
+        metadata,
+        verification_key: json_root,
+        expression_program,
+        verifier_program,
+        expected_fixed_bytes,
+        actual_fixed_bytes,
+        constant_tree_present: paths.constant_tree.is_file(),
+    })
 }
 
 fn derive_unit_paths(root: &Path, global_info: &GlobalInfo) -> Vec<KeyUnitPaths> {
