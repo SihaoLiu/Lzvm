@@ -1,7 +1,17 @@
 use lzvm_artifacts::verification_key::{
     encode_verification_key_binary, encode_verification_key_json, parse_verification_key_binary,
-    parse_verification_key_json, VerificationKeyError, VerificationKeyRoot,
+    parse_verification_key_json, read_verification_key_binary_file,
+    read_verification_key_json_file, VerificationKeyError, VerificationKeyRoot,
 };
+use std::fs;
+use std::path::PathBuf;
+
+fn temp_file_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "lzvm-verification-key-{}-{name}",
+        std::process::id()
+    ))
+}
 
 #[test]
 fn parses_field_root_json_arrays() {
@@ -69,4 +79,32 @@ fn rejects_binary_roots_with_the_wrong_size() {
         parse_verification_key_binary(&[1, 2, 3]),
         Err(VerificationKeyError::InvalidBinaryLength { .. })
     ));
+}
+
+#[test]
+fn reads_verification_key_json_from_a_file_path() {
+    let path = temp_file_path("root.json");
+    fs::write(&path, "[5,6,7,8]").expect("fixture should be written");
+
+    let root = read_verification_key_json_file(&path).expect("fixture should parse");
+    fs::remove_file(&path).expect("fixture should be removed");
+
+    assert_eq!(root, VerificationKeyRoot::FieldElements(vec![5, 6, 7, 8]));
+}
+
+#[test]
+fn reads_verification_key_binary_from_a_file_path() {
+    let path = temp_file_path("root.bin");
+    let bytes =
+        encode_verification_key_binary(&VerificationKeyRoot::FieldElements(vec![13, 14, 15, 16]))
+            .expect("fixture should encode");
+    fs::write(&path, bytes).expect("fixture should be written");
+
+    let root = read_verification_key_binary_file(&path).expect("fixture should parse");
+    fs::remove_file(&path).expect("fixture should be removed");
+
+    assert_eq!(
+        root,
+        VerificationKeyRoot::FieldElements(vec![13, 14, 15, 16])
+    );
 }

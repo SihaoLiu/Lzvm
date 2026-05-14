@@ -1,4 +1,5 @@
 use std::fmt;
+use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerificationKeyRoot {
@@ -13,6 +14,7 @@ pub enum VerificationKeyError {
     InvalidBinaryLength { expected: usize, found: usize },
     ScalarHasNoBinaryEncoding,
     FieldElementCountMismatch { expected: usize, found: usize },
+    Io { message: String },
 }
 
 impl fmt::Display for VerificationKeyError {
@@ -34,6 +36,7 @@ impl fmt::Display for VerificationKeyError {
                 f,
                 "verification-key field element count mismatch: expected {expected}, found {found}"
             ),
+            Self::Io { message } => write!(f, "verification-key io error: {message}"),
         }
     }
 }
@@ -62,6 +65,15 @@ pub fn parse_verification_key_json(
         serde_json::Value::String(value) => Ok(VerificationKeyRoot::DecimalScalar(value)),
         _ => Err(VerificationKeyError::UnsupportedJsonShape),
     }
+}
+
+pub fn read_verification_key_json_file(
+    path: impl AsRef<Path>,
+) -> Result<VerificationKeyRoot, VerificationKeyError> {
+    let input = std::fs::read_to_string(path).map_err(|error| VerificationKeyError::Io {
+        message: error.to_string(),
+    })?;
+    parse_verification_key_json(&input)
 }
 
 pub fn encode_verification_key_json(
@@ -102,6 +114,15 @@ pub fn parse_verification_key_binary(
     }
 
     Ok(VerificationKeyRoot::FieldElements(values))
+}
+
+pub fn read_verification_key_binary_file(
+    path: impl AsRef<Path>,
+) -> Result<VerificationKeyRoot, VerificationKeyError> {
+    let input = std::fs::read(path).map_err(|error| VerificationKeyError::Io {
+        message: error.to_string(),
+    })?;
+    parse_verification_key_binary(&input)
 }
 
 pub fn encode_verification_key_binary(

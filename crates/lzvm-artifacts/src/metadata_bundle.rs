@@ -4,6 +4,10 @@ use crate::metadata_validation::{
     validate_global_metadata, validate_unit_metadata, MetadataValidationError,
 };
 use crate::setup_info::{read_unit_setup_info_file, SetupInfoError, UnitSetupInfo};
+use crate::verification_key::{
+    read_verification_key_binary_file, read_verification_key_json_file, VerificationKeyError,
+    VerificationKeyRoot,
+};
 use crate::verifier_info::{read_verifier_info_file, VerifierInfo, VerifierInfoError};
 use std::ffi::OsString;
 use std::fmt;
@@ -21,6 +25,13 @@ pub struct GlobalMetadataPaths {
     pub info: PathBuf,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnitArtifactPaths {
+    pub metadata: UnitMetadataPaths,
+    pub verification_key_json: PathBuf,
+    pub verification_key_binary: PathBuf,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnitMetadataBundle {
     pub setup: UnitSetupInfo,
@@ -33,12 +44,23 @@ pub struct GlobalMetadataBundle {
     pub info: GlobalInfo,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnitArtifactBundle {
+    pub metadata: UnitMetadataBundle,
+    pub verification_key: VerificationKeyRoot,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MetadataBundleError {
     SetupInfo(SetupInfoError),
     ExpressionInfo(ExpressionInfoError),
     VerifierInfo(VerifierInfoError),
     GlobalInfo(GlobalInfoError),
+    VerificationKey(VerificationKeyError),
+    VerificationKeyMismatch {
+        json_root: VerificationKeyRoot,
+        binary_root: VerificationKeyRoot,
+    },
     Validation(MetadataValidationError),
 }
 
@@ -71,6 +93,29 @@ impl GlobalMetadataPaths {
     }
 }
 
+impl UnitArtifactPaths {
+    pub fn new(
+        metadata: UnitMetadataPaths,
+        verification_key_json: impl Into<PathBuf>,
+        verification_key_binary: impl Into<PathBuf>,
+    ) -> Self {
+        Self {
+            metadata,
+            verification_key_json: verification_key_json.into(),
+            verification_key_binary: verification_key_binary.into(),
+        }
+    }
+
+    pub fn from_unit_prefix(prefix: impl AsRef<Path>) -> Self {
+        let prefix = prefix.as_ref();
+        Self {
+            metadata: UnitMetadataPaths::from_unit_prefix(prefix),
+            verification_key_json: append_suffix(prefix, ".verkey.json"),
+            verification_key_binary: append_suffix(prefix, ".verkey.bin"),
+        }
+    }
+}
+
 impl fmt::Display for MetadataBundleError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -78,6 +123,12 @@ impl fmt::Display for MetadataBundleError {
             Self::ExpressionInfo(error) => write!(f, "expression metadata bundle error: {error}"),
             Self::VerifierInfo(error) => write!(f, "verifier metadata bundle error: {error}"),
             Self::GlobalInfo(error) => write!(f, "global metadata bundle error: {error}"),
+            Self::VerificationKey(error) => {
+                write!(f, "verification-key metadata bundle error: {error}")
+            }
+            Self::VerificationKeyMismatch { .. } => {
+                write!(f, "verification-key companion roots do not match")
+            }
             Self::Validation(error) => write!(f, "metadata bundle validation error: {error}"),
         }
     }
@@ -109,6 +160,12 @@ impl From<GlobalInfoError> for MetadataBundleError {
     }
 }
 
+impl From<VerificationKeyError> for MetadataBundleError {
+    fn from(error: VerificationKeyError) -> Self {
+        Self::VerificationKey(error)
+    }
+}
+
 impl From<MetadataValidationError> for MetadataBundleError {
     fn from(error: MetadataValidationError) -> Self {
         Self::Validation(error)
@@ -128,6 +185,26 @@ pub fn read_unit_metadata_bundle(
         setup,
         expressions,
         verifier,
+    })
+}
+
+pub fn read_unit_artifact_bundle(
+    paths: &UnitArtifactPaths,
+) -> Result<UnitArtifactBundle, MetadataBundleError> {
+    let metadata = read_unit_metadata_bundle(&paths.metadata)?;
+    let json_root = read_verification_key_json_file(&paths.verification_key_json)?;
+    let binary_root = read_verification_key_binary_file(&paths.verification_key_binary)?;
+
+    if json_root != binary_root {
+        return Err(MetadataBundleError::VerificationKeyMismatch {
+            json_root,
+            binary_root,
+        });
+    }
+
+    Ok(UnitArtifactBundle {
+        metadata,
+        verification_key: json_root,
     })
 }
 

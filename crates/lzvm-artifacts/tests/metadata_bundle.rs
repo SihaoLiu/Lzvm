@@ -1,8 +1,9 @@
 use lzvm_artifacts::metadata_bundle::{
-    read_global_metadata_bundle, read_unit_metadata_bundle, GlobalMetadataPaths,
-    MetadataBundleError, UnitMetadataPaths,
+    read_global_metadata_bundle, read_unit_artifact_bundle, read_unit_metadata_bundle,
+    GlobalMetadataPaths, MetadataBundleError, UnitArtifactPaths, UnitMetadataPaths,
 };
 use lzvm_artifacts::metadata_validation::MetadataValidationError;
+use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -142,6 +143,12 @@ fn write_unit_fixture(paths: &UnitMetadataPaths, setup: &str, expressions: &str,
     write_file(&paths.verifier_info, verifier);
 }
 
+fn write_root_binary(path: &Path, values: Vec<u64>) {
+    let bytes = encode_verification_key_binary(&VerificationKeyRoot::FieldElements(values))
+        .expect("fixture should encode");
+    fs::write(path, bytes).expect("fixture should be written");
+}
+
 #[test]
 fn derives_unit_metadata_paths_from_a_unit_prefix() {
     let paths = UnitMetadataPaths::from_unit_prefix(Path::new("/tmp/unit-a"));
@@ -232,5 +239,71 @@ fn rejects_global_metadata_bundles_that_fail_cross_file_validation() {
     assert!(matches!(
         error,
         MetadataBundleError::Validation(MetadataValidationError::NoChallengeStages)
+    ));
+}
+
+#[test]
+fn derives_unit_artifact_paths_from_a_unit_prefix() {
+    let paths = UnitArtifactPaths::from_unit_prefix(Path::new("/tmp/unit-a"));
+
+    assert_eq!(
+        paths.metadata.setup_info,
+        PathBuf::from("/tmp/unit-a.starkinfo.json")
+    );
+    assert_eq!(
+        paths.verification_key_json,
+        PathBuf::from("/tmp/unit-a.verkey.json")
+    );
+    assert_eq!(
+        paths.verification_key_binary,
+        PathBuf::from("/tmp/unit-a.verkey.bin")
+    );
+}
+
+#[test]
+fn reads_and_validates_unit_artifacts_from_paths() {
+    let dir = create_clean_dir("unit-artifacts-valid");
+    let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
+    write_unit_fixture(
+        &paths.metadata,
+        sample_setup_info_json(),
+        sample_expression_info_json(),
+        sample_verifier_info_json(),
+    );
+    write_file(&paths.verification_key_json, "[1,2,3,4]");
+    write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
+
+    let bundle = read_unit_artifact_bundle(&paths).expect("bundle should load");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(bundle.metadata.setup.n_stages, 2);
+    assert_eq!(
+        bundle.verification_key,
+        VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4])
+    );
+}
+
+#[test]
+fn rejects_unit_artifacts_with_mismatched_key_roots() {
+    let dir = create_clean_dir("unit-artifacts-invalid");
+    let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
+    write_unit_fixture(
+        &paths.metadata,
+        sample_setup_info_json(),
+        sample_expression_info_json(),
+        sample_verifier_info_json(),
+    );
+    write_file(&paths.verification_key_json, "[1,2,3,4]");
+    write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 5]);
+
+    let error = read_unit_artifact_bundle(&paths).expect_err("bundle should be rejected");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        error,
+        MetadataBundleError::VerificationKeyMismatch {
+            json_root: VerificationKeyRoot::FieldElements(_),
+            binary_root: VerificationKeyRoot::FieldElements(_)
+        }
     ));
 }
