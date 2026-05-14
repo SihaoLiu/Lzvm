@@ -3,4 +3,5 @@ pub mod expression_program;
 pub mod fixed;
 pub mod hint_program;
 pub mod sectioned;
+pub mod setup_info;
 pub mod verification_key;
