@@ -478,115 +478,117 @@ fn derive_unit_paths(root: &Path, global_info: &GlobalInfo) -> Vec<KeyUnitPaths>
         for (unit_id, unit) in group.iter().enumerate() {
             let unit_root = group_root.join("airs").join(&unit.name);
             let basic_prefix = unit_root.join("air").join(&unit.name);
-            units.push(KeyUnitPaths::from_prefix(
-                KeyUnitKind::Basic,
-                Some(group_id),
-                Some(unit_id),
-                Some(group_name.clone()),
-                Some(unit.name.clone()),
-                basic_prefix.clone(),
-                Some(basic_prefix.clone()),
-                Some(basic_prefix.clone()),
-                basic_prefix,
-            ));
+            units.push(KeyUnitPaths::from_prefix(KeyUnitPathSpec {
+                kind: KeyUnitKind::Basic,
+                group_id: Some(group_id),
+                unit_id: Some(unit_id),
+                group_name: Some(group_name.clone()),
+                unit_name: Some(unit.name.clone()),
+                prefix: basic_prefix.clone(),
+                metadata_prefix: Some(basic_prefix.clone()),
+                program_prefix: Some(basic_prefix.clone()),
+                verification_key_prefix: basic_prefix,
+            }));
 
             if unit.has_compressor {
                 let compressor_prefix = unit_root.join("compressor").join("compressor");
-                units.push(KeyUnitPaths::from_prefix(
-                    KeyUnitKind::Compressor,
-                    Some(group_id),
-                    Some(unit_id),
-                    Some(group_name.clone()),
-                    Some(unit.name.clone()),
-                    compressor_prefix.clone(),
-                    Some(compressor_prefix.clone()),
-                    Some(compressor_prefix.clone()),
-                    compressor_prefix,
-                ));
+                units.push(KeyUnitPaths::from_prefix(KeyUnitPathSpec {
+                    kind: KeyUnitKind::Compressor,
+                    group_id: Some(group_id),
+                    unit_id: Some(unit_id),
+                    group_name: Some(group_name.clone()),
+                    unit_name: Some(unit.name.clone()),
+                    prefix: compressor_prefix.clone(),
+                    metadata_prefix: Some(compressor_prefix.clone()),
+                    program_prefix: Some(compressor_prefix.clone()),
+                    verification_key_prefix: compressor_prefix,
+                }));
             }
 
             let recursive_first_prefix = unit_root.join("recursive1").join("recursive1");
-            units.push(KeyUnitPaths::from_prefix(
-                KeyUnitKind::RecursiveFirst,
-                Some(group_id),
-                Some(unit_id),
-                Some(group_name.clone()),
-                Some(unit.name.clone()),
-                recursive_first_prefix.clone(),
-                Some(recursive_second_prefix.clone()),
-                Some(recursive_second_prefix.clone()),
-                recursive_first_prefix,
-            ));
+            units.push(KeyUnitPaths::from_prefix(KeyUnitPathSpec {
+                kind: KeyUnitKind::RecursiveFirst,
+                group_id: Some(group_id),
+                unit_id: Some(unit_id),
+                group_name: Some(group_name.clone()),
+                unit_name: Some(unit.name.clone()),
+                prefix: recursive_first_prefix.clone(),
+                metadata_prefix: Some(recursive_second_prefix.clone()),
+                program_prefix: Some(recursive_second_prefix.clone()),
+                verification_key_prefix: recursive_first_prefix,
+            }));
         }
 
-        units.push(KeyUnitPaths::from_prefix(
-            KeyUnitKind::RecursiveSecond,
-            Some(group_id),
-            None,
-            Some(group_name.clone()),
-            None,
-            recursive_second_prefix.clone(),
-            Some(recursive_second_prefix.clone()),
-            Some(recursive_second_prefix.clone()),
-            recursive_second_prefix,
-        ));
+        units.push(KeyUnitPaths::from_prefix(KeyUnitPathSpec {
+            kind: KeyUnitKind::RecursiveSecond,
+            group_id: Some(group_id),
+            unit_id: None,
+            group_name: Some(group_name.clone()),
+            unit_name: None,
+            prefix: recursive_second_prefix.clone(),
+            metadata_prefix: Some(recursive_second_prefix.clone()),
+            program_prefix: Some(recursive_second_prefix.clone()),
+            verification_key_prefix: recursive_second_prefix,
+        }));
     }
 
     let final_prefix = program_root.join("vadcop_final").join("vadcop_final");
-    units.push(KeyUnitPaths::from_prefix(
-        KeyUnitKind::FinalAggregation,
-        None,
-        None,
-        None,
-        None,
-        final_prefix.clone(),
-        Some(final_prefix.clone()),
-        Some(final_prefix.clone()),
-        final_prefix,
-    ));
+    units.push(KeyUnitPaths::from_prefix(KeyUnitPathSpec {
+        kind: KeyUnitKind::FinalAggregation,
+        group_id: None,
+        unit_id: None,
+        group_name: None,
+        unit_name: None,
+        prefix: final_prefix.clone(),
+        metadata_prefix: Some(final_prefix.clone()),
+        program_prefix: Some(final_prefix.clone()),
+        verification_key_prefix: final_prefix,
+    }));
 
     let final_circuit_prefix = program_root.join("recursivef").join("recursivef");
     if append_suffix(&final_circuit_prefix, ".starkinfo.json").is_file() {
-        units.push(KeyUnitPaths::from_prefix(
-            KeyUnitKind::FinalCircuit,
-            None,
-            None,
-            None,
-            None,
-            final_circuit_prefix.clone(),
-            Some(final_circuit_prefix.clone()),
-            Some(final_circuit_prefix.clone()),
-            final_circuit_prefix,
-        ));
+        units.push(KeyUnitPaths::from_prefix(KeyUnitPathSpec {
+            kind: KeyUnitKind::FinalCircuit,
+            group_id: None,
+            unit_id: None,
+            group_name: None,
+            unit_name: None,
+            prefix: final_circuit_prefix.clone(),
+            metadata_prefix: Some(final_circuit_prefix.clone()),
+            program_prefix: Some(final_circuit_prefix.clone()),
+            verification_key_prefix: final_circuit_prefix,
+        }));
     }
 
     units
 }
 
+struct KeyUnitPathSpec {
+    kind: KeyUnitKind,
+    group_id: Option<usize>,
+    unit_id: Option<usize>,
+    group_name: Option<String>,
+    unit_name: Option<String>,
+    prefix: PathBuf,
+    metadata_prefix: Option<PathBuf>,
+    program_prefix: Option<PathBuf>,
+    verification_key_prefix: PathBuf,
+}
+
 impl KeyUnitPaths {
-    fn from_prefix(
-        kind: KeyUnitKind,
-        group_id: Option<usize>,
-        unit_id: Option<usize>,
-        group_name: Option<String>,
-        unit_name: Option<String>,
-        prefix: PathBuf,
-        metadata_prefix: Option<PathBuf>,
-        program_prefix: Option<PathBuf>,
-        verification_key_prefix: PathBuf,
-    ) -> Self {
+    fn from_prefix(spec: KeyUnitPathSpec) -> Self {
         Self {
-            kind,
-            group_id,
-            unit_id,
-            group_name,
-            unit_name,
-            fixed_columns: append_suffix(&prefix, ".const"),
-            constant_tree: append_suffix(&prefix, ".consttree"),
-            prefix,
-            metadata_prefix,
-            program_prefix,
-            verification_key_prefix,
+            kind: spec.kind,
+            group_id: spec.group_id,
+            unit_id: spec.unit_id,
+            group_name: spec.group_name,
+            unit_name: spec.unit_name,
+            fixed_columns: append_suffix(&spec.prefix, ".const"),
+            constant_tree: append_suffix(&spec.prefix, ".consttree"),
+            prefix: spec.prefix,
+            metadata_prefix: spec.metadata_prefix,
+            program_prefix: spec.program_prefix,
+            verification_key_prefix: spec.verification_key_prefix,
         }
     }
 }

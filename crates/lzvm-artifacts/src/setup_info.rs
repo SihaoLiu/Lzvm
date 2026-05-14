@@ -107,7 +107,7 @@ impl UnitSetupInfo {
             let width = *self
                 .section_widths
                 .get(&name)
-                .ok_or_else(|| SetupInfoError::MissingSectionWidth { name })?;
+                .ok_or(SetupInfoError::MissingSectionWidth { name })?;
             widths.push(width);
         }
         Ok(widths)

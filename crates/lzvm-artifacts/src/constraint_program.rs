@@ -5,6 +5,8 @@ use crate::sectioned::{
     encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
 
+type ConstraintBuffers = (Vec<u8>, Vec<u16>, Vec<u64>);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConstraintProgram {
     pub entries: Vec<ConstraintEntry>,
@@ -340,7 +342,7 @@ fn read_buffers(
     ops_len: u32,
     args_len: u32,
     numbers_len: u32,
-) -> Result<(Vec<u8>, Vec<u16>, Vec<u64>), ConstraintProgramError> {
+) -> Result<ConstraintBuffers, ConstraintProgramError> {
     let ops_count = usize::try_from(ops_len).map_err(|_| ConstraintProgramError::LengthOverflow)?;
     let args_count =
         usize::try_from(args_len).map_err(|_| ConstraintProgramError::LengthOverflow)?;

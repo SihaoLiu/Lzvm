@@ -51,7 +51,7 @@ fn parses_global_info_json() {
     assert_eq!(info.air_groups, vec!["group-a", "group-b"]);
     assert_eq!(info.airs.len(), 2);
     assert_eq!(info.airs[0][1].name, "unit-b");
-    assert_eq!(info.airs[0][1].has_compressor, true);
+    assert!(info.airs[0][1].has_compressor);
     assert_eq!(info.airs[1][0].num_rows, 4096);
     assert_eq!(info.aggregation_types[0][1].aggregation_type, 2);
     assert_eq!(info.n_publics, 2);

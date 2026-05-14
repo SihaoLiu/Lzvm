@@ -91,7 +91,7 @@ fn parses_expression_info_json() {
     assert_eq!(info.constraints.len(), 1);
     assert_eq!(info.constraints[0].boundary, BoundaryKind::EveryFrame);
     assert_eq!(info.constraints[0].offset_min, Some(-1));
-    assert_eq!(info.constraints[0].intermediate, true);
+    assert!(info.constraints[0].intermediate);
 }
 
 #[test]
