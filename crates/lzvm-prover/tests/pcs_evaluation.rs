@@ -1,14 +1,17 @@
 use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_evaluation_segment::{
-    encode_pcs_evaluation_segment, PcsEvaluationSegment, PcsEvaluationUnitSegment,
-    PCS_EVALUATION_SEGMENT_ID,
+    encode_pcs_evaluation_segment, parse_pcs_evaluation_segment, PcsEvaluationSegment,
+    PcsEvaluationUnitSegment, PCS_EVALUATION_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::proof::ProofSegment;
+use lzvm_field::Ext3;
 use lzvm_prover::pcs_evaluation::{
     load_pcs_evaluation_unit_from_segments, LoadPcsEvaluationUnitError,
 };
-use lzvm_prover::ProveUnitSchedule;
+use lzvm_prover::{
+    build_pcs_evaluation_segment, ProvePcsEvaluationValues, ProveSchedule, ProveUnitSchedule,
+};
 
 #[test]
 fn loads_pcs_evaluation_unit_from_segments() {
@@ -58,6 +61,30 @@ fn rejects_pcs_evaluation_value_count_mismatches() {
     );
 }
 
+#[test]
+fn builds_pcs_evaluation_segments_in_unit_index_order() {
+    let schedule = sample_schedule();
+    let segment = build_pcs_evaluation_segment(
+        &schedule,
+        &[
+            ProvePcsEvaluationValues {
+                unit_index: 1,
+                values: vec![Ext3::from_u64s([4, 5, 6])],
+            },
+            ProvePcsEvaluationValues {
+                unit_index: 0,
+                values: vec![Ext3::from_u64s([1, 2, 3])],
+            },
+        ],
+    )
+    .expect("evaluation segment should build");
+    let parsed =
+        parse_pcs_evaluation_segment(&segment.data).expect("evaluation segment should parse");
+
+    assert_eq!(parsed.units[0].unit_index, 0);
+    assert_eq!(parsed.units[1].unit_index, 1);
+}
+
 fn pcs_evaluation_proof_segment(units: Vec<PcsEvaluationUnitSegment>) -> ProofSegment {
     ProofSegment {
         id: PCS_EVALUATION_SEGMENT_ID,
@@ -68,6 +95,19 @@ fn pcs_evaluation_proof_segment(units: Vec<PcsEvaluationUnitSegment>) -> ProofSe
 
 fn evaluation_unit(unit_index: u32, values: Vec<[u64; 3]>) -> PcsEvaluationUnitSegment {
     PcsEvaluationUnitSegment { unit_index, values }
+}
+
+fn sample_schedule() -> ProveSchedule {
+    ProveSchedule {
+        setup_hash: [0; 32],
+        unit_count: 2,
+        total_fixed_bytes: 0,
+        total_pcs_material_bytes: 0,
+        pcs_material_unit_count: 0,
+        total_query_count: 0,
+        max_extended_domain_bits: 0,
+        units: vec![sample_unit(1), sample_unit(1)],
+    }
 }
 
 fn sample_unit(evaluation_value_count: usize) -> ProveUnitSchedule {

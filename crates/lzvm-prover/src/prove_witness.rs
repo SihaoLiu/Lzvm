@@ -1396,6 +1396,7 @@ pub fn build_pcs_evaluation_segment(
             values: input.values.iter().copied().map(Ext3::to_u64s).collect(),
         });
     }
+    units.sort_by_key(|unit| unit.unit_index);
 
     let segment = PcsEvaluationSegment { units };
     Ok(ProofSegment {
