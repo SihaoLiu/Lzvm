@@ -93,6 +93,7 @@ fn sample_unit() -> ProveUnitSchedule {
         transcript_root_challenge_draws: vec![1],
         challenge_count: 1,
         evaluation_value_count: 1,
+        evaluation_map: Vec::new(),
         transcript_evaluation_challenge_draws: 1,
         constant_width: 1,
         stage_commit_widths: vec![1],

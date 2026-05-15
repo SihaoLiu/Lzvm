@@ -45,6 +45,7 @@ fn sample_unit_with_rows(
         transcript_root_challenge_draws,
         challenge_count: 6,
         evaluation_value_count: 2,
+        evaluation_map: Vec::new(),
         transcript_evaluation_challenge_draws: 2,
         constant_width: 5,
         stage_commit_widths,

@@ -55,6 +55,7 @@ fn sample_unit(rows: u64, stage_commit_widths: Vec<u32>) -> ProveUnitSchedule {
         transcript_root_challenge_draws,
         challenge_count: 6,
         evaluation_value_count: 2,
+        evaluation_map: Vec::new(),
         transcript_evaluation_challenge_draws: 2,
         constant_width: 1,
         stage_commit_widths,

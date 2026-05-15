@@ -11,7 +11,7 @@ use lzvm_artifacts::key_directory::{
     KeyDirectoryError, KeyUnitKind,
 };
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
-use lzvm_artifacts::setup_info::{CommitmentColumn, StageValue, UnitSetupInfo};
+use lzvm_artifacts::setup_info::{CommitmentColumn, EvaluationMapEntry, StageValue, UnitSetupInfo};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::witness_library::{
     read_witness_library_file, WitnessLibraryError, WitnessLibraryInfo,
@@ -106,6 +106,7 @@ pub struct ProveUnitSchedule {
     pub transcript_root_challenge_draws: Vec<usize>,
     pub challenge_count: usize,
     pub evaluation_value_count: usize,
+    pub evaluation_map: Vec<EvaluationMapEntry>,
     pub transcript_evaluation_challenge_draws: usize,
     pub constant_width: u32,
     pub stage_commit_widths: Vec<u32>,
@@ -544,6 +545,7 @@ pub fn derive_prove_schedule(
             ),
             challenge_count: unit.metadata.setup.challenge_count,
             evaluation_value_count: unit.metadata.setup.eval_count,
+            evaluation_map: unit.metadata.setup.evaluation_map.clone(),
             transcript_evaluation_challenge_draws: 2,
             constant_width: unit.pcs_plan.constant_width,
             stage_commit_widths: unit.pcs_plan.stage_commit_widths.clone(),

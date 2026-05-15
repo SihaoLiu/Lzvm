@@ -581,6 +581,7 @@ fn sample_unit(transcript_arity: Option<u32>, hash_commits: bool) -> ProveUnitSc
         transcript_root_challenge_draws: vec![2, 1, 1],
         challenge_count: 6,
         evaluation_value_count: 2,
+        evaluation_map: Vec::new(),
         transcript_evaluation_challenge_draws: 2,
         constant_width: 5,
         stage_commit_widths: vec![2, 3, 1],
