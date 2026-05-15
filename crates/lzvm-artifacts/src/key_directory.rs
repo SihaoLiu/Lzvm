@@ -1,3 +1,4 @@
+use crate::constant_tree::{read_constant_tree_file, ConstantTreeError};
 use crate::constraint_program::{
     read_global_constraint_program_file, ConstraintProgramError, GlobalConstraintProgram,
 };
@@ -78,6 +79,8 @@ pub struct KeyUnitCatalogEntry {
     pub expected_fixed_bytes: usize,
     pub actual_fixed_bytes: u64,
     pub constant_tree_present: bool,
+    pub constant_tree_bytes: Option<u64>,
+    pub constant_tree_root: Option<VerificationKeyRoot>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +93,7 @@ pub struct RequiredPath {
 pub enum KeyDirectoryError {
     GlobalInfo(GlobalInfoError),
     GlobalConstraints(ConstraintProgramError),
+    ConstantTree(ConstantTreeError),
     Metadata(MetadataBundleError),
     ExpressionProgram(ExpressionProgramError),
     VerificationKey(VerificationKeyError),
@@ -112,6 +116,11 @@ pub enum KeyDirectoryError {
         path: PathBuf,
         expected: usize,
         found: u64,
+    },
+    ConstantTreeRootMismatch {
+        kind: KeyUnitKind,
+        expected: VerificationKeyRoot,
+        found: VerificationKeyRoot,
     },
     Io {
         role: &'static str,
@@ -138,6 +147,9 @@ impl fmt::Display for KeyDirectoryError {
             Self::GlobalInfo(error) => write!(f, "key-directory global metadata error: {error}"),
             Self::GlobalConstraints(error) => {
                 write!(f, "key-directory global constraint program error: {error}")
+            }
+            Self::ConstantTree(error) => {
+                write!(f, "key-directory constant-tree error: {error}")
             }
             Self::Metadata(error) => write!(f, "key-directory unit metadata error: {error}"),
             Self::ExpressionProgram(error) => {
@@ -166,6 +178,9 @@ impl fmt::Display for KeyDirectoryError {
                 "key-directory fixed-column byte count mismatch for {kind} at {}: expected {expected}, found {found}",
                 path.display()
             ),
+            Self::ConstantTreeRootMismatch { kind, .. } => {
+                write!(f, "key-directory constant-tree root mismatch for {kind}")
+            }
             Self::Io { role, message } => write!(f, "key-directory {role} io error: {message}"),
         }
     }
@@ -182,6 +197,12 @@ impl From<GlobalInfoError> for KeyDirectoryError {
 impl From<ConstraintProgramError> for KeyDirectoryError {
     fn from(error: ConstraintProgramError) -> Self {
         Self::GlobalConstraints(error)
+    }
+}
+
+impl From<ConstantTreeError> for KeyDirectoryError {
+    fn from(error: ConstantTreeError) -> Self {
+        Self::ConstantTree(error)
     }
 }
 
@@ -454,6 +475,28 @@ fn read_key_unit_catalog_entry(
         });
     }
 
+    let (constant_tree_present, constant_tree_bytes, constant_tree_root) =
+        if paths.constant_tree.is_file() {
+            let tree = read_constant_tree_file(&paths.constant_tree, &metadata.setup)?;
+            let root = tree.root()?;
+            if root != json_root {
+                return Err(KeyDirectoryError::ConstantTreeRootMismatch {
+                    kind: paths.kind,
+                    expected: json_root.clone(),
+                    found: root,
+                });
+            }
+            (
+                true,
+                Some(u64::try_from(tree.bytes.len()).map_err(|_| {
+                    KeyDirectoryError::ConstantTree(ConstantTreeError::LengthOverflow)
+                })?),
+                Some(root),
+            )
+        } else {
+            (false, None, None)
+        };
+
     Ok(KeyUnitCatalogEntry {
         paths: paths.clone(),
         metadata,
@@ -462,7 +505,9 @@ fn read_key_unit_catalog_entry(
         verifier_program,
         expected_fixed_bytes,
         actual_fixed_bytes,
-        constant_tree_present: paths.constant_tree.is_file(),
+        constant_tree_present,
+        constant_tree_bytes,
+        constant_tree_root,
     })
 }
 

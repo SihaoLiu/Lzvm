@@ -168,6 +168,18 @@ fn sample_raw_fixed_columns() -> Vec<u8> {
     bytes
 }
 
+fn sample_constant_tree(root: &VerificationKeyRoot) -> Vec<u8> {
+    let VerificationKeyRoot::FieldElements(values) = root else {
+        panic!("sample root should use field elements");
+    };
+    let mut bytes = vec![7_u8; 224];
+    for (index, value) in values.iter().enumerate() {
+        let offset = bytes.len() - 32 + index * 8;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("lzvm-key-directory-{}-{name}", std::process::id()))
 }
@@ -250,6 +262,13 @@ fn write_catalog_unit_files(unit: &KeyUnitPaths) {
         encode_verification_key_binary(&root).expect("verification key should encode"),
     );
     write_bytes(&unit.fixed_columns, sample_raw_fixed_columns());
+}
+
+fn write_catalog_constant_trees(layout: &lzvm_artifacts::key_directory::KeyDirectoryLayout) {
+    let root = VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4]);
+    for unit in &layout.units {
+        write_bytes(&unit.constant_tree, sample_constant_tree(&root));
+    }
 }
 
 #[test]
@@ -408,6 +427,60 @@ fn reads_key_directory_catalog_without_loading_fixed_values() {
         .iter()
         .all(|unit| unit.actual_fixed_bytes == 32));
     assert!(catalog.units.iter().all(|unit| !unit.constant_tree_present));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn reads_key_directory_catalog_constant_tree_roots_when_present() {
+    let dir = temp_dir("catalog-tree");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    write_catalog_constant_trees(&layout);
+
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+
+    assert!(catalog.units.iter().all(|unit| unit.constant_tree_present));
+    assert!(catalog
+        .units
+        .iter()
+        .all(|unit| unit.constant_tree_bytes == Some(224)));
+    assert!(catalog.units.iter().all(|unit| {
+        unit.constant_tree_root == Some(VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4]))
+    }));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_catalog_entries_with_wrong_constant_tree_roots() {
+    let dir = temp_dir("catalog-bad-tree-root");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    write_catalog_constant_trees(&layout);
+    let wrong_root = VerificationKeyRoot::FieldElements(vec![9, 9, 9, 9]);
+    write_bytes(
+        &layout.units[0].constant_tree,
+        sample_constant_tree(&wrong_root),
+    );
+
+    let error = read_key_directory_catalog(&dir).expect_err("catalog should be rejected");
+
+    assert!(matches!(
+        error,
+        KeyDirectoryError::ConstantTreeRootMismatch {
+            kind: KeyUnitKind::Basic,
+            ..
+        }
+    ));
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
