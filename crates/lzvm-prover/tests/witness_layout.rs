@@ -1,9 +1,26 @@
 use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
+use lzvm_field::Felt;
 use lzvm_prover::witness_layout::{derive_witness_trace_layout, WitnessTraceLayoutError};
+use lzvm_prover::witness_trace::parse_witness_trace;
 use lzvm_prover::ProveUnitSchedule;
 
+fn encode_values(values: &[u64]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(values.len() * 8);
+    for value in values {
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+    out
+}
+
 fn sample_unit(stage_commit_widths: Vec<u32>) -> ProveUnitSchedule {
+    sample_unit_with_rows(stage_commit_widths, 1024)
+}
+
+fn sample_unit_with_rows(
+    stage_commit_widths: Vec<u32>,
+    base_domain_size: u64,
+) -> ProveUnitSchedule {
     ProveUnitSchedule {
         kind: KeyUnitKind::Basic,
         group_id: Some(0),
@@ -12,7 +29,7 @@ fn sample_unit(stage_commit_widths: Vec<u32>) -> ProveUnitSchedule {
         unit_name: Some("unit-a".to_owned()),
         base_domain_bits: 10,
         extended_domain_bits: 13,
-        base_domain_size: 1024,
+        base_domain_size,
         extended_domain_size: 8192,
         blowup_factor: 8,
         query_count: 4,
@@ -63,6 +80,53 @@ fn builds_witness_trace_request_from_layout() {
     assert_eq!(request.input, vec![7, 8, 9]);
     assert_eq!(request.rows, 1024);
     assert_eq!(request.columns, 6);
+}
+
+#[test]
+fn extracts_stage_values_from_row_major_trace() {
+    let unit = sample_unit_with_rows(vec![2, 3, 1], 2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let trace = parse_witness_trace(
+        &encode_values(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+        2,
+        6,
+    )
+    .expect("trace should parse");
+
+    let stage = layout.stage_trace(&trace, 2).expect("stage should extract");
+
+    assert_eq!(stage.stage_index(), 2);
+    assert_eq!(stage.row_count(), 2);
+    assert_eq!(stage.column_count(), 3);
+    assert_eq!(
+        stage.values(),
+        &[
+            Felt::from_canonical(3).expect("canonical"),
+            Felt::from_canonical(4).expect("canonical"),
+            Felt::from_canonical(5).expect("canonical"),
+            Felt::from_canonical(9).expect("canonical"),
+            Felt::from_canonical(10).expect("canonical"),
+            Felt::from_canonical(11).expect("canonical"),
+        ]
+    );
+}
+
+#[test]
+fn rejects_stage_extraction_for_mismatched_trace_shape() {
+    let unit = sample_unit_with_rows(vec![2, 3, 1], 2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let trace =
+        parse_witness_trace(&encode_values(&[1, 2, 3, 4]), 2, 2).expect("trace should parse");
+
+    assert!(matches!(
+        layout.stage_trace(&trace, 1),
+        Err(WitnessTraceLayoutError::TraceShapeMismatch {
+            expected_rows: 2,
+            expected_columns: 6,
+            found_rows: 2,
+            found_columns: 2
+        })
+    ));
 }
 
 #[test]

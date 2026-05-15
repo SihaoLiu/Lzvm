@@ -1,6 +1,9 @@
 use std::fmt;
 
+use lzvm_field::Felt;
+
 use crate::witness_runner::WitnessTraceRequest;
+use crate::witness_trace::WitnessTraceBuffer;
 use crate::ProveUnitSchedule;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,6 +18,32 @@ pub struct WitnessTraceLayout {
     rows: usize,
     columns: usize,
     stages: Vec<WitnessTraceStageLayout>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WitnessTraceStageValues {
+    stage_index: usize,
+    rows: usize,
+    columns: usize,
+    values: Vec<Felt>,
+}
+
+impl WitnessTraceStageValues {
+    pub fn stage_index(&self) -> usize {
+        self.stage_index
+    }
+
+    pub fn row_count(&self) -> usize {
+        self.rows
+    }
+
+    pub fn column_count(&self) -> usize {
+        self.columns
+    }
+
+    pub fn values(&self) -> &[Felt] {
+        &self.values
+    }
 }
 
 impl WitnessTraceLayout {
@@ -41,14 +70,64 @@ impl WitnessTraceLayout {
             columns: self.columns,
         }
     }
+
+    pub fn stage_trace(
+        &self,
+        trace: &WitnessTraceBuffer,
+        stage_index: usize,
+    ) -> Result<WitnessTraceStageValues, WitnessTraceLayoutError> {
+        if trace.row_count() != self.rows || trace.column_count() != self.columns {
+            return Err(WitnessTraceLayoutError::TraceShapeMismatch {
+                expected_rows: self.rows,
+                expected_columns: self.columns,
+                found_rows: trace.row_count(),
+                found_columns: trace.column_count(),
+            });
+        }
+        let stage = self
+            .stages
+            .iter()
+            .find(|stage| stage.stage_index == stage_index)
+            .ok_or(WitnessTraceLayoutError::UnknownStage { stage_index })?;
+        let value_count = self
+            .rows
+            .checked_mul(stage.width)
+            .ok_or(WitnessTraceLayoutError::StageValueCountOverflow)?;
+        let mut values = Vec::with_capacity(value_count);
+        for row in 0..self.rows {
+            for column in stage.start_column..stage.start_column + stage.width {
+                values.push(trace.value(row, column).expect("trace shape checked"));
+            }
+        }
+        Ok(WitnessTraceStageValues {
+            stage_index,
+            rows: self.rows,
+            columns: stage.width,
+            values,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WitnessTraceLayoutError {
-    RowCountTooLarge { rows: u64 },
+    RowCountTooLarge {
+        rows: u64,
+    },
     EmptyStageSet,
-    ZeroStageWidth { stage_index: usize },
+    ZeroStageWidth {
+        stage_index: usize,
+    },
     ColumnCountOverflow,
+    UnknownStage {
+        stage_index: usize,
+    },
+    TraceShapeMismatch {
+        expected_rows: usize,
+        expected_columns: usize,
+        found_rows: usize,
+        found_columns: usize,
+    },
+    StageValueCountOverflow,
 }
 
 impl fmt::Display for WitnessTraceLayoutError {
@@ -62,6 +141,19 @@ impl fmt::Display for WitnessTraceLayoutError {
                 write!(f, "witness trace stage width is zero: {stage_index}")
             }
             Self::ColumnCountOverflow => write!(f, "witness trace column count overflow"),
+            Self::UnknownStage { stage_index } => {
+                write!(f, "witness trace stage is unknown: {stage_index}")
+            }
+            Self::TraceShapeMismatch {
+                expected_rows,
+                expected_columns,
+                found_rows,
+                found_columns,
+            } => write!(
+                f,
+                "witness trace shape mismatch: expected {expected_rows}x{expected_columns}, found {found_rows}x{found_columns}"
+            ),
+            Self::StageValueCountOverflow => write!(f, "witness trace stage value count overflow"),
         }
     }
 }
