@@ -6,10 +6,10 @@ use lzvm_artifacts::key_directory::read_key_directory_catalog;
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 use lzvm_prover::{
-    build_pcs_material_manifest_segment, build_pcs_query_plan_segment,
-    build_witness_commitment_segment, build_witness_opening_segment, derive_prove_execution_plan,
-    run_prove_witness_commitments, ProveExecutionInputArtifacts, ProveSchedule,
-    ProveWitnessCommitments,
+    build_constant_opening_segment, build_pcs_material_manifest_segment,
+    build_pcs_query_plan_segment, build_witness_commitment_segment, build_witness_opening_segment,
+    derive_prove_execution_plan, run_prove_witness_commitments, ProveExecutionInputArtifacts,
+    ProveSchedule, ProveWitnessCommitments,
 };
 
 use crate::prove_plan::{parse_run_args, write_run_plan_summary, ParseError, ParsedRunArgs};
@@ -50,6 +50,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     if plan.run_plan.options.save_outputs {
         if let Err(message) = save_witness_outputs(
             &plan.run_plan.options.output_dir,
+            &catalog,
             &plan.run_plan.schedule,
             plan.inputs.public_inputs.as_deref(),
             &output,
@@ -97,6 +98,7 @@ fn parsed_inputs(parsed: &ParsedRunArgs) -> ProveExecutionInputArtifacts {
 
 fn save_witness_outputs(
     output_dir: &Path,
+    catalog: &lzvm_artifacts::key_directory::KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     public_inputs: Option<&Path>,
     output: &ProveWitnessCommitments,
@@ -110,7 +112,7 @@ fn save_witness_outputs(
 
     let segment = build_witness_commitment_segment(output)
         .map_err(|error| format!("build witness segment failed: {error}"))?;
-    let proof_bytes = build_proof_bytes(schedule, public_inputs, output, &segment)?;
+    let proof_bytes = build_proof_bytes(catalog, schedule, public_inputs, output, &segment)?;
 
     for commitment in output.stage_commitments().commitments() {
         let root_path = output_dir.join(format!(
@@ -139,6 +141,7 @@ fn save_witness_outputs(
 }
 
 fn build_proof_bytes(
+    catalog: &lzvm_artifacts::key_directory::KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     public_inputs: Option<&Path>,
     output: &ProveWitnessCommitments,
@@ -163,6 +166,9 @@ fn build_proof_bytes(
         std::slice::from_ref(segment),
     )
     .map_err(|error| format!("build query plan segment failed: {error}"))?;
+    let constant_opening_segment =
+        build_constant_opening_segment(catalog, schedule, &query_segment)
+            .map_err(|error| format!("build constant opening segment failed: {error}"))?;
     let opening_segment = build_witness_opening_segment(schedule, &query_segment, output)
         .map_err(|error| format!("build witness opening segment failed: {error}"))?;
     let proof = ProofArtifact {
@@ -171,6 +177,7 @@ fn build_proof_bytes(
         segments: vec![
             material_segment,
             query_segment,
+            constant_opening_segment,
             opening_segment,
             segment.clone(),
         ],

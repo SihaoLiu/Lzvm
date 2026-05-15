@@ -1,7 +1,13 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use lzvm_artifacts::key_directory::KeyUnitKind;
+use lzvm_artifacts::constant_opening_segment::{
+    encode_constant_opening_segment, ConstantOpeningLevelSegment, ConstantOpeningQuerySegment,
+    ConstantOpeningSegment, ConstantOpeningSegmentError, ConstantOpeningUnitSegment,
+    CONSTANT_OPENING_SEGMENT_ID,
+};
+use lzvm_artifacts::constant_tree::{read_constant_tree_file, ConstantTreeError};
+use lzvm_artifacts::key_directory::{KeyDirectoryCatalog, KeyUnitKind};
 use lzvm_artifacts::pcs_material_segment::{
     encode_pcs_material_manifest_segment, PcsMaterialManifestSegment,
     PcsMaterialManifestSegmentError, PcsMaterialManifestUnit, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
@@ -24,6 +30,7 @@ use lzvm_artifacts::witness_segment::{
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
+use crate::constant_tree_opening::{open_constant_tree_row, ConstantTreeOpeningError};
 use crate::witness_commitment::{
     commit_witness_trace_stages, open_witness_stage_commitment, WitnessStageOpeningError,
     WitnessTraceCommitmentError, WitnessTraceCommitments,
@@ -141,6 +148,24 @@ pub enum ProveWitnessOpeningSegmentError {
     },
     Opening(WitnessStageOpeningError),
     Segment(WitnessOpeningSegmentError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProveConstantOpeningSegmentError {
+    QueryPlan(PcsQueryPlanSegmentError),
+    UnitIndexOutOfRange {
+        unit_index: usize,
+        unit_count: usize,
+    },
+    UnitIndexOverflow {
+        unit_index: u32,
+    },
+    ConstantTree {
+        unit_index: usize,
+        source: ConstantTreeError,
+    },
+    Opening(ConstantTreeOpeningError),
+    Segment(ConstantOpeningSegmentError),
 }
 
 impl fmt::Display for ProveWitnessCommitmentError {
@@ -300,6 +325,35 @@ impl fmt::Display for ProveWitnessOpeningSegmentError {
     }
 }
 
+impl fmt::Display for ProveConstantOpeningSegmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::QueryPlan(error) => {
+                write!(f, "prove constant opening query plan parse failed: {error}")
+            }
+            Self::UnitIndexOutOfRange {
+                unit_index,
+                unit_count,
+            } => write!(
+                f,
+                "prove constant opening unit index {unit_index} is outside unit count {unit_count}"
+            ),
+            Self::UnitIndexOverflow { unit_index } => write!(
+                f,
+                "prove constant opening unit index does not fit usize: {unit_index}"
+            ),
+            Self::ConstantTree { unit_index, source } => write!(
+                f,
+                "prove constant opening tree read failed for unit {unit_index}: {source}"
+            ),
+            Self::Opening(error) => write!(f, "prove constant opening failed: {error}"),
+            Self::Segment(error) => {
+                write!(f, "prove constant opening segment encode failed: {error}")
+            }
+        }
+    }
+}
+
 impl std::error::Error for ProveWitnessSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -346,6 +400,18 @@ impl std::error::Error for ProveWitnessOpeningSegmentError {
     }
 }
 
+impl std::error::Error for ProveConstantOpeningSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::QueryPlan(error) => Some(error),
+            Self::ConstantTree { source, .. } => Some(source),
+            Self::Opening(error) => Some(error),
+            Self::Segment(error) => Some(error),
+            Self::UnitIndexOutOfRange { .. } | Self::UnitIndexOverflow { .. } => None,
+        }
+    }
+}
+
 impl From<WitnessCommitmentSegmentError> for ProveWitnessSegmentError {
     fn from(error: WitnessCommitmentSegmentError) -> Self {
         Self::Segment(error)
@@ -378,6 +444,24 @@ impl From<WitnessStageOpeningError> for ProveWitnessOpeningSegmentError {
 
 impl From<WitnessOpeningSegmentError> for ProveWitnessOpeningSegmentError {
     fn from(error: WitnessOpeningSegmentError) -> Self {
+        Self::Segment(error)
+    }
+}
+
+impl From<PcsQueryPlanSegmentError> for ProveConstantOpeningSegmentError {
+    fn from(error: PcsQueryPlanSegmentError) -> Self {
+        Self::QueryPlan(error)
+    }
+}
+
+impl From<ConstantTreeOpeningError> for ProveConstantOpeningSegmentError {
+    fn from(error: ConstantTreeOpeningError) -> Self {
+        Self::Opening(error)
+    }
+}
+
+impl From<ConstantOpeningSegmentError> for ProveConstantOpeningSegmentError {
+    fn from(error: ConstantOpeningSegmentError) -> Self {
         Self::Segment(error)
     }
 }
@@ -681,6 +765,77 @@ pub fn build_witness_opening_segment(
     Ok(ProofSegment {
         id: WITNESS_OPENING_SEGMENT_ID,
         data: encode_witness_opening_segment(&segment)?,
+    })
+}
+
+pub fn build_constant_opening_segment(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
+    query_segment: &ProofSegment,
+) -> Result<ProofSegment, ProveConstantOpeningSegmentError> {
+    let query_plan = parse_pcs_query_plan_segment(&query_segment.data)?;
+    let mut units = Vec::with_capacity(query_plan.units.len());
+    for query_unit in &query_plan.units {
+        let unit_index = usize::try_from(query_unit.unit_index).map_err(|_| {
+            ProveConstantOpeningSegmentError::UnitIndexOverflow {
+                unit_index: query_unit.unit_index,
+            }
+        })?;
+        let schedule_unit = schedule.units.get(unit_index).ok_or(
+            ProveConstantOpeningSegmentError::UnitIndexOutOfRange {
+                unit_index,
+                unit_count: schedule.units.len(),
+            },
+        )?;
+        let catalog_unit = catalog.units.get(unit_index).ok_or(
+            ProveConstantOpeningSegmentError::UnitIndexOutOfRange {
+                unit_index,
+                unit_count: catalog.units.len(),
+            },
+        )?;
+        let tree = read_constant_tree_file(
+            &catalog_unit.paths.constant_tree,
+            &catalog_unit.metadata.setup,
+        )
+        .map_err(|source| ProveConstantOpeningSegmentError::ConstantTree { unit_index, source })?;
+        let arity = usize::try_from(schedule_unit.merkle_tree_arity).map_err(|_| {
+            ProveConstantOpeningSegmentError::UnitIndexOutOfRange {
+                unit_index,
+                unit_count: schedule.units.len(),
+            }
+        })?;
+        let mut queries = Vec::with_capacity(query_unit.queries.len());
+        for row_index in &query_unit.queries {
+            let opening = open_constant_tree_row(&tree, *row_index, arity)?;
+            queries.push(ConstantOpeningQuerySegment {
+                row_index: *row_index,
+                values: opening
+                    .values()
+                    .iter()
+                    .map(|value| value.to_u64())
+                    .collect(),
+                siblings: opening
+                    .siblings()
+                    .iter()
+                    .map(|level| ConstantOpeningLevelSegment {
+                        siblings: level
+                            .iter()
+                            .map(|digest| digest.map(|value| value.to_u64()))
+                            .collect(),
+                    })
+                    .collect(),
+            });
+        }
+        units.push(ConstantOpeningUnitSegment {
+            unit_index: query_unit.unit_index,
+            queries,
+        });
+    }
+
+    let segment = ConstantOpeningSegment { units };
+    Ok(ProofSegment {
+        id: CONSTANT_OPENING_SEGMENT_ID,
+        data: encode_constant_opening_segment(&segment)?,
     })
 }
 

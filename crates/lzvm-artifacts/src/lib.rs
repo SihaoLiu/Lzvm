@@ -1,3 +1,4 @@
+pub mod constant_opening_segment;
 pub mod constant_tree;
 pub mod constraint_program;
 pub mod expression_info;

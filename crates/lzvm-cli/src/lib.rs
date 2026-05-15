@@ -2,6 +2,9 @@ use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::Path;
 
+use lzvm_artifacts::constant_opening_segment::{
+    parse_constant_opening_segment, CONSTANT_OPENING_SEGMENT_ID,
+};
 use lzvm_artifacts::constant_tree::read_constant_tree_file;
 use lzvm_artifacts::fixed::{
     read_fixed_columns_file, read_fixed_columns_file_for_setup, FixedColumn, FixedColumns,
@@ -31,6 +34,9 @@ use lzvm_artifacts::witness_segment::{
     parse_witness_commitment_segment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 use lzvm_field::Felt;
+use lzvm_prover::constant_tree_opening::{
+    constant_tree_merkle_level_count, verify_constant_tree_opening_root, ConstantTreeOpening,
+};
 use lzvm_prover::witness_commitment::{verify_witness_stage_opening_root, WitnessStageOpening};
 use lzvm_prover::{build_pcs_query_plan_segment, derive_prove_schedule, ProveSchedule};
 use lzvm_setup::{
@@ -463,6 +469,10 @@ fn verify_setup_preflight(
         let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
         return 1;
     }
+    if let Err(error) = validate_constant_opening_segment(&schedule, &proof) {
+        let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
+        return 1;
+    }
     if let Err(error) = validate_witness_opening_segment(&schedule, &proof) {
         let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
         return 1;
@@ -773,6 +783,107 @@ fn validate_witness_opening_segment(
                         "witness opening segment mismatch for unit {unit_index}"
                     ));
                 }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_constant_opening_segment(
+    schedule: &ProveSchedule,
+    proof: &ProofArtifact,
+) -> Result<(), String> {
+    let query_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
+        .ok_or_else(|| "missing PCS query plan segment".to_owned())?;
+    let query_plan = parse_pcs_query_plan_segment(&query_segment.data)
+        .map_err(|error| format!("invalid PCS query plan segment: {error}"))?;
+    let opening_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == CONSTANT_OPENING_SEGMENT_ID)
+        .ok_or_else(|| "missing constant opening segment".to_owned())?;
+    let opening = parse_constant_opening_segment(&opening_segment.data)
+        .map_err(|error| format!("invalid constant opening segment: {error}"))?;
+    if opening.units.len() != query_plan.units.len() {
+        return Err("constant opening segment unit count mismatch".to_owned());
+    }
+
+    for query_unit in &query_plan.units {
+        let unit_index = usize::try_from(query_unit.unit_index)
+            .map_err(|_| "constant opening segment unit index overflow")?;
+        let unit = schedule
+            .units
+            .get(unit_index)
+            .ok_or_else(|| format!("constant opening segment mismatch for unit {unit_index}"))?;
+        let opening_unit = opening
+            .units
+            .iter()
+            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .ok_or_else(|| format!("constant opening segment mismatch for unit {unit_index}"))?;
+        if opening_unit.queries.len() != query_unit.queries.len() {
+            return Err(format!(
+                "constant opening segment mismatch for unit {unit_index}"
+            ));
+        }
+
+        let arity = usize::try_from(unit.merkle_tree_arity)
+            .map_err(|_| "constant opening segment arity overflow")?;
+        let expected_level_count =
+            constant_tree_merkle_level_count(unit.extended_domain_size, arity)
+                .map_err(|error| format!("invalid constant opening segment: {error}"))?;
+        let constant_width = usize::try_from(unit.constant_width)
+            .map_err(|_| "constant opening segment width overflow")?;
+        let root =
+            field_digest_from_words(unit.pcs_material_constant_tree_root.ok_or_else(|| {
+                format!("constant opening segment mismatch for unit {unit_index}")
+            })?)?;
+
+        for (query, expected_row) in opening_unit.queries.iter().zip(query_unit.queries.iter()) {
+            if query.row_index != *expected_row
+                || query.values.len() != constant_width
+                || query.siblings.len() != expected_level_count
+            {
+                return Err(format!(
+                    "constant opening segment mismatch for unit {unit_index}"
+                ));
+            }
+            let values = query
+                .values
+                .iter()
+                .map(|value| Felt::from_canonical(*value))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("invalid constant opening segment value: {error}"))?;
+            let siblings = query
+                .siblings
+                .iter()
+                .map(|level| {
+                    if level.siblings.len() + 1 != arity {
+                        return Err(format!(
+                            "constant opening segment mismatch for unit {unit_index}"
+                        ));
+                    }
+                    level
+                        .siblings
+                        .iter()
+                        .map(|digest| field_digest_from_words(*digest))
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let opening =
+                ConstantTreeOpening::new(query.row_index, values, siblings).map_err(|error| {
+                    format!("invalid constant opening segment for unit {unit_index}: {error}")
+                })?;
+            let valid =
+                verify_constant_tree_opening_root(root, arity, &opening).map_err(|error| {
+                    format!("invalid constant opening segment for unit {unit_index}: {error}")
+                })?;
+            if !valid {
+                return Err(format!(
+                    "constant opening segment mismatch for unit {unit_index}"
+                ));
             }
         }
     }

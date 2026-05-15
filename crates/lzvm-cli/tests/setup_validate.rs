@@ -2,6 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use lzvm_artifacts::constant_opening_segment::{
+    parse_constant_opening_segment, CONSTANT_OPENING_SEGMENT_ID,
+};
 use lzvm_artifacts::constraint_program::{
     encode_global_constraint_program, GlobalConstraintProgram,
 };
@@ -37,11 +40,11 @@ use lzvm_artifacts::witness_segment::{
 use lzvm_cli::run_cli;
 use lzvm_field::{poseidon2_hash_16, Felt};
 use lzvm_prover::{
-    build_pcs_material_manifest_segment, build_pcs_query_plan_segment,
-    build_witness_commitment_segment, build_witness_opening_segment, derive_prove_execution_plan,
-    derive_prove_schedule, run_prove_witness_commitments, GpuRunOptions,
-    ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest, ProveRunOptions,
-    ProveRunRequest,
+    build_constant_opening_segment, build_pcs_material_manifest_segment,
+    build_pcs_query_plan_segment, build_witness_commitment_segment, build_witness_opening_segment,
+    derive_prove_execution_plan, derive_prove_schedule, run_prove_witness_commitments,
+    GpuRunOptions, ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest,
+    ProveRunOptions, ProveRunRequest,
 };
 
 fn sample_global_info_json() -> &'static str {
@@ -205,6 +208,9 @@ fn sample_proof_with_material(
         std::slice::from_ref(&witness_segment),
     )
     .expect("query segment should build");
+    let constant_opening_segment =
+        build_constant_opening_segment(catalog, &schedule, &query_segment)
+            .expect("constant opening segment should build");
     let opening_segment = sample_witness_opening_segment(&schedule, &query_segment, 0);
     ProofArtifact {
         setup_hash: public_values.setup_hash,
@@ -212,6 +218,7 @@ fn sample_proof_with_material(
         segments: vec![
             material_segment,
             query_segment,
+            constant_opening_segment,
             opening_segment,
             witness_segment,
         ],
@@ -1019,7 +1026,7 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
         proof.public_values_hash,
         public_values_digest(&public_values).expect("digest should compute")
     );
-    assert_eq!(proof.segments.len(), 4);
+    assert_eq!(proof.segments.len(), 5);
     assert_eq!(proof.segments[0].id, PCS_MATERIAL_MANIFEST_SEGMENT_ID);
     let manifest = parse_pcs_material_manifest_segment(&proof.segments[0].data)
         .expect("material manifest should parse");
@@ -1070,19 +1077,31 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
         query_plan.units[0].queries.len(),
         plan.run_plan.schedule.units[0].query_count as usize
     );
+    let expected_constant_opening_segment =
+        build_constant_opening_segment(&catalog, &plan.run_plan.schedule, &proof.segments[1])
+            .expect("constant opening segment should build");
+    let constant_opening = parse_constant_opening_segment(&proof.segments[2].data)
+        .expect("constant opening segment should parse");
+    assert_eq!(proof.segments[2].id, CONSTANT_OPENING_SEGMENT_ID);
+    assert_eq!(proof.segments[2], expected_constant_opening_segment);
+    assert_eq!(constant_opening.units.len(), 1);
+    assert_eq!(
+        constant_opening.units[0].queries.len(),
+        query_plan.units[0].queries.len()
+    );
     let expected_opening_segment =
         build_witness_opening_segment(&plan.run_plan.schedule, &proof.segments[1], &output)
             .expect("opening segment should build");
-    let opening = parse_witness_opening_segment(&proof.segments[2].data)
+    let opening = parse_witness_opening_segment(&proof.segments[3].data)
         .expect("opening segment should parse");
-    assert_eq!(proof.segments[2].id, WITNESS_OPENING_SEGMENT_ID);
-    assert_eq!(proof.segments[2], expected_opening_segment);
+    assert_eq!(proof.segments[3].id, WITNESS_OPENING_SEGMENT_ID);
+    assert_eq!(proof.segments[3], expected_opening_segment);
     assert_eq!(opening.units.len(), 1);
     assert_eq!(
         opening.units[0].queries.len(),
         query_plan.units[0].queries.len()
     );
-    assert_eq!(proof.segments[3], expected_segment);
+    assert_eq!(proof.segments[4], expected_segment);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
@@ -1246,7 +1265,7 @@ fn runs_setup_aware_verify_preflight() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=4\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=5\npublic_values=1\n"
     );
     assert!(stderr.is_empty());
 }
@@ -1344,6 +1363,52 @@ fn rejects_setup_aware_verify_preflight_with_mismatched_pcs_query_plan() {
 }
 
 #[test]
+fn rejects_setup_aware_verify_preflight_with_mismatched_constant_opening() {
+    let dir = temp_dir("verify-setup-preflight-bad-constant-opening");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let mut proof = sample_proof_with_material(&public_values, &catalog);
+    proof.segments[2].data[36] ^= 0x01;
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.json");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_text(
+        &public_values_path,
+        &encode_public_values_json(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: constant opening segment mismatch for unit 0\n"
+    );
+}
+
+#[test]
 fn rejects_setup_aware_verify_preflight_with_mismatched_witness_opening() {
     let dir = temp_dir("verify-setup-preflight-bad-opening");
     let _ = fs::remove_dir_all(&dir);
@@ -1352,7 +1417,7 @@ fn rejects_setup_aware_verify_preflight_with_mismatched_witness_opening() {
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = sample_public_values(setup_hash);
     let mut proof = sample_proof_with_material(&public_values, &catalog);
-    proof.segments[2].data[32] ^= 0x01;
+    proof.segments[3].data[32] ^= 0x01;
     let proof_path = dir.join("proof.bin");
     let public_values_path = dir.join("public_values.json");
     write_bytes(

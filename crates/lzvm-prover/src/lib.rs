@@ -12,6 +12,7 @@ use lzvm_artifacts::witness_library::{
     read_witness_library_file, WitnessLibraryError, WitnessLibraryInfo,
 };
 
+pub mod constant_tree_opening;
 mod prove_witness;
 pub mod witness_commitment;
 pub mod witness_layout;
@@ -20,10 +21,11 @@ pub mod witness_runner;
 pub mod witness_trace;
 
 pub use prove_witness::{
-    build_pcs_material_manifest_segment, build_pcs_query_plan_segment,
-    build_witness_commitment_segment, build_witness_opening_segment, run_prove_witness_commitments,
-    ProvePcsMaterialSegmentError, ProvePcsQueryPlanSegmentError, ProveWitnessCommitmentError,
-    ProveWitnessCommitments, ProveWitnessOpeningSegmentError, ProveWitnessSegmentError,
+    build_constant_opening_segment, build_pcs_material_manifest_segment,
+    build_pcs_query_plan_segment, build_witness_commitment_segment, build_witness_opening_segment,
+    run_prove_witness_commitments, ProveConstantOpeningSegmentError, ProvePcsMaterialSegmentError,
+    ProvePcsQueryPlanSegmentError, ProveWitnessCommitmentError, ProveWitnessCommitments,
+    ProveWitnessOpeningSegmentError, ProveWitnessSegmentError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
