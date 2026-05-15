@@ -7,7 +7,10 @@ use lzvm_artifacts::constraint_program::{
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
-use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyUnitPaths};
+use lzvm_artifacts::key_directory::{
+    key_directory_catalog_digest_hex, read_key_directory_catalog, read_key_directory_layout,
+    KeyUnitPaths,
+};
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use lzvm_cli::run_cli;
 
@@ -244,6 +247,35 @@ fn validates_a_complete_setup_directory() {
 }
 
 #[test]
+fn fingerprints_a_complete_setup_directory() {
+    let dir = temp_dir("fingerprint");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let expected = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "fingerprint",
+            dir.to_str().expect("path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!("status=ok\nunits=4\nfingerprint={expected}\n")
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn reports_usage_for_missing_setup_directory() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -254,5 +286,19 @@ fn reports_usage_for_missing_setup_directory() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "usage: lzvm setup validate <setup-dir>\n"
+    );
+}
+
+#[test]
+fn reports_usage_for_missing_fingerprint_directory() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(&["setup", "fingerprint"], &mut stdout, &mut stderr);
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "usage: lzvm setup fingerprint <setup-dir>\n"
     );
 }

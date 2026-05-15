@@ -6,7 +6,8 @@ use lzvm_artifacts::fixed::{
     read_fixed_columns_file, read_fixed_columns_file_for_setup, FixedColumn, FixedColumns,
 };
 use lzvm_artifacts::key_directory::{
-    read_key_directory_catalog, read_key_directory_layout, validate_key_directory_layout,
+    key_directory_catalog_digest_hex, read_key_directory_catalog, read_key_directory_layout,
+    validate_key_directory_layout,
 };
 use lzvm_artifacts::proof::read_proof_artifact_file;
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
@@ -27,6 +28,10 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             verify_preflight(proof_bin, public_values_json, stdout, stderr)
         }
         ["verify", "preflight", ..] => write_verify_preflight_usage(stderr),
+        ["setup", "fingerprint", setup_dir] => {
+            fingerprint_setup_directory(setup_dir, stdout, stderr)
+        }
+        ["setup", "fingerprint", ..] => write_fingerprint_usage(stderr),
         ["setup", "validate", setup_dir] => validate_setup_directory(setup_dir, stdout, stderr),
         ["setup", "validate", ..] => write_validate_usage(stderr),
         ["setup", "write-info-bin", setup_info, out_setup_info_bin] => {
@@ -212,6 +217,31 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
         }
         ["setup", "write-const-native", ..] => write_const_native_usage(stderr),
         _ => write_validate_usage(stderr),
+    }
+}
+
+fn fingerprint_setup_directory(
+    setup_dir: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    match read_key_directory_catalog(setup_dir) {
+        Ok(catalog) => match key_directory_catalog_digest_hex(&catalog) {
+            Ok(fingerprint) => {
+                let _ = writeln!(stdout, "status=ok");
+                let _ = writeln!(stdout, "units={}", catalog.units.len());
+                let _ = writeln!(stdout, "fingerprint={fingerprint}");
+                0
+            }
+            Err(error) => {
+                let _ = writeln!(stderr, "setup fingerprint failed: {error}");
+                1
+            }
+        },
+        Err(error) => {
+            let _ = writeln!(stderr, "setup fingerprint failed: {error}");
+            1
+        }
     }
 }
 
@@ -924,6 +954,11 @@ fn write_verify_preflight_usage(stderr: &mut dyn Write) -> i32 {
         stderr,
         "usage: lzvm verify preflight <proof-bin> <public-values-json>"
     );
+    2
+}
+
+fn write_fingerprint_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(stderr, "usage: lzvm setup fingerprint <setup-dir>");
     2
 }
 

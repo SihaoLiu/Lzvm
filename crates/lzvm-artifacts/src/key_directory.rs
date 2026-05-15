@@ -1,12 +1,14 @@
 use crate::constant_tree::{read_constant_tree_file, ConstantTreeError};
 use crate::constraint_program::{
-    read_global_constraint_program_file, ConstraintProgramError, GlobalConstraintProgram,
+    encode_global_constraint_program, read_global_constraint_program_file, ConstraintProgramError,
+    GlobalConstraintProgram,
 };
 use crate::expression_program::{
-    read_expression_program_file, ExpressionProgram, ExpressionProgramError,
+    encode_expression_program, read_expression_program_file, ExpressionProgram,
+    ExpressionProgramError,
 };
 use crate::fixed::{expected_raw_fixed_column_byte_count, FixedColumnError};
-use crate::global_info::{read_global_info_file, GlobalInfo, GlobalInfoError};
+use crate::global_info::{read_global_info_file, CurveKind, GlobalInfo, GlobalInfoError};
 use crate::metadata_bundle::{
     read_unit_metadata_bundle, MetadataBundleError, UnitMetadataBundle, UnitMetadataPaths,
 };
@@ -14,6 +16,7 @@ use crate::verification_key::{
     read_verification_key_binary_file, read_verification_key_json_file, VerificationKeyError,
     VerificationKeyRoot,
 };
+use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -122,6 +125,9 @@ pub enum KeyDirectoryError {
         expected: VerificationKeyRoot,
         found: VerificationKeyRoot,
     },
+    Digest {
+        message: String,
+    },
     Io {
         role: &'static str,
         message: String,
@@ -181,6 +187,7 @@ impl fmt::Display for KeyDirectoryError {
             Self::ConstantTreeRootMismatch { kind, .. } => {
                 write!(f, "key-directory constant-tree root mismatch for {kind}")
             }
+            Self::Digest { message } => write!(f, "key-directory digest error: {message}"),
             Self::Io { role, message } => write!(f, "key-directory {role} io error: {message}"),
         }
     }
@@ -396,6 +403,68 @@ pub fn read_key_directory_catalog_from_layout(
         global_constraints,
         units,
     })
+}
+
+pub fn key_directory_catalog_digest(
+    catalog: &KeyDirectoryCatalog,
+) -> Result<[u8; 32], KeyDirectoryError> {
+    let mut hasher = Sha256::new();
+    hash_bytes(&mut hasher, b"lzvm-key-directory-catalog-v1");
+    hash_global_info(&mut hasher, &catalog.layout.global_info);
+    hash_bytes(
+        &mut hasher,
+        &encode_global_constraint_program(&catalog.global_constraints).map_err(|error| {
+            KeyDirectoryError::Digest {
+                message: error.to_string(),
+            }
+        })?,
+    );
+    hash_u64(&mut hasher, catalog.units.len() as u64);
+    for unit in &catalog.units {
+        hash_u8(&mut hasher, key_unit_kind_tag(unit.paths.kind));
+        hash_optional_usize(&mut hasher, unit.paths.group_id);
+        hash_optional_usize(&mut hasher, unit.paths.unit_id);
+        hash_optional_string(&mut hasher, unit.paths.group_name.as_deref());
+        hash_optional_string(&mut hasher, unit.paths.unit_name.as_deref());
+        hash_bytes(
+            &mut hasher,
+            &crate::setup_info::encode_unit_setup_info(&unit.metadata.setup).map_err(|error| {
+                KeyDirectoryError::Digest {
+                    message: error.to_string(),
+                }
+            })?,
+        );
+        hash_bytes(
+            &mut hasher,
+            &encode_expression_program(&unit.expression_program).map_err(|error| {
+                KeyDirectoryError::Digest {
+                    message: error.to_string(),
+                }
+            })?,
+        );
+        hash_bytes(
+            &mut hasher,
+            &encode_expression_program(&unit.verifier_program).map_err(|error| {
+                KeyDirectoryError::Digest {
+                    message: error.to_string(),
+                }
+            })?,
+        );
+        hash_root(&mut hasher, &unit.verification_key);
+        hash_u64(&mut hasher, unit.expected_fixed_bytes as u64);
+        hash_u64(&mut hasher, unit.actual_fixed_bytes);
+        hash_bool(&mut hasher, unit.constant_tree_present);
+        hash_optional_u64(&mut hasher, unit.constant_tree_bytes);
+        hash_optional_root(&mut hasher, unit.constant_tree_root.as_ref());
+    }
+
+    Ok(hasher.finalize().into())
+}
+
+pub fn key_directory_catalog_digest_hex(
+    catalog: &KeyDirectoryCatalog,
+) -> Result<String, KeyDirectoryError> {
+    Ok(encode_digest_hex(&key_directory_catalog_digest(catalog)?))
 }
 
 impl GlobalKeyPaths {
@@ -642,4 +711,158 @@ fn append_suffix(prefix: &Path, suffix: &str) -> PathBuf {
     let mut value = prefix.as_os_str().to_owned();
     value.push(suffix);
     PathBuf::from(value)
+}
+
+fn key_unit_kind_tag(kind: KeyUnitKind) -> u8 {
+    match kind {
+        KeyUnitKind::Basic => 0,
+        KeyUnitKind::Compressor => 1,
+        KeyUnitKind::RecursiveFirst => 2,
+        KeyUnitKind::RecursiveSecond => 3,
+        KeyUnitKind::FinalAggregation => 4,
+        KeyUnitKind::FinalCircuit => 5,
+    }
+}
+
+fn hash_global_info(hasher: &mut Sha256, global: &GlobalInfo) {
+    hash_string(hasher, &global.name);
+    hash_string_vec(hasher, &global.air_groups);
+    hash_u64(hasher, global.airs.len() as u64);
+    for group in &global.airs {
+        hash_u64(hasher, group.len() as u64);
+        for unit in group {
+            hash_string(hasher, &unit.name);
+            hash_u64(hasher, unit.num_rows);
+            hash_bool(hasher, unit.has_compressor);
+        }
+    }
+    hash_u8(hasher, curve_kind_tag(&global.curve));
+    hash_optional_u64(hasher, global.lattice_size);
+    hash_u64(hasher, global.aggregation_types.len() as u64);
+    for group in &global.aggregation_types {
+        hash_u64(hasher, group.len() as u64);
+        for entry in group {
+            hash_u64(hasher, entry.aggregation_type);
+        }
+    }
+    hash_u64(hasher, global.n_publics);
+    hash_u64_vec(hasher, &global.num_challenges);
+    hash_u64_vec(hasher, &global.num_proof_values);
+    hash_u64(hasher, global.proof_values_map.len() as u64);
+    for entry in &global.proof_values_map {
+        hash_string(hasher, &entry.name);
+        hash_u64(hasher, entry.stage);
+        hash_optional_u64(hasher, entry.id);
+        hash_u64_vec(hasher, &entry.lengths);
+    }
+    hash_u64(hasher, global.publics_map.len() as u64);
+    for entry in &global.publics_map {
+        hash_string(hasher, &entry.name);
+        hash_u64(hasher, entry.stage);
+        hash_u64_vec(hasher, &entry.lengths);
+    }
+    hash_u64(hasher, global.transcript_arity);
+}
+
+fn curve_kind_tag(curve: &CurveKind) -> u8 {
+    match curve {
+        CurveKind::None => 0,
+        CurveKind::EcGfp5 => 1,
+        CurveKind::EcMasFp5 => 2,
+    }
+}
+
+fn hash_u8(hasher: &mut Sha256, value: u8) {
+    hasher.update([value]);
+}
+
+fn hash_bool(hasher: &mut Sha256, value: bool) {
+    hash_u8(hasher, u8::from(value));
+}
+
+fn hash_u64(hasher: &mut Sha256, value: u64) {
+    hasher.update(value.to_le_bytes());
+}
+
+fn hash_optional_u64(hasher: &mut Sha256, value: Option<u64>) {
+    match value {
+        Some(value) => {
+            hash_bool(hasher, true);
+            hash_u64(hasher, value);
+        }
+        None => hash_bool(hasher, false),
+    }
+}
+
+fn hash_optional_usize(hasher: &mut Sha256, value: Option<usize>) {
+    hash_optional_u64(hasher, value.map(|value| value as u64));
+}
+
+fn hash_bytes(hasher: &mut Sha256, value: &[u8]) {
+    hash_u64(hasher, value.len() as u64);
+    hasher.update(value);
+}
+
+fn hash_string(hasher: &mut Sha256, value: &str) {
+    hash_bytes(hasher, value.as_bytes());
+}
+
+fn hash_string_vec(hasher: &mut Sha256, values: &[String]) {
+    hash_u64(hasher, values.len() as u64);
+    for value in values {
+        hash_string(hasher, value);
+    }
+}
+
+fn hash_u64_vec(hasher: &mut Sha256, values: &[u64]) {
+    hash_u64(hasher, values.len() as u64);
+    for value in values {
+        hash_u64(hasher, *value);
+    }
+}
+
+fn hash_optional_string(hasher: &mut Sha256, value: Option<&str>) {
+    match value {
+        Some(value) => {
+            hash_bool(hasher, true);
+            hash_string(hasher, value);
+        }
+        None => hash_bool(hasher, false),
+    }
+}
+
+fn hash_root(hasher: &mut Sha256, root: &VerificationKeyRoot) {
+    match root {
+        VerificationKeyRoot::FieldElements(values) => {
+            hash_u8(hasher, 1);
+            hash_u64(hasher, values.len() as u64);
+            for value in values {
+                hash_u64(hasher, *value);
+            }
+        }
+        VerificationKeyRoot::DecimalScalar(value) => {
+            hash_u8(hasher, 2);
+            hash_string(hasher, value);
+        }
+    }
+}
+
+fn hash_optional_root(hasher: &mut Sha256, root: Option<&VerificationKeyRoot>) {
+    match root {
+        Some(root) => {
+            hash_bool(hasher, true);
+            hash_root(hasher, root);
+        }
+        None => hash_bool(hasher, false),
+    }
+}
+
+fn encode_digest_hex(value: &[u8; 32]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(64);
+    for byte in value {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
 }

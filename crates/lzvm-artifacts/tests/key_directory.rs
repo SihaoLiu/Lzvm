@@ -5,8 +5,9 @@ use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
 use lzvm_artifacts::key_directory::{
-    read_key_directory_catalog, read_key_directory_layout, validate_key_directory_layout,
-    KeyDirectoryError, KeyUnitKind, KeyUnitPaths,
+    key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
+    read_key_directory_layout, validate_key_directory_layout, KeyDirectoryError, KeyUnitKind,
+    KeyUnitPaths,
 };
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use std::fs;
@@ -454,6 +455,54 @@ fn reads_key_directory_catalog_constant_tree_roots_when_present() {
     }));
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn hashes_key_directory_catalogs_deterministically() {
+    let dir = temp_dir("catalog-digest");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    write_catalog_constant_trees(&layout);
+
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let digest = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let hex = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+
+    assert_eq!(hex.len(), 64);
+    assert!(hex.chars().all(|value| value.is_ascii_hexdigit()));
+    assert_eq!(
+        key_directory_catalog_digest(&catalog).expect("digest should compute"),
+        digest
+    );
+
+    let mut changed_global = catalog.clone();
+    changed_global.layout.global_info.transcript_arity += 1;
+    assert_ne!(
+        key_directory_catalog_digest(&changed_global).expect("changed digest should compute"),
+        digest
+    );
+
+    write_text(&layout.units[0].verification_key_json(), "[2,2,2,2]");
+    let changed_root = VerificationKeyRoot::FieldElements(vec![2, 2, 2, 2]);
+    write_bytes(
+        &layout.units[0].verification_key_binary(),
+        encode_verification_key_binary(&changed_root).expect("verification key should encode"),
+    );
+    write_bytes(
+        &layout.units[0].constant_tree,
+        sample_constant_tree(&changed_root),
+    );
+    let changed = read_key_directory_catalog(&dir).expect("changed catalog should load");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_ne!(
+        key_directory_catalog_digest(&changed).expect("changed digest should compute"),
+        digest
+    );
 }
 
 #[test]

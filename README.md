@@ -29,6 +29,14 @@ cargo run -p lzvm-cli -- setup validate <setup-dir>
 
 The command loads the discovered setup catalog, validates companion metadata and binary artifacts, and prints a stable summary.
 
+Fingerprint an existing setup directory catalog:
+
+```sh
+cargo run -p lzvm-cli -- setup fingerprint <setup-dir>
+```
+
+This command loads the same setup catalog as validation, hashes the parsed global metadata, global constraint program, unit metadata, expression programs, verification-key roots, fixed-column byte counts, and constant-tree companion roots, then prints a deterministic catalog fingerprint. It is a catalog preflight identifier, not a full proof verifier or a byte-for-byte setup archive hash.
+
 Check proof and public-value artifact consistency:
 
 ```sh
