@@ -144,6 +144,25 @@ fn sample_global_info_json_with_group_value() -> &'static str {
     }"#
 }
 
+fn sample_global_info_json_with_proof_group_value() -> &'static str {
+    r#"{
+        "name": "sample-program",
+        "air_groups": ["group-a"],
+        "airs": [[{"name": "unit-a", "num_rows": 2}]],
+        "curve": "None",
+        "latticeSize": 368,
+        "aggTypes": [[{"aggType": 0}]],
+        "nPublics": 0,
+        "numChallenges": [1],
+        "numProofValues": [1],
+        "proofValuesMap": [
+            {"name": "proof-a", "stage": 2}
+        ],
+        "publicsMap": [],
+        "transcriptArity": 4
+    }"#
+}
+
 fn sample_setup_info_json() -> &'static str {
     r#"{
         "nStages": 1,
@@ -1555,6 +1574,27 @@ fn write_execution_ready_setup_directory_with_group_value(root: &Path) {
     run_setup_command(&["setup", "write-pcs-material-directory", root]);
 }
 
+fn write_setup_directory_with_proof_group_and_unit_value(root: &Path) {
+    write_global_files_with_info(root, sample_global_info_json_with_proof_group_value());
+    let layout = read_key_directory_layout(root).expect("layout should parse");
+    for unit in &layout.units {
+        write_unit_files_with_setup_info_verifier_and_regular_constraints(
+            unit,
+            sample_setup_info_json_with_unit_value(),
+            sample_verifier_info_json(),
+            sample_regular_constraint_program(),
+        );
+    }
+}
+
+fn write_execution_ready_setup_directory_with_proof_group_and_unit_value(root: &Path) {
+    write_setup_directory_with_proof_group_and_unit_value(root);
+    let root = root.to_str().expect("path should be utf-8");
+    run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
+    run_setup_command(&["setup", "write-pcs-directory", root]);
+    run_setup_command(&["setup", "write-pcs-material-directory", root]);
+}
+
 fn write_proof_value_query_preflight_fixture(
     root: &Path,
     proof_values: Option<Vec<[u64; 3]>>,
@@ -2887,6 +2927,120 @@ fn builds_witness_proof_artifact_for_multiple_units_with_unit_values() {
     .expect("proof artifact should build");
     let encoded = encode_proof_artifact(&proof).expect("proof should encode");
     let proof = parse_proof_artifact(&encoded).expect("proof should parse");
+
+    let unit_values_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == UNIT_VALUES_SEGMENT_ID)
+        .expect("unit values segment should exist");
+    let unit_values =
+        parse_unit_values_segment(&unit_values_segment.data).expect("unit values should parse");
+    assert_eq!(unit_values.units.len(), 2);
+    assert_eq!(unit_values.units[0].unit_index, 0);
+    assert_eq!(unit_values.units[1].unit_index, 1);
+    assert_eq!(unit_values.units[0].values, vec![101, 201, 202, 203]);
+    assert_eq!(unit_values.units[1].values, vec![101, 201, 202, 203]);
+    validate_setup_preflight(&catalog, &proof, &public_values)
+        .expect("setup preflight should validate");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn builds_witness_proof_artifact_for_multiple_units_with_tail_segments() {
+    let dir = temp_dir("prove-witness-artifact-multi-tail");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_proof_group_and_unit_value(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [9_u8]);
+
+    let public_values = sample_public_values(setup_hash);
+    let public_values_hash = public_values_digest(&public_values).expect("hash should compute");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan {
+            input_data: Some(input_data),
+            partition_count: 1,
+            partition_ids: vec![0],
+            worker_index: 0,
+        }),
+        options: ProveRunOptions::default_for_output(output_dir),
+        gpu: GpuRunOptions::default(),
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        request,
+        ProveExecutionInputArtifacts {
+            witness_library,
+            guest_image,
+            public_inputs: Some(public_values_path),
+        },
+    )
+    .expect("execution plan should derive");
+    let first = run_prove_witness_commitments(&plan, 0).expect("first unit should run");
+    let second = run_prove_witness_commitments(&plan, 1).expect("second unit should run");
+
+    let proof_values = vec![Felt::from_u64(51), Felt::from_u64(52), Felt::from_u64(53)];
+    let group_values = vec![Ext3::from_u64s([61, 62, 63])];
+    let packed_unit_values = vec![
+        Felt::from_u64(101),
+        Felt::from_u64(201),
+        Felt::from_u64(202),
+        Felt::from_u64(203),
+    ];
+    let unit_values = vec![
+        ProveUnitValues {
+            unit_index: 0,
+            unit_value_map: plan.run_plan.schedule.units[0].unit_value_map.clone(),
+            packed_values: packed_unit_values.clone(),
+        },
+        ProveUnitValues {
+            unit_index: 1,
+            unit_value_map: plan.run_plan.schedule.units[1].unit_value_map.clone(),
+            packed_values: packed_unit_values.clone(),
+        },
+    ];
+
+    let proof = build_witness_proof_artifact(
+        &catalog,
+        &plan.run_plan.schedule,
+        public_values_hash,
+        &[&first, &second],
+        &proof_values,
+        &group_values,
+        &unit_values,
+    )
+    .expect("proof artifact should build");
+    let encoded = encode_proof_artifact(&proof).expect("proof should encode");
+    let proof = parse_proof_artifact(&encoded).expect("proof should parse");
+
+    let proof_values_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_PROOF_VALUES_SEGMENT_ID)
+        .expect("proof values segment should exist");
+    let proof_values = parse_pcs_proof_values_segment(&proof_values_segment.data)
+        .expect("proof values should parse");
+    assert_eq!(proof_values.values, vec![[51, 52, 53]]);
+
+    let group_values_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == GROUP_VALUES_SEGMENT_ID)
+        .expect("group values segment should exist");
+    let group_values =
+        parse_group_values_segment(&group_values_segment.data).expect("group values should parse");
+    assert_eq!(group_values.values, vec![[61, 62, 63]]);
 
     let unit_values_segment = proof
         .segments
