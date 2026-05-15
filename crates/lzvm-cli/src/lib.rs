@@ -8,13 +8,16 @@ use lzvm_artifacts::fixed::{
 };
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
-    read_key_directory_layout, validate_key_directory_layout,
+    read_key_directory_layout, validate_key_directory_layout, KeyDirectoryCatalog,
 };
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_material};
+use lzvm_artifacts::pcs_material_segment::{
+    parse_pcs_material_manifest_segment, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+};
 use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file,
 };
-use lzvm_artifacts::proof::read_proof_artifact_file;
+use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, read_unit_setup_info_file,
@@ -432,12 +435,57 @@ fn verify_setup_preflight(
         );
         return 1;
     }
+    if let Err(error) = validate_pcs_material_manifest(&catalog, &proof) {
+        let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
+        return 1;
+    }
 
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "units={}", catalog.units.len());
     let _ = writeln!(stdout, "segments={}", proof.segments.len());
     let _ = writeln!(stdout, "public_values={}", public_values.values.len());
     0
+}
+
+fn validate_pcs_material_manifest(
+    catalog: &KeyDirectoryCatalog,
+    proof: &ProofArtifact,
+) -> Result<(), String> {
+    let segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
+        .ok_or_else(|| "missing PCS material manifest segment".to_owned())?;
+    let manifest = parse_pcs_material_manifest_segment(&segment.data)
+        .map_err(|error| format!("invalid PCS material manifest segment: {error}"))?;
+    if manifest.units.len() != catalog.units.len() {
+        return Err("PCS material manifest unit count mismatch".to_owned());
+    }
+    for (index, (manifest_unit, catalog_unit)) in
+        manifest.units.iter().zip(catalog.units.iter()).enumerate()
+    {
+        let expected_unit_index =
+            u32::try_from(index).map_err(|_| "PCS material manifest unit index overflow")?;
+        if manifest_unit.unit_index != expected_unit_index {
+            return Err(format!("PCS material manifest mismatch for unit {index}"));
+        }
+        let material = catalog_unit
+            .pcs_material
+            .as_ref()
+            .ok_or_else(|| format!("setup catalog PCS material missing for unit {index}"))?;
+        if manifest_unit.plan_digest != material.plan_digest
+            || manifest_unit.fixed_column_digest != material.fixed_column_digest
+            || manifest_unit.constant_tree_digest != material.constant_tree_digest
+            || manifest_unit.constant_tree_root != material.constant_tree_root
+            || manifest_unit.fixed_byte_count != material.fixed_byte_count
+            || manifest_unit.constant_tree_byte_count != material.constant_tree_byte_count
+            || manifest_unit.leaf_byte_count != material.leaf_byte_count
+            || manifest_unit.node_byte_count != material.node_byte_count
+        {
+            return Err(format!("PCS material manifest mismatch for unit {index}"));
+        }
+    }
+    Ok(())
 }
 
 fn validate_setup_directory(
