@@ -1403,6 +1403,38 @@ fn write_unit_files_with_fri_quotient(unit: &KeyUnitPaths) {
     write_bytes(&unit.fixed_columns, sample_raw_fixed_columns());
 }
 
+fn write_unit_files_with_fri_quotient_and_unit_value(unit: &KeyUnitPaths) {
+    if let Some(path) = unit.setup_info_binary() {
+        write_unit_setup_metadata(&path, sample_setup_info_json_with_unit_value());
+    }
+    if let Some(path) = unit.expression_info_binary() {
+        write_expression_metadata(&path, sample_expression_info_json());
+    }
+    if let Some(path) = unit.verifier_info_binary() {
+        write_verifier_metadata(&path, sample_fri_quotient_verifier_info_json());
+    }
+
+    let program = sample_program_file_with_expression_and_regular_constraints(
+        sample_constant_fri_expression_program(),
+        sample_regular_constraint_program(),
+    );
+    if let Some(path) = unit.expression_program() {
+        write_bytes(&path, &program);
+    }
+    let verifier_program = encode_expression_program(&sample_expression_program())
+        .expect("verifier program should encode");
+    if let Some(path) = unit.verifier_program() {
+        write_bytes(&path, &verifier_program);
+    }
+
+    let root = VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4]);
+    write_bytes(
+        &unit.verification_key_binary(),
+        encode_verification_key_binary(&root).expect("verification key should encode"),
+    );
+    write_bytes(&unit.fixed_columns, sample_raw_fixed_columns());
+}
+
 fn write_unit_files_with_verifier_info(unit: &KeyUnitPaths, verifier_info: &str) {
     write_unit_files_with_verifier_info_and_regular_constraints(
         unit,
@@ -1428,6 +1460,14 @@ fn write_setup_directory_with_fri_quotient(root: &Path) {
     let layout = read_key_directory_layout(root).expect("layout should parse");
     for unit in &layout.units {
         write_unit_files_with_fri_quotient(unit);
+    }
+}
+
+fn write_setup_directory_with_fri_quotient_and_unit_value(root: &Path) {
+    write_global_files(root);
+    let layout = read_key_directory_layout(root).expect("layout should parse");
+    for unit in &layout.units {
+        write_unit_files_with_fri_quotient_and_unit_value(unit);
     }
 }
 
@@ -1520,6 +1560,14 @@ fn write_execution_ready_setup_directory(root: &Path) {
 
 fn write_execution_ready_setup_directory_with_fri_quotient(root: &Path) {
     write_setup_directory_with_fri_quotient(root);
+    let root = root.to_str().expect("path should be utf-8");
+    run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
+    run_setup_command(&["setup", "write-pcs-directory", root]);
+    run_setup_command(&["setup", "write-pcs-material-directory", root]);
+}
+
+fn write_execution_ready_setup_directory_with_fri_quotient_and_unit_value(root: &Path) {
+    write_setup_directory_with_fri_quotient_and_unit_value(root);
     let root = root.to_str().expect("path should be utf-8");
     run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
     run_setup_command(&["setup", "write-pcs-directory", root]);
@@ -3511,6 +3559,163 @@ fn runs_prove_witness_for_aggregate_with_evaluation_values_segment() {
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
         "status=ok\nunits=4\nsegments=11\npublic_values=1\n"
+    );
+    assert!(verify_stderr.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn runs_prove_witness_for_aggregate_fri_with_unit_values_segment() {
+    let dir = temp_dir("prove-witness-aggregate-fri-unit-values-segment");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_fri_quotient_and_unit_value(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let evaluation_values_segment_path = dir.join("evaluation_values_segment.bin");
+    let unit_values_segment_path = dir.join("unit_values_segment.bin");
+    let expected_evaluations = vec![
+        PcsEvaluationUnitSegment {
+            unit_index: 0,
+            values: vec![[30, 31, 32], [40, 41, 42]],
+        },
+        PcsEvaluationUnitSegment {
+            unit_index: 1,
+            values: vec![[50, 51, 52], [60, 61, 62]],
+        },
+        PcsEvaluationUnitSegment {
+            unit_index: 2,
+            values: vec![[70, 71, 72], [80, 81, 82]],
+        },
+        PcsEvaluationUnitSegment {
+            unit_index: 3,
+            values: vec![[90, 91, 92], [100, 101, 102]],
+        },
+    ];
+    let expected_unit_values = UnitValuesSegment {
+        units: vec![
+            UnitValuesUnitSegment {
+                unit_index: 0,
+                values: vec![101, 201, 202, 203],
+            },
+            UnitValuesUnitSegment {
+                unit_index: 1,
+                values: vec![111, 211, 212, 213],
+            },
+            UnitValuesUnitSegment {
+                unit_index: 2,
+                values: vec![121, 221, 222, 223],
+            },
+            UnitValuesUnitSegment {
+                unit_index: 3,
+                values: vec![131, 231, 232, 233],
+            },
+        ],
+    };
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [31_u8]);
+    write_bytes(
+        &evaluation_values_segment_path,
+        encode_pcs_evaluation_segment(&PcsEvaluationSegment {
+            units: expected_evaluations.clone(),
+        })
+        .expect("evaluation segment should encode"),
+    );
+    write_bytes(
+        &unit_values_segment_path,
+        encode_unit_values_segment(&expected_unit_values).expect("unit values should encode"),
+    );
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--aggregate",
+            "--save-outputs",
+            "--evaluation-values-segment",
+            evaluation_values_segment_path
+                .to_str()
+                .expect("evaluation segment path should be utf-8"),
+            "--unit-values-segment",
+            unit_values_segment_path
+                .to_str()
+                .expect("unit values segment path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let proof_path = output_dir.join("proof.bin");
+    let proof_bytes = fs::read(&proof_path).expect("proof output should read");
+    let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
+    assert_eq!(proof.segments.len(), 12);
+
+    let unit_values_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == UNIT_VALUES_SEGMENT_ID)
+        .expect("unit values segment should exist");
+    let unit_values =
+        parse_unit_values_segment(&unit_values_segment.data).expect("unit values should parse");
+    assert_eq!(unit_values, expected_unit_values);
+
+    let evaluation_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
+        .expect("evaluation segment should exist");
+    let evaluations = parse_pcs_evaluation_segment(&evaluation_segment.data)
+        .expect("evaluation segment should parse");
+    assert_eq!(evaluations.units, expected_evaluations);
+
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert_eq!(
+        String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
+        "status=ok\nunits=4\nsegments=12\npublic_values=1\n"
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");

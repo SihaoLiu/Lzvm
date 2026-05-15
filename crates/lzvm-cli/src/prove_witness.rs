@@ -680,10 +680,27 @@ fn build_witness_transcript_proof_artifact_for_all_units(
                 .map_err(|error| format!("build evaluation segment failed: {error}"))?
         }
     };
-    let transcript_inputs = request
+    let transcript_auxiliary_inputs = request
         .outputs
         .iter()
         .map(|output| {
+            let unit_index = output.commitments().unit_index();
+            let mut inputs = output.auxiliary_inputs().clone();
+            if let Some(values) = request
+                .unit_values
+                .iter()
+                .find(|values| values.unit_index == unit_index)
+            {
+                inputs.unit_values = values.packed_values.clone();
+            }
+            inputs
+        })
+        .collect::<Vec<_>>();
+    let transcript_inputs = request
+        .outputs
+        .iter()
+        .zip(transcript_auxiliary_inputs.iter())
+        .map(|(output, auxiliary_inputs)| {
             let commitments = output.commitments();
             let unit_index = commitments.unit_index();
             let execution_unit = request
@@ -705,7 +722,7 @@ fn build_witness_transcript_proof_artifact_for_all_units(
                 execution_unit,
                 trace: output.trace(),
                 publics: output.publics(),
-                auxiliary_inputs: output.auxiliary_inputs(),
+                auxiliary_inputs,
                 material_segment: &material_segment,
                 witness_segment,
                 evaluation_segment: &evaluation_segment,
