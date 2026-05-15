@@ -5,17 +5,19 @@ use std::path::Path;
 use lzvm_artifacts::key_directory::read_key_directory_catalog;
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
+use lzvm_field::Felt;
 use lzvm_prover::{
     build_constant_opening_segment, build_pcs_material_manifest_segment,
     build_pcs_query_plan_segment, build_witness_commitment_segment, build_witness_opening_segment,
-    derive_prove_execution_plan, run_prove_witness_commitments, ProveExecutionInputArtifacts,
-    ProveSchedule, ProveWitnessCommitments,
+    derive_prove_execution_plan, proof_values::build_pcs_proof_values_segment_from_packed_values,
+    run_prove_witness_commitments, ProveExecutionInputArtifacts, ProveSchedule,
+    ProveWitnessCommitments,
 };
 
 use crate::prove_plan::{parse_run_args, write_run_plan_summary, ParseError, ParsedRunArgs};
 
 pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
-    let parsed = match parse_run_args(args, 4, 5) {
+    let parsed = match parse_witness_args(args) {
         Ok(parsed) => parsed,
         Err(ParseError::Usage) => return write_usage(stderr),
         Err(ParseError::Invalid(message)) => {
@@ -24,7 +26,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
 
-    let catalog = match read_key_directory_catalog(&parsed.positionals[0]) {
+    let catalog = match read_key_directory_catalog(&parsed.run_args.positionals[0]) {
         Ok(catalog) => catalog,
         Err(error) => {
             let _ = writeln!(stderr, "prove witness failed: {error}");
@@ -32,8 +34,8 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
 
-    let inputs = parsed_inputs(&parsed);
-    let plan = match derive_prove_execution_plan(&catalog, parsed.request, inputs) {
+    let inputs = parsed_inputs(&parsed.run_args);
+    let plan = match derive_prove_execution_plan(&catalog, parsed.run_args.request, inputs) {
         Ok(plan) => plan,
         Err(error) => {
             let _ = writeln!(stderr, "prove witness failed: {error}");
@@ -53,6 +55,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             &catalog,
             &plan.run_plan.schedule,
             plan.inputs.public_inputs.as_deref(),
+            parsed.proof_values.as_deref(),
             &output,
         ) {
             let _ = writeln!(stderr, "prove witness failed: {message}");
@@ -88,6 +91,37 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     0
 }
 
+struct ParsedWitnessArgs {
+    run_args: ParsedRunArgs,
+    proof_values: Option<std::path::PathBuf>,
+}
+
+fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
+    let mut proof_values = None;
+    let mut filtered = Vec::with_capacity(args.len());
+    let mut index = 0;
+    while index < args.len() {
+        if args[index] == "--proof-values" {
+            index += 1;
+            let value = args
+                .get(index)
+                .ok_or_else(|| ParseError::Invalid("missing --proof-values value".to_owned()))?;
+            if proof_values.replace((*value).into()).is_some() {
+                return Err(ParseError::Invalid(
+                    "duplicate --proof-values option".to_owned(),
+                ));
+            }
+        } else {
+            filtered.push(args[index]);
+        }
+        index += 1;
+    }
+    Ok(ParsedWitnessArgs {
+        run_args: parse_run_args(&filtered, 4, 5)?,
+        proof_values,
+    })
+}
+
 fn parsed_inputs(parsed: &ParsedRunArgs) -> ProveExecutionInputArtifacts {
     ProveExecutionInputArtifacts {
         witness_library: parsed.positionals[2].clone(),
@@ -101,6 +135,7 @@ fn save_witness_outputs(
     catalog: &lzvm_artifacts::key_directory::KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     public_inputs: Option<&Path>,
+    proof_values_input: Option<&Path>,
     output: &ProveWitnessCommitments,
 ) -> Result<(), String> {
     fs::create_dir_all(output_dir).map_err(|error| {
@@ -112,7 +147,14 @@ fn save_witness_outputs(
 
     let segment = build_witness_commitment_segment(output)
         .map_err(|error| format!("build witness segment failed: {error}"))?;
-    let proof_bytes = build_proof_bytes(catalog, schedule, public_inputs, output, &segment)?;
+    let proof_bytes = build_proof_bytes(
+        catalog,
+        schedule,
+        public_inputs,
+        proof_values_input,
+        output,
+        &segment,
+    )?;
 
     for commitment in output.stage_commitments().commitments() {
         let root_path = output_dir.join(format!(
@@ -144,6 +186,7 @@ fn build_proof_bytes(
     catalog: &lzvm_artifacts::key_directory::KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     public_inputs: Option<&Path>,
+    proof_values_input: Option<&Path>,
     output: &ProveWitnessCommitments,
     segment: &ProofSegment,
 ) -> Result<Option<Vec<u8>>, String> {
@@ -171,20 +214,61 @@ fn build_proof_bytes(
             .map_err(|error| format!("build constant opening segment failed: {error}"))?;
     let opening_segment = build_witness_opening_segment(schedule, &query_segment, output)
         .map_err(|error| format!("build witness opening segment failed: {error}"))?;
+    let packed_proof_values = match proof_values_input {
+        Some(path) => read_packed_proof_values(path)?,
+        None => Vec::new(),
+    };
+    let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(
+        &catalog.layout.global_info,
+        &packed_proof_values,
+    )
+    .map_err(|error| format!("build proof values segment failed: {error}"))?;
+    let mut segments = vec![
+        material_segment,
+        query_segment,
+        constant_opening_segment,
+        opening_segment,
+        segment.clone(),
+    ];
+    if let Some(proof_values_segment) = proof_values_segment {
+        segments.push(proof_values_segment);
+    }
     let proof = ProofArtifact {
         setup_hash: schedule.setup_hash,
         public_values_hash,
-        segments: vec![
-            material_segment,
-            query_segment,
-            constant_opening_segment,
-            opening_segment,
-            segment.clone(),
-        ],
+        segments,
     };
     encode_proof_artifact(&proof)
         .map(Some)
         .map_err(|error| format!("encode witness proof artifact failed: {error}"))
+}
+
+fn read_packed_proof_values(path: &Path) -> Result<Vec<Felt>, String> {
+    let bytes = fs::read(path).map_err(|error| {
+        format!(
+            "read proof values input failed: {}: {error}",
+            path.display()
+        )
+    })?;
+    if bytes.len() % 8 != 0 {
+        return Err(format!(
+            "read proof values input failed: {}: byte length is not aligned to field words",
+            path.display()
+        ));
+    }
+    bytes
+        .chunks_exact(8)
+        .enumerate()
+        .map(|(index, chunk)| {
+            let value = u64::from_le_bytes(chunk.try_into().expect("chunk length checked"));
+            Felt::from_canonical(value).map_err(|error| {
+                format!(
+                    "read proof values input failed: {}: field word {index} is invalid: {error}",
+                    path.display()
+                )
+            })
+        })
+        .collect()
 }
 
 fn write_output_file(path: &Path, value: &[u8]) -> Result<(), String> {
