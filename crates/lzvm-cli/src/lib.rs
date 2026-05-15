@@ -4,7 +4,8 @@ use std::path::Path;
 use lzvm_artifacts::fixed::{read_fixed_columns_file, FixedColumn, FixedColumns};
 use lzvm_artifacts::key_directory::read_key_directory_catalog;
 use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, read_unit_setup_info_file};
-use lzvm_setup::write_base_fixed_columns;
+use lzvm_artifacts::verification_key::{read_verification_key_binary_file, VerificationKeyRoot};
+use lzvm_setup::{write_base_constant_tree, write_base_fixed_columns};
 use serde_json::Value;
 
 pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -23,6 +24,17 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             write_fixed_columns_native(setup_info_bin, columns_bin, out_const, stdout, stderr)
         }
         ["setup", "write-fixed-native", ..] => write_fixed_native_usage(stderr),
+        ["setup", "write-const-tree", setup_info_bin, tree_bin, root_bin, out_consttree] => {
+            write_constant_tree(
+                setup_info_bin,
+                tree_bin,
+                root_bin,
+                out_consttree,
+                stdout,
+                stderr,
+            )
+        }
+        ["setup", "write-const-tree", ..] => write_const_tree_usage(stderr),
         _ => write_validate_usage(stderr),
     }
 }
@@ -129,6 +141,51 @@ fn write_fixed_columns_native(
     };
 
     publish_fixed_columns(out_const, &columns, &setup, stdout, stderr)
+}
+
+fn write_constant_tree(
+    setup_info_bin: &str,
+    tree_bin: &str,
+    root_bin: &str,
+    out_consttree: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let setup = match read_unit_setup_info_binary_file(setup_info_bin) {
+        Ok(setup) => setup,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup constant-tree write failed: {error}");
+            return 1;
+        }
+    };
+    let tree = match std::fs::read(tree_bin) {
+        Ok(tree) => tree,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup constant-tree write failed: {error}");
+            return 1;
+        }
+    };
+    let root = match read_verification_key_binary_file(root_bin) {
+        Ok(root) => root,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup constant-tree write failed: {error}");
+            return 1;
+        }
+    };
+
+    match write_base_constant_tree(out_consttree, &tree, &setup, Some(&root)) {
+        Ok(report) => {
+            let _ = writeln!(stdout, "status=ok");
+            let _ = writeln!(stdout, "bytes_written={}", report.bytes_written);
+            let _ = writeln!(stdout, "root={}", format_root(&report.root));
+            let _ = writeln!(stdout, "output={}", report.path.display());
+            0
+        }
+        Err(error) => {
+            let _ = writeln!(stderr, "setup constant-tree write failed: {error}");
+            1
+        }
+    }
 }
 
 fn read_fixed_columns_json(path: impl AsRef<Path>) -> Result<FixedColumns, String> {
@@ -263,4 +320,23 @@ fn write_fixed_native_usage(stderr: &mut dyn Write) -> i32 {
         "usage: lzvm setup write-fixed-native <setup-info-bin> <columns-bin> <out-const>"
     );
     2
+}
+
+fn write_const_tree_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm setup write-const-tree <setup-info-bin> <tree-bin> <root-bin> <out-consttree>"
+    );
+    2
+}
+
+fn format_root(root: &VerificationKeyRoot) -> String {
+    match root {
+        VerificationKeyRoot::FieldElements(values) => values
+            .iter()
+            .map(u64::to_string)
+            .collect::<Vec<_>>()
+            .join(","),
+        VerificationKeyRoot::DecimalScalar(value) => value.clone(),
+    }
 }

@@ -69,6 +69,14 @@ This JSON path is kept for compact fixtures and debugging. The source shape is:
 
 The command writes through a staging path, validates the staged artifact against the setup metadata, and then publishes the final output path.
 
+Publish a raw constant-tree artifact after validating its setup metadata and expected root:
+
+```sh
+cargo run -p lzvm-cli -- setup write-const-tree <setup-info-bin> <tree-bin> <root-bin> <out-consttree>
+```
+
+This command validates the raw tree length and root before publishing through a staging path. It does not compute the tree; native tree construction remains a backend task with Rust/C++/CUDA parity checks.
+
 ## Verification
 
 ```sh
