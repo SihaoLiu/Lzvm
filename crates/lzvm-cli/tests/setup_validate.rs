@@ -70,7 +70,7 @@ use lzvm_artifacts::witness_segment::{
     encode_witness_commitment_segment, parse_witness_commitment_segment, WitnessCommitmentSegment,
     WitnessCommitmentStageSegment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
-use lzvm_cli::run_cli;
+use lzvm_cli::{build_witness_proof_core_artifact, run_cli};
 use lzvm_field::{poseidon2_hash_16, Ext3, Felt};
 use lzvm_prover::pcs_fri::{verify_fri_fold, verify_fri_opening_folds, PcsFriOpeningFoldRequest};
 use lzvm_prover::pcs_transcript::{
@@ -2699,6 +2699,115 @@ fn writes_prove_witness_proof_without_save_outputs() {
     assert_eq!(proof.setup_hash, setup_hash);
     assert_eq!(proof.segments.len(), 5);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn builds_witness_proof_core_for_multiple_units() {
+    let dir = temp_dir("prove-witness-core-multi");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+
+    let public_values = sample_public_values(setup_hash);
+    let public_values_hash = public_values_digest(&public_values).expect("hash should compute");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan {
+            input_data: Some(input_data),
+            partition_count: 1,
+            partition_ids: vec![0],
+            worker_index: 0,
+        }),
+        options: ProveRunOptions::default_for_output(output_dir),
+        gpu: GpuRunOptions::default(),
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        request,
+        ProveExecutionInputArtifacts {
+            witness_library,
+            guest_image,
+            public_inputs: Some(public_values_path),
+        },
+    )
+    .expect("execution plan should derive");
+    let first = run_prove_witness_commitments(&plan, 0).expect("first unit should run");
+    let second = run_prove_witness_commitments(&plan, 1).expect("second unit should run");
+
+    let proof = build_witness_proof_core_artifact(
+        &catalog,
+        &plan.run_plan.schedule,
+        public_values_hash,
+        &[&first, &second],
+    )
+    .expect("core proof artifact should build");
+    let encoded = encode_proof_artifact(&proof).expect("proof should encode");
+    let proof = parse_proof_artifact(&encoded).expect("proof should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let witness_ids = proof
+        .segments
+        .iter()
+        .filter(|segment| segment.id < PCS_MATERIAL_MANIFEST_SEGMENT_ID)
+        .map(|segment| segment.id)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        witness_ids,
+        vec![
+            WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+            WITNESS_COMMITMENT_SEGMENT_BASE_ID + 1
+        ]
+    );
+    let query_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
+        .expect("query segment should be present");
+    let query_plan =
+        parse_pcs_query_plan_segment(&query_segment.data).expect("query segment should parse");
+    assert_eq!(
+        query_plan
+            .units
+            .iter()
+            .map(|unit| unit.unit_index)
+            .collect::<Vec<_>>(),
+        vec![0, 1]
+    );
+    let constant_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == CONSTANT_OPENING_SEGMENT_ID)
+        .expect("constant opening segment should be present");
+    let constant_opening = parse_constant_opening_segment(&constant_segment.data)
+        .expect("constant opening segment should parse");
+    assert_eq!(constant_opening.units.len(), 2);
+    let witness_opening_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == WITNESS_OPENING_SEGMENT_ID)
+        .expect("witness opening segment should be present");
+    let witness_opening = parse_witness_opening_segment(&witness_opening_segment.data)
+        .expect("witness opening segment should parse");
+    assert_eq!(
+        witness_opening
+            .units
+            .iter()
+            .map(|unit| unit.unit_index)
+            .collect::<Vec<_>>(),
+        vec![0, 1]
+    );
 }
 
 #[test]

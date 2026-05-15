@@ -15,12 +15,13 @@ use lzvm_prover::{
     build_pcs_fri_transcript_values_from_trace_segments, build_pcs_material_manifest_segment,
     build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_challenge, build_witness_commitment_segment,
-    build_witness_opening_segment, derive_prove_execution_plan,
-    proof_values::build_pcs_proof_values_segment_from_packed_values,
+    build_witness_opening_segment, build_witness_opening_segment_batch,
+    derive_prove_execution_plan, proof_values::build_pcs_proof_values_segment_from_packed_values,
     run_prove_witness_commitments_with_trace,
     unit_values::build_unit_values_segment_from_packed_values, ProveExecutionInputArtifacts,
     ProveExecutionUnitArtifacts, ProvePcsEvaluationValues, ProvePcsFriTranscriptTraceSegmentValues,
-    ProveSchedule, ProveWitnessAuxiliaryInputs, ProveWitnessTraceCommitments,
+    ProveSchedule, ProveWitnessAuxiliaryInputs, ProveWitnessCommitments,
+    ProveWitnessTraceCommitments,
 };
 
 use crate::prove_plan::{parse_run_args, write_run_plan_summary, ParseError, ParsedRunArgs};
@@ -328,6 +329,52 @@ fn save_witness_outputs(
         .join(format!("unit-{}.witness-segment", commitments.unit_index()));
     write_output_file(&segment_path, &segment.data)?;
     Ok(())
+}
+
+pub fn build_witness_proof_core_artifact(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
+    public_values_hash: [u8; 32],
+    witness_outputs: &[&ProveWitnessCommitments],
+) -> Result<ProofArtifact, String> {
+    let material_segment = build_pcs_material_manifest_segment(schedule)
+        .map_err(|error| format!("build material manifest segment failed: {error}"))?;
+    let mut witness_segments = Vec::with_capacity(witness_outputs.len());
+    for output in witness_outputs {
+        witness_segments.push(
+            build_witness_commitment_segment(output)
+                .map_err(|error| format!("build witness segment failed: {error}"))?,
+        );
+    }
+    witness_segments.sort_by_key(|segment| segment.id);
+
+    let query_segment = build_pcs_query_plan_segment(
+        schedule,
+        public_values_hash,
+        &material_segment,
+        &witness_segments,
+    )
+    .map_err(|error| format!("build query plan segment failed: {error}"))?;
+    let constant_opening_segment =
+        build_constant_opening_segment(catalog, schedule, &query_segment)
+            .map_err(|error| format!("build constant opening segment failed: {error}"))?;
+    let opening_segment =
+        build_witness_opening_segment_batch(schedule, &query_segment, witness_outputs)
+            .map_err(|error| format!("build witness opening segment failed: {error}"))?;
+
+    let mut segments = vec![
+        material_segment,
+        query_segment,
+        constant_opening_segment,
+        opening_segment,
+    ];
+    segments.extend(witness_segments);
+
+    Ok(ProofArtifact {
+        setup_hash: schedule.setup_hash,
+        public_values_hash,
+        segments,
+    })
 }
 
 fn build_proof_bytes(
