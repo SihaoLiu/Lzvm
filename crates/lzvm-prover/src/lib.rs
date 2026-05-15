@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::constraint_program::ConstraintProgram;
+use lzvm_artifacts::expression_program::ExpressionProgram;
 use lzvm_artifacts::guest_image::{read_guest_image_file, GuestImageError, GuestImageInfo};
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryError, KeyUnitKind,
@@ -321,6 +322,8 @@ pub struct ProveExecutionPlan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProveExecutionUnitArtifacts {
     pub fixed_columns: PathBuf,
+    pub expression_program: ExpressionProgram,
+    pub fri_expression_id: Option<u32>,
     pub regular_constraints: ConstraintProgram,
     pub setup: UnitSetupInfo,
     pub fixed_column_count: usize,
@@ -632,6 +635,8 @@ fn derive_prove_execution_units(
         })?;
         units.push(ProveExecutionUnitArtifacts {
             fixed_columns: unit.paths.fixed_columns.clone(),
+            expression_program: unit.expression_program.clone(),
+            fri_expression_id: unit.metadata.verifier.quotient.expression_id,
             regular_constraints: unit.regular_constraints.clone(),
             setup: unit.metadata.setup.clone(),
             fixed_column_count,

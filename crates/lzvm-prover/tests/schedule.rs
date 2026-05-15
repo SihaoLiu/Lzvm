@@ -490,11 +490,11 @@ fn derives_prove_execution_plan_with_input_artifacts() {
     fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
     fs::write(&public_inputs, [3_u8]).expect("public inputs should be written");
 
-    let catalog = sample_catalog(vec![sample_unit_with_pcs_material(
-        KeyUnitKind::Basic,
-        0,
-        64,
-    )]);
+    let mut unit = sample_unit_with_pcs_material(KeyUnitKind::Basic, 0, 64);
+    unit.expression_program.numbers = vec![17, 19, 23];
+    unit.metadata.verifier.quotient.expression_id = Some(42);
+    let expected_expression_program = unit.expression_program.clone();
+    let catalog = sample_catalog(vec![unit]);
     let request = ProveRunRequest {
         pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
         options: ProveRunOptions::default_for_output(dir.join("out")),
@@ -519,6 +519,11 @@ fn derives_prove_execution_plan_with_input_artifacts() {
     assert_eq!(plan.guest_image_info.byte_len, 64);
     assert_eq!(plan.guest_image_info.machine, 243);
     assert_eq!(plan.guest_image_info.entry, 0x8000_0000);
+    assert_eq!(
+        plan.units[0].expression_program,
+        expected_expression_program
+    );
+    assert_eq!(plan.units[0].fri_expression_id, Some(42));
 }
 
 #[test]
