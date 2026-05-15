@@ -3,6 +3,7 @@ use std::fmt;
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryError, KeyUnitKind,
 };
+use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,8 +25,18 @@ pub struct ProveUnitSchedule {
     pub unit_name: Option<String>,
     pub base_domain_bits: u32,
     pub extended_domain_bits: u32,
+    pub base_domain_size: u64,
+    pub extended_domain_size: u64,
+    pub blowup_factor: u64,
     pub query_count: u32,
+    pub proof_of_work_bits: u32,
+    pub merkle_tree_arity: u32,
+    pub transcript_arity: Option<u32>,
+    pub constant_width: u32,
     pub stage_commit_widths: Vec<u32>,
+    pub opening_points: Vec<i64>,
+    pub fri_layers: Vec<PcsFriLayer>,
+    pub final_layer_bits: u32,
     pub fixed_bytes: u64,
     pub constant_tree_root: Option<VerificationKeyRoot>,
 }
@@ -84,8 +95,18 @@ pub fn derive_prove_schedule(
             unit_name: unit.paths.unit_name.clone(),
             base_domain_bits: unit.pcs_plan.base_domain_bits,
             extended_domain_bits: unit.pcs_plan.extended_domain_bits,
+            base_domain_size: unit.pcs_plan.base_domain_size,
+            extended_domain_size: unit.pcs_plan.extended_domain_size,
+            blowup_factor: unit.pcs_plan.blowup_factor,
             query_count: unit.pcs_plan.query_count,
+            proof_of_work_bits: unit.pcs_plan.proof_of_work_bits,
+            merkle_tree_arity: unit.pcs_plan.merkle_tree_arity,
+            transcript_arity: unit.pcs_plan.transcript_arity,
+            constant_width: unit.pcs_plan.constant_width,
             stage_commit_widths: unit.pcs_plan.stage_commit_widths.clone(),
+            opening_points: unit.pcs_plan.opening_points.clone(),
+            fri_layers: unit.pcs_plan.fri_layers.clone(),
+            final_layer_bits: unit.pcs_plan.final_layer_bits,
             fixed_bytes: unit.actual_fixed_bytes,
             constant_tree_root: unit.constant_tree_root.clone(),
         });
