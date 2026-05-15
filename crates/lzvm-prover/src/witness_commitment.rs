@@ -288,6 +288,37 @@ impl WitnessTraceCommitments {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WitnessStageExtendedValues {
+    stage_index: usize,
+    source_rows: usize,
+    extended_rows: usize,
+    columns: usize,
+    values: Vec<Felt>,
+}
+
+impl WitnessStageExtendedValues {
+    pub fn stage_index(&self) -> usize {
+        self.stage_index
+    }
+
+    pub fn source_row_count(&self) -> usize {
+        self.source_rows
+    }
+
+    pub fn extended_row_count(&self) -> usize {
+        self.extended_rows
+    }
+
+    pub fn column_count(&self) -> usize {
+        self.columns
+    }
+
+    pub fn values(&self) -> &[Felt] {
+        &self.values
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WitnessTraceCommitmentError {
     Layout(WitnessTraceLayoutError),
     StageLeaf(WitnessStageLeafError),
@@ -401,6 +432,33 @@ pub fn commit_witness_trace_stages(
     }
 
     Ok(WitnessTraceCommitments { commitments })
+}
+
+pub fn extend_witness_trace_stage_values(
+    trace: &WitnessTraceBuffer,
+    unit: &ProveUnitSchedule,
+) -> Result<Vec<WitnessStageExtendedValues>, WitnessTraceCommitmentError> {
+    let layout = derive_witness_trace_layout(unit)?;
+    let source_bits = usize::try_from(unit.base_domain_bits)
+        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
+    let target_bits = usize::try_from(unit.extended_domain_bits)
+        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
+
+    let mut stages = Vec::with_capacity(layout.stage_count());
+    for stage_info in layout.stages() {
+        let stage = layout.stage_trace(trace, stage_info.stage_index)?;
+        let leaves = extend_witness_stage_leaves(&stage, source_bits, target_bits)?;
+        let values = decode_witness_stage_leaf_values(&leaves)?;
+        stages.push(WitnessStageExtendedValues {
+            stage_index: leaves.stage_index(),
+            source_rows: leaves.source_row_count(),
+            extended_rows: leaves.extended_row_count(),
+            columns: leaves.column_count(),
+            values,
+        });
+    }
+
+    Ok(stages)
 }
 
 pub fn commit_witness_stage_leaves(

@@ -5,8 +5,9 @@ use lzvm_field::{
 };
 use lzvm_prover::witness_commitment::{
     commit_witness_stage_leaves, commit_witness_trace_stages, decode_witness_stage_leaf_values,
-    open_witness_stage_commitment, verify_witness_stage_opening_root, WitnessStageCommitmentError,
-    WitnessStageOpeningError, WitnessTraceCommitmentError,
+    extend_witness_trace_stage_values, open_witness_stage_commitment,
+    verify_witness_stage_opening_root, WitnessStageCommitmentError, WitnessStageOpeningError,
+    WitnessTraceCommitmentError,
 };
 use lzvm_prover::witness_commitment::{extend_witness_stage_leaves, WitnessStageLeafError};
 use lzvm_prover::witness_layout::{derive_witness_trace_layout, WitnessTraceLayoutError};
@@ -330,6 +331,39 @@ fn commits_all_witness_trace_stages_from_the_unit_schedule() {
 
         assert_eq!(&commitments.commitments()[stage_index - 1], &expected);
     }
+}
+
+#[test]
+fn extends_all_witness_trace_stages_for_expression_inputs() {
+    let unit = sample_unit(2, vec![2, 1]);
+    let trace = parse_witness_trace(&encode_values(&[5, 9, 11, 1, 9, 13]), 2, 3)
+        .expect("trace should parse");
+
+    let stages =
+        extend_witness_trace_stage_values(&trace, &unit).expect("trace stages should extend");
+
+    let stage_1_column_0 = coset_extend_evaluations(&[Felt::from_u64(5), Felt::from_u64(1)], 1, 2)
+        .expect("column should extend");
+    let stage_1_column_1 = coset_extend_evaluations(&[Felt::from_u64(9), Felt::from_u64(9)], 1, 2)
+        .expect("column should extend");
+    let expected_stage_1 = (0..4)
+        .flat_map(|row| [stage_1_column_0[row], stage_1_column_1[row]])
+        .collect::<Vec<_>>();
+    let expected_stage_2 =
+        coset_extend_evaluations(&[Felt::from_u64(11), Felt::from_u64(13)], 1, 2)
+            .expect("column should extend");
+
+    assert_eq!(stages.len(), 2);
+    assert_eq!(stages[0].stage_index(), 1);
+    assert_eq!(stages[0].source_row_count(), 2);
+    assert_eq!(stages[0].extended_row_count(), 4);
+    assert_eq!(stages[0].column_count(), 2);
+    assert_eq!(stages[0].values(), expected_stage_1);
+    assert_eq!(stages[1].stage_index(), 2);
+    assert_eq!(stages[1].source_row_count(), 2);
+    assert_eq!(stages[1].extended_row_count(), 4);
+    assert_eq!(stages[1].column_count(), 1);
+    assert_eq!(stages[1].values(), expected_stage_2);
 }
 
 #[test]
