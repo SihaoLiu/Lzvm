@@ -1,6 +1,13 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use lzvm_artifacts::proof::ProofSegment;
+use lzvm_artifacts::witness_segment::{
+    encode_witness_commitment_segment, WitnessCommitmentSegment, WitnessCommitmentSegmentError,
+    WitnessCommitmentStageSegment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+};
+use sha2::{Digest, Sha256};
+
 use crate::witness_commitment::{
     commit_witness_trace_stages, WitnessTraceCommitmentError, WitnessTraceCommitments,
 };
@@ -54,6 +61,12 @@ pub enum ProveWitnessCommitmentError {
     Layout(WitnessTraceLayoutError),
     WitnessRun(WitnessTraceRunError),
     Commit(WitnessTraceCommitmentError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProveWitnessSegmentError {
+    LengthOverflow,
+    Segment(WitnessCommitmentSegmentError),
 }
 
 impl fmt::Display for ProveWitnessCommitmentError {
@@ -117,6 +130,30 @@ impl From<WitnessTraceCommitmentError> for ProveWitnessCommitmentError {
     }
 }
 
+impl fmt::Display for ProveWitnessSegmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LengthOverflow => write!(f, "prove witness segment length overflow"),
+            Self::Segment(error) => write!(f, "prove witness segment encode failed: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for ProveWitnessSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Segment(error) => Some(error),
+            Self::LengthOverflow => None,
+        }
+    }
+}
+
+impl From<WitnessCommitmentSegmentError> for ProveWitnessSegmentError {
+    fn from(error: WitnessCommitmentSegmentError) -> Self {
+        Self::Segment(error)
+    }
+}
+
 pub fn run_prove_witness_commitments(
     plan: &ProveExecutionPlan,
     unit_index: usize,
@@ -143,6 +180,47 @@ pub fn run_prove_witness_commitments(
         trace_rows,
         trace_columns,
         stage_commitments,
+    })
+}
+
+pub fn build_witness_commitment_segment(
+    output: &ProveWitnessCommitments,
+) -> Result<ProofSegment, ProveWitnessSegmentError> {
+    let unit_index =
+        u32::try_from(output.unit_index()).map_err(|_| ProveWitnessSegmentError::LengthOverflow)?;
+    let id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
+        .checked_add(unit_index)
+        .ok_or(ProveWitnessSegmentError::LengthOverflow)?;
+    let mut stages = Vec::with_capacity(output.stage_commitments().stage_count());
+    for commitment in output.stage_commitments().commitments() {
+        let stage_index = u32::try_from(commitment.stage_index())
+            .map_err(|_| ProveWitnessSegmentError::LengthOverflow)?;
+        let arity = u32::try_from(commitment.arity())
+            .map_err(|_| ProveWitnessSegmentError::LengthOverflow)?;
+        let tree_byte_count = u64::try_from(commitment.tree_bytes().len())
+            .map_err(|_| ProveWitnessSegmentError::LengthOverflow)?;
+        stages.push(WitnessCommitmentStageSegment {
+            stage_index,
+            arity,
+            root: commitment.root().map(|value| value.to_u64()),
+            tree_byte_count,
+            tree_digest: Sha256::digest(commitment.tree_bytes()).into(),
+        });
+    }
+
+    let segment = WitnessCommitmentSegment {
+        unit_index,
+        input_byte_count: u64::try_from(output.input_byte_count())
+            .map_err(|_| ProveWitnessSegmentError::LengthOverflow)?,
+        trace_rows: u64::try_from(output.trace_row_count())
+            .map_err(|_| ProveWitnessSegmentError::LengthOverflow)?,
+        trace_columns: u64::try_from(output.trace_column_count())
+            .map_err(|_| ProveWitnessSegmentError::LengthOverflow)?,
+        stages,
+    };
+    Ok(ProofSegment {
+        id,
+        data: encode_witness_commitment_segment(&segment)?,
     })
 }
 

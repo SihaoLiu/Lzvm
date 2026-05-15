@@ -13,3 +13,4 @@ path = "src/lib.rs"
 libloading = "0.8"
 lzvm-artifacts = { path = "../lzvm-artifacts" }
 lzvm-field = { path = "../lzvm-field" }
+sha2 = "0.10"

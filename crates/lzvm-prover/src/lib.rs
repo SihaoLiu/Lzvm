@@ -20,7 +20,8 @@ pub mod witness_runner;
 pub mod witness_trace;
 
 pub use prove_witness::{
-    run_prove_witness_commitments, ProveWitnessCommitmentError, ProveWitnessCommitments,
+    build_witness_commitment_segment, run_prove_witness_commitments, ProveWitnessCommitmentError,
+    ProveWitnessCommitments, ProveWitnessSegmentError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

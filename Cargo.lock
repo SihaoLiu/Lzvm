@@ -114,6 +114,7 @@ dependencies = [
  "libloading",
  "lzvm-artifacts",
  "lzvm-field",
+ "sha2",
 ]
 
 [[package]]

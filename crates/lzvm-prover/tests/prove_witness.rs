@@ -15,15 +15,19 @@ use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
 use lzvm_artifacts::setup_info::{FriStep, StarkStruct, UnitSetupInfo};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
+use lzvm_artifacts::witness_segment::{
+    parse_witness_commitment_segment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+};
 use lzvm_prover::witness_commitment::commit_witness_trace_stages;
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_loader::load_witness_library;
 use lzvm_prover::witness_runner::run_witness_trace;
 use lzvm_prover::{
-    derive_prove_execution_plan, run_prove_witness_commitments, GpuRunOptions,
-    ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest, ProveRunOptions,
-    ProveRunRequest, ProveWitnessCommitmentError,
+    build_witness_commitment_segment, derive_prove_execution_plan, run_prove_witness_commitments,
+    GpuRunOptions, ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest,
+    ProveRunOptions, ProveRunRequest, ProveWitnessCommitmentError,
 };
+use sha2::{Digest, Sha256};
 
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("lzvm-prover-witness-{}-{name}", std::process::id()))
@@ -295,6 +299,58 @@ fn runs_witness_and_commits_stages_from_execution_plan() {
     assert_eq!(output.trace_row_count(), 16);
     assert_eq!(output.trace_column_count(), 5);
     assert_eq!(output.stage_commitments(), &expected);
+}
+
+#[test]
+fn builds_witness_commitment_proof_segments() {
+    let dir = temp_dir("segment");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [13_u8]).expect("input data should be written");
+
+    let catalog = sample_catalog(sample_unit());
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let output = run_prove_witness_commitments(&plan, 0).expect("witness commitments should run");
+
+    let segment = build_witness_commitment_segment(&output).expect("witness segment should build");
+    let parsed =
+        parse_witness_commitment_segment(&segment.data).expect("witness segment should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(segment.id, WITNESS_COMMITMENT_SEGMENT_BASE_ID);
+    assert_eq!(parsed.unit_index, 0);
+    assert_eq!(parsed.input_byte_count, 1);
+    assert_eq!(parsed.trace_rows, 16);
+    assert_eq!(parsed.trace_columns, 5);
+    assert_eq!(
+        parsed.stages.len(),
+        output.stage_commitments().stage_count()
+    );
+    for (stage, commitment) in parsed
+        .stages
+        .iter()
+        .zip(output.stage_commitments().commitments())
+    {
+        assert_eq!(stage.stage_index, commitment.stage_index() as u32);
+        assert_eq!(stage.arity, commitment.arity() as u32);
+        assert_eq!(stage.root, commitment.root().map(|value| value.to_u64()));
+        assert_eq!(stage.tree_byte_count, commitment.tree_bytes().len() as u64);
+        let expected_digest: [u8; 32] = Sha256::digest(commitment.tree_bytes()).into();
+        assert_eq!(stage.tree_digest, expected_digest);
+    }
 }
 
 #[test]
