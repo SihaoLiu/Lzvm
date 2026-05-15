@@ -20,7 +20,8 @@ use lzvm_artifacts::group_values_segment::{
 };
 use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_artifacts::hint_program::{
-    encode_regular_hint_program, regular_hint_program_from_expression_info,
+    encode_global_hint_program, encode_regular_hint_program,
+    regular_hint_program_from_expression_info, HintProgram,
 };
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
@@ -498,6 +499,27 @@ fn sample_program_file_with_expression_and_regular_constraints(
         sections: expression_file.sections,
     })
     .expect("combined program should encode")
+}
+
+fn empty_hint_program() -> HintProgram {
+    HintProgram { hints: Vec::new() }
+}
+
+fn global_constraint_program_file(program: &GlobalConstraintProgram) -> Vec<u8> {
+    let constraints =
+        encode_global_constraint_program(program).expect("global constraints should encode");
+    let hints =
+        encode_global_hint_program(&empty_hint_program()).expect("global hints should encode");
+    let mut constraints_file =
+        parse_sectioned_file(&constraints, *b"chps", 1).expect("constraints should parse");
+    let hint_file = parse_sectioned_file(&hints, *b"chps", 1).expect("hints should parse");
+    constraints_file.sections.extend(hint_file.sections);
+    encode_sectioned_file(&SectionedFile {
+        kind: *b"chps",
+        version: 1,
+        sections: constraints_file.sections,
+    })
+    .expect("combined global program should encode")
 }
 
 fn sample_public_values(setup_hash: [u8; 32]) -> PublicValues {
@@ -1243,22 +1265,24 @@ int lzvm_witness_compute(const LzvmWitnessCall *call, LzvmWitnessResult *result)
 fn write_global_files_with_info(root: &Path, global_info: &str) {
     fs::create_dir_all(root).expect("fixture root should be created");
     write_global_metadata(&root.join("pilout.globalInfo.bin"), global_info);
-    let constraints = encode_global_constraint_program(&GlobalConstraintProgram {
-        entries: vec![],
-        ops: vec![],
-        args: vec![],
-        numbers: vec![],
-    })
-    .expect("global constraints should encode");
-    fs::write(root.join("pilout.globalConstraints.bin"), constraints)
-        .expect("global constraints program should be written");
+    fs::write(
+        root.join("pilout.globalConstraints.bin"),
+        global_constraint_program_file(&GlobalConstraintProgram {
+            entries: vec![],
+            ops: vec![],
+            args: vec![],
+            numbers: vec![],
+        }),
+    )
+    .expect("global constraints program should be written");
 }
 
 fn write_global_constraint_program(root: &Path, program: GlobalConstraintProgram) {
-    let constraints =
-        encode_global_constraint_program(&program).expect("global constraints should encode");
-    fs::write(root.join("pilout.globalConstraints.bin"), constraints)
-        .expect("global constraints program should be written");
+    fs::write(
+        root.join("pilout.globalConstraints.bin"),
+        global_constraint_program_file(&program),
+    )
+    .expect("global constraints program should be written");
 }
 
 fn write_global_files(root: &Path) {

@@ -221,6 +221,7 @@ fn sample_catalog(units: Vec<KeyUnitCatalogEntry>) -> KeyDirectoryCatalog {
             args: Vec::new(),
             numbers: Vec::new(),
         },
+        global_hints: empty_regular_hints(),
         units,
     }
 }

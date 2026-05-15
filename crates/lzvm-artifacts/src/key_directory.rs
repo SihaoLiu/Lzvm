@@ -11,8 +11,9 @@ use crate::expression_program::{
 use crate::fixed::{expected_raw_fixed_column_byte_count, FixedColumnError};
 use crate::global_info::{read_global_info_binary_file, CurveKind, GlobalInfo, GlobalInfoError};
 use crate::hint_program::{
-    encode_regular_hint_program, read_regular_hint_program_file,
-    regular_hint_program_from_expression_info, HintProgram, HintProgramError,
+    encode_global_hint_program, encode_regular_hint_program, read_global_hint_program_file,
+    read_regular_hint_program_file, regular_hint_program_from_expression_info, HintProgram,
+    HintProgramError,
 };
 use crate::metadata_bundle::{
     read_unit_metadata_bundle, MetadataBundleError, UnitMetadataBundle, UnitMetadataPaths,
@@ -46,6 +47,7 @@ pub struct KeyDirectoryLayout {
 pub struct KeyDirectoryCatalog {
     pub layout: KeyDirectoryLayout,
     pub global_constraints: GlobalConstraintProgram,
+    pub global_hints: HintProgram,
     pub units: Vec<KeyUnitCatalogEntry>,
 }
 
@@ -110,6 +112,7 @@ pub struct RequiredPath {
 pub enum KeyDirectoryError {
     GlobalInfo(GlobalInfoError),
     GlobalConstraints(ConstraintProgramError),
+    GlobalHints(HintProgramError),
     RegularConstraints(ConstraintProgramError),
     RegularHints(HintProgramError),
     ConstantTree(ConstantTreeError),
@@ -178,6 +181,9 @@ impl fmt::Display for KeyDirectoryError {
             Self::GlobalInfo(error) => write!(f, "key-directory global metadata error: {error}"),
             Self::GlobalConstraints(error) => {
                 write!(f, "key-directory global constraint program error: {error}")
+            }
+            Self::GlobalHints(error) => {
+                write!(f, "key-directory global hint program error: {error}")
             }
             Self::RegularConstraints(error) => {
                 write!(f, "key-directory regular constraint program error: {error}")
@@ -471,6 +477,8 @@ pub fn read_key_directory_catalog_from_layout(
     let global_constraints =
         read_global_constraint_program_file(&layout.global_paths.constraints_program)
             .map_err(KeyDirectoryError::GlobalConstraints)?;
+    let global_hints = read_global_hint_program_file(&layout.global_paths.constraints_program)
+        .map_err(KeyDirectoryError::GlobalHints)?;
     let mut units = Vec::with_capacity(layout.units.len());
     for unit in &layout.units {
         units.push(read_key_unit_catalog_entry(unit)?);
@@ -479,6 +487,7 @@ pub fn read_key_directory_catalog_from_layout(
     Ok(KeyDirectoryCatalog {
         layout: layout.clone(),
         global_constraints,
+        global_hints,
         units,
     })
 }
@@ -492,6 +501,14 @@ pub fn key_directory_catalog_digest(
     hash_bytes(
         &mut hasher,
         &encode_global_constraint_program(&catalog.global_constraints).map_err(|error| {
+            KeyDirectoryError::Digest {
+                message: error.to_string(),
+            }
+        })?,
+    );
+    hash_bytes(
+        &mut hasher,
+        &encode_global_hint_program(&catalog.global_hints).map_err(|error| {
             KeyDirectoryError::Digest {
                 message: error.to_string(),
             }

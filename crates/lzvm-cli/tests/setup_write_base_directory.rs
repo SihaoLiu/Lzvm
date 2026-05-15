@@ -16,7 +16,9 @@ use lzvm_artifacts::fixed::{encode_raw_fixed_columns, FixedColumn, FixedColumns}
 use lzvm_artifacts::global_info::{
     encode_global_info, parse_global_info_json, read_global_info_binary_file,
 };
-use lzvm_artifacts::hint_program::{read_regular_hint_program_file, HintOperand};
+use lzvm_artifacts::hint_program::{
+    encode_global_hint_program, read_regular_hint_program_file, HintOperand, HintProgram,
+};
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyUnitPaths};
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, read_pcs_setup_material_file};
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, read_pcs_setup_plan_file};
@@ -277,6 +279,27 @@ fn root_from_tree(tree: &[u8]) -> VerificationKeyRoot {
     )
 }
 
+fn empty_hint_program() -> HintProgram {
+    HintProgram { hints: Vec::new() }
+}
+
+fn global_constraint_program_file(program: &GlobalConstraintProgram) -> Vec<u8> {
+    let constraints =
+        encode_global_constraint_program(program).expect("global constraints should encode");
+    let hints =
+        encode_global_hint_program(&empty_hint_program()).expect("global hints should encode");
+    let mut constraints_file =
+        parse_sectioned_file(&constraints, *b"chps", 1).expect("constraints should parse");
+    let hint_file = parse_sectioned_file(&hints, *b"chps", 1).expect("hints should parse");
+    constraints_file.sections.extend(hint_file.sections);
+    encode_sectioned_file(&SectionedFile {
+        kind: *b"chps",
+        version: 1,
+        sections: constraints_file.sections,
+    })
+    .expect("combined global program should encode")
+}
+
 fn write_global_files(root: &Path) {
     fs::create_dir_all(root).expect("fixture root should be created");
     write_global_metadata(
@@ -285,13 +308,12 @@ fn write_global_files(root: &Path) {
     );
     write_bytes(
         &root.join("pilout.globalConstraints.bin"),
-        encode_global_constraint_program(&GlobalConstraintProgram {
+        global_constraint_program_file(&GlobalConstraintProgram {
             entries: vec![],
             ops: vec![],
             args: vec![],
             numbers: vec![],
-        })
-        .expect("global constraints should encode"),
+        }),
     );
 }
 

@@ -9,7 +9,9 @@ use lzvm_artifacts::expression_program::{
 };
 use lzvm_artifacts::global_info::{encode_global_info, parse_global_info_json};
 use lzvm_artifacts::hint_program::{
-    encode_regular_hint_program, regular_hint_program_from_expression_info, HintOperand,
+    encode_global_hint_program, encode_regular_hint_program,
+    regular_hint_program_from_expression_info, Hint, HintField, HintOperand, HintProgram,
+    HintValue,
 };
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
@@ -224,6 +226,50 @@ fn sample_regular_constraint_program() -> ConstraintProgram {
     }
 }
 
+fn sample_global_hint_program() -> HintProgram {
+    HintProgram {
+        hints: vec![Hint {
+            name: "global-hint-a".to_owned(),
+            fields: vec![HintField {
+                name: "field-a".to_owned(),
+                values: vec![HintValue {
+                    operand: HintOperand::GroupValue { group_id: 0, id: 7 },
+                    positions: vec![1, 3],
+                }],
+            }],
+        }],
+    }
+}
+
+fn empty_hint_program() -> HintProgram {
+    HintProgram { hints: Vec::new() }
+}
+
+fn sample_global_constraint_program() -> GlobalConstraintProgram {
+    GlobalConstraintProgram {
+        entries: vec![],
+        ops: vec![],
+        args: vec![],
+        numbers: vec![],
+    }
+}
+
+fn global_constraint_program_file(hints: &HintProgram) -> Vec<u8> {
+    let constraints = encode_global_constraint_program(&sample_global_constraint_program())
+        .expect("global constraints should encode");
+    let hints = encode_global_hint_program(hints).expect("global hints should encode");
+    let mut constraints_file =
+        parse_sectioned_file(&constraints, *b"chps", 1).expect("constraints should parse");
+    let hint_file = parse_sectioned_file(&hints, *b"chps", 1).expect("hints should parse");
+    constraints_file.sections.extend(hint_file.sections);
+    encode_sectioned_file(&SectionedFile {
+        kind: *b"chps",
+        version: 1,
+        sections: constraints_file.sections,
+    })
+    .expect("combined global program should encode")
+}
+
 fn sample_program_file() -> Vec<u8> {
     let expression = encode_expression_program(&sample_expression_program())
         .expect("expression program should encode");
@@ -353,15 +399,24 @@ fn write_catalog_global_files(root: &Path) {
         &root.join("pilout.globalInfo.bin"),
         sample_catalog_global_info_json(),
     );
-    let constraints = encode_global_constraint_program(&GlobalConstraintProgram {
-        entries: vec![],
-        ops: vec![],
-        args: vec![],
-        numbers: vec![],
-    })
-    .expect("global constraints should encode");
-    fs::write(root.join("pilout.globalConstraints.bin"), constraints)
-        .expect("global constraints program should be written");
+    fs::write(
+        root.join("pilout.globalConstraints.bin"),
+        global_constraint_program_file(&empty_hint_program()),
+    )
+    .expect("global constraints program should be written");
+}
+
+fn write_catalog_global_files_with_hints(root: &Path) {
+    fs::create_dir_all(root).expect("fixture root should be created");
+    write_global_metadata(
+        &root.join("pilout.globalInfo.bin"),
+        sample_catalog_global_info_json(),
+    );
+    fs::write(
+        root.join("pilout.globalConstraints.bin"),
+        global_constraint_program_file(&sample_global_hint_program()),
+    )
+    .expect("global constraints program should be written");
 }
 
 fn write_binary_catalog_global_files(root: &Path) {
@@ -370,15 +425,11 @@ fn write_binary_catalog_global_files(root: &Path) {
         &root.join("pilout.globalInfo.bin"),
         sample_catalog_global_info_json(),
     );
-    let constraints = encode_global_constraint_program(&GlobalConstraintProgram {
-        entries: vec![],
-        ops: vec![],
-        args: vec![],
-        numbers: vec![],
-    })
-    .expect("global constraints should encode");
-    fs::write(root.join("pilout.globalConstraints.bin"), constraints)
-        .expect("global constraints program should be written");
+    fs::write(
+        root.join("pilout.globalConstraints.bin"),
+        global_constraint_program_file(&empty_hint_program()),
+    )
+    .expect("global constraints program should be written");
 }
 
 fn write_catalog_unit_files(unit: &KeyUnitPaths) {
@@ -696,6 +747,22 @@ fn reads_key_directory_catalog_regular_hints_from_unit_programs() {
                 row_offset_index: 0,
             }
     }));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn reads_key_directory_catalog_global_hints_from_global_program() {
+    let dir = temp_dir("catalog-global-hints");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files_with_hints(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+
+    assert_eq!(catalog.global_hints, sample_global_hint_program());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 

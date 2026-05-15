@@ -391,6 +391,7 @@ fn sample_catalog(unit: KeyUnitCatalogEntry) -> KeyDirectoryCatalog {
             args: Vec::new(),
             numbers: Vec::new(),
         },
+        global_hints: HintProgram { hints: Vec::new() },
         units: vec![unit],
     }
 }
