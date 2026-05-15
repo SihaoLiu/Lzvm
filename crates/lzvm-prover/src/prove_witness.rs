@@ -41,6 +41,9 @@ use crate::pcs_challenge::find_query_nonce;
 #[cfg(feature = "cuda")]
 use crate::pcs_challenge::find_query_nonce_cuda;
 use crate::pcs_challenge::{derive_fri_queries, verify_query_nonce, PcsChallengeError};
+use crate::pcs_transcript::{
+    derive_pcs_final_query_challenge_from_segments, PcsTranscriptError, PcsTranscriptSegmentInputs,
+};
 use crate::witness_commitment::{
     commit_witness_trace_stages, open_witness_stage_commitment, WitnessStageOpeningError,
     WitnessTraceCommitmentError, WitnessTraceCommitments,
@@ -143,6 +146,7 @@ pub enum ProvePcsQueryPlanSegmentError {
         bits: u32,
     },
     Challenge(PcsChallengeError),
+    Transcript(PcsTranscriptError),
     LengthOverflow,
     Segment(PcsQueryPlanSegmentError),
     NonceSegment(PcsQueryNonceSegmentError),
@@ -314,6 +318,9 @@ impl fmt::Display for ProvePcsQueryPlanSegmentError {
                 "prove PCS query plan unit {unit_index} query nonce does not satisfy {bits} work bits"
             ),
             Self::Challenge(error) => write!(f, "prove PCS query plan challenge failed: {error}"),
+            Self::Transcript(error) => {
+                write!(f, "prove PCS query plan transcript failed: {error}")
+            }
             Self::LengthOverflow => write!(f, "prove PCS query plan length overflow"),
             Self::Segment(error) => write!(f, "prove PCS query plan encode failed: {error}"),
             Self::NonceSegment(error) => {
@@ -408,6 +415,7 @@ impl std::error::Error for ProvePcsQueryPlanSegmentError {
         match self {
             Self::InvalidWitnessSegment { source, .. } => Some(source),
             Self::Challenge(error) => Some(error),
+            Self::Transcript(error) => Some(error),
             Self::Segment(error) => Some(error),
             Self::NonceSegment(error) => Some(error),
             Self::MissingWitnessSegments
@@ -468,6 +476,12 @@ impl From<PcsQueryPlanSegmentError> for ProvePcsQueryPlanSegmentError {
 impl From<PcsChallengeError> for ProvePcsQueryPlanSegmentError {
     fn from(error: PcsChallengeError) -> Self {
         Self::Challenge(error)
+    }
+}
+
+impl From<PcsTranscriptError> for ProvePcsQueryPlanSegmentError {
+    fn from(error: PcsTranscriptError) -> Self {
+        Self::Transcript(error)
     }
 }
 
@@ -706,6 +720,14 @@ pub fn build_pcs_query_nonce_segment(
         id: PCS_QUERY_NONCE_SEGMENT_ID,
         data: encode_pcs_query_nonce_segment(&segment)?,
     })
+}
+
+pub fn build_pcs_query_nonce_segment_from_transcript_segments(
+    schedule: &ProveSchedule,
+    input: PcsTranscriptSegmentInputs<'_>,
+) -> Result<ProofSegment, ProvePcsQueryPlanSegmentError> {
+    let challenge = derive_pcs_final_query_challenge_from_segments(input)?;
+    build_pcs_query_nonce_segment(schedule, challenge)
 }
 
 #[cfg(feature = "cuda")]

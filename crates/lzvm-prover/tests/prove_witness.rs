@@ -11,7 +11,10 @@ use lzvm_artifacts::key_directory::{
     KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry, KeyUnitKind, KeyUnitPaths,
 };
 use lzvm_artifacts::metadata_bundle::UnitMetadataBundle;
+use lzvm_artifacts::pcs_evaluation_segment::PcsEvaluationUnitSegment;
+use lzvm_artifacts::pcs_fri_segment::{PcsFriOpeningLayerSegment, PcsFriOpeningUnitSegment};
 use lzvm_artifacts::pcs_material::PcsSetupMaterial;
+use lzvm_artifacts::pcs_material_segment::parse_pcs_material_manifest_segment;
 use lzvm_artifacts::pcs_nonce_segment::{
     parse_pcs_query_nonce_segment, PCS_QUERY_NONCE_SEGMENT_ID,
 };
@@ -24,21 +27,25 @@ use lzvm_artifacts::witness_opening_segment::{
     parse_witness_opening_segment, WITNESS_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::witness_segment::{
-    parse_witness_commitment_segment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+    parse_witness_commitment_segment, WitnessCommitmentSegment, WitnessCommitmentStageSegment,
+    WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::pcs_challenge::{derive_fri_queries, verify_query_nonce};
+use lzvm_prover::pcs_transcript::{
+    derive_pcs_final_query_challenge_from_segments, PcsTranscriptSegmentInputs,
+};
 use lzvm_prover::witness_commitment::commit_witness_trace_stages;
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_loader::load_witness_library;
 use lzvm_prover::witness_runner::run_witness_trace;
 use lzvm_prover::{
     build_pcs_material_manifest_segment, build_pcs_query_nonce_segment,
-    build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_challenge,
-    build_witness_commitment_segment, build_witness_opening_segment, derive_prove_execution_plan,
-    derive_prove_schedule, run_prove_witness_commitments, GpuRunOptions,
-    ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest, ProveRunOptions,
-    ProveRunRequest, ProveWitnessCommitmentError,
+    build_pcs_query_nonce_segment_from_transcript_segments, build_pcs_query_plan_segment,
+    build_pcs_query_plan_segment_from_challenge, build_witness_commitment_segment,
+    build_witness_opening_segment, derive_prove_execution_plan, derive_prove_schedule,
+    run_prove_witness_commitments, GpuRunOptions, ProveExecutionInputArtifacts, ProvePartitionPlan,
+    ProvePassRequest, ProveRunOptions, ProveRunRequest, ProveWitnessCommitmentError,
 };
 use sha2::{Digest, Sha256};
 
@@ -161,6 +168,29 @@ fn sample_pcs_material() -> PcsSetupMaterial {
         constant_tree_byte_count: 224,
         leaf_byte_count: 64,
         node_byte_count: 160,
+    }
+}
+
+fn sample_witness_commitment_segment(
+    unit_index: u32,
+    root_seeds: &[u64],
+) -> WitnessCommitmentSegment {
+    WitnessCommitmentSegment {
+        unit_index,
+        input_byte_count: 0,
+        trace_rows: 16,
+        trace_columns: 5,
+        stages: root_seeds
+            .iter()
+            .enumerate()
+            .map(|(index, seed)| WitnessCommitmentStageSegment {
+                stage_index: (index + 1) as u32,
+                arity: 4,
+                root: [*seed, *seed + 1, *seed + 2, *seed + 3],
+                tree_byte_count: 224,
+                tree_digest: [index as u8; 32],
+            })
+            .collect(),
     }
 }
 
@@ -515,6 +545,59 @@ fn builds_pcs_query_nonce_segments_for_transcript_query_plans() {
         challenge,
         Felt::from_u64(parsed.nonce),
         schedule.units[0].proof_of_work_bits
+    )
+    .expect("nonce should verify"));
+}
+
+#[test]
+fn builds_pcs_query_nonce_segments_from_transcript_segments() {
+    let catalog = sample_catalog(sample_unit());
+    let schedule = derive_prove_schedule(&catalog).expect("schedule should derive");
+    let unit = &schedule.units[0];
+    let material_segment =
+        build_pcs_material_manifest_segment(&schedule).expect("material segment should build");
+    let material = parse_pcs_material_manifest_segment(&material_segment.data)
+        .expect("material segment should parse");
+    let witness = sample_witness_commitment_segment(0, &[10, 20]);
+    let evaluations = PcsEvaluationUnitSegment {
+        unit_index: 0,
+        values: vec![[30, 31, 32], [40, 41, 42]],
+    };
+    let fri = PcsFriOpeningUnitSegment {
+        unit_index: 0,
+        layers: vec![PcsFriOpeningLayerSegment {
+            layer_index: 0,
+            root: [50, 51, 52, 53],
+            last_level: Vec::new(),
+            queries: Vec::new(),
+        }],
+        final_polynomial: vec![[60, 61, 62], [70, 71, 72]],
+    };
+    let transcript_inputs = PcsTranscriptSegmentInputs {
+        unit_index: 0,
+        unit,
+        material: &material.units[0],
+        public_values: &[],
+        witness: &witness,
+        evaluations: &evaluations,
+        fri: &fri,
+        root_challenge_draws: &[2, 1],
+        evaluation_challenge_draws: 2,
+    };
+
+    let challenge = derive_pcs_final_query_challenge_from_segments(transcript_inputs)
+        .expect("challenge should derive");
+    let nonce_segment =
+        build_pcs_query_nonce_segment_from_transcript_segments(&schedule, transcript_inputs)
+            .expect("nonce segment should build");
+    let parsed =
+        parse_pcs_query_nonce_segment(&nonce_segment.data).expect("nonce segment should parse");
+
+    assert_eq!(nonce_segment.id, PCS_QUERY_NONCE_SEGMENT_ID);
+    assert!(verify_query_nonce(
+        challenge,
+        Felt::from_u64(parsed.nonce),
+        unit.proof_of_work_bits
     )
     .expect("nonce should verify"));
 }
