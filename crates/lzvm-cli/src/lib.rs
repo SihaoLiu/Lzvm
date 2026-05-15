@@ -17,7 +17,6 @@ use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
     read_key_directory_layout, validate_key_directory_layout, KeyDirectoryCatalog,
 };
-use lzvm_artifacts::pcs_fri_segment::PCS_FRI_OPENING_SEGMENT_ID;
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_material};
 use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file,
@@ -41,23 +40,16 @@ use lzvm_prover::global_constraints::{
 use lzvm_prover::group_values::load_group_values_from_segments;
 use lzvm_prover::hint_eval::{global_hint_input_requirements, resolve_global_hint_program};
 use lzvm_prover::pcs_fri::{
-    load_pcs_fri_opening_segment_from_segments, validate_pcs_fri_opening_folds_from_units,
-    validate_pcs_fri_opening_segments,
+    validate_optional_pcs_fri_opening_proof_segments,
+    ValidateOptionalPcsFriOpeningProofSegmentsRequest,
 };
 use lzvm_prover::pcs_material_manifest::validate_pcs_material_manifest_segments;
 use lzvm_prover::pcs_query_plan::{
-    load_pcs_query_plan_from_segments, uses_transcript_pcs_query_plan_inputs,
-    validate_pcs_query_plan_segments,
+    uses_transcript_pcs_query_plan_inputs, validate_pcs_query_plan_segments,
 };
-use lzvm_prover::pcs_transcript_segments::{
-    derive_pcs_transcript_challenges_from_proof_segments,
-    derive_pcs_transcript_unit_challenges_from_proof_segments,
-};
+use lzvm_prover::pcs_transcript_segments::derive_pcs_transcript_challenges_from_proof_segments;
 use lzvm_prover::proof_preflight::validate_proof_public_values;
 use lzvm_prover::proof_values::{flatten_pcs_proof_values, load_pcs_proof_values_from_segments};
-use lzvm_prover::verifier_query::{
-    validate_verifier_query_outputs_from_segments, VerifierFriQueryOutputSegmentsRequest,
-};
 use lzvm_prover::witness_commitment::load_witness_commitment_segments;
 use lzvm_prover::witness_opening::validate_witness_opening_segments;
 use lzvm_prover::{derive_prove_schedule, ProveSchedule};
@@ -548,52 +540,25 @@ fn validate_optional_pcs_fri_opening_segment(
     proof: &ProofArtifact,
     public_values: &PublicValues,
 ) -> Result<(), String> {
-    if !proof
-        .segments
-        .iter()
-        .any(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
-    {
-        return Ok(());
-    }
-    validate_pcs_fri_opening_segments(&schedule.units, &proof.segments)
-        .map_err(|error| error.to_string())?;
-    if !uses_transcript_pcs_query_plan_inputs(&proof.segments) {
-        return Ok(());
-    }
-
-    let query_plan =
-        load_pcs_query_plan_from_segments(&proof.segments).map_err(|error| error.to_string())?;
-    let opening = load_pcs_fri_opening_segment_from_segments(&proof.segments)
-        .map_err(|error| error.to_string())?;
-    let public_value_fields = transcript_public_value_fields(public_values)?;
-    let transcript_challenges = derive_pcs_transcript_unit_challenges_from_proof_segments(
-        schedule,
-        &public_value_fields,
-        &proof.segments,
-    )
-    .map_err(|error| error.to_string())?;
-    validate_pcs_fri_opening_folds_from_units(
-        &schedule.units,
-        &query_plan.units,
-        &opening.units,
-        &transcript_challenges,
-    )
-    .map_err(|error| error.to_string())?;
+    let public_value_fields = if uses_transcript_pcs_query_plan_inputs(&proof.segments) {
+        transcript_public_value_fields(public_values)?
+    } else {
+        Vec::new()
+    };
     let verifier_codes = catalog
         .units
         .iter()
         .map(|unit| &unit.metadata.verifier.query)
         .collect::<Vec<_>>();
-    validate_verifier_query_outputs_from_segments(VerifierFriQueryOutputSegmentsRequest {
-        units: &schedule.units,
-        verifier_codes: &verifier_codes,
-        global_info: &catalog.layout.global_info,
-        public_values: &public_value_fields,
-        query_units: &query_plan.units,
-        opening_units: &opening.units,
-        transcript_challenges: &transcript_challenges,
-        segments: &proof.segments,
-    })
+    validate_optional_pcs_fri_opening_proof_segments(
+        ValidateOptionalPcsFriOpeningProofSegmentsRequest {
+            schedule,
+            verifier_codes: &verifier_codes,
+            global_info: &catalog.layout.global_info,
+            public_values: &public_value_fields,
+            segments: &proof.segments,
+        },
+    )
     .map_err(|error| error.to_string())
 }
 

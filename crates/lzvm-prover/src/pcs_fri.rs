@@ -1,5 +1,6 @@
 use std::fmt;
 
+use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::pcs_fri_segment::{
     parse_pcs_fri_opening_segment, PcsFriOpeningLayerSegment, PcsFriOpeningLevelSegment,
     PcsFriOpeningQuerySegment, PcsFriOpeningSegment, PcsFriOpeningSegmentError,
@@ -8,15 +9,26 @@ use lzvm_artifacts::pcs_fri_segment::{
 use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::setup_info::StageValue;
+use lzvm_artifacts::verifier_info::VerifierCode;
 use lzvm_field::{intt_in_place, DomainError, Ext3, Felt, FieldError, PoseidonTranscript, SHIFT};
 
 use crate::merkle_hash::{
     linear_hash, parent_hash, root_from_digest_level, MerkleHashError, HASH_WORDS,
 };
-use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
+use crate::pcs_query_plan::{
+    load_pcs_query_plan_from_segments, uses_transcript_pcs_query_plan_inputs,
+    LoadPcsQueryPlanSegmentError,
+};
 use crate::pcs_transcript::{absorb_commit_values, PcsTranscriptError};
-use crate::pcs_transcript_segments::PcsTranscriptUnitChallenges;
-use crate::ProveUnitSchedule;
+use crate::pcs_transcript_segments::{
+    derive_pcs_transcript_unit_challenges_from_proof_segments, PcsTranscriptProofSegmentsError,
+    PcsTranscriptUnitChallenges,
+};
+use crate::verifier_query::{
+    validate_verifier_query_outputs_from_segments, VerifierFriQueryOutputSegmentsError,
+    VerifierFriQueryOutputSegmentsRequest,
+};
+use crate::{ProveSchedule, ProveUnitSchedule};
 
 #[derive(Debug, Clone, Copy)]
 pub struct PcsFriOpeningFoldRequest<'a> {
@@ -47,6 +59,15 @@ pub struct PcsFriTranscriptCommitmentRequest<'a> {
     pub evaluation_values: &'a [Ext3],
     pub evaluation_challenge_draws: usize,
     pub polynomial: &'a [Ext3],
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ValidateOptionalPcsFriOpeningProofSegmentsRequest<'a> {
+    pub schedule: &'a ProveSchedule,
+    pub verifier_codes: &'a [&'a VerifierCode],
+    pub global_info: &'a GlobalInfo,
+    pub public_values: &'a [Felt],
+    pub segments: &'a [ProofSegment],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,6 +126,16 @@ pub enum ValidatePcsFriOpeningFoldUnitsError {
         unit_index: usize,
     },
     UnitIndexOverflow,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValidateOptionalPcsFriOpeningProofSegmentsError {
+    Opening(ValidatePcsFriOpeningSegmentsError),
+    QueryPlan(LoadPcsQueryPlanSegmentError),
+    OpeningSegment(LoadPcsFriOpeningSegmentError),
+    Transcript(PcsTranscriptProofSegmentsError),
+    Fold(ValidatePcsFriOpeningFoldUnitsError),
+    VerifierQuery(VerifierFriQueryOutputSegmentsError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -293,6 +324,32 @@ impl std::error::Error for ValidatePcsFriOpeningFoldUnitsError {
         match self {
             Self::Fold { source, .. } => Some(source),
             Self::UnitMismatch { .. } | Self::UnitIndexOverflow => None,
+        }
+    }
+}
+
+impl fmt::Display for ValidateOptionalPcsFriOpeningProofSegmentsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Opening(error) => write!(f, "{error}"),
+            Self::QueryPlan(error) => write!(f, "{error}"),
+            Self::OpeningSegment(error) => write!(f, "{error}"),
+            Self::Transcript(error) => write!(f, "{error}"),
+            Self::Fold(error) => write!(f, "{error}"),
+            Self::VerifierQuery(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for ValidateOptionalPcsFriOpeningProofSegmentsError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Opening(error) => Some(error),
+            Self::QueryPlan(error) => Some(error),
+            Self::OpeningSegment(error) => Some(error),
+            Self::Transcript(error) => Some(error),
+            Self::Fold(error) => Some(error),
+            Self::VerifierQuery(error) => Some(error),
         }
     }
 }
@@ -499,6 +556,53 @@ pub fn validate_pcs_fri_opening_folds_from_units(
         }
     }
     Ok(())
+}
+
+pub fn validate_optional_pcs_fri_opening_proof_segments(
+    request: ValidateOptionalPcsFriOpeningProofSegmentsRequest<'_>,
+) -> Result<(), ValidateOptionalPcsFriOpeningProofSegmentsError> {
+    if !request
+        .segments
+        .iter()
+        .any(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
+    {
+        return Ok(());
+    }
+
+    validate_pcs_fri_opening_segments(&request.schedule.units, request.segments)
+        .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Opening)?;
+    if !uses_transcript_pcs_query_plan_inputs(request.segments) {
+        return Ok(());
+    }
+
+    let query_plan = load_pcs_query_plan_from_segments(request.segments)
+        .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::QueryPlan)?;
+    let opening = load_pcs_fri_opening_segment_from_segments(request.segments)
+        .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::OpeningSegment)?;
+    let transcript_challenges = derive_pcs_transcript_unit_challenges_from_proof_segments(
+        request.schedule,
+        request.public_values,
+        request.segments,
+    )
+    .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Transcript)?;
+    validate_pcs_fri_opening_folds_from_units(
+        &request.schedule.units,
+        &query_plan.units,
+        &opening.units,
+        &transcript_challenges,
+    )
+    .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Fold)?;
+    validate_verifier_query_outputs_from_segments(VerifierFriQueryOutputSegmentsRequest {
+        units: &request.schedule.units,
+        verifier_codes: request.verifier_codes,
+        global_info: request.global_info,
+        public_values: request.public_values,
+        query_units: &query_plan.units,
+        opening_units: &opening.units,
+        transcript_challenges: &transcript_challenges,
+        segments: request.segments,
+    })
+    .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::VerifierQuery)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,4 +1,6 @@
+use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
 use lzvm_artifacts::key_directory::KeyUnitKind;
+use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
 use lzvm_artifacts::pcs_fri_segment::{
     encode_pcs_fri_opening_segment, PcsFriOpeningLayerSegment, PcsFriOpeningQuerySegment,
     PcsFriOpeningSegment, PcsFriOpeningUnitSegment, PCS_FRI_OPENING_SEGMENT_ID,
@@ -12,16 +14,21 @@ use lzvm_field::{poseidon2_hash_8, Ext3, Felt, SHIFT};
 use lzvm_prover::pcs_fri::{
     build_pcs_fri_opening_unit, build_pcs_fri_transcript_commitments,
     load_pcs_fri_opening_segment_from_segments, load_pcs_fri_opening_unit_from_segments,
-    validate_pcs_fri_opening_folds_from_units, validate_pcs_fri_opening_segments, verify_fri_fold,
-    verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path,
-    LoadPcsFriOpeningSegmentError, LoadPcsFriOpeningUnitError, PcsFriFoldError, PcsFriMerkleError,
-    PcsFriOpeningBuildRequest, PcsFriOpeningFoldRequest, PcsFriTranscriptCommitmentRequest,
-    ValidatePcsFriOpeningFoldUnitsError, ValidatePcsFriOpeningSegmentsError,
+    validate_optional_pcs_fri_opening_proof_segments, validate_pcs_fri_opening_folds_from_units,
+    validate_pcs_fri_opening_segments, verify_fri_fold, verify_fri_last_level_root,
+    verify_fri_opening_folds, verify_fri_query_path, LoadPcsFriOpeningSegmentError,
+    LoadPcsFriOpeningUnitError, PcsFriFoldError, PcsFriMerkleError, PcsFriOpeningBuildRequest,
+    PcsFriOpeningFoldRequest, PcsFriTranscriptCommitmentRequest,
+    ValidateOptionalPcsFriOpeningProofSegmentsError,
+    ValidateOptionalPcsFriOpeningProofSegmentsRequest, ValidatePcsFriOpeningFoldUnitsError,
+    ValidatePcsFriOpeningSegmentsError,
 };
 use lzvm_prover::pcs_query_plan::load_pcs_query_plan_from_segments;
 use lzvm_prover::pcs_transcript::{derive_pcs_transcript_challenges, PcsTranscriptInputs};
-use lzvm_prover::pcs_transcript_segments::PcsTranscriptUnitChallenges;
-use lzvm_prover::ProveUnitSchedule;
+use lzvm_prover::pcs_transcript_segments::{
+    PcsTranscriptProofSegmentsError, PcsTranscriptUnitChallenges,
+};
+use lzvm_prover::{ProveSchedule, ProveUnitSchedule};
 
 #[test]
 fn verifies_binary_fri_fold_values() {
@@ -459,6 +466,68 @@ fn validates_pcs_fri_opening_segments() {
 }
 
 #[test]
+fn validates_optional_pcs_fri_opening_when_segment_is_absent() {
+    let unit = sample_validation_unit();
+    let schedule = sample_prove_schedule(unit);
+
+    validate_optional_pcs_fri_opening_proof_segments(
+        ValidateOptionalPcsFriOpeningProofSegmentsRequest {
+            schedule: &schedule,
+            verifier_codes: &[],
+            global_info: &global_info_without_proof_values(),
+            public_values: &[],
+            segments: &[],
+        },
+    )
+    .expect("missing optional FRI opening should be accepted");
+}
+
+#[test]
+fn validates_optional_pcs_fri_opening_from_seeded_inputs() {
+    let (unit, segments) = valid_pcs_fri_opening_segments();
+    let schedule = sample_prove_schedule(unit);
+
+    validate_optional_pcs_fri_opening_proof_segments(
+        ValidateOptionalPcsFriOpeningProofSegmentsRequest {
+            schedule: &schedule,
+            verifier_codes: &[],
+            global_info: &global_info_without_proof_values(),
+            public_values: &[],
+            segments: &segments,
+        },
+    )
+    .expect("seeded FRI opening should validate structurally");
+}
+
+#[test]
+fn rejects_optional_pcs_fri_opening_transcript_inputs_without_material() {
+    let (unit, mut segments) = valid_pcs_fri_opening_segments();
+    let schedule = sample_prove_schedule(unit);
+    segments.push(ProofSegment {
+        id: PCS_EVALUATION_SEGMENT_ID,
+        data: Vec::new(),
+    });
+
+    let error = validate_optional_pcs_fri_opening_proof_segments(
+        ValidateOptionalPcsFriOpeningProofSegmentsRequest {
+            schedule: &schedule,
+            verifier_codes: &[],
+            global_info: &global_info_without_proof_values(),
+            public_values: &[],
+            segments: &segments,
+        },
+    )
+    .expect_err("transcript inputs should require transcript material");
+
+    assert_eq!(
+        error,
+        ValidateOptionalPcsFriOpeningProofSegmentsError::Transcript(
+            PcsTranscriptProofSegmentsError::MissingMaterialSegment
+        )
+    );
+}
+
+#[test]
 fn validates_pcs_fri_opening_folds_from_units() {
     let (unit, segments) = valid_pcs_fri_opening_segments();
     let query_plan = load_pcs_query_plan_from_segments(&segments).expect("query plan should load");
@@ -744,6 +813,36 @@ fn sample_fold_challenges() -> PcsTranscriptUnitChallenges {
     PcsTranscriptUnitChallenges {
         unit_index: 0,
         challenges,
+    }
+}
+
+fn sample_prove_schedule(unit: ProveUnitSchedule) -> ProveSchedule {
+    ProveSchedule {
+        setup_hash: [0; 32],
+        unit_count: 1,
+        total_fixed_bytes: unit.fixed_bytes,
+        total_pcs_material_bytes: unit.pcs_material_bytes.unwrap_or(0),
+        pcs_material_unit_count: usize::from(unit.pcs_material_bytes.is_some()),
+        total_query_count: u64::from(unit.query_count),
+        max_extended_domain_bits: unit.extended_domain_bits,
+        units: vec![unit],
+    }
+}
+
+fn global_info_without_proof_values() -> GlobalInfo {
+    GlobalInfo {
+        name: "global".to_owned(),
+        air_groups: vec!["group".to_owned()],
+        airs: Vec::new(),
+        curve: CurveKind::None,
+        lattice_size: None,
+        aggregation_types: Vec::new(),
+        n_publics: 0,
+        num_challenges: Vec::new(),
+        num_proof_values: Vec::new(),
+        proof_values_map: Vec::new(),
+        publics_map: Vec::new(),
+        transcript_arity: 2,
     }
 }
 
