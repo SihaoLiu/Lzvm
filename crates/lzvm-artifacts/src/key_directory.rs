@@ -9,7 +9,9 @@ use crate::expression_program::{
     ExpressionProgramError,
 };
 use crate::fixed::{expected_raw_fixed_column_byte_count, FixedColumnError};
-use crate::global_info::{read_global_info_file, CurveKind, GlobalInfo, GlobalInfoError};
+use crate::global_info::{
+    read_global_info_binary_file, read_global_info_file, CurveKind, GlobalInfo, GlobalInfoError,
+};
 use crate::metadata_bundle::{
     read_unit_metadata_bundle, MetadataBundleError, UnitMetadataBundle, UnitMetadataPaths,
 };
@@ -29,6 +31,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 const GLOBAL_INFO_FILE: &str = "pilout.globalInfo.json";
+const GLOBAL_INFO_BIN_FILE: &str = "pilout.globalInfo.bin";
 const GLOBAL_CONSTRAINTS_JSON_FILE: &str = "pilout.globalConstraints.json";
 const GLOBAL_CONSTRAINTS_BIN_FILE: &str = "pilout.globalConstraints.bin";
 
@@ -417,7 +420,7 @@ pub fn read_key_directory_layout(
 ) -> Result<KeyDirectoryLayout, KeyDirectoryError> {
     let root = root.as_ref().to_path_buf();
     let global_paths = GlobalKeyPaths::from_root(&root);
-    let global_info = read_global_info_file(&global_paths.info)?;
+    let global_info = read_global_info_path(&global_paths)?;
     let units = derive_unit_paths(&root, &global_info);
 
     Ok(KeyDirectoryLayout {
@@ -546,11 +549,26 @@ pub fn key_directory_catalog_digest_hex(
 
 impl GlobalKeyPaths {
     pub fn from_root(root: &Path) -> Self {
+        let info_json = root.join(GLOBAL_INFO_FILE);
+        let info_binary = root.join(GLOBAL_INFO_BIN_FILE);
+        let info = if info_binary.is_file() {
+            info_binary.clone()
+        } else {
+            info_json.clone()
+        };
         Self {
-            info: root.join(GLOBAL_INFO_FILE),
+            info,
             constraints_json: root.join(GLOBAL_CONSTRAINTS_JSON_FILE),
             constraints_program: root.join(GLOBAL_CONSTRAINTS_BIN_FILE),
         }
+    }
+}
+
+fn read_global_info_path(paths: &GlobalKeyPaths) -> Result<GlobalInfo, KeyDirectoryError> {
+    if paths.info.file_name().and_then(|name| name.to_str()) == Some(GLOBAL_INFO_BIN_FILE) {
+        read_global_info_binary_file(&paths.info).map_err(KeyDirectoryError::GlobalInfo)
+    } else {
+        read_global_info_file(&paths.info).map_err(KeyDirectoryError::GlobalInfo)
     }
 }
 

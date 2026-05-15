@@ -6,6 +6,7 @@ use lzvm_artifacts::constraint_program::{
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
+use lzvm_artifacts::global_info::{encode_global_info, parse_global_info_json};
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
     read_key_directory_layout, validate_key_directory_layout, KeyDirectoryError, KeyUnitKind,
@@ -283,6 +284,26 @@ fn write_catalog_global_files(root: &Path) {
         .expect("global constraints program should be written");
 }
 
+fn write_binary_catalog_global_files(root: &Path) {
+    fs::create_dir_all(root).expect("fixture root should be created");
+    let info =
+        parse_global_info_json(sample_catalog_global_info_json()).expect("global should parse");
+    let bytes = encode_global_info(&info).expect("global should encode");
+    fs::write(root.join("pilout.globalInfo.bin"), bytes)
+        .expect("global metadata should be written");
+    fs::write(root.join("pilout.globalConstraints.json"), "{}")
+        .expect("global constraints metadata should be written");
+    let constraints = encode_global_constraint_program(&GlobalConstraintProgram {
+        entries: vec![],
+        ops: vec![],
+        args: vec![],
+        numbers: vec![],
+    })
+    .expect("global constraints should encode");
+    fs::write(root.join("pilout.globalConstraints.bin"), constraints)
+        .expect("global constraints program should be written");
+}
+
 fn write_catalog_unit_files(unit: &KeyUnitPaths) {
     if let Some(path) = unit.setup_info() {
         write_text(&path, sample_setup_info_json());
@@ -511,6 +532,20 @@ fn reads_key_directory_catalog_without_loading_fixed_values() {
     }));
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn reads_key_directory_layout_from_binary_global_metadata() {
+    let dir = temp_dir("binary-global");
+    let _ = fs::remove_dir_all(&dir);
+    write_binary_catalog_global_files(&dir);
+
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(layout.global_info.name, "sample-program");
+    assert_eq!(layout.global_paths.info, dir.join("pilout.globalInfo.bin"));
+    assert_eq!(layout.units.len(), 4);
 }
 
 #[test]

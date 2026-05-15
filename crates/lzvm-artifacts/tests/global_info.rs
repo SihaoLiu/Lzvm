@@ -1,5 +1,6 @@
 use lzvm_artifacts::global_info::{
-    parse_global_info_json, read_global_info_file, CurveKind, GlobalInfoError,
+    encode_global_info, parse_global_info, parse_global_info_json, read_global_info_binary_file,
+    read_global_info_file, CurveKind, GlobalInfoError,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -60,6 +61,22 @@ fn parses_global_info_json() {
     assert_eq!(info.stage_one_proof_value_count(), 1);
     assert_eq!(info.publics_map[1].lengths, vec![2, 3]);
     assert_eq!(info.transcript_arity, 4);
+}
+
+#[test]
+fn encodes_and_parses_global_info_binary() {
+    let info = parse_global_info_json(sample_global_info_json()).expect("fixture should parse");
+    let bytes = encode_global_info(&info).expect("fixture should encode");
+
+    let parsed = parse_global_info(&bytes).expect("binary fixture should parse");
+    assert_eq!(parsed, info);
+
+    let path = temp_file_path("global.bin");
+    fs::write(&path, &bytes).expect("binary fixture should be written");
+    let from_file = read_global_info_binary_file(&path).expect("binary fixture should read");
+    fs::remove_file(&path).expect("fixture should be removed");
+
+    assert_eq!(from_file, info);
 }
 
 #[test]
