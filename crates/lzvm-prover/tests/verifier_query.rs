@@ -75,6 +75,8 @@ fn schedule() -> ProveUnitSchedule {
                 lengths: Vec::new(),
             },
         ],
+        unit_value_map: Vec::new(),
+        group_value_map: Vec::new(),
         opening_points: vec![0, -1],
         fri_layers: Vec::new(),
         final_layer_bits: 4,

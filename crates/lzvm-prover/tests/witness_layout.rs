@@ -49,6 +49,8 @@ fn sample_unit_with_rows(
         constant_width: 5,
         stage_commit_widths,
         commitment_columns: Vec::new(),
+        unit_value_map: Vec::new(),
+        group_value_map: Vec::new(),
         opening_points: vec![0, 1, -1],
         fri_layers: vec![PcsFriLayer {
             input_bits: 13,

@@ -50,6 +50,8 @@ fn sample_unit(rows: u64, stage_commit_widths: Vec<u32>) -> ProveUnitSchedule {
         constant_width: 1,
         stage_commit_widths,
         commitment_columns: Vec::new(),
+        unit_value_map: Vec::new(),
+        group_value_map: Vec::new(),
         opening_points: vec![0],
         fri_layers: vec![PcsFriLayer {
             input_bits: 2,

@@ -8,7 +8,7 @@ use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryError, KeyUnitKind,
 };
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
-use lzvm_artifacts::setup_info::{CommitmentColumn, UnitSetupInfo};
+use lzvm_artifacts::setup_info::{CommitmentColumn, StageValue, UnitSetupInfo};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::witness_library::{
     read_witness_library_file, WitnessLibraryError, WitnessLibraryInfo,
@@ -82,6 +82,8 @@ pub struct ProveUnitSchedule {
     pub constant_width: u32,
     pub stage_commit_widths: Vec<u32>,
     pub commitment_columns: Vec<CommitmentColumn>,
+    pub unit_value_map: Vec<StageValue>,
+    pub group_value_map: Vec<StageValue>,
     pub opening_points: Vec<i64>,
     pub fri_layers: Vec<PcsFriLayer>,
     pub final_layer_bits: u32,
@@ -515,6 +517,8 @@ pub fn derive_prove_schedule(
             constant_width: unit.pcs_plan.constant_width,
             stage_commit_widths: unit.pcs_plan.stage_commit_widths.clone(),
             commitment_columns: unit.metadata.setup.commitment_columns.clone(),
+            unit_value_map: unit.metadata.setup.unit_value_map.clone(),
+            group_value_map: unit.metadata.setup.group_value_map.clone(),
             opening_points: unit.pcs_plan.opening_points.clone(),
             fri_layers: unit.pcs_plan.fri_layers.clone(),
             final_layer_bits: unit.pcs_plan.final_layer_bits,

@@ -129,6 +129,8 @@ fn verifies_fri_opening_fold_chain_to_final_polynomial() {
         constant_width: 1,
         stage_commit_widths: vec![1],
         commitment_columns: Vec::new(),
+        unit_value_map: Vec::new(),
+        group_value_map: Vec::new(),
         opening_points: vec![0],
         fri_layers: vec![
             PcsFriLayer {

@@ -460,6 +460,8 @@ fn sample_unit(transcript_arity: Option<u32>, hash_commits: bool) -> ProveUnitSc
         constant_width: 5,
         stage_commit_widths: vec![2, 3, 1],
         commitment_columns: Vec::new(),
+        unit_value_map: Vec::new(),
+        group_value_map: Vec::new(),
         opening_points: vec![0, 1, -1],
         fri_layers: vec![PcsFriLayer {
             input_bits: 13,

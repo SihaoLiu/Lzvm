@@ -13,7 +13,9 @@ use lzvm_artifacts::key_directory::{
 use lzvm_artifacts::metadata_bundle::UnitMetadataBundle;
 use lzvm_artifacts::pcs_material::PcsSetupMaterial;
 use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
-use lzvm_artifacts::setup_info::{CommitmentColumn, FriStep, StarkStruct, UnitSetupInfo};
+use lzvm_artifacts::setup_info::{
+    CommitmentColumn, FriStep, StageValue, StarkStruct, UnitSetupInfo,
+};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
 use lzvm_artifacts::witness_library::WitnessLibraryError;
@@ -62,8 +64,23 @@ fn sample_setup(n_bits: u32, n_bits_ext: u32, query_count: u32) -> UnitSetupInfo
         challenge_count: 1,
         eval_count: 2,
         boundaries: Vec::new(),
-        unit_value_map: Vec::new(),
-        group_value_map: Vec::new(),
+        unit_value_map: vec![
+            StageValue {
+                name: "unit.alpha".to_owned(),
+                stage: 1,
+                lengths: vec![2],
+            },
+            StageValue {
+                name: "unit.beta".to_owned(),
+                stage: 2,
+                lengths: Vec::new(),
+            },
+        ],
+        group_value_map: vec![StageValue {
+            name: "group.alpha".to_owned(),
+            stage: 2,
+            lengths: Vec::new(),
+        }],
         stark: StarkStruct {
             n_bits,
             n_bits_ext,
@@ -298,6 +315,11 @@ fn derives_prove_schedule_from_key_directory_catalog() {
     assert_eq!(schedule.units[0].commitment_columns.len(), 2);
     assert_eq!(schedule.units[0].commitment_columns[1].stage, 2);
     assert_eq!(schedule.units[0].commitment_columns[1].stage_position, 0);
+    assert_eq!(schedule.units[0].unit_value_map.len(), 2);
+    assert_eq!(schedule.units[0].unit_value_map[0].name, "unit.alpha");
+    assert_eq!(schedule.units[0].unit_value_map[0].lengths, [2]);
+    assert_eq!(schedule.units[0].group_value_map.len(), 1);
+    assert_eq!(schedule.units[0].group_value_map[0].name, "group.alpha");
     assert_eq!(schedule.units[0].opening_points, vec![0, 1]);
     assert_eq!(schedule.units[0].fri_layers.len(), 1);
     assert_eq!(schedule.units[0].fri_layers[0].input_bits, 6);
