@@ -1,8 +1,11 @@
-use lzvm_artifacts::expression_program::{ExpressionEntry, ExpressionProgram};
+use lzvm_artifacts::{
+    expression_program::{ExpressionEntry, ExpressionProgram},
+    setup_info::Boundary,
+};
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::fri_polynomial::{
     build_fri_domain_points, build_fri_polynomial, derive_opening_xis, FriPolynomialColumnMatrix,
-    FriPolynomialInputs, FriPolynomialStageColumns,
+    FriPolynomialInputs, FriPolynomialStageColumns, FriPolynomialZerofierTable,
 };
 
 #[test]
@@ -202,6 +205,67 @@ fn derives_opening_xis_from_base_domain_offsets() {
             ),
         ]
     );
+}
+
+#[test]
+fn builds_zerofier_table_for_every_and_first_row_boundaries() {
+    let root = Felt::root_of_unity(2).expect("domain root should exist");
+    let points = build_fri_domain_points(3).expect("domain points should build");
+
+    let table = FriPolynomialZerofierTable::build(
+        2,
+        3,
+        &[
+            Boundary {
+                name: Some("everyRow".to_owned()),
+                offset_min: None,
+                offset_max: None,
+            },
+            Boundary {
+                name: Some("firstRow".to_owned()),
+                offset_min: None,
+                offset_max: None,
+            },
+        ],
+    )
+    .expect("zerofier table should build");
+
+    assert_eq!(table.column_count, 2);
+    assert_eq!(table.values.len(), 16);
+    for (row, x) in points.iter().copied().enumerate() {
+        let every = (x.pow(4) - Felt::ONE)
+            .inverse()
+            .expect("shifted coset should not hit the base domain");
+        let first = ((x - Felt::ONE) * every)
+            .inverse()
+            .expect("shifted coset should not hit one");
+        assert_eq!(table.values[row * 2], every);
+        assert_eq!(table.values[row * 2 + 1], first);
+    }
+    assert_eq!(root.pow(4), Felt::ONE);
+}
+
+#[test]
+fn builds_zerofier_table_for_frame_boundaries() {
+    let root = Felt::root_of_unity(2).expect("domain root should exist");
+    let points = build_fri_domain_points(3).expect("domain points should build");
+
+    let table = FriPolynomialZerofierTable::build(
+        2,
+        3,
+        &[Boundary {
+            name: Some("everyFrame".to_owned()),
+            offset_min: Some(1),
+            offset_max: Some(1),
+        }],
+    )
+    .expect("zerofier table should build");
+
+    assert_eq!(table.column_count, 1);
+    for (row, x) in points.iter().copied().enumerate() {
+        let expected = (x - Felt::ONE) * (x - root.pow(3));
+        assert_eq!(table.values[row], expected);
+    }
 }
 
 fn felt(value: u64) -> Felt {
