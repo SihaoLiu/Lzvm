@@ -60,7 +60,10 @@ use lzvm_field::{Ext3, Felt};
 use lzvm_prover::constant_tree_opening::{
     constant_tree_merkle_level_count, verify_constant_tree_opening_root, ConstantTreeOpening,
 };
-use lzvm_prover::global_constraints::{evaluate_global_constraints, GlobalConstraintInputs};
+use lzvm_prover::global_constraints::{
+    validate_global_constraints as validate_global_constraint_program, GlobalConstraintInputs,
+    GlobalConstraintValidationError,
+};
 use lzvm_prover::hint_eval::{global_hint_input_requirements, resolve_global_hint_program};
 use lzvm_prover::pcs_fri::{
     verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path,
@@ -1411,7 +1414,7 @@ fn validate_global_constraints(
         .map_err(|error| format!("global constraint proof values invalid: {error}"))?;
     let challenges = derive_global_constraint_challenges(schedule, proof, public_values)?;
     let group_values = load_group_values(catalog, proof)?;
-    let residuals = evaluate_global_constraints(
+    validate_global_constraint_program(
         &catalog.global_constraints,
         GlobalConstraintInputs {
             publics: &publics,
@@ -1420,14 +1423,12 @@ fn validate_global_constraints(
             group_values: &group_values,
         },
     )
-    .map_err(|error| format!("invalid global constraint program: {error}"))?;
-
-    for (index, residual) in residuals.iter().enumerate() {
-        if *residual != Ext3::ZERO {
-            return Err(format!("global constraint {index} is not satisfied"));
+    .map_err(|error| match error {
+        GlobalConstraintValidationError::Eval(source) => {
+            format!("invalid global constraint program: {source}")
         }
-    }
-    Ok(())
+        source => source.to_string(),
+    })
 }
 
 fn validate_global_hints(

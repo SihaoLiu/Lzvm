@@ -99,6 +99,43 @@ impl fmt::Display for GlobalConstraintEvalError {
 
 impl std::error::Error for GlobalConstraintEvalError {}
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GlobalConstraintValidationError {
+    Eval(GlobalConstraintEvalError),
+    ConstraintViolation {
+        constraint_index: usize,
+        value: [u64; 3],
+    },
+}
+
+impl fmt::Display for GlobalConstraintValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Eval(error) => write!(f, "{error}"),
+            Self::ConstraintViolation {
+                constraint_index, ..
+            } => {
+                write!(f, "global constraint {constraint_index} is not satisfied")
+            }
+        }
+    }
+}
+
+impl std::error::Error for GlobalConstraintValidationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Eval(error) => Some(error),
+            Self::ConstraintViolation { .. } => None,
+        }
+    }
+}
+
+impl From<GlobalConstraintEvalError> for GlobalConstraintValidationError {
+    fn from(error: GlobalConstraintEvalError) -> Self {
+        Self::Eval(error)
+    }
+}
+
 pub fn evaluate_global_constraints(
     program: &GlobalConstraintProgram,
     inputs: GlobalConstraintInputs<'_>,
@@ -109,6 +146,22 @@ pub fn evaluate_global_constraints(
         .enumerate()
         .map(|(index, entry)| evaluate_entry(index, entry, program, inputs))
         .collect()
+}
+
+pub fn validate_global_constraints(
+    program: &GlobalConstraintProgram,
+    inputs: GlobalConstraintInputs<'_>,
+) -> Result<(), GlobalConstraintValidationError> {
+    let residuals = evaluate_global_constraints(program, inputs)?;
+    for (constraint_index, residual) in residuals.into_iter().enumerate() {
+        if residual != Ext3::ZERO {
+            return Err(GlobalConstraintValidationError::ConstraintViolation {
+                constraint_index,
+                value: residual.to_u64s(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn evaluate_entry(

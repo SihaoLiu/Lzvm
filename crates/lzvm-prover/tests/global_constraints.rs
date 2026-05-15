@@ -1,7 +1,8 @@
 use lzvm_artifacts::constraint_program::{GlobalConstraintEntry, GlobalConstraintProgram};
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::global_constraints::{
-    evaluate_global_constraints, GlobalConstraintEvalError, GlobalConstraintInputs,
+    evaluate_global_constraints, validate_global_constraints, GlobalConstraintEvalError,
+    GlobalConstraintInputs, GlobalConstraintValidationError,
 };
 
 #[test]
@@ -46,6 +47,46 @@ fn evaluates_base_global_constraint_residuals() {
     )
     .expect("unsatisfied program should still evaluate");
     assert_eq!(unsatisfied, vec![ext([5, 0, 0])]);
+}
+
+#[test]
+fn validates_satisfied_global_constraints() {
+    let program = base_residual_program();
+
+    validate_global_constraints(
+        &program,
+        GlobalConstraintInputs {
+            publics: &[felt(17)],
+            proof_values: &[],
+            challenges: &[],
+            group_values: &[],
+        },
+    )
+    .expect("zero residual should validate");
+}
+
+#[test]
+fn rejects_unsatisfied_global_constraints() {
+    let program = base_residual_program();
+
+    let error = validate_global_constraints(
+        &program,
+        GlobalConstraintInputs {
+            publics: &[felt(12)],
+            proof_values: &[],
+            challenges: &[],
+            group_values: &[],
+        },
+    )
+    .expect_err("nonzero residual should reject");
+
+    assert_eq!(
+        error,
+        GlobalConstraintValidationError::ConstraintViolation {
+            constraint_index: 0,
+            value: [5, 0, 0],
+        }
+    );
 }
 
 #[test]
@@ -243,4 +284,23 @@ fn felt(value: u64) -> Felt {
 
 fn ext(values: [u64; 3]) -> Ext3 {
     Ext3::from_u64s(values)
+}
+
+fn base_residual_program() -> GlobalConstraintProgram {
+    GlobalConstraintProgram {
+        entries: vec![GlobalConstraintEntry {
+            destination_dimension: 1,
+            destination_id: 0,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 6,
+            args_offset: 0,
+            source_line: "base residual".to_owned(),
+        }],
+        ops: vec![0],
+        args: vec![1, 0, 2, 0, 1, 0],
+        numbers: vec![17],
+    }
 }
