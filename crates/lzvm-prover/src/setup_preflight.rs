@@ -6,9 +6,40 @@ use lzvm_artifacts::key_directory::{
 use lzvm_artifacts::proof::ProofArtifact;
 use lzvm_artifacts::public_values::PublicValues;
 
-use crate::proof_preflight::{
-    validate_proof_public_values, ProofPreflightError, ProofPreflightReport,
+use crate::constant_opening::{
+    validate_constant_opening_segments, ValidateConstantOpeningSegmentsError,
 };
+use crate::global_constraints::{
+    validate_global_constraints_from_proof_segments, ValidateGlobalConstraintProofSegmentsError,
+    ValidateGlobalConstraintProofSegmentsRequest,
+};
+use crate::hint_eval::{
+    resolve_global_hint_program_from_proof_segments, ResolveGlobalHintProofSegmentsError,
+    ResolveGlobalHintProofSegmentsRequest,
+};
+use crate::pcs_fri::{
+    validate_optional_pcs_fri_opening_proof_segments,
+    ValidateOptionalPcsFriOpeningProofSegmentsError,
+    ValidateOptionalPcsFriOpeningProofSegmentsRequest,
+};
+use crate::pcs_material_manifest::{
+    validate_pcs_material_manifest_segments, ValidatePcsMaterialManifestSegmentsError,
+};
+use crate::pcs_query_plan::{
+    uses_transcript_pcs_query_plan_inputs, validate_pcs_query_plan_segments,
+    ValidatePcsQueryPlanSegmentsError,
+};
+use crate::proof_preflight::{
+    public_values_as_fields, validate_proof_public_values, ProofPreflightError,
+    ProofPreflightReport, PublicValueFieldError,
+};
+use crate::witness_commitment::{
+    load_witness_commitment_segments, LoadWitnessCommitmentSegmentsError,
+};
+use crate::witness_opening::{
+    validate_witness_opening_segments, ValidateWitnessOpeningSegmentsError,
+};
+use crate::{derive_prove_schedule, ProveScheduleError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SetupPreflightReport {
@@ -22,6 +53,16 @@ pub enum SetupPreflightError {
     Catalog(KeyDirectoryError),
     Proof(ProofPreflightError),
     CatalogHashMismatch,
+    Schedule(ProveScheduleError),
+    PublicValues(PublicValueFieldError),
+    PcsMaterial(ValidatePcsMaterialManifestSegmentsError),
+    WitnessCommitment(LoadWitnessCommitmentSegmentsError),
+    PcsQueryPlan(ValidatePcsQueryPlanSegmentsError),
+    ConstantOpening(ValidateConstantOpeningSegmentsError),
+    WitnessOpening(ValidateWitnessOpeningSegmentsError),
+    GlobalConstraints(ValidateGlobalConstraintProofSegmentsError),
+    GlobalHints(ResolveGlobalHintProofSegmentsError),
+    PcsFri(ValidateOptionalPcsFriOpeningProofSegmentsError),
 }
 
 impl fmt::Display for SetupPreflightError {
@@ -30,6 +71,16 @@ impl fmt::Display for SetupPreflightError {
             Self::Catalog(error) => write!(f, "{error}"),
             Self::Proof(error) => write!(f, "{error}"),
             Self::CatalogHashMismatch => write!(f, "setup catalog fingerprint mismatch"),
+            Self::Schedule(error) => write!(f, "{error}"),
+            Self::PublicValues(error) => write!(f, "{error}"),
+            Self::PcsMaterial(error) => write!(f, "{error}"),
+            Self::WitnessCommitment(error) => write!(f, "{error}"),
+            Self::PcsQueryPlan(error) => write!(f, "{error}"),
+            Self::ConstantOpening(error) => write!(f, "{error}"),
+            Self::WitnessOpening(error) => write!(f, "{error}"),
+            Self::GlobalConstraints(error) => write!(f, "{error}"),
+            Self::GlobalHints(error) => write!(f, "{error}"),
+            Self::PcsFri(error) => write!(f, "{error}"),
         }
     }
 }
@@ -39,6 +90,16 @@ impl std::error::Error for SetupPreflightError {
         match self {
             Self::Catalog(error) => Some(error),
             Self::Proof(error) => Some(error),
+            Self::Schedule(error) => Some(error),
+            Self::PublicValues(error) => Some(error),
+            Self::PcsMaterial(error) => Some(error),
+            Self::WitnessCommitment(error) => Some(error),
+            Self::PcsQueryPlan(error) => Some(error),
+            Self::ConstantOpening(error) => Some(error),
+            Self::WitnessOpening(error) => Some(error),
+            Self::GlobalConstraints(error) => Some(error),
+            Self::GlobalHints(error) => Some(error),
+            Self::PcsFri(error) => Some(error),
             Self::CatalogHashMismatch => None,
         }
     }
@@ -71,4 +132,87 @@ pub fn validate_setup_preflight_hashes(
         segment_count,
         public_value_count,
     })
+}
+
+pub fn validate_setup_preflight(
+    catalog: &KeyDirectoryCatalog,
+    proof: &ProofArtifact,
+    public_values: &PublicValues,
+) -> Result<SetupPreflightReport, SetupPreflightError> {
+    let report = validate_setup_preflight_hashes(catalog, proof, public_values)?;
+    let schedule = derive_prove_schedule(catalog).map_err(SetupPreflightError::Schedule)?;
+    let uses_transcript_inputs = uses_transcript_pcs_query_plan_inputs(&proof.segments);
+    let needs_public_fields = uses_transcript_inputs
+        || !catalog.global_constraints.entries.is_empty()
+        || !catalog.global_hints.hints.is_empty();
+    let public_fields = if needs_public_fields {
+        Some(public_values_as_fields(public_values).map_err(SetupPreflightError::PublicValues)?)
+    } else {
+        None
+    };
+    let transcript_public_fields = if uses_transcript_inputs {
+        public_fields.as_deref().unwrap_or(&[])
+    } else {
+        &[]
+    };
+
+    validate_pcs_material_manifest_segments(&schedule, &proof.segments)
+        .map_err(SetupPreflightError::PcsMaterial)?;
+    load_witness_commitment_segments(&schedule.units, &proof.segments)
+        .map(|_| ())
+        .map_err(SetupPreflightError::WitnessCommitment)?;
+    validate_pcs_query_plan_segments(
+        &schedule,
+        proof.public_values_hash,
+        transcript_public_fields,
+        &proof.segments,
+    )
+    .map_err(SetupPreflightError::PcsQueryPlan)?;
+    validate_constant_opening_segments(&schedule.units, &proof.segments)
+        .map_err(SetupPreflightError::ConstantOpening)?;
+    validate_witness_opening_segments(&schedule.units, &proof.segments)
+        .map_err(SetupPreflightError::WitnessOpening)?;
+
+    if !catalog.global_constraints.entries.is_empty() {
+        validate_global_constraints_from_proof_segments(
+            ValidateGlobalConstraintProofSegmentsRequest {
+                program: &catalog.global_constraints,
+                global_info: &catalog.layout.global_info,
+                schedule: &schedule,
+                public_values: public_fields.as_deref().unwrap_or(&[]),
+                segments: &proof.segments,
+            },
+        )
+        .map_err(SetupPreflightError::GlobalConstraints)?;
+    }
+
+    if !catalog.global_hints.hints.is_empty() {
+        resolve_global_hint_program_from_proof_segments(ResolveGlobalHintProofSegmentsRequest {
+            global_info: &catalog.layout.global_info,
+            program: &catalog.global_hints,
+            schedule: &schedule,
+            public_values: public_fields.as_deref().unwrap_or(&[]),
+            segments: &proof.segments,
+        })
+        .map(|_| ())
+        .map_err(SetupPreflightError::GlobalHints)?;
+    }
+
+    let verifier_codes = catalog
+        .units
+        .iter()
+        .map(|unit| &unit.metadata.verifier.query)
+        .collect::<Vec<_>>();
+    validate_optional_pcs_fri_opening_proof_segments(
+        ValidateOptionalPcsFriOpeningProofSegmentsRequest {
+            schedule: &schedule,
+            verifier_codes: &verifier_codes,
+            global_info: &catalog.layout.global_info,
+            public_values: transcript_public_fields,
+            segments: &proof.segments,
+        },
+    )
+    .map_err(SetupPreflightError::PcsFri)?;
+
+    Ok(report)
 }

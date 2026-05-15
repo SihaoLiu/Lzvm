@@ -15,14 +15,14 @@ use lzvm_artifacts::hint_program::{
 };
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest_hex, read_key_directory_catalog, read_key_directory_layout,
-    validate_key_directory_layout, KeyDirectoryCatalog,
+    validate_key_directory_layout,
 };
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_material};
 use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file,
 };
-use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact};
-use lzvm_artifacts::public_values::{read_public_values_file, PublicValues};
+use lzvm_artifacts::proof::read_proof_artifact_file;
+use lzvm_artifacts::public_values::read_public_values_file;
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, UnitSetupInfo,
@@ -31,26 +31,9 @@ use lzvm_artifacts::verification_key::{read_verification_key_binary_file, Verifi
 use lzvm_artifacts::verifier_info::{
     encode_verifier_info, read_verifier_info_binary_file, VerifierInfo,
 };
-use lzvm_prover::constant_opening::validate_constant_opening_segments;
-use lzvm_prover::global_constraints::{
-    validate_global_constraints_from_proof_segments, ValidateGlobalConstraintProofSegmentsRequest,
-};
-use lzvm_prover::hint_eval::{
-    resolve_global_hint_program_from_proof_segments, ResolveGlobalHintProofSegmentsRequest,
-};
-use lzvm_prover::pcs_fri::{
-    validate_optional_pcs_fri_opening_proof_segments,
-    ValidateOptionalPcsFriOpeningProofSegmentsRequest,
-};
-use lzvm_prover::pcs_material_manifest::validate_pcs_material_manifest_segments;
-use lzvm_prover::pcs_query_plan::{
-    uses_transcript_pcs_query_plan_inputs, validate_pcs_query_plan_segments,
-};
-use lzvm_prover::proof_preflight::{public_values_as_fields, validate_proof_public_values};
-use lzvm_prover::setup_preflight::validate_setup_preflight_hashes;
-use lzvm_prover::witness_commitment::load_witness_commitment_segments;
-use lzvm_prover::witness_opening::validate_witness_opening_segments;
-use lzvm_prover::{derive_prove_schedule, ProveSchedule};
+use lzvm_prover::derive_prove_schedule;
+use lzvm_prover::proof_preflight::validate_proof_public_values;
+use lzvm_prover::setup_preflight::validate_setup_preflight;
 use lzvm_setup::{
     build_constant_tree_from_fixed_columns_with_backend, write_base_constant_tree,
     write_base_fixed_columns, write_constant_tree_leaves_with_backend,
@@ -401,177 +384,19 @@ fn verify_setup_preflight(
             return 1;
         }
     };
-    let public_report = match validate_setup_preflight_hashes(&catalog, &proof, &public_values) {
+    let public_report = match validate_setup_preflight(&catalog, &proof, &public_values) {
         Ok(report) => report,
         Err(error) => {
             let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
             return 1;
         }
     };
-    let schedule = match derive_prove_schedule(&catalog) {
-        Ok(schedule) => schedule,
-        Err(error) => {
-            let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
-            return 1;
-        }
-    };
-    if let Err(error) = validate_pcs_material_manifest_segments(&schedule, &proof.segments) {
-        let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
-        return 1;
-    }
-    if let Err(error) = validate_witness_commitment_segments(&schedule, &proof) {
-        let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
-        return 1;
-    }
-    if let Err(error) = validate_pcs_query_plan(&schedule, &proof, &public_values) {
-        let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
-        return 1;
-    }
-    if let Err(error) = validate_constant_opening_segment(&schedule, &proof) {
-        let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
-        return 1;
-    }
-    if let Err(error) = validate_witness_opening_segment(&schedule, &proof) {
-        let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
-        return 1;
-    }
-    if let Err(error) = validate_global_constraints(&catalog, &schedule, &proof, &public_values) {
-        let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
-        return 1;
-    }
-    if let Err(error) = validate_global_hints(&catalog, &schedule, &proof, &public_values) {
-        let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
-        return 1;
-    }
-    if let Err(error) =
-        validate_optional_pcs_fri_opening_segment(&catalog, &schedule, &proof, &public_values)
-    {
-        let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
-        return 1;
-    }
 
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "units={}", public_report.unit_count);
     let _ = writeln!(stdout, "segments={}", public_report.segment_count);
     let _ = writeln!(stdout, "public_values={}", public_report.public_value_count);
     0
-}
-
-fn validate_witness_commitment_segments(
-    schedule: &ProveSchedule,
-    proof: &ProofArtifact,
-) -> Result<(), String> {
-    load_witness_commitment_segments(&schedule.units, &proof.segments)
-        .map(|_| ())
-        .map_err(|error| error.to_string())
-}
-
-fn validate_pcs_query_plan(
-    schedule: &ProveSchedule,
-    proof: &ProofArtifact,
-    public_values: &lzvm_artifacts::public_values::PublicValues,
-) -> Result<(), String> {
-    let public_value_fields = if uses_transcript_pcs_query_plan_inputs(&proof.segments) {
-        public_values_as_fields(public_values).map_err(|error| error.to_string())?
-    } else {
-        Vec::new()
-    };
-    validate_pcs_query_plan_segments(
-        schedule,
-        proof.public_values_hash,
-        &public_value_fields,
-        &proof.segments,
-    )
-    .map_err(|error| error.to_string())
-}
-
-fn validate_witness_opening_segment(
-    schedule: &ProveSchedule,
-    proof: &ProofArtifact,
-) -> Result<(), String> {
-    validate_witness_opening_segments(&schedule.units, &proof.segments)
-        .map_err(|error| error.to_string())
-}
-
-fn validate_constant_opening_segment(
-    schedule: &ProveSchedule,
-    proof: &ProofArtifact,
-) -> Result<(), String> {
-    validate_constant_opening_segments(&schedule.units, &proof.segments)
-        .map_err(|error| error.to_string())?;
-    Ok(())
-}
-
-fn validate_optional_pcs_fri_opening_segment(
-    catalog: &KeyDirectoryCatalog,
-    schedule: &ProveSchedule,
-    proof: &ProofArtifact,
-    public_values: &PublicValues,
-) -> Result<(), String> {
-    let public_value_fields = if uses_transcript_pcs_query_plan_inputs(&proof.segments) {
-        public_values_as_fields(public_values).map_err(|error| error.to_string())?
-    } else {
-        Vec::new()
-    };
-    let verifier_codes = catalog
-        .units
-        .iter()
-        .map(|unit| &unit.metadata.verifier.query)
-        .collect::<Vec<_>>();
-    validate_optional_pcs_fri_opening_proof_segments(
-        ValidateOptionalPcsFriOpeningProofSegmentsRequest {
-            schedule,
-            verifier_codes: &verifier_codes,
-            global_info: &catalog.layout.global_info,
-            public_values: &public_value_fields,
-            segments: &proof.segments,
-        },
-    )
-    .map_err(|error| error.to_string())
-}
-
-fn validate_global_constraints(
-    catalog: &KeyDirectoryCatalog,
-    schedule: &ProveSchedule,
-    proof: &ProofArtifact,
-    public_values: &PublicValues,
-) -> Result<(), String> {
-    if catalog.global_constraints.entries.is_empty() {
-        return Ok(());
-    }
-
-    let publics = public_values_as_fields(public_values).map_err(|error| error.to_string())?;
-    validate_global_constraints_from_proof_segments(ValidateGlobalConstraintProofSegmentsRequest {
-        program: &catalog.global_constraints,
-        global_info: &catalog.layout.global_info,
-        schedule,
-        public_values: &publics,
-        segments: &proof.segments,
-    })
-    .map_err(|error| error.to_string())
-}
-
-fn validate_global_hints(
-    catalog: &KeyDirectoryCatalog,
-    schedule: &ProveSchedule,
-    proof: &ProofArtifact,
-    public_values: &PublicValues,
-) -> Result<(), String> {
-    if catalog.global_hints.hints.is_empty() {
-        return Ok(());
-    }
-
-    let public_value_fields =
-        public_values_as_fields(public_values).map_err(|error| error.to_string())?;
-    resolve_global_hint_program_from_proof_segments(ResolveGlobalHintProofSegmentsRequest {
-        global_info: &catalog.layout.global_info,
-        program: &catalog.global_hints,
-        schedule,
-        public_values: &public_value_fields,
-        segments: &proof.segments,
-    })
-    .map(|_| ())
-    .map_err(|error| error.to_string())
 }
 
 fn validate_setup_directory(

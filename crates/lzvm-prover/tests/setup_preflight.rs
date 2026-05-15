@@ -8,8 +8,10 @@ use lzvm_artifacts::proof::{ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, PublicValueEntry, PublicValues};
 use lzvm_prover::proof_preflight::ProofPreflightError;
 use lzvm_prover::setup_preflight::{
-    validate_setup_preflight_hashes, SetupPreflightError, SetupPreflightReport,
+    validate_setup_preflight, validate_setup_preflight_hashes, SetupPreflightError,
+    SetupPreflightReport,
 };
+use lzvm_prover::ProveScheduleError;
 
 fn sample_catalog() -> KeyDirectoryCatalog {
     KeyDirectoryCatalog {
@@ -123,5 +125,21 @@ fn rejects_setup_preflight_public_values_hash_mismatches() {
     assert_eq!(
         error,
         SetupPreflightError::Proof(ProofPreflightError::PublicValuesHashMismatch)
+    );
+}
+
+#[test]
+fn rejects_setup_preflight_with_empty_catalog() {
+    let catalog = sample_catalog();
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let proof = sample_proof(&public_values);
+
+    let error = validate_setup_preflight(&catalog, &proof, &public_values)
+        .expect_err("setup preflight should require scheduled units");
+
+    assert_eq!(
+        error,
+        SetupPreflightError::Schedule(ProveScheduleError::EmptyCatalog)
     );
 }
