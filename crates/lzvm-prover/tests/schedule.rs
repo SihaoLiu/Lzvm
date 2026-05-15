@@ -13,7 +13,7 @@ use lzvm_artifacts::key_directory::{
 use lzvm_artifacts::metadata_bundle::UnitMetadataBundle;
 use lzvm_artifacts::pcs_material::PcsSetupMaterial;
 use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
-use lzvm_artifacts::setup_info::{FriStep, StarkStruct, UnitSetupInfo};
+use lzvm_artifacts::setup_info::{CommitmentColumn, FriStep, StarkStruct, UnitSetupInfo};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
 use lzvm_artifacts::witness_library::WitnessLibraryError;
@@ -32,6 +32,28 @@ fn sample_setup(n_bits: u32, n_bits_ext: u32, query_count: u32) -> UnitSetupInfo
         n_stages: 1,
         n_constants: 2,
         constant_columns: Vec::new(),
+        commitment_columns: vec![
+            CommitmentColumn {
+                name: "trace.a".to_owned(),
+                stage: 1,
+                dimension: 1,
+                pols_map_id: 0,
+                stage_id: 0,
+                stage_position: 0,
+                intermediate: false,
+                lengths: Vec::new(),
+            },
+            CommitmentColumn {
+                name: "aux.a".to_owned(),
+                stage: 2,
+                dimension: 3,
+                pols_map_id: 1,
+                stage_id: 0,
+                stage_position: 0,
+                intermediate: true,
+                lengths: Vec::new(),
+            },
+        ],
         n_publics: Some(0),
         n_constraints: Some(0),
         q_degree: 3,
@@ -260,6 +282,9 @@ fn derives_prove_schedule_from_key_directory_catalog() {
     assert_eq!(schedule.units[0].transcript_evaluation_challenge_draws, 2);
     assert_eq!(schedule.units[0].constant_width, 2);
     assert_eq!(schedule.units[0].stage_commit_widths, vec![2, 3]);
+    assert_eq!(schedule.units[0].commitment_columns.len(), 2);
+    assert_eq!(schedule.units[0].commitment_columns[1].stage, 2);
+    assert_eq!(schedule.units[0].commitment_columns[1].stage_position, 0);
     assert_eq!(schedule.units[0].opening_points, vec![0, 1]);
     assert_eq!(schedule.units[0].fri_layers.len(), 1);
     assert_eq!(schedule.units[0].fri_layers[0].input_bits, 6);

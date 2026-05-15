@@ -23,6 +23,7 @@ pub struct UnitSetupInfo {
     pub challenge_count: usize,
     pub eval_count: usize,
     pub boundaries: Vec<Boundary>,
+    pub commitment_columns: Vec<CommitmentColumn>,
     pub stark: StarkStruct,
 }
 
@@ -60,6 +61,18 @@ pub struct ConstantColumn {
     pub dimension: u32,
     pub pols_map_id: u32,
     pub stage_id: u32,
+    pub lengths: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitmentColumn {
+    pub name: String,
+    pub stage: u32,
+    pub dimension: u32,
+    pub pols_map_id: u32,
+    pub stage_id: u32,
+    pub stage_position: u32,
+    pub intermediate: bool,
     pub lengths: Vec<u32>,
 }
 
@@ -118,6 +131,9 @@ pub enum SetupInfoError {
         found: usize,
     },
     InvalidConstantColumn {
+        index: usize,
+    },
+    InvalidCommitmentColumn {
         index: usize,
     },
     Io {
@@ -179,6 +195,12 @@ impl fmt::Display for SetupInfoError {
                 write!(
                     f,
                     "invalid setup-info constant-column entry at index {index}"
+                )
+            }
+            Self::InvalidCommitmentColumn { index } => {
+                write!(
+                    f,
+                    "invalid setup-info commitment-column entry at index {index}"
                 )
             }
             Self::Io { message } => write!(f, "setup-info io error: {message}"),
@@ -285,6 +307,7 @@ pub fn parse_unit_setup_info_json(input: &str) -> Result<UnitSetupInfo, SetupInf
     let n_constants = required_u32(object, "nConstants")?;
     let constant_columns = parse_constant_columns(optional_array(object, "constPolsMap")?)?;
     validate_constant_columns(n_constants, &constant_columns)?;
+    let commitment_columns = parse_commitment_columns(optional_array(object, "cmPolsMap")?)?;
     let q_degree = required_u32(object, "qDeg")?;
     let opening_points = required_i64_array(object, "openingPoints")?;
     let challenge_count = required_array(object, "challengesMap")?.len();
@@ -307,6 +330,7 @@ pub fn parse_unit_setup_info_json(input: &str) -> Result<UnitSetupInfo, SetupInf
         challenge_count,
         eval_count,
         boundaries,
+        commitment_columns,
         stark,
     };
 
@@ -402,6 +426,12 @@ fn parse_unit_setup_info_section(bytes: &[u8]) -> Result<UnitSetupInfo, SetupInf
         }
     };
 
+    let commitment_columns = if reader.position() == bytes.len() {
+        Vec::new()
+    } else {
+        read_commitment_columns(&mut reader)?
+    };
+
     if reader.position() != bytes.len() {
         return Err(SetupInfoError::UnexpectedTrailingBytes {
             count: bytes.len() - reader.position(),
@@ -420,6 +450,7 @@ fn parse_unit_setup_info_section(bytes: &[u8]) -> Result<UnitSetupInfo, SetupInf
         challenge_count,
         eval_count,
         boundaries,
+        commitment_columns,
         stark,
     };
     validate_unit_setup_info(&info)?;
@@ -482,6 +513,21 @@ fn encode_unit_setup_info_section(value: &UnitSetupInfo) -> Result<Vec<u8>, Setu
     write_optional_u32(&mut section, value.stark.transcript_arity);
     write_optional_bool(&mut section, value.stark.merkle_tree_custom);
 
+    write_u32(&mut section, usize_to_u32(value.commitment_columns.len())?);
+    for column in &value.commitment_columns {
+        write_string(&mut section, &column.name)?;
+        write_u32(&mut section, column.stage);
+        write_u32(&mut section, column.dimension);
+        write_u32(&mut section, column.pols_map_id);
+        write_u32(&mut section, column.stage_id);
+        write_u32(&mut section, column.stage_position);
+        write_bool(&mut section, column.intermediate);
+        write_u32(&mut section, usize_to_u32(column.lengths.len())?);
+        for length in &column.lengths {
+            write_u32(&mut section, *length);
+        }
+    }
+
     Ok(section)
 }
 
@@ -505,6 +551,66 @@ fn parse_constant_columns(
         });
     }
     Ok(out)
+}
+
+fn parse_commitment_columns(
+    values: Option<&Vec<serde_json::Value>>,
+) -> Result<Vec<CommitmentColumn>, SetupInfoError> {
+    let Some(values) = values else {
+        return Ok(Vec::new());
+    };
+
+    let mut out = Vec::with_capacity(values.len());
+    for value in values {
+        let object = as_object(value, "cmPolsMap")?;
+        out.push(CommitmentColumn {
+            name: required_string(object, "name")?,
+            stage: required_u32(object, "stage")?,
+            dimension: required_u32(object, "dim")?,
+            pols_map_id: required_u32(object, "polsMapId")?,
+            stage_id: required_u32(object, "stageId")?,
+            stage_position: required_u32(object, "stagePos")?,
+            intermediate: optional_bool(object, "imPol")?.unwrap_or(false),
+            lengths: optional_u32_array(object, "lengths")?.unwrap_or_default(),
+        });
+    }
+    Ok(out)
+}
+
+fn read_commitment_columns(
+    reader: &mut Reader<'_>,
+) -> Result<Vec<CommitmentColumn>, SetupInfoError> {
+    let commitment_column_count = reader.read_u32()?;
+    let mut commitment_columns = Vec::with_capacity(commitment_column_count as usize);
+    for index in 0..commitment_column_count {
+        let lengths_count = {
+            let name = reader.read_string()?;
+            let stage = reader.read_u32()?;
+            let dimension = reader.read_u32()?;
+            let pols_map_id = reader.read_u32()?;
+            let stage_id = reader.read_u32()?;
+            let stage_position = reader.read_u32()?;
+            let intermediate = reader.read_bool("commitment_column_intermediate")?;
+            let lengths_count = reader.read_u32()?;
+            commitment_columns.push(CommitmentColumn {
+                name,
+                stage,
+                dimension,
+                pols_map_id,
+                stage_id,
+                stage_position,
+                intermediate,
+                lengths: Vec::with_capacity(lengths_count as usize),
+            });
+            lengths_count
+        };
+        for _ in 0..lengths_count {
+            commitment_columns[index as usize]
+                .lengths
+                .push(reader.read_u32()?);
+        }
+    }
+    Ok(commitment_columns)
 }
 
 fn validate_constant_columns(
@@ -535,6 +641,26 @@ fn validate_constant_columns(
         seen[id] = true;
     }
 
+    Ok(())
+}
+
+fn validate_commitment_columns(info: &UnitSetupInfo) -> Result<(), SetupInfoError> {
+    for (index, column) in info.commitment_columns.iter().enumerate() {
+        if column.stage == 0 || column.stage > info.n_stages + 1 || column.dimension == 0 {
+            return Err(SetupInfoError::InvalidCommitmentColumn { index });
+        }
+        let name = format!("cm{}", column.stage);
+        let width = *info
+            .section_widths
+            .get(&name)
+            .ok_or(SetupInfoError::MissingSectionWidth { name: name.clone() })?;
+        let Some(end) = column.stage_position.checked_add(column.dimension) else {
+            return Err(SetupInfoError::InvalidCommitmentColumn { index });
+        };
+        if end > width {
+            return Err(SetupInfoError::InvalidCommitmentColumn { index });
+        }
+    }
     Ok(())
 }
 
@@ -583,6 +709,7 @@ fn validate_domains(stark: &StarkStruct) -> Result<(), SetupInfoError> {
 
 fn validate_unit_setup_info(info: &UnitSetupInfo) -> Result<(), SetupInfoError> {
     validate_constant_columns(info.n_constants, &info.constant_columns)?;
+    validate_commitment_columns(info)?;
     validate_domains(&info.stark)?;
     info.stage_commit_widths()?;
     Ok(())

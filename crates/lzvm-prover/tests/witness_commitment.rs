@@ -48,6 +48,7 @@ fn sample_unit(rows: u64, stage_commit_widths: Vec<u32>) -> ProveUnitSchedule {
         transcript_evaluation_challenge_draws: 2,
         constant_width: 1,
         stage_commit_widths,
+        commitment_columns: Vec::new(),
         opening_points: vec![0],
         fri_layers: vec![PcsFriLayer {
             input_bits: 2,

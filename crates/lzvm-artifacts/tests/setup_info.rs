@@ -83,6 +83,10 @@ fn sample_setup_info_json() -> &'static str {
             {"stage": 0, "name": "main.d", "dim": 1, "polsMapId": 3, "stageId": 3},
             {"stage": 0, "name": "main.e", "dim": 1, "polsMapId": 4, "stageId": 4, "lengths": [5]}
         ],
+        "cmPolsMap": [
+            {"stage": 1, "name": "trace.a", "dim": 1, "polsMapId": 0, "stageId": 0, "stagePos": 0},
+            {"stage": 2, "name": "aux.a", "dim": 3, "polsMapId": 1, "stageId": 0, "stagePos": 0}
+        ],
         "challengesMap": [{}, {}],
         "evMap": [{}, {}, {}],
         "boundaries": [
@@ -176,6 +180,24 @@ fn sample_setup_info_binary() -> Vec<u8> {
     push_optional_u32(&mut section, Some(4));
     push_optional_bool(&mut section, Some(true));
 
+    push_u32(&mut section, 2);
+    for (name, stage, dimension, pols_map_id, stage_id, stage_position, intermediate, lengths) in [
+        ("trace.a", 1_u32, 1_u32, 0_u32, 0_u32, 0_u32, false, &[][..]),
+        ("aux.a", 2, 3, 1, 0, 0, false, &[][..]),
+    ] {
+        push_string(&mut section, name);
+        push_u32(&mut section, stage);
+        push_u32(&mut section, dimension);
+        push_u32(&mut section, pols_map_id);
+        push_u32(&mut section, stage_id);
+        push_u32(&mut section, stage_position);
+        push_u8(&mut section, u8::from(intermediate));
+        push_u32(&mut section, lengths.len() as u32);
+        for length in lengths {
+            push_u32(&mut section, *length);
+        }
+    }
+
     let mut file = Vec::new();
     file.extend_from_slice(b"uinf");
     push_u32(&mut file, 1);
@@ -183,6 +205,19 @@ fn sample_setup_info_binary() -> Vec<u8> {
     push_u32(&mut file, 1);
     file.extend_from_slice(&(section.len() as u64).to_le_bytes());
     file.extend_from_slice(&section);
+    file
+}
+
+fn sample_setup_info_binary_without_commitment_columns() -> Vec<u8> {
+    const COMMITMENT_COLUMN_BYTES: usize = 68;
+    let mut file = sample_setup_info_binary();
+    let section_len_offset = 16;
+    let mut section_len_bytes = [0_u8; 8];
+    section_len_bytes.copy_from_slice(&file[section_len_offset..section_len_offset + 8]);
+    let section_len = u64::from_le_bytes(section_len_bytes);
+    let adjusted_len = section_len - COMMITMENT_COLUMN_BYTES as u64;
+    file[section_len_offset..section_len_offset + 8].copy_from_slice(&adjusted_len.to_le_bytes());
+    file.truncate(file.len() - COMMITMENT_COLUMN_BYTES);
     file
 }
 
@@ -199,6 +234,10 @@ fn parses_unit_setup_info_json() {
     assert_eq!(info.constant_columns.len(), 5);
     assert_eq!(info.constant_columns[4].name, "main.e");
     assert_eq!(info.constant_columns[4].lengths, [5]);
+    assert_eq!(info.commitment_columns.len(), 2);
+    assert_eq!(info.commitment_columns[1].stage, 2);
+    assert_eq!(info.commitment_columns[1].stage_position, 0);
+    assert_eq!(info.commitment_columns[1].dimension, 3);
     assert_eq!(info.n_publics, Some(3));
     assert_eq!(info.n_constraints, Some(8));
     assert_eq!(info.q_degree, 7);
@@ -282,6 +321,10 @@ fn parses_unit_setup_info_binary() {
     assert_eq!(info.constant_columns.len(), 5);
     assert_eq!(info.constant_columns[4].name, "main.e");
     assert_eq!(info.constant_columns[4].lengths, [5]);
+    assert_eq!(info.commitment_columns.len(), 2);
+    assert_eq!(info.commitment_columns[1].stage, 2);
+    assert_eq!(info.commitment_columns[1].stage_position, 0);
+    assert_eq!(info.commitment_columns[1].dimension, 3);
     assert_eq!(info.n_publics, Some(3));
     assert_eq!(info.n_constraints, Some(8));
     assert_eq!(info.q_degree, 7);
@@ -299,6 +342,18 @@ fn parses_unit_setup_info_binary() {
     assert_eq!(info.stark.n_bits_ext, 13);
     assert_eq!(info.stark.steps.len(), 3);
     assert_eq!(info.stark.verification_hash_type.as_deref(), Some("GL"));
+}
+
+#[test]
+fn parses_unit_setup_info_binary_without_commitment_columns() {
+    let info = parse_unit_setup_info(&sample_setup_info_binary_without_commitment_columns())
+        .expect("fixture should parse");
+
+    assert!(info.commitment_columns.is_empty());
+    assert_eq!(
+        info.stage_commit_widths().expect("widths should exist"),
+        vec![2, 3, 1]
+    );
 }
 
 #[test]

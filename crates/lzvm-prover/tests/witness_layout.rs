@@ -47,6 +47,7 @@ fn sample_unit_with_rows(
         transcript_evaluation_challenge_draws: 2,
         constant_width: 5,
         stage_commit_widths,
+        commitment_columns: Vec::new(),
         opening_points: vec![0, 1, -1],
         fri_layers: vec![PcsFriLayer {
             input_bits: 13,

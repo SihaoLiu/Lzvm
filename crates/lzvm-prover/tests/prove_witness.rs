@@ -101,6 +101,7 @@ fn sample_setup() -> UnitSetupInfo {
         n_stages: 1,
         n_constants: 2,
         constant_columns: Vec::new(),
+        commitment_columns: Vec::new(),
         n_publics: Some(0),
         n_constraints: Some(0),
         q_degree: 3,
