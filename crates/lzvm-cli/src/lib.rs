@@ -503,7 +503,7 @@ fn verify_setup_preflight(
         let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
         return 1;
     }
-    if let Err(error) = validate_global_constraints(&catalog, &proof, &public_values) {
+    if let Err(error) = validate_global_constraints(&catalog, &schedule, &proof, &public_values) {
         let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
         return 1;
     }
@@ -1406,6 +1406,7 @@ fn validate_pcs_fri_query_outputs(input: PcsFriQueryOutputValidation<'_>) -> Res
 
 fn validate_global_constraints(
     catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
     proof: &ProofArtifact,
     public_values: &PublicValues,
 ) -> Result<(), String> {
@@ -1417,12 +1418,13 @@ fn validate_global_constraints(
     let proof_values = load_pcs_proof_values(catalog, proof)?;
     let packed_proof_values = flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)
         .map_err(|error| format!("global constraint proof values invalid: {error}"))?;
+    let challenges = derive_global_constraint_challenges(schedule, proof, public_values)?;
     let residuals = evaluate_global_constraints(
         &catalog.global_constraints,
         GlobalConstraintInputs {
             publics: &publics,
             proof_values: &packed_proof_values,
-            challenges: &[],
+            challenges: &challenges,
             group_values: &[],
         },
     )
@@ -1434,6 +1436,101 @@ fn validate_global_constraints(
         }
     }
     Ok(())
+}
+
+fn derive_global_constraint_challenges(
+    schedule: &ProveSchedule,
+    proof: &ProofArtifact,
+    public_values: &PublicValues,
+) -> Result<Vec<Ext3>, String> {
+    if !uses_transcript_query_plan_inputs(proof) {
+        return Ok(Vec::new());
+    }
+
+    let material_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
+        .ok_or_else(|| "missing PCS material manifest segment".to_owned())?;
+    let query_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
+        .ok_or_else(|| "missing PCS query plan segment".to_owned())?;
+    let evaluation_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
+        .ok_or_else(|| "missing PCS evaluation segment".to_owned())?;
+    let fri_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
+        .ok_or_else(|| "missing PCS FRI opening segment".to_owned())?;
+
+    let query_plan = parse_pcs_query_plan_segment(&query_segment.data)
+        .map_err(|error| format!("invalid PCS query plan segment: {error}"))?;
+    let material = parse_pcs_material_manifest_segment(&material_segment.data)
+        .map_err(|error| format!("invalid PCS material manifest segment: {error}"))?;
+    let evaluations = parse_pcs_evaluation_segment(&evaluation_segment.data)
+        .map_err(|error| format!("invalid PCS evaluation segment: {error}"))?;
+    let fri = parse_pcs_fri_opening_segment(&fri_segment.data)
+        .map_err(|error| format!("invalid PCS FRI opening segment: {error}"))?;
+    let witness_segments = collect_witness_commitment_segments(schedule, proof)?;
+    let public_value_fields = transcript_public_value_fields(public_values)?;
+    let mut challenges = Vec::new();
+
+    for query_unit in &query_plan.units {
+        let unit_index = usize::try_from(query_unit.unit_index)
+            .map_err(|_| "global constraint challenge unit index overflow".to_owned())?;
+        let unit = schedule
+            .units
+            .get(unit_index)
+            .ok_or_else(|| format!("global constraint challenge mismatch for unit {unit_index}"))?;
+        let material_unit = material
+            .units
+            .iter()
+            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .ok_or_else(|| format!("global constraint challenge mismatch for unit {unit_index}"))?;
+        let witness_segment_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
+            .checked_add(query_unit.unit_index)
+            .ok_or_else(|| "global constraint challenge witness id overflow".to_owned())?;
+        let witness_segment = witness_segments
+            .iter()
+            .find(|segment| segment.id == witness_segment_id)
+            .ok_or_else(|| format!("global constraint challenge mismatch for unit {unit_index}"))?;
+        let witness = parse_witness_commitment_segment(&witness_segment.data).map_err(|error| {
+            format!("invalid witness commitment segment for unit {unit_index}: {error}")
+        })?;
+        let evaluation_unit = evaluations
+            .units
+            .iter()
+            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .ok_or_else(|| format!("global constraint challenge mismatch for unit {unit_index}"))?;
+        let fri_unit = fri
+            .units
+            .iter()
+            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .ok_or_else(|| format!("global constraint challenge mismatch for unit {unit_index}"))?;
+        let mut unit_challenges =
+            derive_pcs_transcript_challenges_from_segments(PcsTranscriptSegmentInputs {
+                unit_index,
+                unit,
+                material: material_unit,
+                public_values: &public_value_fields,
+                witness: &witness,
+                evaluations: evaluation_unit,
+                fri: fri_unit,
+                root_challenge_draws: &unit.transcript_root_challenge_draws,
+                evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
+            })
+            .map_err(|error| {
+                format!("derive global constraint transcript challenges failed: {error}")
+            })?;
+        challenges.append(&mut unit_challenges);
+    }
+
+    Ok(challenges)
 }
 
 fn load_pcs_proof_values(
