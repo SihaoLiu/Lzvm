@@ -11,6 +11,10 @@ fn source(kind: &str, id: u32) -> serde_json::Value {
     json!({"type": kind, "id": id, "dim": 3})
 }
 
+fn scalar_source(kind: &str, id: u32) -> serde_json::Value {
+    json!({"type": kind, "id": id, "dim": 1})
+}
+
 fn number(value: &str) -> serde_json::Value {
     json!({"type": "number", "value": value, "dim": 1})
 }
@@ -67,6 +71,8 @@ fn evaluates_verifier_code_arithmetic() {
         challenges: &challenges,
         evaluations: &evaluations,
         publics: &publics,
+        constants: &[],
+        commitments: &[],
         zi: &[],
         proof_values: &[],
         x_div_x_sub: &[],
@@ -108,6 +114,8 @@ fn evaluates_verifier_code_with_auxiliary_vectors() {
         challenges: &[],
         evaluations: &[],
         publics: &[],
+        constants: &[],
+        commitments: &[],
         zi: &zi,
         proof_values: &proof_values,
         x_div_x_sub: &x_div_x_sub,
@@ -116,6 +124,47 @@ fn evaluates_verifier_code_with_auxiliary_vectors() {
     let value = evaluate_verifier_code(&code, &inputs).expect("code should evaluate");
 
     assert_eq!(value, (zi[0] + proof_values[0]) * x_div_x_sub[1]);
+}
+
+#[test]
+fn evaluates_verifier_code_with_opened_values() {
+    let code = code(
+        3,
+        vec![
+            operation(
+                VerifierOperationKind::Copy,
+                tmp(0),
+                vec![scalar_source("const", 1)],
+            ),
+            operation(
+                VerifierOperationKind::Copy,
+                tmp(1),
+                vec![json!({"type": "cm", "id": 2, "dim": 3})],
+            ),
+            operation(VerifierOperationKind::Add, tmp(2), vec![tmp(0), tmp(1)]),
+            operation(VerifierOperationKind::Copy, tmp(0), vec![tmp(2)]),
+        ],
+    );
+    let constants = [Felt::from_u64(7), Felt::from_u64(11)];
+    let commitments = [
+        Felt::from_u64(1),
+        Felt::from_u64(2),
+        Felt::from_u64(13),
+        Felt::from_u64(17),
+        Felt::from_u64(19),
+    ];
+    let inputs = VerifierEvalInputs {
+        constants: &constants,
+        commitments: &commitments,
+        ..VerifierEvalInputs::default()
+    };
+
+    let value = evaluate_verifier_code(&code, &inputs).expect("code should evaluate");
+
+    assert_eq!(
+        value,
+        Ext3::from_u64s([11, 0, 0]) + Ext3::from_u64s([13, 17, 19])
+    );
 }
 
 #[test]

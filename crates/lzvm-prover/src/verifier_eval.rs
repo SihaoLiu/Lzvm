@@ -8,6 +8,8 @@ pub struct VerifierEvalInputs<'a> {
     pub challenges: &'a [Ext3],
     pub evaluations: &'a [Ext3],
     pub publics: &'a [Felt],
+    pub constants: &'a [Felt],
+    pub commitments: &'a [Felt],
     pub zi: &'a [Ext3],
     pub proof_values: &'a [Ext3],
     pub x_div_x_sub: &'a [Ext3],
@@ -28,6 +30,9 @@ pub enum VerifierEvalError {
     },
     InvalidNumber {
         value: String,
+    },
+    UnsupportedDimension {
+        dimension: usize,
     },
     TemporaryIndexOutOfRange {
         index: usize,
@@ -63,6 +68,9 @@ impl fmt::Display for VerifierEvalError {
             }
             Self::InvalidNumber { value } => {
                 write!(f, "invalid verifier evaluation number: {value}")
+            }
+            Self::UnsupportedDimension { dimension } => {
+                write!(f, "unsupported verifier evaluation dimension: {dimension}")
             }
             Self::TemporaryIndexOutOfRange { index, len } => write!(
                 f,
@@ -190,6 +198,16 @@ fn resolve_source(
             })?;
             Ok(extension_from_scalar(value))
         }
+        "const" => {
+            let index = usize_field(object, "id")?;
+            let dimension = optional_usize_field(object, "dim")?.unwrap_or(1);
+            read_felt_vector("const", index, dimension, inputs.constants)
+        }
+        "cm" => {
+            let index = usize_field(object, "id")?;
+            let dimension = optional_usize_field(object, "dim")?.unwrap_or(1);
+            read_felt_vector("cm", index, dimension, inputs.commitments)
+        }
         "Zi" => {
             let index = match optional_usize_field(object, "boundaryId")? {
                 Some(index) => index,
@@ -275,6 +293,49 @@ fn read_ext3(kind: &str, index: usize, values: &[Ext3]) -> Result<Ext3, Verifier
             index,
             len: values.len(),
         })
+}
+
+fn read_felt_vector(
+    kind: &str,
+    index: usize,
+    dimension: usize,
+    values: &[Felt],
+) -> Result<Ext3, VerifierEvalError> {
+    match dimension {
+        1 => {
+            let value =
+                *values
+                    .get(index)
+                    .ok_or_else(|| VerifierEvalError::SourceIndexOutOfRange {
+                        kind: kind.to_owned(),
+                        index,
+                        len: values.len(),
+                    })?;
+            Ok(extension_from_scalar(value))
+        }
+        3 => {
+            let end = index
+                .checked_add(3)
+                .ok_or(VerifierEvalError::SourceIndexOutOfRange {
+                    kind: kind.to_owned(),
+                    index,
+                    len: values.len(),
+                })?;
+            if end > values.len() {
+                return Err(VerifierEvalError::SourceIndexOutOfRange {
+                    kind: kind.to_owned(),
+                    index,
+                    len: values.len(),
+                });
+            }
+            Ok(Ext3::new(
+                values[index],
+                values[index + 1],
+                values[index + 2],
+            ))
+        }
+        _ => Err(VerifierEvalError::UnsupportedDimension { dimension }),
+    }
 }
 
 fn check_index(kind: &str, index: usize, len: usize) -> Result<(), VerifierEvalError> {
