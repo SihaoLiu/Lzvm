@@ -10,7 +10,7 @@ use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::{ExpressionEntry, ExpressionProgram};
 use lzvm_artifacts::fixed::{write_raw_fixed_columns_file, FixedColumn, FixedColumns};
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
-use lzvm_artifacts::hint_program::HintProgram;
+use lzvm_artifacts::hint_program::{Hint, HintField, HintOperand, HintProgram, HintValue};
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry,
     KeyUnitKind, KeyUnitPaths,
@@ -198,6 +198,21 @@ fn empty_regular_constraints() -> ConstraintProgram {
 
 fn empty_regular_hints() -> HintProgram {
     HintProgram { hints: Vec::new() }
+}
+
+fn proof_value_regular_hint() -> HintProgram {
+    HintProgram {
+        hints: vec![Hint {
+            name: "runtime-hint".to_owned(),
+            fields: vec![HintField {
+                name: "values".to_owned(),
+                values: vec![HintValue {
+                    operand: HintOperand::ProofValue { id: 0 },
+                    positions: vec![0],
+                }],
+            }],
+        }],
+    }
 }
 
 fn row_zero_stage_constraint(expected: u64) -> ConstraintProgram {
@@ -784,6 +799,83 @@ fn uses_proof_values_when_checking_regular_constraints() {
         },
     )
     .expect("proof-valued regular constraint should pass");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(output.unit_index(), 0);
+    assert_eq!(output.trace_row_count(), 16);
+}
+
+#[test]
+fn rejects_regular_hints_with_missing_proof_values() {
+    let dir = temp_dir("missing-regular-hint-proof-value");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.regular_hints = proof_value_regular_hint();
+    let catalog = sample_catalog(unit);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+
+    let error = run_prove_witness_commitments(&plan, 0)
+        .expect_err("missing proof value input should reject regular hint check");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(
+        error
+            .to_string()
+            .contains("missing regular hint proof value input"),
+        "{error}"
+    );
+}
+
+#[test]
+fn uses_proof_values_when_checking_regular_hints() {
+    let dir = temp_dir("proof-value-regular-hint");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.regular_hints = proof_value_regular_hint();
+    let catalog = sample_catalog(unit);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+
+    let output = run_prove_witness_commitments_with_auxiliary_inputs(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs {
+            proof_values: vec![Felt::from_canonical(8).expect("value should be canonical")],
+            ..ProveWitnessAuxiliaryInputs::default()
+        },
+    )
+    .expect("proof-valued regular hint should pass");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(output.unit_index(), 0);

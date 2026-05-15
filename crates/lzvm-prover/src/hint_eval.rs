@@ -256,6 +256,50 @@ pub fn resolve_regular_hint_field(
         .collect()
 }
 
+pub fn resolve_regular_hint_program_for_row(
+    setup: &UnitSetupInfo,
+    program: &HintProgram,
+    row: usize,
+    inputs: RegularConstraintInputs<'_>,
+) -> Result<Vec<ResolvedHint>, HintEvalError> {
+    validate_regular_row(row, inputs)?;
+    program
+        .hints
+        .iter()
+        .map(|hint| {
+            let fields = hint
+                .fields
+                .iter()
+                .map(|field| {
+                    let values = field
+                        .values
+                        .iter()
+                        .map(|value| {
+                            Ok(ResolvedHintValue {
+                                payload: resolve_regular_operand(
+                                    setup,
+                                    &value.operand,
+                                    row,
+                                    inputs,
+                                )?,
+                                positions: value.positions.clone(),
+                            })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(ResolvedHintField {
+                        name: field.name.clone(),
+                        values,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(ResolvedHint {
+                name: hint.name.clone(),
+                fields,
+            })
+        })
+        .collect()
+}
+
 fn resolve_global_operand(
     global_info: &GlobalInfo,
     operand: &HintOperand,

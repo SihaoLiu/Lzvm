@@ -8,6 +8,7 @@ use lzvm_artifacts::constant_opening_segment::{
 };
 use lzvm_artifacts::constant_tree::{read_constant_tree_file, ConstantTreeError};
 use lzvm_artifacts::fixed::{read_fixed_columns_file_for_setup, FixedColumnError, FixedColumns};
+use lzvm_artifacts::hint_program::{HintOperand, HintProgram};
 use lzvm_artifacts::key_directory::{KeyDirectoryCatalog, KeyUnitKind};
 use lzvm_artifacts::pcs_evaluation_segment::{
     encode_pcs_evaluation_segment, PcsEvaluationSegment, PcsEvaluationSegmentError,
@@ -42,6 +43,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
 use crate::constant_tree_opening::{open_constant_tree_row, ConstantTreeOpeningError};
+use crate::hint_eval::{resolve_regular_hint_program_for_row, HintEvalError};
 #[cfg(not(feature = "cuda"))]
 use crate::pcs_challenge::find_query_nonce;
 #[cfg(feature = "cuda")]
@@ -212,6 +214,14 @@ pub enum ProveWitnessCommitmentError {
         buffer: &'static str,
     },
     RegularConstraintEval(RegularConstraintEvalError),
+    MissingRegularHintInput {
+        unit_index: usize,
+        source: &'static str,
+    },
+    RegularHintEval {
+        unit_index: usize,
+        source: HintEvalError,
+    },
     RegularConstraintViolation {
         unit_index: usize,
         constraint_index: usize,
@@ -440,6 +450,14 @@ impl fmt::Display for ProveWitnessCommitmentError {
             Self::RegularConstraintEval(error) => {
                 write!(f, "prove witness commitment regular constraint evaluation failed: {error}")
             }
+            Self::MissingRegularHintInput { unit_index, source } => write!(
+                f,
+                "missing regular hint {source} input for prove witness commitment unit {unit_index}"
+            ),
+            Self::RegularHintEval { unit_index, source } => write!(
+                f,
+                "prove witness commitment regular hint evaluation failed for unit {unit_index}: {source}"
+            ),
             Self::RegularConstraintViolation {
                 unit_index,
                 constraint_index,
@@ -463,6 +481,7 @@ impl std::error::Error for ProveWitnessCommitmentError {
             Self::PublicInputs { source, .. } => Some(source),
             Self::FixedColumns { source, .. } => Some(source),
             Self::RegularConstraintEval(error) => Some(error),
+            Self::RegularHintEval { source, .. } => Some(source),
             Self::Commit(error) => Some(error),
             Self::UnitIndexOutOfRange { .. }
             | Self::InputData { .. }
@@ -476,6 +495,7 @@ impl std::error::Error for ProveWitnessCommitmentError {
             | Self::FixedColumnNonCanonical { .. }
             | Self::StageIndexTooLarge { .. }
             | Self::MissingRegularConstraintInput { .. }
+            | Self::MissingRegularHintInput { .. }
             | Self::RegularConstraintViolation { .. } => None,
         }
     }
@@ -890,6 +910,14 @@ pub fn run_prove_witness_commitments_with_trace(
         &publics,
         &auxiliary_inputs,
     )?;
+    validate_witness_regular_hints(
+        execution_unit,
+        unit_index,
+        &layout,
+        &trace,
+        &publics,
+        &auxiliary_inputs,
+    )?;
     let trace_rows = trace.row_count();
     let trace_columns = trace.column_count();
     let stage_commitments = commit_witness_trace_stages(&trace, unit)?;
@@ -1048,6 +1076,125 @@ fn is_regular_constraint_input_buffer(buffer: &str) -> bool {
     matches!(
         buffer,
         "public" | "unit value" | "proof value" | "group value" | "challenge" | "evaluation"
+    )
+}
+
+fn validate_witness_regular_hints(
+    plan_unit: &ProveExecutionUnitArtifacts,
+    unit_index: usize,
+    layout: &WitnessTraceLayout,
+    trace: &WitnessTraceBuffer,
+    publics: &[Felt],
+    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
+) -> Result<(), ProveWitnessCommitmentError> {
+    if plan_unit.regular_hints.hints.is_empty() {
+        return Ok(());
+    }
+
+    let fixed_values = if regular_hints_read_fixed_columns(&plan_unit.regular_hints) {
+        let fixed_columns = read_fixed_columns_file_for_setup(
+            &plan_unit.fixed_columns,
+            &plan_unit.setup,
+            plan_unit.group_name.clone(),
+            plan_unit.unit_name.clone(),
+        )
+        .map_err(|source| ProveWitnessCommitmentError::FixedColumns {
+            unit_index,
+            path: plan_unit.fixed_columns.clone(),
+            source,
+        })?;
+        fixed_columns_to_matrix(
+            &fixed_columns,
+            plan_unit.fixed_column_count,
+            layout.row_count(),
+            unit_index,
+            &plan_unit.fixed_columns,
+        )?
+    } else {
+        Vec::new()
+    };
+
+    let stage_traces = layout
+        .stages()
+        .iter()
+        .map(|stage| layout.stage_trace(trace, stage.stage_index))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut stage_columns = Vec::with_capacity(stage_traces.len());
+    for stage in &stage_traces {
+        let stage_index = u16::try_from(stage.stage_index()).map_err(|_| {
+            ProveWitnessCommitmentError::StageIndexTooLarge {
+                unit_index,
+                stage_index: stage.stage_index(),
+            }
+        })?;
+        stage_columns.push(RegularStageColumns {
+            stage_index,
+            column_count: stage.column_count(),
+            values: stage.values(),
+        });
+    }
+
+    let fixed_columns = if fixed_values.is_empty() {
+        RegularColumnMatrix::default()
+    } else {
+        RegularColumnMatrix {
+            column_count: plan_unit.fixed_column_count,
+            values: &fixed_values,
+        }
+    };
+
+    for row in 0..layout.row_count() {
+        resolve_regular_hint_program_for_row(
+            &plan_unit.setup,
+            &plan_unit.regular_hints,
+            row,
+            RegularConstraintInputs {
+                domain_size: layout.row_count(),
+                stage_count: plan_unit.stage_count,
+                fixed_columns,
+                stage_columns: &stage_columns,
+                custom_fixed_columns: &[],
+                opening_point_offsets: &plan_unit.opening_point_offsets,
+                publics,
+                unit_values: &auxiliary_inputs.unit_values,
+                proof_values: &auxiliary_inputs.proof_values,
+                group_values: &auxiliary_inputs.group_values,
+                challenges: &auxiliary_inputs.challenges,
+                evaluations: &auxiliary_inputs.evaluations,
+            },
+        )
+        .map_err(|error| map_regular_hint_eval_error(unit_index, error))?;
+    }
+    Ok(())
+}
+
+fn regular_hints_read_fixed_columns(program: &HintProgram) -> bool {
+    program
+        .hints
+        .iter()
+        .flat_map(|hint| hint.fields.iter())
+        .flat_map(|field| field.values.iter())
+        .any(|value| matches!(value.operand, HintOperand::Constant { .. }))
+}
+
+fn map_regular_hint_eval_error(
+    unit_index: usize,
+    error: HintEvalError,
+) -> ProveWitnessCommitmentError {
+    match error {
+        HintEvalError::SourceIndexOutOfRange { source, len: 0, .. }
+            if is_regular_hint_input_source(source) =>
+        {
+            ProveWitnessCommitmentError::MissingRegularHintInput { unit_index, source }
+        }
+        source => ProveWitnessCommitmentError::RegularHintEval { unit_index, source },
+    }
+}
+
+fn is_regular_hint_input_source(source: &str) -> bool {
+    matches!(
+        source,
+        "public" | "unit value" | "proof value" | "unit group value" | "challenge" | "evaluation"
     )
 }
 

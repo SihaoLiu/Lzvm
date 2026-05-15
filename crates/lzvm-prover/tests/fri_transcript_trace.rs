@@ -73,6 +73,7 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
         expression_program: key_unit.expression_program.clone(),
         fri_expression_id: key_unit.metadata.verifier.quotient.expression_id,
         regular_constraints: key_unit.regular_constraints.clone(),
+        regular_hints: key_unit.regular_hints.clone(),
         setup: key_unit.metadata.setup.clone(),
         fixed_column_count: 2,
         stage_count: 1,
