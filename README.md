@@ -77,6 +77,14 @@ cargo run -p lzvm-cli -- setup write-const-tree <setup-info-bin> <tree-bin> <roo
 
 This command validates the raw tree length and root before publishing through a staging path. It does not compute the tree; native tree construction remains a backend task with Rust/C++/CUDA parity checks.
 
+Generate row-major extended fixed-column leaves for native constant-tree construction:
+
+```sh
+cargo run -p lzvm-cli -- setup write-const-leaves <setup-info-bin> <columns-bin> <out-leaves>
+```
+
+This command validates fixed columns against setup metadata, extends them over the shifted extended domain, and writes the leaf bytes used by the constant-tree backend.
+
 ## Verification
 
 ```sh

@@ -26,6 +26,14 @@ pub struct ConstantTreeWriteReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstantTreeLeavesWriteReport {
+    pub path: PathBuf,
+    pub bytes_written: u64,
+    pub row_count: u64,
+    pub column_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetupError {
     FixedColumns(FixedColumnError),
     ConstantTree(ConstantTreeError),
@@ -188,6 +196,62 @@ pub fn write_base_fixed_columns(
     Ok(FixedColumnWriteReport {
         path,
         bytes_written,
+    })
+}
+
+pub fn write_constant_tree_leaves(
+    path: impl AsRef<Path>,
+    value: &FixedColumns,
+    setup: &UnitSetupInfo,
+) -> Result<ConstantTreeLeavesWriteReport, SetupError> {
+    let path = path.as_ref().to_path_buf();
+    let parent = path
+        .parent()
+        .ok_or_else(|| SetupError::MissingParent { path: path.clone() })?;
+    std::fs::create_dir_all(parent).map_err(|error| SetupError::Io {
+        role: "create output directory",
+        path: parent.to_path_buf(),
+        message: error.to_string(),
+    })?;
+
+    let leaves = extend_fixed_columns_for_constant_tree(value, setup)?;
+    let expected_len = checked_domain_len(setup.stark.n_bits_ext)?
+        .checked_mul(usize::try_from(setup.n_constants).map_err(|_| SetupError::LengthOverflow)?)
+        .and_then(|words| words.checked_mul(8))
+        .ok_or(SetupError::LengthOverflow)?;
+    if leaves.len() != expected_len {
+        return Err(SetupError::LengthOverflow);
+    }
+
+    let staging_path = staging_path_for(&path);
+    std::fs::write(&staging_path, &leaves).map_err(|error| SetupError::Io {
+        role: "write constant-tree leaves staging file",
+        path: staging_path.clone(),
+        message: error.to_string(),
+    })?;
+    let bytes_written = std::fs::metadata(&staging_path)
+        .map_err(|error| SetupError::Io {
+            role: "read staging metadata",
+            path: staging_path.clone(),
+            message: error.to_string(),
+        })?
+        .len();
+    if bytes_written != u64::try_from(expected_len).map_err(|_| SetupError::LengthOverflow)? {
+        return Err(SetupError::LengthOverflow);
+    }
+    std::fs::rename(&staging_path, &path).map_err(|error| SetupError::Io {
+        role: "publish constant-tree leaves",
+        path: path.clone(),
+        message: error.to_string(),
+    })?;
+
+    Ok(ConstantTreeLeavesWriteReport {
+        path,
+        bytes_written,
+        row_count: 1_u64
+            .checked_shl(setup.stark.n_bits_ext)
+            .ok_or(SetupError::LengthOverflow)?,
+        column_count: setup.n_constants,
     })
 }
 

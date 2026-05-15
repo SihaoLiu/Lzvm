@@ -5,7 +5,7 @@ use lzvm_artifacts::fixed::{read_fixed_columns_file, FixedColumn, FixedColumns};
 use lzvm_artifacts::key_directory::read_key_directory_catalog;
 use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, read_unit_setup_info_file};
 use lzvm_artifacts::verification_key::{read_verification_key_binary_file, VerificationKeyRoot};
-use lzvm_setup::{write_base_constant_tree, write_base_fixed_columns};
+use lzvm_setup::{write_base_constant_tree, write_base_fixed_columns, write_constant_tree_leaves};
 use serde_json::Value;
 
 pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -35,6 +35,16 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             )
         }
         ["setup", "write-const-tree", ..] => write_const_tree_usage(stderr),
+        ["setup", "write-const-leaves", setup_info_bin, columns_bin, out_leaves] => {
+            write_constant_tree_leaves_command(
+                setup_info_bin,
+                columns_bin,
+                out_leaves,
+                stdout,
+                stderr,
+            )
+        }
+        ["setup", "write-const-leaves", ..] => write_const_leaves_usage(stderr),
         _ => write_validate_usage(stderr),
     }
 }
@@ -188,6 +198,44 @@ fn write_constant_tree(
     }
 }
 
+fn write_constant_tree_leaves_command(
+    setup_info_bin: &str,
+    columns_bin: &str,
+    out_leaves: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let setup = match read_unit_setup_info_binary_file(setup_info_bin) {
+        Ok(setup) => setup,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup constant-tree leaf write failed: {error}");
+            return 1;
+        }
+    };
+    let columns = match read_fixed_columns_file(columns_bin) {
+        Ok(columns) => columns,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup constant-tree leaf write failed: {error}");
+            return 1;
+        }
+    };
+
+    match write_constant_tree_leaves(out_leaves, &columns, &setup) {
+        Ok(report) => {
+            let _ = writeln!(stdout, "status=ok");
+            let _ = writeln!(stdout, "bytes_written={}", report.bytes_written);
+            let _ = writeln!(stdout, "rows={}", report.row_count);
+            let _ = writeln!(stdout, "columns={}", report.column_count);
+            let _ = writeln!(stdout, "output={}", report.path.display());
+            0
+        }
+        Err(error) => {
+            let _ = writeln!(stderr, "setup constant-tree leaf write failed: {error}");
+            1
+        }
+    }
+}
+
 fn read_fixed_columns_json(path: impl AsRef<Path>) -> Result<FixedColumns, String> {
     let path = path.as_ref();
     let input = std::fs::read_to_string(path)
@@ -326,6 +374,14 @@ fn write_const_tree_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
         "usage: lzvm setup write-const-tree <setup-info-bin> <tree-bin> <root-bin> <out-consttree>"
+    );
+    2
+}
+
+fn write_const_leaves_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm setup write-const-leaves <setup-info-bin> <columns-bin> <out-leaves>"
     );
     2
 }

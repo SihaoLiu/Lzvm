@@ -1,7 +1,10 @@
 use lzvm_artifacts::fixed::{FixedColumn, FixedColumns};
 use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
 use lzvm_field::{Felt, FieldError, MODULUS, SHIFT};
-use lzvm_setup::{extend_fixed_columns_for_constant_tree, SetupError};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use lzvm_setup::{extend_fixed_columns_for_constant_tree, write_constant_tree_leaves, SetupError};
 
 fn sample_setup_info_json() -> &'static str {
     r#"{
@@ -67,6 +70,22 @@ fn words(bytes: &[u8]) -> Vec<u64> {
         .collect()
 }
 
+fn temp_dir(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("lzvm-setup-leaves-{}-{name}", std::process::id()))
+}
+
+fn staging_entries(parent: &Path) -> Vec<PathBuf> {
+    fs::read_dir(parent)
+        .expect("directory should be readable")
+        .map(|entry| entry.expect("directory entry should exist").path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.contains(".staging."))
+        })
+        .collect()
+}
+
 #[test]
 fn extends_fixed_columns_into_row_major_constant_tree_leaves() {
     let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
@@ -110,4 +129,49 @@ fn rejects_non_canonical_fixed_values_before_extension() {
         extend_fixed_columns_for_constant_tree(&columns, &setup),
         Err(SetupError::Field(FieldError::NonCanonical { value })) if value == MODULUS
     ));
+}
+
+#[test]
+fn writes_extended_leaves_through_validated_staging() {
+    let dir = temp_dir("write-leaves");
+    let _ = fs::remove_dir_all(&dir);
+    let path = dir.join("base").join("unit-a.constleaves");
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+
+    let report =
+        write_constant_tree_leaves(&path, &sample_columns(), &setup).expect("write should succeed");
+    let bytes = fs::read(&path).expect("leaf output should exist");
+    let staging = staging_entries(path.parent().expect("path should have a parent"));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(report.path, path);
+    assert_eq!(report.bytes_written, 64);
+    assert_eq!(report.row_count, 4);
+    assert_eq!(report.column_count, 2);
+    assert_eq!(
+        bytes,
+        extend_fixed_columns_for_constant_tree(&sample_columns(), &setup)
+            .expect("extension should succeed")
+    );
+    assert!(staging.is_empty());
+}
+
+#[test]
+fn preserves_existing_extended_leaves_when_generation_fails() {
+    let dir = temp_dir("preserve-leaves");
+    let _ = fs::remove_dir_all(&dir);
+    let path = dir.join("base").join("unit-a.constleaves");
+    fs::create_dir_all(path.parent().expect("path should have a parent"))
+        .expect("fixture directory should be created");
+    fs::write(&path, b"stable-output").expect("stable fixture should be written");
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let mut columns = sample_columns();
+    columns.columns[0].values[0] = MODULUS;
+
+    let result = write_constant_tree_leaves(&path, &columns, &setup);
+    let stable = fs::read(&path).expect("stable output should still exist");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(result, Err(SetupError::Field(_))));
+    assert_eq!(stable, b"stable-output");
 }
