@@ -5,8 +5,9 @@ use lzvm_artifacts::pcs_fri_segment::{
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_field::{poseidon2_hash_8, Ext3, Felt, SHIFT};
 use lzvm_prover::pcs_fri::{
-    verify_fri_fold, verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path,
-    PcsFriFoldError, PcsFriMerkleError, PcsFriOpeningFoldRequest,
+    build_pcs_fri_opening_unit, verify_fri_fold, verify_fri_last_level_root,
+    verify_fri_opening_folds, verify_fri_query_path, PcsFriFoldError, PcsFriMerkleError,
+    PcsFriOpeningBuildRequest, PcsFriOpeningFoldRequest,
 };
 use lzvm_prover::ProveUnitSchedule;
 
@@ -239,8 +240,184 @@ fn verifies_fri_opening_fold_chain_to_final_polynomial() {
     assert!(!invalid);
 }
 
+#[test]
+fn builds_fri_opening_unit_from_polynomial_values() {
+    let query_rows = [1_u64, 6_u64];
+    let schedule = ProveUnitSchedule {
+        kind: KeyUnitKind::Basic,
+        group_id: None,
+        unit_id: None,
+        group_name: None,
+        unit_name: None,
+        base_domain_bits: 2,
+        extended_domain_bits: 3,
+        base_domain_size: 4,
+        extended_domain_size: 8,
+        blowup_factor: 2,
+        query_count: 2,
+        proof_of_work_bits: 0,
+        merkle_tree_arity: 2,
+        last_level_verification: 1,
+        transcript_arity: Some(2),
+        hash_commits: false,
+        transcript_root_challenge_draws: vec![2, 1],
+        challenge_count: 6,
+        evaluation_value_count: 0,
+        transcript_evaluation_challenge_draws: 2,
+        constant_width: 1,
+        stage_commit_widths: vec![1],
+        commitment_columns: Vec::new(),
+        unit_value_map: Vec::new(),
+        group_value_map: Vec::new(),
+        opening_points: vec![0],
+        fri_layers: vec![
+            PcsFriLayer {
+                input_bits: 3,
+                output_bits: 2,
+                folding_factor: 2,
+            },
+            PcsFriLayer {
+                input_bits: 2,
+                output_bits: 1,
+                folding_factor: 2,
+            },
+        ],
+        final_layer_bits: 1,
+        fixed_bytes: 0,
+        constant_tree_root: None,
+        pcs_material_bytes: None,
+        pcs_material_plan_digest: None,
+        pcs_material_fixed_column_digest: None,
+        pcs_material_constant_tree_digest: None,
+        pcs_material_constant_tree_root: None,
+        pcs_material_fixed_byte_count: None,
+        pcs_material_constant_tree_byte_count: None,
+        pcs_material_leaf_byte_count: None,
+        pcs_material_node_byte_count: None,
+    };
+    let polynomial = (0_u64..8)
+        .map(|index| Ext3::from_u64s([index + 1, index + 11, index + 21]))
+        .collect::<Vec<_>>();
+    let mut challenges = vec![Ext3::ZERO; 9];
+    challenges[7] = Ext3::from_u64s([31, 32, 33]);
+    challenges[8] = Ext3::from_u64s([41, 42, 43]);
+
+    let fri = build_pcs_fri_opening_unit(
+        &schedule,
+        PcsFriOpeningBuildRequest {
+            unit_index: 5,
+            query_rows: &query_rows,
+            challenges: &challenges,
+            polynomial: &polynomial,
+        },
+    )
+    .expect("FRI opening should build");
+
+    assert_eq!(fri.unit_index, 5);
+    assert_eq!(fri.layers.len(), 2);
+    assert_eq!(fri.final_polynomial.len(), 2);
+    assert!(verify_fri_opening_folds(
+        &schedule,
+        PcsFriOpeningFoldRequest {
+            unit_index: 5,
+            query_rows: &query_rows,
+            challenges: &challenges,
+            fri: &fri,
+        },
+    )
+    .expect("fold chain should verify"));
+
+    let first_fold = fold_full_layer(
+        &schedule,
+        &schedule.fri_layers[0],
+        challenges[7],
+        &polynomial,
+    );
+    let final_fold = fold_full_layer(
+        &schedule,
+        &schedule.fri_layers[1],
+        challenges[8],
+        &first_fold,
+    );
+    assert_eq!(
+        fri.final_polynomial,
+        final_fold
+            .iter()
+            .map(|value| value.to_u64s())
+            .collect::<Vec<_>>()
+    );
+
+    for layer in &fri.layers {
+        let root = digest_from_u64s(layer.root);
+        let last_level = layer
+            .last_level
+            .iter()
+            .copied()
+            .map(digest_from_u64s)
+            .collect::<Vec<_>>();
+        assert!(verify_fri_last_level_root(root, 2, &last_level).expect("last level should verify"));
+        for query in &layer.queries {
+            let values = query
+                .values
+                .iter()
+                .map(|value| Ext3::from_u64s(*value))
+                .collect::<Vec<_>>();
+            let siblings = query
+                .siblings
+                .iter()
+                .map(|level| {
+                    level
+                        .siblings
+                        .iter()
+                        .copied()
+                        .map(digest_from_u64s)
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            assert!(verify_fri_query_path(
+                root,
+                &last_level,
+                2,
+                query.row_index,
+                &values,
+                &siblings
+            )
+            .expect("query path should verify"));
+        }
+    }
+}
+
 fn scale(value: Ext3, scalar: Felt) -> Ext3 {
     Ext3::new(value.c0 * scalar, value.c1 * scalar, value.c2 * scalar)
+}
+
+fn fold_full_layer(
+    schedule: &ProveUnitSchedule,
+    layer: &PcsFriLayer,
+    challenge: Ext3,
+    polynomial: &[Ext3],
+) -> Vec<Ext3> {
+    let output_size = 1_usize << layer.output_bits;
+    (0..output_size)
+        .map(|row| {
+            let values = (0..layer.folding_factor as usize)
+                .map(|slot| polynomial[slot * output_size + row])
+                .collect::<Vec<_>>();
+            verify_fri_fold(
+                schedule.extended_domain_bits,
+                layer.output_bits,
+                layer.input_bits,
+                challenge,
+                row as u64,
+                &values,
+            )
+            .expect("fold should evaluate")
+        })
+        .collect()
+}
+
+fn digest_from_u64s(values: [u64; 4]) -> [Felt; 4] {
+    values.map(Felt::from_u64)
 }
 
 fn extension_leaf(value: Ext3) -> [Felt; 4] {

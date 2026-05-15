@@ -1,6 +1,9 @@
 use std::fmt;
 
-use lzvm_artifacts::pcs_fri_segment::{PcsFriOpeningLayerSegment, PcsFriOpeningUnitSegment};
+use lzvm_artifacts::pcs_fri_segment::{
+    PcsFriOpeningLayerSegment, PcsFriOpeningLevelSegment, PcsFriOpeningQuerySegment,
+    PcsFriOpeningUnitSegment,
+};
 use lzvm_field::{intt_in_place, DomainError, Ext3, Felt, FieldError, SHIFT};
 
 use crate::merkle_hash::{
@@ -14,6 +17,14 @@ pub struct PcsFriOpeningFoldRequest<'a> {
     pub query_rows: &'a [u64],
     pub challenges: &'a [Ext3],
     pub fri: &'a PcsFriOpeningUnitSegment,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PcsFriOpeningBuildRequest<'a> {
+    pub unit_index: u32,
+    pub query_rows: &'a [u64],
+    pub challenges: &'a [Ext3],
+    pub polynomial: &'a [Ext3],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,6 +95,139 @@ impl From<DomainError> for PcsFriFoldError {
 impl From<FieldError> for PcsFriFoldError {
     fn from(error: FieldError) -> Self {
         Self::Field(error)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PcsFriOpeningBuildError {
+    EmptyFriLayers,
+    QueryRowCountMismatch {
+        expected: usize,
+        found: usize,
+    },
+    InvalidLayerBits {
+        layer_index: usize,
+        input_bits: u32,
+        output_bits: u32,
+    },
+    LayerInputMismatch {
+        layer_index: usize,
+        expected: u32,
+        found: u32,
+    },
+    FoldingFactorMismatch {
+        layer_index: usize,
+        expected: usize,
+        found: usize,
+    },
+    PolynomialLengthMismatch {
+        layer_index: usize,
+        expected: usize,
+        found: usize,
+    },
+    FinalLayerMismatch {
+        expected: u32,
+        found: u32,
+    },
+    MissingChallenge {
+        index: usize,
+        len: usize,
+    },
+    UnsupportedDomainBits {
+        bits: u32,
+    },
+    Merkle(PcsFriMerkleError),
+    Fold(PcsFriFoldError),
+    LengthOverflow,
+}
+
+impl fmt::Display for PcsFriOpeningBuildError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyFriLayers => write!(f, "PCS FRI opening build has no layers"),
+            Self::QueryRowCountMismatch { expected, found } => write!(
+                f,
+                "PCS FRI opening build expected {expected} query rows, found {found}"
+            ),
+            Self::InvalidLayerBits {
+                layer_index,
+                input_bits,
+                output_bits,
+            } => write!(
+                f,
+                "PCS FRI opening build layer {layer_index} bits are invalid: input {input_bits}, output {output_bits}"
+            ),
+            Self::LayerInputMismatch {
+                layer_index,
+                expected,
+                found,
+            } => write!(
+                f,
+                "PCS FRI opening build layer {layer_index} input bits {found} do not match expected {expected}"
+            ),
+            Self::FoldingFactorMismatch {
+                layer_index,
+                expected,
+                found,
+            } => write!(
+                f,
+                "PCS FRI opening build layer {layer_index} folding factor {found} does not match expected {expected}"
+            ),
+            Self::PolynomialLengthMismatch {
+                layer_index,
+                expected,
+                found,
+            } => write!(
+                f,
+                "PCS FRI opening build layer {layer_index} expected polynomial length {expected}, found {found}"
+            ),
+            Self::FinalLayerMismatch { expected, found } => write!(
+                f,
+                "PCS FRI opening build final layer bits {found} do not match expected {expected}"
+            ),
+            Self::MissingChallenge { index, len } => write!(
+                f,
+                "PCS FRI opening build challenge index {index} is outside challenge count {len}"
+            ),
+            Self::UnsupportedDomainBits { bits } => write!(
+                f,
+                "PCS FRI opening build domain bits are unsupported: {bits}"
+            ),
+            Self::Merkle(error) => write!(f, "PCS FRI opening build Merkle error: {error}"),
+            Self::Fold(error) => write!(f, "PCS FRI opening build fold error: {error}"),
+            Self::LengthOverflow => write!(f, "PCS FRI opening build length overflow"),
+        }
+    }
+}
+
+impl std::error::Error for PcsFriOpeningBuildError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Merkle(error) => Some(error),
+            Self::Fold(error) => Some(error),
+            Self::EmptyFriLayers
+            | Self::QueryRowCountMismatch { .. }
+            | Self::InvalidLayerBits { .. }
+            | Self::LayerInputMismatch { .. }
+            | Self::FoldingFactorMismatch { .. }
+            | Self::PolynomialLengthMismatch { .. }
+            | Self::FinalLayerMismatch { .. }
+            | Self::MissingChallenge { .. }
+            | Self::UnsupportedDomainBits { .. }
+            | Self::LengthOverflow => None,
+        }
+    }
+}
+
+impl From<PcsFriMerkleError> for PcsFriOpeningBuildError {
+    fn from(error: PcsFriMerkleError) -> Self {
+        Self::Merkle(error)
+    }
+}
+
+impl From<PcsFriFoldError> for PcsFriOpeningBuildError {
+    fn from(error: PcsFriFoldError) -> Self {
+        Self::Fold(error)
     }
 }
 
@@ -394,6 +538,144 @@ pub fn verify_fri_last_level_root(
     Ok(root_from_digest_level(last_level, arity)? == root)
 }
 
+pub fn build_pcs_fri_opening_unit(
+    schedule: &ProveUnitSchedule,
+    request: PcsFriOpeningBuildRequest<'_>,
+) -> Result<PcsFriOpeningUnitSegment, PcsFriOpeningBuildError> {
+    if schedule.fri_layers.is_empty() {
+        return Err(PcsFriOpeningBuildError::EmptyFriLayers);
+    }
+
+    let query_count = usize::try_from(schedule.query_count)
+        .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
+    if request.query_rows.len() != query_count {
+        return Err(PcsFriOpeningBuildError::QueryRowCountMismatch {
+            expected: query_count,
+            found: request.query_rows.len(),
+        });
+    }
+
+    let arity = usize::try_from(schedule.merkle_tree_arity)
+        .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
+    let mut current = request.polynomial.to_vec();
+    let mut current_bits = schedule.fri_layers[0].input_bits;
+    let expected_initial_len = build_domain_size(current_bits)?;
+    if current.len() != expected_initial_len {
+        return Err(PcsFriOpeningBuildError::PolynomialLengthMismatch {
+            layer_index: 0,
+            expected: expected_initial_len,
+            found: current.len(),
+        });
+    }
+
+    let mut layers = Vec::with_capacity(schedule.fri_layers.len());
+    for (layer_index, layer) in schedule.fri_layers.iter().enumerate() {
+        if layer.input_bits != current_bits {
+            return Err(PcsFriOpeningBuildError::LayerInputMismatch {
+                layer_index,
+                expected: current_bits,
+                found: layer.input_bits,
+            });
+        }
+        if layer.output_bits >= layer.input_bits {
+            return Err(PcsFriOpeningBuildError::InvalidLayerBits {
+                layer_index,
+                input_bits: layer.input_bits,
+                output_bits: layer.output_bits,
+            });
+        }
+
+        let output_size = build_domain_size(layer.output_bits)?;
+        let folding_factor = usize::try_from(layer.folding_factor)
+            .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
+        let expected_folding_factor = build_domain_size(layer.input_bits - layer.output_bits)?;
+        if folding_factor != expected_folding_factor {
+            return Err(PcsFriOpeningBuildError::FoldingFactorMismatch {
+                layer_index,
+                expected: expected_folding_factor,
+                found: folding_factor,
+            });
+        }
+
+        let grouped_values =
+            group_fri_layer_values(layer_index, &current, output_size, folding_factor)?;
+        let tree = build_fri_layer_tree(&grouped_values, arity, schedule.last_level_verification)?;
+        let layer_index_u32 =
+            u32::try_from(layer_index).map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
+        let output_size_u64 =
+            u64::try_from(output_size).map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
+        let queries = request
+            .query_rows
+            .iter()
+            .map(|query_row| {
+                let row_index = *query_row % output_size_u64;
+                let row_index_usize = usize::try_from(row_index)
+                    .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
+                let values = grouped_values[row_index_usize]
+                    .iter()
+                    .map(|value| value.to_u64s())
+                    .collect();
+                let siblings = tree.query_siblings(row_index_usize)?;
+                Ok(PcsFriOpeningQuerySegment {
+                    row_index,
+                    values,
+                    siblings,
+                })
+            })
+            .collect::<Result<Vec<_>, PcsFriOpeningBuildError>>()?;
+
+        layers.push(PcsFriOpeningLayerSegment {
+            layer_index: layer_index_u32,
+            root: digest_to_u64s(tree.root),
+            last_level: tree
+                .last_level
+                .iter()
+                .copied()
+                .map(digest_to_u64s)
+                .collect(),
+            queries,
+        });
+
+        let challenge_index = schedule
+            .challenge_count
+            .checked_add(layer_index)
+            .and_then(|index| index.checked_add(1))
+            .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
+        let challenge = *request.challenges.get(challenge_index).ok_or(
+            PcsFriOpeningBuildError::MissingChallenge {
+                index: challenge_index,
+                len: request.challenges.len(),
+            },
+        )?;
+        let mut next = Vec::with_capacity(output_size);
+        for (row_index, values) in grouped_values.iter().enumerate() {
+            next.push(verify_fri_fold(
+                schedule.extended_domain_bits,
+                layer.output_bits,
+                layer.input_bits,
+                challenge,
+                u64::try_from(row_index).map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?,
+                values,
+            )?);
+        }
+        current = next;
+        current_bits = layer.output_bits;
+    }
+
+    if current_bits != schedule.final_layer_bits {
+        return Err(PcsFriOpeningBuildError::FinalLayerMismatch {
+            expected: schedule.final_layer_bits,
+            found: current_bits,
+        });
+    }
+
+    Ok(PcsFriOpeningUnitSegment {
+        unit_index: request.unit_index,
+        layers,
+        final_polynomial: current.iter().map(|value| value.to_u64s()).collect(),
+    })
+}
+
 pub fn verify_fri_opening_folds(
     schedule: &ProveUnitSchedule,
     request: PcsFriOpeningFoldRequest<'_>,
@@ -600,4 +882,190 @@ fn convert_felt(value: u64) -> Result<Felt, PcsFriOpeningFoldError> {
     Felt::from_canonical(value).map_err(|error| match error {
         FieldError::NonCanonical { value } => PcsFriOpeningFoldError::NonCanonicalField { value },
     })
+}
+
+struct FriLayerTree {
+    root: [Felt; HASH_WORDS],
+    levels: Vec<Vec<[Felt; HASH_WORDS]>>,
+    unpadded_counts: Vec<usize>,
+    last_level: Vec<[Felt; HASH_WORDS]>,
+    last_level_verification: u32,
+    arity: usize,
+}
+
+impl FriLayerTree {
+    fn query_siblings(
+        &self,
+        row_index: usize,
+    ) -> Result<Vec<PcsFriOpeningLevelSegment>, PcsFriOpeningBuildError> {
+        let mut siblings = Vec::new();
+        let mut query_index = row_index;
+        let mut level_index = 0;
+        while !self.should_stop_at_level(level_index)? {
+            let level = self
+                .levels
+                .get(level_index)
+                .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
+            let child_slot = query_index % self.arity;
+            let group_start = (query_index / self.arity)
+                .checked_mul(self.arity)
+                .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
+            let mut level_siblings = Vec::with_capacity(self.arity - 1);
+            for slot in 0..self.arity {
+                if slot == child_slot {
+                    continue;
+                }
+                let sibling_index = group_start
+                    .checked_add(slot)
+                    .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
+                let digest = level
+                    .get(sibling_index)
+                    .copied()
+                    .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
+                level_siblings.push(digest_to_u64s(digest));
+            }
+            siblings.push(PcsFriOpeningLevelSegment {
+                siblings: level_siblings,
+            });
+            query_index /= self.arity;
+            level_index += 1;
+        }
+        Ok(siblings)
+    }
+
+    fn should_stop_at_level(&self, level_index: usize) -> Result<bool, PcsFriOpeningBuildError> {
+        let count = *self
+            .unpadded_counts
+            .get(level_index)
+            .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
+        if self.last_level_verification == 0 {
+            Ok(count == 1)
+        } else {
+            Ok(count <= checked_pow(self.arity, self.last_level_verification)?)
+        }
+    }
+}
+
+fn group_fri_layer_values(
+    layer_index: usize,
+    polynomial: &[Ext3],
+    output_size: usize,
+    folding_factor: usize,
+) -> Result<Vec<Vec<Ext3>>, PcsFriOpeningBuildError> {
+    let expected = output_size
+        .checked_mul(folding_factor)
+        .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
+    if polynomial.len() != expected {
+        return Err(PcsFriOpeningBuildError::PolynomialLengthMismatch {
+            layer_index,
+            expected,
+            found: polynomial.len(),
+        });
+    }
+
+    let mut grouped = Vec::with_capacity(output_size);
+    for row in 0..output_size {
+        let mut values = Vec::with_capacity(folding_factor);
+        for slot in 0..folding_factor {
+            let index = slot
+                .checked_mul(output_size)
+                .and_then(|offset| offset.checked_add(row))
+                .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
+            values.push(polynomial[index]);
+        }
+        grouped.push(values);
+    }
+    Ok(grouped)
+}
+
+fn build_fri_layer_tree(
+    rows: &[Vec<Ext3>],
+    arity: usize,
+    last_level_verification: u32,
+) -> Result<FriLayerTree, PcsFriOpeningBuildError> {
+    if rows.is_empty() {
+        return Err(PcsFriOpeningBuildError::PolynomialLengthMismatch {
+            layer_index: 0,
+            expected: 1,
+            found: 0,
+        });
+    }
+
+    let mut current = rows
+        .iter()
+        .map(|row| {
+            let flattened = flatten_extension_values(row)?;
+            linear_hash(&flattened, arity).map_err(PcsFriMerkleError::from)
+        })
+        .collect::<Result<Vec<_>, PcsFriMerkleError>>()?;
+    let mut levels = Vec::new();
+    let mut unpadded_counts = Vec::new();
+    loop {
+        unpadded_counts.push(current.len());
+        let mut padded = current.clone();
+        if padded.len() > 1 {
+            let extra_zeros = (arity - (padded.len() % arity)) % arity;
+            padded.resize(
+                padded
+                    .len()
+                    .checked_add(extra_zeros)
+                    .ok_or(PcsFriOpeningBuildError::LengthOverflow)?,
+                [Felt::ZERO; HASH_WORDS],
+            );
+        }
+        levels.push(padded.clone());
+        if current.len() == 1 {
+            break;
+        }
+
+        current = padded
+            .chunks_exact(arity)
+            .map(|children| parent_hash(children, arity).map_err(PcsFriMerkleError::from))
+            .collect::<Result<Vec<_>, PcsFriMerkleError>>()?;
+    }
+
+    let root = *levels
+        .last()
+        .and_then(|level| level.first())
+        .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
+    let last_level = if last_level_verification == 0 {
+        Vec::new()
+    } else {
+        let target_count = checked_pow(arity, last_level_verification)?;
+        let level_index = unpadded_counts
+            .iter()
+            .position(|count| *count <= target_count)
+            .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
+        let count = unpadded_counts[level_index];
+        levels[level_index][..count].to_vec()
+    };
+
+    Ok(FriLayerTree {
+        root,
+        levels,
+        unpadded_counts,
+        last_level,
+        last_level_verification,
+        arity,
+    })
+}
+
+fn build_domain_size(bits: u32) -> Result<usize, PcsFriOpeningBuildError> {
+    1_usize
+        .checked_shl(bits)
+        .ok_or(PcsFriOpeningBuildError::UnsupportedDomainBits { bits })
+}
+
+fn checked_pow(base: usize, power: u32) -> Result<usize, PcsFriOpeningBuildError> {
+    let mut out = 1_usize;
+    for _ in 0..power {
+        out = out
+            .checked_mul(base)
+            .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
+    }
+    Ok(out)
+}
+
+fn digest_to_u64s(digest: [Felt; HASH_WORDS]) -> [u64; HASH_WORDS] {
+    digest.map(Felt::to_u64)
 }
