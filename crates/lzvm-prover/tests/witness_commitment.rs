@@ -9,7 +9,8 @@ use lzvm_field::{
     coset_extend_evaluations, poseidon2_hash_16, poseidon2_hash_8, DomainError, Felt,
 };
 use lzvm_prover::witness_commitment::{
-    commit_witness_stage_leaves, commit_witness_trace_stages, decode_witness_stage_leaf_values,
+    commit_witness_stage_leaves, commit_witness_trace_stages,
+    commit_witness_trace_stages_with_workers, decode_witness_stage_leaf_values,
     extend_witness_trace_stage_values, open_witness_stage_commitment,
     verify_witness_stage_opening_root, WitnessStageCommitmentError, WitnessStageOpeningError,
     WitnessTraceCommitmentError,
@@ -397,6 +398,23 @@ fn commits_all_witness_trace_stages_from_the_unit_schedule() {
 
         assert_eq!(&commitments.commitments()[stage_index - 1], &expected);
     }
+}
+
+#[test]
+fn worker_count_preserves_witness_trace_commitments() {
+    let unit = sample_unit(2, vec![2, 1]);
+    let trace = parse_witness_trace(&encode_values(&[5, 9, 11, 1, 9, 13]), 2, 3)
+        .expect("trace should parse");
+
+    let serial =
+        commit_witness_trace_stages(&trace, &unit).expect("serial trace stages should commit");
+    let threaded = commit_witness_trace_stages_with_workers(&trace, &unit, 2)
+        .expect("threaded trace stages should commit");
+
+    assert_eq!(threaded, serial);
+    assert_eq!(threaded.stage_count(), 2);
+    assert_eq!(threaded.commitments()[0].stage_index(), 1);
+    assert_eq!(threaded.commitments()[1].stage_index(), 2);
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, thread};
 
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
@@ -437,6 +437,7 @@ pub enum WitnessTraceCommitmentError {
     Layout(WitnessTraceLayoutError),
     StageLeaf(WitnessStageLeafError),
     StageCommitment(WitnessStageCommitmentError),
+    WorkerPanic,
     LengthOverflow,
 }
 
@@ -450,6 +451,7 @@ impl fmt::Display for WitnessTraceCommitmentError {
             Self::StageCommitment(error) => {
                 write!(f, "witness trace commitment tree error: {error}")
             }
+            Self::WorkerPanic => write!(f, "witness trace commitment worker panicked"),
             Self::LengthOverflow => write!(f, "witness trace commitment length overflow"),
         }
     }
@@ -461,7 +463,7 @@ impl std::error::Error for WitnessTraceCommitmentError {
             Self::Layout(error) => Some(error),
             Self::StageLeaf(error) => Some(error),
             Self::StageCommitment(error) => Some(error),
-            Self::LengthOverflow => None,
+            Self::WorkerPanic | Self::LengthOverflow => None,
         }
     }
 }
@@ -620,6 +622,67 @@ pub fn commit_witness_trace_stages(
     }
 
     Ok(WitnessTraceCommitments { commitments })
+}
+
+pub fn commit_witness_trace_stages_with_workers(
+    trace: &WitnessTraceBuffer,
+    unit: &ProveUnitSchedule,
+    worker_count: usize,
+) -> Result<WitnessTraceCommitments, WitnessTraceCommitmentError> {
+    let worker_count = worker_count.max(1);
+    if worker_count == 1 || unit.stage_commit_widths.len() <= 1 {
+        return commit_witness_trace_stages(trace, unit);
+    }
+
+    let layout = derive_witness_trace_layout(unit)?;
+    let source_bits = usize::try_from(unit.base_domain_bits)
+        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
+    let target_bits = usize::try_from(unit.extended_domain_bits)
+        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
+    let arity = usize::try_from(unit.merkle_tree_arity)
+        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
+    let stage_indices = layout
+        .stages()
+        .iter()
+        .map(|stage| stage.stage_index)
+        .collect::<Vec<_>>();
+    let worker_count = worker_count.min(stage_indices.len());
+    let chunk_size = stage_indices.len().div_ceil(worker_count);
+
+    let mut commitments = Vec::with_capacity(stage_indices.len());
+    thread::scope(|scope| {
+        let mut handles = Vec::new();
+        for chunk in stage_indices.chunks(chunk_size) {
+            let chunk = chunk.to_vec();
+            let layout = &layout;
+            handles.push(scope.spawn(move || {
+                let mut out = Vec::with_capacity(chunk.len());
+                for stage_index in chunk {
+                    let stage = layout.stage_trace(trace, stage_index)?;
+                    let leaves = extend_witness_stage_leaves(&stage, source_bits, target_bits)?;
+                    let commitment = commit_witness_stage_leaves(&leaves, arity)?;
+                    out.push((stage_index, commitment));
+                }
+                Ok::<_, WitnessTraceCommitmentError>(out)
+            }));
+        }
+
+        for handle in handles {
+            let chunk = handle
+                .join()
+                .map_err(|_| WitnessTraceCommitmentError::WorkerPanic)??;
+            commitments.extend(chunk);
+        }
+        Ok::<(), WitnessTraceCommitmentError>(())
+    })?;
+
+    commitments.sort_by_key(|(stage_index, _)| *stage_index);
+    Ok(WitnessTraceCommitments {
+        commitments: commitments
+            .into_iter()
+            .map(|(_, commitment)| commitment)
+            .collect(),
+    })
 }
 
 pub fn extend_witness_trace_stage_values(

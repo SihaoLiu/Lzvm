@@ -58,8 +58,8 @@ use crate::regular_constraints::{
     RegularConstraintInputs, RegularStageColumns,
 };
 use crate::witness_commitment::{
-    commit_witness_trace_stages, open_witness_stage_commitment, WitnessStageOpeningError,
-    WitnessTraceCommitmentError, WitnessTraceCommitments,
+    commit_witness_trace_stages_with_workers, open_witness_stage_commitment,
+    WitnessStageOpeningError, WitnessTraceCommitmentError, WitnessTraceCommitments,
 };
 use crate::witness_layout::{
     derive_witness_trace_layout, WitnessTraceLayout, WitnessTraceLayoutError,
@@ -921,7 +921,11 @@ pub fn run_prove_witness_commitments_with_trace(
     )?;
     let trace_rows = trace.row_count();
     let trace_columns = trace.column_count();
-    let stage_commitments = commit_witness_trace_stages(&trace, unit)?;
+    let stage_commitments = commit_witness_trace_stages_with_workers(
+        &trace,
+        unit,
+        plan.run_plan.gpu.witness_thread_pools,
+    )?;
 
     let commitments = ProveWitnessCommitments {
         unit_index,
