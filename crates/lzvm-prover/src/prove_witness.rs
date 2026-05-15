@@ -7,6 +7,7 @@ use lzvm_artifacts::constant_opening_segment::{
     CONSTANT_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::constant_tree::{read_constant_tree_file, ConstantTreeError};
+use lzvm_artifacts::fixed::{read_fixed_columns_file_for_setup, FixedColumnError, FixedColumns};
 use lzvm_artifacts::key_directory::{KeyDirectoryCatalog, KeyUnitKind};
 use lzvm_artifacts::pcs_evaluation_segment::{
     encode_pcs_evaluation_segment, PcsEvaluationSegment, PcsEvaluationSegmentError,
@@ -35,7 +36,7 @@ use lzvm_artifacts::witness_segment::{
     WitnessCommitmentSegmentError, WitnessCommitmentStageSegment,
     WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
-use lzvm_field::{Ext3, Felt};
+use lzvm_field::{Ext3, Felt, FieldError};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
@@ -48,14 +49,21 @@ use crate::pcs_challenge::{derive_fri_queries, verify_query_nonce, PcsChallengeE
 use crate::pcs_transcript::{
     derive_pcs_final_query_challenge_from_segments, PcsTranscriptError, PcsTranscriptSegmentInputs,
 };
+use crate::regular_constraints::{
+    evaluate_regular_constraints, RegularColumnMatrix, RegularConstraintEvalError,
+    RegularConstraintInputs, RegularStageColumns,
+};
 use crate::witness_commitment::{
     commit_witness_trace_stages, open_witness_stage_commitment, WitnessStageOpeningError,
     WitnessTraceCommitmentError, WitnessTraceCommitments,
 };
-use crate::witness_layout::{derive_witness_trace_layout, WitnessTraceLayoutError};
+use crate::witness_layout::{
+    derive_witness_trace_layout, WitnessTraceLayout, WitnessTraceLayoutError,
+};
 use crate::witness_loader::{load_witness_library, WitnessLoadError};
 use crate::witness_runner::{run_witness_trace, WitnessTraceRunError};
-use crate::{ProveExecutionPlan, ProvePassRequest, ProveSchedule};
+use crate::witness_trace::WitnessTraceBuffer;
+use crate::{ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassRequest, ProveSchedule};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProveWitnessCommitments {
@@ -107,6 +115,56 @@ pub enum ProveWitnessCommitmentError {
     WitnessLoad(WitnessLoadError),
     Layout(WitnessTraceLayoutError),
     WitnessRun(WitnessTraceRunError),
+    FixedColumns {
+        unit_index: usize,
+        path: PathBuf,
+        source: FixedColumnError,
+    },
+    FixedRowCountTooLarge {
+        unit_index: usize,
+        path: PathBuf,
+        rows: u64,
+    },
+    FixedRowCountMismatch {
+        unit_index: usize,
+        path: PathBuf,
+        expected: usize,
+        found: usize,
+    },
+    FixedColumnCountMismatch {
+        unit_index: usize,
+        path: PathBuf,
+        expected: usize,
+        found: usize,
+    },
+    FixedColumnValueCountMismatch {
+        unit_index: usize,
+        path: PathBuf,
+        column: String,
+        expected: usize,
+        found: usize,
+    },
+    FixedColumnValueCountOverflow {
+        unit_index: usize,
+        path: PathBuf,
+    },
+    FixedColumnNonCanonical {
+        unit_index: usize,
+        path: PathBuf,
+        index: usize,
+        value: u64,
+    },
+    StageIndexTooLarge {
+        unit_index: usize,
+        stage_index: usize,
+    },
+    RegularConstraintEval(RegularConstraintEvalError),
+    RegularConstraintViolation {
+        unit_index: usize,
+        constraint_index: usize,
+        row: usize,
+        value: [u64; 3],
+    },
     Commit(WitnessTraceCommitmentError),
 }
 
@@ -241,6 +299,89 @@ impl fmt::Display for ProveWitnessCommitmentError {
             }
             Self::Layout(error) => write!(f, "prove witness commitment layout failed: {error}"),
             Self::WitnessRun(error) => write!(f, "prove witness commitment run failed: {error}"),
+            Self::FixedColumns {
+                unit_index,
+                path,
+                source,
+            } => write!(
+                f,
+                "prove witness commitment fixed columns failed for unit {unit_index}: {}: {source}",
+                path.display()
+            ),
+            Self::FixedRowCountTooLarge {
+                unit_index,
+                path,
+                rows,
+            } => write!(
+                f,
+                "prove witness commitment fixed-column row count is too large for unit {unit_index}: {}: {rows}",
+                path.display()
+            ),
+            Self::FixedRowCountMismatch {
+                unit_index,
+                path,
+                expected,
+                found,
+            } => write!(
+                f,
+                "prove witness commitment fixed-column row count mismatch for unit {unit_index}: {}: expected {expected}, found {found}",
+                path.display()
+            ),
+            Self::FixedColumnCountMismatch {
+                unit_index,
+                path,
+                expected,
+                found,
+            } => write!(
+                f,
+                "prove witness commitment fixed-column count mismatch for unit {unit_index}: {}: expected {expected}, found {found}",
+                path.display()
+            ),
+            Self::FixedColumnValueCountMismatch {
+                unit_index,
+                path,
+                column,
+                expected,
+                found,
+            } => write!(
+                f,
+                "prove witness commitment fixed-column value count mismatch for unit {unit_index}: {}: {column}: expected {expected}, found {found}",
+                path.display()
+            ),
+            Self::FixedColumnValueCountOverflow { unit_index, path } => write!(
+                f,
+                "prove witness commitment fixed-column value count overflow for unit {unit_index}: {}",
+                path.display()
+            ),
+            Self::FixedColumnNonCanonical {
+                unit_index,
+                path,
+                index,
+                value,
+            } => write!(
+                f,
+                "prove witness commitment fixed-column value is non-canonical for unit {unit_index}: {}: index {index}: {value}",
+                path.display()
+            ),
+            Self::StageIndexTooLarge {
+                unit_index,
+                stage_index,
+            } => write!(
+                f,
+                "prove witness commitment stage index does not fit u16 for unit {unit_index}: {stage_index}"
+            ),
+            Self::RegularConstraintEval(error) => {
+                write!(f, "prove witness commitment regular constraint evaluation failed: {error}")
+            }
+            Self::RegularConstraintViolation {
+                unit_index,
+                constraint_index,
+                row,
+                value,
+            } => write!(
+                f,
+                "prove witness commitment regular constraint {constraint_index} failed for unit {unit_index} at row {row}: {value:?}"
+            ),
             Self::Commit(error) => write!(f, "prove witness commitment failed: {error}"),
         }
     }
@@ -252,8 +393,19 @@ impl std::error::Error for ProveWitnessCommitmentError {
             Self::WitnessLoad(error) => Some(error),
             Self::Layout(error) => Some(error),
             Self::WitnessRun(error) => Some(error),
+            Self::FixedColumns { source, .. } => Some(source),
+            Self::RegularConstraintEval(error) => Some(error),
             Self::Commit(error) => Some(error),
-            Self::UnitIndexOutOfRange { .. } | Self::InputData { .. } => None,
+            Self::UnitIndexOutOfRange { .. }
+            | Self::InputData { .. }
+            | Self::FixedRowCountTooLarge { .. }
+            | Self::FixedRowCountMismatch { .. }
+            | Self::FixedColumnCountMismatch { .. }
+            | Self::FixedColumnValueCountMismatch { .. }
+            | Self::FixedColumnValueCountOverflow { .. }
+            | Self::FixedColumnNonCanonical { .. }
+            | Self::StageIndexTooLarge { .. }
+            | Self::RegularConstraintViolation { .. } => None,
         }
     }
 }
@@ -273,6 +425,12 @@ impl From<WitnessTraceLayoutError> for ProveWitnessCommitmentError {
 impl From<WitnessTraceRunError> for ProveWitnessCommitmentError {
     fn from(error: WitnessTraceRunError) -> Self {
         Self::WitnessRun(error)
+    }
+}
+
+impl From<RegularConstraintEvalError> for ProveWitnessCommitmentError {
+    fn from(error: RegularConstraintEvalError) -> Self {
+        Self::RegularConstraintEval(error)
     }
 }
 
@@ -624,6 +782,14 @@ pub fn run_prove_witness_commitments(
     let library = load_witness_library(&plan.inputs.witness_library)?;
     let layout = derive_witness_trace_layout(unit)?;
     let trace = run_witness_trace(&library, layout.request(input))?;
+    let execution_unit =
+        plan.units
+            .get(unit_index)
+            .ok_or(ProveWitnessCommitmentError::UnitIndexOutOfRange {
+                unit_index,
+                unit_count: plan.units.len(),
+            })?;
+    validate_witness_regular_constraints(execution_unit, unit_index, &layout, &trace)?;
     let trace_rows = trace.row_count();
     let trace_columns = trace.column_count();
     let stage_commitments = commit_witness_trace_stages(&trace, unit)?;
@@ -635,6 +801,154 @@ pub fn run_prove_witness_commitments(
         trace_columns,
         stage_commitments,
     })
+}
+
+fn validate_witness_regular_constraints(
+    plan_unit: &ProveExecutionUnitArtifacts,
+    unit_index: usize,
+    layout: &WitnessTraceLayout,
+    trace: &WitnessTraceBuffer,
+) -> Result<(), ProveWitnessCommitmentError> {
+    if plan_unit.regular_constraints.entries.is_empty() {
+        return Ok(());
+    }
+
+    let fixed_columns = read_fixed_columns_file_for_setup(
+        &plan_unit.fixed_columns,
+        &plan_unit.setup,
+        plan_unit.group_name.clone(),
+        plan_unit.unit_name.clone(),
+    )
+    .map_err(|source| ProveWitnessCommitmentError::FixedColumns {
+        unit_index,
+        path: plan_unit.fixed_columns.clone(),
+        source,
+    })?;
+    let fixed_values = fixed_columns_to_matrix(
+        &fixed_columns,
+        plan_unit.fixed_column_count,
+        layout.row_count(),
+        unit_index,
+        &plan_unit.fixed_columns,
+    )?;
+
+    let stage_traces = layout
+        .stages()
+        .iter()
+        .map(|stage| layout.stage_trace(trace, stage.stage_index))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut stage_columns = Vec::with_capacity(stage_traces.len());
+    for stage in &stage_traces {
+        let stage_index = u16::try_from(stage.stage_index()).map_err(|_| {
+            ProveWitnessCommitmentError::StageIndexTooLarge {
+                unit_index,
+                stage_index: stage.stage_index(),
+            }
+        })?;
+        stage_columns.push(RegularStageColumns {
+            stage_index,
+            column_count: stage.column_count(),
+            values: stage.values(),
+        });
+    }
+
+    let results = evaluate_regular_constraints(
+        &plan_unit.regular_constraints,
+        RegularConstraintInputs {
+            domain_size: layout.row_count(),
+            stage_count: plan_unit.stage_count,
+            fixed_columns: RegularColumnMatrix {
+                column_count: plan_unit.fixed_column_count,
+                values: &fixed_values,
+            },
+            stage_columns: &stage_columns,
+            custom_fixed_columns: &[],
+            opening_point_offsets: &plan_unit.opening_point_offsets,
+            publics: &[],
+            unit_values: &[],
+            proof_values: &[],
+            group_values: &[],
+            challenges: &[],
+            evaluations: &[],
+        },
+    )?;
+
+    for result in results {
+        if let Some(violation) = result.invalid_rows.first() {
+            return Err(ProveWitnessCommitmentError::RegularConstraintViolation {
+                unit_index,
+                constraint_index: result.constraint_index,
+                row: violation.row,
+                value: violation.value.to_u64s(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn fixed_columns_to_matrix(
+    fixed_columns: &FixedColumns,
+    fixed_column_count: usize,
+    row_count: usize,
+    unit_index: usize,
+    path: &Path,
+) -> Result<Vec<Felt>, ProveWitnessCommitmentError> {
+    let found_rows = usize::try_from(fixed_columns.row_count).map_err(|_| {
+        ProveWitnessCommitmentError::FixedRowCountTooLarge {
+            unit_index,
+            path: path.to_path_buf(),
+            rows: fixed_columns.row_count,
+        }
+    })?;
+    if found_rows != row_count {
+        return Err(ProveWitnessCommitmentError::FixedRowCountMismatch {
+            unit_index,
+            path: path.to_path_buf(),
+            expected: row_count,
+            found: found_rows,
+        });
+    }
+    if fixed_columns.columns.len() != fixed_column_count {
+        return Err(ProveWitnessCommitmentError::FixedColumnCountMismatch {
+            unit_index,
+            path: path.to_path_buf(),
+            expected: fixed_column_count,
+            found: fixed_columns.columns.len(),
+        });
+    }
+
+    let value_count = row_count.checked_mul(fixed_column_count).ok_or(
+        ProveWitnessCommitmentError::FixedColumnValueCountOverflow {
+            unit_index,
+            path: path.to_path_buf(),
+        },
+    )?;
+    let mut values = vec![Felt::ZERO; value_count];
+    for (column_index, column) in fixed_columns.columns.iter().enumerate() {
+        if column.values.len() != row_count {
+            return Err(ProveWitnessCommitmentError::FixedColumnValueCountMismatch {
+                unit_index,
+                path: path.to_path_buf(),
+                column: column.name.clone(),
+                expected: row_count,
+                found: column.values.len(),
+            });
+        }
+        for (row, raw) in column.values.iter().copied().enumerate() {
+            let index = row * fixed_column_count + column_index;
+            values[index] = Felt::from_canonical(raw).map_err(|error| match error {
+                FieldError::NonCanonical { value } => {
+                    ProveWitnessCommitmentError::FixedColumnNonCanonical {
+                        unit_index,
+                        path: path.to_path_buf(),
+                        index,
+                        value,
+                    }
+                }
+            })?;
+        }
+    }
+    Ok(values)
 }
 
 pub fn build_witness_commitment_segment(

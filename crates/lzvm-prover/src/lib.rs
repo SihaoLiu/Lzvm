@@ -2,12 +2,13 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use lzvm_artifacts::constraint_program::ConstraintProgram;
 use lzvm_artifacts::guest_image::{read_guest_image_file, GuestImageError, GuestImageInfo};
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryError, KeyUnitKind,
 };
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
-use lzvm_artifacts::setup_info::CommitmentColumn;
+use lzvm_artifacts::setup_info::{CommitmentColumn, UnitSetupInfo};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::witness_library::{
     read_witness_library_file, WitnessLibraryError, WitnessLibraryInfo,
@@ -305,6 +306,19 @@ pub struct ProveExecutionPlan {
     pub inputs: ProveExecutionInputArtifacts,
     pub witness_library_info: WitnessLibraryInfo,
     pub guest_image_info: GuestImageInfo,
+    pub units: Vec<ProveExecutionUnitArtifacts>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProveExecutionUnitArtifacts {
+    pub fixed_columns: PathBuf,
+    pub regular_constraints: ConstraintProgram,
+    pub setup: UnitSetupInfo,
+    pub fixed_column_count: usize,
+    pub stage_count: u16,
+    pub opening_point_offsets: Vec<i64>,
+    pub group_name: String,
+    pub unit_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -339,6 +353,14 @@ pub enum ProveExecutionPlanError {
     },
     PublicInputsIsNotFile {
         path: PathBuf,
+    },
+    FixedColumnCountTooLarge {
+        unit_index: usize,
+        fixed_column_count: u32,
+    },
+    StageCountTooLarge {
+        unit_index: usize,
+        stage_count: u32,
     },
 }
 
@@ -396,6 +418,20 @@ impl fmt::Display for ProveExecutionPlanError {
                 "prove execution plan public inputs are not a file: {}",
                 path.display()
             ),
+            Self::FixedColumnCountTooLarge {
+                unit_index,
+                fixed_column_count,
+            } => write!(
+                f,
+                "prove execution plan unit {unit_index} fixed column count does not fit usize: {fixed_column_count}"
+            ),
+            Self::StageCountTooLarge {
+                unit_index,
+                stage_count,
+            } => write!(
+                f,
+                "prove execution plan unit {unit_index} stage count does not fit u16: {stage_count}"
+            ),
         }
     }
 }
@@ -406,7 +442,9 @@ impl std::error::Error for ProveExecutionPlanError {
             Self::InvalidWitnessLibrary { source, .. } => Some(source),
             Self::InvalidGuestImage { source, .. } => Some(source),
             Self::RunPlan(error) => Some(error),
-            Self::MissingPcsMaterial { .. } => None,
+            Self::MissingPcsMaterial { .. }
+            | Self::FixedColumnCountTooLarge { .. }
+            | Self::StageCountTooLarge { .. } => None,
             _ => None,
         }
     }
@@ -552,12 +590,55 @@ pub fn derive_prove_execution_plan(
         )?;
     }
 
+    let units = derive_prove_execution_units(catalog)?;
+
     Ok(ProveExecutionPlan {
         run_plan,
         inputs,
         witness_library_info,
         guest_image_info,
+        units,
     })
+}
+
+fn derive_prove_execution_units(
+    catalog: &KeyDirectoryCatalog,
+) -> Result<Vec<ProveExecutionUnitArtifacts>, ProveExecutionPlanError> {
+    let mut units = Vec::with_capacity(catalog.units.len());
+    for (unit_index, unit) in catalog.units.iter().enumerate() {
+        let fixed_column_count =
+            usize::try_from(unit.metadata.setup.n_constants).map_err(|_| {
+                ProveExecutionPlanError::FixedColumnCountTooLarge {
+                    unit_index,
+                    fixed_column_count: unit.metadata.setup.n_constants,
+                }
+            })?;
+        let stage_count = u16::try_from(unit.metadata.setup.n_stages).map_err(|_| {
+            ProveExecutionPlanError::StageCountTooLarge {
+                unit_index,
+                stage_count: unit.metadata.setup.n_stages,
+            }
+        })?;
+        units.push(ProveExecutionUnitArtifacts {
+            fixed_columns: unit.paths.fixed_columns.clone(),
+            regular_constraints: unit.regular_constraints.clone(),
+            setup: unit.metadata.setup.clone(),
+            fixed_column_count,
+            stage_count,
+            opening_point_offsets: unit.metadata.setup.opening_points.clone(),
+            group_name: unit
+                .paths
+                .group_name
+                .clone()
+                .unwrap_or_else(|| "global".to_owned()),
+            unit_name: unit
+                .paths
+                .unit_name
+                .clone()
+                .unwrap_or_else(|| "main".to_owned()),
+        });
+    }
+    Ok(units)
 }
 
 fn validate_execution_pcs_material(

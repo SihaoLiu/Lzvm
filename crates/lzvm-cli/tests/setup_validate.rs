@@ -275,8 +275,8 @@ fn sample_regular_constraint_program() -> ConstraintProgram {
             source_line: "fixture regular constraint".to_owned(),
         }],
         ops: vec![0],
-        args: vec![1, 0, 0, 0, 0, 8, 0, 0],
-        numbers: vec![1],
+        args: vec![1, 0, 0, 0, 0, 0, 0, 0],
+        numbers: vec![],
     }
 }
 

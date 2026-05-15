@@ -3,7 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use lzvm_artifacts::constraint_program::{ConstraintProgram, GlobalConstraintProgram};
+use lzvm_artifacts::constraint_program::{
+    ConstraintEntry, ConstraintProgram, GlobalConstraintProgram,
+};
 use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::ExpressionProgram;
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
@@ -172,6 +174,29 @@ fn empty_regular_constraints() -> ConstraintProgram {
         ops: Vec::new(),
         args: Vec::new(),
         numbers: Vec::new(),
+    }
+}
+
+fn row_zero_stage_constraint(expected: u64) -> ConstraintProgram {
+    ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 0,
+            first_row: 0,
+            last_row: 0,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 8,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "row zero stage residual".to_owned(),
+        }],
+        ops: vec![0],
+        args: vec![3, 0, 1, 0, 0, 8, 0, 0],
+        numbers: vec![expected],
     }
 }
 
@@ -440,6 +465,41 @@ fn runs_witness_and_commits_stages_from_execution_plan() {
     assert_eq!(output.trace_row_count(), 16);
     assert_eq!(output.trace_column_count(), 5);
     assert_eq!(output.stage_commitments(), &expected);
+}
+
+#[test]
+fn rejects_witness_traces_that_violate_regular_constraints() {
+    let dir = temp_dir("constraint-violation");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.paths.fixed_columns = dir.join("unit.const");
+    fs::write(&unit.paths.fixed_columns, vec![0_u8; 16 * 2 * 8])
+        .expect("fixed columns should be written");
+    unit.regular_constraints = row_zero_stage_constraint(9);
+    let catalog = sample_catalog(unit);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+
+    let error = run_prove_witness_commitments(&plan, 0)
+        .expect_err("constraint violation should reject witness trace");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(error.to_string().contains("regular constraint"));
 }
 
 #[test]
