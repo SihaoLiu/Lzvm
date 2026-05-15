@@ -8,6 +8,8 @@ pub mod hint_program;
 pub mod key_directory;
 pub mod metadata_bundle;
 pub mod metadata_validation;
+pub mod proof;
+pub mod public_values;
 pub mod sectioned;
 pub mod setup_info;
 pub mod verification_key;
