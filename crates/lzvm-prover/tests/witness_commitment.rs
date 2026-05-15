@@ -44,6 +44,7 @@ fn sample_unit(rows: u64, stage_commit_widths: Vec<u32>) -> ProveUnitSchedule {
         transcript_arity: Some(2),
         hash_commits: true,
         transcript_root_challenge_draws,
+        evaluation_value_count: 2,
         transcript_evaluation_challenge_draws: 2,
         constant_width: 1,
         stage_commit_widths,

@@ -256,6 +256,7 @@ fn derives_prove_schedule_from_key_directory_catalog() {
         schedule.units[0].transcript_root_challenge_draws,
         vec![2, 1]
     );
+    assert_eq!(schedule.units[0].evaluation_value_count, 2);
     assert_eq!(schedule.units[0].transcript_evaluation_challenge_draws, 2);
     assert_eq!(schedule.units[0].constant_width, 2);
     assert_eq!(schedule.units[0].stage_commit_widths, vec![2, 3]);
@@ -268,6 +269,18 @@ fn derives_prove_schedule_from_key_directory_catalog() {
     assert_eq!(schedule.units[1].kind, KeyUnitKind::RecursiveFirst);
     assert_eq!(schedule.units[1].extended_domain_bits, 7);
     assert_ne!(schedule.setup_hash, [0_u8; 32]);
+}
+
+#[test]
+fn distinguishes_evaluation_value_count_from_transcript_draws() {
+    let mut unit = sample_unit(KeyUnitKind::Basic, 0, 64);
+    unit.metadata.setup.eval_count = 5;
+    let catalog = sample_catalog(vec![unit]);
+
+    let schedule = derive_prove_schedule(&catalog).expect("prove schedule should derive");
+
+    assert_eq!(schedule.units[0].evaluation_value_count, 5);
+    assert_eq!(schedule.units[0].transcript_evaluation_challenge_draws, 2);
 }
 
 #[test]

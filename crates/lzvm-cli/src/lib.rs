@@ -722,6 +722,11 @@ fn validate_transcript_pcs_query_plan(
         .iter()
         .find(|unit| unit.unit_index == unit_index_u32)
         .ok_or_else(|| format!("PCS transcript query plan mismatch for unit {unit_index}"))?;
+    if evaluation_unit.values.len() != unit.evaluation_value_count {
+        return Err(format!(
+            "PCS evaluation segment value count mismatch for unit {unit_index}"
+        ));
+    }
     let fri = parse_pcs_fri_opening_segment(&fri_segment.data)
         .map_err(|error| format!("invalid PCS FRI opening segment: {error}"))?;
     let fri_unit = fri

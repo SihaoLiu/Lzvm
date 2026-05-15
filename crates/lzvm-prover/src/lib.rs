@@ -65,6 +65,7 @@ pub struct ProveUnitSchedule {
     pub transcript_arity: Option<u32>,
     pub hash_commits: bool,
     pub transcript_root_challenge_draws: Vec<usize>,
+    pub evaluation_value_count: usize,
     pub transcript_evaluation_challenge_draws: usize,
     pub constant_width: u32,
     pub stage_commit_widths: Vec<u32>,
@@ -458,7 +459,8 @@ pub fn derive_prove_schedule(
             transcript_root_challenge_draws: derive_transcript_root_challenge_draws(
                 unit.pcs_plan.stage_commit_widths.len(),
             ),
-            transcript_evaluation_challenge_draws: unit.metadata.setup.eval_count,
+            evaluation_value_count: unit.metadata.setup.eval_count,
+            transcript_evaluation_challenge_draws: 2,
             constant_width: unit.pcs_plan.constant_width,
             stage_commit_widths: unit.pcs_plan.stage_commit_widths.clone(),
             opening_points: unit.pcs_plan.opening_points.clone(),
