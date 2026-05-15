@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::Path;
 
+use lzvm_artifacts::constant_tree::read_constant_tree_file;
 use lzvm_artifacts::fixed::{
     read_fixed_columns_file, read_fixed_columns_file_for_setup, FixedColumn, FixedColumns,
 };
@@ -9,7 +10,10 @@ use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
     read_key_directory_layout, validate_key_directory_layout,
 };
-use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, encode_pcs_setup_plan};
+use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_material};
+use lzvm_artifacts::pcs_plan::{
+    derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file,
+};
 use lzvm_artifacts::proof::read_proof_artifact_file;
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 use lzvm_artifacts::setup_info::{
@@ -57,6 +61,18 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             write_pcs_setup_plan(setup_info_bin, out_pcs_plan, stdout, stderr)
         }
         ["setup", "write-pcs-plan", ..] => write_pcs_plan_usage(stderr),
+        ["setup", "write-pcs-material", setup_info_bin, pcs_plan, fixed_const, consttree, out_pcs_material] => {
+            write_pcs_setup_material(
+                setup_info_bin,
+                pcs_plan,
+                fixed_const,
+                consttree,
+                out_pcs_material,
+                stdout,
+                stderr,
+            )
+        }
+        ["setup", "write-pcs-material", ..] => write_pcs_material_usage(stderr),
         ["setup", "write-fixed", setup_info, columns_json, out_const] => {
             write_fixed_columns(setup_info, columns_json, out_const, stdout, stderr)
         }
@@ -513,6 +529,89 @@ fn write_pcs_setup_plan(
     }
     if let Err(error) = std::fs::write(output, &bytes) {
         let _ = writeln!(stderr, "setup PCS plan write failed: {error}");
+        return 1;
+    }
+
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "bytes_written={}", bytes.len());
+    let _ = writeln!(stdout, "output={}", output.display());
+    0
+}
+
+fn write_pcs_setup_material(
+    setup_info_bin: &str,
+    pcs_plan: &str,
+    fixed_const: &str,
+    consttree: &str,
+    out_pcs_material: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let setup = match read_unit_setup_info_binary_file(setup_info_bin) {
+        Ok(setup) => setup,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup PCS material write failed: {error}");
+            return 1;
+        }
+    };
+    let plan = match read_pcs_setup_plan_file(pcs_plan) {
+        Ok(plan) => plan,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup PCS material write failed: {error}");
+            return 1;
+        }
+    };
+    let expected_plan = match derive_pcs_setup_plan(&setup) {
+        Ok(plan) => plan,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup PCS material write failed: {error}");
+            return 1;
+        }
+    };
+    if plan != expected_plan {
+        let _ = writeln!(
+            stderr,
+            "setup PCS material write failed: PCS setup plan does not match setup metadata"
+        );
+        return 1;
+    }
+    let fixed_bytes = match std::fs::read(fixed_const) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup PCS material write failed: {error}");
+            return 1;
+        }
+    };
+    let tree = match read_constant_tree_file(consttree, &setup) {
+        Ok(tree) => tree,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup PCS material write failed: {error}");
+            return 1;
+        }
+    };
+    let material = match build_pcs_setup_material(&plan, &fixed_bytes, &tree) {
+        Ok(material) => material,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup PCS material write failed: {error}");
+            return 1;
+        }
+    };
+    let bytes = match encode_pcs_setup_material(&material) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup PCS material write failed: {error}");
+            return 1;
+        }
+    };
+    let output = Path::new(out_pcs_material);
+    if let Some(parent) = output.parent() {
+        if let Err(error) = std::fs::create_dir_all(parent) {
+            let _ = writeln!(stderr, "setup PCS material write failed: {error}");
+            return 1;
+        }
+    }
+    if let Err(error) = std::fs::write(output, &bytes) {
+        let _ = writeln!(stderr, "setup PCS material write failed: {error}");
         return 1;
     }
 
@@ -1223,6 +1322,14 @@ fn write_pcs_plan_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
         "usage: lzvm setup write-pcs-plan <setup-info-bin> <out-pcs-plan>"
+    );
+    2
+}
+
+fn write_pcs_material_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm setup write-pcs-material <setup-info-bin> <pcs-plan> <fixed-const> <consttree> <out-pcs-material>"
     );
     2
 }

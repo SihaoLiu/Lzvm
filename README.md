@@ -102,6 +102,14 @@ cargo run -p lzvm-cli -- setup write-pcs-directory <setup-dir>
 
 This command derives each unit from setup-directory metadata, reads the unit setup metadata, and writes a canonical `.pcs-plan` companion next to that unit metadata prefix. It is a directory-level bridge from native setup metadata into later PCS setup generation.
 
+Generate a native PCS setup-material artifact from binary setup inputs:
+
+```sh
+cargo run -p lzvm-cli -- setup write-pcs-material <setup-info-bin> <pcs-plan> <fixed-const> <consttree> <out-pcs-material>
+```
+
+This command validates that the PCS setup plan matches the binary setup metadata, reads the raw fixed-column artifact and native constant tree, then writes a canonical binary material descriptor with digests, tree root, and byte counts for later setup generation.
+
 Generate a raw fixed-column artifact from native binary setup metadata and a native binary fixed-column source:
 
 ```sh
