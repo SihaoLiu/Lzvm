@@ -57,7 +57,9 @@ use lzvm_prover::pcs_fri::{
     validate_pcs_fri_opening_segments, verify_fri_opening_folds, PcsFriOpeningFoldRequest,
 };
 use lzvm_prover::pcs_material_manifest::validate_pcs_material_manifest_segments;
-use lzvm_prover::pcs_query_plan::load_pcs_query_plan_from_segments;
+use lzvm_prover::pcs_query_plan::{
+    load_pcs_query_plan_from_segments, validate_seeded_pcs_query_plan_segments,
+};
 use lzvm_prover::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptSegmentInputs,
 };
@@ -72,8 +74,7 @@ use lzvm_prover::witness_opening::{
     load_witness_opening_segment_from_segments, validate_witness_opening_segments,
 };
 use lzvm_prover::{
-    build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_transcript_segments,
-    derive_prove_schedule, ProveSchedule,
+    build_pcs_query_plan_segment_from_transcript_segments, derive_prove_schedule, ProveSchedule,
 };
 use lzvm_setup::{
     build_constant_tree_from_fixed_columns_with_backend, write_base_constant_tree,
@@ -513,6 +514,15 @@ fn validate_pcs_query_plan(
     proof: &ProofArtifact,
     public_values: &lzvm_artifacts::public_values::PublicValues,
 ) -> Result<(), String> {
+    if !uses_transcript_query_plan_inputs(proof) {
+        return validate_seeded_pcs_query_plan_segments(
+            schedule,
+            proof.public_values_hash,
+            &proof.segments,
+        )
+        .map_err(|error| error.to_string());
+    }
+
     let material_segment = proof
         .segments
         .iter()
@@ -525,27 +535,14 @@ fn validate_pcs_query_plan(
         .ok_or_else(|| "missing PCS query plan segment".to_owned())?;
     load_pcs_query_plan_from_segments(&proof.segments).map_err(|error| error.to_string())?;
     let witness_segments = collect_witness_commitment_segments(schedule, proof)?;
-    if uses_transcript_query_plan_inputs(proof) {
-        return validate_transcript_pcs_query_plan(
-            schedule,
-            proof,
-            public_values,
-            material_segment,
-            query_segment,
-            &witness_segments,
-        );
-    }
-    let expected_segment = build_pcs_query_plan_segment(
+    validate_transcript_pcs_query_plan(
         schedule,
-        proof.public_values_hash,
+        proof,
+        public_values,
         material_segment,
+        query_segment,
         &witness_segments,
     )
-    .map_err(|error| format!("derive PCS query plan segment failed: {error}"))?;
-    if query_segment.data != expected_segment.data {
-        return Err("PCS query plan segment mismatch".to_owned());
-    }
-    Ok(())
 }
 
 fn uses_transcript_query_plan_inputs(proof: &ProofArtifact) -> bool {
