@@ -17,7 +17,10 @@ use lzvm_artifacts::metadata_bundle::UnitMetadataBundle;
 use lzvm_artifacts::pcs_evaluation_segment::{
     parse_pcs_evaluation_segment, PcsEvaluationUnitSegment, PCS_EVALUATION_SEGMENT_ID,
 };
-use lzvm_artifacts::pcs_fri_segment::{PcsFriOpeningLayerSegment, PcsFriOpeningUnitSegment};
+use lzvm_artifacts::pcs_fri_segment::{
+    parse_pcs_fri_opening_segment, PcsFriOpeningLayerSegment, PcsFriOpeningUnitSegment,
+    PCS_FRI_OPENING_SEGMENT_ID,
+};
 use lzvm_artifacts::pcs_material::PcsSetupMaterial;
 use lzvm_artifacts::pcs_material_segment::{
     parse_pcs_material_manifest_segment, PcsMaterialManifestUnit,
@@ -26,7 +29,10 @@ use lzvm_artifacts::pcs_nonce_segment::{
     parse_pcs_query_nonce_segment, PCS_QUERY_NONCE_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
-use lzvm_artifacts::pcs_query_segment::{parse_pcs_query_plan_segment, PCS_QUERY_PLAN_SEGMENT_ID};
+use lzvm_artifacts::pcs_query_segment::{
+    encode_pcs_query_plan_segment, parse_pcs_query_plan_segment, PcsQueryPlanSegment,
+    PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
+};
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::public_values::{encode_public_values_json, PublicValueEntry, PublicValues};
 use lzvm_artifacts::setup_info::{FriStep, StarkStruct, UnitSetupInfo};
@@ -41,6 +47,7 @@ use lzvm_artifacts::witness_segment::{
 };
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::pcs_challenge::{derive_fri_queries, verify_query_nonce};
+use lzvm_prover::pcs_fri::{verify_fri_opening_folds, PcsFriOpeningFoldRequest};
 use lzvm_prover::pcs_transcript::{
     derive_pcs_final_query_challenge_from_segments, PcsTranscriptSegmentInputs,
 };
@@ -49,15 +56,17 @@ use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_loader::load_witness_library;
 use lzvm_prover::witness_runner::run_witness_trace;
 use lzvm_prover::{
-    build_pcs_evaluation_segment, build_pcs_material_manifest_segment,
-    build_pcs_query_nonce_segment, build_pcs_query_nonce_segment_from_transcript_segments,
-    build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_challenge,
+    build_pcs_evaluation_segment, build_pcs_fri_opening_segment,
+    build_pcs_material_manifest_segment, build_pcs_query_nonce_segment,
+    build_pcs_query_nonce_segment_from_transcript_segments, build_pcs_query_plan_segment,
+    build_pcs_query_plan_segment_from_challenge,
     build_pcs_query_plan_segment_from_transcript_segments, build_witness_commitment_segment,
     build_witness_opening_segment, derive_prove_execution_plan, derive_prove_schedule,
     run_prove_witness_commitments, run_prove_witness_commitments_with_auxiliary_inputs,
     GpuRunOptions, ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest,
-    ProvePcsEvaluationValues, ProvePcsQueryPlanSegmentError, ProveRunOptions, ProveRunRequest,
-    ProveSchedule, ProveWitnessAuxiliaryInputs, ProveWitnessCommitmentError,
+    ProvePcsEvaluationValues, ProvePcsFriOpeningValues, ProvePcsQueryPlanSegmentError,
+    ProveRunOptions, ProveRunRequest, ProveSchedule, ProveWitnessAuxiliaryInputs,
+    ProveWitnessCommitmentError,
 };
 use sha2::{Digest, Sha256};
 
@@ -931,6 +940,65 @@ fn builds_pcs_evaluation_segments_from_values() {
         parsed.units[0].values,
         values.into_iter().map(Ext3::to_u64s).collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn builds_pcs_fri_opening_segments_from_polynomial_values() {
+    let catalog = sample_catalog(sample_unit());
+    let schedule = derive_prove_schedule(&catalog).expect("schedule should derive");
+    let unit = &schedule.units[0];
+    let query_plan = PcsQueryPlanSegment {
+        units: vec![PcsQueryPlanUnit {
+            unit_index: 0,
+            queries: vec![1, unit.extended_domain_size - 1],
+        }],
+    };
+    let query_segment = ProofSegment {
+        id: PCS_QUERY_PLAN_SEGMENT_ID,
+        data: encode_pcs_query_plan_segment(&query_plan).expect("query segment should encode"),
+    };
+    let polynomial = (0..unit.extended_domain_size)
+        .map(|index| Ext3::from_u64s([index + 1, index + 101, index + 201]))
+        .collect::<Vec<_>>();
+    let mut challenges = vec![Ext3::ZERO; unit.challenge_count + unit.fri_layers.len() + 1];
+    challenges[unit.challenge_count + 1] = Ext3::from_u64s([17, 18, 19]);
+
+    let segment = build_pcs_fri_opening_segment(
+        &schedule,
+        &query_segment,
+        &[ProvePcsFriOpeningValues {
+            unit_index: 0,
+            challenges: challenges.clone(),
+            polynomial,
+        }],
+    )
+    .expect("FRI opening segment should build");
+    let parsed = parse_pcs_fri_opening_segment(&segment.data).expect("FRI segment should parse");
+
+    assert_eq!(segment.id, PCS_FRI_OPENING_SEGMENT_ID);
+    assert_eq!(parsed.units.len(), 1);
+    assert_eq!(parsed.units[0].unit_index, 0);
+    assert_eq!(parsed.units[0].layers.len(), unit.fri_layers.len());
+    assert_eq!(
+        parsed.units[0].layers[0].queries.len(),
+        unit.query_count as usize
+    );
+    assert_eq!(parsed.units[0].layers[0].queries[0].row_index, 1);
+    assert_eq!(parsed.units[0].layers[0].queries[1].row_index, 15);
+    assert_eq!(
+        parsed.units[0].final_polynomial.len(),
+        1_usize << unit.final_layer_bits
+    );
+    assert!(verify_fri_opening_folds(
+        unit,
+        PcsFriOpeningFoldRequest {
+            unit_index: 0,
+            query_rows: &query_plan.units[0].queries,
+            challenges: &challenges,
+            fri: &parsed.units[0],
+        },
+    )
+    .expect("folds should verify"));
 }
 
 #[test]
