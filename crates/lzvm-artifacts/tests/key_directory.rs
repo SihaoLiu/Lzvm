@@ -428,6 +428,12 @@ fn reads_key_directory_catalog_without_loading_fixed_values() {
         .iter()
         .all(|unit| unit.actual_fixed_bytes == 32));
     assert!(catalog.units.iter().all(|unit| !unit.constant_tree_present));
+    assert!(catalog.units.iter().all(|unit| {
+        unit.pcs_plan.base_domain_bits == 1
+            && unit.pcs_plan.extended_domain_bits == 2
+            && unit.pcs_plan.blowup_factor == 2
+            && unit.pcs_plan.stage_commit_widths == vec![1, 1]
+    }));
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
@@ -476,6 +482,13 @@ fn hashes_key_directory_catalogs_deterministically() {
     assert!(hex.chars().all(|value| value.is_ascii_hexdigit()));
     assert_eq!(
         key_directory_catalog_digest(&catalog).expect("digest should compute"),
+        digest
+    );
+
+    let mut changed_plan = catalog.clone();
+    changed_plan.units[0].pcs_plan.query_count += 1;
+    assert_ne!(
+        key_directory_catalog_digest(&changed_plan).expect("changed digest should compute"),
         digest
     );
 

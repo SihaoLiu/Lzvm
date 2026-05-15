@@ -12,6 +12,7 @@ use crate::global_info::{read_global_info_file, CurveKind, GlobalInfo, GlobalInf
 use crate::metadata_bundle::{
     read_unit_metadata_bundle, MetadataBundleError, UnitMetadataBundle, UnitMetadataPaths,
 };
+use crate::pcs_plan::{derive_pcs_setup_plan, PcsPlanError, PcsSetupPlan};
 use crate::verification_key::{
     read_verification_key_binary_file, read_verification_key_json_file, VerificationKeyError,
     VerificationKeyRoot,
@@ -76,6 +77,7 @@ pub struct KeyUnitPaths {
 pub struct KeyUnitCatalogEntry {
     pub paths: KeyUnitPaths,
     pub metadata: UnitMetadataBundle,
+    pub pcs_plan: PcsSetupPlan,
     pub verification_key: VerificationKeyRoot,
     pub expression_program: ExpressionProgram,
     pub verifier_program: ExpressionProgram,
@@ -98,6 +100,7 @@ pub enum KeyDirectoryError {
     GlobalConstraints(ConstraintProgramError),
     ConstantTree(ConstantTreeError),
     Metadata(MetadataBundleError),
+    PcsPlan(PcsPlanError),
     ExpressionProgram(ExpressionProgramError),
     VerificationKey(VerificationKeyError),
     FixedColumns(FixedColumnError),
@@ -158,6 +161,7 @@ impl fmt::Display for KeyDirectoryError {
                 write!(f, "key-directory constant-tree error: {error}")
             }
             Self::Metadata(error) => write!(f, "key-directory unit metadata error: {error}"),
+            Self::PcsPlan(error) => write!(f, "key-directory PCS setup plan error: {error}"),
             Self::ExpressionProgram(error) => {
                 write!(f, "key-directory expression program error: {error}")
             }
@@ -216,6 +220,12 @@ impl From<ConstantTreeError> for KeyDirectoryError {
 impl From<MetadataBundleError> for KeyDirectoryError {
     fn from(error: MetadataBundleError) -> Self {
         Self::Metadata(error)
+    }
+}
+
+impl From<PcsPlanError> for KeyDirectoryError {
+    fn from(error: PcsPlanError) -> Self {
+        Self::PcsPlan(error)
     }
 }
 
@@ -426,6 +436,7 @@ pub fn key_directory_catalog_digest(
         hash_optional_usize(&mut hasher, unit.paths.unit_id);
         hash_optional_string(&mut hasher, unit.paths.group_name.as_deref());
         hash_optional_string(&mut hasher, unit.paths.unit_name.as_deref());
+        hash_pcs_setup_plan(&mut hasher, &unit.pcs_plan);
         hash_bytes(
             &mut hasher,
             &crate::setup_info::encode_unit_setup_info(&unit.metadata.setup).map_err(|error| {
@@ -501,6 +512,7 @@ fn read_key_unit_catalog_entry(
             })?,
     );
     let metadata = read_unit_metadata_bundle(&metadata_paths)?;
+    let pcs_plan = derive_pcs_setup_plan(&metadata.setup)?;
 
     let json_root = read_verification_key_json_file(paths.verification_key_json())?;
     let binary_root = read_verification_key_binary_file(paths.verification_key_binary())?;
@@ -569,6 +581,7 @@ fn read_key_unit_catalog_entry(
     Ok(KeyUnitCatalogEntry {
         paths: paths.clone(),
         metadata,
+        pcs_plan,
         verification_key: json_root,
         expression_program,
         verifier_program,
@@ -772,6 +785,28 @@ fn curve_kind_tag(curve: &CurveKind) -> u8 {
     }
 }
 
+fn hash_pcs_setup_plan(hasher: &mut Sha256, plan: &PcsSetupPlan) {
+    hash_u32(hasher, plan.base_domain_bits);
+    hash_u32(hasher, plan.extended_domain_bits);
+    hash_u64(hasher, plan.base_domain_size);
+    hash_u64(hasher, plan.extended_domain_size);
+    hash_u64(hasher, plan.blowup_factor);
+    hash_u32(hasher, plan.query_count);
+    hash_u32(hasher, plan.proof_of_work_bits);
+    hash_u32(hasher, plan.merkle_tree_arity);
+    hash_optional_u32(hasher, plan.transcript_arity);
+    hash_u32(hasher, plan.constant_width);
+    hash_u32_vec(hasher, &plan.stage_commit_widths);
+    hash_i64_vec(hasher, &plan.opening_points);
+    hash_u64(hasher, plan.fri_layers.len() as u64);
+    for layer in &plan.fri_layers {
+        hash_u32(hasher, layer.input_bits);
+        hash_u32(hasher, layer.output_bits);
+        hash_u64(hasher, layer.folding_factor);
+    }
+    hash_u32(hasher, plan.final_layer_bits);
+}
+
 fn hash_u8(hasher: &mut Sha256, value: u8) {
     hasher.update([value]);
 }
@@ -782,6 +817,24 @@ fn hash_bool(hasher: &mut Sha256, value: bool) {
 
 fn hash_u64(hasher: &mut Sha256, value: u64) {
     hasher.update(value.to_le_bytes());
+}
+
+fn hash_u32(hasher: &mut Sha256, value: u32) {
+    hasher.update(value.to_le_bytes());
+}
+
+fn hash_i64(hasher: &mut Sha256, value: i64) {
+    hasher.update(value.to_le_bytes());
+}
+
+fn hash_optional_u32(hasher: &mut Sha256, value: Option<u32>) {
+    match value {
+        Some(value) => {
+            hash_bool(hasher, true);
+            hash_u32(hasher, value);
+        }
+        None => hash_bool(hasher, false),
+    }
 }
 
 fn hash_optional_u64(hasher: &mut Sha256, value: Option<u64>) {
@@ -818,6 +871,20 @@ fn hash_u64_vec(hasher: &mut Sha256, values: &[u64]) {
     hash_u64(hasher, values.len() as u64);
     for value in values {
         hash_u64(hasher, *value);
+    }
+}
+
+fn hash_u32_vec(hasher: &mut Sha256, values: &[u32]) {
+    hash_u64(hasher, values.len() as u64);
+    for value in values {
+        hash_u32(hasher, *value);
+    }
+}
+
+fn hash_i64_vec(hasher: &mut Sha256, values: &[i64]) {
+    hash_u64(hasher, values.len() as u64);
+    for value in values {
+        hash_i64(hasher, *value);
     }
 }
 
