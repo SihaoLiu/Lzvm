@@ -13,6 +13,10 @@ path = "src/lib.rs"
 name = "lzvm"
 path = "src/main.rs"
 
+[features]
+default = []
+cuda = ["lzvm-setup/cuda"]
+
 [dependencies]
 lzvm-artifacts = { path = "../lzvm-artifacts" }
 lzvm-setup = { path = "../lzvm-setup" }

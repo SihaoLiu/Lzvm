@@ -319,6 +319,15 @@ pub fn write_constant_tree_leaves(
     value: &FixedColumns,
     setup: &UnitSetupInfo,
 ) -> Result<ConstantTreeLeavesWriteReport, SetupError> {
+    write_constant_tree_leaves_with_backend(path, value, setup, FixedExtensionBackend::Cpu)
+}
+
+pub fn write_constant_tree_leaves_with_backend(
+    path: impl AsRef<Path>,
+    value: &FixedColumns,
+    setup: &UnitSetupInfo,
+    backend: FixedExtensionBackend,
+) -> Result<ConstantTreeLeavesWriteReport, SetupError> {
     let path = path.as_ref().to_path_buf();
     let parent = path
         .parent()
@@ -329,7 +338,7 @@ pub fn write_constant_tree_leaves(
         message: error.to_string(),
     })?;
 
-    let leaves = extend_fixed_columns_for_constant_tree(value, setup)?;
+    let leaves = extend_fixed_columns_for_constant_tree_with_backend(value, setup, backend)?;
     let expected_len = checked_domain_len(setup.stark.n_bits_ext)?
         .checked_mul(usize::try_from(setup.n_constants).map_err(|_| SetupError::LengthOverflow)?)
         .and_then(|words| words.checked_mul(8))
@@ -374,7 +383,15 @@ pub fn build_constant_tree_from_fixed_columns(
     value: &FixedColumns,
     setup: &UnitSetupInfo,
 ) -> Result<Vec<u8>, SetupError> {
-    let leaves = extend_fixed_columns_for_constant_tree(value, setup)?;
+    build_constant_tree_from_fixed_columns_with_backend(value, setup, FixedExtensionBackend::Cpu)
+}
+
+pub fn build_constant_tree_from_fixed_columns_with_backend(
+    value: &FixedColumns,
+    setup: &UnitSetupInfo,
+    backend: FixedExtensionBackend,
+) -> Result<Vec<u8>, SetupError> {
+    let leaves = extend_fixed_columns_for_constant_tree_with_backend(value, setup, backend)?;
     build_constant_tree_from_leaves(&leaves, setup)
 }
 

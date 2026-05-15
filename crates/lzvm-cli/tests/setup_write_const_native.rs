@@ -210,6 +210,68 @@ fn writes_native_constant_tree_from_raw_columns_with_expected_root() {
 }
 
 #[test]
+#[cfg(feature = "cuda")]
+fn writes_native_constant_tree_with_cuda_backend_option() {
+    let dir = temp_dir("cuda");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let setup_path = dir.join("unit.setup.bin");
+    let columns_path = dir.join("unit.fixed.bin");
+    let cpu_out = dir.join("unit.cpu.consttree");
+    let cuda_out = dir.join("unit.cuda.consttree");
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    fs::write(
+        &setup_path,
+        encode_unit_setup_info(&setup).expect("setup should encode"),
+    )
+    .expect("setup fixture should be written");
+    fs::write(
+        &columns_path,
+        encode_fixed_columns(&sample_columns()).expect("columns should encode"),
+    )
+    .expect("columns fixture should be written");
+
+    let mut cpu_stdout = Vec::new();
+    let mut cpu_stderr = Vec::new();
+    let cpu_code = run_cli(
+        &[
+            "setup",
+            "write-const-native",
+            setup_path.to_str().expect("setup path should be utf-8"),
+            columns_path.to_str().expect("columns path should be utf-8"),
+            cpu_out.to_str().expect("cpu output path should be utf-8"),
+        ],
+        &mut cpu_stdout,
+        &mut cpu_stderr,
+    );
+    let mut cuda_stdout = Vec::new();
+    let mut cuda_stderr = Vec::new();
+    let cuda_code = run_cli(
+        &[
+            "setup",
+            "write-const-native",
+            "--backend",
+            "cuda",
+            setup_path.to_str().expect("setup path should be utf-8"),
+            columns_path.to_str().expect("columns path should be utf-8"),
+            cuda_out.to_str().expect("cuda output path should be utf-8"),
+        ],
+        &mut cuda_stdout,
+        &mut cuda_stderr,
+    );
+
+    let cpu_tree = fs::read(&cpu_out).expect("cpu tree output should be written");
+    let cuda_tree = fs::read(&cuda_out).expect("cuda tree output should be written");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(cpu_code, 0);
+    assert_eq!(cuda_code, 0);
+    assert!(cpu_stderr.is_empty());
+    assert!(cuda_stderr.is_empty());
+    assert_eq!(cuda_tree, cpu_tree);
+}
+
+#[test]
 fn reports_usage_for_missing_native_constant_tree_output_path() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -228,6 +290,6 @@ fn reports_usage_for_missing_native_constant_tree_output_path() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm setup write-const-native <setup-info-bin> <columns-bin> [root-bin] <out-consttree>\n"
+        "usage: lzvm setup write-const-native [--backend cpu|cuda] <setup-info-bin> <columns-bin> [root-bin] <out-consttree>\n"
     );
 }

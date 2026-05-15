@@ -119,6 +119,68 @@ fn writes_extended_leaves_from_binary_setup_and_columns() {
 }
 
 #[test]
+#[cfg(feature = "cuda")]
+fn writes_extended_leaves_with_cuda_backend_option() {
+    let dir = temp_dir("cuda");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let setup_path = dir.join("unit.setup.bin");
+    let columns_path = dir.join("unit.fixed.bin");
+    let cpu_out = dir.join("unit.cpu.constleaves");
+    let cuda_out = dir.join("unit.cuda.constleaves");
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    fs::write(
+        &setup_path,
+        encode_unit_setup_info(&setup).expect("setup should encode"),
+    )
+    .expect("setup fixture should be written");
+    fs::write(
+        &columns_path,
+        encode_fixed_columns(&sample_columns()).expect("columns should encode"),
+    )
+    .expect("columns fixture should be written");
+
+    let mut cpu_stdout = Vec::new();
+    let mut cpu_stderr = Vec::new();
+    let cpu_code = run_cli(
+        &[
+            "setup",
+            "write-const-leaves",
+            setup_path.to_str().expect("setup path should be utf-8"),
+            columns_path.to_str().expect("columns path should be utf-8"),
+            cpu_out.to_str().expect("cpu output path should be utf-8"),
+        ],
+        &mut cpu_stdout,
+        &mut cpu_stderr,
+    );
+    let mut cuda_stdout = Vec::new();
+    let mut cuda_stderr = Vec::new();
+    let cuda_code = run_cli(
+        &[
+            "setup",
+            "write-const-leaves",
+            "--backend",
+            "cuda",
+            setup_path.to_str().expect("setup path should be utf-8"),
+            columns_path.to_str().expect("columns path should be utf-8"),
+            cuda_out.to_str().expect("cuda output path should be utf-8"),
+        ],
+        &mut cuda_stdout,
+        &mut cuda_stderr,
+    );
+
+    let cpu_bytes = fs::read(&cpu_out).expect("cpu leaf output should exist");
+    let cuda_bytes = fs::read(&cuda_out).expect("cuda leaf output should exist");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(cpu_code, 0);
+    assert_eq!(cuda_code, 0);
+    assert!(cpu_stderr.is_empty());
+    assert!(cuda_stderr.is_empty());
+    assert_eq!(cuda_bytes, cpu_bytes);
+}
+
+#[test]
 fn reports_usage_for_missing_extended_leaves_output_path() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -137,6 +199,6 @@ fn reports_usage_for_missing_extended_leaves_output_path() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm setup write-const-leaves <setup-info-bin> <columns-bin> <out-leaves>\n"
+        "usage: lzvm setup write-const-leaves [--backend cpu|cuda] <setup-info-bin> <columns-bin> <out-leaves>\n"
     );
 }

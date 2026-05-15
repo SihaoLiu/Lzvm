@@ -89,18 +89,18 @@ This command validates the raw tree length and root before publishing through a 
 Generate row-major extended fixed-column leaves for native constant-tree construction:
 
 ```sh
-cargo run -p lzvm-cli -- setup write-const-leaves <setup-info-bin> <columns-bin> <out-leaves>
+cargo run -p lzvm-cli -- setup write-const-leaves [--backend cpu|cuda] <setup-info-bin> <columns-bin> <out-leaves>
 ```
 
-This command validates fixed columns against setup metadata, extends them over the shifted extended domain, and writes the leaf bytes used by the constant-tree backend.
+This command validates fixed columns against setup metadata, extends them over the shifted extended domain, and writes the leaf bytes used by the constant-tree backend. The default backend is `cpu`; `cuda` is available when the CLI is built with the `cuda` feature.
 
 Generate a native GL constant-tree artifact directly from binary setup metadata and binary fixed-column source data:
 
 ```sh
-cargo run -p lzvm-cli -- setup write-const-native <setup-info-bin> <columns-bin> [root-bin] <out-consttree>
+cargo run -p lzvm-cli -- setup write-const-native [--backend cpu|cuda] <setup-info-bin> <columns-bin> [root-bin] <out-consttree>
 ```
 
-This command accepts either sectioned or raw fixed-column bytes, extends fixed columns, builds leaf digests and parent nodes with the repository-owned CPU reference hash, optionally checks the generated root against a binary expected root, validates the resulting raw tree artifact, and publishes it through a staging path. The current native path covers arity 2 and arity 4; accelerated backends remain separate parity targets.
+This command accepts either sectioned or raw fixed-column bytes, extends fixed columns, builds leaf digests and parent nodes with the repository-owned CPU reference hash, optionally checks the generated root against a binary expected root, validates the resulting raw tree artifact, and publishes it through a staging path. The current native path covers arity 2 and arity 4; the optional `cuda` backend accelerates fixed-column extension while tree hashing remains on the CPU path.
 
 ## Verification
 

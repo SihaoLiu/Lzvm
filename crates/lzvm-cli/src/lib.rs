@@ -10,8 +10,8 @@ use lzvm_artifacts::setup_info::{
 };
 use lzvm_artifacts::verification_key::{read_verification_key_binary_file, VerificationKeyRoot};
 use lzvm_setup::{
-    build_constant_tree_from_fixed_columns, write_base_constant_tree, write_base_fixed_columns,
-    write_constant_tree_leaves,
+    build_constant_tree_from_fixed_columns_with_backend, write_base_constant_tree,
+    write_base_fixed_columns, write_constant_tree_leaves_with_backend, FixedExtensionBackend,
 };
 use serde_json::Value;
 
@@ -46,22 +46,74 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             )
         }
         ["setup", "write-const-tree", ..] => write_const_tree_usage(stderr),
+        ["setup", "write-const-leaves", "--backend", backend, setup_info_bin, columns_bin, out_leaves] =>
+        {
+            let Some(backend) =
+                parse_fixed_extension_backend(backend, "setup constant-tree leaf write", stderr)
+            else {
+                return 1;
+            };
+            write_constant_tree_leaves_command(
+                setup_info_bin,
+                columns_bin,
+                out_leaves,
+                backend,
+                stdout,
+                stderr,
+            )
+        }
         ["setup", "write-const-leaves", setup_info_bin, columns_bin, out_leaves] => {
             write_constant_tree_leaves_command(
                 setup_info_bin,
                 columns_bin,
                 out_leaves,
+                FixedExtensionBackend::Cpu,
                 stdout,
                 stderr,
             )
         }
         ["setup", "write-const-leaves", ..] => write_const_leaves_usage(stderr),
+        ["setup", "write-const-native", "--backend", backend, setup_info_bin, columns_bin, root_bin, out_consttree] =>
+        {
+            let Some(backend) =
+                parse_fixed_extension_backend(backend, "setup native constant-tree write", stderr)
+            else {
+                return 1;
+            };
+            write_constant_tree_native(
+                setup_info_bin,
+                columns_bin,
+                Some(root_bin),
+                out_consttree,
+                backend,
+                stdout,
+                stderr,
+            )
+        }
+        ["setup", "write-const-native", "--backend", backend, setup_info_bin, columns_bin, out_consttree] =>
+        {
+            let Some(backend) =
+                parse_fixed_extension_backend(backend, "setup native constant-tree write", stderr)
+            else {
+                return 1;
+            };
+            write_constant_tree_native(
+                setup_info_bin,
+                columns_bin,
+                None,
+                out_consttree,
+                backend,
+                stdout,
+                stderr,
+            )
+        }
         ["setup", "write-const-native", setup_info_bin, columns_bin, root_bin, out_consttree] => {
             write_constant_tree_native(
                 setup_info_bin,
                 columns_bin,
                 Some(root_bin),
                 out_consttree,
+                FixedExtensionBackend::Cpu,
                 stdout,
                 stderr,
             )
@@ -72,6 +124,7 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
                 columns_bin,
                 None,
                 out_consttree,
+                FixedExtensionBackend::Cpu,
                 stdout,
                 stderr,
             )
@@ -272,6 +325,7 @@ fn write_constant_tree_leaves_command(
     setup_info_bin: &str,
     columns_bin: &str,
     out_leaves: &str,
+    backend: FixedExtensionBackend,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
@@ -290,7 +344,7 @@ fn write_constant_tree_leaves_command(
         }
     };
 
-    match write_constant_tree_leaves(out_leaves, &columns, &setup) {
+    match write_constant_tree_leaves_with_backend(out_leaves, &columns, &setup, backend) {
         Ok(report) => {
             let _ = writeln!(stdout, "status=ok");
             let _ = writeln!(stdout, "bytes_written={}", report.bytes_written);
@@ -311,6 +365,7 @@ fn write_constant_tree_native(
     columns_bin: &str,
     root_bin: Option<&str>,
     out_consttree: &str,
+    backend: FixedExtensionBackend,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
@@ -339,7 +394,8 @@ fn write_constant_tree_native(
         None => None,
     };
 
-    let tree = match build_constant_tree_from_fixed_columns(&columns, &setup) {
+    let tree = match build_constant_tree_from_fixed_columns_with_backend(&columns, &setup, backend)
+    {
         Ok(tree) => tree,
         Err(error) => {
             let _ = writeln!(stderr, "setup native constant-tree write failed: {error}");
@@ -418,6 +474,21 @@ fn publish_fixed_columns(
         Err(error) => {
             let _ = writeln!(stderr, "setup fixed-column write failed: {error}");
             1
+        }
+    }
+}
+
+fn parse_fixed_extension_backend(
+    value: &str,
+    role: &str,
+    stderr: &mut dyn Write,
+) -> Option<FixedExtensionBackend> {
+    match value {
+        "cpu" => Some(FixedExtensionBackend::Cpu),
+        "cuda" => Some(FixedExtensionBackend::Cuda),
+        _ => {
+            let _ = writeln!(stderr, "{role} failed: unsupported backend {value}");
+            None
         }
     }
 }
@@ -515,7 +586,7 @@ fn write_const_tree_usage(stderr: &mut dyn Write) -> i32 {
 fn write_const_leaves_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm setup write-const-leaves <setup-info-bin> <columns-bin> <out-leaves>"
+        "usage: lzvm setup write-const-leaves [--backend cpu|cuda] <setup-info-bin> <columns-bin> <out-leaves>"
     );
     2
 }
@@ -523,7 +594,7 @@ fn write_const_leaves_usage(stderr: &mut dyn Write) -> i32 {
 fn write_const_native_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm setup write-const-native <setup-info-bin> <columns-bin> [root-bin] <out-consttree>"
+        "usage: lzvm setup write-const-native [--backend cpu|cuda] <setup-info-bin> <columns-bin> [root-bin] <out-consttree>"
     );
     2
 }
