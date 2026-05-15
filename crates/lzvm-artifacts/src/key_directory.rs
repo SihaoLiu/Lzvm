@@ -441,10 +441,6 @@ impl KeyUnitPaths {
             });
         }
         paths.push(RequiredPath {
-            role: "unit verification-key metadata",
-            path: self.verification_key_json(),
-        });
-        paths.push(RequiredPath {
             role: "unit verification-key binary",
             path: self.verification_key_binary(),
         });
@@ -640,15 +636,18 @@ fn read_key_unit_catalog_entry(
     let pcs_plan = derive_pcs_setup_plan(&metadata.setup)?;
     validate_pcs_setup_plan_companion(paths, &pcs_plan)?;
 
-    let json_root = read_verification_key_json_file(paths.verification_key_json())?;
     let binary_root = read_verification_key_binary_file(paths.verification_key_binary())?;
-    if json_root != binary_root {
-        return Err(KeyDirectoryError::VerificationKeyMismatch {
-            kind: paths.kind,
-            json_root,
-            binary_root,
-        });
+    if paths.verification_key_json().is_file() {
+        let json_root = read_verification_key_json_file(paths.verification_key_json())?;
+        if json_root != binary_root {
+            return Err(KeyDirectoryError::VerificationKeyMismatch {
+                kind: paths.kind,
+                json_root,
+                binary_root,
+            });
+        }
     }
+    let verification_key = binary_root;
 
     let expression_program_path =
         paths
@@ -690,10 +689,10 @@ fn read_key_unit_catalog_entry(
         if paths.constant_tree.is_file() {
             let tree = read_constant_tree_file(&paths.constant_tree, &metadata.setup)?;
             let root = tree.root()?;
-            if root != json_root {
+            if root != verification_key {
                 return Err(KeyDirectoryError::ConstantTreeRootMismatch {
                     kind: paths.kind,
-                    expected: json_root.clone(),
+                    expected: verification_key.clone(),
                     found: root,
                 });
             }
@@ -714,7 +713,7 @@ fn read_key_unit_catalog_entry(
         paths: paths.clone(),
         metadata,
         pcs_plan,
-        verification_key: json_root,
+        verification_key,
         expression_program,
         regular_constraints,
         verifier_program,

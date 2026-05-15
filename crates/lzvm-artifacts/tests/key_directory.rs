@@ -695,6 +695,27 @@ fn reads_key_directory_catalog_from_binary_expression_metadata() {
 }
 
 #[test]
+fn reads_key_directory_catalog_from_binary_verification_keys_without_json() {
+    let dir = temp_dir("binary-verkey-only");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+        fs::remove_file(unit.verification_key_json())
+            .expect("json verification key should be removed");
+    }
+
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+
+    assert!(catalog
+        .units
+        .iter()
+        .all(|unit| unit.verification_key == VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4])));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn reads_key_directory_catalog_constant_tree_roots_when_present() {
     let dir = temp_dir("catalog-tree");
     let _ = fs::remove_dir_all(&dir);
