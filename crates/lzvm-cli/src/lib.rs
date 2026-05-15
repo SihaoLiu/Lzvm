@@ -25,9 +25,11 @@ use lzvm_artifacts::pcs_nonce_segment::PCS_QUERY_NONCE_SEGMENT_ID;
 use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file,
 };
-use lzvm_artifacts::pcs_query_segment::{parse_pcs_query_plan_segment, PCS_QUERY_PLAN_SEGMENT_ID};
+use lzvm_artifacts::pcs_query_segment::{
+    parse_pcs_query_plan_segment, PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
+};
 use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact, ProofSegment};
-use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
+use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file, PublicValues};
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, read_unit_setup_info_file,
 };
@@ -42,8 +44,13 @@ use lzvm_field::{Ext3, Felt};
 use lzvm_prover::constant_tree_opening::{
     constant_tree_merkle_level_count, verify_constant_tree_opening_root, ConstantTreeOpening,
 };
-use lzvm_prover::pcs_fri::{verify_fri_last_level_root, verify_fri_query_path};
-use lzvm_prover::pcs_transcript::PcsTranscriptSegmentInputs;
+use lzvm_prover::pcs_fri::{
+    verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path,
+    PcsFriOpeningFoldRequest,
+};
+use lzvm_prover::pcs_transcript::{
+    derive_pcs_transcript_challenges_from_segments, PcsTranscriptSegmentInputs,
+};
 use lzvm_prover::witness_commitment::{verify_witness_stage_opening_root, WitnessStageOpening};
 use lzvm_prover::{
     build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_transcript_segments,
@@ -487,7 +494,8 @@ fn verify_setup_preflight(
         let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
         return 1;
     }
-    if let Err(error) = validate_optional_pcs_fri_opening_segment(&schedule, &proof) {
+    if let Err(error) = validate_optional_pcs_fri_opening_segment(&schedule, &proof, &public_values)
+    {
         let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
         return 1;
     }
@@ -1034,6 +1042,7 @@ fn validate_constant_opening_segment(
 fn validate_optional_pcs_fri_opening_segment(
     schedule: &ProveSchedule,
     proof: &ProofArtifact,
+    public_values: &PublicValues,
 ) -> Result<(), String> {
     let Some(segment) = proof
         .segments
@@ -1173,8 +1182,98 @@ fn validate_optional_pcs_fri_opening_segment(
                 }
             }
         }
+
+        if uses_transcript_query_plan_inputs(proof) {
+            validate_pcs_fri_opening_fold_chain(
+                schedule,
+                proof,
+                public_values,
+                query_unit,
+                opening_unit,
+            )?;
+        }
     }
     Ok(())
+}
+
+fn validate_pcs_fri_opening_fold_chain(
+    schedule: &ProveSchedule,
+    proof: &ProofArtifact,
+    public_values: &PublicValues,
+    query_unit: &PcsQueryPlanUnit,
+    opening_unit: &lzvm_artifacts::pcs_fri_segment::PcsFriOpeningUnitSegment,
+) -> Result<(), String> {
+    let unit_index = usize::try_from(query_unit.unit_index)
+        .map_err(|_| "PCS FRI opening segment unit index overflow")?;
+    let unit = schedule
+        .units
+        .get(unit_index)
+        .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
+    let material_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
+        .ok_or_else(|| "missing PCS material manifest segment".to_owned())?;
+    let material = parse_pcs_material_manifest_segment(&material_segment.data)
+        .map_err(|error| format!("invalid PCS material manifest segment: {error}"))?;
+    let material_unit = material
+        .units
+        .iter()
+        .find(|unit| unit.unit_index == query_unit.unit_index)
+        .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
+    let witness_segment_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
+        .checked_add(query_unit.unit_index)
+        .ok_or_else(|| "PCS FRI opening segment witness id overflow".to_owned())?;
+    let witness_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == witness_segment_id)
+        .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
+    let witness = parse_witness_commitment_segment(&witness_segment.data).map_err(|error| {
+        format!("invalid witness commitment segment for unit {unit_index}: {error}")
+    })?;
+    let evaluation_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
+        .ok_or_else(|| "missing PCS evaluation segment".to_owned())?;
+    let evaluations = parse_pcs_evaluation_segment(&evaluation_segment.data)
+        .map_err(|error| format!("invalid PCS evaluation segment: {error}"))?;
+    let evaluation_unit = evaluations
+        .units
+        .iter()
+        .find(|unit| unit.unit_index == query_unit.unit_index)
+        .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
+    let public_value_fields = transcript_public_value_fields(public_values)?;
+    let challenges = derive_pcs_transcript_challenges_from_segments(PcsTranscriptSegmentInputs {
+        unit_index,
+        unit,
+        material: material_unit,
+        public_values: &public_value_fields,
+        witness: &witness,
+        evaluations: evaluation_unit,
+        fri: opening_unit,
+        root_challenge_draws: &unit.transcript_root_challenge_draws,
+        evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
+    })
+    .map_err(|error| format!("derive PCS FRI opening challenges failed: {error}"))?;
+    let valid = verify_fri_opening_folds(
+        unit,
+        PcsFriOpeningFoldRequest {
+            unit_index: query_unit.unit_index,
+            query_rows: &query_unit.queries,
+            challenges: &challenges,
+            fri: opening_unit,
+        },
+    )
+    .map_err(|error| format!("invalid PCS FRI opening segment for unit {unit_index}: {error}"))?;
+    if valid {
+        Ok(())
+    } else {
+        Err(format!(
+            "PCS FRI opening segment mismatch for unit {unit_index}"
+        ))
+    }
 }
 
 fn expected_merkle_level_count(row_count: u64, arity: usize) -> Result<usize, String> {

@@ -47,8 +47,11 @@ use lzvm_artifacts::witness_segment::{
     WitnessCommitmentStageSegment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 use lzvm_cli::run_cli;
-use lzvm_field::{poseidon2_hash_16, Felt};
-use lzvm_prover::pcs_transcript::PcsTranscriptSegmentInputs;
+use lzvm_field::{poseidon2_hash_16, Ext3, Felt};
+use lzvm_prover::pcs_fri::verify_fri_fold;
+use lzvm_prover::pcs_transcript::{
+    derive_pcs_transcript_challenges_from_segments, PcsTranscriptSegmentInputs,
+};
 use lzvm_prover::{
     build_constant_opening_segment, build_pcs_material_manifest_segment,
     build_pcs_query_nonce_segment_from_transcript_segments, build_pcs_query_plan_segment,
@@ -492,6 +495,96 @@ fn sample_stable_pcs_fri_opening_unit(
         unit_index: unit_index as u32,
         layers,
         final_polynomial: vec![[21, 22, 23]; 1_usize << unit.final_layer_bits],
+    }
+}
+
+fn sample_folded_pcs_fri_opening_template(
+    schedule: &lzvm_prover::ProveSchedule,
+    material: &lzvm_artifacts::pcs_material_segment::PcsMaterialManifestUnit,
+    public_values: &[Felt],
+    witness: &WitnessCommitmentSegment,
+    evaluations: &PcsEvaluationUnitSegment,
+    unit_index: usize,
+) -> PcsFriOpeningUnitSegment {
+    let unit = &schedule.units[unit_index];
+    assert_eq!(unit.fri_layers.len(), 1);
+    let layer = &unit.fri_layers[0];
+    let values = vec![[11, 12, 13]; layer.folding_factor as usize];
+    let leaf_digest = sample_fri_value_digest(&values);
+    let last_level =
+        vec![leaf_digest; unit.merkle_tree_arity.pow(unit.last_level_verification) as usize];
+    let root = sample_digest_tree_root(last_level.clone(), unit.merkle_tree_arity as usize);
+    let mut template = PcsFriOpeningUnitSegment {
+        unit_index: unit_index as u32,
+        layers: vec![PcsFriOpeningLayerSegment {
+            layer_index: 0,
+            root,
+            last_level,
+            queries: Vec::new(),
+        }],
+        final_polynomial: vec![Ext3::ZERO.to_u64s(); 1_usize << unit.final_layer_bits],
+    };
+    let challenges = derive_pcs_transcript_challenges_from_segments(PcsTranscriptSegmentInputs {
+        unit_index,
+        unit,
+        material,
+        public_values,
+        witness,
+        evaluations,
+        fri: &template,
+        root_challenge_draws: &unit.transcript_root_challenge_draws,
+        evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
+    })
+    .expect("transcript challenges should derive");
+    let fold_values = values
+        .iter()
+        .map(|value| Ext3::from_u64s(*value))
+        .collect::<Vec<_>>();
+    let challenge = challenges[unit.challenge_count + 1];
+    for row_index in 0..template.final_polynomial.len() {
+        template.final_polynomial[row_index] = verify_fri_fold(
+            unit.extended_domain_bits,
+            layer.output_bits,
+            layer.input_bits,
+            challenge,
+            row_index as u64,
+            &fold_values,
+        )
+        .expect("fold should evaluate")
+        .to_u64s();
+    }
+    template
+}
+
+fn sample_folded_pcs_fri_opening_segment(
+    schedule: &lzvm_prover::ProveSchedule,
+    query_segment: &ProofSegment,
+    unit_index: usize,
+    mut unit: PcsFriOpeningUnitSegment,
+) -> ProofSegment {
+    let query_plan =
+        parse_pcs_query_plan_segment(&query_segment.data).expect("query plan should parse");
+    let query_unit = query_plan
+        .units
+        .iter()
+        .find(|unit| unit.unit_index == unit_index as u32)
+        .expect("query unit should exist");
+    let layer = &schedule.units[unit_index].fri_layers[0];
+    let output_domain = 1_u64 << layer.output_bits;
+    let values = vec![[11, 12, 13]; layer.folding_factor as usize];
+    unit.layers[0].queries = query_unit
+        .queries
+        .iter()
+        .map(|row_index| PcsFriOpeningQuerySegment {
+            row_index: *row_index % output_domain,
+            values: values.clone(),
+            siblings: Vec::<PcsFriOpeningLevelSegment>::new(),
+        })
+        .collect();
+    let segment = PcsFriOpeningSegment { units: vec![unit] };
+    ProofSegment {
+        id: PCS_FRI_OPENING_SEGMENT_ID,
+        data: encode_pcs_fri_opening_segment(&segment).expect("FRI segment should encode"),
     }
 }
 
@@ -1571,6 +1664,118 @@ fn validates_setup_aware_verify_preflight_with_transcript_query_plan() {
         .expect("evaluation segment should parse")
         .units[0]
         .clone();
+    let fri_unit = sample_folded_pcs_fri_opening_template(
+        &schedule,
+        &material,
+        &public_value_fields,
+        &witness,
+        &evaluations,
+        0,
+    );
+    let transcript_inputs = PcsTranscriptSegmentInputs {
+        unit_index: 0,
+        unit: &schedule.units[0],
+        material: &material,
+        public_values: &public_value_fields,
+        witness: &witness,
+        evaluations: &evaluations,
+        fri: &fri_unit,
+        root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
+        evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+    };
+    let nonce_segment =
+        build_pcs_query_nonce_segment_from_transcript_segments(&schedule, transcript_inputs)
+            .expect("nonce segment should build");
+    let query_segment = build_pcs_query_plan_segment_from_transcript_segments(
+        &schedule,
+        std::slice::from_ref(&witness_segment),
+        transcript_inputs,
+        &nonce_segment,
+    )
+    .expect("query segment should build");
+    let constant_opening_segment =
+        build_constant_opening_segment(&catalog, &schedule, &query_segment)
+            .expect("constant opening segment should build");
+    let opening_segment = sample_witness_opening_segment(&schedule, &query_segment, 0);
+    let fri_segment = sample_folded_pcs_fri_opening_segment(&schedule, &query_segment, 0, fri_unit);
+    let proof = ProofArtifact {
+        setup_hash: public_values.setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            material_segment,
+            query_segment,
+            constant_opening_segment,
+            opening_segment,
+            witness_segment,
+            evaluation_segment,
+            fri_segment,
+            nonce_segment,
+        ],
+    };
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.json");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_text(
+        &public_values_path,
+        &encode_public_values_json(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        "status=ok\nunits=4\nsegments=8\npublic_values=1\n"
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn rejects_setup_aware_verify_preflight_with_bad_fri_fold_chain() {
+    let dir = temp_dir("verify-setup-preflight-bad-fri-fold");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let public_value_fields = public_values
+        .values
+        .iter()
+        .flat_map(|entry| entry.elements.iter().copied().map(Felt::from_u64))
+        .collect::<Vec<_>>();
+    let schedule = derive_prove_schedule(&catalog).expect("schedule should derive");
+    let material_segment =
+        build_pcs_material_manifest_segment(&schedule).expect("material segment should build");
+    let material = parse_pcs_material_manifest_segment(&material_segment.data)
+        .expect("material segment should parse")
+        .units[0]
+        .clone();
+    let witness_segment = sample_witness_proof_segment(&schedule, 0);
+    let witness = parse_witness_commitment_segment(&witness_segment.data)
+        .expect("witness segment should parse");
+    let evaluation_segment = sample_pcs_evaluation_segment(0);
+    let evaluations = parse_pcs_evaluation_segment(&evaluation_segment.data)
+        .expect("evaluation segment should parse")
+        .units[0]
+        .clone();
     let fri_unit = sample_stable_pcs_fri_opening_unit(&schedule, &[0], 0);
     let transcript_inputs = PcsTranscriptSegmentInputs {
         unit_index: 0,
@@ -1640,12 +1845,12 @@ fn validates_setup_aware_verify_preflight_with_transcript_query_plan() {
     );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
-    assert_eq!(code, 0);
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
     assert_eq!(
-        String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=8\npublic_values=1\n"
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: PCS FRI opening segment mismatch for unit 0\n"
     );
-    assert!(stderr.is_empty());
 }
 
 #[test]
