@@ -1,6 +1,9 @@
 use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
-use lzvm_field::{coset_extend_evaluations, DomainError, Felt};
+use lzvm_field::{
+    coset_extend_evaluations, poseidon2_hash_16, poseidon2_hash_8, DomainError, Felt,
+};
+use lzvm_prover::witness_commitment::{commit_witness_stage_leaves, WitnessStageCommitmentError};
 use lzvm_prover::witness_commitment::{extend_witness_stage_leaves, WitnessStageLeafError};
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_trace::parse_witness_trace;
@@ -51,6 +54,74 @@ fn decode_words(bytes: &[u8]) -> Vec<u64> {
         .collect()
 }
 
+fn encode_digest_words(out: &mut Vec<u64>, digest: [Felt; 4]) {
+    out.extend(digest.into_iter().map(|value| value.to_u64()));
+}
+
+fn parent_hash(left: [Felt; 4], right: [Felt; 4]) -> [Felt; 4] {
+    let state = poseidon2_hash_8([
+        left[0], left[1], left[2], left[3], right[0], right[1], right[2], right[3],
+    ]);
+    [state[0], state[1], state[2], state[3]]
+}
+
+fn manual_expected_tree_words(leaves: &[u8]) -> Vec<u64> {
+    let leaf_words = decode_words(leaves);
+    let rows = leaf_words
+        .chunks_exact(2)
+        .map(|row| {
+            [
+                Felt::from_canonical(row[0]).expect("canonical"),
+                Felt::from_canonical(row[1]).expect("canonical"),
+                Felt::ZERO,
+                Felt::ZERO,
+            ]
+        })
+        .collect::<Vec<_>>();
+    let parent_left = parent_hash(rows[0], rows[1]);
+    let parent_right = parent_hash(rows[2], rows[3]);
+    let root = parent_hash(parent_left, parent_right);
+
+    let mut expected = leaf_words;
+    for row in rows {
+        encode_digest_words(&mut expected, row);
+    }
+    encode_digest_words(&mut expected, parent_left);
+    encode_digest_words(&mut expected, parent_right);
+    encode_digest_words(&mut expected, root);
+    expected
+}
+
+fn manual_expected_wide_arity4_tree_words(leaves: &[u8]) -> Vec<u64> {
+    const ROW_WIDTH: usize = 5;
+
+    let leaf_words = decode_words(leaves);
+    let rows = leaf_words
+        .chunks_exact(ROW_WIDTH)
+        .map(|row| {
+            let mut state = [Felt::ZERO; 16];
+            for (value, raw) in state.iter_mut().zip(row) {
+                *value = Felt::from_canonical(*raw).expect("canonical");
+            }
+            let state = poseidon2_hash_16(state);
+            [state[0], state[1], state[2], state[3]]
+        })
+        .collect::<Vec<_>>();
+    let root_state = poseidon2_hash_16([
+        rows[0][0], rows[0][1], rows[0][2], rows[0][3], rows[1][0], rows[1][1], rows[1][2],
+        rows[1][3], rows[2][0], rows[2][1], rows[2][2], rows[2][3], rows[3][0], rows[3][1],
+        rows[3][2], rows[3][3],
+    ]);
+    let root = [root_state[0], root_state[1], root_state[2], root_state[3]];
+
+    let mut expected = leaf_words;
+    for row in rows {
+        encode_digest_words(&mut expected, row);
+    }
+    encode_digest_words(&mut expected, root);
+    expected
+}
+
 #[test]
 fn extends_witness_stage_values_into_row_major_leaves() {
     let unit = sample_unit(2, vec![2]);
@@ -75,6 +146,77 @@ fn extends_witness_stage_values_into_row_major_leaves() {
     assert_eq!(leaves.extended_row_count(), 4);
     assert_eq!(leaves.column_count(), 2);
     assert_eq!(decode_words(leaves.bytes()), expected);
+}
+
+#[test]
+fn commits_witness_stage_leaves_with_the_native_tree_layout() {
+    let unit = sample_unit(2, vec![2]);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let trace =
+        parse_witness_trace(&encode_values(&[5, 9, 1, 9]), 2, 2).expect("trace should parse");
+    let stage = layout.stage_trace(&trace, 1).expect("stage should extract");
+    let leaves =
+        extend_witness_stage_leaves(&stage, 1, 2).expect("witness stage leaves should extend");
+
+    let commitment = commit_witness_stage_leaves(&leaves, 2).expect("witness stage should commit");
+    let expected_words = manual_expected_tree_words(leaves.bytes());
+    let root_words = &expected_words[expected_words.len() - 4..];
+
+    assert_eq!(commitment.stage_index(), 1);
+    assert_eq!(commitment.arity(), 2);
+    assert_eq!(decode_words(commitment.tree_bytes()), expected_words);
+    assert_eq!(
+        commitment.root(),
+        [
+            Felt::from_canonical(root_words[0]).expect("canonical"),
+            Felt::from_canonical(root_words[1]).expect("canonical"),
+            Felt::from_canonical(root_words[2]).expect("canonical"),
+            Felt::from_canonical(root_words[3]).expect("canonical"),
+        ]
+    );
+}
+
+#[test]
+fn commits_wide_witness_stage_leaves_with_arity4_hashing() {
+    let unit = sample_unit(2, vec![5]);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let trace = parse_witness_trace(&encode_values(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), 2, 5)
+        .expect("trace should parse");
+    let stage = layout.stage_trace(&trace, 1).expect("stage should extract");
+    let leaves =
+        extend_witness_stage_leaves(&stage, 1, 2).expect("witness stage leaves should extend");
+
+    let commitment = commit_witness_stage_leaves(&leaves, 4).expect("witness stage should commit");
+    let expected_words = manual_expected_wide_arity4_tree_words(leaves.bytes());
+    let root_words = &expected_words[expected_words.len() - 4..];
+
+    assert_eq!(commitment.stage_index(), 1);
+    assert_eq!(commitment.arity(), 4);
+    assert_eq!(decode_words(commitment.tree_bytes()), expected_words);
+    assert_eq!(
+        commitment.root(),
+        [
+            Felt::from_canonical(root_words[0]).expect("canonical"),
+            Felt::from_canonical(root_words[1]).expect("canonical"),
+            Felt::from_canonical(root_words[2]).expect("canonical"),
+            Felt::from_canonical(root_words[3]).expect("canonical"),
+        ]
+    );
+}
+
+#[test]
+fn rejects_unsupported_witness_stage_commitment_arities() {
+    let unit = sample_unit(2, vec![1]);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let trace = parse_witness_trace(&encode_values(&[5, 1]), 2, 1).expect("trace should parse");
+    let stage = layout.stage_trace(&trace, 1).expect("stage should extract");
+    let leaves =
+        extend_witness_stage_leaves(&stage, 1, 2).expect("witness stage leaves should extend");
+
+    assert!(matches!(
+        commit_witness_stage_leaves(&leaves, 3),
+        Err(WitnessStageCommitmentError::UnsupportedArity { arity: 3 })
+    ));
 }
 
 #[test]
