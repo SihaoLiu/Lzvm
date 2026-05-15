@@ -280,6 +280,10 @@ pub struct ProveExecutionPlan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProveExecutionPlanError {
     RunPlan(ProveRunPlanError),
+    MissingPcsMaterial {
+        unit_index: usize,
+        kind: KeyUnitKind,
+    },
     MissingWitnessLibrary {
         path: PathBuf,
     },
@@ -312,6 +316,10 @@ impl fmt::Display for ProveExecutionPlanError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::RunPlan(error) => write!(f, "prove execution plan run-plan error: {error}"),
+            Self::MissingPcsMaterial { unit_index, kind } => write!(
+                f,
+                "prove execution plan PCS setup material is missing for unit {unit_index} ({kind})"
+            ),
             Self::MissingWitnessLibrary { path } => {
                 write!(
                     f,
@@ -368,6 +376,7 @@ impl std::error::Error for ProveExecutionPlanError {
             Self::InvalidWitnessLibrary { source, .. } => Some(source),
             Self::InvalidGuestImage { source, .. } => Some(source),
             Self::RunPlan(error) => Some(error),
+            Self::MissingPcsMaterial { .. } => None,
             _ => None,
         }
     }
@@ -459,6 +468,7 @@ pub fn derive_prove_execution_plan(
     inputs: ProveExecutionInputArtifacts,
 ) -> Result<ProveExecutionPlan, ProveExecutionPlanError> {
     let run_plan = derive_prove_run_plan(catalog, request)?;
+    validate_execution_pcs_material(&run_plan.schedule)?;
     validate_regular_file(
         &inputs.witness_library,
         |path| ProveExecutionPlanError::MissingWitnessLibrary { path },
@@ -496,6 +506,25 @@ pub fn derive_prove_execution_plan(
         witness_library_info,
         guest_image_info,
     })
+}
+
+fn validate_execution_pcs_material(
+    schedule: &ProveSchedule,
+) -> Result<(), ProveExecutionPlanError> {
+    for (unit_index, unit) in schedule.units.iter().enumerate() {
+        if unit.pcs_material_bytes.is_none()
+            || unit.pcs_material_plan_digest.is_none()
+            || unit.pcs_material_fixed_column_digest.is_none()
+            || unit.pcs_material_constant_tree_digest.is_none()
+            || unit.pcs_material_constant_tree_root.is_none()
+        {
+            return Err(ProveExecutionPlanError::MissingPcsMaterial {
+                unit_index,
+                kind: unit.kind,
+            });
+        }
+    }
+    Ok(())
 }
 
 pub fn derive_prove_run_plan(

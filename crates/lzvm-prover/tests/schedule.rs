@@ -218,6 +218,18 @@ fn sample_pcs_material(seed: u8) -> PcsSetupMaterial {
     }
 }
 
+fn sample_unit_with_pcs_material(
+    kind: KeyUnitKind,
+    unit_id: usize,
+    fixed_bytes: u64,
+) -> KeyUnitCatalogEntry {
+    let mut unit = sample_unit(kind, unit_id, fixed_bytes);
+    unit.pcs_material_present = true;
+    unit.pcs_material_bytes = Some(184);
+    unit.pcs_material = Some(sample_pcs_material(unit_id as u8 + 7));
+    unit
+}
+
 #[test]
 fn derives_prove_schedule_from_key_directory_catalog() {
     let catalog = sample_catalog(vec![
@@ -392,7 +404,11 @@ fn derives_prove_execution_plan_with_input_artifacts() {
     fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
     fs::write(&public_inputs, [3_u8]).expect("public inputs should be written");
 
-    let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
+    let catalog = sample_catalog(vec![sample_unit_with_pcs_material(
+        KeyUnitKind::Basic,
+        0,
+        64,
+    )]);
     let request = ProveRunRequest {
         pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
         options: ProveRunOptions::default_for_output(dir.join("out")),
@@ -420,6 +436,41 @@ fn derives_prove_execution_plan_with_input_artifacts() {
 }
 
 #[test]
+fn rejects_prove_execution_plan_without_pcs_material() {
+    let dir = temp_dir("missing-pcs-material");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    fs::write(&witness_library, sample_witness_library())
+        .expect("witness library should be written");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+
+    let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
+        options: ProveRunOptions::default_for_output(dir.join("out")),
+        gpu: GpuRunOptions::default(),
+    };
+    let inputs = ProveExecutionInputArtifacts {
+        witness_library,
+        guest_image,
+        public_inputs: None,
+    };
+
+    let result = derive_prove_execution_plan(&catalog, request, inputs);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        result,
+        Err(ProveExecutionPlanError::MissingPcsMaterial {
+            unit_index: 0,
+            kind: KeyUnitKind::Basic,
+        })
+    ));
+}
+
+#[test]
 fn rejects_prove_execution_plan_with_missing_witness_library() {
     let dir = temp_dir("missing-witness");
     let _ = fs::remove_dir_all(&dir);
@@ -428,7 +479,11 @@ fn rejects_prove_execution_plan_with_missing_witness_library() {
     let guest_image = dir.join("guest.elf");
     fs::write(&guest_image, [2_u8]).expect("guest image should be written");
 
-    let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
+    let catalog = sample_catalog(vec![sample_unit_with_pcs_material(
+        KeyUnitKind::Basic,
+        0,
+        64,
+    )]);
     let request = ProveRunRequest {
         pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
         options: ProveRunOptions::default_for_output(dir.join("out")),
@@ -460,7 +515,11 @@ fn rejects_prove_execution_plan_with_invalid_guest_image() {
         .expect("witness library should be written");
     fs::write(&guest_image, b"not-an-elf").expect("guest image should be written");
 
-    let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
+    let catalog = sample_catalog(vec![sample_unit_with_pcs_material(
+        KeyUnitKind::Basic,
+        0,
+        64,
+    )]);
     let request = ProveRunRequest {
         pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
         options: ProveRunOptions::default_for_output(dir.join("out")),
@@ -492,7 +551,11 @@ fn rejects_prove_execution_plan_with_invalid_witness_library() {
     fs::write(&witness_library, b"not-an-elf").expect("witness library should be written");
     fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
 
-    let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
+    let catalog = sample_catalog(vec![sample_unit_with_pcs_material(
+        KeyUnitKind::Basic,
+        0,
+        64,
+    )]);
     let request = ProveRunRequest {
         pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
         options: ProveRunOptions::default_for_output(dir.join("out")),

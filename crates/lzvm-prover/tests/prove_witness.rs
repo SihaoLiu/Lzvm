@@ -11,6 +11,7 @@ use lzvm_artifacts::key_directory::{
     KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry, KeyUnitKind, KeyUnitPaths,
 };
 use lzvm_artifacts::metadata_bundle::UnitMetadataBundle;
+use lzvm_artifacts::pcs_material::PcsSetupMaterial;
 use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
 use lzvm_artifacts::setup_info::{FriStep, StarkStruct, UnitSetupInfo};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
@@ -138,6 +139,19 @@ fn empty_program() -> ExpressionProgram {
     }
 }
 
+fn sample_pcs_material() -> PcsSetupMaterial {
+    PcsSetupMaterial {
+        plan_digest: [7; 32],
+        fixed_column_digest: [8; 32],
+        constant_tree_digest: [9; 32],
+        constant_tree_root: [1, 2, 3, 4],
+        fixed_byte_count: 64,
+        constant_tree_byte_count: 224,
+        leaf_byte_count: 64,
+        node_byte_count: 160,
+    }
+}
+
 fn sample_unit() -> KeyUnitCatalogEntry {
     let setup = sample_setup();
     let pcs_plan = derive_pcs_setup_plan(&setup).expect("PCS setup plan should derive");
@@ -170,9 +184,9 @@ fn sample_unit() -> KeyUnitCatalogEntry {
         constant_tree_present: true,
         constant_tree_bytes: Some(224),
         constant_tree_root: Some(VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4])),
-        pcs_material_present: false,
-        pcs_material_bytes: None,
-        pcs_material: None,
+        pcs_material_present: true,
+        pcs_material_bytes: Some(184),
+        pcs_material: Some(sample_pcs_material()),
     }
 }
 

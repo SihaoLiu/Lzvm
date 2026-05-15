@@ -341,6 +341,38 @@ fn write_setup_directory(root: &Path) {
     }
 }
 
+fn run_setup_command(args: &[&str]) {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(args, &mut stdout, &mut stderr);
+    assert_eq!(
+        code,
+        0,
+        "setup command failed: {}\n{}",
+        args.join(" "),
+        String::from_utf8_lossy(&stderr)
+    );
+}
+
+fn write_execution_ready_setup_directory(root: &Path) {
+    write_setup_directory(root);
+    let root = root.to_str().expect("path should be utf-8");
+    run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
+    run_setup_command(&["setup", "write-pcs-directory", root]);
+    run_setup_command(&["setup", "write-pcs-material-directory", root]);
+}
+
+fn pcs_material_byte_count(catalog: &lzvm_artifacts::key_directory::KeyDirectoryCatalog) -> u64 {
+    catalog
+        .units
+        .iter()
+        .map(|unit| {
+            unit.pcs_material_bytes
+                .expect("execution-ready setup should include material")
+        })
+        .sum()
+}
+
 fn write_proof_pair(root: &Path, setup_hash: [u8; 32]) -> (PathBuf, PathBuf) {
     let public_values = sample_public_values(setup_hash);
     let proof = sample_proof(&public_values);
@@ -536,9 +568,10 @@ fn rejects_prove_run_plan_with_invalid_partition() {
 fn prints_prove_inputs_for_setup_directory() {
     let dir = temp_dir("prove-inputs");
     let _ = fs::remove_dir_all(&dir);
-    write_setup_directory(&dir);
+    write_execution_ready_setup_directory(&dir);
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
     let expected = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let material_bytes = pcs_material_byte_count(&catalog);
     let output_dir = dir.join("proof-out");
     let witness_library = dir.join("libwitness.so");
     let guest_image = dir.join("guest.elf");
@@ -577,7 +610,7 @@ fn prints_prove_inputs_for_setup_directory() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nwitness_library_bytes=64\nwitness_library_machine=62\nwitness_library_digest={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs={}\n",
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nwitness_library_bytes=64\nwitness_library_machine=62\nwitness_library_digest={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs={}\n",
             output_dir.display(),
             witness_library.display(),
             format_hash(&witness_library_info.digest),
@@ -593,9 +626,10 @@ fn prints_prove_inputs_for_setup_directory() {
 fn runs_prove_witness_commitments_for_setup_directory() {
     let dir = temp_dir("prove-witness");
     let _ = fs::remove_dir_all(&dir);
-    write_setup_directory(&dir);
+    write_execution_ready_setup_directory(&dir);
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
     let setup_hash = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let material_bytes = pcs_material_byte_count(&catalog);
     let output_dir = dir.join("proof-out");
     let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
     let guest_image = dir.join("guest.elf");
@@ -664,7 +698,7 @@ fn runs_prove_witness_commitments_for_setup_directory() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data={}\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash}\nunit_index=0\ninput_bytes=1\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data={}\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash}\nunit_index=0\ninput_bytes=1\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
             input_data.display(),
             output_dir.display(),
             expected_stages
@@ -677,7 +711,7 @@ fn runs_prove_witness_commitments_for_setup_directory() {
 fn saves_prove_witness_commitment_outputs_when_requested() {
     let dir = temp_dir("prove-witness-save");
     let _ = fs::remove_dir_all(&dir);
-    write_setup_directory(&dir);
+    write_execution_ready_setup_directory(&dir);
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
     let output_dir = dir.join("proof-out");
     let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
@@ -793,7 +827,7 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
 fn rejects_prove_witness_proof_output_with_mismatched_public_inputs() {
     let dir = temp_dir("prove-witness-bad-public-inputs");
     let _ = fs::remove_dir_all(&dir);
-    write_setup_directory(&dir);
+    write_execution_ready_setup_directory(&dir);
     let output_dir = dir.join("proof-out");
     let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
     let guest_image = dir.join("guest.elf");
@@ -843,7 +877,7 @@ fn rejects_prove_witness_proof_output_with_mismatched_public_inputs() {
 fn rejects_prove_inputs_with_invalid_guest_image() {
     let dir = temp_dir("prove-inputs-invalid-guest");
     let _ = fs::remove_dir_all(&dir);
-    write_setup_directory(&dir);
+    write_execution_ready_setup_directory(&dir);
     let output_dir = dir.join("proof-out");
     let witness_library = dir.join("libwitness.so");
     let guest_image = dir.join("guest.elf");
@@ -883,7 +917,7 @@ fn rejects_prove_inputs_with_invalid_guest_image() {
 fn rejects_prove_inputs_with_invalid_witness_library() {
     let dir = temp_dir("prove-inputs-invalid-witness");
     let _ = fs::remove_dir_all(&dir);
-    write_setup_directory(&dir);
+    write_execution_ready_setup_directory(&dir);
     let output_dir = dir.join("proof-out");
     let witness_library = dir.join("libwitness.so");
     let guest_image = dir.join("guest.elf");
