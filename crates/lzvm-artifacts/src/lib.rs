@@ -10,6 +10,7 @@ pub mod hint_program;
 pub mod key_directory;
 pub mod metadata_bundle;
 pub mod metadata_validation;
+pub mod pcs_evaluation_segment;
 pub mod pcs_fri_segment;
 pub mod pcs_material;
 pub mod pcs_material_segment;
