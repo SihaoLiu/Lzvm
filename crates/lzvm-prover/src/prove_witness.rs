@@ -97,6 +97,36 @@ impl ProveWitnessCommitments {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProveWitnessTraceCommitments {
+    commitments: ProveWitnessCommitments,
+    trace: WitnessTraceBuffer,
+    publics: Vec<Felt>,
+    auxiliary_inputs: ProveWitnessAuxiliaryInputs,
+}
+
+impl ProveWitnessTraceCommitments {
+    pub fn commitments(&self) -> &ProveWitnessCommitments {
+        &self.commitments
+    }
+
+    pub fn trace(&self) -> &WitnessTraceBuffer {
+        &self.trace
+    }
+
+    pub fn publics(&self) -> &[Felt] {
+        &self.publics
+    }
+
+    pub fn auxiliary_inputs(&self) -> &ProveWitnessAuxiliaryInputs {
+        &self.auxiliary_inputs
+    }
+
+    pub fn into_commitments(self) -> ProveWitnessCommitments {
+        self.commitments
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProveWitnessAuxiliaryInputs {
     pub unit_values: Vec<Felt>,
@@ -823,6 +853,15 @@ pub fn run_prove_witness_commitments_with_auxiliary_inputs(
     unit_index: usize,
     auxiliary_inputs: ProveWitnessAuxiliaryInputs,
 ) -> Result<ProveWitnessCommitments, ProveWitnessCommitmentError> {
+    run_prove_witness_commitments_with_trace(plan, unit_index, auxiliary_inputs)
+        .map(ProveWitnessTraceCommitments::into_commitments)
+}
+
+pub fn run_prove_witness_commitments_with_trace(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    auxiliary_inputs: ProveWitnessAuxiliaryInputs,
+) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
     let unit_count = plan.run_plan.schedule.units.len();
     let unit = plan.run_plan.schedule.units.get(unit_index).ok_or(
         ProveWitnessCommitmentError::UnitIndexOutOfRange {
@@ -855,12 +894,19 @@ pub fn run_prove_witness_commitments_with_auxiliary_inputs(
     let trace_columns = trace.column_count();
     let stage_commitments = commit_witness_trace_stages(&trace, unit)?;
 
-    Ok(ProveWitnessCommitments {
+    let commitments = ProveWitnessCommitments {
         unit_index,
         input_byte_count,
         trace_rows,
         trace_columns,
         stage_commitments,
+    };
+
+    Ok(ProveWitnessTraceCommitments {
+        commitments,
+        trace,
+        publics,
+        auxiliary_inputs,
     })
 }
 

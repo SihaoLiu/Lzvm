@@ -65,10 +65,10 @@ use lzvm_prover::{
     build_pcs_query_plan_segment_from_transcript_segments, build_witness_commitment_segment,
     build_witness_opening_segment, derive_prove_execution_plan, derive_prove_schedule,
     run_prove_witness_commitments, run_prove_witness_commitments_with_auxiliary_inputs,
-    GpuRunOptions, ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest,
-    ProvePcsEvaluationValues, ProvePcsFriOpeningTraceValues, ProvePcsFriOpeningValues,
-    ProvePcsQueryPlanSegmentError, ProveRunOptions, ProveRunRequest, ProveSchedule,
-    ProveWitnessAuxiliaryInputs, ProveWitnessCommitmentError,
+    run_prove_witness_commitments_with_trace, GpuRunOptions, ProveExecutionInputArtifacts,
+    ProvePartitionPlan, ProvePassRequest, ProvePcsEvaluationValues, ProvePcsFriOpeningTraceValues,
+    ProvePcsFriOpeningValues, ProvePcsQueryPlanSegmentError, ProveRunOptions, ProveRunRequest,
+    ProveSchedule, ProveWitnessAuxiliaryInputs, ProveWitnessCommitmentError,
 };
 use sha2::{Digest, Sha256};
 
@@ -600,6 +600,66 @@ fn runs_witness_and_commits_stages_from_execution_plan() {
     assert_eq!(output.trace_row_count(), 16);
     assert_eq!(output.trace_column_count(), 5);
     assert_eq!(output.stage_commitments(), &expected);
+}
+
+#[test]
+fn preserves_trace_inputs_and_commitments_for_pcs_openings() {
+    let dir = temp_dir("trace-commitments");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let public_inputs = dir.join("public-values.json");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.paths.fixed_columns = dir.join("unit.const");
+    fs::write(&unit.paths.fixed_columns, vec![0_u8; 16 * 2 * 8])
+        .expect("fixed columns should be written");
+    unit.regular_constraints = public_row_zero_stage_constraint();
+    let catalog = sample_catalog(unit);
+    write_public_values(
+        &public_inputs,
+        key_directory_catalog_digest(&catalog).expect("catalog digest should compute"),
+        vec![8],
+    );
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library,
+            guest_image,
+            public_inputs: Some(public_inputs),
+        },
+    )
+    .expect("execution plan should derive");
+    let auxiliary_inputs = ProveWitnessAuxiliaryInputs {
+        proof_values: vec![Felt::from_u64(31)],
+        challenges: vec![Ext3::from_u64s([41, 42, 43])],
+        ..ProveWitnessAuxiliaryInputs::default()
+    };
+
+    let output = run_prove_witness_commitments_with_trace(&plan, 0, auxiliary_inputs.clone())
+        .expect("trace commitments should run");
+    let expected_commitments =
+        run_prove_witness_commitments_with_auxiliary_inputs(&plan, 0, auxiliary_inputs.clone())
+            .expect("witness commitments should run");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(output.commitments(), &expected_commitments);
+    assert_eq!(
+        output.trace().row_count(),
+        expected_commitments.trace_row_count()
+    );
+    assert_eq!(
+        output.trace().column_count(),
+        expected_commitments.trace_column_count()
+    );
+    assert_eq!(output.trace().value(0, 0), Some(Felt::from_u64(8)));
+    assert_eq!(output.publics(), &[Felt::from_u64(8)]);
+    assert_eq!(output.auxiliary_inputs(), &auxiliary_inputs);
 }
 
 #[test]
