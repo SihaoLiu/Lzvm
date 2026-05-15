@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use lzvm_artifacts::expression_program::{ExpressionEntry, ExpressionProgram};
 use lzvm_artifacts::fixed::{write_raw_fixed_columns_file, FixedColumn, FixedColumns};
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
+use lzvm_artifacts::hint_program::HintProgram;
 use lzvm_artifacts::key_directory::{
     KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry, KeyUnitKind, KeyUnitPaths,
 };
@@ -329,6 +330,7 @@ fn sample_unit(fixed_columns: PathBuf) -> KeyUnitCatalogEntry {
             args: Vec::new(),
             numbers: Vec::new(),
         },
+        regular_hints: HintProgram { hints: Vec::new() },
         verifier_program: ExpressionProgram {
             max_tmp1: 0,
             max_tmp3: 0,

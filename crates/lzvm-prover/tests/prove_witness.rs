@@ -10,6 +10,7 @@ use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::{ExpressionEntry, ExpressionProgram};
 use lzvm_artifacts::fixed::{write_raw_fixed_columns_file, FixedColumn, FixedColumns};
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
+use lzvm_artifacts::hint_program::HintProgram;
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry,
     KeyUnitKind, KeyUnitPaths,
@@ -193,6 +194,10 @@ fn empty_regular_constraints() -> ConstraintProgram {
         args: Vec::new(),
         numbers: Vec::new(),
     }
+}
+
+fn empty_regular_hints() -> HintProgram {
+    HintProgram { hints: Vec::new() }
 }
 
 fn row_zero_stage_constraint(expected: u64) -> ConstraintProgram {
@@ -464,6 +469,7 @@ fn sample_unit() -> KeyUnitCatalogEntry {
         verification_key: VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4]),
         expression_program: empty_program(),
         regular_constraints: empty_regular_constraints(),
+        regular_hints: empty_regular_hints(),
         verifier_program: empty_program(),
         expected_fixed_bytes: 64,
         actual_fixed_bytes: 64,

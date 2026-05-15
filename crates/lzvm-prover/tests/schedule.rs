@@ -7,6 +7,7 @@ use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::ExpressionProgram;
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
 use lzvm_artifacts::guest_image::GuestImageError;
+use lzvm_artifacts::hint_program::HintProgram;
 use lzvm_artifacts::key_directory::{
     KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry, KeyUnitKind, KeyUnitPaths,
 };
@@ -146,6 +147,10 @@ fn empty_regular_constraints() -> ConstraintProgram {
     }
 }
 
+fn empty_regular_hints() -> HintProgram {
+    HintProgram { hints: Vec::new() }
+}
+
 fn sample_unit(kind: KeyUnitKind, unit_id: usize, fixed_bytes: u64) -> KeyUnitCatalogEntry {
     let setup = sample_setup(4 + unit_id as u32, 6 + unit_id as u32, 2 + unit_id as u32);
     let pcs_plan = derive_pcs_setup_plan(&setup).expect("PCS setup plan should derive");
@@ -173,6 +178,7 @@ fn sample_unit(kind: KeyUnitKind, unit_id: usize, fixed_bytes: u64) -> KeyUnitCa
         verification_key: VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4]),
         expression_program: empty_program(),
         regular_constraints: empty_regular_constraints(),
+        regular_hints: empty_regular_hints(),
         verifier_program: empty_program(),
         expected_fixed_bytes: fixed_bytes as usize,
         actual_fixed_bytes: fixed_bytes,

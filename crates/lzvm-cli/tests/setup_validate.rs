@@ -19,6 +19,9 @@ use lzvm_artifacts::group_values_segment::{
     GROUP_VALUES_SEGMENT_ID,
 };
 use lzvm_artifacts::guest_image::parse_guest_image;
+use lzvm_artifacts::hint_program::{
+    encode_regular_hint_program, regular_hint_program_from_expression_info,
+};
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
     read_key_directory_layout, KeyUnitPaths,
@@ -477,11 +480,18 @@ fn sample_program_file_with_expression_and_regular_constraints(
         encode_expression_program(&expression_program).expect("expression program should encode");
     let regular =
         encode_regular_constraint_program(&program).expect("regular constraints should encode");
+    let expression_info = parse_expression_info_json(sample_expression_info_json())
+        .expect("expression metadata should parse");
+    let regular_hints =
+        regular_hint_program_from_expression_info(&expression_info).expect("hints should derive");
+    let hints = encode_regular_hint_program(&regular_hints).expect("hints should encode");
     let mut expression_file =
         parse_sectioned_file(&expression, *b"chps", 1).expect("expression file should parse");
     let regular_file =
         parse_sectioned_file(&regular, *b"chps", 1).expect("regular file should parse");
+    let hint_file = parse_sectioned_file(&hints, *b"chps", 1).expect("hints should parse");
     expression_file.sections.extend(regular_file.sections);
+    expression_file.sections.extend(hint_file.sections);
     encode_sectioned_file(&SectionedFile {
         kind: *b"chps",
         version: 1,

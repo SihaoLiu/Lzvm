@@ -8,6 +8,9 @@ use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
 use lzvm_artifacts::global_info::{encode_global_info, parse_global_info_json};
+use lzvm_artifacts::hint_program::{
+    encode_regular_hint_program, regular_hint_program_from_expression_info, HintOperand,
+};
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
     read_key_directory_layout, validate_key_directory_layout, KeyDirectoryError, KeyUnitKind,
@@ -117,6 +120,34 @@ fn sample_expression_info_json() -> &'static str {
     }"#
 }
 
+fn sample_expression_info_with_hints_json() -> &'static str {
+    r#"{
+        "hintsInfo": [
+            {
+                "name": "hint-a",
+                "fields": [
+                    {
+                        "name": "field-a",
+                        "values": [
+                            {"op": "cm", "id": 0, "rowOffset": 0, "rowOffsetIndex": 0, "stage": 1, "stageId": 0, "dim": 1, "pos": [0]}
+                        ]
+                    }
+                ]
+            }
+        ],
+        "expressionsCode": [
+            {
+                "expId": 7,
+                "stage": 2,
+                "line": "query-expression",
+                "tmpUsed": 0,
+                "code": []
+            }
+        ],
+        "constraints": []
+    }"#
+}
+
 fn sample_verifier_info_json() -> &'static str {
     r#"{
         "qVerifier": {
@@ -198,17 +229,43 @@ fn sample_program_file() -> Vec<u8> {
         .expect("expression program should encode");
     let regular = encode_regular_constraint_program(&sample_regular_constraint_program())
         .expect("regular constraints should encode");
+    let expression_info = parse_expression_info_json(sample_expression_info_json())
+        .expect("expression metadata should parse");
+    let regular_hints =
+        regular_hint_program_from_expression_info(&expression_info).expect("hints should derive");
+    let hints = encode_regular_hint_program(&regular_hints).expect("hints should encode");
     let mut expression_file =
         parse_sectioned_file(&expression, *b"chps", 1).expect("expression file should parse");
     let regular_file =
         parse_sectioned_file(&regular, *b"chps", 1).expect("regular file should parse");
+    let hint_file = parse_sectioned_file(&hints, *b"chps", 1).expect("hints should parse");
     expression_file.sections.extend(regular_file.sections);
+    expression_file.sections.extend(hint_file.sections);
     encode_sectioned_file(&SectionedFile {
         kind: *b"chps",
         version: 1,
         sections: expression_file.sections,
     })
     .expect("combined program should encode")
+}
+
+fn sample_program_file_with_regular_hints(expression_info_json: &str) -> Vec<u8> {
+    let expressions =
+        parse_expression_info_json(expression_info_json).expect("expression metadata should parse");
+    let regular_hints =
+        regular_hint_program_from_expression_info(&expressions).expect("hints should derive");
+    let hints = encode_regular_hint_program(&regular_hints).expect("hints should encode");
+    let mut program_file =
+        parse_sectioned_file(&sample_program_file(), *b"chps", 1).expect("program should parse");
+    let hint_file = parse_sectioned_file(&hints, *b"chps", 1).expect("hints should parse");
+    program_file.sections.retain(|section| section.id != 3);
+    program_file.sections.extend(hint_file.sections);
+    encode_sectioned_file(&SectionedFile {
+        kind: *b"chps",
+        version: 1,
+        sections: program_file.sections,
+    })
+    .expect("program with hints should encode")
 }
 
 fn sample_raw_fixed_columns() -> Vec<u8> {
@@ -338,6 +395,37 @@ fn write_catalog_unit_files(unit: &KeyUnitPaths) {
     let program = sample_program_file();
     if let Some(path) = unit.expression_program() {
         write_bytes(&path, &program);
+    }
+    let verifier_program = encode_expression_program(&sample_expression_program())
+        .expect("verifier program should encode");
+    if let Some(path) = unit.verifier_program() {
+        write_bytes(&path, &verifier_program);
+    }
+
+    let root = VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4]);
+    write_bytes(
+        &unit.verification_key_binary(),
+        encode_verification_key_binary(&root).expect("verification key should encode"),
+    );
+    write_bytes(&unit.fixed_columns, sample_raw_fixed_columns());
+}
+
+fn write_catalog_unit_files_with_hints(unit: &KeyUnitPaths) {
+    if let Some(path) = unit.setup_info_binary() {
+        write_unit_setup_metadata(&path, sample_setup_info_json());
+    }
+    if let Some(path) = unit.expression_info_binary() {
+        write_expression_metadata(&path, sample_expression_info_with_hints_json());
+    }
+    if let Some(path) = unit.verifier_info_binary() {
+        write_verifier_metadata(&path, sample_verifier_info_json());
+    }
+
+    if let Some(path) = unit.expression_program() {
+        write_bytes(
+            &path,
+            sample_program_file_with_regular_hints(sample_expression_info_with_hints_json()),
+        );
     }
     let verifier_program = encode_expression_program(&sample_expression_program())
         .expect("verifier program should encode");
@@ -582,6 +670,32 @@ fn reads_key_directory_catalog_without_loading_fixed_values() {
             && unit.pcs_plan.stage_commit_widths == vec![1, 1]
     }));
 
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn reads_key_directory_catalog_regular_hints_from_unit_programs() {
+    let dir = temp_dir("catalog-hints");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files_with_hints(unit);
+    }
+
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+
+    assert!(catalog
+        .units
+        .iter()
+        .all(|unit| unit.regular_hints.hints.len() == 1));
+    assert!(catalog.units.iter().all(|unit| {
+        unit.regular_hints.hints[0].fields[0].values[0].operand
+            == HintOperand::Commitment {
+                id: 0,
+                row_offset_index: 0,
+            }
+    }));
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 

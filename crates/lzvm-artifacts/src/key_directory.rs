@@ -10,6 +10,10 @@ use crate::expression_program::{
 };
 use crate::fixed::{expected_raw_fixed_column_byte_count, FixedColumnError};
 use crate::global_info::{read_global_info_binary_file, CurveKind, GlobalInfo, GlobalInfoError};
+use crate::hint_program::{
+    encode_regular_hint_program, read_regular_hint_program_file,
+    regular_hint_program_from_expression_info, HintProgram, HintProgramError,
+};
 use crate::metadata_bundle::{
     read_unit_metadata_bundle, MetadataBundleError, UnitMetadataBundle, UnitMetadataPaths,
 };
@@ -84,6 +88,7 @@ pub struct KeyUnitCatalogEntry {
     pub verification_key: VerificationKeyRoot,
     pub expression_program: ExpressionProgram,
     pub regular_constraints: ConstraintProgram,
+    pub regular_hints: HintProgram,
     pub verifier_program: ExpressionProgram,
     pub expected_fixed_bytes: usize,
     pub actual_fixed_bytes: u64,
@@ -106,6 +111,7 @@ pub enum KeyDirectoryError {
     GlobalInfo(GlobalInfoError),
     GlobalConstraints(ConstraintProgramError),
     RegularConstraints(ConstraintProgramError),
+    RegularHints(HintProgramError),
     ConstantTree(ConstantTreeError),
     Metadata(MetadataBundleError),
     PcsPlan(PcsPlanError),
@@ -140,6 +146,10 @@ pub enum KeyDirectoryError {
         kind: KeyUnitKind,
         path: PathBuf,
     },
+    RegularHintsMismatch {
+        kind: KeyUnitKind,
+        path: PathBuf,
+    },
     Digest {
         message: String,
     },
@@ -171,6 +181,9 @@ impl fmt::Display for KeyDirectoryError {
             }
             Self::RegularConstraints(error) => {
                 write!(f, "key-directory regular constraint program error: {error}")
+            }
+            Self::RegularHints(error) => {
+                write!(f, "key-directory regular hint program error: {error}")
             }
             Self::ConstantTree(error) => {
                 write!(f, "key-directory constant-tree error: {error}")
@@ -216,6 +229,11 @@ impl fmt::Display for KeyDirectoryError {
                 "key-directory PCS setup material mismatch for {kind} at {}",
                 path.display()
             ),
+            Self::RegularHintsMismatch { kind, path } => write!(
+                f,
+                "key-directory regular hint program mismatch for {kind} at {}",
+                path.display()
+            ),
             Self::Digest { message } => write!(f, "key-directory digest error: {message}"),
             Self::Io { role, message } => write!(f, "key-directory {role} io error: {message}"),
         }
@@ -233,6 +251,12 @@ impl From<GlobalInfoError> for KeyDirectoryError {
 impl From<ConstraintProgramError> for KeyDirectoryError {
     fn from(error: ConstraintProgramError) -> Self {
         Self::GlobalConstraints(error)
+    }
+}
+
+impl From<HintProgramError> for KeyDirectoryError {
+    fn from(error: HintProgramError) -> Self {
+        Self::RegularHints(error)
     }
 }
 
@@ -507,6 +531,14 @@ pub fn key_directory_catalog_digest(
         );
         hash_bytes(
             &mut hasher,
+            &encode_regular_hint_program(&unit.regular_hints).map_err(|error| {
+                KeyDirectoryError::Digest {
+                    message: error.to_string(),
+                }
+            })?,
+        );
+        hash_bytes(
+            &mut hasher,
             &encode_expression_program(&unit.verifier_program).map_err(|error| {
                 KeyDirectoryError::Digest {
                     message: error.to_string(),
@@ -586,6 +618,15 @@ fn read_key_unit_catalog_entry(
     let expression_program = read_expression_program_file(&expression_program_path)?;
     let regular_constraints = read_regular_constraint_program_file(&expression_program_path)
         .map_err(KeyDirectoryError::RegularConstraints)?;
+    let regular_hints = read_regular_hint_program_file(&expression_program_path)
+        .map_err(KeyDirectoryError::RegularHints)?;
+    let expected_regular_hints = regular_hint_program_from_expression_info(&metadata.expressions)?;
+    if regular_hints != expected_regular_hints {
+        return Err(KeyDirectoryError::RegularHintsMismatch {
+            kind: paths.kind,
+            path: expression_program_path,
+        });
+    }
     let verifier_program = read_expression_program_file(paths.verifier_program().ok_or(
         KeyDirectoryError::MissingDerivedPath {
             role: "verifier program",
@@ -643,6 +684,7 @@ fn read_key_unit_catalog_entry(
         verification_key,
         expression_program,
         regular_constraints,
+        regular_hints,
         verifier_program,
         expected_fixed_bytes,
         actual_fixed_bytes,
