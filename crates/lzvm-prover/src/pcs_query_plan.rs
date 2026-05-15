@@ -1,13 +1,29 @@
 use std::fmt;
 
-use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
+use lzvm_artifacts::pcs_material_segment::{
+    parse_pcs_material_manifest_segment, PcsMaterialManifestSegmentError,
+    PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+};
+use lzvm_artifacts::pcs_nonce_segment::PCS_QUERY_NONCE_SEGMENT_ID;
 use lzvm_artifacts::pcs_query_segment::{
     parse_pcs_query_plan_segment, PcsQueryPlanSegment, PcsQueryPlanSegmentError,
     PCS_QUERY_PLAN_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::ProofSegment;
+use lzvm_artifacts::witness_segment::{
+    parse_witness_commitment_segment, WitnessCommitmentSegmentError,
+    WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+};
+use lzvm_field::Felt;
 
-use crate::prove_witness::{build_pcs_query_plan_segment, ProvePcsQueryPlanSegmentError};
+use crate::pcs_evaluation::{load_pcs_evaluation_unit_from_segments, LoadPcsEvaluationUnitError};
+use crate::pcs_fri::{load_pcs_fri_opening_unit_from_segments, LoadPcsFriOpeningUnitError};
+use crate::pcs_transcript::PcsTranscriptSegmentInputs;
+use crate::prove_witness::{
+    build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_transcript_segments,
+    ProvePcsQueryPlanSegmentError,
+};
+use crate::unit_values::{load_unit_values_from_segments, LoadUnitValuesSegmentError};
 use crate::witness_commitment::{
     load_witness_commitment_segments, LoadWitnessCommitmentSegmentsError,
 };
@@ -22,10 +38,25 @@ pub enum LoadPcsQueryPlanSegmentError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidatePcsQueryPlanSegmentsError {
     MissingMaterialSegment,
+    MissingNonceSegment,
     QueryPlan(LoadPcsQueryPlanSegmentError),
     Witness(LoadWitnessCommitmentSegmentsError),
+    Material(PcsMaterialManifestSegmentError),
+    WitnessSegment {
+        unit_index: usize,
+        source: WitnessCommitmentSegmentError,
+    },
+    Evaluation(LoadPcsEvaluationUnitError),
+    Fri(LoadPcsFriOpeningUnitError),
+    UnitValues(LoadUnitValuesSegmentError),
     Build(ProvePcsQueryPlanSegmentError),
     QueryPlanMismatch,
+    TranscriptUnitCountMismatch,
+    WitnessSegmentIdOverflow,
+    UnitIndexOverflow,
+    UnitMismatch {
+        unit_index: usize,
+    },
 }
 
 impl fmt::Display for LoadPcsQueryPlanSegmentError {
@@ -41,10 +72,32 @@ impl fmt::Display for ValidatePcsQueryPlanSegmentsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingMaterialSegment => write!(f, "missing PCS material manifest segment"),
+            Self::MissingNonceSegment => write!(f, "missing PCS query nonce segment"),
             Self::QueryPlan(error) => write!(f, "{error}"),
             Self::Witness(error) => write!(f, "{error}"),
+            Self::Material(error) => write!(f, "invalid PCS material manifest segment: {error}"),
+            Self::WitnessSegment { unit_index, source } => write!(
+                f,
+                "invalid witness commitment segment for unit {unit_index}: {source}"
+            ),
+            Self::Evaluation(error) => write!(f, "{error}"),
+            Self::Fri(error) => write!(f, "{error}"),
+            Self::UnitValues(error) => write!(f, "{error}"),
             Self::Build(error) => write!(f, "derive PCS query plan segment failed: {error}"),
             Self::QueryPlanMismatch => write!(f, "PCS query plan segment mismatch"),
+            Self::TranscriptUnitCountMismatch => {
+                write!(f, "PCS transcript query plan unit count mismatch")
+            }
+            Self::WitnessSegmentIdOverflow => {
+                write!(f, "PCS transcript query plan witness segment id overflow")
+            }
+            Self::UnitIndexOverflow => write!(f, "PCS transcript query plan unit index overflow"),
+            Self::UnitMismatch { unit_index } => {
+                write!(
+                    f,
+                    "PCS transcript query plan mismatch for unit {unit_index}"
+                )
+            }
         }
     }
 }
@@ -63,8 +116,19 @@ impl std::error::Error for ValidatePcsQueryPlanSegmentsError {
         match self {
             Self::QueryPlan(error) => Some(error),
             Self::Witness(error) => Some(error),
+            Self::Material(error) => Some(error),
+            Self::WitnessSegment { source, .. } => Some(source),
+            Self::Evaluation(error) => Some(error),
+            Self::Fri(error) => Some(error),
+            Self::UnitValues(error) => Some(error),
             Self::Build(error) => Some(error),
-            Self::MissingMaterialSegment | Self::QueryPlanMismatch => None,
+            Self::MissingMaterialSegment
+            | Self::MissingNonceSegment
+            | Self::QueryPlanMismatch
+            | Self::TranscriptUnitCountMismatch
+            | Self::WitnessSegmentIdOverflow
+            | Self::UnitIndexOverflow
+            | Self::UnitMismatch { .. } => None,
         }
     }
 }
@@ -103,6 +167,84 @@ pub fn validate_seeded_pcs_query_plan_segments(
         public_values_hash,
         material_segment,
         &witness_segments,
+    )
+    .map_err(ValidatePcsQueryPlanSegmentsError::Build)?;
+    if query_segment.data != expected_segment.data {
+        return Err(ValidatePcsQueryPlanSegmentsError::QueryPlanMismatch);
+    }
+    Ok(())
+}
+
+pub fn validate_transcript_pcs_query_plan_segments(
+    schedule: &ProveSchedule,
+    public_values: &[Felt],
+    segments: &[ProofSegment],
+) -> Result<(), ValidatePcsQueryPlanSegmentsError> {
+    let material_segment = segments
+        .iter()
+        .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
+        .ok_or(ValidatePcsQueryPlanSegmentsError::MissingMaterialSegment)?;
+    let nonce_segment = segments
+        .iter()
+        .find(|segment| segment.id == PCS_QUERY_NONCE_SEGMENT_ID)
+        .ok_or(ValidatePcsQueryPlanSegmentsError::MissingNonceSegment)?;
+    load_pcs_query_plan_from_segments(segments)
+        .map_err(ValidatePcsQueryPlanSegmentsError::QueryPlan)?;
+    let query_segment = segments
+        .iter()
+        .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
+        .ok_or(ValidatePcsQueryPlanSegmentsError::QueryPlan(
+            LoadPcsQueryPlanSegmentError::MissingSegment,
+        ))?;
+    let witness_segments = load_witness_commitment_segments(&schedule.units, segments)
+        .map_err(ValidatePcsQueryPlanSegmentsError::Witness)?;
+    if witness_segments.len() != 1 {
+        return Err(ValidatePcsQueryPlanSegmentsError::TranscriptUnitCountMismatch);
+    }
+
+    let unit_index_u32 = witness_segments[0]
+        .id
+        .checked_sub(WITNESS_COMMITMENT_SEGMENT_BASE_ID)
+        .ok_or(ValidatePcsQueryPlanSegmentsError::WitnessSegmentIdOverflow)?;
+    let unit_index = usize::try_from(unit_index_u32)
+        .map_err(|_| ValidatePcsQueryPlanSegmentsError::UnitIndexOverflow)?;
+    let unit = schedule
+        .units
+        .get(unit_index)
+        .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
+    let material = parse_pcs_material_manifest_segment(&material_segment.data)
+        .map_err(ValidatePcsQueryPlanSegmentsError::Material)?;
+    let material_unit = material
+        .units
+        .iter()
+        .find(|unit| unit.unit_index == unit_index_u32)
+        .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
+    let witness =
+        parse_witness_commitment_segment(&witness_segments[0].data).map_err(|source| {
+            ValidatePcsQueryPlanSegmentsError::WitnessSegment { unit_index, source }
+        })?;
+    let evaluation_unit = load_pcs_evaluation_unit_from_segments(unit_index, unit, segments)
+        .map_err(ValidatePcsQueryPlanSegmentsError::Evaluation)?;
+    let fri_unit = load_pcs_fri_opening_unit_from_segments(unit_index, segments)
+        .map_err(ValidatePcsQueryPlanSegmentsError::Fri)?;
+    let unit_values = load_unit_values_from_segments(unit_index, &unit.unit_value_map, segments)
+        .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
+    let expected_segment = build_pcs_query_plan_segment_from_transcript_segments(
+        schedule,
+        &witness_segments,
+        PcsTranscriptSegmentInputs {
+            unit_index,
+            unit,
+            material: material_unit,
+            public_values,
+            unit_values: &unit_values,
+            witness: &witness,
+            evaluations: &evaluation_unit,
+            fri: &fri_unit,
+            root_challenge_draws: &unit.transcript_root_challenge_draws,
+            evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
+        },
+        nonce_segment,
     )
     .map_err(ValidatePcsQueryPlanSegmentsError::Build)?;
     if query_segment.data != expected_segment.data {

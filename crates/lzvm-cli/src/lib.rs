@@ -27,7 +27,7 @@ use lzvm_artifacts::pcs_nonce_segment::PCS_QUERY_NONCE_SEGMENT_ID;
 use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file,
 };
-use lzvm_artifacts::pcs_query_segment::{PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID};
+use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
 use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValues};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
@@ -53,12 +53,13 @@ use lzvm_prover::group_values::load_group_values_from_segments;
 use lzvm_prover::hint_eval::{global_hint_input_requirements, resolve_global_hint_program};
 use lzvm_prover::pcs_evaluation::load_pcs_evaluation_unit_from_segments;
 use lzvm_prover::pcs_fri::{
-    load_pcs_fri_opening_segment_from_segments, load_pcs_fri_opening_unit_from_segments,
-    validate_pcs_fri_opening_segments, verify_fri_opening_folds, PcsFriOpeningFoldRequest,
+    load_pcs_fri_opening_segment_from_segments, validate_pcs_fri_opening_segments,
+    verify_fri_opening_folds, PcsFriOpeningFoldRequest,
 };
 use lzvm_prover::pcs_material_manifest::validate_pcs_material_manifest_segments;
 use lzvm_prover::pcs_query_plan::{
     load_pcs_query_plan_from_segments, validate_seeded_pcs_query_plan_segments,
+    validate_transcript_pcs_query_plan_segments,
 };
 use lzvm_prover::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptSegmentInputs,
@@ -73,9 +74,7 @@ use lzvm_prover::witness_commitment::load_witness_commitment_segments;
 use lzvm_prover::witness_opening::{
     load_witness_opening_segment_from_segments, validate_witness_opening_segments,
 };
-use lzvm_prover::{
-    build_pcs_query_plan_segment_from_transcript_segments, derive_prove_schedule, ProveSchedule,
-};
+use lzvm_prover::{derive_prove_schedule, ProveSchedule};
 use lzvm_setup::{
     build_constant_tree_from_fixed_columns_with_backend, write_base_constant_tree,
     write_base_fixed_columns, write_constant_tree_leaves_with_backend,
@@ -523,26 +522,9 @@ fn validate_pcs_query_plan(
         .map_err(|error| error.to_string());
     }
 
-    let material_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
-        .ok_or_else(|| "missing PCS material manifest segment".to_owned())?;
-    let query_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
-        .ok_or_else(|| "missing PCS query plan segment".to_owned())?;
-    load_pcs_query_plan_from_segments(&proof.segments).map_err(|error| error.to_string())?;
-    let witness_segments = collect_witness_commitment_segments(schedule, proof)?;
-    validate_transcript_pcs_query_plan(
-        schedule,
-        proof,
-        public_values,
-        material_segment,
-        query_segment,
-        &witness_segments,
-    )
+    let public_value_fields = transcript_public_value_fields(public_values)?;
+    validate_transcript_pcs_query_plan_segments(schedule, &public_value_fields, &proof.segments)
+        .map_err(|error| error.to_string())
 }
 
 fn uses_transcript_query_plan_inputs(proof: &ProofArtifact) -> bool {
@@ -554,72 +536,6 @@ fn uses_transcript_query_plan_inputs(proof: &ProofArtifact) -> bool {
             .segments
             .iter()
             .any(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
-}
-
-fn validate_transcript_pcs_query_plan(
-    schedule: &ProveSchedule,
-    proof: &ProofArtifact,
-    public_values: &lzvm_artifacts::public_values::PublicValues,
-    material_segment: &ProofSegment,
-    query_segment: &ProofSegment,
-    witness_segments: &[ProofSegment],
-) -> Result<(), String> {
-    if witness_segments.len() != 1 {
-        return Err("PCS transcript query plan unit count mismatch".to_owned());
-    }
-    let nonce_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == PCS_QUERY_NONCE_SEGMENT_ID)
-        .ok_or_else(|| "missing PCS query nonce segment".to_owned())?;
-    let unit_index_u32 = witness_segments[0]
-        .id
-        .checked_sub(WITNESS_COMMITMENT_SEGMENT_BASE_ID)
-        .ok_or_else(|| "PCS transcript query plan witness segment id overflow".to_owned())?;
-    let unit_index = usize::try_from(unit_index_u32)
-        .map_err(|_| "PCS transcript query plan unit index overflow".to_owned())?;
-    let unit = schedule
-        .units
-        .get(unit_index)
-        .ok_or_else(|| format!("PCS transcript query plan mismatch for unit {unit_index}"))?;
-    let material = parse_pcs_material_manifest_segment(&material_segment.data)
-        .map_err(|error| format!("invalid PCS material manifest segment: {error}"))?;
-    let material_unit = material
-        .units
-        .iter()
-        .find(|unit| unit.unit_index == unit_index_u32)
-        .ok_or_else(|| format!("PCS transcript query plan mismatch for unit {unit_index}"))?;
-    let witness = parse_witness_commitment_segment(&witness_segments[0].data).map_err(|error| {
-        format!("invalid witness commitment segment for unit {unit_index}: {error}")
-    })?;
-    let evaluation_unit = load_pcs_evaluation_unit_from_segments(unit_index, unit, &proof.segments)
-        .map_err(|error| error.to_string())?;
-    let fri_unit = load_pcs_fri_opening_unit_from_segments(unit_index, &proof.segments)
-        .map_err(|error| error.to_string())?;
-    let public_value_fields = transcript_public_value_fields(public_values)?;
-    let unit_values = load_unit_values(schedule, proof, unit_index)?;
-    let expected_segment = build_pcs_query_plan_segment_from_transcript_segments(
-        schedule,
-        witness_segments,
-        PcsTranscriptSegmentInputs {
-            unit_index,
-            unit,
-            material: material_unit,
-            public_values: &public_value_fields,
-            unit_values: &unit_values,
-            witness: &witness,
-            evaluations: &evaluation_unit,
-            fri: &fri_unit,
-            root_challenge_draws: &unit.transcript_root_challenge_draws,
-            evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
-        },
-        nonce_segment,
-    )
-    .map_err(|error| format!("derive PCS transcript query plan segment failed: {error}"))?;
-    if query_segment.data != expected_segment.data {
-        return Err("PCS query plan segment mismatch".to_owned());
-    }
-    Ok(())
 }
 
 fn transcript_public_value_fields(
