@@ -13,7 +13,8 @@ use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
 use lzvm_artifacts::group_values_segment::{
-    encode_group_values_segment, GroupValuesSegment, GROUP_VALUES_SEGMENT_ID,
+    encode_group_values_segment, parse_group_values_segment, GroupValuesSegment,
+    GROUP_VALUES_SEGMENT_ID,
 };
 use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_artifacts::key_directory::{
@@ -2672,6 +2673,118 @@ fn saves_prove_witness_proof_values_when_requested() {
     let proof_values = parse_pcs_proof_values_segment(&proof_values_segment.data)
         .expect("proof values segment should parse");
     assert_eq!(proof_values.values, vec![[51, 52, 53]]);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn saves_prove_witness_group_values_when_requested() {
+    let dir = temp_dir("prove-witness-save-group-values");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_group_value(&dir);
+    let group_value = [61, 62, 63];
+    write_global_constraint_program(
+        &dir,
+        GlobalConstraintProgram {
+            entries: vec![GlobalConstraintEntry {
+                destination_dimension: 3,
+                destination_id: 0,
+                temp1_count: 0,
+                temp3_count: 1,
+                ops_count: 1,
+                ops_offset: 0,
+                args_count: 6,
+                args_offset: 0,
+                source_line: "group residual".to_owned(),
+            }],
+            ops: vec![2],
+            args: vec![1, 0, 5, 0, 2, 0],
+            numbers: group_value.to_vec(),
+        },
+    );
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let group_values_path = dir.join("group_values.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [13_u8]);
+    write_field_words(&group_values_path, &group_value);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let public_values_path = dir.join("public_values.json");
+    write_text(
+        &public_values_path,
+        &encode_public_values_json(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--save-outputs",
+            "--group-values",
+            group_values_path
+                .to_str()
+                .expect("group values path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let proof_path = output_dir.join("proof.bin");
+    let proof_bytes = fs::read(&proof_path).expect("proof output should read");
+    let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
+    let group_values_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == GROUP_VALUES_SEGMENT_ID)
+        .expect("group values segment should exist");
+    let group_values = parse_group_values_segment(&group_values_segment.data)
+        .expect("group values segment should parse");
+    assert_eq!(group_values.values, vec![group_value]);
+
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert_eq!(
+        String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
+        "status=ok\nunits=4\nsegments=6\npublic_values=1\n"
+    );
+    assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 

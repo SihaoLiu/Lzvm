@@ -7,6 +7,7 @@ use lzvm_artifacts::pcs_nonce_segment::parse_pcs_query_nonce_segment;
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 use lzvm_field::{Ext3, Felt};
+use lzvm_prover::group_values::build_group_values_segment;
 use lzvm_prover::{
     build_constant_opening_segment, build_pcs_evaluation_segment,
     build_pcs_fri_opening_segment_from_transcript_values,
@@ -52,6 +53,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     let auxiliary_inputs = match load_witness_auxiliary_inputs(
         parsed.unit_values.as_deref(),
         parsed.proof_values.as_deref(),
+        parsed.group_values.as_deref(),
         parsed.evaluation_values.as_deref(),
     ) {
         Ok(inputs) => inputs,
@@ -128,12 +130,14 @@ struct ParsedWitnessArgs {
     run_args: ParsedRunArgs,
     unit_values: Option<std::path::PathBuf>,
     proof_values: Option<std::path::PathBuf>,
+    group_values: Option<std::path::PathBuf>,
     evaluation_values: Option<std::path::PathBuf>,
 }
 
 fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
     let mut unit_values = None;
     let mut proof_values = None;
+    let mut group_values = None;
     let mut evaluation_values = None;
     let mut filtered = Vec::with_capacity(args.len());
     let mut index = 0;
@@ -161,6 +165,17 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
                     ));
                 }
             }
+            "--group-values" => {
+                index += 1;
+                let value = args.get(index).ok_or_else(|| {
+                    ParseError::Invalid("missing --group-values value".to_owned())
+                })?;
+                if group_values.replace((*value).into()).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --group-values option".to_owned(),
+                    ));
+                }
+            }
             "--evaluation-values" => {
                 index += 1;
                 let value = args.get(index).ok_or_else(|| {
@@ -180,6 +195,7 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
         run_args: parse_run_args(&filtered, 4, 5)?,
         unit_values,
         proof_values,
+        group_values,
         evaluation_values,
     })
 }
@@ -195,6 +211,7 @@ fn parsed_inputs(parsed: &ParsedRunArgs) -> ProveExecutionInputArtifacts {
 fn load_witness_auxiliary_inputs(
     unit_values_input: Option<&Path>,
     proof_values_input: Option<&Path>,
+    group_values_input: Option<&Path>,
     evaluation_values_input: Option<&Path>,
 ) -> Result<ProveWitnessAuxiliaryInputs, String> {
     Ok(ProveWitnessAuxiliaryInputs {
@@ -204,6 +221,10 @@ fn load_witness_auxiliary_inputs(
         },
         proof_values: match proof_values_input {
             Some(path) => read_packed_values(path, "proof values")?,
+            None => Vec::new(),
+        },
+        group_values: match group_values_input {
+            Some(path) => read_packed_extension_values(path, "group values")?,
             None => Vec::new(),
         },
         evaluations: match evaluation_values_input {
@@ -377,6 +398,11 @@ fn build_proof_bytes(
         &packed_proof_values,
     )
     .map_err(|error| format!("build proof values segment failed: {error}"))?;
+    let group_values_segment = build_group_values_segment(
+        &request.catalog.layout.global_info,
+        &request.output.auxiliary_inputs().group_values,
+    )
+    .map_err(|error| format!("build group values segment failed: {error}"))?;
     let mut segments = vec![
         material_segment,
         query_segment,
@@ -399,6 +425,9 @@ fn build_proof_bytes(
     }
     if let Some(proof_values_segment) = proof_values_segment {
         segments.push(proof_values_segment);
+    }
+    if let Some(group_values_segment) = group_values_segment {
+        segments.push(group_values_segment);
     }
     if let Some(unit_values_segment) = unit_values_segment {
         segments.push(unit_values_segment);
