@@ -41,15 +41,15 @@ This command loads the same setup catalog as validation, hashes the parsed globa
 Check proof and public-value artifact consistency:
 
 ```sh
-cargo run -p lzvm-cli -- verify preflight <proof-bin> <public-values-json>
+cargo run -p lzvm-cli -- verify preflight <proof-bin> <public-values>
 ```
 
-This command parses the native proof envelope and public-values JSON, checks that setup hashes match, checks that the proof envelope references the canonical public-values hash, and prints a stable summary. It is an artifact preflight check, not a full proof verifier.
+This command parses the native proof envelope and public-values artifact, checks that setup hashes match, checks that the proof envelope references the canonical public-values hash, and prints a stable summary. The public-values input may use the repository-owned binary format or the legacy JSON shape. It is an artifact preflight check, not a full proof verifier.
 
 Check proof, public-value, and setup catalog consistency:
 
 ```sh
-cargo run -p lzvm-cli -- verify setup-preflight <setup-dir> <proof-bin> <public-values-json>
+cargo run -p lzvm-cli -- verify setup-preflight <setup-dir> <proof-bin> <public-values>
 ```
 
 This command runs the proof/public-values preflight and also checks that the proof setup hash matches the deterministic setup catalog fingerprint for the supplied setup directory. It is a setup-aware artifact preflight check, not a full proof verifier.
@@ -140,15 +140,15 @@ Regenerate native base fixed-column and constant-tree artifacts for a setup dire
 cargo run -p lzvm-cli -- setup write-base-directory [--derive-verkey] [--backend cpu|cuda] <setup-dir>
 ```
 
-This command derives units from the setup directory metadata, reads each unit's setup metadata and fixed columns, then rewrites the raw fixed-column artifact and publishes a validated native constant tree for every unit. By default it checks generated tree roots against existing binary verification keys. With `--derive-verkey`, it writes JSON and binary verification-key companions from the generated tree roots. The default backend is `cpu`; `cuda` is available when the CLI is built with the `cuda` feature.
+This command derives units from the setup directory metadata, reads each unit's setup metadata and fixed columns, then rewrites the raw fixed-column artifact and publishes a validated native constant tree for every unit. By default it checks generated tree roots against existing binary verification keys. With `--derive-verkey`, it writes binary verification-key artifacts from the generated tree roots. The default backend is `cpu`; `cuda` is available when the CLI is built with the `cuda` feature.
 
-Generate verification-key companions from a native constant tree:
+Generate a binary verification-key artifact from a native constant tree:
 
 ```sh
-cargo run -p lzvm-cli -- setup write-verkey-native <setup-info-bin> <consttree> <out-verkey-json> <out-verkey-bin>
+cargo run -p lzvm-cli -- setup write-verkey-native <setup-info-bin> <consttree> <out-verkey-bin>
 ```
 
-This command reads binary setup metadata and a raw constant-tree artifact, extracts the tree root through the native artifact parser, writes JSON and binary verification-key companions through staging paths, and validates both companions before publishing them.
+This command reads binary setup metadata and a raw constant-tree artifact, extracts the tree root through the native artifact parser, writes the binary verification-key artifact through a staging path, and validates it before publishing.
 
 Generate the same raw artifact from JSON setup metadata and a native binary fixed-column source:
 
