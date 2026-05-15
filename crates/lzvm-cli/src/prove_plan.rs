@@ -1,0 +1,253 @@
+use std::io::Write;
+use std::path::PathBuf;
+
+use lzvm_artifacts::key_directory::read_key_directory_catalog;
+use lzvm_prover::{
+    derive_prove_run_plan, GpuRunOptions, ProvePartitionPlan, ProvePassKind, ProvePassRequest,
+    ProveRunOptions, ProveRunRequest,
+};
+
+pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
+    let parsed = match parse_args(args) {
+        Ok(parsed) => parsed,
+        Err(ParseError::Usage) => return write_usage(stderr),
+        Err(ParseError::Invalid(message)) => {
+            let _ = writeln!(stderr, "prove plan failed: {message}");
+            return 1;
+        }
+    };
+
+    let catalog = match read_key_directory_catalog(&parsed.setup_dir) {
+        Ok(catalog) => catalog,
+        Err(error) => {
+            let _ = writeln!(stderr, "prove plan failed: {error}");
+            return 1;
+        }
+    };
+
+    let plan = match derive_prove_run_plan(&catalog, parsed.request) {
+        Ok(plan) => plan,
+        Err(error) => {
+            let _ = writeln!(stderr, "prove plan failed: {error}");
+            return 1;
+        }
+    };
+
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "pass={}", format_pass_kind(plan.pass.kind()));
+    let _ = writeln!(stdout, "units={}", plan.schedule.unit_count);
+    let _ = writeln!(stdout, "fixed_bytes={}", plan.schedule.total_fixed_bytes);
+    let _ = writeln!(stdout, "queries={}", plan.schedule.total_query_count);
+    let _ = writeln!(
+        stdout,
+        "max_extended_domain_bits={}",
+        plan.schedule.max_extended_domain_bits
+    );
+    if let ProvePassRequest::Contributions(partitions) | ProvePassRequest::Full(partitions) =
+        &plan.pass
+    {
+        let _ = writeln!(stdout, "partitions={}", partitions.partition_count);
+        let _ = writeln!(
+            stdout,
+            "partition_ids={}",
+            format_partition_ids(&partitions.partition_ids)
+        );
+        let _ = writeln!(stdout, "worker={}", partitions.worker_index);
+        let _ = writeln!(
+            stdout,
+            "input_data={}",
+            partitions
+                .input_data
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "none".to_owned())
+        );
+    }
+    let _ = writeln!(stdout, "aggregate={}", plan.options.aggregate);
+    let _ = writeln!(
+        stdout,
+        "remote_aggregation={}",
+        plan.options.remote_aggregation
+    );
+    let _ = writeln!(stdout, "final_wrap={}", plan.options.final_wrap);
+    let _ = writeln!(stdout, "verify_outputs={}", plan.options.verify_outputs);
+    let _ = writeln!(stdout, "save_outputs={}", plan.options.save_outputs);
+    let _ = writeln!(stdout, "minimal_memory={}", plan.options.minimal_memory);
+    let _ = writeln!(stdout, "output={}", plan.options.output_dir.display());
+    let _ = writeln!(stdout, "gpu_preallocate={}", plan.gpu.preallocate);
+    let _ = writeln!(stdout, "gpu_streams={}", plan.gpu.max_streams);
+    let _ = writeln!(
+        stdout,
+        "witness_thread_pools={}",
+        plan.gpu.witness_thread_pools
+    );
+    let _ = writeln!(stdout, "stored_witnesses={}", plan.gpu.max_stored_witnesses);
+    let _ = writeln!(stdout, "pack_trace={}", plan.gpu.pack_trace);
+    let _ = writeln!(
+        stdout,
+        "setup_hash={}",
+        format_hash(&plan.schedule.setup_hash)
+    );
+    0
+}
+
+struct ParsedProvePlan {
+    setup_dir: PathBuf,
+    request: ProveRunRequest,
+}
+
+enum ParseError {
+    Usage,
+    Invalid(String),
+}
+
+fn parse_args(args: &[&str]) -> Result<ParsedProvePlan, ParseError> {
+    let mut aggregate = false;
+    let mut remote_aggregation = false;
+    let mut final_wrap = false;
+    let mut verify_outputs = true;
+    let mut save_outputs = false;
+    let mut minimal_memory = false;
+    let mut gpu = GpuRunOptions::default();
+    let mut input_data = None;
+    let mut partition_count = 1_usize;
+    let mut partition_ids = vec![0_u32];
+    let mut worker_index = 0_usize;
+    let mut positionals = Vec::new();
+    let mut index = 0;
+
+    while index < args.len() {
+        match args[index] {
+            "--aggregate" => aggregate = true,
+            "--remote-aggregation" => remote_aggregation = true,
+            "--final-wrap" => final_wrap = true,
+            "--no-verify-outputs" => verify_outputs = false,
+            "--save-outputs" => save_outputs = true,
+            "--minimal-memory" => minimal_memory = true,
+            "--gpu-preallocate" => gpu.preallocate = true,
+            "--no-pack-trace" => gpu.pack_trace = false,
+            "--gpu-streams" => {
+                index += 1;
+                gpu.max_streams = parse_usize(args.get(index), "--gpu-streams")?;
+            }
+            "--witness-thread-pools" => {
+                index += 1;
+                gpu.witness_thread_pools = parse_usize(args.get(index), "--witness-thread-pools")?;
+            }
+            "--stored-witnesses" => {
+                index += 1;
+                gpu.max_stored_witnesses = parse_usize(args.get(index), "--stored-witnesses")?;
+            }
+            "--partitions" => {
+                index += 1;
+                partition_count = parse_usize(args.get(index), "--partitions")?;
+            }
+            "--partition-ids" => {
+                index += 1;
+                partition_ids = parse_partition_ids(args.get(index))?;
+            }
+            "--worker" => {
+                index += 1;
+                worker_index = parse_usize(args.get(index), "--worker")?;
+            }
+            "--input-data" => {
+                index += 1;
+                input_data = Some(PathBuf::from(
+                    args.get(index)
+                        .ok_or(ParseError::Invalid("missing --input-data value".to_owned()))?,
+                ));
+            }
+            value if value.starts_with("--") => {
+                return Err(ParseError::Invalid(format!("unknown option {value}")));
+            }
+            value => positionals.push(value),
+        }
+        index += 1;
+    }
+
+    if positionals.len() != 2 {
+        return Err(ParseError::Usage);
+    }
+
+    let setup_dir = PathBuf::from(positionals[0]);
+    let output_dir = PathBuf::from(positionals[1]);
+    let options = ProveRunOptions {
+        aggregate,
+        remote_aggregation,
+        final_wrap,
+        verify_outputs,
+        save_outputs,
+        minimal_memory,
+        output_dir,
+    };
+    let pass = ProvePassRequest::Full(ProvePartitionPlan {
+        input_data,
+        partition_count,
+        partition_ids,
+        worker_index,
+    });
+
+    Ok(ParsedProvePlan {
+        setup_dir,
+        request: ProveRunRequest { pass, options, gpu },
+    })
+}
+
+fn parse_usize(value: Option<&&str>, option: &str) -> Result<usize, ParseError> {
+    value
+        .ok_or_else(|| ParseError::Invalid(format!("missing {option} value")))?
+        .parse::<usize>()
+        .map_err(|_| ParseError::Invalid(format!("{option} value must be an unsigned integer")))
+}
+
+fn parse_partition_ids(value: Option<&&str>) -> Result<Vec<u32>, ParseError> {
+    let value =
+        value.ok_or_else(|| ParseError::Invalid("missing --partition-ids value".to_owned()))?;
+    if value.is_empty() {
+        return Err(ParseError::Invalid(
+            "--partition-ids value must not be empty".to_owned(),
+        ));
+    }
+    value
+        .split(',')
+        .map(|entry| {
+            entry.parse::<u32>().map_err(|_| {
+                ParseError::Invalid("--partition-ids entries must be unsigned integers".to_owned())
+            })
+        })
+        .collect()
+}
+
+fn format_pass_kind(kind: ProvePassKind) -> &'static str {
+    match kind {
+        ProvePassKind::Contributions => "contributions",
+        ProvePassKind::Internal => "internal",
+        ProvePassKind::Full => "full",
+    }
+}
+
+fn format_partition_ids(partition_ids: &[u32]) -> String {
+    partition_ids
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn format_hash(hash: &[u8; 32]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(64);
+    for byte in hash {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
+}
+
+fn write_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm prove plan [options] <setup-dir> <output-dir>"
+    );
+    2
+}

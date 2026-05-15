@@ -62,6 +62,14 @@ cargo run -p lzvm-cli -- prove schedule <setup-dir>
 
 This command loads the setup catalog, derives the native proof schedule, and prints the setup hash, unit count, fixed-byte total, query total, and maximum extended-domain size. It is a proof-runtime preflight summary, not a full proof constructor.
 
+Validate the full proof run plan for a setup directory:
+
+```sh
+cargo run -p lzvm-cli -- prove plan [options] <setup-dir> <output-dir>
+```
+
+This command loads the setup catalog, derives the native proof run plan, checks partition, aggregation, output, and GPU execution settings, then prints a stable plan summary. It is a proof-runtime planning check, not a full proof constructor.
+
 Encode setup metadata JSON into the repository-owned binary setup format:
 
 ```sh

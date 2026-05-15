@@ -349,6 +349,94 @@ fn prints_prove_schedule_for_setup_directory() {
 }
 
 #[test]
+fn prints_prove_run_plan_for_setup_directory() {
+    let dir = temp_dir("prove-plan");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let expected = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let input_path = dir.join("input.bin");
+    let output_dir = dir.join("proof-out");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "plan",
+            "--aggregate",
+            "--final-wrap",
+            "--save-outputs",
+            "--gpu-preallocate",
+            "--gpu-streams",
+            "8",
+            "--witness-thread-pools",
+            "2",
+            "--stored-witnesses",
+            "3",
+            "--no-pack-trace",
+            "--partitions",
+            "4",
+            "--partition-ids",
+            "1,3",
+            "--worker",
+            "2",
+            "--input-data",
+            input_path.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\nqueries=4\nmax_extended_domain_bits=2\npartitions=4\npartition_ids=1,3\nworker=2\ninput_data={}\naggregate=true\nremote_aggregation=false\nfinal_wrap=true\nverify_outputs=true\nsave_outputs=true\nminimal_memory=false\noutput={}\ngpu_preallocate=true\ngpu_streams=8\nwitness_thread_pools=2\nstored_witnesses=3\npack_trace=false\nsetup_hash={expected}\n",
+            input_path.display(),
+            output_dir.display()
+        )
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn rejects_prove_run_plan_with_invalid_partition() {
+    let dir = temp_dir("prove-plan-bad-partition");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let output_dir = dir.join("proof-out");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "plan",
+            "--partitions",
+            "2",
+            "--partition-ids",
+            "2",
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove plan failed: prove run plan partition id 2 is outside partition count 2\n"
+    );
+}
+
+#[test]
 fn runs_setup_aware_verify_preflight() {
     let dir = temp_dir("verify-setup-preflight");
     let _ = fs::remove_dir_all(&dir);
@@ -453,6 +541,20 @@ fn reports_usage_for_missing_prove_schedule_directory() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "usage: lzvm prove schedule <setup-dir>\n"
+    );
+}
+
+#[test]
+fn reports_usage_for_missing_prove_plan_paths() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(&["prove", "plan"], &mut stdout, &mut stderr);
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "usage: lzvm prove plan [options] <setup-dir> <output-dir>\n"
     );
 }
 
