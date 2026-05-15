@@ -22,9 +22,9 @@ use lzvm_prover::{
     derive_prove_execution_plan, proof_values::build_pcs_proof_values_segment_from_packed_values,
     run_prove_witness_commitments_with_trace,
     unit_values::build_unit_values_segment_from_packed_values, ProveExecutionInputArtifacts,
-    ProveExecutionUnitArtifacts, ProvePcsEvaluationValues, ProvePcsFriTranscriptTraceSegmentValues,
-    ProveSchedule, ProveWitnessAuxiliaryInputs, ProveWitnessCommitments,
-    ProveWitnessTraceCommitments,
+    ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePcsEvaluationValues,
+    ProvePcsFriTranscriptTraceSegmentValues, ProveSchedule, ProveWitnessAuxiliaryInputs,
+    ProveWitnessCommitments, ProveWitnessTraceCommitments,
 };
 
 use crate::prove_plan::{parse_run_args, write_run_plan_summary, ParseError, ParsedRunArgs};
@@ -68,6 +68,96 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
+    if parsed.all_units {
+        if plan
+            .units
+            .iter()
+            .any(|unit| unit.fri_expression_id.is_some())
+            || !auxiliary_inputs.evaluations.is_empty()
+        {
+            let _ = writeln!(
+                stderr,
+                "prove witness failed: all-units mode does not support transcript inputs yet"
+            );
+            return 1;
+        }
+        let outputs = match run_prove_witness_commitments_for_all_units(&plan, &auxiliary_inputs) {
+            Ok(outputs) => outputs,
+            Err(error) => {
+                let _ = writeln!(stderr, "prove witness failed: {error}");
+                return 1;
+            }
+        };
+        let proof_bytes = match build_witness_proof_artifact_for_all_units(
+            &catalog,
+            &plan.run_plan.schedule,
+            plan.inputs.public_inputs.as_deref(),
+            &outputs,
+            &auxiliary_inputs,
+            plan.run_plan.options.verify_outputs,
+        ) {
+            Ok(proof_bytes) => proof_bytes,
+            Err(message) => {
+                let _ = writeln!(stderr, "prove witness failed: {message}");
+                return 1;
+            }
+        };
+        if plan.run_plan.options.save_outputs {
+            for output in &outputs {
+                let commitments = output.commitments();
+                let segment = match build_witness_commitment_segment(commitments) {
+                    Ok(segment) => segment,
+                    Err(error) => {
+                        let _ = writeln!(
+                            stderr,
+                            "prove witness failed: build witness segment failed: {error}"
+                        );
+                        return 1;
+                    }
+                };
+                let output_unit_index = commitments.unit_index();
+                let execution_unit = match plan.units.get(output_unit_index) {
+                    Some(unit) => unit,
+                    None => {
+                        let _ = writeln!(
+                            stderr,
+                            "prove witness failed: output unit index out of range: {output_unit_index}"
+                        );
+                        return 1;
+                    }
+                };
+                let request = WitnessOutputSaveRequest {
+                    output_dir: &plan.run_plan.options.output_dir,
+                    catalog: &catalog,
+                    schedule: &plan.run_plan.schedule,
+                    execution_unit,
+                    gpu_streams: plan.run_plan.gpu.max_streams,
+                    public_inputs: plan.inputs.public_inputs.as_deref(),
+                    unit_values_input: parsed.unit_values.as_deref(),
+                    proof_values_input: parsed.proof_values.as_deref(),
+                    output,
+                };
+                if let Err(message) = save_witness_outputs(&request, &segment) {
+                    let _ = writeln!(stderr, "prove witness failed: {message}");
+                    return 1;
+                }
+            }
+        }
+        if let Some(proof_bytes) = proof_bytes {
+            if let Err(message) =
+                write_proof_output(&plan.run_plan.options.output_dir, &proof_bytes)
+            {
+                let _ = writeln!(stderr, "prove witness failed: {message}");
+                return 1;
+            }
+        }
+
+        write_run_plan_summary(stdout, &plan.run_plan);
+        for output in &outputs {
+            write_witness_output_summary(stdout, output.commitments());
+        }
+        return 0;
+    }
     let output = match run_prove_witness_commitments_with_trace(&plan, 0, auxiliary_inputs) {
         Ok(output) => output,
         Err(error) => {
@@ -130,35 +220,13 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     }
 
     write_run_plan_summary(stdout, &plan.run_plan);
-    let _ = writeln!(stdout, "unit_index={}", commitments.unit_index());
-    let _ = writeln!(stdout, "input_bytes={}", commitments.input_byte_count());
-    let _ = writeln!(stdout, "trace_rows={}", commitments.trace_row_count());
-    let _ = writeln!(stdout, "trace_columns={}", commitments.trace_column_count());
-    let _ = writeln!(
-        stdout,
-        "stage_count={}",
-        commitments.stage_commitments().stage_count()
-    );
-    for commitment in commitments.stage_commitments().commitments() {
-        let root = commitment
-            .root()
-            .iter()
-            .map(|value| value.to_u64().to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        let _ = writeln!(stdout, "stage_{}_root={root}", commitment.stage_index());
-        let _ = writeln!(
-            stdout,
-            "stage_{}_tree_bytes={}",
-            commitment.stage_index(),
-            commitment.tree_bytes().len()
-        );
-    }
+    write_witness_output_summary(stdout, commitments);
     0
 }
 
 struct ParsedWitnessArgs {
     run_args: ParsedRunArgs,
+    all_units: bool,
     unit_values: Option<std::path::PathBuf>,
     proof_values: Option<std::path::PathBuf>,
     group_values: Option<std::path::PathBuf>,
@@ -167,6 +235,7 @@ struct ParsedWitnessArgs {
 }
 
 fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
+    let mut all_units = false;
     let mut unit_values = None;
     let mut proof_values = None;
     let mut group_values = None;
@@ -176,6 +245,7 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
     let mut index = 0;
     while index < args.len() {
         match args[index] {
+            "--all-units" => all_units = true,
             "--unit-values" => {
                 index += 1;
                 let value = args
@@ -237,6 +307,7 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
     }
     Ok(ParsedWitnessArgs {
         run_args: parse_run_args(&filtered, 4, 5)?,
+        all_units,
         unit_values,
         proof_values,
         group_values,
@@ -334,6 +405,33 @@ fn save_witness_outputs(
     Ok(())
 }
 
+fn write_witness_output_summary(stdout: &mut dyn Write, commitments: &ProveWitnessCommitments) {
+    let _ = writeln!(stdout, "unit_index={}", commitments.unit_index());
+    let _ = writeln!(stdout, "input_bytes={}", commitments.input_byte_count());
+    let _ = writeln!(stdout, "trace_rows={}", commitments.trace_row_count());
+    let _ = writeln!(stdout, "trace_columns={}", commitments.trace_column_count());
+    let _ = writeln!(
+        stdout,
+        "stage_count={}",
+        commitments.stage_commitments().stage_count()
+    );
+    for commitment in commitments.stage_commitments().commitments() {
+        let root = commitment
+            .root()
+            .iter()
+            .map(|value| value.to_u64().to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let _ = writeln!(stdout, "stage_{}_root={root}", commitment.stage_index());
+        let _ = writeln!(
+            stdout,
+            "stage_{}_tree_bytes={}",
+            commitment.stage_index(),
+            commitment.tree_bytes().len()
+        );
+    }
+}
+
 pub fn build_witness_proof_core_artifact(
     catalog: &KeyDirectoryCatalog,
     schedule: &ProveSchedule,
@@ -411,6 +509,72 @@ pub fn build_witness_proof_artifact(
         proof.segments.push(segment);
     }
     Ok(proof)
+}
+
+fn build_witness_proof_artifact_for_all_units(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
+    public_inputs: Option<&Path>,
+    outputs: &[ProveWitnessTraceCommitments],
+    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
+    verify_outputs: bool,
+) -> Result<Option<Vec<u8>>, String> {
+    let Some(public_inputs) = public_inputs else {
+        return Ok(None);
+    };
+    let public_values = read_public_values_file(public_inputs)
+        .map_err(|error| format!("read public inputs failed: {error}"))?;
+    if public_values.setup_hash != schedule.setup_hash {
+        return Err("public inputs setup hash mismatch".to_owned());
+    }
+    let public_values_hash = public_values_digest(&public_values)
+        .map_err(|error| format!("hash public inputs failed: {error}"))?;
+    let witness_outputs = outputs
+        .iter()
+        .map(|output| output.commitments())
+        .collect::<Vec<_>>();
+    let unit_values = schedule
+        .units
+        .iter()
+        .enumerate()
+        .map(|(unit_index, unit)| ProveUnitValues {
+            unit_index,
+            unit_value_map: unit.unit_value_map.clone(),
+            packed_values: auxiliary_inputs.unit_values.clone(),
+        })
+        .collect::<Vec<_>>();
+    let proof = build_witness_proof_artifact(
+        catalog,
+        schedule,
+        public_values_hash,
+        &witness_outputs,
+        &auxiliary_inputs.proof_values,
+        &auxiliary_inputs.group_values,
+        &unit_values,
+    )?;
+    if verify_outputs {
+        validate_setup_preflight(catalog, &proof, &public_values)
+            .map_err(|error| format!("verify proof output failed: {error}"))?;
+    }
+    encode_proof_artifact(&proof)
+        .map(Some)
+        .map_err(|error| format!("encode witness proof artifact failed: {error}"))
+}
+
+fn run_prove_witness_commitments_for_all_units(
+    plan: &ProveExecutionPlan,
+    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
+) -> Result<Vec<ProveWitnessTraceCommitments>, String> {
+    let mut outputs = Vec::with_capacity(plan.units.len());
+    for unit_index in 0..plan.units.len() {
+        let output =
+            run_prove_witness_commitments_with_trace(plan, unit_index, auxiliary_inputs.clone())
+                .map_err(|error| {
+                    format!("run witness commitments failed for unit {unit_index}: {error}")
+                })?;
+        outputs.push(output);
+    }
+    Ok(outputs)
 }
 
 fn build_proof_bytes(
