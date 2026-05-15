@@ -86,9 +86,11 @@ use lzvm_prover::{
     build_pcs_query_nonce_segment_from_transcript_segments, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_transcript_segments, build_witness_commitment_segment,
     build_witness_opening_segment, derive_prove_execution_plan, derive_prove_schedule,
-    run_prove_witness_commitments, GpuRunOptions, ProveExecutionInputArtifacts, ProvePartitionPlan,
-    ProvePassRequest, ProveRunOptions, ProveRunRequest,
+    derive_prove_schedule_from_directory, run_prove_witness_commitments, GpuRunOptions,
+    ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest, ProveRunOptions,
+    ProveRunRequest,
 };
+use lzvm_setup::summarize_setup_directory;
 
 fn sample_global_info_json() -> &'static str {
     r#"{
@@ -2075,7 +2077,6 @@ fn validates_a_complete_setup_directory() {
         &mut stdout,
         &mut stderr,
     );
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0);
     assert_eq!(
@@ -2083,6 +2084,20 @@ fn validates_a_complete_setup_directory() {
         "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\n"
     );
     assert!(stderr.is_empty());
+
+    let report = summarize_setup_directory(&dir).expect("directory summary should load");
+    assert_eq!(report.unit_count, 4);
+    assert_eq!(report.global_constraint_count, 0);
+    assert_eq!(report.fixed_bytes, 128);
+    assert_eq!(
+        report.fingerprint,
+        key_directory_catalog_digest_hex(
+            &read_key_directory_catalog(&dir).expect("catalog should load")
+        )
+        .expect("digest should encode")
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]
@@ -2104,7 +2119,6 @@ fn fingerprints_a_complete_setup_directory() {
         &mut stdout,
         &mut stderr,
     );
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0);
     assert_eq!(
@@ -2112,6 +2126,14 @@ fn fingerprints_a_complete_setup_directory() {
         format!("status=ok\nunits=4\nfingerprint={expected}\n")
     );
     assert!(stderr.is_empty());
+
+    let report = summarize_setup_directory(&dir).expect("directory summary should load");
+    assert_eq!(report.unit_count, 4);
+    assert_eq!(report.fingerprint, expected);
+    assert_eq!(report.global_constraint_count, 0);
+    assert_eq!(report.fixed_bytes, 128);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]
@@ -2133,7 +2155,6 @@ fn prints_prove_schedule_for_setup_directory() {
         &mut stdout,
         &mut stderr,
     );
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0);
     assert_eq!(
@@ -2143,6 +2164,16 @@ fn prints_prove_schedule_for_setup_directory() {
         )
     );
     assert!(stderr.is_empty());
+
+    let schedule =
+        derive_prove_schedule_from_directory(&dir).expect("schedule should derive from directory");
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    assert_eq!(
+        schedule,
+        derive_prove_schedule(&catalog).expect("schedule should derive")
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]

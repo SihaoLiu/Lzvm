@@ -1,10 +1,10 @@
 use std::io::Write;
 
-use lzvm_artifacts::key_directory::{key_directory_catalog_digest_hex, read_key_directory_catalog};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
-use lzvm_prover::derive_prove_schedule;
+use lzvm_prover::derive_prove_schedule_from_directory;
 use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
 use lzvm_prover::setup_preflight::validate_setup_preflight_from_files;
+use lzvm_setup::summarize_setup_directory;
 use lzvm_setup::FixedExtensionBackend;
 
 mod prove_inputs;
@@ -224,14 +224,7 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
 }
 
 fn prove_schedule(setup_dir: &str, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
-    let catalog = match read_key_directory_catalog(setup_dir) {
-        Ok(catalog) => catalog,
-        Err(error) => {
-            let _ = writeln!(stderr, "prove schedule failed: {error}");
-            return 1;
-        }
-    };
-    let schedule = match derive_prove_schedule(&catalog) {
+    let schedule = match derive_prove_schedule_from_directory(setup_dir) {
         Ok(schedule) => schedule,
         Err(error) => {
             let _ = writeln!(stderr, "prove schedule failed: {error}");
@@ -267,19 +260,13 @@ fn fingerprint_setup_directory(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    match read_key_directory_catalog(setup_dir) {
-        Ok(catalog) => match key_directory_catalog_digest_hex(&catalog) {
-            Ok(fingerprint) => {
-                let _ = writeln!(stdout, "status=ok");
-                let _ = writeln!(stdout, "units={}", catalog.units.len());
-                let _ = writeln!(stdout, "fingerprint={fingerprint}");
-                0
-            }
-            Err(error) => {
-                let _ = writeln!(stderr, "setup fingerprint failed: {error}");
-                1
-            }
-        },
+    match summarize_setup_directory(setup_dir) {
+        Ok(report) => {
+            let _ = writeln!(stdout, "status=ok");
+            let _ = writeln!(stdout, "units={}", report.unit_count);
+            let _ = writeln!(stdout, "fingerprint={}", report.fingerprint);
+            0
+        }
         Err(error) => {
             let _ = writeln!(stderr, "setup fingerprint failed: {error}");
             1
@@ -335,21 +322,16 @@ fn validate_setup_directory(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    match read_key_directory_catalog(setup_dir) {
-        Ok(catalog) => {
-            let fixed_bytes = catalog
-                .units
-                .iter()
-                .map(|unit| unit.actual_fixed_bytes)
-                .sum::<u64>();
+    match summarize_setup_directory(setup_dir) {
+        Ok(report) => {
             let _ = writeln!(stdout, "status=ok");
-            let _ = writeln!(stdout, "units={}", catalog.units.len());
+            let _ = writeln!(stdout, "units={}", report.unit_count);
             let _ = writeln!(
                 stdout,
                 "global_constraints={}",
-                catalog.global_constraints.entries.len()
+                report.global_constraint_count
             );
-            let _ = writeln!(stdout, "fixed_bytes={fixed_bytes}");
+            let _ = writeln!(stdout, "fixed_bytes={}", report.fixed_bytes);
             0
         }
         Err(error) => {

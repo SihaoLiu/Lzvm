@@ -18,7 +18,8 @@ use lzvm_artifacts::hint_program::{
     encode_regular_hint_program, regular_hint_program_from_expression_info, HintProgramError,
 };
 use lzvm_artifacts::key_directory::{
-    read_key_directory_layout, validate_key_directory_layout, KeyDirectoryError, KeyDirectoryLayout,
+    key_directory_catalog_digest_hex, read_key_directory_catalog, read_key_directory_layout,
+    validate_key_directory_layout, KeyDirectoryError, KeyDirectoryLayout,
 };
 use lzvm_artifacts::pcs_material::{
     build_pcs_setup_material, encode_pcs_setup_material, PcsSetupMaterialError,
@@ -92,6 +93,14 @@ pub struct BaseDirectoryWriteReport {
     pub fixed_bytes: u64,
     pub tree_bytes: u64,
     pub verkey_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SetupDirectorySummaryReport {
+    pub unit_count: usize,
+    pub global_constraint_count: usize,
+    pub fixed_bytes: u64,
+    pub fingerprint: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -492,6 +501,22 @@ pub fn write_base_directory_from_layout(
         } else {
             None
         },
+    })
+}
+
+pub fn summarize_setup_directory(
+    root: impl AsRef<Path>,
+) -> Result<SetupDirectorySummaryReport, KeyDirectoryError> {
+    let catalog = read_key_directory_catalog(root)?;
+    Ok(SetupDirectorySummaryReport {
+        unit_count: catalog.units.len(),
+        global_constraint_count: catalog.global_constraints.entries.len(),
+        fixed_bytes: catalog
+            .units
+            .iter()
+            .map(|unit| unit.actual_fixed_bytes)
+            .sum(),
+        fingerprint: key_directory_catalog_digest_hex(&catalog)?,
     })
 }
 

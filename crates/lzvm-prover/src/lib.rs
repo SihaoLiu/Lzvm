@@ -7,7 +7,8 @@ use lzvm_artifacts::expression_program::ExpressionProgram;
 use lzvm_artifacts::guest_image::{read_guest_image_file, GuestImageError, GuestImageInfo};
 use lzvm_artifacts::hint_program::HintProgram;
 use lzvm_artifacts::key_directory::{
-    key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryError, KeyUnitKind,
+    key_directory_catalog_digest, read_key_directory_catalog, KeyDirectoryCatalog,
+    KeyDirectoryError, KeyUnitKind,
 };
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::setup_info::{CommitmentColumn, StageValue, UnitSetupInfo};
@@ -576,6 +577,13 @@ pub fn derive_prove_schedule(
         max_extended_domain_bits,
         units,
     })
+}
+
+pub fn derive_prove_schedule_from_directory(
+    root: impl AsRef<Path>,
+) -> Result<ProveSchedule, ProveScheduleError> {
+    let catalog = read_key_directory_catalog(root).map_err(ProveScheduleError::from)?;
+    derive_prove_schedule(&catalog)
 }
 
 fn derive_transcript_root_challenge_draws(root_count: usize) -> Vec<usize> {
