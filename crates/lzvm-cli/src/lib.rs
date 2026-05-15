@@ -43,8 +43,8 @@ use lzvm_prover::global_constraints::{
 use lzvm_prover::group_values::load_group_values_from_segments;
 use lzvm_prover::hint_eval::{global_hint_input_requirements, resolve_global_hint_program};
 use lzvm_prover::pcs_fri::{
-    load_pcs_fri_opening_segment_from_segments, validate_pcs_fri_opening_segments,
-    verify_fri_opening_folds, PcsFriOpeningFoldRequest,
+    load_pcs_fri_opening_segment_from_segments, validate_pcs_fri_opening_folds_from_units,
+    validate_pcs_fri_opening_segments,
 };
 use lzvm_prover::pcs_material_manifest::validate_pcs_material_manifest_segments;
 use lzvm_prover::pcs_query_plan::{
@@ -585,40 +585,13 @@ fn validate_optional_pcs_fri_opening_segment(
         &proof.segments,
     )
     .map_err(|error| error.to_string())?;
-    for query_unit in &query_plan.units {
-        let unit_index = usize::try_from(query_unit.unit_index)
-            .map_err(|_| "PCS FRI opening segment unit index overflow")?;
-        let unit = schedule
-            .units
-            .get(unit_index)
-            .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
-        let opening_unit = opening
-            .units
-            .iter()
-            .find(|unit| unit.unit_index == query_unit.unit_index)
-            .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
-        let challenges = transcript_challenges
-            .iter()
-            .find(|unit| unit.unit_index == query_unit.unit_index)
-            .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
-        let valid = verify_fri_opening_folds(
-            unit,
-            PcsFriOpeningFoldRequest {
-                unit_index: query_unit.unit_index,
-                query_rows: &query_unit.queries,
-                challenges: &challenges.challenges,
-                fri: opening_unit,
-            },
-        )
-        .map_err(|error| {
-            format!("invalid PCS FRI opening segment for unit {unit_index}: {error}")
-        })?;
-        if !valid {
-            return Err(format!(
-                "PCS FRI opening segment mismatch for unit {unit_index}"
-            ));
-        }
-    }
+    validate_pcs_fri_opening_folds_from_units(
+        &schedule.units,
+        &query_plan.units,
+        &opening.units,
+        &transcript_challenges,
+    )
+    .map_err(|error| error.to_string())?;
     let verifier_codes = catalog
         .units
         .iter()

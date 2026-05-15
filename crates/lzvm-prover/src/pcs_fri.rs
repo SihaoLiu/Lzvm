@@ -5,6 +5,7 @@ use lzvm_artifacts::pcs_fri_segment::{
     PcsFriOpeningQuerySegment, PcsFriOpeningSegment, PcsFriOpeningSegmentError,
     PcsFriOpeningUnitSegment, PCS_FRI_OPENING_SEGMENT_ID,
 };
+use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::setup_info::StageValue;
 use lzvm_field::{intt_in_place, DomainError, Ext3, Felt, FieldError, PoseidonTranscript, SHIFT};
@@ -14,6 +15,7 @@ use crate::merkle_hash::{
 };
 use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
 use crate::pcs_transcript::{absorb_commit_values, PcsTranscriptError};
+use crate::pcs_transcript_segments::PcsTranscriptUnitChallenges;
 use crate::ProveUnitSchedule;
 
 #[derive(Debug, Clone, Copy)]
@@ -91,6 +93,18 @@ pub enum ValidatePcsFriOpeningSegmentsError {
     InvalidTreeShape,
     FieldValue(FieldError),
     FieldDigest(FieldError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValidatePcsFriOpeningFoldUnitsError {
+    Fold {
+        unit_index: usize,
+        source: PcsFriOpeningFoldError,
+    },
+    UnitMismatch {
+        unit_index: usize,
+    },
+    UnitIndexOverflow,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -259,6 +273,30 @@ impl std::error::Error for ValidatePcsFriOpeningSegmentsError {
     }
 }
 
+impl fmt::Display for ValidatePcsFriOpeningFoldUnitsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Fold { unit_index, source } => write!(
+                f,
+                "invalid PCS FRI opening segment for unit {unit_index}: {source}"
+            ),
+            Self::UnitMismatch { unit_index } => {
+                write!(f, "PCS FRI opening segment mismatch for unit {unit_index}")
+            }
+            Self::UnitIndexOverflow => write!(f, "PCS FRI opening segment unit index overflow"),
+        }
+    }
+}
+
+impl std::error::Error for ValidatePcsFriOpeningFoldUnitsError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Fold { source, .. } => Some(source),
+            Self::UnitMismatch { .. } | Self::UnitIndexOverflow => None,
+        }
+    }
+}
+
 impl From<DomainError> for PcsFriFoldError {
     fn from(error: DomainError) -> Self {
         Self::Domain(error)
@@ -421,6 +459,43 @@ pub fn validate_pcs_fri_opening_segments(
                     return Err(ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index });
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_pcs_fri_opening_folds_from_units(
+    units: &[ProveUnitSchedule],
+    query_units: &[PcsQueryPlanUnit],
+    opening_units: &[PcsFriOpeningUnitSegment],
+    transcript_challenges: &[PcsTranscriptUnitChallenges],
+) -> Result<(), ValidatePcsFriOpeningFoldUnitsError> {
+    for query_unit in query_units {
+        let unit_index = usize::try_from(query_unit.unit_index)
+            .map_err(|_| ValidatePcsFriOpeningFoldUnitsError::UnitIndexOverflow)?;
+        let unit = units
+            .get(unit_index)
+            .ok_or(ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index })?;
+        let opening_unit = opening_units
+            .iter()
+            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .ok_or(ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index })?;
+        let challenges = transcript_challenges
+            .iter()
+            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .ok_or(ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index })?;
+        let valid = verify_fri_opening_folds(
+            unit,
+            PcsFriOpeningFoldRequest {
+                unit_index: query_unit.unit_index,
+                query_rows: &query_unit.queries,
+                challenges: &challenges.challenges,
+                fri: opening_unit,
+            },
+        )
+        .map_err(|source| ValidatePcsFriOpeningFoldUnitsError::Fold { unit_index, source })?;
+        if !valid {
+            return Err(ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index });
         }
     }
     Ok(())

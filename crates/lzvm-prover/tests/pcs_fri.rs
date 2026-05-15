@@ -12,13 +12,15 @@ use lzvm_field::{poseidon2_hash_8, Ext3, Felt, SHIFT};
 use lzvm_prover::pcs_fri::{
     build_pcs_fri_opening_unit, build_pcs_fri_transcript_commitments,
     load_pcs_fri_opening_segment_from_segments, load_pcs_fri_opening_unit_from_segments,
-    validate_pcs_fri_opening_segments, verify_fri_fold, verify_fri_last_level_root,
-    verify_fri_opening_folds, verify_fri_query_path, LoadPcsFriOpeningSegmentError,
-    LoadPcsFriOpeningUnitError, PcsFriFoldError, PcsFriMerkleError, PcsFriOpeningBuildRequest,
-    PcsFriOpeningFoldRequest, PcsFriTranscriptCommitmentRequest,
-    ValidatePcsFriOpeningSegmentsError,
+    validate_pcs_fri_opening_folds_from_units, validate_pcs_fri_opening_segments, verify_fri_fold,
+    verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path,
+    LoadPcsFriOpeningSegmentError, LoadPcsFriOpeningUnitError, PcsFriFoldError, PcsFriMerkleError,
+    PcsFriOpeningBuildRequest, PcsFriOpeningFoldRequest, PcsFriTranscriptCommitmentRequest,
+    ValidatePcsFriOpeningFoldUnitsError, ValidatePcsFriOpeningSegmentsError,
 };
+use lzvm_prover::pcs_query_plan::load_pcs_query_plan_from_segments;
 use lzvm_prover::pcs_transcript::{derive_pcs_transcript_challenges, PcsTranscriptInputs};
+use lzvm_prover::pcs_transcript_segments::PcsTranscriptUnitChallenges;
 use lzvm_prover::ProveUnitSchedule;
 
 #[test]
@@ -457,6 +459,46 @@ fn validates_pcs_fri_opening_segments() {
 }
 
 #[test]
+fn validates_pcs_fri_opening_folds_from_units() {
+    let (unit, segments) = valid_pcs_fri_opening_segments();
+    let query_plan = load_pcs_query_plan_from_segments(&segments).expect("query plan should load");
+    let opening =
+        load_pcs_fri_opening_segment_from_segments(&segments).expect("FRI opening should load");
+    let challenges = vec![sample_fold_challenges()];
+
+    validate_pcs_fri_opening_folds_from_units(
+        &[unit],
+        &query_plan.units,
+        &opening.units,
+        &challenges,
+    )
+    .expect("FRI opening folds should validate");
+}
+
+#[test]
+fn rejects_pcs_fri_opening_fold_mismatches_from_units() {
+    let (unit, segments) = valid_pcs_fri_opening_segments();
+    let query_plan = load_pcs_query_plan_from_segments(&segments).expect("query plan should load");
+    let opening =
+        load_pcs_fri_opening_segment_from_segments(&segments).expect("FRI opening should load");
+    let mut challenges = sample_fold_challenges();
+    challenges.challenges[7] = Ext3::from_u64s([99, 100, 101]);
+
+    let error = validate_pcs_fri_opening_folds_from_units(
+        &[unit],
+        &query_plan.units,
+        &opening.units,
+        &[challenges],
+    )
+    .expect_err("FRI fold mismatch should be rejected");
+
+    assert_eq!(
+        error,
+        ValidatePcsFriOpeningFoldUnitsError::UnitMismatch { unit_index: 0 }
+    );
+}
+
+#[test]
 fn rejects_pcs_fri_opening_value_mismatches() {
     let (unit, mut segments) = valid_pcs_fri_opening_segments();
     let fri_segment = segments
@@ -693,6 +735,16 @@ fn valid_pcs_fri_opening_segments() -> (ProveUnitSchedule, Vec<ProofSegment>) {
     let fri_segment = pcs_fri_opening_proof_segment(vec![fri]);
 
     (unit, vec![query_segment, fri_segment])
+}
+
+fn sample_fold_challenges() -> PcsTranscriptUnitChallenges {
+    let mut challenges = vec![Ext3::ZERO; 9];
+    challenges[7] = Ext3::from_u64s([31, 32, 33]);
+    challenges[8] = Ext3::from_u64s([41, 42, 43]);
+    PcsTranscriptUnitChallenges {
+        unit_index: 0,
+        challenges,
+    }
 }
 
 fn sample_fri_opening_unit(unit_index: u32) -> PcsFriOpeningUnitSegment {
