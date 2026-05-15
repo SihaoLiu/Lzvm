@@ -26,10 +26,19 @@ impl std::error::Error for AccelError {}
 unsafe extern "C" {
     fn lzvm_cuda_goldilocks_add(lhs: *const u64, rhs: *const u64, out: *mut u64, len: usize)
         -> i32;
+    fn lzvm_cuda_goldilocks_mul(lhs: *const u64, rhs: *const u64, out: *mut u64, len: usize)
+        -> i32;
 }
 
 #[cfg(feature = "cuda")]
-pub fn cuda_goldilocks_add(lhs: &[u64], rhs: &[u64]) -> Result<Vec<u64>, AccelError> {
+type CudaBinaryOp = unsafe extern "C" fn(*const u64, *const u64, *mut u64, usize) -> i32;
+
+#[cfg(feature = "cuda")]
+fn run_cuda_binary_op(
+    lhs: &[u64],
+    rhs: &[u64],
+    operation: CudaBinaryOp,
+) -> Result<Vec<u64>, AccelError> {
     if lhs.len() != rhs.len() {
         return Err(AccelError::LengthMismatch {
             lhs: lhs.len(),
@@ -41,7 +50,7 @@ pub fn cuda_goldilocks_add(lhs: &[u64], rhs: &[u64]) -> Result<Vec<u64>, AccelEr
     let code = if lhs.is_empty() {
         0
     } else {
-        unsafe { lzvm_cuda_goldilocks_add(lhs.as_ptr(), rhs.as_ptr(), out.as_mut_ptr(), lhs.len()) }
+        unsafe { operation(lhs.as_ptr(), rhs.as_ptr(), out.as_mut_ptr(), lhs.len()) }
     };
     if code == 0 {
         Ok(out)
@@ -50,7 +59,22 @@ pub fn cuda_goldilocks_add(lhs: &[u64], rhs: &[u64]) -> Result<Vec<u64>, AccelEr
     }
 }
 
+#[cfg(feature = "cuda")]
+pub fn cuda_goldilocks_add(lhs: &[u64], rhs: &[u64]) -> Result<Vec<u64>, AccelError> {
+    run_cuda_binary_op(lhs, rhs, lzvm_cuda_goldilocks_add)
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_goldilocks_mul(lhs: &[u64], rhs: &[u64]) -> Result<Vec<u64>, AccelError> {
+    run_cuda_binary_op(lhs, rhs, lzvm_cuda_goldilocks_mul)
+}
+
 #[cfg(not(feature = "cuda"))]
 pub fn cuda_goldilocks_add(_lhs: &[u64], _rhs: &[u64]) -> Result<Vec<u64>, AccelError> {
+    Err(AccelError::CudaUnavailable)
+}
+
+#[cfg(not(feature = "cuda"))]
+pub fn cuda_goldilocks_mul(_lhs: &[u64], _rhs: &[u64]) -> Result<Vec<u64>, AccelError> {
     Err(AccelError::CudaUnavailable)
 }
