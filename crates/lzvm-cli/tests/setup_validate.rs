@@ -3390,6 +3390,133 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
 }
 
 #[test]
+fn runs_prove_witness_for_aggregate_with_evaluation_values_segment() {
+    let dir = temp_dir("prove-witness-aggregate-evaluation-segment");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_fri_quotient(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let evaluation_values_segment_path = dir.join("evaluation_values_segment.bin");
+    let expected_evaluations = vec![
+        PcsEvaluationUnitSegment {
+            unit_index: 0,
+            values: vec![[30, 31, 32], [40, 41, 42]],
+        },
+        PcsEvaluationUnitSegment {
+            unit_index: 1,
+            values: vec![[50, 51, 52], [60, 61, 62]],
+        },
+        PcsEvaluationUnitSegment {
+            unit_index: 2,
+            values: vec![[70, 71, 72], [80, 81, 82]],
+        },
+        PcsEvaluationUnitSegment {
+            unit_index: 3,
+            values: vec![[90, 91, 92], [100, 101, 102]],
+        },
+    ];
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [29_u8]);
+    write_bytes(
+        &evaluation_values_segment_path,
+        encode_pcs_evaluation_segment(&PcsEvaluationSegment {
+            units: expected_evaluations.clone(),
+        })
+        .expect("evaluation segment should encode"),
+    );
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--aggregate",
+            "--save-outputs",
+            "--evaluation-values-segment",
+            evaluation_values_segment_path
+                .to_str()
+                .expect("evaluation segment path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let proof_path = output_dir.join("proof.bin");
+    let proof_bytes = fs::read(&proof_path).expect("proof output should read");
+    let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
+    assert_eq!(proof.segments.len(), 11);
+
+    let evaluation_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
+        .expect("evaluation segment should exist");
+    let evaluations = parse_pcs_evaluation_segment(&evaluation_segment.data)
+        .expect("evaluation segment should parse");
+    assert_eq!(evaluations.units, expected_evaluations);
+
+    let fri_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
+        .expect("FRI segment should exist");
+    let fri = parse_pcs_fri_opening_segment(&fri_segment.data).expect("FRI segment should parse");
+    assert_eq!(fri.units.len(), 4);
+
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert_eq!(
+        String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
+        "status=ok\nunits=4\nsegments=11\npublic_values=1\n"
+    );
+    assert!(verify_stderr.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn saves_prove_witness_transcript_fri_outputs_when_requested() {
     let dir = temp_dir("prove-witness-save-fri");
     let _ = fs::remove_dir_all(&dir);

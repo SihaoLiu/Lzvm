@@ -3,6 +3,9 @@ use std::io::Write;
 use std::path::Path;
 
 use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryCatalog};
+use lzvm_artifacts::pcs_evaluation_segment::{
+    parse_pcs_evaluation_segment, PCS_EVALUATION_SEGMENT_ID,
+};
 use lzvm_artifacts::pcs_nonce_segment::parse_pcs_query_nonce_segment;
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
@@ -57,6 +60,15 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
+    if parsed.evaluation_values_segment.is_some()
+        && !(parsed.all_units || plan.run_plan.options.aggregate)
+    {
+        let _ = writeln!(
+            stderr,
+            "prove witness failed: --evaluation-values-segment requires all-units mode"
+        );
+        return 1;
+    }
     let auxiliary_inputs = match load_witness_auxiliary_inputs(
         parsed.unit_values.as_deref(),
         parsed.proof_values.as_deref(),
@@ -98,6 +110,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             outputs: &outputs,
             auxiliary_inputs: &auxiliary_inputs,
             unit_values: &unit_values,
+            evaluation_values_segment_input: parsed.evaluation_values_segment.as_deref(),
             verify_outputs: plan.run_plan.options.verify_outputs,
         };
         let proof_bytes = match build_witness_proof_artifact_for_all_units(&proof_request) {
@@ -238,6 +251,7 @@ struct ParsedWitnessArgs {
     group_values: Option<std::path::PathBuf>,
     challenge_values: Option<std::path::PathBuf>,
     evaluation_values: Option<std::path::PathBuf>,
+    evaluation_values_segment: Option<std::path::PathBuf>,
 }
 
 fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
@@ -248,6 +262,7 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
     let mut group_values = None;
     let mut challenge_values = None;
     let mut evaluation_values = None;
+    let mut evaluation_values_segment = None;
     let mut filtered = Vec::with_capacity(args.len());
     let mut index = 0;
     while index < args.len() {
@@ -319,9 +334,25 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
                     ));
                 }
             }
+            "--evaluation-values-segment" => {
+                index += 1;
+                let value = args.get(index).ok_or_else(|| {
+                    ParseError::Invalid("missing --evaluation-values-segment value".to_owned())
+                })?;
+                if evaluation_values_segment.replace((*value).into()).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --evaluation-values-segment option".to_owned(),
+                    ));
+                }
+            }
             _ => filtered.push(args[index]),
         }
         index += 1;
+    }
+    if evaluation_values.is_some() && evaluation_values_segment.is_some() {
+        return Err(ParseError::Invalid(
+            "cannot combine --evaluation-values and --evaluation-values-segment".to_owned(),
+        ));
     }
     Ok(ParsedWitnessArgs {
         run_args: parse_run_args(&filtered, 4, 5)?,
@@ -332,6 +363,7 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
         group_values,
         challenge_values,
         evaluation_values,
+        evaluation_values_segment,
     })
 }
 
@@ -539,6 +571,7 @@ struct WitnessAllUnitsProofRequest<'a> {
     outputs: &'a [ProveWitnessTraceCommitments],
     auxiliary_inputs: &'a ProveWitnessAuxiliaryInputs,
     unit_values: &'a [ProveUnitValues],
+    evaluation_values_segment_input: Option<&'a Path>,
     verify_outputs: bool,
 }
 
@@ -564,6 +597,7 @@ fn build_witness_proof_artifact_for_all_units(
         request.execution_units,
         request.outputs,
         request.auxiliary_inputs,
+        request.evaluation_values_segment_input.is_some(),
     )? {
         build_witness_transcript_proof_artifact_for_all_units(request, public_values_hash)?
     } else {
@@ -590,6 +624,7 @@ fn all_units_transcript_required(
     execution_units: &[ProveExecutionUnitArtifacts],
     outputs: &[ProveWitnessTraceCommitments],
     auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
+    has_evaluation_segment: bool,
 ) -> Result<bool, String> {
     let mut has_fri_unit = false;
     for output in outputs {
@@ -599,7 +634,7 @@ fn all_units_transcript_required(
             .ok_or_else(|| format!("output unit index out of range: {unit_index}"))?;
         if execution_unit.fri_expression_id.is_some() {
             has_fri_unit = true;
-            if auxiliary_inputs.evaluations.is_empty() {
+            if auxiliary_inputs.evaluations.is_empty() && !has_evaluation_segment {
                 return Err(format!(
                     "missing evaluation values for unit {unit_index}: expected {}",
                     execution_unit.expected_evaluation_value_count()
@@ -607,7 +642,7 @@ fn all_units_transcript_required(
             }
         }
     }
-    Ok(has_fri_unit || !auxiliary_inputs.evaluations.is_empty())
+    Ok(has_fri_unit || !auxiliary_inputs.evaluations.is_empty() || has_evaluation_segment)
 }
 
 fn build_witness_transcript_proof_artifact_for_all_units(
@@ -630,16 +665,21 @@ fn build_witness_transcript_proof_artifact_for_all_units(
     }
     witness_segments.sort_by_key(|segment| segment.id);
 
-    let evaluation_values = request
-        .outputs
-        .iter()
-        .map(|output| ProvePcsEvaluationValues {
-            unit_index: output.commitments().unit_index(),
-            values: request.auxiliary_inputs.evaluations.clone(),
-        })
-        .collect::<Vec<_>>();
-    let evaluation_segment = build_pcs_evaluation_segment(request.schedule, &evaluation_values)
-        .map_err(|error| format!("build evaluation segment failed: {error}"))?;
+    let evaluation_segment = match request.evaluation_values_segment_input {
+        Some(path) => read_evaluation_values_segment_input(path)?,
+        None => {
+            let evaluation_values = request
+                .outputs
+                .iter()
+                .map(|output| ProvePcsEvaluationValues {
+                    unit_index: output.commitments().unit_index(),
+                    values: request.auxiliary_inputs.evaluations.clone(),
+                })
+                .collect::<Vec<_>>();
+            build_pcs_evaluation_segment(request.schedule, &evaluation_values)
+                .map_err(|error| format!("build evaluation segment failed: {error}"))?
+        }
+    };
     let transcript_inputs = request
         .outputs
         .iter()
@@ -749,6 +789,21 @@ fn build_witness_transcript_proof_artifact_for_all_units(
         setup_hash: request.schedule.setup_hash,
         public_values_hash,
         segments,
+    })
+}
+
+fn read_evaluation_values_segment_input(path: &Path) -> Result<ProofSegment, String> {
+    let bytes = fs::read(path).map_err(|error| {
+        format!(
+            "read evaluation values segment failed: {}: {error}",
+            path.display()
+        )
+    })?;
+    parse_pcs_evaluation_segment(&bytes)
+        .map_err(|error| format!("parse evaluation values segment failed: {error}"))?;
+    Ok(ProofSegment {
+        id: PCS_EVALUATION_SEGMENT_ID,
+        data: bytes,
     })
 }
 
