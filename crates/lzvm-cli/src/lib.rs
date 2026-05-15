@@ -149,6 +149,10 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             write_pcs_directory(setup_dir, stdout, stderr)
         }
         ["setup", "write-pcs-directory", ..] => write_pcs_directory_usage(stderr),
+        ["setup", "write-pcs-material-directory", setup_dir] => {
+            write_pcs_material_directory(setup_dir, stdout, stderr)
+        }
+        ["setup", "write-pcs-material-directory", ..] => write_pcs_material_directory_usage(stderr),
         ["setup", "write-verkey-native", setup_info_bin, consttree, out_verkey_json, out_verkey_bin] => {
             write_verification_key_native(
                 setup_info_bin,
@@ -946,6 +950,126 @@ fn write_pcs_directory(setup_dir: &str, stdout: &mut dyn Write, stderr: &mut dyn
     0
 }
 
+fn write_pcs_material_directory(
+    setup_dir: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let layout = match read_key_directory_layout(setup_dir) {
+        Ok(layout) => layout,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup PCS material directory write failed: {error}");
+            return 1;
+        }
+    };
+
+    let mut bytes_written = 0_u64;
+    for unit in &layout.units {
+        let setup_path = match unit.setup_info() {
+            Some(path) => path,
+            None => {
+                let _ = writeln!(
+                    stderr,
+                    "setup PCS material directory write failed: missing unit setup metadata path"
+                );
+                return 1;
+            }
+        };
+        let plan_path = match unit.pcs_setup_plan() {
+            Some(path) => path,
+            None => {
+                let _ = writeln!(
+                    stderr,
+                    "setup PCS material directory write failed: missing unit PCS plan path"
+                );
+                return 1;
+            }
+        };
+        let output = match unit.pcs_setup_material() {
+            Some(path) => path,
+            None => {
+                let _ = writeln!(
+                    stderr,
+                    "setup PCS material directory write failed: missing unit PCS material output path"
+                );
+                return 1;
+            }
+        };
+        let setup = match read_unit_setup_info_file(&setup_path) {
+            Ok(setup) => setup,
+            Err(error) => {
+                let _ = writeln!(stderr, "setup PCS material directory write failed: {error}");
+                return 1;
+            }
+        };
+        let plan = match read_pcs_setup_plan_file(&plan_path) {
+            Ok(plan) => plan,
+            Err(error) => {
+                let _ = writeln!(stderr, "setup PCS material directory write failed: {error}");
+                return 1;
+            }
+        };
+        let expected_plan = match derive_pcs_setup_plan(&setup) {
+            Ok(plan) => plan,
+            Err(error) => {
+                let _ = writeln!(stderr, "setup PCS material directory write failed: {error}");
+                return 1;
+            }
+        };
+        if plan != expected_plan {
+            let _ = writeln!(
+                stderr,
+                "setup PCS material directory write failed: PCS setup plan does not match setup metadata"
+            );
+            return 1;
+        }
+        let fixed_bytes = match std::fs::read(&unit.fixed_columns) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let _ = writeln!(stderr, "setup PCS material directory write failed: {error}");
+                return 1;
+            }
+        };
+        let tree = match read_constant_tree_file(&unit.constant_tree, &setup) {
+            Ok(tree) => tree,
+            Err(error) => {
+                let _ = writeln!(stderr, "setup PCS material directory write failed: {error}");
+                return 1;
+            }
+        };
+        let material = match build_pcs_setup_material(&plan, &fixed_bytes, &tree) {
+            Ok(material) => material,
+            Err(error) => {
+                let _ = writeln!(stderr, "setup PCS material directory write failed: {error}");
+                return 1;
+            }
+        };
+        let bytes = match encode_pcs_setup_material(&material) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let _ = writeln!(stderr, "setup PCS material directory write failed: {error}");
+                return 1;
+            }
+        };
+        if let Some(parent) = output.parent() {
+            if let Err(error) = std::fs::create_dir_all(parent) {
+                let _ = writeln!(stderr, "setup PCS material directory write failed: {error}");
+                return 1;
+            }
+        }
+        if let Err(error) = std::fs::write(&output, &bytes) {
+            let _ = writeln!(stderr, "setup PCS material directory write failed: {error}");
+            return 1;
+        }
+        bytes_written = bytes_written.saturating_add(bytes.len() as u64);
+    }
+
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "units={}", layout.units.len());
+    let _ = writeln!(stdout, "bytes_written={bytes_written}");
+    0
+}
+
 fn validate_base_directory_inputs(
     layout: &lzvm_artifacts::key_directory::KeyDirectoryLayout,
     derive_verkey: bool,
@@ -1376,6 +1500,14 @@ fn write_base_directory_usage(stderr: &mut dyn Write) -> i32 {
 
 fn write_pcs_directory_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(stderr, "usage: lzvm setup write-pcs-directory <setup-dir>");
+    2
+}
+
+fn write_pcs_material_directory_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm setup write-pcs-material-directory <setup-dir>"
+    );
     2
 }
 

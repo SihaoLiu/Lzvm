@@ -12,6 +12,9 @@ use crate::global_info::{read_global_info_file, CurveKind, GlobalInfo, GlobalInf
 use crate::metadata_bundle::{
     read_unit_metadata_bundle, MetadataBundleError, UnitMetadataBundle, UnitMetadataPaths,
 };
+use crate::pcs_material::{
+    build_pcs_setup_material, read_pcs_setup_material_file, PcsSetupMaterial, PcsSetupMaterialError,
+};
 use crate::pcs_plan::{
     derive_pcs_setup_plan, read_pcs_setup_plan_file, PcsPlanError, PcsSetupPlan,
 };
@@ -88,6 +91,9 @@ pub struct KeyUnitCatalogEntry {
     pub constant_tree_present: bool,
     pub constant_tree_bytes: Option<u64>,
     pub constant_tree_root: Option<VerificationKeyRoot>,
+    pub pcs_material_present: bool,
+    pub pcs_material_bytes: Option<u64>,
+    pub pcs_material: Option<PcsSetupMaterial>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,6 +109,7 @@ pub enum KeyDirectoryError {
     ConstantTree(ConstantTreeError),
     Metadata(MetadataBundleError),
     PcsPlan(PcsPlanError),
+    PcsMaterial(PcsSetupMaterialError),
     ExpressionProgram(ExpressionProgramError),
     VerificationKey(VerificationKeyError),
     FixedColumns(FixedColumnError),
@@ -131,6 +138,10 @@ pub enum KeyDirectoryError {
         found: VerificationKeyRoot,
     },
     PcsPlanMismatch {
+        kind: KeyUnitKind,
+        path: PathBuf,
+    },
+    PcsMaterialMismatch {
         kind: KeyUnitKind,
         path: PathBuf,
     },
@@ -168,6 +179,9 @@ impl fmt::Display for KeyDirectoryError {
             }
             Self::Metadata(error) => write!(f, "key-directory unit metadata error: {error}"),
             Self::PcsPlan(error) => write!(f, "key-directory PCS setup plan error: {error}"),
+            Self::PcsMaterial(error) => {
+                write!(f, "key-directory PCS setup material error: {error}")
+            }
             Self::ExpressionProgram(error) => {
                 write!(f, "key-directory expression program error: {error}")
             }
@@ -200,6 +214,11 @@ impl fmt::Display for KeyDirectoryError {
             Self::PcsPlanMismatch { kind, path } => write!(
                 f,
                 "key-directory PCS setup plan mismatch for {kind} at {}",
+                path.display()
+            ),
+            Self::PcsMaterialMismatch { kind, path } => write!(
+                f,
+                "key-directory PCS setup material mismatch for {kind} at {}",
                 path.display()
             ),
             Self::Digest { message } => write!(f, "key-directory digest error: {message}"),
@@ -237,6 +256,12 @@ impl From<MetadataBundleError> for KeyDirectoryError {
 impl From<PcsPlanError> for KeyDirectoryError {
     fn from(error: PcsPlanError) -> Self {
         Self::PcsPlan(error)
+    }
+}
+
+impl From<PcsSetupMaterialError> for KeyDirectoryError {
+    fn from(error: PcsSetupMaterialError) -> Self {
+        Self::PcsMaterial(error)
     }
 }
 
@@ -305,6 +330,12 @@ impl KeyUnitPaths {
         self.metadata_prefix
             .as_ref()
             .map(|prefix| append_suffix(prefix, ".pcs-plan"))
+    }
+
+    pub fn pcs_setup_material(&self) -> Option<PathBuf> {
+        self.metadata_prefix
+            .as_ref()
+            .map(|prefix| append_suffix(prefix, ".pcs-material"))
     }
 
     pub fn expression_program(&self) -> Option<PathBuf> {
@@ -484,6 +515,9 @@ pub fn key_directory_catalog_digest(
         hash_bool(&mut hasher, unit.constant_tree_present);
         hash_optional_u64(&mut hasher, unit.constant_tree_bytes);
         hash_optional_root(&mut hasher, unit.constant_tree_root.as_ref());
+        hash_bool(&mut hasher, unit.pcs_material_present);
+        hash_optional_u64(&mut hasher, unit.pcs_material_bytes);
+        hash_optional_pcs_setup_material(&mut hasher, unit.pcs_material.as_ref());
     }
 
     Ok(hasher.finalize().into())
@@ -595,6 +629,8 @@ fn read_key_unit_catalog_entry(
         } else {
             (false, None, None)
         };
+    let (pcs_material_present, pcs_material_bytes, pcs_material) =
+        read_pcs_setup_material_companion(paths, &metadata.setup, &pcs_plan)?;
 
     Ok(KeyUnitCatalogEntry {
         paths: paths.clone(),
@@ -608,6 +644,9 @@ fn read_key_unit_catalog_entry(
         constant_tree_present,
         constant_tree_bytes,
         constant_tree_root,
+        pcs_material_present,
+        pcs_material_bytes,
+        pcs_material,
     })
 }
 
@@ -629,6 +668,41 @@ fn validate_pcs_setup_plan_companion(
         });
     }
     Ok(())
+}
+
+fn read_pcs_setup_material_companion(
+    paths: &KeyUnitPaths,
+    setup: &crate::setup_info::UnitSetupInfo,
+    plan: &PcsSetupPlan,
+) -> Result<(bool, Option<u64>, Option<PcsSetupMaterial>), KeyDirectoryError> {
+    let Some(path) = paths.pcs_setup_material() else {
+        return Ok((false, None, None));
+    };
+    if !path.is_file() {
+        return Ok((false, None, None));
+    }
+
+    let found = read_pcs_setup_material_file(&path)?;
+    let fixed_bytes =
+        std::fs::read(&paths.fixed_columns).map_err(|error| KeyDirectoryError::Io {
+            role: "fixed-column material input",
+            message: error.to_string(),
+        })?;
+    let tree = read_constant_tree_file(&paths.constant_tree, setup)?;
+    let expected = build_pcs_setup_material(plan, &fixed_bytes, &tree)?;
+    if found != expected {
+        return Err(KeyDirectoryError::PcsMaterialMismatch {
+            kind: paths.kind,
+            path,
+        });
+    }
+    let bytes = std::fs::metadata(&path)
+        .map_err(|error| KeyDirectoryError::Io {
+            role: "PCS setup material metadata",
+            message: error.to_string(),
+        })?
+        .len();
+    Ok((true, Some(bytes), Some(found)))
 }
 
 fn derive_unit_paths(root: &Path, global_info: &GlobalInfo) -> Vec<KeyUnitPaths> {
@@ -843,6 +917,29 @@ fn hash_pcs_setup_plan(hasher: &mut Sha256, plan: &PcsSetupPlan) {
         hash_u64(hasher, layer.folding_factor);
     }
     hash_u32(hasher, plan.final_layer_bits);
+}
+
+fn hash_optional_pcs_setup_material(hasher: &mut Sha256, material: Option<&PcsSetupMaterial>) {
+    match material {
+        Some(material) => {
+            hash_bool(hasher, true);
+            hash_pcs_setup_material(hasher, material);
+        }
+        None => hash_bool(hasher, false),
+    }
+}
+
+fn hash_pcs_setup_material(hasher: &mut Sha256, material: &PcsSetupMaterial) {
+    hash_bytes(hasher, &material.plan_digest);
+    hash_bytes(hasher, &material.fixed_column_digest);
+    hash_bytes(hasher, &material.constant_tree_digest);
+    for value in material.constant_tree_root {
+        hash_u64(hasher, value);
+    }
+    hash_u64(hasher, material.fixed_byte_count);
+    hash_u64(hasher, material.constant_tree_byte_count);
+    hash_u64(hasher, material.leaf_byte_count);
+    hash_u64(hasher, material.node_byte_count);
 }
 
 fn hash_u8(hasher: &mut Sha256, value: u8) {

@@ -1,3 +1,4 @@
+use lzvm_artifacts::constant_tree::parse_constant_tree_bytes;
 use lzvm_artifacts::constraint_program::{
     encode_global_constraint_program, GlobalConstraintProgram,
 };
@@ -9,6 +10,7 @@ use lzvm_artifacts::key_directory::{
     read_key_directory_layout, validate_key_directory_layout, KeyDirectoryError, KeyUnitKind,
     KeyUnitPaths,
 };
+use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_material};
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, encode_pcs_setup_plan};
 use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
@@ -274,6 +276,29 @@ fn write_catalog_constant_trees(layout: &lzvm_artifacts::key_directory::KeyDirec
     }
 }
 
+fn write_catalog_pcs_setup_materials(
+    layout: &lzvm_artifacts::key_directory::KeyDirectoryLayout,
+) -> u64 {
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
+    let fixed = sample_raw_fixed_columns();
+    let root = VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4]);
+    let tree = parse_constant_tree_bytes(sample_constant_tree(&root), &setup)
+        .expect("constant tree should parse");
+    let material = build_pcs_setup_material(&plan, &fixed, &tree).expect("material should build");
+    let bytes = encode_pcs_setup_material(&material).expect("material should encode");
+    let byte_count = u64::try_from(bytes.len()).expect("material length should fit");
+    for unit in &layout.units {
+        write_bytes(
+            &unit
+                .pcs_setup_material()
+                .expect("PCS material path should derive"),
+            &bytes,
+        );
+    }
+    byte_count
+}
+
 #[test]
 fn derives_key_directory_units_from_global_metadata() {
     let dir = temp_dir("derive");
@@ -466,6 +491,28 @@ fn reads_key_directory_catalog_constant_tree_roots_when_present() {
 }
 
 #[test]
+fn reads_key_directory_catalog_pcs_setup_materials_when_present() {
+    let dir = temp_dir("catalog-pcs-material");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    write_catalog_constant_trees(&layout);
+    let material_bytes = write_catalog_pcs_setup_materials(&layout);
+
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+
+    assert!(catalog.units.iter().all(|unit| unit.pcs_material_present));
+    assert!(catalog
+        .units
+        .iter()
+        .all(|unit| unit.pcs_material_bytes == Some(material_bytes)));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn hashes_key_directory_catalogs_deterministically() {
     let dir = temp_dir("catalog-digest");
     let _ = fs::remove_dir_all(&dir);
@@ -599,6 +646,46 @@ fn rejects_catalog_entries_with_mismatched_pcs_setup_plan_companions() {
     assert!(matches!(
         error,
         KeyDirectoryError::PcsPlanMismatch {
+            kind: KeyUnitKind::Basic,
+            ..
+        }
+    ));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_catalog_entries_with_mismatched_pcs_setup_material_companions() {
+    let dir = temp_dir("catalog-bad-pcs-material");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    write_catalog_constant_trees(&layout);
+    write_catalog_pcs_setup_materials(&layout);
+
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
+    let root = VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4]);
+    let tree = parse_constant_tree_bytes(sample_constant_tree(&root), &setup)
+        .expect("constant tree should parse");
+    let wrong_fixed = [9_u8; 32];
+    let material =
+        build_pcs_setup_material(&plan, &wrong_fixed, &tree).expect("material should build");
+    write_bytes(
+        &layout.units[0]
+            .pcs_setup_material()
+            .expect("PCS material path should derive"),
+        encode_pcs_setup_material(&material).expect("material should encode"),
+    );
+
+    let error = read_key_directory_catalog(&dir).expect_err("catalog should be rejected");
+
+    assert!(matches!(
+        error,
+        KeyDirectoryError::PcsMaterialMismatch {
             kind: KeyUnitKind::Basic,
             ..
         }

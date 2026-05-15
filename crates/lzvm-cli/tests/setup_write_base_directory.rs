@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use lzvm_artifacts::constant_tree::parse_constant_tree_bytes;
 use lzvm_artifacts::constraint_program::{
     encode_global_constraint_program, GlobalConstraintProgram,
 };
@@ -9,6 +10,7 @@ use lzvm_artifacts::expression_program::{
 };
 use lzvm_artifacts::fixed::{encode_raw_fixed_columns, FixedColumn, FixedColumns};
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyUnitPaths};
+use lzvm_artifacts::pcs_material::{build_pcs_setup_material, read_pcs_setup_material_file};
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, read_pcs_setup_plan_file};
 use lzvm_artifacts::setup_info::{parse_unit_setup_info_json, UnitSetupInfo};
 use lzvm_artifacts::verification_key::{
@@ -416,6 +418,102 @@ fn reports_usage_for_missing_pcs_directory_path() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "usage: lzvm setup write-pcs-directory <setup-dir>\n"
+    );
+}
+
+#[test]
+fn writes_pcs_setup_materials_for_all_units() {
+    let (dir, _) = create_key_directory("pcs-material");
+
+    let mut base_stdout = Vec::new();
+    let mut base_stderr = Vec::new();
+    let base_code = run_cli(
+        &[
+            "setup",
+            "write-base-directory",
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut base_stdout,
+        &mut base_stderr,
+    );
+    assert_eq!(base_code, 0);
+    assert!(base_stderr.is_empty());
+
+    let mut plan_stdout = Vec::new();
+    let mut plan_stderr = Vec::new();
+    let plan_code = run_cli(
+        &[
+            "setup",
+            "write-pcs-directory",
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut plan_stdout,
+        &mut plan_stderr,
+    );
+    assert_eq!(plan_code, 0);
+    assert!(plan_stderr.is_empty());
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "write-pcs-material-directory",
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit_count = layout.units.len();
+    let mut bytes_written = 0_u64;
+    for unit in &layout.units {
+        let setup =
+            parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+        let plan =
+            read_pcs_setup_plan_file(unit.pcs_setup_plan().expect("PCS plan path should derive"))
+                .expect("PCS plan should parse");
+        let fixed = fs::read(&unit.fixed_columns).expect("fixed columns should read");
+        let tree_bytes = fs::read(&unit.constant_tree).expect("constant tree should read");
+        let tree =
+            parse_constant_tree_bytes(tree_bytes, &setup).expect("constant tree should parse");
+        let expected =
+            build_pcs_setup_material(&plan, &fixed, &tree).expect("material should build");
+        let path = unit
+            .pcs_setup_material()
+            .expect("PCS material path should derive");
+        let material = read_pcs_setup_material_file(&path).expect("PCS material should parse");
+        bytes_written += fs::metadata(path)
+            .expect("PCS material output should exist")
+            .len();
+        assert_eq!(material, expected);
+    }
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!("status=ok\nunits={unit_count}\nbytes_written={bytes_written}\n")
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn reports_usage_for_missing_pcs_material_directory_path() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &["setup", "write-pcs-material-directory"],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "usage: lzvm setup write-pcs-material-directory <setup-dir>\n"
     );
 }
 

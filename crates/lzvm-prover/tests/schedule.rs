@@ -127,6 +127,9 @@ fn sample_unit(kind: KeyUnitKind, unit_id: usize, fixed_bytes: u64) -> KeyUnitCa
         constant_tree_present: true,
         constant_tree_bytes: Some(224),
         constant_tree_root: Some(VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4])),
+        pcs_material_present: false,
+        pcs_material_bytes: None,
+        pcs_material: None,
     }
 }
 
