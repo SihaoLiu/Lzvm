@@ -40,6 +40,106 @@ const ROOTS_OF_UNITY: [u64; 33] = [
     7_277_203_076_849_721_926,
 ];
 
+const POSEIDON2_WIDTH_8_DIAG: [u64; 8] = [
+    0xa988_11a1_fed4_e3a5,
+    0x1cc4_8b54_f377_e2a0,
+    0xe40c_d4f6_c560_9a26,
+    0x11de_79eb_ca97_a4a3,
+    0x9177_c73d_8b7e_929c,
+    0x2a6f_e808_5797_e791,
+    0x3de6_e933_29f8_d5ad,
+    0x3f7a_f912_5da9_62fe,
+];
+
+const POSEIDON2_WIDTH_8_ROUND_CONSTANTS: [u64; 86] = [
+    0xdd57_43e7_f2a5_a5d9,
+    0xcb3a_864e_58ad_a44b,
+    0xffa2_449e_d32f_8cdc,
+    0x4202_5f65_d6bd_13ee,
+    0x7889_175e_2550_6323,
+    0x34b9_8bb0_3d24_b737,
+    0xbdcc_535e_cc4f_aa2a,
+    0x5b20_ad86_9fc0_d033,
+    0xf1dd_a5b9_259d_fcb4,
+    0x2751_5210_be11_2d59,
+    0x4227_d171_8c76_6c3f,
+    0x26d3_3316_1a5b_d794,
+    0x49b9_3895_7bf4_b026,
+    0x4a56_b593_8b21_3669,
+    0x1120_426b_48c8_353d,
+    0x6b32_3c3f_10a5_6cad,
+    0xce57_d624_5ddc_a6b2,
+    0xb1fc_8d40_2bba_1eb1,
+    0xb5c5_096c_a959_bd04,
+    0x6db5_5cd3_06d3_1f7f,
+    0xc49d_293a_81cb_9641,
+    0x1ce5_5a4f_e979_719f,
+    0xa92e_60a9_d178_a4d1,
+    0x002c_c649_73bc_fd8c,
+    0xcea7_21cc_e82f_b11b,
+    0xe5b5_5eb8_098e_ce81,
+    0x4e30_525c_6f1d_dd66,
+    0x43c6_7028_2707_0987,
+    0xaca6_8430_a7b5_762a,
+    0x3674_2386_34df_9c93,
+    0x88ce_e1c8_25e3_3433,
+    0xde99_ae8d_74b5_7176,
+    0x4888_97d8_5ff5_1f56,
+    0x1140_737c_cb16_2218,
+    0xa7ee_b921_5866_ed35,
+    0x9bd2_976f_ee49_fcc9,
+    0xc0c8_f0de_580a_3fcc,
+    0x4fb2_dae6_ee8f_c793,
+    0x343a_89f3_5f37_395b,
+    0x223b_525a_77ca_72c8,
+    0x56cc_b625_74aa_a918,
+    0xc4d5_07d8_027a_f9ed,
+    0xa080_673c_f0b7_e95c,
+    0xf018_4884_eb70_dcf8,
+    0x044f_10b0_cb3d_5c69,
+    0xe9e3_f799_3938_f186,
+    0x1b76_1c80_e772_f459,
+    0x606c_ec60_7a1b_5fac,
+    0x14a0_c2e1_d45f_03cd,
+    0x4eac_e885_5398_574f,
+    0xf905_ca71_03ef_f3e6,
+    0xf8c8_f8d2_0862_c059,
+    0xb524_fe8b_dd67_8e5a,
+    0xfbb7_8659_01a1_ec41,
+    0x014e_f119_7d34_1346,
+    0x9725_e208_25d0_7394,
+    0xfdb2_5aef_2c5b_ae3b,
+    0xbe54_02dc_598c_971e,
+    0x93a5_711f_04cd_ca3d,
+    0xc45a_9a5b_2f8f_b97b,
+    0xfe89_46a9_2493_3545,
+    0x2af9_97a2_7369_091c,
+    0xaa62_c88e_0b29_4011,
+    0x058e_b9d8_10ce_9f74,
+    0xb3cb_23ec_ed34_9ae4,
+    0xa364_8177_a77b_4a84,
+    0x4315_3d90_5992_d95d,
+    0xf4e2_a97c_da44_aa4b,
+    0x5baa_2702_b908_682f,
+    0x0829_23bd_f4f7_50d1,
+    0x98ae_09a3_2589_3803,
+    0xf8a6_4750_7796_8838,
+    0xceb0_735b_f00b_2c5f,
+    0x0a1a_5d95_3888_e072,
+    0x2fcb_1904_89f9_4475,
+    0xb5be_0627_0dec_69fc,
+    0x739c_b934_b09a_cf8b,
+    0x5377_50b7_5ec7_f25b,
+    0xe9dd_318b_ae1f_3961,
+    0xf746_2137_299e_fe1a,
+    0xb1f6_b8ee_e9ad_b940,
+    0xbdeb_cc8a_809d_fe6b,
+    0x40fc_1f79_1b17_8113,
+    0x3ac1_c336_2d01_4864,
+    0x9a01_6184_bdb8_aeba,
+    0x95f2_3944_59fb_c25e,
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Felt(u64);
 
@@ -202,6 +302,94 @@ pub fn coset_extend_evaluations(
         power = power * target_root;
     }
     Ok(out)
+}
+
+pub fn poseidon2_hash_8(input: [Felt; 8]) -> [Felt; 8] {
+    const WIDTH: usize = 8;
+    const HALF_ROUNDS: usize = 4;
+    const PARTIAL_ROUNDS: usize = 22;
+
+    let mut state = input;
+    poseidon2_matmul_external_8(&mut state);
+
+    for round in 0..HALF_ROUNDS {
+        let offset = round * WIDTH;
+        poseidon2_pow7add_8(
+            &mut state,
+            &POSEIDON2_WIDTH_8_ROUND_CONSTANTS[offset..offset + WIDTH],
+        );
+        poseidon2_matmul_external_8(&mut state);
+    }
+
+    let partial_offset = HALF_ROUNDS * WIDTH;
+    for round in 0..PARTIAL_ROUNDS {
+        state[0] = poseidon2_pow7(
+            state[0] + Felt::from_u64(POSEIDON2_WIDTH_8_ROUND_CONSTANTS[partial_offset + round]),
+        );
+        let sum = state
+            .iter()
+            .copied()
+            .fold(Felt::ZERO, |acc, value| acc + value);
+        for (index, value) in state.iter_mut().enumerate() {
+            *value = *value * Felt::from_u64(POSEIDON2_WIDTH_8_DIAG[index]) + sum;
+        }
+    }
+
+    let final_offset = HALF_ROUNDS * WIDTH + PARTIAL_ROUNDS;
+    for round in 0..HALF_ROUNDS {
+        let offset = final_offset + round * WIDTH;
+        poseidon2_pow7add_8(
+            &mut state,
+            &POSEIDON2_WIDTH_8_ROUND_CONSTANTS[offset..offset + WIDTH],
+        );
+        poseidon2_matmul_external_8(&mut state);
+    }
+
+    state
+}
+
+fn poseidon2_pow7(value: Felt) -> Felt {
+    let square = value * value;
+    let fourth = square * square;
+    fourth * square * value
+}
+
+fn poseidon2_pow7add_8(state: &mut [Felt; 8], constants: &[u64]) {
+    for (value, constant) in state.iter_mut().zip(constants) {
+        *value = poseidon2_pow7(*value + Felt::from_u64(*constant));
+    }
+}
+
+fn poseidon2_matmul_external_8(state: &mut [Felt; 8]) {
+    poseidon2_matmul_m4(&mut state[0..4]);
+    poseidon2_matmul_m4(&mut state[4..8]);
+    let stored = [
+        state[0] + state[4],
+        state[1] + state[5],
+        state[2] + state[6],
+        state[3] + state[7],
+    ];
+    for (index, value) in state.iter_mut().enumerate() {
+        *value = *value + stored[index % 4];
+    }
+}
+
+fn poseidon2_matmul_m4(values: &mut [Felt]) {
+    let t0 = values[0] + values[1];
+    let t1 = values[2] + values[3];
+    let t2 = values[1] + values[1] + t1;
+    let t3 = values[3] + values[3] + t0;
+    let t1_2 = t1 + t1;
+    let t0_2 = t0 + t0;
+    let t4 = t1_2 + t1_2 + t3;
+    let t5 = t0_2 + t0_2 + t2;
+    let t6 = t3 + t5;
+    let t7 = t2 + t4;
+
+    values[0] = t6;
+    values[1] = t5;
+    values[2] = t7;
+    values[3] = t4;
 }
 
 fn transform_in_place(values: &mut [Felt], bits: usize, inverse: bool) -> Result<(), DomainError> {
