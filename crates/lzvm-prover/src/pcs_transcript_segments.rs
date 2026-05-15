@@ -44,6 +44,12 @@ pub enum PcsTranscriptProofSegmentsError {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PcsTranscriptUnitChallenges {
+    pub unit_index: u32,
+    pub challenges: Vec<Ext3>,
+}
+
 impl fmt::Display for PcsTranscriptProofSegmentsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -96,6 +102,19 @@ pub fn derive_pcs_transcript_challenges_from_proof_segments(
     public_values: &[Felt],
     segments: &[ProofSegment],
 ) -> Result<Vec<Ext3>, PcsTranscriptProofSegmentsError> {
+    let units = derive_pcs_transcript_unit_challenges_from_proof_segments(
+        schedule,
+        public_values,
+        segments,
+    )?;
+    Ok(units.into_iter().flat_map(|unit| unit.challenges).collect())
+}
+
+pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
+    schedule: &ProveSchedule,
+    public_values: &[Felt],
+    segments: &[ProofSegment],
+) -> Result<Vec<PcsTranscriptUnitChallenges>, PcsTranscriptProofSegmentsError> {
     let material_segment = segments
         .iter()
         .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
@@ -108,7 +127,7 @@ pub fn derive_pcs_transcript_challenges_from_proof_segments(
         .map_err(PcsTranscriptProofSegmentsError::Fri)?;
     let witness_segments = load_witness_commitment_segments(&schedule.units, segments)
         .map_err(PcsTranscriptProofSegmentsError::Witness)?;
-    let mut challenges = Vec::new();
+    let mut units = Vec::new();
 
     for query_unit in &query_plan.units {
         let unit_index = usize::try_from(query_unit.unit_index)
@@ -157,8 +176,12 @@ pub fn derive_pcs_transcript_challenges_from_proof_segments(
                 evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
             })
             .map_err(PcsTranscriptProofSegmentsError::Transcript)?;
-        challenges.append(&mut unit_challenges);
+        unit_challenges.shrink_to_fit();
+        units.push(PcsTranscriptUnitChallenges {
+            unit_index: query_unit.unit_index,
+            challenges: unit_challenges,
+        });
     }
 
-    Ok(challenges)
+    Ok(units)
 }

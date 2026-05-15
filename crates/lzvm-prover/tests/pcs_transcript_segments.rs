@@ -23,7 +23,8 @@ use lzvm_artifacts::witness_segment::{
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::pcs_transcript::{derive_pcs_transcript_challenges, PcsTranscriptInputs};
 use lzvm_prover::pcs_transcript_segments::{
-    derive_pcs_transcript_challenges_from_proof_segments, PcsTranscriptProofSegmentsError,
+    derive_pcs_transcript_challenges_from_proof_segments,
+    derive_pcs_transcript_unit_challenges_from_proof_segments, PcsTranscriptProofSegmentsError,
 };
 use lzvm_prover::{ProveSchedule, ProveUnitSchedule};
 
@@ -53,6 +54,39 @@ fn derives_transcript_challenges_from_proof_segments() {
     .expect("expected challenges should derive");
 
     assert_eq!(actual, expected);
+}
+
+#[test]
+fn derives_unit_transcript_challenges_from_proof_segments() {
+    let schedule = sample_schedule();
+    let public_values = values(&[7, 8]);
+    let segments = transcript_segments(0);
+
+    let actual = derive_pcs_transcript_unit_challenges_from_proof_segments(
+        &schedule,
+        &public_values,
+        &segments,
+    )
+    .expect("unit challenges should derive");
+    let expected = derive_pcs_transcript_challenges(PcsTranscriptInputs {
+        arity: 4,
+        hash_values: false,
+        constant_root: root(1),
+        public_values: &public_values,
+        witness_roots: &[root(10)],
+        root_challenge_draws: &[2],
+        unit_value_map: &[],
+        unit_values: &[],
+        evaluation_values: &[ext(20)],
+        evaluation_challenge_draws: 1,
+        fri_roots: &[],
+        final_polynomial: &[ext(40)],
+    })
+    .expect("expected challenges should derive");
+
+    assert_eq!(actual.len(), 1);
+    assert_eq!(actual[0].unit_index, 0);
+    assert_eq!(actual[0].challenges, expected);
 }
 
 #[test]

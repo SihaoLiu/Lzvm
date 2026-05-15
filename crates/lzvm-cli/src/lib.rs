@@ -20,9 +20,6 @@ use lzvm_artifacts::key_directory::{
 use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
 use lzvm_artifacts::pcs_fri_segment::PCS_FRI_OPENING_SEGMENT_ID;
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_material};
-use lzvm_artifacts::pcs_material_segment::{
-    parse_pcs_material_manifest_segment, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
-};
 use lzvm_artifacts::pcs_nonce_segment::PCS_QUERY_NONCE_SEGMENT_ID;
 use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file,
@@ -37,9 +34,6 @@ use lzvm_artifacts::setup_info::{
 use lzvm_artifacts::verification_key::{read_verification_key_binary_file, VerificationKeyRoot};
 use lzvm_artifacts::verifier_info::{
     encode_verifier_info, read_verifier_info_binary_file, VerifierInfo,
-};
-use lzvm_artifacts::witness_segment::{
-    parse_witness_commitment_segment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::constant_opening::{
@@ -61,13 +55,12 @@ use lzvm_prover::pcs_query_plan::{
     load_pcs_query_plan_from_segments, validate_seeded_pcs_query_plan_segments,
     validate_transcript_pcs_query_plan_segments,
 };
-use lzvm_prover::pcs_transcript::{
-    derive_pcs_transcript_challenges_from_segments, PcsTranscriptSegmentInputs,
+use lzvm_prover::pcs_transcript_segments::{
+    derive_pcs_transcript_challenges_from_proof_segments,
+    derive_pcs_transcript_unit_challenges_from_proof_segments,
 };
-use lzvm_prover::pcs_transcript_segments::derive_pcs_transcript_challenges_from_proof_segments;
 use lzvm_prover::proof_preflight::validate_proof_public_values;
 use lzvm_prover::proof_values::{flatten_pcs_proof_values, load_pcs_proof_values_from_segments};
-use lzvm_prover::unit_values::load_unit_values_from_segments;
 use lzvm_prover::verifier_query::{
     validate_verifier_query_outputs_against_fri_opening, VerifierFriQueryOutputValidationRequest,
 };
@@ -591,6 +584,13 @@ fn validate_optional_pcs_fri_opening_segment(
         load_pcs_query_plan_from_segments(&proof.segments).map_err(|error| error.to_string())?;
     let opening = load_pcs_fri_opening_segment_from_segments(&proof.segments)
         .map_err(|error| error.to_string())?;
+    let public_value_fields = transcript_public_value_fields(public_values)?;
+    let transcript_challenges = derive_pcs_transcript_unit_challenges_from_proof_segments(
+        schedule,
+        &public_value_fields,
+        &proof.segments,
+    )
+    .map_err(|error| error.to_string())?;
     for query_unit in &query_plan.units {
         let unit_index = usize::try_from(query_unit.unit_index)
             .map_err(|_| "PCS FRI opening segment unit index overflow")?;
@@ -599,13 +599,18 @@ fn validate_optional_pcs_fri_opening_segment(
             .iter()
             .find(|unit| unit.unit_index == query_unit.unit_index)
             .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
+        let challenges = transcript_challenges
+            .iter()
+            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
         validate_pcs_transcript_fri_opening(
             catalog,
             schedule,
             proof,
-            public_values,
+            &public_value_fields,
             query_unit,
             opening_unit,
+            &challenges.challenges,
         )?;
     }
     Ok(())
@@ -615,9 +620,10 @@ fn validate_pcs_transcript_fri_opening(
     catalog: &KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     proof: &ProofArtifact,
-    public_values: &PublicValues,
+    public_values: &[Felt],
     query_unit: &PcsQueryPlanUnit,
     opening_unit: &lzvm_artifacts::pcs_fri_segment::PcsFriOpeningUnitSegment,
+    challenges: &[Ext3],
 ) -> Result<(), String> {
     let unit_index = usize::try_from(query_unit.unit_index)
         .map_err(|_| "PCS FRI opening segment unit index overflow")?;
@@ -629,52 +635,14 @@ fn validate_pcs_transcript_fri_opening(
         .units
         .get(unit_index)
         .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
-    let material_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
-        .ok_or_else(|| "missing PCS material manifest segment".to_owned())?;
-    let material = parse_pcs_material_manifest_segment(&material_segment.data)
-        .map_err(|error| format!("invalid PCS material manifest segment: {error}"))?;
-    let material_unit = material
-        .units
-        .iter()
-        .find(|unit| unit.unit_index == query_unit.unit_index)
-        .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
-    let witness_segment_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
-        .checked_add(query_unit.unit_index)
-        .ok_or_else(|| "PCS FRI opening segment witness id overflow".to_owned())?;
-    let witness_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == witness_segment_id)
-        .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
-    let witness = parse_witness_commitment_segment(&witness_segment.data).map_err(|error| {
-        format!("invalid witness commitment segment for unit {unit_index}: {error}")
-    })?;
     let evaluation_unit = load_pcs_evaluation_unit_from_segments(unit_index, unit, &proof.segments)
         .map_err(|error| error.to_string())?;
-    let public_value_fields = transcript_public_value_fields(public_values)?;
-    let unit_values = load_unit_values(schedule, proof, unit_index)?;
-    let challenges = derive_pcs_transcript_challenges_from_segments(PcsTranscriptSegmentInputs {
-        unit_index,
-        unit,
-        material: material_unit,
-        public_values: &public_value_fields,
-        unit_values: &unit_values,
-        witness: &witness,
-        evaluations: &evaluation_unit,
-        fri: opening_unit,
-        root_challenge_draws: &unit.transcript_root_challenge_draws,
-        evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
-    })
-    .map_err(|error| format!("derive PCS FRI opening challenges failed: {error}"))?;
     let valid = verify_fri_opening_folds(
         unit,
         PcsFriOpeningFoldRequest {
             unit_index: query_unit.unit_index,
             query_rows: &query_unit.queries,
-            challenges: &challenges,
+            challenges,
             fri: opening_unit,
         },
     )
@@ -690,7 +658,7 @@ fn validate_pcs_transcript_fri_opening(
             unit,
             catalog_unit,
             evaluation_unit: &evaluation_unit,
-            challenges: &challenges,
+            challenges,
             proof_values: &proof_values,
         })
     } else {
@@ -702,7 +670,7 @@ fn validate_pcs_transcript_fri_opening(
 
 struct PcsFriQueryOutputValidation<'a> {
     proof: &'a ProofArtifact,
-    public_values: &'a PublicValues,
+    public_values: &'a [Felt],
     query_unit: &'a PcsQueryPlanUnit,
     opening_unit: &'a lzvm_artifacts::pcs_fri_segment::PcsFriOpeningUnitSegment,
     unit_index: usize,
@@ -738,7 +706,6 @@ fn validate_pcs_fri_query_outputs(input: PcsFriQueryOutputValidation<'_>) -> Res
                 input.unit_index
             )
         })?;
-    let public_value_fields = transcript_public_value_fields(input.public_values)?;
     let valid = validate_verifier_query_outputs_against_fri_opening(
         input.unit,
         VerifierFriQueryOutputValidationRequest {
@@ -750,7 +717,7 @@ fn validate_pcs_fri_query_outputs(input: PcsFriQueryOutputValidation<'_>) -> Res
             witness_unit,
             evaluations: input.evaluation_unit,
             code: &input.catalog_unit.metadata.verifier.query,
-            publics: &public_value_fields,
+            publics: input.public_values,
             fri: input.opening_unit,
         },
     )
@@ -867,19 +834,6 @@ fn derive_global_constraint_challenges(
         &proof.segments,
     )
     .map_err(|error| error.to_string())
-}
-
-fn load_unit_values(
-    schedule: &ProveSchedule,
-    proof: &ProofArtifact,
-    unit_index: usize,
-) -> Result<Vec<Felt>, String> {
-    let unit = schedule
-        .units
-        .get(unit_index)
-        .ok_or_else(|| format!("unit values segment mismatch for unit {unit_index}"))?;
-    load_unit_values_from_segments(unit_index, &unit.unit_value_map, &proof.segments)
-        .map_err(|error| error.to_string())
 }
 
 fn load_pcs_proof_values(
