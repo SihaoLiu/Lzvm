@@ -28,6 +28,14 @@ unsafe extern "C" {
         -> i32;
     fn lzvm_cuda_goldilocks_mul(lhs: *const u64, rhs: *const u64, out: *mut u64, len: usize)
         -> i32;
+    fn lzvm_cuda_goldilocks_butterfly(
+        even: *const u64,
+        odd: *const u64,
+        twiddle: *const u64,
+        out_even: *mut u64,
+        out_odd: *mut u64,
+        len: usize,
+    ) -> i32;
 }
 
 #[cfg(feature = "cuda")]
@@ -69,6 +77,48 @@ pub fn cuda_goldilocks_mul(lhs: &[u64], rhs: &[u64]) -> Result<Vec<u64>, AccelEr
     run_cuda_binary_op(lhs, rhs, lzvm_cuda_goldilocks_mul)
 }
 
+#[cfg(feature = "cuda")]
+pub fn cuda_goldilocks_butterfly(
+    even: &[u64],
+    odd: &[u64],
+    twiddle: &[u64],
+) -> Result<(Vec<u64>, Vec<u64>), AccelError> {
+    if even.len() != odd.len() {
+        return Err(AccelError::LengthMismatch {
+            lhs: even.len(),
+            rhs: odd.len(),
+        });
+    }
+    if even.len() != twiddle.len() {
+        return Err(AccelError::LengthMismatch {
+            lhs: even.len(),
+            rhs: twiddle.len(),
+        });
+    }
+
+    let mut out_even = vec![0_u64; even.len()];
+    let mut out_odd = vec![0_u64; even.len()];
+    let code = if even.is_empty() {
+        0
+    } else {
+        unsafe {
+            lzvm_cuda_goldilocks_butterfly(
+                even.as_ptr(),
+                odd.as_ptr(),
+                twiddle.as_ptr(),
+                out_even.as_mut_ptr(),
+                out_odd.as_mut_ptr(),
+                even.len(),
+            )
+        }
+    };
+    if code == 0 {
+        Ok((out_even, out_odd))
+    } else {
+        Err(AccelError::Cuda { code })
+    }
+}
+
 #[cfg(not(feature = "cuda"))]
 pub fn cuda_goldilocks_add(_lhs: &[u64], _rhs: &[u64]) -> Result<Vec<u64>, AccelError> {
     Err(AccelError::CudaUnavailable)
@@ -76,5 +126,14 @@ pub fn cuda_goldilocks_add(_lhs: &[u64], _rhs: &[u64]) -> Result<Vec<u64>, Accel
 
 #[cfg(not(feature = "cuda"))]
 pub fn cuda_goldilocks_mul(_lhs: &[u64], _rhs: &[u64]) -> Result<Vec<u64>, AccelError> {
+    Err(AccelError::CudaUnavailable)
+}
+
+#[cfg(not(feature = "cuda"))]
+pub fn cuda_goldilocks_butterfly(
+    _even: &[u64],
+    _odd: &[u64],
+    _twiddle: &[u64],
+) -> Result<(Vec<u64>, Vec<u64>), AccelError> {
     Err(AccelError::CudaUnavailable)
 }
