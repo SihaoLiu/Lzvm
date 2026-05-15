@@ -113,6 +113,7 @@ name = "lzvm-prover"
 version = "0.1.0"
 dependencies = [
  "libloading",
+ "lzvm-accel",
  "lzvm-artifacts",
  "lzvm-field",
  "sha2",

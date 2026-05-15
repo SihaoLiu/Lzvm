@@ -1,4 +1,6 @@
 use lzvm_field::{Ext3, Felt, TranscriptError};
+#[cfg(feature = "cuda")]
+use lzvm_prover::pcs_challenge::find_query_nonce_cuda;
 use lzvm_prover::pcs_challenge::{
     derive_fri_queries, find_query_nonce, verify_query_nonce, PcsChallengeError,
 };
@@ -43,6 +45,18 @@ fn query_nonce_search_rejects_invalid_work_bits() {
         find_query_nonce(Ext3::ONE, 65),
         Err(PcsChallengeError::InvalidWorkBits { bits: 65 })
     );
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_query_nonce_search_matches_cpu_search() {
+    let challenge = Ext3::from_u64s([0, 1, 2]);
+
+    let expected = find_query_nonce(challenge, 2).expect("CPU nonce search should find a value");
+    let actual =
+        find_query_nonce_cuda(challenge, 2).expect("CUDA nonce search should find a value");
+
+    assert_eq!(actual, expected);
 }
 
 #[test]

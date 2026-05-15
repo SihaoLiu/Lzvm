@@ -36,9 +36,11 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
 use crate::constant_tree_opening::{open_constant_tree_row, ConstantTreeOpeningError};
-use crate::pcs_challenge::{
-    derive_fri_queries, find_query_nonce, verify_query_nonce, PcsChallengeError,
-};
+#[cfg(not(feature = "cuda"))]
+use crate::pcs_challenge::find_query_nonce;
+#[cfg(feature = "cuda")]
+use crate::pcs_challenge::find_query_nonce_cuda;
+use crate::pcs_challenge::{derive_fri_queries, verify_query_nonce, PcsChallengeError};
 use crate::witness_commitment::{
     commit_witness_trace_stages, open_witness_stage_commitment, WitnessStageOpeningError,
     WitnessTraceCommitmentError, WitnessTraceCommitments,
@@ -696,7 +698,7 @@ pub fn build_pcs_query_nonce_segment(
         .map(|unit| unit.proof_of_work_bits)
         .max()
         .unwrap_or(0);
-    let nonce = find_query_nonce(challenge, bits)?;
+    let nonce = find_query_nonce_with_available_backend(challenge, bits)?;
     let segment = PcsQueryNonceSegment {
         nonce: nonce.to_u64(),
     };
@@ -704,6 +706,22 @@ pub fn build_pcs_query_nonce_segment(
         id: PCS_QUERY_NONCE_SEGMENT_ID,
         data: encode_pcs_query_nonce_segment(&segment)?,
     })
+}
+
+#[cfg(feature = "cuda")]
+fn find_query_nonce_with_available_backend(
+    challenge: Ext3,
+    bits: u32,
+) -> Result<Felt, ProvePcsQueryPlanSegmentError> {
+    Ok(find_query_nonce_cuda(challenge, bits)?)
+}
+
+#[cfg(not(feature = "cuda"))]
+fn find_query_nonce_with_available_backend(
+    challenge: Ext3,
+    bits: u32,
+) -> Result<Felt, ProvePcsQueryPlanSegmentError> {
+    Ok(find_query_nonce(challenge, bits)?)
 }
 
 pub fn build_pcs_query_plan_segment_from_challenge(
