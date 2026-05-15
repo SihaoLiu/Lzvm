@@ -674,6 +674,11 @@ fn constant_column_specs(setup: &UnitSetupInfo) -> Vec<RawFixedColumnInfo> {
             .collect();
     }
 
+    let mut name_counts = BTreeMap::new();
+    for column in &setup.constant_columns {
+        *name_counts.entry(column.name.as_str()).or_insert(0_usize) += 1;
+    }
+
     setup
         .constant_columns
         .iter()
@@ -683,8 +688,13 @@ fn constant_column_specs(setup: &UnitSetupInfo) -> Vec<RawFixedColumnInfo> {
             } else {
                 column.lengths.clone()
             };
+            let name = if name_counts.get(column.name.as_str()).copied().unwrap_or(0) > 1 {
+                format!("{}[{}]", column.name, column.pols_map_id)
+            } else {
+                column.name.clone()
+            };
             RawFixedColumnInfo {
-                name: column.name.clone(),
+                name,
                 index: column.pols_map_id,
                 dimensions,
             }

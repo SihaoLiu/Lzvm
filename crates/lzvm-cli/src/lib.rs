@@ -321,7 +321,7 @@ fn write_base_native(
             return 1;
         }
     };
-    let columns = match read_fixed_columns_file(columns_bin) {
+    let columns = match read_fixed_columns_file_for_setup(columns_bin, &setup, "raw", "unit") {
         Ok(columns) => columns,
         Err(error) => {
             let _ = writeln!(stderr, "setup native base write failed: {error}");

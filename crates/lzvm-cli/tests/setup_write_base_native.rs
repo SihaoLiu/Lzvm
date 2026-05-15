@@ -159,6 +159,56 @@ fn writes_base_fixed_columns_and_constant_tree_from_native_inputs() {
 }
 
 #[test]
+fn writes_base_outputs_from_raw_fixed_columns() {
+    let dir = temp_dir("raw");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let setup_path = dir.join("unit.setup.bin");
+    let columns_path = dir.join("unit.raw.const");
+    let out_const = dir.join("unit.const");
+    let out_consttree = dir.join("unit.consttree");
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let columns = sample_columns();
+    let raw_fixed = encode_raw_fixed_columns(&columns, &setup).expect("raw fixed should encode");
+    let expected_tree =
+        build_constant_tree_from_fixed_columns(&columns, &setup).expect("tree should build");
+    fs::write(
+        &setup_path,
+        encode_unit_setup_info(&setup).expect("setup should encode"),
+    )
+    .expect("setup fixture should be written");
+    fs::write(&columns_path, &raw_fixed).expect("raw fixed fixture should be written");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "write-base-native",
+            setup_path.to_str().expect("setup path should be utf-8"),
+            columns_path.to_str().expect("columns path should be utf-8"),
+            out_const
+                .to_str()
+                .expect("fixed output path should be utf-8"),
+            out_consttree
+                .to_str()
+                .expect("tree output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let fixed_bytes = fs::read(&out_const).expect("fixed output should be written");
+    let tree_bytes = fs::read(&out_consttree).expect("tree output should be written");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(fixed_bytes, raw_fixed);
+    assert_eq!(tree_bytes, expected_tree);
+    assert!(stderr.is_empty());
+}
+
+#[test]
 #[cfg(feature = "cuda")]
 fn writes_base_outputs_with_cuda_backend_option() {
     let dir = temp_dir("cuda");

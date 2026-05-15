@@ -51,7 +51,7 @@ Generate native base fixed-column and constant-tree artifacts in one command:
 cargo run -p lzvm-cli -- setup write-base-native [--backend cpu|cuda] <setup-info-bin> <columns-bin> <out-const> <out-consttree>
 ```
 
-This command reads binary setup metadata plus sectioned binary fixed-column source data, writes the raw fixed-column artifact, builds the native GL constant tree, validates both outputs through the setup crate, and publishes them through staging paths. The default backend is `cpu`; `cuda` is available when the CLI is built with the `cuda` feature.
+This command reads binary setup metadata plus sectioned or raw fixed-column source data, writes the raw fixed-column artifact, builds the native GL constant tree, validates both outputs through the setup crate, and publishes them through staging paths. The default backend is `cpu`; `cuda` is available when the CLI is built with the `cuda` feature.
 
 Generate the same raw artifact from JSON setup metadata and a native binary fixed-column source:
 

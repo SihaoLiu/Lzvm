@@ -91,9 +91,55 @@ fn sample_setup_info_json() -> &'static str {
     }"#
 }
 
+fn duplicate_name_setup_info_json() -> &'static str {
+    r#"{
+        "nStages": 1,
+        "nConstants": 2,
+        "qDeg": 3,
+        "openingPoints": [0],
+        "mapSectionsN": {
+            "const": 2,
+            "cm1": 1,
+            "cm2": 1
+        },
+        "constPolsMap": [
+            {"stage": 0, "name": "main.value", "dim": 1, "polsMapId": 0, "stageId": 0},
+            {"stage": 0, "name": "main.value", "dim": 1, "polsMapId": 1, "stageId": 1}
+        ],
+        "challengesMap": [],
+        "evMap": [],
+        "boundaries": [],
+        "starkStruct": {
+            "nBits": 1,
+            "nBitsExt": 2,
+            "nQueries": 2,
+            "steps": [
+                {"nBits": 2},
+                {"nBits": 1}
+            ],
+            "hashCommits": true,
+            "lastLevelVerification": 2,
+            "powBits": 0,
+            "merkleTreeArity": 2,
+            "verificationHashType": "GL",
+            "transcriptArity": 2,
+            "merkleTreeCustom": true
+        }
+    }"#
+}
+
 fn sample_raw_file() -> Vec<u8> {
     let mut bytes = Vec::new();
     for (left, right) in [(1_u64, 10_u64), (2, 20), (3, 30), (4, 40)] {
+        push_u64(&mut bytes, left);
+        push_u64(&mut bytes, right);
+    }
+    bytes
+}
+
+fn duplicate_name_raw_file() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for (left, right) in [(7_u64, 70_u64), (8, 80)] {
         push_u64(&mut bytes, left);
         push_u64(&mut bytes, right);
     }
@@ -214,6 +260,23 @@ fn encodes_raw_fixed_columns_using_setup_column_map() {
         .expect("encoded fixture should parse");
     assert_eq!(parsed.columns[0].values, [1, 2, 3, 4]);
     assert_eq!(parsed.columns[1].values, [10, 20, 30, 40]);
+}
+
+#[test]
+fn disambiguates_duplicate_raw_fixed_column_names_by_physical_index() {
+    let setup =
+        parse_unit_setup_info_json(duplicate_name_setup_info_json()).expect("setup should parse");
+
+    let parsed = parse_raw_fixed_columns(&duplicate_name_raw_file(), &setup, "group-a", "unit-a")
+        .expect("raw columns should parse");
+    let encoded = encode_raw_fixed_columns(&parsed, &setup).expect("raw columns should encode");
+
+    assert_eq!(parsed.columns.len(), 2);
+    assert_eq!(parsed.columns[0].name, "main.value[0]");
+    assert_eq!(parsed.columns[0].values, [7, 8]);
+    assert_eq!(parsed.columns[1].name, "main.value[1]");
+    assert_eq!(parsed.columns[1].values, [70, 80]);
+    assert_eq!(encoded, duplicate_name_raw_file());
 }
 
 #[test]
