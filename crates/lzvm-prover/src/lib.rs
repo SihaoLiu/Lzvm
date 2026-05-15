@@ -12,6 +12,7 @@ use lzvm_artifacts::witness_library::{
     read_witness_library_file, WitnessLibraryError, WitnessLibraryInfo,
 };
 
+pub mod witness_layout;
 pub mod witness_loader;
 pub mod witness_runner;
 pub mod witness_trace;
