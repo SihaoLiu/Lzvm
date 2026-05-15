@@ -1,6 +1,10 @@
 use std::fmt;
 use std::path::Path;
 
+use crate::expression_info::{
+    ExpressionInfo, HintFieldInfo as ExpressionHintFieldInfo, HintInfo as ExpressionHintInfo,
+    HintPayload, HintValueInfo,
+};
 use crate::sectioned::{
     encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
@@ -98,6 +102,10 @@ pub enum HintProgramError {
         op: &'static str,
         section: &'static str,
     },
+    MissingOperandField {
+        op: &'static str,
+        field: &'static str,
+    },
     LengthOverflow,
     Io {
         message: String,
@@ -138,6 +146,9 @@ impl fmt::Display for HintProgramError {
             Self::UnknownOperand { op } => write!(f, "unknown hint operand: {op}"),
             Self::InvalidOperandSection { op, section } => {
                 write!(f, "hint operand {op} is invalid for {section} section")
+            }
+            Self::MissingOperandField { op, field } => {
+                write!(f, "hint operand {op} is missing field {field}")
             }
             Self::LengthOverflow => write!(f, "hint program length overflow"),
             Self::Io { message } => write!(f, "hint program io error: {message}"),
@@ -181,6 +192,152 @@ pub fn parse_global_hint_program(bytes: &[u8]) -> Result<HintProgram, HintProgra
 
 pub fn encode_global_hint_program(program: &HintProgram) -> Result<Vec<u8>, HintProgramError> {
     encode_hint_program(program, 2, HintSectionKind::Global)
+}
+
+pub fn regular_hint_program_from_expression_info(
+    info: &ExpressionInfo,
+) -> Result<HintProgram, HintProgramError> {
+    hint_program_from_expression_info(info, HintSectionKind::Regular)
+}
+
+pub fn global_hint_program_from_expression_info(
+    info: &ExpressionInfo,
+) -> Result<HintProgram, HintProgramError> {
+    hint_program_from_expression_info(info, HintSectionKind::Global)
+}
+
+fn hint_program_from_expression_info(
+    info: &ExpressionInfo,
+    kind: HintSectionKind,
+) -> Result<HintProgram, HintProgramError> {
+    let hints = info
+        .hints
+        .iter()
+        .map(|hint| hint_from_expression_info(hint, kind))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(HintProgram { hints })
+}
+
+fn hint_from_expression_info(
+    hint: &ExpressionHintInfo,
+    kind: HintSectionKind,
+) -> Result<Hint, HintProgramError> {
+    let fields = hint
+        .fields
+        .iter()
+        .map(|field| hint_field_from_expression_info(field, kind))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Hint {
+        name: hint.name.clone(),
+        fields,
+    })
+}
+
+fn hint_field_from_expression_info(
+    field: &ExpressionHintFieldInfo,
+    kind: HintSectionKind,
+) -> Result<HintField, HintProgramError> {
+    let values = field
+        .values
+        .iter()
+        .map(|value| hint_value_from_expression_info(value, kind))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(HintField {
+        name: field.name.clone(),
+        values,
+    })
+}
+
+fn hint_value_from_expression_info(
+    value: &HintValueInfo,
+    kind: HintSectionKind,
+) -> Result<HintValue, HintProgramError> {
+    Ok(HintValue {
+        operand: hint_operand_from_payload(&value.payload, kind)?,
+        positions: value.positions.clone(),
+    })
+}
+
+fn hint_operand_from_payload(
+    payload: &HintPayload,
+    kind: HintSectionKind,
+) -> Result<HintOperand, HintProgramError> {
+    match payload {
+        HintPayload::Number { value } => Ok(HintOperand::Number(*value)),
+        HintPayload::String { value } => Ok(HintOperand::String(value.clone())),
+        HintPayload::Temporary { id, dimension } => Ok(HintOperand::Temporary {
+            id: *id,
+            dimension: if kind == HintSectionKind::Regular {
+                *dimension
+            } else {
+                None
+            },
+        }),
+        HintPayload::Commitment {
+            id,
+            row_offset_index,
+            ..
+        } if kind == HintSectionKind::Regular => Ok(HintOperand::Commitment {
+            id: *id,
+            row_offset_index: required_payload_field(*row_offset_index, "cm", "row_offset_index")?,
+        }),
+        HintPayload::Commitment { .. } => Err(invalid_operand_section("cm", kind)),
+        HintPayload::CustomCommitment {
+            id,
+            commit_id,
+            row_offset_index,
+            ..
+        } if kind == HintSectionKind::Regular => Ok(HintOperand::CustomCommitment {
+            id: *id,
+            row_offset_index: required_payload_field(
+                *row_offset_index,
+                "custom",
+                "row_offset_index",
+            )?,
+            commit_id: required_payload_field(*commit_id, "custom", "commit_id")?,
+        }),
+        HintPayload::CustomCommitment { .. } => Err(invalid_operand_section("custom", kind)),
+        HintPayload::Constant {
+            id,
+            row_offset_index,
+            ..
+        } if kind == HintSectionKind::Regular => Ok(HintOperand::Constant {
+            id: *id,
+            row_offset_index: required_payload_field(
+                *row_offset_index,
+                "const",
+                "row_offset_index",
+            )?,
+        }),
+        HintPayload::Constant { .. } => Err(invalid_operand_section("const", kind)),
+        HintPayload::Challenge { id, .. } if kind == HintSectionKind::Regular => {
+            Ok(HintOperand::Challenge { id: *id })
+        }
+        HintPayload::Challenge { .. } => Err(invalid_operand_section("challenge", kind)),
+        HintPayload::Public { id, .. } => Ok(HintOperand::Public { id: *id }),
+        HintPayload::AirGroupValue {
+            id, air_group_id, ..
+        } if kind == HintSectionKind::Regular => Ok(HintOperand::AirGroupValue { id: *id }),
+        HintPayload::AirGroupValue {
+            id, air_group_id, ..
+        } => Ok(HintOperand::GroupValue {
+            group_id: required_payload_field(*air_group_id, "airgroupvalue", "air_group_id")?,
+            id: *id,
+        }),
+        HintPayload::AirValue { id, .. } if kind == HintSectionKind::Regular => {
+            Ok(HintOperand::AirValue { id: *id })
+        }
+        HintPayload::AirValue { .. } => Err(invalid_operand_section("airvalue", kind)),
+        HintPayload::ProofValue { id, .. } => Ok(HintOperand::ProofValue { id: *id }),
+    }
+}
+
+fn required_payload_field<T>(
+    value: Option<T>,
+    op: &'static str,
+    field: &'static str,
+) -> Result<T, HintProgramError> {
+    value.ok_or(HintProgramError::MissingOperandField { op, field })
 }
 
 fn parse_hint_program(

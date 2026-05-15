@@ -1,7 +1,13 @@
+use lzvm_artifacts::expression_info::{
+    ConstraintCode, ExpressionCode, ExpressionInfo, HintFieldInfo as ExpressionHintFieldInfo,
+    HintInfo as ExpressionHintInfo, HintPayload, HintValueInfo,
+};
 use lzvm_artifacts::hint_program::{
-    encode_global_hint_program, encode_regular_hint_program, parse_global_hint_program,
-    parse_regular_hint_program, read_global_hint_program_file, Hint, HintField, HintOperand,
-    HintProgram, HintProgramError, HintValue,
+    encode_global_hint_program, encode_regular_hint_program,
+    global_hint_program_from_expression_info, parse_global_hint_program,
+    parse_regular_hint_program, read_global_hint_program_file,
+    regular_hint_program_from_expression_info, Hint, HintField, HintOperand, HintProgram,
+    HintProgramError, HintValue,
 };
 use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedSection};
 use std::fs;
@@ -234,6 +240,20 @@ fn one_value_program(operand: HintOperand) -> HintProgram {
     }
 }
 
+fn expression_info_with_hint_payloads(values: Vec<HintValueInfo>) -> ExpressionInfo {
+    ExpressionInfo {
+        hints: vec![ExpressionHintInfo {
+            name: "hint-a".to_owned(),
+            fields: vec![ExpressionHintFieldInfo {
+                name: "field-a".to_owned(),
+                values,
+            }],
+        }],
+        expressions: Vec::<ExpressionCode>::new(),
+        constraints: Vec::<ConstraintCode>::new(),
+    }
+}
+
 #[test]
 fn parses_regular_hint_sections() {
     let encoded =
@@ -267,6 +287,209 @@ fn parses_global_hint_sections() {
     let parsed = parse_global_hint_program(&encoded).expect("fixture should parse");
 
     assert_eq!(parsed, sample_global_hint_program());
+}
+
+#[test]
+fn builds_regular_hint_program_from_expression_info_payloads() {
+    let info = expression_info_with_hint_payloads(vec![
+        HintValueInfo {
+            positions: vec![0],
+            payload: HintPayload::number(42),
+        },
+        HintValueInfo {
+            positions: vec![1],
+            payload: HintPayload::string("label"),
+        },
+        HintValueInfo {
+            positions: vec![2],
+            payload: HintPayload::Commitment {
+                id: 3,
+                row_offset_index: Some(4),
+                row_offset: Some(1),
+                stage: Some(2),
+                stage_id: Some(0),
+                dimension: Some(1),
+                air_group_id: Some(5),
+                air_id: Some(6),
+            },
+        },
+        HintValueInfo {
+            positions: vec![3],
+            payload: HintPayload::CustomCommitment {
+                id: 7,
+                commit_id: Some(8),
+                row_offset_index: Some(9),
+                row_offset: Some(-1),
+                stage: Some(3),
+                stage_id: Some(1),
+                dimension: Some(3),
+                air_group_id: Some(10),
+                air_id: Some(11),
+            },
+        },
+        HintValueInfo {
+            positions: vec![4],
+            payload: HintPayload::constant(12, Some(13), Some(0), Some(1), Some(14), Some(15)),
+        },
+        HintValueInfo {
+            positions: vec![5],
+            payload: HintPayload::challenge(16, Some(2), Some(1)),
+        },
+        HintValueInfo {
+            positions: vec![6],
+            payload: HintPayload::air_group_value(17, Some(18), Some(2), Some(3)),
+        },
+        HintValueInfo {
+            positions: vec![7],
+            payload: HintPayload::air_value(19, Some(2), Some(3)),
+        },
+        HintValueInfo {
+            positions: vec![8],
+            payload: HintPayload::temporary(20, Some(3)),
+        },
+        HintValueInfo {
+            positions: vec![9],
+            payload: HintPayload::public(21, Some(1)),
+        },
+        HintValueInfo {
+            positions: vec![10],
+            payload: HintPayload::proof_value(22, Some(2), Some(3)),
+        },
+    ]);
+
+    let program = regular_hint_program_from_expression_info(&info).expect("payloads should lower");
+    let encoded = encode_regular_hint_program(&program).expect("program should encode");
+    let parsed = parse_regular_hint_program(&encoded).expect("program should parse");
+
+    assert_eq!(program, parsed);
+    assert_eq!(
+        program.hints[0].fields[0].values[2].operand,
+        HintOperand::Commitment {
+            id: 3,
+            row_offset_index: 4
+        }
+    );
+    assert_eq!(
+        program.hints[0].fields[0].values[3].operand,
+        HintOperand::CustomCommitment {
+            id: 7,
+            row_offset_index: 9,
+            commit_id: 8
+        }
+    );
+}
+
+#[test]
+fn builds_global_hint_program_from_expression_info_payloads() {
+    let info = expression_info_with_hint_payloads(vec![
+        HintValueInfo {
+            positions: vec![0],
+            payload: HintPayload::number(42),
+        },
+        HintValueInfo {
+            positions: vec![1],
+            payload: HintPayload::string("label"),
+        },
+        HintValueInfo {
+            positions: vec![2],
+            payload: HintPayload::air_group_value(7, Some(9), Some(2), Some(3)),
+        },
+        HintValueInfo {
+            positions: vec![3],
+            payload: HintPayload::temporary(11, Some(3)),
+        },
+        HintValueInfo {
+            positions: vec![4],
+            payload: HintPayload::public(13, Some(1)),
+        },
+        HintValueInfo {
+            positions: vec![5],
+            payload: HintPayload::proof_value(15, Some(2), Some(3)),
+        },
+    ]);
+
+    let program = global_hint_program_from_expression_info(&info).expect("payloads should lower");
+    let encoded = encode_global_hint_program(&program).expect("program should encode");
+    let parsed = parse_global_hint_program(&encoded).expect("program should parse");
+
+    assert_eq!(program, parsed);
+    assert_eq!(
+        program.hints[0].fields[0].values[2].operand,
+        HintOperand::GroupValue { group_id: 9, id: 7 }
+    );
+    assert_eq!(
+        program.hints[0].fields[0].values[3].operand,
+        HintOperand::Temporary {
+            id: 11,
+            dimension: None
+        }
+    );
+}
+
+#[test]
+fn rejects_regular_expression_hint_payloads_without_row_offset_indexes() {
+    let info = expression_info_with_hint_payloads(vec![HintValueInfo {
+        positions: vec![0],
+        payload: HintPayload::Commitment {
+            id: 3,
+            row_offset_index: None,
+            row_offset: Some(1),
+            stage: Some(2),
+            stage_id: Some(0),
+            dimension: Some(1),
+            air_group_id: None,
+            air_id: None,
+        },
+    }]);
+
+    assert!(matches!(
+        regular_hint_program_from_expression_info(&info),
+        Err(HintProgramError::MissingOperandField {
+            op: "cm",
+            field: "row_offset_index"
+        })
+    ));
+}
+
+#[test]
+fn rejects_global_expression_hint_payloads_without_group_ids() {
+    let info = expression_info_with_hint_payloads(vec![HintValueInfo {
+        positions: vec![0],
+        payload: HintPayload::air_group_value(7, None, Some(2), Some(3)),
+    }]);
+
+    assert!(matches!(
+        global_hint_program_from_expression_info(&info),
+        Err(HintProgramError::MissingOperandField {
+            op: "airgroupvalue",
+            field: "air_group_id"
+        })
+    ));
+}
+
+#[test]
+fn rejects_regular_only_expression_hint_payloads_in_global_programs() {
+    let info = expression_info_with_hint_payloads(vec![HintValueInfo {
+        positions: vec![0],
+        payload: HintPayload::Commitment {
+            id: 3,
+            row_offset_index: Some(4),
+            row_offset: Some(1),
+            stage: Some(2),
+            stage_id: Some(0),
+            dimension: Some(1),
+            air_group_id: None,
+            air_id: None,
+        },
+    }]);
+
+    assert!(matches!(
+        global_hint_program_from_expression_info(&info),
+        Err(HintProgramError::InvalidOperandSection {
+            op: "cm",
+            section: "global"
+        })
+    ));
 }
 
 #[test]
