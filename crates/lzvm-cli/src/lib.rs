@@ -1,19 +1,13 @@
 use std::io::Write;
 
-use lzvm_artifacts::fixed::{read_fixed_columns_file, read_fixed_columns_file_for_setup};
 use lzvm_artifacts::key_directory::{key_directory_catalog_digest_hex, read_key_directory_catalog};
 use lzvm_artifacts::proof::read_proof_artifact_file;
 use lzvm_artifacts::public_values::read_public_values_file;
-use lzvm_artifacts::setup_info::read_unit_setup_info_binary_file;
-use lzvm_artifacts::verification_key::{read_verification_key_binary_file, VerificationKeyRoot};
+use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_prover::derive_prove_schedule;
 use lzvm_prover::proof_preflight::validate_proof_public_values;
 use lzvm_prover::setup_preflight::validate_setup_preflight;
-use lzvm_setup::{
-    build_constant_tree_from_fixed_columns_with_backend, write_base_constant_tree,
-    write_constant_tree_leaves_with_backend, write_verification_key_from_constant_tree,
-    FixedExtensionBackend,
-};
+use lzvm_setup::FixedExtensionBackend;
 
 mod prove_inputs;
 mod prove_plan;
@@ -569,22 +563,8 @@ fn write_verification_key_native(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    let setup = match read_unit_setup_info_binary_file(setup_info_bin) {
-        Ok(setup) => setup,
-        Err(error) => {
-            let _ = writeln!(stderr, "setup verification-key write failed: {error}");
-            return 1;
-        }
-    };
-    let tree = match std::fs::read(consttree) {
-        Ok(tree) => tree,
-        Err(error) => {
-            let _ = writeln!(stderr, "setup verification-key write failed: {error}");
-            return 1;
-        }
-    };
-
-    match write_verification_key_from_constant_tree(out_verkey_bin, &tree, &setup) {
+    match lzvm_setup::write_verification_key_native_file(setup_info_bin, consttree, out_verkey_bin)
+    {
         Ok(report) => {
             let _ = writeln!(stdout, "status=ok");
             let _ = writeln!(stdout, "binary_bytes={}", report.binary_bytes);
@@ -607,29 +587,7 @@ fn write_constant_tree(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    let setup = match read_unit_setup_info_binary_file(setup_info_bin) {
-        Ok(setup) => setup,
-        Err(error) => {
-            let _ = writeln!(stderr, "setup constant-tree write failed: {error}");
-            return 1;
-        }
-    };
-    let tree = match std::fs::read(tree_bin) {
-        Ok(tree) => tree,
-        Err(error) => {
-            let _ = writeln!(stderr, "setup constant-tree write failed: {error}");
-            return 1;
-        }
-    };
-    let root = match read_verification_key_binary_file(root_bin) {
-        Ok(root) => root,
-        Err(error) => {
-            let _ = writeln!(stderr, "setup constant-tree write failed: {error}");
-            return 1;
-        }
-    };
-
-    match write_base_constant_tree(out_consttree, &tree, &setup, Some(&root)) {
+    match lzvm_setup::write_constant_tree_file(setup_info_bin, tree_bin, root_bin, out_consttree) {
         Ok(report) => {
             let _ = writeln!(stdout, "status=ok");
             let _ = writeln!(stdout, "bytes_written={}", report.bytes_written);
@@ -652,22 +610,12 @@ fn write_constant_tree_leaves_command(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    let setup = match read_unit_setup_info_binary_file(setup_info_bin) {
-        Ok(setup) => setup,
-        Err(error) => {
-            let _ = writeln!(stderr, "setup constant-tree leaf write failed: {error}");
-            return 1;
-        }
-    };
-    let columns = match read_fixed_columns_file(columns_bin) {
-        Ok(columns) => columns,
-        Err(error) => {
-            let _ = writeln!(stderr, "setup constant-tree leaf write failed: {error}");
-            return 1;
-        }
-    };
-
-    match write_constant_tree_leaves_with_backend(out_leaves, &columns, &setup, backend) {
+    match lzvm_setup::write_constant_tree_leaves_file(
+        setup_info_bin,
+        columns_bin,
+        out_leaves,
+        backend,
+    ) {
         Ok(report) => {
             let _ = writeln!(stdout, "status=ok");
             let _ = writeln!(stdout, "bytes_written={}", report.bytes_written);
@@ -692,41 +640,13 @@ fn write_constant_tree_native(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    let setup = match read_unit_setup_info_binary_file(setup_info_bin) {
-        Ok(setup) => setup,
-        Err(error) => {
-            let _ = writeln!(stderr, "setup native constant-tree write failed: {error}");
-            return 1;
-        }
-    };
-    let columns = match read_fixed_columns_file_for_setup(columns_bin, &setup, "raw", "unit") {
-        Ok(columns) => columns,
-        Err(error) => {
-            let _ = writeln!(stderr, "setup native constant-tree write failed: {error}");
-            return 1;
-        }
-    };
-    let expected_root = match root_bin {
-        Some(path) => match read_verification_key_binary_file(path) {
-            Ok(root) => Some(root),
-            Err(error) => {
-                let _ = writeln!(stderr, "setup native constant-tree write failed: {error}");
-                return 1;
-            }
-        },
-        None => None,
-    };
-
-    let tree = match build_constant_tree_from_fixed_columns_with_backend(&columns, &setup, backend)
-    {
-        Ok(tree) => tree,
-        Err(error) => {
-            let _ = writeln!(stderr, "setup native constant-tree write failed: {error}");
-            return 1;
-        }
-    };
-
-    match write_base_constant_tree(out_consttree, &tree, &setup, expected_root.as_ref()) {
+    match lzvm_setup::write_constant_tree_native_file(
+        setup_info_bin,
+        columns_bin,
+        root_bin,
+        out_consttree,
+        backend,
+    ) {
         Ok(report) => {
             let _ = writeln!(stdout, "status=ok");
             let _ = writeln!(stdout, "bytes_written={}", report.bytes_written);

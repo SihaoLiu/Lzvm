@@ -247,6 +247,73 @@ pub fn write_base_native_files(
     Ok(BaseNativeWriteReport { fixed, tree })
 }
 
+pub fn write_verification_key_native_file(
+    setup_info_path: impl AsRef<Path>,
+    constant_tree_path: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
+) -> Result<VerificationKeyWriteReport, NativeFileWriteError> {
+    let setup = read_unit_setup_info_binary_file(setup_info_path)?;
+    let tree = read_native_input_bytes(
+        constant_tree_path.as_ref(),
+        "read constant-tree input for verification-key write",
+    )?;
+    write_verification_key_from_constant_tree(output_path, &tree, &setup).map_err(Into::into)
+}
+
+pub fn write_constant_tree_file(
+    setup_info_path: impl AsRef<Path>,
+    tree_path: impl AsRef<Path>,
+    root_path: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
+) -> Result<ConstantTreeWriteReport, NativeFileWriteError> {
+    let setup = read_unit_setup_info_binary_file(setup_info_path)?;
+    let tree = read_native_input_bytes(tree_path.as_ref(), "read constant-tree input")?;
+    let root = read_verification_key_binary_file(root_path).map_err(SetupError::from)?;
+    write_base_constant_tree(output_path, &tree, &setup, Some(&root)).map_err(Into::into)
+}
+
+pub fn write_constant_tree_leaves_file(
+    setup_info_path: impl AsRef<Path>,
+    columns_path: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
+    backend: FixedExtensionBackend,
+) -> Result<ConstantTreeLeavesWriteReport, NativeFileWriteError> {
+    let setup = read_unit_setup_info_binary_file(setup_info_path)?;
+    let columns = read_fixed_columns_file(columns_path)?;
+    write_constant_tree_leaves_with_backend(output_path, &columns, &setup, backend)
+        .map_err(Into::into)
+}
+
+pub fn write_constant_tree_native_file(
+    setup_info_path: impl AsRef<Path>,
+    columns_path: impl AsRef<Path>,
+    root_path: Option<impl AsRef<Path>>,
+    output_path: impl AsRef<Path>,
+    backend: FixedExtensionBackend,
+) -> Result<ConstantTreeWriteReport, NativeFileWriteError> {
+    let setup = read_unit_setup_info_binary_file(setup_info_path)?;
+    let columns = read_fixed_columns_file_for_setup(columns_path, &setup, "raw", "unit")?;
+    let expected_root = match root_path {
+        Some(path) => Some(read_verification_key_binary_file(path).map_err(SetupError::from)?),
+        None => None,
+    };
+    let tree = build_constant_tree_from_fixed_columns_with_backend(&columns, &setup, backend)?;
+    write_base_constant_tree(output_path, &tree, &setup, expected_root.as_ref()).map_err(Into::into)
+}
+
+fn read_native_input_bytes(
+    path: &Path,
+    role: &'static str,
+) -> Result<Vec<u8>, NativeFileWriteError> {
+    std::fs::read(path)
+        .map_err(|error| SetupError::Io {
+            role,
+            path: path.to_path_buf(),
+            message: error.to_string(),
+        })
+        .map_err(Into::into)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BaseDirectoryWriteError {
     KeyDirectory(KeyDirectoryError),
