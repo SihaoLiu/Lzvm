@@ -2,17 +2,24 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
+use lzvm_artifacts::global_info::GlobalInfo;
+use lzvm_artifacts::group_values_segment::GROUP_VALUES_SEGMENT_ID;
 use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryCatalog};
 use lzvm_artifacts::pcs_evaluation_segment::{
     parse_pcs_evaluation_segment, PCS_EVALUATION_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_nonce_segment::parse_pcs_query_nonce_segment;
+use lzvm_artifacts::pcs_proof_values_segment::PCS_PROOF_VALUES_SEGMENT_ID;
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 use lzvm_artifacts::unit_values_segment::parse_unit_values_segment;
 use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 use lzvm_field::{Ext3, Felt};
-use lzvm_prover::group_values::build_group_values_segment;
+use lzvm_prover::group_values::{build_group_values_segment, load_group_values_from_segments};
+use lzvm_prover::proof_values::{
+    build_pcs_proof_values_segment_from_packed_values, flatten_pcs_proof_values,
+    load_pcs_proof_values_from_segments,
+};
 use lzvm_prover::setup_preflight::validate_setup_preflight;
 use lzvm_prover::unit_values::{
     build_unit_values_segment_from_packed_values_batch, ProveUnitValues,
@@ -24,8 +31,7 @@ use lzvm_prover::{
     build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_challenge, build_witness_commitment_segment,
     build_witness_opening_segment, build_witness_opening_segment_batch,
-    derive_prove_execution_plan, proof_values::build_pcs_proof_values_segment_from_packed_values,
-    run_prove_witness_commitments_with_trace,
+    derive_prove_execution_plan, run_prove_witness_commitments_with_trace,
     unit_values::build_unit_values_segment_from_packed_values, ProveExecutionInputArtifacts,
     ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePcsEvaluationValues,
     ProvePcsFriTranscriptTraceSegmentValues, ProveSchedule, ProveWitnessAuxiliaryInputs,
@@ -69,13 +75,17 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         );
         return 1;
     }
-    let auxiliary_inputs = match load_witness_auxiliary_inputs(
-        parsed.unit_values.as_deref(),
-        parsed.proof_values.as_deref(),
-        parsed.group_values.as_deref(),
-        parsed.challenge_values.as_deref(),
-        parsed.evaluation_values.as_deref(),
-    ) {
+    let auxiliary_request = WitnessAuxiliaryInputRequest {
+        global_info: &catalog.layout.global_info,
+        unit_values_input: parsed.unit_values.as_deref(),
+        proof_values_input: parsed.proof_values.as_deref(),
+        proof_values_segment_input: parsed.proof_values_segment.as_deref(),
+        group_values_input: parsed.group_values.as_deref(),
+        group_values_segment_input: parsed.group_values_segment.as_deref(),
+        challenge_values_input: parsed.challenge_values.as_deref(),
+        evaluation_values_input: parsed.evaluation_values.as_deref(),
+    };
+    let auxiliary_inputs = match load_witness_auxiliary_inputs(&auxiliary_request) {
         Ok(inputs) => inputs,
         Err(message) => {
             let _ = writeln!(stderr, "prove witness failed: {message}");
@@ -248,7 +258,9 @@ struct ParsedWitnessArgs {
     unit_values: Option<std::path::PathBuf>,
     unit_values_segment: Option<std::path::PathBuf>,
     proof_values: Option<std::path::PathBuf>,
+    proof_values_segment: Option<std::path::PathBuf>,
     group_values: Option<std::path::PathBuf>,
+    group_values_segment: Option<std::path::PathBuf>,
     challenge_values: Option<std::path::PathBuf>,
     evaluation_values: Option<std::path::PathBuf>,
     evaluation_values_segment: Option<std::path::PathBuf>,
@@ -259,7 +271,9 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
     let mut unit_values = None;
     let mut unit_values_segment = None;
     let mut proof_values = None;
+    let mut proof_values_segment = None;
     let mut group_values = None;
+    let mut group_values_segment = None;
     let mut challenge_values = None;
     let mut evaluation_values = None;
     let mut evaluation_values_segment = None;
@@ -301,6 +315,17 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
                     ));
                 }
             }
+            "--proof-values-segment" => {
+                index += 1;
+                let value = args.get(index).ok_or_else(|| {
+                    ParseError::Invalid("missing --proof-values-segment value".to_owned())
+                })?;
+                if proof_values_segment.replace((*value).into()).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --proof-values-segment option".to_owned(),
+                    ));
+                }
+            }
             "--group-values" => {
                 index += 1;
                 let value = args.get(index).ok_or_else(|| {
@@ -309,6 +334,17 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
                 if group_values.replace((*value).into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --group-values option".to_owned(),
+                    ));
+                }
+            }
+            "--group-values-segment" => {
+                index += 1;
+                let value = args.get(index).ok_or_else(|| {
+                    ParseError::Invalid("missing --group-values-segment value".to_owned())
+                })?;
+                if group_values_segment.replace((*value).into()).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --group-values-segment option".to_owned(),
                     ));
                 }
             }
@@ -354,13 +390,25 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             "cannot combine --evaluation-values and --evaluation-values-segment".to_owned(),
         ));
     }
+    if proof_values.is_some() && proof_values_segment.is_some() {
+        return Err(ParseError::Invalid(
+            "cannot combine --proof-values and --proof-values-segment".to_owned(),
+        ));
+    }
+    if group_values.is_some() && group_values_segment.is_some() {
+        return Err(ParseError::Invalid(
+            "cannot combine --group-values and --group-values-segment".to_owned(),
+        ));
+    }
     Ok(ParsedWitnessArgs {
         run_args: parse_run_args(&filtered, 4, 5)?,
         all_units,
         unit_values,
         unit_values_segment,
         proof_values,
+        proof_values_segment,
         group_values,
+        group_values_segment,
         challenge_values,
         evaluation_values,
         evaluation_values_segment,
@@ -375,31 +423,44 @@ fn parsed_inputs(parsed: &ParsedRunArgs) -> ProveExecutionInputArtifacts {
     }
 }
 
+struct WitnessAuxiliaryInputRequest<'a> {
+    global_info: &'a GlobalInfo,
+    unit_values_input: Option<&'a Path>,
+    proof_values_input: Option<&'a Path>,
+    proof_values_segment_input: Option<&'a Path>,
+    group_values_input: Option<&'a Path>,
+    group_values_segment_input: Option<&'a Path>,
+    challenge_values_input: Option<&'a Path>,
+    evaluation_values_input: Option<&'a Path>,
+}
+
 fn load_witness_auxiliary_inputs(
-    unit_values_input: Option<&Path>,
-    proof_values_input: Option<&Path>,
-    group_values_input: Option<&Path>,
-    challenge_values_input: Option<&Path>,
-    evaluation_values_input: Option<&Path>,
+    request: &WitnessAuxiliaryInputRequest<'_>,
 ) -> Result<ProveWitnessAuxiliaryInputs, String> {
     Ok(ProveWitnessAuxiliaryInputs {
-        unit_values: match unit_values_input {
+        unit_values: match request.unit_values_input {
             Some(path) => read_packed_values(path, "unit values")?,
             None => Vec::new(),
         },
-        proof_values: match proof_values_input {
+        proof_values: match request.proof_values_input {
             Some(path) => read_packed_values(path, "proof values")?,
-            None => Vec::new(),
+            None => match request.proof_values_segment_input {
+                Some(path) => read_packed_proof_values_segment(request.global_info, path)?,
+                None => Vec::new(),
+            },
         },
-        group_values: match group_values_input {
+        group_values: match request.group_values_input {
             Some(path) => read_packed_extension_values(path, "group values")?,
-            None => Vec::new(),
+            None => match request.group_values_segment_input {
+                Some(path) => read_group_values_segment_input(request.global_info, path)?,
+                None => Vec::new(),
+            },
         },
-        challenges: match challenge_values_input {
+        challenges: match request.challenge_values_input {
             Some(path) => read_packed_extension_values(path, "challenge values")?,
             None => Vec::new(),
         },
-        evaluations: match evaluation_values_input {
+        evaluations: match request.evaluation_values_input {
             Some(path) => read_packed_extension_values(path, "evaluation values")?,
             None => Vec::new(),
         },
@@ -822,6 +883,44 @@ fn read_evaluation_values_segment_input(path: &Path) -> Result<ProofSegment, Str
         id: PCS_EVALUATION_SEGMENT_ID,
         data: bytes,
     })
+}
+
+fn read_packed_proof_values_segment(
+    global_info: &GlobalInfo,
+    path: &Path,
+) -> Result<Vec<Felt>, String> {
+    let bytes = fs::read(path).map_err(|error| {
+        format!(
+            "read proof values segment failed: {}: {error}",
+            path.display()
+        )
+    })?;
+    let segment = ProofSegment {
+        id: PCS_PROOF_VALUES_SEGMENT_ID,
+        data: bytes,
+    };
+    let values = load_pcs_proof_values_from_segments(global_info, std::slice::from_ref(&segment))
+        .map_err(|error| format!("load proof values segment failed: {error}"))?;
+    flatten_pcs_proof_values(global_info, &values)
+        .map_err(|error| format!("flatten proof values segment failed: {error}"))
+}
+
+fn read_group_values_segment_input(
+    global_info: &GlobalInfo,
+    path: &Path,
+) -> Result<Vec<Ext3>, String> {
+    let bytes = fs::read(path).map_err(|error| {
+        format!(
+            "read group values segment failed: {}: {error}",
+            path.display()
+        )
+    })?;
+    let segment = ProofSegment {
+        id: GROUP_VALUES_SEGMENT_ID,
+        data: bytes,
+    };
+    load_group_values_from_segments(global_info, std::slice::from_ref(&segment))
+        .map_err(|error| format!("load group values segment failed: {error}"))
 }
 
 fn load_batch_unit_values_inputs(

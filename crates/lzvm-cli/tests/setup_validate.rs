@@ -3295,6 +3295,132 @@ fn runs_prove_witness_for_aggregate_with_unit_values_segment() {
 }
 
 #[test]
+fn runs_prove_witness_for_aggregate_with_proof_and_group_segments() {
+    let dir = temp_dir("prove-witness-aggregate-proof-group-segments");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_proof_group_and_unit_value(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let unit_values_segment_path = dir.join("unit_values_segment.bin");
+    let proof_values_segment_path = dir.join("proof_values_segment.bin");
+    let group_values_segment_path = dir.join("group_values_segment.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [21_u8]);
+    write_bytes(
+        &unit_values_segment_path,
+        encode_unit_values_segment(&UnitValuesSegment {
+            units: vec![
+                UnitValuesUnitSegment {
+                    unit_index: 0,
+                    values: vec![101, 201, 202, 203],
+                },
+                UnitValuesUnitSegment {
+                    unit_index: 1,
+                    values: vec![111, 211, 212, 213],
+                },
+            ],
+        })
+        .expect("unit values segment should encode"),
+    );
+    write_bytes(
+        &proof_values_segment_path,
+        encode_pcs_proof_values_segment(&PcsProofValuesSegment {
+            values: vec![[51, 52, 53]],
+        })
+        .expect("proof values segment should encode"),
+    );
+    write_bytes(
+        &group_values_segment_path,
+        encode_group_values_segment(&GroupValuesSegment {
+            values: vec![[61, 62, 63]],
+        })
+        .expect("group values segment should encode"),
+    );
+
+    let public_values = sample_public_values(setup_hash);
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--aggregate",
+            "--save-outputs",
+            "--unit-values-segment",
+            unit_values_segment_path
+                .to_str()
+                .expect("unit values segment path should be utf-8"),
+            "--proof-values-segment",
+            proof_values_segment_path
+                .to_str()
+                .expect("proof values segment path should be utf-8"),
+            "--group-values-segment",
+            group_values_segment_path
+                .to_str()
+                .expect("group values segment path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let proof_bytes = fs::read(output_dir.join("proof.bin")).expect("proof output should read");
+    let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
+
+    let proof_values_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_PROOF_VALUES_SEGMENT_ID)
+        .expect("proof values segment should exist");
+    let proof_values = parse_pcs_proof_values_segment(&proof_values_segment.data)
+        .expect("proof values should parse");
+    assert_eq!(proof_values.values, vec![[51, 52, 53]]);
+
+    let group_values_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == GROUP_VALUES_SEGMENT_ID)
+        .expect("group values segment should exist");
+    let group_values =
+        parse_group_values_segment(&group_values_segment.data).expect("group values should parse");
+    assert_eq!(group_values.values, vec![[61, 62, 63]]);
+
+    let unit_values_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == UNIT_VALUES_SEGMENT_ID)
+        .expect("unit values segment should exist");
+    let unit_values =
+        parse_unit_values_segment(&unit_values_segment.data).expect("unit values should parse");
+    assert_eq!(unit_values.units.len(), 2);
+    assert_eq!(unit_values.units[0].values, vec![101, 201, 202, 203]);
+    assert_eq!(unit_values.units[1].values, vec![111, 211, 212, 213]);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     let dir = temp_dir("prove-witness-aggregate-fri");
     let _ = fs::remove_dir_all(&dir);
