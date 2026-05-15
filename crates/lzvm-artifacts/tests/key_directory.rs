@@ -449,6 +449,25 @@ fn validates_required_key_directory_files() {
 }
 
 #[test]
+fn validates_without_global_constraint_json_metadata() {
+    let dir = temp_dir("validate-global-constraints-bin");
+    let _ = fs::remove_dir_all(&dir);
+    write_global_files(&dir);
+    fs::remove_file(dir.join("pilout.globalConstraints.json"))
+        .expect("global constraint json metadata should be removed");
+
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for required in layout.required_paths() {
+        if required.role != "global constraints metadata" {
+            write_file(&required.path);
+        }
+    }
+
+    validate_key_directory_layout(&layout).expect("layout should validate");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn reports_missing_required_key_directory_files() {
     let dir = temp_dir("missing");
     let _ = fs::remove_dir_all(&dir);

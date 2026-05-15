@@ -300,10 +300,6 @@ impl KeyDirectoryLayout {
                 path: self.global_paths.info.clone(),
             },
             RequiredPath {
-                role: "global constraints metadata",
-                path: self.global_paths.constraints_json.clone(),
-            },
-            RequiredPath {
                 role: "global constraints program",
                 path: self.global_paths.constraints_program.clone(),
             },
