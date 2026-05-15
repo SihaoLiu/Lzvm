@@ -14,6 +14,7 @@ The goal is to build a native stack with a Rust-first core, C++ integration for 
 ## Workspace
 
 - `crates/lzvm-field`: CPU reference field arithmetic used by artifact validation and backend parity tests.
+- `crates/lzvm-accel`: feature-gated C++/CUDA acceleration boundary with GPU parity tests.
 - `crates/lzvm-artifacts`: native readers, writers, and validators for setup and proving artifacts.
 - `crates/lzvm-setup`: native setup-generation primitives with validated staging and publish behavior.
 - `crates/lzvm-cli`: repository-owned command entry points.
@@ -106,4 +107,11 @@ This command accepts either sectioned or raw fixed-column bytes, extends fixed c
 ```sh
 cargo test
 cargo clippy --all-targets -- -D warnings
+```
+
+CUDA parity tests require the local CUDA toolchain and a matching architecture target:
+
+```sh
+source /etc/profile.d/modules.sh && module load intel/compiler cuda openmpi
+cargo test -p lzvm-accel --features cuda --test cuda_field
 ```

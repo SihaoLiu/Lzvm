@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/lzvm-artifacts",
+    "crates/lzvm-accel",
     "crates/lzvm-cli",
     "crates/lzvm-field",
     "crates/lzvm-setup",

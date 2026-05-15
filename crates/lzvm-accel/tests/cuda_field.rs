@@ -1,0 +1,52 @@
+#[cfg(feature = "cuda")]
+use lzvm_accel::cuda_goldilocks_add;
+
+#[cfg(feature = "cuda")]
+const MODULUS: u64 = 0xffff_ffff_0000_0001;
+
+#[cfg(feature = "cuda")]
+fn add_mod(lhs: u64, rhs: u64) -> u64 {
+    ((lhs as u128 + rhs as u128) % MODULUS as u128) as u64
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_adds_goldilocks_vectors() {
+    let lhs = vec![
+        0,
+        1,
+        MODULUS - 1,
+        0xffff_ffff,
+        MODULUS - 9,
+        123_456_789,
+        9_876_543_210,
+        MODULUS / 2,
+    ];
+    let rhs = vec![
+        7,
+        MODULUS - 1,
+        5,
+        0xffff_ffff,
+        27,
+        987_654_321,
+        MODULUS - 5,
+        MODULUS / 2 + 3,
+    ];
+    let expected = lhs
+        .iter()
+        .zip(&rhs)
+        .map(|(lhs, rhs)| add_mod(*lhs, *rhs))
+        .collect::<Vec<_>>();
+
+    let actual = cuda_goldilocks_add(&lhs, &rhs).expect("cuda addition should run");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_rejects_mismatched_vector_lengths() {
+    let error = cuda_goldilocks_add(&[1, 2, 3], &[4, 5]).expect_err("lengths should be checked");
+
+    assert!(error.to_string().contains("length mismatch"));
+}

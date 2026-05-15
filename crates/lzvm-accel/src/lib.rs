@@ -1,0 +1,56 @@
+use std::fmt;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AccelError {
+    LengthMismatch { lhs: usize, rhs: usize },
+    CudaUnavailable,
+    Cuda { code: i32 },
+}
+
+impl fmt::Display for AccelError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LengthMismatch { lhs, rhs } => {
+                write!(f, "length mismatch: lhs {lhs}, rhs {rhs}")
+            }
+            Self::CudaUnavailable => write!(f, "cuda backend is not enabled"),
+            Self::Cuda { code } if *code < 0 => write!(f, "invalid cuda input: {code}"),
+            Self::Cuda { code } => write!(f, "cuda backend error: {code}"),
+        }
+    }
+}
+
+impl std::error::Error for AccelError {}
+
+#[cfg(feature = "cuda")]
+unsafe extern "C" {
+    fn lzvm_cuda_goldilocks_add(lhs: *const u64, rhs: *const u64, out: *mut u64, len: usize)
+        -> i32;
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_goldilocks_add(lhs: &[u64], rhs: &[u64]) -> Result<Vec<u64>, AccelError> {
+    if lhs.len() != rhs.len() {
+        return Err(AccelError::LengthMismatch {
+            lhs: lhs.len(),
+            rhs: rhs.len(),
+        });
+    }
+
+    let mut out = vec![0_u64; lhs.len()];
+    let code = if lhs.is_empty() {
+        0
+    } else {
+        unsafe { lzvm_cuda_goldilocks_add(lhs.as_ptr(), rhs.as_ptr(), out.as_mut_ptr(), lhs.len()) }
+    };
+    if code == 0 {
+        Ok(out)
+    } else {
+        Err(AccelError::Cuda { code })
+    }
+}
+
+#[cfg(not(feature = "cuda"))]
+pub fn cuda_goldilocks_add(_lhs: &[u64], _rhs: &[u64]) -> Result<Vec<u64>, AccelError> {
+    Err(AccelError::CudaUnavailable)
+}

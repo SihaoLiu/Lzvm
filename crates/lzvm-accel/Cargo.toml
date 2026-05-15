@@ -1,0 +1,16 @@
+[package]
+name = "lzvm-accel"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "lzvm_accel"
+path = "src/lib.rs"
+
+[features]
+default = []
+cuda = []
+
+[dependencies]
