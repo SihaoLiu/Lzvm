@@ -177,6 +177,10 @@ pub enum ProveWitnessCommitmentError {
         unit_index: usize,
         stage_index: usize,
     },
+    MissingRegularConstraintInput {
+        unit_index: usize,
+        buffer: &'static str,
+    },
     RegularConstraintEval(RegularConstraintEvalError),
     RegularConstraintViolation {
         unit_index: usize,
@@ -399,6 +403,10 @@ impl fmt::Display for ProveWitnessCommitmentError {
                 f,
                 "prove witness commitment stage index does not fit u16 for unit {unit_index}: {stage_index}"
             ),
+            Self::MissingRegularConstraintInput { unit_index, buffer } => write!(
+                f,
+                "missing regular constraint {buffer} input for prove witness commitment unit {unit_index}"
+            ),
             Self::RegularConstraintEval(error) => {
                 write!(f, "prove witness commitment regular constraint evaluation failed: {error}")
             }
@@ -437,6 +445,7 @@ impl std::error::Error for ProveWitnessCommitmentError {
             | Self::FixedColumnValueCountOverflow { .. }
             | Self::FixedColumnNonCanonical { .. }
             | Self::StageIndexTooLarge { .. }
+            | Self::MissingRegularConstraintInput { .. }
             | Self::RegularConstraintViolation { .. } => None,
         }
     }
@@ -959,7 +968,8 @@ fn validate_witness_regular_constraints(
             challenges: &auxiliary_inputs.challenges,
             evaluations: &auxiliary_inputs.evaluations,
         },
-    )?;
+    )
+    .map_err(|error| map_regular_constraint_eval_error(unit_index, error))?;
 
     for result in results {
         if let Some(violation) = result.invalid_rows.first() {
@@ -972,6 +982,27 @@ fn validate_witness_regular_constraints(
         }
     }
     Ok(())
+}
+
+fn map_regular_constraint_eval_error(
+    unit_index: usize,
+    error: RegularConstraintEvalError,
+) -> ProveWitnessCommitmentError {
+    match error {
+        RegularConstraintEvalError::SourceIndexOutOfRange { buffer, len: 0, .. }
+            if is_regular_constraint_input_buffer(buffer) =>
+        {
+            ProveWitnessCommitmentError::MissingRegularConstraintInput { unit_index, buffer }
+        }
+        error => ProveWitnessCommitmentError::RegularConstraintEval(error),
+    }
+}
+
+fn is_regular_constraint_input_buffer(buffer: &str) -> bool {
+    matches!(
+        buffer,
+        "public" | "unit value" | "proof value" | "group value" | "challenge" | "evaluation"
+    )
 }
 
 fn fixed_columns_to_matrix(

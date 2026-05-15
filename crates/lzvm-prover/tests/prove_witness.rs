@@ -249,6 +249,29 @@ fn proof_value_row_zero_stage_constraint() -> ConstraintProgram {
     }
 }
 
+fn challenge_row_zero_stage_constraint() -> ConstraintProgram {
+    ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 0,
+            first_row: 0,
+            last_row: 0,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 8,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "challenge row zero stage residual".to_owned(),
+        }],
+        ops: vec![0],
+        args: vec![1, 0, 12, 0, 0, 1, 0, 0],
+        numbers: Vec::new(),
+    }
+}
+
 fn write_public_values(path: &Path, setup_hash: [u8; 32], elements: Vec<u64>) {
     let values = PublicValues {
         schema_version: 1,
@@ -650,6 +673,46 @@ fn uses_proof_values_when_checking_regular_constraints() {
 
     assert_eq!(output.unit_index(), 0);
     assert_eq!(output.trace_row_count(), 16);
+}
+
+#[test]
+fn reports_missing_challenges_for_regular_constraints() {
+    let dir = temp_dir("missing-challenge-constraint");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.paths.fixed_columns = dir.join("unit.const");
+    fs::write(&unit.paths.fixed_columns, vec![0_u8; 16 * 2 * 8])
+        .expect("fixed columns should be written");
+    unit.regular_constraints = challenge_row_zero_stage_constraint();
+    let catalog = sample_catalog(unit);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+
+    let error = run_prove_witness_commitments(&plan, 0)
+        .expect_err("missing challenge input should reject regular constraint check");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(
+        error
+            .to_string()
+            .contains("missing regular constraint challenge input"),
+        "{error}"
+    );
 }
 
 #[test]
