@@ -25,7 +25,8 @@ use lzvm_artifacts::public_values::{
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use lzvm_artifacts::witness_library::parse_witness_library;
 use lzvm_artifacts::witness_segment::{
-    parse_witness_commitment_segment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+    encode_witness_commitment_segment, parse_witness_commitment_segment, WitnessCommitmentSegment,
+    WitnessCommitmentStageSegment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 use lzvm_cli::run_cli;
 use lzvm_prover::{
@@ -191,13 +192,67 @@ fn sample_proof_with_material(
     ProofArtifact {
         setup_hash: public_values.setup_hash,
         public_values_hash: public_values_digest(public_values).expect("digest should compute"),
+        segments: vec![material_segment, sample_witness_proof_segment(&schedule, 0)],
+    }
+}
+
+fn sample_proof_with_material_and_bad_witness(
+    public_values: &PublicValues,
+    catalog: &lzvm_artifacts::key_directory::KeyDirectoryCatalog,
+) -> ProofArtifact {
+    let schedule = derive_prove_schedule(catalog).expect("schedule should derive");
+    let material_segment =
+        build_pcs_material_manifest_segment(&schedule).expect("material segment should build");
+    ProofArtifact {
+        setup_hash: public_values.setup_hash,
+        public_values_hash: public_values_digest(public_values).expect("digest should compute"),
         segments: vec![
             material_segment,
             ProofSegment {
-                id: 100,
+                id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
                 data: vec![1, 2, 3, 4],
             },
         ],
+    }
+}
+
+fn sample_witness_proof_segment(
+    schedule: &lzvm_prover::ProveSchedule,
+    unit_index: usize,
+) -> ProofSegment {
+    let unit = &schedule.units[unit_index];
+    let trace_columns = unit
+        .stage_commit_widths
+        .iter()
+        .map(|width| u64::from(*width))
+        .sum();
+    let stages = unit
+        .stage_commit_widths
+        .iter()
+        .enumerate()
+        .map(|(stage_index, _)| WitnessCommitmentStageSegment {
+            stage_index: stage_index as u32,
+            arity: unit.merkle_tree_arity,
+            root: [
+                stage_index as u64 + 1,
+                stage_index as u64 + 2,
+                stage_index as u64 + 3,
+                stage_index as u64 + 4,
+            ],
+            tree_byte_count: 32,
+            tree_digest: [stage_index as u8 + 11; 32],
+        })
+        .collect();
+    let segment = WitnessCommitmentSegment {
+        unit_index: unit_index as u32,
+        input_byte_count: 0,
+        trace_rows: unit.base_domain_size,
+        trace_columns,
+        stages,
+    };
+    ProofSegment {
+        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID + unit_index as u32,
+        data: encode_witness_commitment_segment(&segment).expect("witness segment should encode"),
     }
 }
 
@@ -1109,6 +1164,51 @@ fn rejects_setup_aware_verify_preflight_with_mismatched_pcs_material_manifest() 
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "verify setup-preflight failed: PCS material manifest mismatch for unit 0\n"
+    );
+}
+
+#[test]
+fn rejects_setup_aware_verify_preflight_with_invalid_witness_segment() {
+    let dir = temp_dir("verify-setup-preflight-bad-witness");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let proof = sample_proof_with_material_and_bad_witness(&public_values, &catalog);
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.json");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_text(
+        &public_values_path,
+        &encode_public_values_json(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: invalid witness commitment segment for unit 0: invalid witness commitment segment magic\n"
     );
 }
 

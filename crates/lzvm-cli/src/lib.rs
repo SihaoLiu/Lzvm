@@ -23,7 +23,10 @@ use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, read_unit_setup_info_file,
 };
 use lzvm_artifacts::verification_key::{read_verification_key_binary_file, VerificationKeyRoot};
-use lzvm_prover::derive_prove_schedule;
+use lzvm_artifacts::witness_segment::{
+    parse_witness_commitment_segment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+};
+use lzvm_prover::{derive_prove_schedule, ProveSchedule};
 use lzvm_setup::{
     build_constant_tree_from_fixed_columns_with_backend, write_base_constant_tree,
     write_base_fixed_columns, write_constant_tree_leaves_with_backend,
@@ -439,6 +442,17 @@ fn verify_setup_preflight(
         let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
         return 1;
     }
+    let schedule = match derive_prove_schedule(&catalog) {
+        Ok(schedule) => schedule,
+        Err(error) => {
+            let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
+            return 1;
+        }
+    };
+    if let Err(error) = validate_witness_commitment_segments(&schedule, &proof) {
+        let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
+        return 1;
+    }
 
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "units={}", catalog.units.len());
@@ -486,6 +500,82 @@ fn validate_pcs_material_manifest(
         }
     }
     Ok(())
+}
+
+fn validate_witness_commitment_segments(
+    schedule: &ProveSchedule,
+    proof: &ProofArtifact,
+) -> Result<(), String> {
+    let unit_count = u32::try_from(schedule.units.len())
+        .map_err(|_| "witness commitment segment unit count overflow")?;
+    let end_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
+        .checked_add(unit_count)
+        .ok_or_else(|| "witness commitment segment id overflow".to_owned())?;
+    let mut found = false;
+
+    for segment in &proof.segments {
+        if segment.id < WITNESS_COMMITMENT_SEGMENT_BASE_ID || segment.id >= end_id {
+            continue;
+        }
+        found = true;
+        let unit_index_u32 = segment.id - WITNESS_COMMITMENT_SEGMENT_BASE_ID;
+        let unit_index = usize::try_from(unit_index_u32)
+            .map_err(|_| "witness commitment segment unit index overflow")?;
+        let parsed = parse_witness_commitment_segment(&segment.data).map_err(|error| {
+            format!("invalid witness commitment segment for unit {unit_index}: {error}")
+        })?;
+        if parsed.unit_index != unit_index_u32 {
+            return Err(format!(
+                "witness commitment segment unit mismatch for unit {unit_index}"
+            ));
+        }
+        let unit = &schedule.units[unit_index];
+        if parsed.trace_rows != unit.base_domain_size {
+            return Err(format!(
+                "witness commitment segment row count mismatch for unit {unit_index}"
+            ));
+        }
+        let trace_columns = unit
+            .stage_commit_widths
+            .iter()
+            .try_fold(0_u64, |acc, width| acc.checked_add(u64::from(*width)))
+            .ok_or_else(|| "witness commitment segment column count overflow".to_owned())?;
+        if parsed.trace_columns != trace_columns {
+            return Err(format!(
+                "witness commitment segment column count mismatch for unit {unit_index}"
+            ));
+        }
+        if parsed.stages.len() != unit.stage_commit_widths.len() {
+            return Err(format!(
+                "witness commitment segment stage count mismatch for unit {unit_index}"
+            ));
+        }
+        for (stage_index, stage) in parsed.stages.iter().enumerate() {
+            let expected_stage_index = u32::try_from(stage_index)
+                .map_err(|_| "witness commitment segment stage index overflow")?;
+            if stage.stage_index != expected_stage_index {
+                return Err(format!(
+                    "witness commitment segment stage index mismatch for unit {unit_index}"
+                ));
+            }
+            if stage.arity != unit.merkle_tree_arity {
+                return Err(format!(
+                    "witness commitment segment arity mismatch for unit {unit_index}"
+                ));
+            }
+            if stage.tree_byte_count == 0 {
+                return Err(format!(
+                    "witness commitment segment empty tree for unit {unit_index}"
+                ));
+            }
+        }
+    }
+
+    if found {
+        Ok(())
+    } else {
+        Err("missing witness commitment segment".to_owned())
+    }
 }
 
 fn validate_setup_directory(
