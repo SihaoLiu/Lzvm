@@ -12,6 +12,8 @@ use lzvm_artifacts::witness_library::{
     read_witness_library_file, WitnessLibraryError, WitnessLibraryInfo,
 };
 
+pub mod witness_loader;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProveSchedule {
     pub setup_hash: [u8; 32],

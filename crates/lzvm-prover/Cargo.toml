@@ -10,4 +10,5 @@ name = "lzvm_prover"
 path = "src/lib.rs"
 
 [dependencies]
+libloading = "0.8"
 lzvm-artifacts = { path = "../lzvm-artifacts" }
