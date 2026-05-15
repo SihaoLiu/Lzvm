@@ -10,8 +10,7 @@ use crate::metadata_validation::{
 };
 use crate::setup_info::{read_unit_setup_info_file, SetupInfoError, UnitSetupInfo};
 use crate::verification_key::{
-    read_verification_key_binary_file, read_verification_key_json_file, VerificationKeyError,
-    VerificationKeyRoot,
+    read_verification_key_binary_file, VerificationKeyError, VerificationKeyRoot,
 };
 use crate::verifier_info::{read_verifier_info_file, VerifierInfo, VerifierInfoError};
 use std::ffi::OsString;
@@ -79,10 +78,6 @@ pub enum MetadataBundleError {
     FixedColumnRowCountMismatch {
         expected: u64,
         found: u64,
-    },
-    VerificationKeyMismatch {
-        json_root: VerificationKeyRoot,
-        binary_root: VerificationKeyRoot,
     },
     ConstantTreeRootMismatch {
         tree_root: VerificationKeyRoot,
@@ -177,9 +172,6 @@ impl fmt::Display for MetadataBundleError {
                 f,
                 "fixed-column row count mismatch: expected {expected}, found {found}"
             ),
-            Self::VerificationKeyMismatch { .. } => {
-                write!(f, "verification-key companion roots do not match")
-            }
             Self::ConstantTreeRootMismatch { .. } => {
                 write!(f, "constant-tree root does not match verification key")
             }
@@ -266,15 +258,6 @@ pub fn read_unit_artifact_bundle(
     let metadata = read_unit_metadata_bundle(&paths.metadata)?;
     let binary_root = read_verification_key_binary_file(&paths.verification_key_binary)?;
 
-    if paths.verification_key_json.is_file() {
-        let json_root = read_verification_key_json_file(&paths.verification_key_json)?;
-        if json_root != binary_root {
-            return Err(MetadataBundleError::VerificationKeyMismatch {
-                json_root,
-                binary_root,
-            });
-        }
-    }
     let expression_program = read_expression_program_file(&paths.expression_program)?;
     let verifier_program = read_expression_program_file(&paths.verifier_program)?;
     let fixed_columns = read_fixed_columns_file_for_setup(

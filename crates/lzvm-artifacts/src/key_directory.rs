@@ -22,8 +22,7 @@ use crate::pcs_plan::{
     derive_pcs_setup_plan, read_pcs_setup_plan_file, PcsPlanError, PcsSetupPlan,
 };
 use crate::verification_key::{
-    read_verification_key_binary_file, read_verification_key_json_file, VerificationKeyError,
-    VerificationKeyRoot,
+    read_verification_key_binary_file, VerificationKeyError, VerificationKeyRoot,
 };
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
@@ -127,11 +126,6 @@ pub enum KeyDirectoryError {
         role: &'static str,
         unit: KeyUnitKind,
     },
-    VerificationKeyMismatch {
-        kind: KeyUnitKind,
-        json_root: VerificationKeyRoot,
-        binary_root: VerificationKeyRoot,
-    },
     FixedByteCountMismatch {
         kind: KeyUnitKind,
         path: PathBuf,
@@ -203,9 +197,6 @@ impl fmt::Display for KeyDirectoryError {
             }
             Self::MissingDerivedPath { role, unit } => {
                 write!(f, "missing derived key-directory {role} for {unit}")
-            }
-            Self::VerificationKeyMismatch { kind, .. } => {
-                write!(f, "key-directory verification-key mismatch for {kind}")
             }
             Self::FixedByteCountMismatch {
                 kind,
@@ -637,16 +628,6 @@ fn read_key_unit_catalog_entry(
     validate_pcs_setup_plan_companion(paths, &pcs_plan)?;
 
     let binary_root = read_verification_key_binary_file(paths.verification_key_binary())?;
-    if paths.verification_key_json().is_file() {
-        let json_root = read_verification_key_json_file(paths.verification_key_json())?;
-        if json_root != binary_root {
-            return Err(KeyDirectoryError::VerificationKeyMismatch {
-                kind: paths.kind,
-                json_root,
-                binary_root,
-            });
-        }
-    }
     let verification_key = binary_root;
 
     let expression_program_path =

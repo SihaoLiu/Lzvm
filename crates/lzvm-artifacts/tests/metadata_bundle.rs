@@ -372,7 +372,7 @@ fn reads_and_validates_unit_artifacts_from_paths() {
         sample_expression_info_json(),
         sample_verifier_info_json(),
     );
-    write_file(&paths.verification_key_json, "[1,2,3,4]");
+    write_file(&paths.verification_key_json, "[9,9,9,9]");
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
     write_expression_program(&paths.expression_program, 17);
     write_expression_program(&paths.verifier_program, 9);
@@ -419,7 +419,7 @@ fn reads_and_validates_unit_artifacts_from_binary_key_without_json() {
 }
 
 #[test]
-fn rejects_unit_artifacts_with_mismatched_key_roots() {
+fn rejects_unit_artifacts_when_binary_key_does_not_match_constant_tree() {
     let dir = create_clean_dir("unit-artifacts-invalid");
     let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
     write_unit_fixture(
@@ -440,9 +440,9 @@ fn rejects_unit_artifacts_with_mismatched_key_roots() {
 
     assert!(matches!(
         error,
-        MetadataBundleError::VerificationKeyMismatch {
-            json_root: VerificationKeyRoot::FieldElements(_),
-            binary_root: VerificationKeyRoot::FieldElements(_)
+        MetadataBundleError::ConstantTreeRootMismatch {
+            tree_root: VerificationKeyRoot::FieldElements(_),
+            verification_key: VerificationKeyRoot::FieldElements(_),
         }
     ));
 }
