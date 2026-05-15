@@ -54,6 +54,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         parsed.unit_values.as_deref(),
         parsed.proof_values.as_deref(),
         parsed.group_values.as_deref(),
+        parsed.challenge_values.as_deref(),
         parsed.evaluation_values.as_deref(),
     ) {
         Ok(inputs) => inputs,
@@ -131,6 +132,7 @@ struct ParsedWitnessArgs {
     unit_values: Option<std::path::PathBuf>,
     proof_values: Option<std::path::PathBuf>,
     group_values: Option<std::path::PathBuf>,
+    challenge_values: Option<std::path::PathBuf>,
     evaluation_values: Option<std::path::PathBuf>,
 }
 
@@ -138,6 +140,7 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
     let mut unit_values = None;
     let mut proof_values = None;
     let mut group_values = None;
+    let mut challenge_values = None;
     let mut evaluation_values = None;
     let mut filtered = Vec::with_capacity(args.len());
     let mut index = 0;
@@ -176,6 +179,17 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
                     ));
                 }
             }
+            "--challenge-values" => {
+                index += 1;
+                let value = args.get(index).ok_or_else(|| {
+                    ParseError::Invalid("missing --challenge-values value".to_owned())
+                })?;
+                if challenge_values.replace((*value).into()).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --challenge-values option".to_owned(),
+                    ));
+                }
+            }
             "--evaluation-values" => {
                 index += 1;
                 let value = args.get(index).ok_or_else(|| {
@@ -196,6 +210,7 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
         unit_values,
         proof_values,
         group_values,
+        challenge_values,
         evaluation_values,
     })
 }
@@ -212,6 +227,7 @@ fn load_witness_auxiliary_inputs(
     unit_values_input: Option<&Path>,
     proof_values_input: Option<&Path>,
     group_values_input: Option<&Path>,
+    challenge_values_input: Option<&Path>,
     evaluation_values_input: Option<&Path>,
 ) -> Result<ProveWitnessAuxiliaryInputs, String> {
     Ok(ProveWitnessAuxiliaryInputs {
@@ -227,11 +243,14 @@ fn load_witness_auxiliary_inputs(
             Some(path) => read_packed_extension_values(path, "group values")?,
             None => Vec::new(),
         },
+        challenges: match challenge_values_input {
+            Some(path) => read_packed_extension_values(path, "challenge values")?,
+            None => Vec::new(),
+        },
         evaluations: match evaluation_values_input {
             Some(path) => read_packed_extension_values(path, "evaluation values")?,
             None => Vec::new(),
         },
-        ..ProveWitnessAuxiliaryInputs::default()
     })
 }
 

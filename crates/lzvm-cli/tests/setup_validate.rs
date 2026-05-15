@@ -435,6 +435,29 @@ fn sample_unit_value_regular_constraint_program() -> ConstraintProgram {
     }
 }
 
+fn sample_challenge_regular_constraint_program() -> ConstraintProgram {
+    ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 0,
+            first_row: 0,
+            last_row: 0,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 8,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "challenge regular constraint".to_owned(),
+        }],
+        ops: vec![0],
+        args: vec![1, 0, 12, 0, 0, 1, 0, 0],
+        numbers: Vec::new(),
+    }
+}
+
 fn sample_program_file_with_regular_constraints(program: ConstraintProgram) -> Vec<u8> {
     sample_program_file_with_expression_and_regular_constraints(
         sample_expression_program(),
@@ -1368,6 +1391,18 @@ fn write_setup_directory_with_unit_value_constraint(root: &Path) {
     }
 }
 
+fn write_setup_directory_with_challenge_constraint(root: &Path) {
+    write_global_files(root);
+    let layout = read_key_directory_layout(root).expect("layout should parse");
+    for unit in &layout.units {
+        write_unit_files_with_verifier_info_and_regular_constraints(
+            unit,
+            sample_verifier_info_json(),
+            sample_challenge_regular_constraint_program(),
+        );
+    }
+}
+
 fn write_setup_directory_with_group_value(root: &Path) {
     write_global_files_with_info(root, sample_global_info_json_with_group_value());
     let layout = read_key_directory_layout(root).expect("layout should parse");
@@ -1431,6 +1466,14 @@ fn write_execution_ready_setup_directory_with_unit_value(root: &Path) {
 
 fn write_execution_ready_setup_directory_with_unit_value_constraint(root: &Path) {
     write_setup_directory_with_unit_value_constraint(root);
+    let root = root.to_str().expect("path should be utf-8");
+    run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
+    run_setup_command(&["setup", "write-pcs-directory", root]);
+    run_setup_command(&["setup", "write-pcs-material-directory", root]);
+}
+
+fn write_execution_ready_setup_directory_with_challenge_constraint(root: &Path) {
+    write_setup_directory_with_challenge_constraint(root);
     let root = root.to_str().expect("path should be utf-8");
     run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
     run_setup_command(&["setup", "write-pcs-directory", root]);
@@ -2941,6 +2984,60 @@ fn passes_unit_values_to_witness_regular_constraints() {
             unit_values_path
                 .to_str()
                 .expect("unit values path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn passes_challenge_values_to_witness_regular_constraints() {
+    let dir = temp_dir("prove-witness-challenge-constraint");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_challenge_constraint(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let challenge_values_path = dir.join("challenge_values.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [13_u8]);
+    write_field_words(&challenge_values_path, &[14, 52, 53]);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let public_values_path = dir.join("public_values.json");
+    write_text(
+        &public_values_path,
+        &encode_public_values_json(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--save-outputs",
+            "--challenge-values",
+            challenge_values_path
+                .to_str()
+                .expect("challenge values path should be utf-8"),
             "--input-data",
             input_data.to_str().expect("input path should be utf-8"),
             dir.to_str().expect("path should be utf-8"),
