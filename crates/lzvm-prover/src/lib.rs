@@ -36,6 +36,7 @@ mod prove_fri_opening;
 mod prove_fri_polynomial;
 mod prove_witness;
 pub mod regular_constraints;
+pub mod setup_preflight;
 pub mod unit_values;
 pub mod verifier_eval;
 pub mod verifier_query;

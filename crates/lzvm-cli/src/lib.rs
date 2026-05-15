@@ -14,8 +14,8 @@ use lzvm_artifacts::hint_program::{
     encode_regular_hint_program, regular_hint_program_from_expression_info,
 };
 use lzvm_artifacts::key_directory::{
-    key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
-    read_key_directory_layout, validate_key_directory_layout, KeyDirectoryCatalog,
+    key_directory_catalog_digest_hex, read_key_directory_catalog, read_key_directory_layout,
+    validate_key_directory_layout, KeyDirectoryCatalog,
 };
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_material};
 use lzvm_artifacts::pcs_plan::{
@@ -48,6 +48,7 @@ use lzvm_prover::pcs_query_plan::{
     uses_transcript_pcs_query_plan_inputs, validate_pcs_query_plan_segments,
 };
 use lzvm_prover::proof_preflight::validate_proof_public_values;
+use lzvm_prover::setup_preflight::validate_setup_preflight_hashes;
 use lzvm_prover::witness_commitment::load_witness_commitment_segments;
 use lzvm_prover::witness_opening::validate_witness_opening_segments;
 use lzvm_prover::{derive_prove_schedule, ProveSchedule};
@@ -387,13 +388,6 @@ fn verify_setup_preflight(
             return 1;
         }
     };
-    let setup_hash = match key_directory_catalog_digest(&catalog) {
-        Ok(setup_hash) => setup_hash,
-        Err(error) => {
-            let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
-            return 1;
-        }
-    };
     let proof = match read_proof_artifact_file(proof_bin) {
         Ok(proof) => proof,
         Err(error) => {
@@ -408,18 +402,7 @@ fn verify_setup_preflight(
             return 1;
         }
     };
-    if proof.setup_hash != public_values.setup_hash {
-        let _ = writeln!(stderr, "verify setup-preflight failed: setup hash mismatch");
-        return 1;
-    }
-    if proof.setup_hash != setup_hash {
-        let _ = writeln!(
-            stderr,
-            "verify setup-preflight failed: setup catalog fingerprint mismatch"
-        );
-        return 1;
-    }
-    let public_report = match validate_proof_public_values(&proof, &public_values) {
+    let public_report = match validate_setup_preflight_hashes(&catalog, &proof, &public_values) {
         Ok(report) => report,
         Err(error) => {
             let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
@@ -469,7 +452,7 @@ fn verify_setup_preflight(
     }
 
     let _ = writeln!(stdout, "status=ok");
-    let _ = writeln!(stdout, "units={}", catalog.units.len());
+    let _ = writeln!(stdout, "units={}", public_report.unit_count);
     let _ = writeln!(stdout, "segments={}", public_report.segment_count);
     let _ = writeln!(stdout, "public_values={}", public_report.public_value_count);
     0
