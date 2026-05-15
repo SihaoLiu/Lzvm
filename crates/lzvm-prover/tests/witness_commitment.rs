@@ -4,9 +4,9 @@ use lzvm_field::{
     coset_extend_evaluations, poseidon2_hash_16, poseidon2_hash_8, DomainError, Felt,
 };
 use lzvm_prover::witness_commitment::{
-    commit_witness_stage_leaves, commit_witness_trace_stages, open_witness_stage_commitment,
-    verify_witness_stage_opening_root, WitnessStageCommitmentError, WitnessStageOpeningError,
-    WitnessTraceCommitmentError,
+    commit_witness_stage_leaves, commit_witness_trace_stages, decode_witness_stage_leaf_values,
+    open_witness_stage_commitment, verify_witness_stage_opening_root, WitnessStageCommitmentError,
+    WitnessStageOpeningError, WitnessTraceCommitmentError,
 };
 use lzvm_prover::witness_commitment::{extend_witness_stage_leaves, WitnessStageLeafError};
 use lzvm_prover::witness_layout::{derive_witness_trace_layout, WitnessTraceLayoutError};
@@ -172,6 +172,29 @@ fn extends_witness_stage_values_into_row_major_leaves() {
     assert_eq!(leaves.extended_row_count(), 4);
     assert_eq!(leaves.column_count(), 2);
     assert_eq!(decode_words(leaves.bytes()), expected);
+}
+
+#[test]
+fn decodes_extended_witness_stage_values_for_expression_inputs() {
+    let unit = sample_unit(2, vec![2]);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let trace =
+        parse_witness_trace(&encode_values(&[5, 9, 1, 9]), 2, 2).expect("trace should parse");
+    let stage = layout.stage_trace(&trace, 1).expect("stage should extract");
+    let leaves =
+        extend_witness_stage_leaves(&stage, 1, 2).expect("witness stage leaves should extend");
+
+    let values = decode_witness_stage_leaf_values(&leaves).expect("extended values should decode");
+
+    let column_0 = coset_extend_evaluations(&[Felt::from_u64(5), Felt::from_u64(1)], 1, 2)
+        .expect("column should extend");
+    let column_1 = coset_extend_evaluations(&[Felt::from_u64(9), Felt::from_u64(9)], 1, 2)
+        .expect("column should extend");
+    let expected = (0..4)
+        .flat_map(|row| [column_0[row], column_1[row]])
+        .collect::<Vec<_>>();
+
+    assert_eq!(values, expected);
 }
 
 #[test]

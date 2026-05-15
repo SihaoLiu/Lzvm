@@ -538,6 +538,15 @@ pub fn open_witness_stage_commitment(
     })
 }
 
+pub fn decode_witness_stage_leaf_values(
+    leaves: &WitnessStageLeaves,
+) -> Result<Vec<Felt>, WitnessStageCommitmentError> {
+    Ok(read_witness_stage_leaf_rows(leaves)?
+        .into_iter()
+        .flatten()
+        .collect())
+}
+
 pub fn verify_witness_stage_opening_root(
     root: [Felt; HASH_WORDS],
     arity: usize,
