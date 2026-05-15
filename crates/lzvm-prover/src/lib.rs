@@ -29,6 +29,7 @@ pub mod pcs_fri;
 pub mod pcs_material_manifest;
 pub mod pcs_query_plan;
 pub mod pcs_transcript;
+pub mod pcs_transcript_segments;
 pub mod proof_preflight;
 pub mod proof_values;
 mod prove_fri_opening;

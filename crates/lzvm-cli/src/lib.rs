@@ -28,7 +28,7 @@ use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file,
 };
 use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
-use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact, ProofSegment};
+use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValues};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
 use lzvm_artifacts::setup_info::{
@@ -64,6 +64,7 @@ use lzvm_prover::pcs_query_plan::{
 use lzvm_prover::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptSegmentInputs,
 };
+use lzvm_prover::pcs_transcript_segments::derive_pcs_transcript_challenges_from_proof_segments;
 use lzvm_prover::proof_preflight::validate_proof_public_values;
 use lzvm_prover::proof_values::{flatten_pcs_proof_values, load_pcs_proof_values_from_segments};
 use lzvm_prover::unit_values::load_unit_values_from_segments;
@@ -550,14 +551,6 @@ fn transcript_public_value_fields(
         .map_err(|error| format!("invalid PCS transcript public value: {error}"))
 }
 
-fn collect_witness_commitment_segments(
-    schedule: &ProveSchedule,
-    proof: &ProofArtifact,
-) -> Result<Vec<ProofSegment>, String> {
-    load_witness_commitment_segments(&schedule.units, &proof.segments)
-        .map_err(|error| error.to_string())
-}
-
 fn validate_witness_opening_segment(
     schedule: &ProveSchedule,
     proof: &ProofArtifact,
@@ -867,72 +860,13 @@ fn derive_global_constraint_challenges(
         return Ok(Vec::new());
     }
 
-    let material_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
-        .ok_or_else(|| "missing PCS material manifest segment".to_owned())?;
-    let query_plan =
-        load_pcs_query_plan_from_segments(&proof.segments).map_err(|error| error.to_string())?;
-    let material = parse_pcs_material_manifest_segment(&material_segment.data)
-        .map_err(|error| format!("invalid PCS material manifest segment: {error}"))?;
-    let fri = load_pcs_fri_opening_segment_from_segments(&proof.segments)
-        .map_err(|error| error.to_string())?;
-    let witness_segments = collect_witness_commitment_segments(schedule, proof)?;
     let public_value_fields = transcript_public_value_fields(public_values)?;
-    let mut challenges = Vec::new();
-
-    for query_unit in &query_plan.units {
-        let unit_index = usize::try_from(query_unit.unit_index)
-            .map_err(|_| "global constraint challenge unit index overflow".to_owned())?;
-        let unit = schedule
-            .units
-            .get(unit_index)
-            .ok_or_else(|| format!("global constraint challenge mismatch for unit {unit_index}"))?;
-        let material_unit = material
-            .units
-            .iter()
-            .find(|unit| unit.unit_index == query_unit.unit_index)
-            .ok_or_else(|| format!("global constraint challenge mismatch for unit {unit_index}"))?;
-        let witness_segment_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
-            .checked_add(query_unit.unit_index)
-            .ok_or_else(|| "global constraint challenge witness id overflow".to_owned())?;
-        let witness_segment = witness_segments
-            .iter()
-            .find(|segment| segment.id == witness_segment_id)
-            .ok_or_else(|| format!("global constraint challenge mismatch for unit {unit_index}"))?;
-        let witness = parse_witness_commitment_segment(&witness_segment.data).map_err(|error| {
-            format!("invalid witness commitment segment for unit {unit_index}: {error}")
-        })?;
-        let evaluation_unit =
-            load_pcs_evaluation_unit_from_segments(unit_index, unit, &proof.segments)
-                .map_err(|error| error.to_string())?;
-        let fri_unit = fri
-            .units
-            .iter()
-            .find(|unit| unit.unit_index == query_unit.unit_index)
-            .ok_or_else(|| format!("global constraint challenge mismatch for unit {unit_index}"))?;
-        let unit_values = load_unit_values(schedule, proof, unit_index)?;
-        let mut unit_challenges =
-            derive_pcs_transcript_challenges_from_segments(PcsTranscriptSegmentInputs {
-                unit_index,
-                unit,
-                material: material_unit,
-                public_values: &public_value_fields,
-                unit_values: &unit_values,
-                witness: &witness,
-                evaluations: &evaluation_unit,
-                fri: fri_unit,
-                root_challenge_draws: &unit.transcript_root_challenge_draws,
-                evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
-            })
-            .map_err(|error| {
-                format!("derive global constraint transcript challenges failed: {error}")
-            })?;
-        challenges.append(&mut unit_challenges);
-    }
-
-    Ok(challenges)
+    derive_pcs_transcript_challenges_from_proof_segments(
+        schedule,
+        &public_value_fields,
+        &proof.segments,
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn load_unit_values(
