@@ -78,14 +78,6 @@ cargo run -p lzvm-cli -- prove inputs [options] <setup-dir> <output-dir> <witnes
 
 This command derives the native proof run plan, validates witness library, guest image, and optional public-input paths, parses witness and guest image metadata, and prints stable input fingerprints. It is an execution-input preflight check, not a full proof constructor.
 
-Encode setup metadata JSON into the repository-owned binary setup format:
-
-```sh
-cargo run -p lzvm-cli -- setup write-info-bin <setup-info-json> <out-setup-info-bin>
-```
-
-This command validates the JSON metadata and writes the canonical binary setup metadata used by native setup commands.
-
 Generate a native PCS setup-plan artifact from binary setup metadata:
 
 ```sh
@@ -149,39 +141,6 @@ cargo run -p lzvm-cli -- setup write-verkey-native <setup-info-bin> <consttree> 
 ```
 
 This command reads binary setup metadata and a raw constant-tree artifact, extracts the tree root through the native artifact parser, writes the binary verification-key artifact through a staging path, and validates it before publishing.
-
-Generate the same raw artifact from JSON setup metadata and a native binary fixed-column source:
-
-```sh
-cargo run -p lzvm-cli -- setup write-fixed-bin <setup-info-json> <columns-bin> <out-const>
-```
-
-This bridge path keeps existing setup metadata fixtures usable while fixed-column values move through the binary artifact codec.
-
-Generate the same raw artifact from fixed-column source JSON:
-
-```sh
-cargo run -p lzvm-cli -- setup write-fixed <setup-info-json> <columns-json> <out-const>
-```
-
-This JSON path is kept for compact fixtures and debugging. The source shape is:
-
-```json
-{
-  "group_name": "group-a",
-  "unit_name": "unit-a",
-  "row_count": 4,
-  "columns": [
-    {
-      "name": "main.left",
-      "dimensions": [1],
-      "values": [1, 2, 3, 4]
-    }
-  ]
-}
-```
-
-The command writes through a staging path, validates the staged artifact against the setup metadata, and then publishes the final output path.
 
 Publish a raw constant-tree artifact after validating its setup metadata and expected root:
 
