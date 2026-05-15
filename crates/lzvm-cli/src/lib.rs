@@ -4,7 +4,9 @@ use std::path::Path;
 use lzvm_artifacts::fixed::{
     read_fixed_columns_file, read_fixed_columns_file_for_setup, FixedColumn, FixedColumns,
 };
-use lzvm_artifacts::key_directory::read_key_directory_catalog;
+use lzvm_artifacts::key_directory::{
+    read_key_directory_catalog, read_key_directory_layout, validate_key_directory_layout,
+};
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, read_unit_setup_info_file,
 };
@@ -64,6 +66,18 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             )
         }
         ["setup", "write-base-native", ..] => write_base_native_usage(stderr),
+        ["setup", "write-base-directory", "--backend", backend, setup_dir] => {
+            let Some(backend) =
+                parse_fixed_extension_backend(backend, "setup native base directory write", stderr)
+            else {
+                return 1;
+            };
+            write_base_directory(setup_dir, backend, stdout, stderr)
+        }
+        ["setup", "write-base-directory", setup_dir] => {
+            write_base_directory(setup_dir, FixedExtensionBackend::Cpu, stdout, stderr)
+        }
+        ["setup", "write-base-directory", ..] => write_base_directory_usage(stderr),
         ["setup", "write-const-tree", setup_info_bin, tree_bin, root_bin, out_consttree] => {
             write_constant_tree(
                 setup_info_bin,
@@ -357,6 +371,105 @@ fn write_base_native(
     let _ = writeln!(stdout, "root={}", format_root(&tree_report.root));
     let _ = writeln!(stdout, "fixed_output={}", fixed_report.path.display());
     let _ = writeln!(stdout, "tree_output={}", tree_report.path.display());
+    0
+}
+
+fn write_base_directory(
+    setup_dir: &str,
+    backend: FixedExtensionBackend,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let layout = match read_key_directory_layout(setup_dir) {
+        Ok(layout) => layout,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup native base directory write failed: {error}");
+            return 1;
+        }
+    };
+    if let Err(error) = validate_key_directory_layout(&layout) {
+        let _ = writeln!(stderr, "setup native base directory write failed: {error}");
+        return 1;
+    }
+
+    let mut fixed_bytes = 0_u64;
+    let mut tree_bytes = 0_u64;
+    for unit in &layout.units {
+        let setup_path = match unit.setup_info() {
+            Some(path) => path,
+            None => {
+                let _ = writeln!(
+                    stderr,
+                    "setup native base directory write failed: missing unit setup metadata path"
+                );
+                return 1;
+            }
+        };
+        let setup = match read_unit_setup_info_file(&setup_path) {
+            Ok(setup) => setup,
+            Err(error) => {
+                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
+                return 1;
+            }
+        };
+        let group_name = unit.group_name.as_deref().unwrap_or("raw");
+        let unit_name = unit.unit_name.as_deref().unwrap_or("unit");
+        let columns = match read_fixed_columns_file_for_setup(
+            &unit.fixed_columns,
+            &setup,
+            group_name,
+            unit_name,
+        ) {
+            Ok(columns) => columns,
+            Err(error) => {
+                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
+                return 1;
+            }
+        };
+        let expected_root = match read_verification_key_binary_file(unit.verification_key_binary())
+        {
+            Ok(root) => root,
+            Err(error) => {
+                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
+                return 1;
+            }
+        };
+        let tree =
+            match build_constant_tree_from_fixed_columns_with_backend(&columns, &setup, backend) {
+                Ok(tree) => tree,
+                Err(error) => {
+                    let _ = writeln!(stderr, "setup native base directory write failed: {error}");
+                    return 1;
+                }
+            };
+        let fixed_report = match write_base_fixed_columns(&unit.fixed_columns, &columns, &setup) {
+            Ok(report) => report,
+            Err(error) => {
+                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
+                return 1;
+            }
+        };
+        let tree_report = match write_base_constant_tree(
+            &unit.constant_tree,
+            &tree,
+            &setup,
+            Some(&expected_root),
+        ) {
+            Ok(report) => report,
+            Err(error) => {
+                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
+                return 1;
+            }
+        };
+
+        fixed_bytes = fixed_bytes.saturating_add(fixed_report.bytes_written);
+        tree_bytes = tree_bytes.saturating_add(tree_report.bytes_written);
+    }
+
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "units={}", layout.units.len());
+    let _ = writeln!(stdout, "fixed_bytes={fixed_bytes}");
+    let _ = writeln!(stdout, "tree_bytes={tree_bytes}");
     0
 }
 
@@ -663,6 +776,14 @@ fn write_base_native_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
         "usage: lzvm setup write-base-native [--backend cpu|cuda] <setup-info-bin> <columns-bin> <out-const> <out-consttree>"
+    );
+    2
+}
+
+fn write_base_directory_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm setup write-base-directory [--backend cpu|cuda] <setup-dir>"
     );
     2
 }

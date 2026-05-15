@@ -53,6 +53,14 @@ cargo run -p lzvm-cli -- setup write-base-native [--backend cpu|cuda] <setup-inf
 
 This command reads binary setup metadata plus sectioned or raw fixed-column source data, writes the raw fixed-column artifact, builds the native GL constant tree, validates both outputs through the setup crate, and publishes them through staging paths. The default backend is `cpu`; `cuda` is available when the CLI is built with the `cuda` feature.
 
+Regenerate native base fixed-column and constant-tree artifacts for a setup directory:
+
+```sh
+cargo run -p lzvm-cli -- setup write-base-directory [--backend cpu|cuda] <setup-dir>
+```
+
+This command derives units from the setup directory metadata, reads each unit's setup metadata, fixed columns, and binary verification key, then rewrites the raw fixed-column artifact and publishes a validated native constant tree for every unit. The default backend is `cpu`; `cuda` is available when the CLI is built with the `cuda` feature.
+
 Generate the same raw artifact from JSON setup metadata and a native binary fixed-column source:
 
 ```sh

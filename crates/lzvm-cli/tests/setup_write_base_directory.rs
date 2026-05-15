@@ -1,0 +1,361 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use lzvm_artifacts::constraint_program::{
+    encode_global_constraint_program, GlobalConstraintProgram,
+};
+use lzvm_artifacts::expression_program::{
+    encode_expression_program, ExpressionEntry, ExpressionProgram,
+};
+use lzvm_artifacts::fixed::{encode_raw_fixed_columns, FixedColumn, FixedColumns};
+use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyUnitPaths};
+use lzvm_artifacts::setup_info::{parse_unit_setup_info_json, UnitSetupInfo};
+use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
+use lzvm_cli::run_cli;
+use lzvm_setup::build_constant_tree_from_fixed_columns;
+
+fn sample_global_info_json() -> &'static str {
+    r#"{
+        "name": "sample-program",
+        "air_groups": ["group-a"],
+        "airs": [[{"name": "unit-a", "num_rows": 2}]],
+        "curve": "None",
+        "latticeSize": 368,
+        "aggTypes": [[]],
+        "nPublics": 0,
+        "numChallenges": [1],
+        "numProofValues": [],
+        "publicsMap": [],
+        "transcriptArity": 4
+    }"#
+}
+
+fn sample_setup_info_json() -> &'static str {
+    r#"{
+        "nStages": 1,
+        "nConstants": 2,
+        "nPublics": 0,
+        "nConstraints": 0,
+        "qDeg": 3,
+        "openingPoints": [0],
+        "mapSectionsN": {
+            "const": 2,
+            "cm1": 1,
+            "cm2": 1
+        },
+        "constPolsMap": [
+            {"stage": 0, "name": "main.left", "dim": 1, "polsMapId": 0, "stageId": 0},
+            {"stage": 0, "name": "main.right", "dim": 1, "polsMapId": 1, "stageId": 1}
+        ],
+        "challengesMap": [],
+        "evMap": [],
+        "boundaries": [],
+        "starkStruct": {
+            "nBits": 1,
+            "nBitsExt": 2,
+            "nQueries": 1,
+            "steps": [
+                {"nBits": 2},
+                {"nBits": 1}
+            ],
+            "hashCommits": true,
+            "lastLevelVerification": 2,
+            "powBits": 0,
+            "merkleTreeArity": 4,
+            "verificationHashType": "GL",
+            "transcriptArity": 4,
+            "merkleTreeCustom": true
+        }
+    }"#
+}
+
+fn sample_expression_info_json() -> &'static str {
+    r#"{
+        "hintsInfo": [],
+        "expressionsCode": [
+            {
+                "expId": 7,
+                "stage": 2,
+                "line": "query-expression",
+                "tmpUsed": 0,
+                "code": []
+            }
+        ],
+        "constraints": []
+    }"#
+}
+
+fn sample_verifier_info_json() -> &'static str {
+    r#"{
+        "qVerifier": {
+            "tmpUsed": 1,
+            "code": [
+                {
+                    "op": "copy",
+                    "dest": {"type": "tmp", "id": 0, "dim": 3},
+                    "src": [{"type": "number", "value": "1", "dim": 1}]
+                }
+            ]
+        },
+        "queryVerifier": {
+            "expId": 7,
+            "stage": 2,
+            "tmpUsed": 1,
+            "line": "query-expression",
+            "code": [
+                {
+                    "op": "copy",
+                    "dest": {"type": "tmp", "id": 0, "dim": 3},
+                    "src": [{"type": "eval", "id": 0, "dim": 3}]
+                }
+            ]
+        }
+    }"#
+}
+
+fn sample_expression_program() -> ExpressionProgram {
+    ExpressionProgram {
+        max_tmp1: 1,
+        max_tmp3: 1,
+        max_args: 1,
+        max_ops: 1,
+        entries: vec![ExpressionEntry {
+            expression_id: 7,
+            destination_dimension: 1,
+            destination_id: 0,
+            stage: 1,
+            temp1_count: 0,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 1,
+            args_offset: 0,
+            source_line: "program-line".to_owned(),
+        }],
+        ops: vec![1],
+        args: vec![2],
+        numbers: vec![],
+    }
+}
+
+fn sample_columns() -> FixedColumns {
+    FixedColumns {
+        group_name: "group-a".to_owned(),
+        unit_name: "unit-a".to_owned(),
+        row_count: 2,
+        columns: vec![
+            FixedColumn {
+                name: "main.left".to_owned(),
+                dimensions: vec![1],
+                values: vec![5, 1],
+            },
+            FixedColumn {
+                name: "main.right".to_owned(),
+                dimensions: vec![1],
+                values: vec![9, 9],
+            },
+        ],
+    }
+}
+
+fn temp_dir(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "lzvm-cli-write-base-directory-{}-{name}",
+        std::process::id()
+    ))
+}
+
+fn write_bytes(path: &Path, bytes: impl AsRef<[u8]>) {
+    fs::create_dir_all(path.parent().expect("path should have a parent"))
+        .expect("fixture directory should be created");
+    fs::write(path, bytes).expect("fixture should be written");
+}
+
+fn write_text(path: &Path, value: &str) {
+    write_bytes(path, value.as_bytes());
+}
+
+fn root_from_tree(tree: &[u8]) -> VerificationKeyRoot {
+    VerificationKeyRoot::FieldElements(
+        tree[tree.len() - 32..]
+            .chunks_exact(8)
+            .map(|chunk| u64::from_le_bytes(chunk.try_into().expect("slice length checked")))
+            .collect(),
+    )
+}
+
+fn write_global_files(root: &Path) {
+    fs::create_dir_all(root).expect("fixture root should be created");
+    write_text(
+        &root.join("pilout.globalInfo.json"),
+        sample_global_info_json(),
+    );
+    write_text(&root.join("pilout.globalConstraints.json"), "{}");
+    write_bytes(
+        &root.join("pilout.globalConstraints.bin"),
+        encode_global_constraint_program(&GlobalConstraintProgram {
+            entries: vec![],
+            ops: vec![],
+            args: vec![],
+            numbers: vec![],
+        })
+        .expect("global constraints should encode"),
+    );
+}
+
+fn write_unit_files(
+    paths: &KeyUnitPaths,
+    setup: &UnitSetupInfo,
+    raw_fixed: &[u8],
+    root: &VerificationKeyRoot,
+) {
+    if let Some(path) = paths.setup_info() {
+        write_text(&path, sample_setup_info_json());
+    }
+    if let Some(path) = paths.expression_info() {
+        write_text(&path, sample_expression_info_json());
+    }
+    if let Some(path) = paths.verifier_info() {
+        write_text(&path, sample_verifier_info_json());
+    }
+
+    let program =
+        encode_expression_program(&sample_expression_program()).expect("program should encode");
+    if let Some(path) = paths.expression_program() {
+        write_bytes(&path, &program);
+    }
+    if let Some(path) = paths.verifier_program() {
+        write_bytes(&path, &program);
+    }
+
+    write_text(&paths.verification_key_json(), "[1,2,3,4]");
+    write_bytes(
+        &paths.verification_key_binary(),
+        encode_verification_key_binary(root).expect("root should encode"),
+    );
+    write_bytes(&paths.fixed_columns, raw_fixed);
+
+    let expected_len = lzvm_artifacts::fixed::expected_raw_fixed_column_byte_count(setup)
+        .expect("raw fixed length should derive");
+    assert_eq!(raw_fixed.len(), expected_len);
+}
+
+fn create_key_directory(name: &str) -> (PathBuf, VerificationKeyRoot) {
+    let dir = temp_dir(name);
+    let _ = fs::remove_dir_all(&dir);
+    write_global_files(&dir);
+
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let columns = sample_columns();
+    let raw_fixed = encode_raw_fixed_columns(&columns, &setup).expect("raw fixed should encode");
+    let tree = build_constant_tree_from_fixed_columns(&columns, &setup).expect("tree should build");
+    let root = root_from_tree(&tree);
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    for unit in &layout.units {
+        write_unit_files(unit, &setup, &raw_fixed, &root);
+    }
+
+    (dir, root)
+}
+
+#[test]
+fn writes_base_directory_constant_trees_for_all_units() {
+    let (dir, root) = create_key_directory("valid");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "write-base-directory",
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit_count = layout.units.len();
+    let mut tree_bytes = 0_u64;
+    let mut fixed_bytes = 0_u64;
+    for unit in &layout.units {
+        let tree = fs::read(&unit.constant_tree).expect("constant tree should be written");
+        tree_bytes += u64::try_from(tree.len()).expect("tree length should fit");
+        fixed_bytes += fs::metadata(&unit.fixed_columns)
+            .expect("fixed output should exist")
+            .len();
+        assert_eq!(root_from_tree(&tree), root);
+    }
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nunits={unit_count}\nfixed_bytes={fixed_bytes}\ntree_bytes={tree_bytes}\n"
+        )
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn writes_base_directory_with_cuda_backend_option() {
+    let (cpu_dir, _) = create_key_directory("cpu");
+    let (cuda_dir, _) = create_key_directory("cuda");
+
+    let mut cpu_stdout = Vec::new();
+    let mut cpu_stderr = Vec::new();
+    let cpu_code = run_cli(
+        &[
+            "setup",
+            "write-base-directory",
+            cpu_dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut cpu_stdout,
+        &mut cpu_stderr,
+    );
+    let mut cuda_stdout = Vec::new();
+    let mut cuda_stderr = Vec::new();
+    let cuda_code = run_cli(
+        &[
+            "setup",
+            "write-base-directory",
+            "--backend",
+            "cuda",
+            cuda_dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut cuda_stdout,
+        &mut cuda_stderr,
+    );
+
+    let cpu_layout = read_key_directory_layout(&cpu_dir).expect("cpu layout should derive");
+    let cuda_layout = read_key_directory_layout(&cuda_dir).expect("cuda layout should derive");
+    for (cpu_unit, cuda_unit) in cpu_layout.units.iter().zip(&cuda_layout.units) {
+        let cpu_tree = fs::read(&cpu_unit.constant_tree).expect("cpu tree should be written");
+        let cuda_tree = fs::read(&cuda_unit.constant_tree).expect("cuda tree should be written");
+        assert_eq!(cuda_tree, cpu_tree);
+    }
+    fs::remove_dir_all(&cpu_dir).expect("cpu fixture directory should be removed");
+    fs::remove_dir_all(&cuda_dir).expect("cuda fixture directory should be removed");
+
+    assert_eq!(cpu_code, 0);
+    assert_eq!(cuda_code, 0);
+    assert!(cpu_stderr.is_empty());
+    assert!(cuda_stderr.is_empty());
+}
+
+#[test]
+fn reports_usage_for_missing_base_directory_path() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(&["setup", "write-base-directory"], &mut stdout, &mut stderr);
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "usage: lzvm setup write-base-directory [--backend cpu|cuda] <setup-dir>\n"
+    );
+}
