@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use lzvm_artifacts::constraint_program::{
     encode_global_constraint_program, GlobalConstraintProgram,
@@ -19,6 +20,11 @@ use lzvm_artifacts::public_values::{
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use lzvm_artifacts::witness_library::parse_witness_library;
 use lzvm_cli::run_cli;
+use lzvm_prover::{
+    derive_prove_execution_plan, run_prove_witness_commitments, GpuRunOptions,
+    ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest, ProveRunOptions,
+    ProveRunRequest,
+};
 
 fn sample_global_info_json() -> &'static str {
     r#"{
@@ -217,6 +223,60 @@ fn write_bytes(path: &Path, value: impl AsRef<[u8]>) {
     fs::create_dir_all(path.parent().expect("path should have a parent"))
         .expect("fixture directory should be created");
     fs::write(path, value).expect("fixture file should be written");
+}
+
+fn build_shared_library(dir: &Path, name: &str, source: &str) -> PathBuf {
+    fs::create_dir_all(dir).expect("fixture directory should be created");
+    let source_path = dir.join(format!("{name}.c"));
+    let library_path = dir.join(format!("lib{name}.so"));
+    fs::write(&source_path, source).expect("fixture source should be written");
+    let status = Command::new("cc")
+        .arg("-shared")
+        .arg("-fPIC")
+        .arg(&source_path)
+        .arg("-o")
+        .arg(&library_path)
+        .status()
+        .expect("cc should run");
+    assert!(status.success(), "cc should build the fixture library");
+    library_path
+}
+
+fn sample_witness_source() -> &'static str {
+    r#"#include <stddef.h>
+typedef struct {
+    const unsigned char *input_ptr;
+    size_t input_len;
+    unsigned char *output_ptr;
+    size_t output_len;
+} LzvmWitnessCall;
+typedef struct {
+    int status;
+    size_t produced_len;
+} LzvmWitnessResult;
+static void write_u64_le(unsigned char *out, unsigned long long value) {
+    for (size_t i = 0; i < 8; i++) {
+        out[i] = (unsigned char)((value >> (i * 8)) & 0xff);
+    }
+}
+unsigned int lzvm_witness_abi_version(void) { return 1; }
+int lzvm_witness_compute(const LzvmWitnessCall *call, LzvmWitnessResult *result) {
+    const size_t rows = 2;
+    const size_t columns = 2;
+    const size_t word_bytes = 8;
+    const size_t element_count = rows * columns;
+    if (!call || !result || call->output_len < element_count * word_bytes) {
+        return -1;
+    }
+    unsigned long long seed = call->input_len > 0 ? call->input_ptr[0] : 0;
+    for (size_t index = 0; index < element_count; index++) {
+        write_u64_le(call->output_ptr + index * word_bytes, seed + index + 1);
+    }
+    result->status = 0;
+    result->produced_len = element_count * word_bytes;
+    return 0;
+}
+"#
 }
 
 fn write_global_files(root: &Path) {
@@ -519,6 +579,90 @@ fn prints_prove_inputs_for_setup_directory() {
             guest_image.display(),
             format_hash(&guest_image_info.digest),
             public_inputs.display()
+        )
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn runs_prove_witness_commitments_for_setup_directory() {
+    let dir = temp_dir("prove-witness");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan {
+            input_data: Some(input_data.clone()),
+            partition_count: 1,
+            partition_ids: vec![0],
+            worker_index: 0,
+        }),
+        options: ProveRunOptions::default_for_output(output_dir.clone()),
+        gpu: GpuRunOptions::default(),
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        request,
+        ProveExecutionInputArtifacts {
+            witness_library: witness_library.clone(),
+            guest_image: guest_image.clone(),
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let output = run_prove_witness_commitments(&plan, 0).expect("witness commitments should run");
+    let mut expected_stages = String::new();
+    for commitment in output.stage_commitments().commitments() {
+        let root = commitment
+            .root()
+            .iter()
+            .map(|value| value.to_u64().to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        expected_stages.push_str(&format!(
+            "stage_{}_root={root}\nstage_{}_tree_bytes={}\n",
+            commitment.stage_index(),
+            commitment.stage_index(),
+            commitment.tree_bytes().len()
+        ));
+    }
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data={}\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash}\nunit_index=0\ninput_bytes=1\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
+            input_data.display(),
+            output_dir.display(),
+            expected_stages
         )
     );
     assert!(stderr.is_empty());
