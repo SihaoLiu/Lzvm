@@ -6,12 +6,18 @@ use lzvm_artifacts::pcs_material_segment::{
     encode_pcs_material_manifest_segment, PcsMaterialManifestSegment,
     PcsMaterialManifestSegmentError, PcsMaterialManifestUnit, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
+use lzvm_artifacts::pcs_query_segment::{
+    encode_pcs_query_plan_segment, PcsQueryPlanSegment, PcsQueryPlanSegmentError, PcsQueryPlanUnit,
+    PCS_QUERY_PLAN_SEGMENT_ID,
+};
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
-    encode_witness_commitment_segment, WitnessCommitmentSegment, WitnessCommitmentSegmentError,
-    WitnessCommitmentStageSegment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+    encode_witness_commitment_segment, parse_witness_commitment_segment, WitnessCommitmentSegment,
+    WitnessCommitmentSegmentError, WitnessCommitmentStageSegment,
+    WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 
 use crate::witness_commitment::{
     commit_witness_trace_stages, WitnessTraceCommitmentError, WitnessTraceCommitments,
@@ -84,6 +90,30 @@ pub enum ProvePcsMaterialSegmentError {
         unit_index: usize,
     },
     Segment(PcsMaterialManifestSegmentError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProvePcsQueryPlanSegmentError {
+    MissingWitnessSegments,
+    InvalidWitnessSegment {
+        unit_index: usize,
+        source: WitnessCommitmentSegmentError,
+    },
+    UnitIndexOutOfRange {
+        unit_index: usize,
+        unit_count: usize,
+    },
+    WitnessUnitMismatch {
+        segment_unit_index: u32,
+        payload_unit_index: u32,
+    },
+    QueryCountExceedsDomain {
+        unit_index: usize,
+        query_count: u32,
+        domain_size: u64,
+    },
+    LengthOverflow,
+    Segment(PcsQueryPlanSegmentError),
 }
 
 impl fmt::Display for ProveWitnessCommitmentError {
@@ -174,6 +204,42 @@ impl fmt::Display for ProvePcsMaterialSegmentError {
     }
 }
 
+impl fmt::Display for ProvePcsQueryPlanSegmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingWitnessSegments => write!(f, "prove PCS query plan has no witness segments"),
+            Self::InvalidWitnessSegment { unit_index, source } => write!(
+                f,
+                "prove PCS query plan witness segment for unit {unit_index} is invalid: {source}"
+            ),
+            Self::UnitIndexOutOfRange {
+                unit_index,
+                unit_count,
+            } => write!(
+                f,
+                "prove PCS query plan unit index {unit_index} is outside unit count {unit_count}"
+            ),
+            Self::WitnessUnitMismatch {
+                segment_unit_index,
+                payload_unit_index,
+            } => write!(
+                f,
+                "prove PCS query plan witness unit mismatch: segment {segment_unit_index}, payload {payload_unit_index}"
+            ),
+            Self::QueryCountExceedsDomain {
+                unit_index,
+                query_count,
+                domain_size,
+            } => write!(
+                f,
+                "prove PCS query plan unit {unit_index} query count {query_count} exceeds domain size {domain_size}"
+            ),
+            Self::LengthOverflow => write!(f, "prove PCS query plan length overflow"),
+            Self::Segment(error) => write!(f, "prove PCS query plan encode failed: {error}"),
+        }
+    }
+}
+
 impl std::error::Error for ProveWitnessSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -192,6 +258,20 @@ impl std::error::Error for ProvePcsMaterialSegmentError {
     }
 }
 
+impl std::error::Error for ProvePcsQueryPlanSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidWitnessSegment { source, .. } => Some(source),
+            Self::Segment(error) => Some(error),
+            Self::MissingWitnessSegments
+            | Self::UnitIndexOutOfRange { .. }
+            | Self::WitnessUnitMismatch { .. }
+            | Self::QueryCountExceedsDomain { .. }
+            | Self::LengthOverflow => None,
+        }
+    }
+}
+
 impl From<WitnessCommitmentSegmentError> for ProveWitnessSegmentError {
     fn from(error: WitnessCommitmentSegmentError) -> Self {
         Self::Segment(error)
@@ -200,6 +280,12 @@ impl From<WitnessCommitmentSegmentError> for ProveWitnessSegmentError {
 
 impl From<PcsMaterialManifestSegmentError> for ProvePcsMaterialSegmentError {
     fn from(error: PcsMaterialManifestSegmentError) -> Self {
+        Self::Segment(error)
+    }
+}
+
+impl From<PcsQueryPlanSegmentError> for ProvePcsQueryPlanSegmentError {
+    fn from(error: PcsQueryPlanSegmentError) -> Self {
         Self::Segment(error)
     }
 }
@@ -338,6 +424,127 @@ pub fn build_pcs_material_manifest_segment(
         id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
         data: encode_pcs_material_manifest_segment(&manifest)?,
     })
+}
+
+pub fn build_pcs_query_plan_segment(
+    schedule: &ProveSchedule,
+    public_values_hash: [u8; 32],
+    material_segment: &ProofSegment,
+    witness_segments: &[ProofSegment],
+) -> Result<ProofSegment, ProvePcsQueryPlanSegmentError> {
+    if witness_segments.is_empty() {
+        return Err(ProvePcsQueryPlanSegmentError::MissingWitnessSegments);
+    }
+
+    let mut witness_segments = witness_segments.to_vec();
+    witness_segments.sort_by_key(|segment| segment.id);
+
+    let mut hasher = Sha256::new();
+    hasher.update(b"lzvm-pcs-query-plan-v1");
+    hasher.update(schedule.setup_hash);
+    hasher.update(public_values_hash);
+    hash_proof_segment(&mut hasher, material_segment)?;
+    for segment in &witness_segments {
+        hash_proof_segment(&mut hasher, segment)?;
+    }
+    let seed: [u8; 32] = hasher.finalize().into();
+
+    let mut units = Vec::with_capacity(witness_segments.len());
+    let mut seen_units = BTreeSet::new();
+    for segment in &witness_segments {
+        let unit_index_u32 = segment
+            .id
+            .checked_sub(WITNESS_COMMITMENT_SEGMENT_BASE_ID)
+            .ok_or(ProvePcsQueryPlanSegmentError::LengthOverflow)?;
+        let unit_index = usize::try_from(unit_index_u32)
+            .map_err(|_| ProvePcsQueryPlanSegmentError::LengthOverflow)?;
+        let unit = schedule.units.get(unit_index).ok_or(
+            ProvePcsQueryPlanSegmentError::UnitIndexOutOfRange {
+                unit_index,
+                unit_count: schedule.units.len(),
+            },
+        )?;
+        let witness = parse_witness_commitment_segment(&segment.data).map_err(|source| {
+            ProvePcsQueryPlanSegmentError::InvalidWitnessSegment { unit_index, source }
+        })?;
+        if witness.unit_index != unit_index_u32 {
+            return Err(ProvePcsQueryPlanSegmentError::WitnessUnitMismatch {
+                segment_unit_index: unit_index_u32,
+                payload_unit_index: witness.unit_index,
+            });
+        }
+        if !seen_units.insert(unit_index_u32) {
+            return Err(ProvePcsQueryPlanSegmentError::Segment(
+                PcsQueryPlanSegmentError::DuplicateUnitIndex {
+                    unit_index: unit_index_u32,
+                },
+            ));
+        }
+        units.push(PcsQueryPlanUnit {
+            unit_index: unit_index_u32,
+            queries: derive_unit_queries(
+                &seed,
+                unit_index_u32,
+                unit.query_count,
+                unit.extended_domain_size,
+            )?,
+        });
+    }
+
+    let query_plan = PcsQueryPlanSegment { units };
+    Ok(ProofSegment {
+        id: PCS_QUERY_PLAN_SEGMENT_ID,
+        data: encode_pcs_query_plan_segment(&query_plan)?,
+    })
+}
+
+fn derive_unit_queries(
+    seed: &[u8; 32],
+    unit_index: u32,
+    query_count: u32,
+    domain_size: u64,
+) -> Result<Vec<u64>, ProvePcsQueryPlanSegmentError> {
+    if u64::from(query_count) > domain_size {
+        return Err(ProvePcsQueryPlanSegmentError::QueryCountExceedsDomain {
+            unit_index: unit_index as usize,
+            query_count,
+            domain_size,
+        });
+    }
+    let mut queries = Vec::with_capacity(query_count as usize);
+    let mut seen = BTreeSet::new();
+    let mask = domain_size
+        .checked_sub(1)
+        .ok_or(ProvePcsQueryPlanSegmentError::LengthOverflow)?;
+    let mut draw = 0_u64;
+    while queries.len() < query_count as usize {
+        let mut hasher = Sha256::new();
+        hasher.update(seed);
+        hasher.update(unit_index.to_le_bytes());
+        hasher.update(draw.to_le_bytes());
+        let digest: [u8; 32] = hasher.finalize().into();
+        let raw = u64::from_le_bytes(digest[..8].try_into().expect("slice length checked"));
+        let query = raw & mask;
+        if seen.insert(query) {
+            queries.push(query);
+        }
+        draw = draw
+            .checked_add(1)
+            .ok_or(ProvePcsQueryPlanSegmentError::LengthOverflow)?;
+    }
+    Ok(queries)
+}
+
+fn hash_proof_segment(
+    hasher: &mut Sha256,
+    segment: &ProofSegment,
+) -> Result<(), ProvePcsQueryPlanSegmentError> {
+    hasher.update(segment.id.to_le_bytes());
+    let byte_count = u64::try_from(segment.data.len())
+        .map_err(|_| ProvePcsQueryPlanSegmentError::LengthOverflow)?;
+    hasher.update(byte_count.to_le_bytes());
+    hasher.update(Sha256::digest(&segment.data));
+    Ok(())
 }
 
 fn read_witness_input(pass: &ProvePassRequest) -> Result<Vec<u8>, ProveWitnessCommitmentError> {

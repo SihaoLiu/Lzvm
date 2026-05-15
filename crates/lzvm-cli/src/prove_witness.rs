@@ -6,9 +6,9 @@ use lzvm_artifacts::key_directory::read_key_directory_catalog;
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 use lzvm_prover::{
-    build_pcs_material_manifest_segment, build_witness_commitment_segment,
-    derive_prove_execution_plan, run_prove_witness_commitments, ProveExecutionInputArtifacts,
-    ProveSchedule, ProveWitnessCommitments,
+    build_pcs_material_manifest_segment, build_pcs_query_plan_segment,
+    build_witness_commitment_segment, derive_prove_execution_plan, run_prove_witness_commitments,
+    ProveExecutionInputArtifacts, ProveSchedule, ProveWitnessCommitments,
 };
 
 use crate::prove_plan::{parse_run_args, write_run_plan_summary, ParseError, ParsedRunArgs};
@@ -154,10 +154,17 @@ fn build_proof_bytes(
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
     let material_segment = build_pcs_material_manifest_segment(schedule)
         .map_err(|error| format!("build material manifest segment failed: {error}"))?;
+    let query_segment = build_pcs_query_plan_segment(
+        schedule,
+        public_values_hash,
+        &material_segment,
+        std::slice::from_ref(segment),
+    )
+    .map_err(|error| format!("build query plan segment failed: {error}"))?;
     let proof = ProofArtifact {
         setup_hash: schedule.setup_hash,
         public_values_hash,
-        segments: vec![material_segment, segment.clone()],
+        segments: vec![material_segment, query_segment, segment.clone()],
     };
     encode_proof_artifact(&proof)
         .map(Some)

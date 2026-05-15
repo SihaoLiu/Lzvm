@@ -16,6 +16,7 @@ use lzvm_artifacts::key_directory::{
 use lzvm_artifacts::pcs_material_segment::{
     parse_pcs_material_manifest_segment, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
+use lzvm_artifacts::pcs_query_segment::{parse_pcs_query_plan_segment, PCS_QUERY_PLAN_SEGMENT_ID};
 use lzvm_artifacts::proof::{
     encode_proof_artifact, parse_proof_artifact, ProofArtifact, ProofSegment,
 };
@@ -30,10 +31,10 @@ use lzvm_artifacts::witness_segment::{
 };
 use lzvm_cli::run_cli;
 use lzvm_prover::{
-    build_pcs_material_manifest_segment, build_witness_commitment_segment,
-    derive_prove_execution_plan, derive_prove_schedule, run_prove_witness_commitments,
-    GpuRunOptions, ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest,
-    ProveRunOptions, ProveRunRequest,
+    build_pcs_material_manifest_segment, build_pcs_query_plan_segment,
+    build_witness_commitment_segment, derive_prove_execution_plan, derive_prove_schedule,
+    run_prove_witness_commitments, GpuRunOptions, ProveExecutionInputArtifacts, ProvePartitionPlan,
+    ProvePassRequest, ProveRunOptions, ProveRunRequest,
 };
 
 fn sample_global_info_json() -> &'static str {
@@ -189,10 +190,18 @@ fn sample_proof_with_material(
     let schedule = derive_prove_schedule(catalog).expect("schedule should derive");
     let material_segment =
         build_pcs_material_manifest_segment(&schedule).expect("material segment should build");
+    let witness_segment = sample_witness_proof_segment(&schedule, 0);
+    let query_segment = build_pcs_query_plan_segment(
+        &schedule,
+        public_values_digest(public_values).expect("digest should compute"),
+        &material_segment,
+        std::slice::from_ref(&witness_segment),
+    )
+    .expect("query segment should build");
     ProofArtifact {
         setup_hash: public_values.setup_hash,
         public_values_hash: public_values_digest(public_values).expect("digest should compute"),
-        segments: vec![material_segment, sample_witness_proof_segment(&schedule, 0)],
+        segments: vec![material_segment, query_segment, witness_segment],
     }
 }
 
@@ -918,7 +927,7 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
         proof.public_values_hash,
         public_values_digest(&public_values).expect("digest should compute")
     );
-    assert_eq!(proof.segments.len(), 2);
+    assert_eq!(proof.segments.len(), 3);
     assert_eq!(proof.segments[0].id, PCS_MATERIAL_MANIFEST_SEGMENT_ID);
     let manifest = parse_pcs_material_manifest_segment(&proof.segments[0].data)
         .expect("material manifest should parse");
@@ -952,7 +961,24 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
         assert_eq!(manifest_unit.leaf_byte_count, material.leaf_byte_count);
         assert_eq!(manifest_unit.node_byte_count, material.node_byte_count);
     }
-    assert_eq!(proof.segments[1], expected_segment);
+    let public_values_hash = public_values_digest(&public_values).expect("digest should compute");
+    let expected_query_segment = build_pcs_query_plan_segment(
+        &plan.run_plan.schedule,
+        public_values_hash,
+        &proof.segments[0],
+        std::slice::from_ref(&expected_segment),
+    )
+    .expect("query segment should build");
+    let query_plan =
+        parse_pcs_query_plan_segment(&proof.segments[1].data).expect("query plan should parse");
+    assert_eq!(proof.segments[1].id, PCS_QUERY_PLAN_SEGMENT_ID);
+    assert_eq!(proof.segments[1], expected_query_segment);
+    assert_eq!(query_plan.units.len(), 1);
+    assert_eq!(
+        query_plan.units[0].queries.len(),
+        plan.run_plan.schedule.units[0].query_count as usize
+    );
+    assert_eq!(proof.segments[2], expected_segment);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
@@ -1116,7 +1142,7 @@ fn runs_setup_aware_verify_preflight() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=2\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=3\npublic_values=1\n"
     );
     assert!(stderr.is_empty());
 }
@@ -1164,6 +1190,52 @@ fn rejects_setup_aware_verify_preflight_with_mismatched_pcs_material_manifest() 
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "verify setup-preflight failed: PCS material manifest mismatch for unit 0\n"
+    );
+}
+
+#[test]
+fn rejects_setup_aware_verify_preflight_with_mismatched_pcs_query_plan() {
+    let dir = temp_dir("verify-setup-preflight-bad-query");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let mut proof = sample_proof_with_material(&public_values, &catalog);
+    proof.segments[1].data[20] ^= 0x01;
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.json");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_text(
+        &public_values_path,
+        &encode_public_values_json(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: PCS query plan segment mismatch\n"
     );
 }
 

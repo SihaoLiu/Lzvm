@@ -17,7 +17,8 @@ use lzvm_artifacts::pcs_material_segment::{
 use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file,
 };
-use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact};
+use lzvm_artifacts::pcs_query_segment::{parse_pcs_query_plan_segment, PCS_QUERY_PLAN_SEGMENT_ID};
+use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, read_unit_setup_info_file,
@@ -26,7 +27,7 @@ use lzvm_artifacts::verification_key::{read_verification_key_binary_file, Verifi
 use lzvm_artifacts::witness_segment::{
     parse_witness_commitment_segment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
-use lzvm_prover::{derive_prove_schedule, ProveSchedule};
+use lzvm_prover::{build_pcs_query_plan_segment, derive_prove_schedule, ProveSchedule};
 use lzvm_setup::{
     build_constant_tree_from_fixed_columns_with_backend, write_base_constant_tree,
     write_base_fixed_columns, write_constant_tree_leaves_with_backend,
@@ -453,6 +454,10 @@ fn verify_setup_preflight(
         let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
         return 1;
     }
+    if let Err(error) = validate_pcs_query_plan(&schedule, &proof) {
+        let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
+        return 1;
+    }
 
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "units={}", catalog.units.len());
@@ -576,6 +581,55 @@ fn validate_witness_commitment_segments(
     } else {
         Err("missing witness commitment segment".to_owned())
     }
+}
+
+fn validate_pcs_query_plan(schedule: &ProveSchedule, proof: &ProofArtifact) -> Result<(), String> {
+    let material_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
+        .ok_or_else(|| "missing PCS material manifest segment".to_owned())?;
+    let query_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
+        .ok_or_else(|| "missing PCS query plan segment".to_owned())?;
+    parse_pcs_query_plan_segment(&query_segment.data)
+        .map_err(|error| format!("invalid PCS query plan segment: {error}"))?;
+    let witness_segments = collect_witness_commitment_segments(schedule, proof)?;
+    let expected_segment = build_pcs_query_plan_segment(
+        schedule,
+        proof.public_values_hash,
+        material_segment,
+        &witness_segments,
+    )
+    .map_err(|error| format!("derive PCS query plan segment failed: {error}"))?;
+    if query_segment.data != expected_segment.data {
+        return Err("PCS query plan segment mismatch".to_owned());
+    }
+    Ok(())
+}
+
+fn collect_witness_commitment_segments(
+    schedule: &ProveSchedule,
+    proof: &ProofArtifact,
+) -> Result<Vec<ProofSegment>, String> {
+    let unit_count = u32::try_from(schedule.units.len())
+        .map_err(|_| "witness commitment segment unit count overflow")?;
+    let end_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
+        .checked_add(unit_count)
+        .ok_or_else(|| "witness commitment segment id overflow".to_owned())?;
+    let mut segments = proof
+        .segments
+        .iter()
+        .filter(|segment| segment.id >= WITNESS_COMMITMENT_SEGMENT_BASE_ID && segment.id < end_id)
+        .cloned()
+        .collect::<Vec<_>>();
+    if segments.is_empty() {
+        return Err("missing witness commitment segment".to_owned());
+    }
+    segments.sort_by_key(|segment| segment.id);
+    Ok(segments)
 }
 
 fn validate_setup_directory(
