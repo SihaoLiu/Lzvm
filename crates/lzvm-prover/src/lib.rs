@@ -26,6 +26,7 @@ pub mod pcs_challenge;
 pub mod pcs_evaluation;
 pub mod pcs_fri;
 pub mod pcs_material_manifest;
+pub mod pcs_query_plan;
 pub mod pcs_transcript;
 pub mod proof_preflight;
 pub mod proof_values;

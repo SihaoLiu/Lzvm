@@ -30,9 +30,7 @@ use lzvm_artifacts::pcs_nonce_segment::PCS_QUERY_NONCE_SEGMENT_ID;
 use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file,
 };
-use lzvm_artifacts::pcs_query_segment::{
-    parse_pcs_query_plan_segment, PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
-};
+use lzvm_artifacts::pcs_query_segment::{PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID};
 use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValues};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
@@ -65,6 +63,7 @@ use lzvm_prover::pcs_fri::{
     PcsFriOpeningFoldRequest,
 };
 use lzvm_prover::pcs_material_manifest::validate_pcs_material_manifest_segments;
+use lzvm_prover::pcs_query_plan::load_pcs_query_plan_from_segments;
 use lzvm_prover::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptSegmentInputs,
 };
@@ -530,8 +529,7 @@ fn validate_pcs_query_plan(
         .iter()
         .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
         .ok_or_else(|| "missing PCS query plan segment".to_owned())?;
-    parse_pcs_query_plan_segment(&query_segment.data)
-        .map_err(|error| format!("invalid PCS query plan segment: {error}"))?;
+    load_pcs_query_plan_from_segments(&proof.segments).map_err(|error| error.to_string())?;
     let witness_segments = collect_witness_commitment_segments(schedule, proof)?;
     if uses_transcript_query_plan_inputs(proof) {
         return validate_transcript_pcs_query_plan(
@@ -668,13 +666,8 @@ fn validate_witness_opening_segment(
     schedule: &ProveSchedule,
     proof: &ProofArtifact,
 ) -> Result<(), String> {
-    let query_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
-        .ok_or_else(|| "missing PCS query plan segment".to_owned())?;
-    let query_plan = parse_pcs_query_plan_segment(&query_segment.data)
-        .map_err(|error| format!("invalid PCS query plan segment: {error}"))?;
+    let query_plan =
+        load_pcs_query_plan_from_segments(&proof.segments).map_err(|error| error.to_string())?;
     let opening_segment = proof
         .segments
         .iter()
@@ -806,13 +799,8 @@ fn validate_constant_opening_segment(
     schedule: &ProveSchedule,
     proof: &ProofArtifact,
 ) -> Result<(), String> {
-    let query_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
-        .ok_or_else(|| "missing PCS query plan segment".to_owned())?;
-    let query_plan = parse_pcs_query_plan_segment(&query_segment.data)
-        .map_err(|error| format!("invalid PCS query plan segment: {error}"))?;
+    let query_plan =
+        load_pcs_query_plan_from_segments(&proof.segments).map_err(|error| error.to_string())?;
     let opening_segment = proof
         .segments
         .iter()
@@ -916,13 +904,8 @@ fn validate_optional_pcs_fri_opening_segment(
     else {
         return Ok(());
     };
-    let query_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
-        .ok_or_else(|| "missing PCS query plan segment".to_owned())?;
-    let query_plan = parse_pcs_query_plan_segment(&query_segment.data)
-        .map_err(|error| format!("invalid PCS query plan segment: {error}"))?;
+    let query_plan =
+        load_pcs_query_plan_from_segments(&proof.segments).map_err(|error| error.to_string())?;
     let opening = parse_pcs_fri_opening_segment(&segment.data)
         .map_err(|error| format!("invalid PCS FRI opening segment: {error}"))?;
     if opening.units.len() != query_plan.units.len() {
@@ -1344,19 +1327,14 @@ fn derive_global_constraint_challenges(
         .iter()
         .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
         .ok_or_else(|| "missing PCS material manifest segment".to_owned())?;
-    let query_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
-        .ok_or_else(|| "missing PCS query plan segment".to_owned())?;
     let fri_segment = proof
         .segments
         .iter()
         .find(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
         .ok_or_else(|| "missing PCS FRI opening segment".to_owned())?;
 
-    let query_plan = parse_pcs_query_plan_segment(&query_segment.data)
-        .map_err(|error| format!("invalid PCS query plan segment: {error}"))?;
+    let query_plan =
+        load_pcs_query_plan_from_segments(&proof.segments).map_err(|error| error.to_string())?;
     let material = parse_pcs_material_manifest_segment(&material_segment.data)
         .map_err(|error| format!("invalid PCS material manifest segment: {error}"))?;
     let fri = parse_pcs_fri_opening_segment(&fri_segment.data)
