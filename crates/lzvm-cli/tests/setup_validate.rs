@@ -13,6 +13,9 @@ use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
     read_key_directory_layout, KeyUnitPaths,
 };
+use lzvm_artifacts::pcs_material_segment::{
+    parse_pcs_material_manifest_segment, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+};
 use lzvm_artifacts::proof::{
     encode_proof_artifact, parse_proof_artifact, ProofArtifact, ProofSegment,
 };
@@ -819,7 +822,41 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
         proof.public_values_hash,
         public_values_digest(&public_values).expect("digest should compute")
     );
-    assert_eq!(proof.segments, vec![expected_segment]);
+    assert_eq!(proof.segments.len(), 2);
+    assert_eq!(proof.segments[0].id, PCS_MATERIAL_MANIFEST_SEGMENT_ID);
+    let manifest = parse_pcs_material_manifest_segment(&proof.segments[0].data)
+        .expect("material manifest should parse");
+    assert_eq!(manifest.units.len(), catalog.units.len());
+    for (index, (manifest_unit, catalog_unit)) in
+        manifest.units.iter().zip(catalog.units.iter()).enumerate()
+    {
+        let material = catalog_unit
+            .pcs_material
+            .as_ref()
+            .expect("material should be loaded");
+        assert_eq!(manifest_unit.unit_index, index as u32);
+        assert_eq!(manifest_unit.plan_digest, material.plan_digest);
+        assert_eq!(
+            manifest_unit.fixed_column_digest,
+            material.fixed_column_digest
+        );
+        assert_eq!(
+            manifest_unit.constant_tree_digest,
+            material.constant_tree_digest
+        );
+        assert_eq!(
+            manifest_unit.constant_tree_root,
+            material.constant_tree_root
+        );
+        assert_eq!(manifest_unit.fixed_byte_count, material.fixed_byte_count);
+        assert_eq!(
+            manifest_unit.constant_tree_byte_count,
+            material.constant_tree_byte_count
+        );
+        assert_eq!(manifest_unit.leaf_byte_count, material.leaf_byte_count);
+        assert_eq!(manifest_unit.node_byte_count, material.node_byte_count);
+    }
+    assert_eq!(proof.segments[1], expected_segment);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 

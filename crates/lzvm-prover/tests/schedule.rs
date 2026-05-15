@@ -291,6 +291,13 @@ fn derives_prove_schedule_with_pcs_material_inputs() {
         schedule.units[0].pcs_material_constant_tree_root,
         Some([1, 2, 3, 4])
     );
+    assert_eq!(schedule.units[0].pcs_material_fixed_byte_count, Some(64));
+    assert_eq!(
+        schedule.units[0].pcs_material_constant_tree_byte_count,
+        Some(224)
+    );
+    assert_eq!(schedule.units[0].pcs_material_leaf_byte_count, Some(64));
+    assert_eq!(schedule.units[0].pcs_material_node_byte_count, Some(160));
     assert_eq!(schedule.units[1].pcs_material_bytes, None);
     assert_eq!(schedule.units[1].pcs_material_plan_digest, None);
 }

@@ -1,6 +1,11 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use lzvm_artifacts::key_directory::KeyUnitKind;
+use lzvm_artifacts::pcs_material_segment::{
+    encode_pcs_material_manifest_segment, PcsMaterialManifestSegment,
+    PcsMaterialManifestSegmentError, PcsMaterialManifestUnit, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+};
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
     encode_witness_commitment_segment, WitnessCommitmentSegment, WitnessCommitmentSegmentError,
@@ -14,7 +19,7 @@ use crate::witness_commitment::{
 use crate::witness_layout::{derive_witness_trace_layout, WitnessTraceLayoutError};
 use crate::witness_loader::{load_witness_library, WitnessLoadError};
 use crate::witness_runner::{run_witness_trace, WitnessTraceRunError};
-use crate::{ProveExecutionPlan, ProvePassRequest};
+use crate::{ProveExecutionPlan, ProvePassRequest, ProveSchedule};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProveWitnessCommitments {
@@ -67,6 +72,18 @@ pub enum ProveWitnessCommitmentError {
 pub enum ProveWitnessSegmentError {
     LengthOverflow,
     Segment(WitnessCommitmentSegmentError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProvePcsMaterialSegmentError {
+    MissingMaterial {
+        unit_index: usize,
+        kind: KeyUnitKind,
+    },
+    UnitIndexOverflow {
+        unit_index: usize,
+    },
+    Segment(PcsMaterialManifestSegmentError),
 }
 
 impl fmt::Display for ProveWitnessCommitmentError {
@@ -139,6 +156,24 @@ impl fmt::Display for ProveWitnessSegmentError {
     }
 }
 
+impl fmt::Display for ProvePcsMaterialSegmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingMaterial { unit_index, kind } => write!(
+                f,
+                "prove PCS material segment is missing material for unit {unit_index} ({kind})"
+            ),
+            Self::UnitIndexOverflow { unit_index } => {
+                write!(
+                    f,
+                    "prove PCS material segment unit index does not fit u32: {unit_index}"
+                )
+            }
+            Self::Segment(error) => write!(f, "prove PCS material segment encode failed: {error}"),
+        }
+    }
+}
+
 impl std::error::Error for ProveWitnessSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -148,8 +183,23 @@ impl std::error::Error for ProveWitnessSegmentError {
     }
 }
 
+impl std::error::Error for ProvePcsMaterialSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Segment(error) => Some(error),
+            Self::MissingMaterial { .. } | Self::UnitIndexOverflow { .. } => None,
+        }
+    }
+}
+
 impl From<WitnessCommitmentSegmentError> for ProveWitnessSegmentError {
     fn from(error: WitnessCommitmentSegmentError) -> Self {
+        Self::Segment(error)
+    }
+}
+
+impl From<PcsMaterialManifestSegmentError> for ProvePcsMaterialSegmentError {
+    fn from(error: PcsMaterialManifestSegmentError) -> Self {
         Self::Segment(error)
     }
 }
@@ -221,6 +271,72 @@ pub fn build_witness_commitment_segment(
     Ok(ProofSegment {
         id,
         data: encode_witness_commitment_segment(&segment)?,
+    })
+}
+
+pub fn build_pcs_material_manifest_segment(
+    schedule: &ProveSchedule,
+) -> Result<ProofSegment, ProvePcsMaterialSegmentError> {
+    let mut units = Vec::with_capacity(schedule.units.len());
+    for (unit_index, unit) in schedule.units.iter().enumerate() {
+        let unit_index_u32 = u32::try_from(unit_index)
+            .map_err(|_| ProvePcsMaterialSegmentError::UnitIndexOverflow { unit_index })?;
+        units.push(PcsMaterialManifestUnit {
+            unit_index: unit_index_u32,
+            plan_digest: unit.pcs_material_plan_digest.ok_or(
+                ProvePcsMaterialSegmentError::MissingMaterial {
+                    unit_index,
+                    kind: unit.kind,
+                },
+            )?,
+            fixed_column_digest: unit.pcs_material_fixed_column_digest.ok_or(
+                ProvePcsMaterialSegmentError::MissingMaterial {
+                    unit_index,
+                    kind: unit.kind,
+                },
+            )?,
+            constant_tree_digest: unit.pcs_material_constant_tree_digest.ok_or(
+                ProvePcsMaterialSegmentError::MissingMaterial {
+                    unit_index,
+                    kind: unit.kind,
+                },
+            )?,
+            constant_tree_root: unit.pcs_material_constant_tree_root.ok_or(
+                ProvePcsMaterialSegmentError::MissingMaterial {
+                    unit_index,
+                    kind: unit.kind,
+                },
+            )?,
+            fixed_byte_count: unit.pcs_material_fixed_byte_count.ok_or(
+                ProvePcsMaterialSegmentError::MissingMaterial {
+                    unit_index,
+                    kind: unit.kind,
+                },
+            )?,
+            constant_tree_byte_count: unit.pcs_material_constant_tree_byte_count.ok_or(
+                ProvePcsMaterialSegmentError::MissingMaterial {
+                    unit_index,
+                    kind: unit.kind,
+                },
+            )?,
+            leaf_byte_count: unit.pcs_material_leaf_byte_count.ok_or(
+                ProvePcsMaterialSegmentError::MissingMaterial {
+                    unit_index,
+                    kind: unit.kind,
+                },
+            )?,
+            node_byte_count: unit.pcs_material_node_byte_count.ok_or(
+                ProvePcsMaterialSegmentError::MissingMaterial {
+                    unit_index,
+                    kind: unit.kind,
+                },
+            )?,
+        });
+    }
+    let manifest = PcsMaterialManifestSegment { units };
+    Ok(ProofSegment {
+        id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+        data: encode_pcs_material_manifest_segment(&manifest)?,
     })
 }
 

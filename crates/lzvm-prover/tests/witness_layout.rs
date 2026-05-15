@@ -52,6 +52,10 @@ fn sample_unit_with_rows(
         pcs_material_fixed_column_digest: None,
         pcs_material_constant_tree_digest: None,
         pcs_material_constant_tree_root: None,
+        pcs_material_fixed_byte_count: None,
+        pcs_material_constant_tree_byte_count: None,
+        pcs_material_leaf_byte_count: None,
+        pcs_material_node_byte_count: None,
     }
 }
 

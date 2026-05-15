@@ -6,8 +6,9 @@ use lzvm_artifacts::key_directory::read_key_directory_catalog;
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 use lzvm_prover::{
-    build_witness_commitment_segment, derive_prove_execution_plan, run_prove_witness_commitments,
-    ProveExecutionInputArtifacts, ProveWitnessCommitments,
+    build_pcs_material_manifest_segment, build_witness_commitment_segment,
+    derive_prove_execution_plan, run_prove_witness_commitments, ProveExecutionInputArtifacts,
+    ProveSchedule, ProveWitnessCommitments,
 };
 
 use crate::prove_plan::{parse_run_args, write_run_plan_summary, ParseError, ParsedRunArgs};
@@ -48,7 +49,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     if plan.run_plan.options.save_outputs {
         if let Err(message) = save_witness_outputs(
             &plan.run_plan.options.output_dir,
-            &plan.run_plan.schedule.setup_hash,
+            &plan.run_plan.schedule,
             plan.inputs.public_inputs.as_deref(),
             &output,
         ) {
@@ -95,7 +96,7 @@ fn parsed_inputs(parsed: &ParsedRunArgs) -> ProveExecutionInputArtifacts {
 
 fn save_witness_outputs(
     output_dir: &Path,
-    setup_hash: &[u8; 32],
+    schedule: &ProveSchedule,
     public_inputs: Option<&Path>,
     output: &ProveWitnessCommitments,
 ) -> Result<(), String> {
@@ -108,7 +109,7 @@ fn save_witness_outputs(
 
     let segment = build_witness_commitment_segment(output)
         .map_err(|error| format!("build witness segment failed: {error}"))?;
-    let proof_bytes = build_proof_bytes(setup_hash, public_inputs, &segment)?;
+    let proof_bytes = build_proof_bytes(schedule, public_inputs, &segment)?;
 
     for commitment in output.stage_commitments().commitments() {
         let root_path = output_dir.join(format!(
@@ -137,7 +138,7 @@ fn save_witness_outputs(
 }
 
 fn build_proof_bytes(
-    setup_hash: &[u8; 32],
+    schedule: &ProveSchedule,
     public_inputs: Option<&Path>,
     segment: &ProofSegment,
 ) -> Result<Option<Vec<u8>>, String> {
@@ -146,15 +147,17 @@ fn build_proof_bytes(
     };
     let public_values = read_public_values_file(public_inputs)
         .map_err(|error| format!("read public inputs failed: {error}"))?;
-    if public_values.setup_hash != *setup_hash {
+    if public_values.setup_hash != schedule.setup_hash {
         return Err("public inputs setup hash mismatch".to_owned());
     }
     let public_values_hash = public_values_digest(&public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
+    let material_segment = build_pcs_material_manifest_segment(schedule)
+        .map_err(|error| format!("build material manifest segment failed: {error}"))?;
     let proof = ProofArtifact {
-        setup_hash: *setup_hash,
+        setup_hash: schedule.setup_hash,
         public_values_hash,
-        segments: vec![segment.clone()],
+        segments: vec![material_segment, segment.clone()],
     };
     encode_proof_artifact(&proof)
         .map(Some)

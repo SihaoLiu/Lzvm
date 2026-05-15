@@ -20,7 +20,8 @@ pub mod witness_runner;
 pub mod witness_trace;
 
 pub use prove_witness::{
-    build_witness_commitment_segment, run_prove_witness_commitments, ProveWitnessCommitmentError,
+    build_pcs_material_manifest_segment, build_witness_commitment_segment,
+    run_prove_witness_commitments, ProvePcsMaterialSegmentError, ProveWitnessCommitmentError,
     ProveWitnessCommitments, ProveWitnessSegmentError,
 };
 
@@ -64,6 +65,10 @@ pub struct ProveUnitSchedule {
     pub pcs_material_fixed_column_digest: Option<[u8; 32]>,
     pub pcs_material_constant_tree_digest: Option<[u8; 32]>,
     pub pcs_material_constant_tree_root: Option<[u64; 4]>,
+    pub pcs_material_fixed_byte_count: Option<u64>,
+    pub pcs_material_constant_tree_byte_count: Option<u64>,
+    pub pcs_material_leaf_byte_count: Option<u64>,
+    pub pcs_material_node_byte_count: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -447,6 +452,11 @@ pub fn derive_prove_schedule(
             pcs_material_fixed_column_digest: material.map(|value| value.fixed_column_digest),
             pcs_material_constant_tree_digest: material.map(|value| value.constant_tree_digest),
             pcs_material_constant_tree_root: material.map(|value| value.constant_tree_root),
+            pcs_material_fixed_byte_count: material.map(|value| value.fixed_byte_count),
+            pcs_material_constant_tree_byte_count: material
+                .map(|value| value.constant_tree_byte_count),
+            pcs_material_leaf_byte_count: material.map(|value| value.leaf_byte_count),
+            pcs_material_node_byte_count: material.map(|value| value.node_byte_count),
         });
     }
 
@@ -517,6 +527,10 @@ fn validate_execution_pcs_material(
             || unit.pcs_material_fixed_column_digest.is_none()
             || unit.pcs_material_constant_tree_digest.is_none()
             || unit.pcs_material_constant_tree_root.is_none()
+            || unit.pcs_material_fixed_byte_count.is_none()
+            || unit.pcs_material_constant_tree_byte_count.is_none()
+            || unit.pcs_material_leaf_byte_count.is_none()
+            || unit.pcs_material_node_byte_count.is_none()
         {
             return Err(ProveExecutionPlanError::MissingPcsMaterial {
                 unit_index,
