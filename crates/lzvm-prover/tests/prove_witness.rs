@@ -35,7 +35,7 @@ use lzvm_artifacts::pcs_query_segment::{
     PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::ProofSegment;
-use lzvm_artifacts::public_values::{encode_public_values_json, PublicValueEntry, PublicValues};
+use lzvm_artifacts::public_values::{encode_public_values, PublicValueEntry, PublicValues};
 use lzvm_artifacts::setup_info::{FriStep, StarkStruct, UnitSetupInfo};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
@@ -331,7 +331,7 @@ fn write_public_values(path: &Path, setup_hash: [u8; 32], elements: Vec<u64>) {
     };
     fs::write(
         path,
-        encode_public_values_json(&values).expect("public values should encode"),
+        encode_public_values(&values).expect("public values should encode"),
     )
     .expect("public values should be written");
 }
@@ -611,7 +611,7 @@ fn preserves_trace_inputs_and_commitments_for_pcs_openings() {
     let witness_library = build_shared_library(&dir, "witness", witness_source());
     let guest_image = dir.join("guest.elf");
     let input_data = dir.join("input.bin");
-    let public_inputs = dir.join("public-values.json");
+    let public_inputs = dir.join("public-values.bin");
     fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
     fs::write(&input_data, [7_u8]).expect("input data should be written");
 
@@ -706,7 +706,7 @@ fn uses_public_inputs_when_checking_regular_constraints() {
     let witness_library = build_shared_library(&dir, "witness", witness_source());
     let guest_image = dir.join("guest.elf");
     let input_data = dir.join("input.bin");
-    let public_inputs = dir.join("public-values.json");
+    let public_inputs = dir.join("public-values.bin");
     fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
     fs::write(&input_data, [7_u8]).expect("input data should be written");
 

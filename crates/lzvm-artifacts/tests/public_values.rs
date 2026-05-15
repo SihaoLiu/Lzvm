@@ -74,15 +74,27 @@ fn encodes_and_parses_public_values_binary() {
 
 #[test]
 fn reads_public_values_from_a_file_path() {
-    let path = temp_file_path("values.json");
-    let encoded =
-        encode_public_values_json(&sample_public_values()).expect("fixture should encode");
+    let path = temp_file_path("values.pval");
+    let encoded = encode_public_values(&sample_public_values()).expect("fixture should encode");
     fs::write(&path, encoded).expect("fixture should be written");
 
     let parsed = read_public_values_file(&path).expect("fixture should parse");
     fs::remove_file(&path).expect("fixture should be removed");
 
     assert_eq!(parsed, sample_public_values());
+}
+
+#[test]
+fn rejects_text_public_values_from_a_file_path() {
+    let path = temp_file_path("values.json");
+    let encoded =
+        encode_public_values_json(&sample_public_values()).expect("fixture should encode");
+    fs::write(&path, encoded).expect("fixture should be written");
+
+    let error = read_public_values_file(&path).expect_err("text fixture should be rejected");
+    fs::remove_file(&path).expect("fixture should be removed");
+
+    assert!(matches!(error, PublicValuesError::InvalidMagic));
 }
 
 #[test]

@@ -3,8 +3,7 @@ use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{
-    encode_public_values, encode_public_values_json, public_values_digest, PublicValueEntry,
-    PublicValues,
+    encode_public_values, public_values_digest, PublicValueEntry, PublicValues,
 };
 use lzvm_cli::run_cli;
 
@@ -61,14 +60,14 @@ fn write_fixture_pair(
     let dir = temp_dir(name);
     let _ = fs::remove_dir_all(&dir);
     let proof_path = dir.join("proof.bin");
-    let public_path = dir.join("public_values.json");
+    let public_path = dir.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(proof).expect("proof should encode"),
     );
     write_bytes(
         &public_path,
-        encode_public_values_json(values).expect("public values should encode"),
+        encode_public_values(values).expect("public values should encode"),
     );
     (dir, proof_path, public_path)
 }

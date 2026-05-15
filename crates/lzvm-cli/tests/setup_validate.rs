@@ -45,7 +45,7 @@ use lzvm_artifacts::proof::{
     encode_proof_artifact, parse_proof_artifact, ProofArtifact, ProofSegment,
 };
 use lzvm_artifacts::public_values::{
-    encode_public_values_json, public_values_digest, PublicValueEntry, PublicValues,
+    encode_public_values, public_values_digest, PublicValueEntry, PublicValues,
 };
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
 use lzvm_artifacts::setup_info::{encode_unit_setup_info, parse_unit_setup_info_json};
@@ -1138,12 +1138,6 @@ fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("lzvm-cli-{}-{name}", std::process::id()))
 }
 
-fn write_text(path: &Path, value: &str) {
-    fs::create_dir_all(path.parent().expect("path should have a parent"))
-        .expect("fixture directory should be created");
-    fs::write(path, value).expect("fixture file should be written");
-}
-
 fn write_bytes(path: &Path, value: impl AsRef<[u8]>) {
     fs::create_dir_all(path.parent().expect("path should have a parent"))
         .expect("fixture directory should be created");
@@ -1602,14 +1596,14 @@ fn write_proof_value_query_preflight_fixture(
         segments,
     };
     let proof_path = root.join("proof.bin");
-    let public_values_path = root.join("public_values.json");
+    let public_values_path = root.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
     (proof_path, public_values_path, segment_count)
 }
@@ -1647,14 +1641,14 @@ fn write_global_constraint_preflight_fixture(
         .push(sample_pcs_proof_values_segment(vec![proof_value]));
     let segment_count = proof.segments.len();
     let proof_path = root.join("proof.bin");
-    let public_values_path = root.join("public_values.json");
+    let public_values_path = root.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
     (proof_path, public_values_path, segment_count)
 }
@@ -1751,14 +1745,14 @@ fn write_unit_value_query_preflight_fixture(
         segments,
     };
     let proof_path = root.join("proof.bin");
-    let public_values_path = root.join("public_values.json");
+    let public_values_path = root.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
     (proof_path, public_values_path, segment_count)
 }
@@ -1864,14 +1858,14 @@ fn write_challenge_global_constraint_preflight_fixture(root: &Path) -> (PathBuf,
         segments,
     };
     let proof_path = root.join("proof.bin");
-    let public_values_path = root.join("public_values.json");
+    let public_values_path = root.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
     (proof_path, public_values_path, segment_count)
 }
@@ -1909,14 +1903,14 @@ fn write_group_value_global_constraint_preflight_fixture(
         .push(sample_group_values_segment(vec![group_value]));
     let segment_count = proof.segments.len();
     let proof_path = root.join("proof.bin");
-    let public_values_path = root.join("public_values.json");
+    let public_values_path = root.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
     (proof_path, public_values_path, segment_count)
 }
@@ -1936,14 +1930,14 @@ fn write_proof_pair(root: &Path, setup_hash: [u8; 32]) -> (PathBuf, PathBuf) {
     let public_values = sample_public_values(setup_hash);
     let proof = sample_proof(&public_values);
     let proof_path = root.join("proof.bin");
-    let public_values_path = root.join("public_values.json");
+    let public_values_path = root.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
     (proof_path, public_values_path)
 }
@@ -1956,14 +1950,14 @@ fn write_proof_pair_with_material(
     let public_values = sample_public_values(setup_hash);
     let proof = sample_proof_with_material(&public_values, catalog);
     let proof_path = root.join("proof.bin");
-    let public_values_path = root.join("public_values.json");
+    let public_values_path = root.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
     (proof_path, public_values_path)
 }
@@ -2300,10 +2294,10 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
     write_bytes(&input_data, [11_u8]);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = sample_public_values(setup_hash);
-    let public_values_path = dir.join("public_values.json");
-    write_text(
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let request = ProveRunRequest {
@@ -2493,10 +2487,10 @@ fn saves_prove_witness_transcript_fri_outputs_when_requested() {
     write_field_words(&evaluation_values_path, &[30, 31, 32, 40, 41, 42]);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = sample_public_values(setup_hash);
-    let public_values_path = dir.join("public_values.json");
-    write_text(
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -2694,10 +2688,10 @@ fn saves_prove_witness_proof_values_when_requested() {
     write_field_words(&proof_values_path, &[51, 52, 53]);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = sample_public_values(setup_hash);
-    let public_values_path = dir.join("public_values.json");
-    write_text(
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -2778,10 +2772,10 @@ fn saves_prove_witness_group_values_when_requested() {
     write_field_words(&group_values_path, &group_value);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = sample_public_values(setup_hash);
-    let public_values_path = dir.join("public_values.json");
-    write_text(
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -2870,10 +2864,10 @@ fn saves_prove_witness_unit_values_when_requested() {
     write_field_words(&unit_values_path, &[101, 201, 202, 203]);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = sample_public_values(setup_hash);
-    let public_values_path = dir.join("public_values.json");
-    write_text(
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -2936,10 +2930,10 @@ fn passes_proof_values_to_witness_regular_constraints() {
     write_field_words(&proof_values_path, &[14, 52, 53]);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = sample_public_values(setup_hash);
-    let public_values_path = dir.join("public_values.json");
-    write_text(
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -2990,10 +2984,10 @@ fn passes_unit_values_to_witness_regular_constraints() {
     write_field_words(&unit_values_path, &[14, 201, 202, 203]);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = sample_public_values(setup_hash);
-    let public_values_path = dir.join("public_values.json");
-    write_text(
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -3044,10 +3038,10 @@ fn passes_challenge_values_to_witness_regular_constraints() {
     write_field_words(&challenge_values_path, &[14, 52, 53]);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = sample_public_values(setup_hash);
-    let public_values_path = dir.join("public_values.json");
-    write_text(
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -3091,12 +3085,12 @@ fn rejects_prove_witness_proof_output_with_mismatched_public_inputs() {
     let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
     let guest_image = dir.join("guest.elf");
     let input_data = dir.join("input.bin");
-    let public_values_path = dir.join("public_values.json");
+    let public_values_path = dir.join("public_values.bin");
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(&input_data, [11_u8]);
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&sample_public_values([0x99; 32]))
+        encode_public_values(&sample_public_values([0x99; 32]))
             .expect("public values should encode"),
     );
 
@@ -3260,14 +3254,14 @@ fn validates_setup_aware_verify_preflight_with_pcs_fri_opening() {
     let fri_segment = sample_pcs_fri_opening_segment(&schedule, &proof.segments[1], 0);
     proof.segments.push(fri_segment);
     let proof_path = dir.join("proof.bin");
-    let public_values_path = dir.join("public_values.json");
+    let public_values_path = dir.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -3373,14 +3367,14 @@ fn validates_setup_aware_verify_preflight_with_transcript_query_plan() {
         ],
     };
     let proof_path = dir.join("proof.bin");
-    let public_values_path = dir.join("public_values.json");
+    let public_values_path = dir.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -3765,14 +3759,14 @@ fn rejects_setup_aware_verify_preflight_with_bad_fri_fold_chain() {
         ],
     };
     let proof_path = dir.join("proof.bin");
-    let public_values_path = dir.join("public_values.json");
+    let public_values_path = dir.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -3885,14 +3879,14 @@ fn rejects_setup_aware_verify_preflight_with_bad_query_output() {
         ],
     };
     let proof_path = dir.join("proof.bin");
-    let public_values_path = dir.join("public_values.json");
+    let public_values_path = dir.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -3991,14 +3985,14 @@ fn rejects_setup_aware_verify_preflight_with_wrong_evaluation_value_count() {
         ],
     };
     let proof_path = dir.join("proof.bin");
-    let public_values_path = dir.join("public_values.json");
+    let public_values_path = dir.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -4037,14 +4031,14 @@ fn rejects_setup_aware_verify_preflight_with_mismatched_pcs_material_manifest() 
     let mut proof = sample_proof_with_material(&public_values, &catalog);
     proof.segments[0].data[16] ^= 0x01;
     let proof_path = dir.join("proof.bin");
-    let public_values_path = dir.join("public_values.json");
+    let public_values_path = dir.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -4083,14 +4077,14 @@ fn rejects_setup_aware_verify_preflight_with_mismatched_pcs_query_plan() {
     let mut proof = sample_proof_with_material(&public_values, &catalog);
     proof.segments[1].data[20] ^= 0x01;
     let proof_path = dir.join("proof.bin");
-    let public_values_path = dir.join("public_values.json");
+    let public_values_path = dir.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -4129,14 +4123,14 @@ fn rejects_setup_aware_verify_preflight_with_mismatched_constant_opening() {
     let mut proof = sample_proof_with_material(&public_values, &catalog);
     proof.segments[2].data[36] ^= 0x01;
     let proof_path = dir.join("proof.bin");
-    let public_values_path = dir.join("public_values.json");
+    let public_values_path = dir.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -4181,14 +4175,14 @@ fn rejects_setup_aware_verify_preflight_with_mismatched_pcs_fri_opening() {
     fri_segment.data = encode_pcs_fri_opening_segment(&opening).expect("FRI opening should encode");
     proof.segments.push(fri_segment);
     let proof_path = dir.join("proof.bin");
-    let public_values_path = dir.join("public_values.json");
+    let public_values_path = dir.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -4227,14 +4221,14 @@ fn rejects_setup_aware_verify_preflight_with_mismatched_witness_opening() {
     let mut proof = sample_proof_with_material(&public_values, &catalog);
     proof.segments[3].data[32] ^= 0x01;
     let proof_path = dir.join("proof.bin");
-    let public_values_path = dir.join("public_values.json");
+    let public_values_path = dir.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -4272,14 +4266,14 @@ fn rejects_setup_aware_verify_preflight_with_invalid_witness_segment() {
     let public_values = sample_public_values(setup_hash);
     let proof = sample_proof_with_material_and_bad_witness(&public_values, &catalog);
     let proof_path = dir.join("proof.bin");
-    let public_values_path = dir.join("public_values.json");
+    let public_values_path = dir.join("public_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
     );
-    write_text(
+    write_bytes(
         &public_values_path,
-        &encode_public_values_json(&public_values).expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();

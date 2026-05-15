@@ -149,15 +149,10 @@ impl From<SectionedError> for PublicValuesError {
 }
 
 pub fn read_public_values_file(path: impl AsRef<Path>) -> Result<PublicValues, PublicValuesError> {
-    let path = path.as_ref();
-    if path.extension().and_then(|extension| extension.to_str()) == Some("bin") {
-        return read_public_values_binary_file(path);
-    }
-
-    let input = std::fs::read_to_string(path).map_err(|error| PublicValuesError::Io {
+    let bytes = std::fs::read(path).map_err(|error| PublicValuesError::Io {
         message: error.to_string(),
     })?;
-    parse_public_values_json(&input)
+    parse_public_values(&bytes)
 }
 
 pub fn read_public_values_binary_file(
