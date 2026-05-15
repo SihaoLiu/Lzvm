@@ -33,6 +33,25 @@ pub enum ResolvedHintPayload {
     Text(String),
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GlobalHintInputRequirements {
+    pub publics: bool,
+    pub proof_values: bool,
+    pub challenges: bool,
+    pub group_values: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RegularHintInputRequirements {
+    pub fixed_columns: bool,
+    pub stage_columns: bool,
+    pub publics: bool,
+    pub unit_values: bool,
+    pub proof_values: bool,
+    pub group_values: bool,
+    pub challenges: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HintEvalError {
     EmptyDomain,
@@ -142,6 +161,43 @@ impl fmt::Display for HintEvalError {
 }
 
 impl std::error::Error for HintEvalError {}
+
+pub fn global_hint_input_requirements(program: &HintProgram) -> GlobalHintInputRequirements {
+    let mut requirements = GlobalHintInputRequirements::default();
+    for_hint_operand(program, |operand| match operand {
+        HintOperand::Public { .. } => requirements.publics = true,
+        HintOperand::ProofValue { .. } => requirements.proof_values = true,
+        HintOperand::Challenge { .. } => requirements.challenges = true,
+        HintOperand::GroupValue { .. } => requirements.group_values = true,
+        _ => {}
+    });
+    requirements
+}
+
+pub fn regular_hint_input_requirements(program: &HintProgram) -> RegularHintInputRequirements {
+    let mut requirements = RegularHintInputRequirements::default();
+    for_hint_operand(program, |operand| match operand {
+        HintOperand::Constant { .. } => requirements.fixed_columns = true,
+        HintOperand::Commitment { .. } => requirements.stage_columns = true,
+        HintOperand::Public { .. } => requirements.publics = true,
+        HintOperand::AirValue { .. } => requirements.unit_values = true,
+        HintOperand::ProofValue { .. } => requirements.proof_values = true,
+        HintOperand::AirGroupValue { .. } => requirements.group_values = true,
+        HintOperand::Challenge { .. } => requirements.challenges = true,
+        _ => {}
+    });
+    requirements
+}
+
+fn for_hint_operand(program: &HintProgram, mut f: impl FnMut(&HintOperand)) {
+    for hint in &program.hints {
+        for field in &hint.fields {
+            for value in &field.values {
+                f(&value.operand);
+            }
+        }
+    }
+}
 
 pub fn resolve_global_hint_field(
     global_info: &GlobalInfo,

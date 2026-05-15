@@ -8,8 +8,9 @@ use lzvm_artifacts::setup_info::{
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::global_constraints::GlobalConstraintInputs;
 use lzvm_prover::hint_eval::{
-    resolve_global_hint_field, resolve_regular_hint_field, HintEvalError, ResolvedHintPayload,
-    ResolvedHintValue,
+    global_hint_input_requirements, regular_hint_input_requirements, resolve_global_hint_field,
+    resolve_regular_hint_field, GlobalHintInputRequirements, HintEvalError,
+    RegularHintInputRequirements, ResolvedHintPayload, ResolvedHintValue,
 };
 use lzvm_prover::regular_constraints::{
     RegularColumnMatrix, RegularConstraintInputs, RegularStageColumns,
@@ -133,6 +134,50 @@ fn rejects_global_hint_temporaries_without_expression_inputs() {
         error,
         HintEvalError::UnsupportedOperand {
             operand: "temporary"
+        }
+    );
+}
+
+#[test]
+fn identifies_global_hint_runtime_inputs() {
+    let program = HintProgram {
+        hints: vec![Hint {
+            name: "hint-a".to_owned(),
+            fields: vec![HintField {
+                name: "values".to_owned(),
+                values: vec![
+                    HintValue {
+                        operand: HintOperand::Number(42),
+                        positions: vec![],
+                    },
+                    HintValue {
+                        operand: HintOperand::Public { id: 0 },
+                        positions: vec![],
+                    },
+                    HintValue {
+                        operand: HintOperand::ProofValue { id: 0 },
+                        positions: vec![],
+                    },
+                    HintValue {
+                        operand: HintOperand::Challenge { id: 0 },
+                        positions: vec![],
+                    },
+                    HintValue {
+                        operand: HintOperand::GroupValue { group_id: 0, id: 0 },
+                        positions: vec![],
+                    },
+                ],
+            }],
+        }],
+    };
+
+    assert_eq!(
+        global_hint_input_requirements(&program),
+        GlobalHintInputRequirements {
+            publics: true,
+            proof_values: true,
+            challenges: true,
+            group_values: true,
         }
     );
 }
@@ -281,6 +326,67 @@ fn resolves_regular_hint_values_from_row_inputs() {
                 positions: vec![8],
             },
         ]
+    );
+}
+
+#[test]
+fn identifies_regular_hint_runtime_inputs() {
+    let program = HintProgram {
+        hints: vec![Hint {
+            name: "hint-a".to_owned(),
+            fields: vec![HintField {
+                name: "values".to_owned(),
+                values: vec![
+                    HintValue {
+                        operand: HintOperand::Constant {
+                            id: 10,
+                            row_offset_index: 0,
+                        },
+                        positions: vec![],
+                    },
+                    HintValue {
+                        operand: HintOperand::Commitment {
+                            id: 20,
+                            row_offset_index: 1,
+                        },
+                        positions: vec![],
+                    },
+                    HintValue {
+                        operand: HintOperand::Public { id: 0 },
+                        positions: vec![],
+                    },
+                    HintValue {
+                        operand: HintOperand::AirValue { id: 0 },
+                        positions: vec![],
+                    },
+                    HintValue {
+                        operand: HintOperand::AirGroupValue { id: 0 },
+                        positions: vec![],
+                    },
+                    HintValue {
+                        operand: HintOperand::Challenge { id: 0 },
+                        positions: vec![],
+                    },
+                    HintValue {
+                        operand: HintOperand::ProofValue { id: 0 },
+                        positions: vec![],
+                    },
+                ],
+            }],
+        }],
+    };
+
+    assert_eq!(
+        regular_hint_input_requirements(&program),
+        RegularHintInputRequirements {
+            fixed_columns: true,
+            stage_columns: true,
+            publics: true,
+            unit_values: true,
+            proof_values: true,
+            group_values: true,
+            challenges: true,
+        }
     );
 }
 

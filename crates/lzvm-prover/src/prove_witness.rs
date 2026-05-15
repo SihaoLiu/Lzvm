@@ -8,7 +8,6 @@ use lzvm_artifacts::constant_opening_segment::{
 };
 use lzvm_artifacts::constant_tree::{read_constant_tree_file, ConstantTreeError};
 use lzvm_artifacts::fixed::{read_fixed_columns_file_for_setup, FixedColumnError, FixedColumns};
-use lzvm_artifacts::hint_program::{HintOperand, HintProgram};
 use lzvm_artifacts::key_directory::{KeyDirectoryCatalog, KeyUnitKind};
 use lzvm_artifacts::pcs_evaluation_segment::{
     encode_pcs_evaluation_segment, PcsEvaluationSegment, PcsEvaluationSegmentError,
@@ -43,7 +42,9 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
 use crate::constant_tree_opening::{open_constant_tree_row, ConstantTreeOpeningError};
-use crate::hint_eval::{resolve_regular_hint_program_for_row, HintEvalError};
+use crate::hint_eval::{
+    regular_hint_input_requirements, resolve_regular_hint_program_for_row, HintEvalError,
+};
 #[cfg(not(feature = "cuda"))]
 use crate::pcs_challenge::find_query_nonce;
 #[cfg(feature = "cuda")]
@@ -1091,7 +1092,9 @@ fn validate_witness_regular_hints(
         return Ok(());
     }
 
-    let fixed_values = if regular_hints_read_fixed_columns(&plan_unit.regular_hints) {
+    let requirements = regular_hint_input_requirements(&plan_unit.regular_hints);
+
+    let fixed_values = if requirements.fixed_columns {
         let fixed_columns = read_fixed_columns_file_for_setup(
             &plan_unit.fixed_columns,
             &plan_unit.setup,
@@ -1114,11 +1117,15 @@ fn validate_witness_regular_hints(
         Vec::new()
     };
 
-    let stage_traces = layout
-        .stages()
-        .iter()
-        .map(|stage| layout.stage_trace(trace, stage.stage_index))
-        .collect::<Result<Vec<_>, _>>()?;
+    let stage_traces = if requirements.stage_columns {
+        layout
+            .stages()
+            .iter()
+            .map(|stage| layout.stage_trace(trace, stage.stage_index))
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        Vec::new()
+    };
     let mut stage_columns = Vec::with_capacity(stage_traces.len());
     for stage in &stage_traces {
         let stage_index = u16::try_from(stage.stage_index()).map_err(|_| {
@@ -1166,15 +1173,6 @@ fn validate_witness_regular_hints(
         .map_err(|error| map_regular_hint_eval_error(unit_index, error))?;
     }
     Ok(())
-}
-
-fn regular_hints_read_fixed_columns(program: &HintProgram) -> bool {
-    program
-        .hints
-        .iter()
-        .flat_map(|hint| hint.fields.iter())
-        .flat_map(|field| field.values.iter())
-        .any(|value| matches!(value.operand, HintOperand::Constant { .. }))
 }
 
 fn map_regular_hint_eval_error(

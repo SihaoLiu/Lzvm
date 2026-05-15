@@ -15,8 +15,7 @@ use lzvm_artifacts::fixed::{
 use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo};
 use lzvm_artifacts::group_values_segment::{parse_group_values_segment, GROUP_VALUES_SEGMENT_ID};
 use lzvm_artifacts::hint_program::{
-    encode_regular_hint_program, regular_hint_program_from_expression_info, HintOperand,
-    HintProgram,
+    encode_regular_hint_program, regular_hint_program_from_expression_info,
 };
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
@@ -62,7 +61,7 @@ use lzvm_prover::constant_tree_opening::{
     constant_tree_merkle_level_count, verify_constant_tree_opening_root, ConstantTreeOpening,
 };
 use lzvm_prover::global_constraints::{evaluate_global_constraints, GlobalConstraintInputs};
-use lzvm_prover::hint_eval::resolve_global_hint_program;
+use lzvm_prover::hint_eval::{global_hint_input_requirements, resolve_global_hint_program};
 use lzvm_prover::pcs_fri::{
     verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path,
     PcsFriOpeningFoldRequest,
@@ -1458,7 +1457,7 @@ fn validate_global_hints(
         return Ok(());
     }
 
-    let requirements = global_hint_requirements(&catalog.global_hints);
+    let requirements = global_hint_input_requirements(&catalog.global_hints);
     let publics = if requirements.publics {
         transcript_public_value_fields(public_values)?
     } else {
@@ -1494,32 +1493,6 @@ fn validate_global_hints(
     )
     .map(|_| ())
     .map_err(|error| format!("invalid global hint program: {error}"))
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-struct GlobalHintRequirements {
-    publics: bool,
-    proof_values: bool,
-    challenges: bool,
-    group_values: bool,
-}
-
-fn global_hint_requirements(program: &HintProgram) -> GlobalHintRequirements {
-    let mut requirements = GlobalHintRequirements::default();
-    for hint in &program.hints {
-        for field in &hint.fields {
-            for value in &field.values {
-                match value.operand {
-                    HintOperand::Public { .. } => requirements.publics = true,
-                    HintOperand::ProofValue { .. } => requirements.proof_values = true,
-                    HintOperand::Challenge { .. } => requirements.challenges = true,
-                    HintOperand::GroupValue { .. } => requirements.group_values = true,
-                    _ => {}
-                }
-            }
-        }
-    }
-    requirements
 }
 
 fn derive_global_constraint_challenges(
