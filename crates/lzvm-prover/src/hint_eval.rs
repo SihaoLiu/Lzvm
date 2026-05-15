@@ -13,6 +13,18 @@ pub struct ResolvedHintValue {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedHintField {
+    pub name: String,
+    pub values: Vec<ResolvedHintValue>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedHint {
+    pub name: String,
+    pub fields: Vec<ResolvedHintField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolvedHintPayload {
     Scalar(Felt),
     Extension(Ext3),
@@ -116,6 +128,47 @@ pub fn resolve_global_hint_field(
             Ok(ResolvedHintValue {
                 payload: resolve_global_operand(global_info, &value.operand, inputs)?,
                 positions: value.positions.clone(),
+            })
+        })
+        .collect()
+}
+
+pub fn resolve_global_hint_program(
+    global_info: &GlobalInfo,
+    program: &HintProgram,
+    inputs: GlobalConstraintInputs<'_>,
+) -> Result<Vec<ResolvedHint>, HintEvalError> {
+    program
+        .hints
+        .iter()
+        .map(|hint| {
+            let fields = hint
+                .fields
+                .iter()
+                .map(|field| {
+                    let values = field
+                        .values
+                        .iter()
+                        .map(|value| {
+                            Ok(ResolvedHintValue {
+                                payload: resolve_global_operand(
+                                    global_info,
+                                    &value.operand,
+                                    inputs,
+                                )?,
+                                positions: value.positions.clone(),
+                            })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(ResolvedHintField {
+                        name: field.name.clone(),
+                        values,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(ResolvedHint {
+                name: hint.name.clone(),
+                fields,
             })
         })
         .collect()

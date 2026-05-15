@@ -15,7 +15,8 @@ use lzvm_artifacts::fixed::{
 use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo};
 use lzvm_artifacts::group_values_segment::{parse_group_values_segment, GROUP_VALUES_SEGMENT_ID};
 use lzvm_artifacts::hint_program::{
-    encode_regular_hint_program, regular_hint_program_from_expression_info,
+    encode_regular_hint_program, regular_hint_program_from_expression_info, HintOperand,
+    HintProgram,
 };
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
@@ -61,6 +62,7 @@ use lzvm_prover::constant_tree_opening::{
     constant_tree_merkle_level_count, verify_constant_tree_opening_root, ConstantTreeOpening,
 };
 use lzvm_prover::global_constraints::{evaluate_global_constraints, GlobalConstraintInputs};
+use lzvm_prover::hint_eval::resolve_global_hint_program;
 use lzvm_prover::pcs_fri::{
     verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path,
     PcsFriOpeningFoldRequest,
@@ -500,6 +502,10 @@ fn verify_setup_preflight(
         return 1;
     }
     if let Err(error) = validate_global_constraints(&catalog, &schedule, &proof, &public_values) {
+        let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
+        return 1;
+    }
+    if let Err(error) = validate_global_hints(&catalog, &schedule, &proof, &public_values) {
         let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
         return 1;
     }
@@ -1440,6 +1446,80 @@ fn validate_global_constraints(
         }
     }
     Ok(())
+}
+
+fn validate_global_hints(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
+    proof: &ProofArtifact,
+    public_values: &PublicValues,
+) -> Result<(), String> {
+    if catalog.global_hints.hints.is_empty() {
+        return Ok(());
+    }
+
+    let requirements = global_hint_requirements(&catalog.global_hints);
+    let publics = if requirements.publics {
+        transcript_public_value_fields(public_values)?
+    } else {
+        Vec::new()
+    };
+    let packed_proof_values = if requirements.proof_values {
+        let proof_values = load_pcs_proof_values(catalog, proof)?;
+        flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)
+            .map_err(|error| format!("global hint proof values invalid: {error}"))?
+    } else {
+        Vec::new()
+    };
+    let challenges = if requirements.challenges {
+        derive_global_constraint_challenges(schedule, proof, public_values)?
+    } else {
+        Vec::new()
+    };
+    let group_values = if requirements.group_values {
+        load_group_values(catalog, proof)?
+    } else {
+        Vec::new()
+    };
+
+    resolve_global_hint_program(
+        &catalog.layout.global_info,
+        &catalog.global_hints,
+        GlobalConstraintInputs {
+            publics: &publics,
+            proof_values: &packed_proof_values,
+            challenges: &challenges,
+            group_values: &group_values,
+        },
+    )
+    .map(|_| ())
+    .map_err(|error| format!("invalid global hint program: {error}"))
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct GlobalHintRequirements {
+    publics: bool,
+    proof_values: bool,
+    challenges: bool,
+    group_values: bool,
+}
+
+fn global_hint_requirements(program: &HintProgram) -> GlobalHintRequirements {
+    let mut requirements = GlobalHintRequirements::default();
+    for hint in &program.hints {
+        for field in &hint.fields {
+            for value in &field.values {
+                match value.operand {
+                    HintOperand::Public { .. } => requirements.publics = true,
+                    HintOperand::ProofValue { .. } => requirements.proof_values = true,
+                    HintOperand::Challenge { .. } => requirements.challenges = true,
+                    HintOperand::GroupValue { .. } => requirements.group_values = true,
+                    _ => {}
+                }
+            }
+        }
+    }
+    requirements
 }
 
 fn derive_global_constraint_challenges(

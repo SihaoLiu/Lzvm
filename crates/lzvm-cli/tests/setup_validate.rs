@@ -21,7 +21,8 @@ use lzvm_artifacts::group_values_segment::{
 use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_artifacts::hint_program::{
     encode_global_hint_program, encode_regular_hint_program,
-    regular_hint_program_from_expression_info, HintProgram,
+    regular_hint_program_from_expression_info, Hint, HintField, HintOperand, HintProgram,
+    HintValue,
 };
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
@@ -506,10 +507,13 @@ fn empty_hint_program() -> HintProgram {
 }
 
 fn global_constraint_program_file(program: &GlobalConstraintProgram) -> Vec<u8> {
+    global_program_file(program, &empty_hint_program())
+}
+
+fn global_program_file(program: &GlobalConstraintProgram, hints: &HintProgram) -> Vec<u8> {
     let constraints =
         encode_global_constraint_program(program).expect("global constraints should encode");
-    let hints =
-        encode_global_hint_program(&empty_hint_program()).expect("global hints should encode");
+    let hints = encode_global_hint_program(hints).expect("global hints should encode");
     let mut constraints_file =
         parse_sectioned_file(&constraints, *b"chps", 1).expect("constraints should parse");
     let hint_file = parse_sectioned_file(&hints, *b"chps", 1).expect("hints should parse");
@@ -1285,6 +1289,14 @@ fn write_global_constraint_program(root: &Path, program: GlobalConstraintProgram
     .expect("global constraints program should be written");
 }
 
+fn write_global_program(root: &Path, program: GlobalConstraintProgram, hints: HintProgram) {
+    fs::write(
+        root.join("pilout.globalConstraints.bin"),
+        global_program_file(&program, &hints),
+    )
+    .expect("global program should be written");
+}
+
 fn write_global_files(root: &Path) {
     write_global_files_with_info(root, sample_global_info_json());
 }
@@ -1673,6 +1685,55 @@ fn write_global_constraint_preflight_fixture(
     proof
         .segments
         .push(sample_pcs_proof_values_segment(vec![proof_value]));
+    let segment_count = proof.segments.len();
+    let proof_path = root.join("proof.bin");
+    let public_values_path = root.join("public_values.bin");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+    (proof_path, public_values_path, segment_count)
+}
+
+fn write_global_hint_preflight_fixture(
+    root: &Path,
+    proof_values: Option<Vec<[u64; 3]>>,
+) -> (PathBuf, PathBuf, usize) {
+    write_execution_ready_setup_directory_with_proof_value(root);
+    write_global_program(
+        root,
+        GlobalConstraintProgram {
+            entries: Vec::new(),
+            ops: Vec::new(),
+            args: Vec::new(),
+            numbers: Vec::new(),
+        },
+        HintProgram {
+            hints: vec![Hint {
+                name: "runtime-hint".to_owned(),
+                fields: vec![HintField {
+                    name: "values".to_owned(),
+                    values: vec![HintValue {
+                        operand: HintOperand::ProofValue { id: 0 },
+                        positions: vec![0],
+                    }],
+                }],
+            }],
+        },
+    );
+    let catalog = read_key_directory_catalog(root).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let mut proof = sample_proof_with_material(&public_values, &catalog);
+    if let Some(proof_values) = proof_values {
+        proof
+            .segments
+            .push(sample_pcs_proof_values_segment(proof_values));
+    }
     let segment_count = proof.segments.len();
     let proof_path = root.join("proof.bin");
     let public_values_path = root.join("public_values.bin");
@@ -3533,6 +3594,38 @@ fn validates_setup_aware_verify_preflight_with_global_constraints() {
 }
 
 #[test]
+fn validates_setup_aware_verify_preflight_with_global_hints() {
+    let dir = temp_dir("verify-setup-preflight-global-hint");
+    let _ = fs::remove_dir_all(&dir);
+    let (proof_path, public_values_path, segment_count) =
+        write_global_hint_preflight_fixture(&dir, Some(vec![[51, 52, 53]]));
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\n")
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn validates_setup_aware_verify_preflight_with_challenge_global_constraints() {
     let dir = temp_dir("verify-setup-preflight-challenge-global-constraint");
     let _ = fs::remove_dir_all(&dir);
@@ -3625,6 +3718,37 @@ fn rejects_setup_aware_verify_preflight_with_bad_global_constraint() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "verify setup-preflight failed: global constraint 0 is not satisfied\n"
+    );
+}
+
+#[test]
+fn rejects_setup_aware_verify_preflight_with_missing_global_hint_proof_values() {
+    let dir = temp_dir("verify-setup-preflight-missing-global-hint-proof-values");
+    let _ = fs::remove_dir_all(&dir);
+    let (proof_path, public_values_path, _) = write_global_hint_preflight_fixture(&dir, None);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: missing PCS proof values segment\n"
     );
 }
 
