@@ -26,6 +26,7 @@ use lzvm_artifacts::pcs_query_segment::{
     PcsQueryPlanSegmentError, PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::ProofSegment;
+use lzvm_artifacts::public_values::{read_public_values_file, PublicValues, PublicValuesError};
 use lzvm_artifacts::witness_opening_segment::{
     encode_witness_opening_segment, WitnessOpeningLevelSegment, WitnessOpeningQuerySegment,
     WitnessOpeningSegment, WitnessOpeningSegmentError, WitnessOpeningStageSegment,
@@ -111,6 +112,15 @@ pub enum ProveWitnessCommitmentError {
     InputData {
         path: PathBuf,
         message: String,
+    },
+    PublicInputs {
+        path: PathBuf,
+        source: PublicValuesError,
+    },
+    PublicInputsSetupHashMismatch,
+    PublicInputNonCanonical {
+        index: usize,
+        value: u64,
     },
     WitnessLoad(WitnessLoadError),
     Layout(WitnessTraceLayoutError),
@@ -294,6 +304,16 @@ impl fmt::Display for ProveWitnessCommitmentError {
                 "prove witness commitment input-data read failed: {}: {message}",
                 path.display()
             ),
+            Self::PublicInputs { path, source } => {
+                write!(f, "read public inputs failed: {}: {source}", path.display())
+            }
+            Self::PublicInputsSetupHashMismatch => {
+                write!(f, "public inputs setup hash mismatch")
+            }
+            Self::PublicInputNonCanonical { index, value } => write!(
+                f,
+                "public input field {index} is non-canonical: {value}"
+            ),
             Self::WitnessLoad(error) => {
                 write!(f, "prove witness commitment library load failed: {error}")
             }
@@ -393,11 +413,14 @@ impl std::error::Error for ProveWitnessCommitmentError {
             Self::WitnessLoad(error) => Some(error),
             Self::Layout(error) => Some(error),
             Self::WitnessRun(error) => Some(error),
+            Self::PublicInputs { source, .. } => Some(source),
             Self::FixedColumns { source, .. } => Some(source),
             Self::RegularConstraintEval(error) => Some(error),
             Self::Commit(error) => Some(error),
             Self::UnitIndexOutOfRange { .. }
             | Self::InputData { .. }
+            | Self::PublicInputsSetupHashMismatch
+            | Self::PublicInputNonCanonical { .. }
             | Self::FixedRowCountTooLarge { .. }
             | Self::FixedRowCountMismatch { .. }
             | Self::FixedColumnCountMismatch { .. }
@@ -777,6 +800,7 @@ pub fn run_prove_witness_commitments(
             unit_count,
         },
     )?;
+    let publics = load_public_inputs(plan)?;
     let input = read_witness_input(&plan.run_plan.pass)?;
     let input_byte_count = input.len();
     let library = load_witness_library(&plan.inputs.witness_library)?;
@@ -789,7 +813,7 @@ pub fn run_prove_witness_commitments(
                 unit_index,
                 unit_count: plan.units.len(),
             })?;
-    validate_witness_regular_constraints(execution_unit, unit_index, &layout, &trace)?;
+    validate_witness_regular_constraints(execution_unit, unit_index, &layout, &trace, &publics)?;
     let trace_rows = trace.row_count();
     let trace_columns = trace.column_count();
     let stage_commitments = commit_witness_trace_stages(&trace, unit)?;
@@ -803,11 +827,46 @@ pub fn run_prove_witness_commitments(
     })
 }
 
+fn load_public_inputs(plan: &ProveExecutionPlan) -> Result<Vec<Felt>, ProveWitnessCommitmentError> {
+    let Some(path) = &plan.inputs.public_inputs else {
+        return Ok(Vec::new());
+    };
+    let public_values = read_public_values_file(path).map_err(|source| {
+        ProveWitnessCommitmentError::PublicInputs {
+            path: path.clone(),
+            source,
+        }
+    })?;
+    if public_values.setup_hash != plan.run_plan.schedule.setup_hash {
+        return Err(ProveWitnessCommitmentError::PublicInputsSetupHashMismatch);
+    }
+    public_values_to_fields(&public_values)
+}
+
+fn public_values_to_fields(
+    public_values: &PublicValues,
+) -> Result<Vec<Felt>, ProveWitnessCommitmentError> {
+    public_values
+        .values
+        .iter()
+        .flat_map(|entry| entry.elements.iter().copied())
+        .enumerate()
+        .map(|(index, value)| {
+            Felt::from_canonical(value).map_err(|error| match error {
+                FieldError::NonCanonical { value } => {
+                    ProveWitnessCommitmentError::PublicInputNonCanonical { index, value }
+                }
+            })
+        })
+        .collect()
+}
+
 fn validate_witness_regular_constraints(
     plan_unit: &ProveExecutionUnitArtifacts,
     unit_index: usize,
     layout: &WitnessTraceLayout,
     trace: &WitnessTraceBuffer,
+    publics: &[Felt],
 ) -> Result<(), ProveWitnessCommitmentError> {
     if plan_unit.regular_constraints.entries.is_empty() {
         return Ok(());
@@ -864,7 +923,7 @@ fn validate_witness_regular_constraints(
             stage_columns: &stage_columns,
             custom_fixed_columns: &[],
             opening_point_offsets: &plan_unit.opening_point_offsets,
-            publics: &[],
+            publics,
             unit_values: &[],
             proof_values: &[],
             group_values: &[],

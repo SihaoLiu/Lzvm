@@ -10,7 +10,8 @@ use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::ExpressionProgram;
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
 use lzvm_artifacts::key_directory::{
-    KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry, KeyUnitKind, KeyUnitPaths,
+    key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry,
+    KeyUnitKind, KeyUnitPaths,
 };
 use lzvm_artifacts::metadata_bundle::UnitMetadataBundle;
 use lzvm_artifacts::pcs_evaluation_segment::{
@@ -27,6 +28,7 @@ use lzvm_artifacts::pcs_nonce_segment::{
 use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
 use lzvm_artifacts::pcs_query_segment::{parse_pcs_query_plan_segment, PCS_QUERY_PLAN_SEGMENT_ID};
 use lzvm_artifacts::proof::ProofSegment;
+use lzvm_artifacts::public_values::{encode_public_values_json, PublicValueEntry, PublicValues};
 use lzvm_artifacts::setup_info::{FriStep, StarkStruct, UnitSetupInfo};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
@@ -198,6 +200,45 @@ fn row_zero_stage_constraint(expected: u64) -> ConstraintProgram {
         args: vec![3, 0, 1, 0, 0, 8, 0, 0],
         numbers: vec![expected],
     }
+}
+
+fn public_row_zero_stage_constraint() -> ConstraintProgram {
+    ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 0,
+            first_row: 0,
+            last_row: 0,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 8,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "public row zero stage residual".to_owned(),
+        }],
+        ops: vec![0],
+        args: vec![1, 0, 7, 0, 0, 1, 0, 0],
+        numbers: Vec::new(),
+    }
+}
+
+fn write_public_values(path: &Path, setup_hash: [u8; 32], elements: Vec<u64>) {
+    let values = PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: vec![PublicValueEntry {
+            name: "sample_public".to_owned(),
+            elements,
+        }],
+    };
+    fs::write(
+        path,
+        encode_public_values_json(&values).expect("public values should encode"),
+    )
+    .expect("public values should be written");
 }
 
 fn sample_pcs_material() -> PcsSetupMaterial {
@@ -500,6 +541,48 @@ fn rejects_witness_traces_that_violate_regular_constraints() {
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert!(error.to_string().contains("regular constraint"));
+}
+
+#[test]
+fn uses_public_inputs_when_checking_regular_constraints() {
+    let dir = temp_dir("public-constraint");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let public_inputs = dir.join("public-values.json");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.paths.fixed_columns = dir.join("unit.const");
+    fs::write(&unit.paths.fixed_columns, vec![0_u8; 16 * 2 * 8])
+        .expect("fixed columns should be written");
+    unit.regular_constraints = public_row_zero_stage_constraint();
+    let catalog = sample_catalog(unit);
+    write_public_values(
+        &public_inputs,
+        key_directory_catalog_digest(&catalog).expect("catalog digest should compute"),
+        vec![8],
+    );
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library,
+            guest_image,
+            public_inputs: Some(public_inputs),
+        },
+    )
+    .expect("execution plan should derive");
+
+    let output = run_prove_witness_commitments(&plan, 0)
+        .expect("public-valued regular constraint should pass");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(output.unit_index(), 0);
+    assert_eq!(output.trace_row_count(), 16);
 }
 
 #[test]
