@@ -1,4 +1,10 @@
-use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, PcsPlanError};
+use std::fs;
+use std::path::PathBuf;
+
+use lzvm_artifacts::pcs_plan::{
+    derive_pcs_setup_plan, encode_pcs_setup_plan, parse_pcs_setup_plan, read_pcs_setup_plan_file,
+    PcsPlanError,
+};
 use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
 
 fn sample_setup_info_json() -> &'static str {
@@ -48,6 +54,10 @@ fn sample_setup_info_json() -> &'static str {
     }"#
 }
 
+fn temp_file_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("lzvm-pcs-plan-{}-{name}", std::process::id()))
+}
+
 #[test]
 fn derives_pcs_setup_plan_from_unit_setup_metadata() {
     let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
@@ -74,6 +84,35 @@ fn derives_pcs_setup_plan_from_unit_setup_metadata() {
     assert_eq!(plan.fri_layers[1].input_bits, 9);
     assert_eq!(plan.fri_layers[1].output_bits, 5);
     assert_eq!(plan.fri_layers[1].folding_factor, 16);
+}
+
+#[test]
+fn encodes_and_parses_pcs_setup_plans() {
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
+
+    let encoded = encode_pcs_setup_plan(&plan).expect("plan should encode");
+    let parsed = parse_pcs_setup_plan(&encoded).expect("plan should parse");
+
+    assert_eq!(&encoded[0..4], b"pcsp");
+    assert_eq!(parsed, plan);
+}
+
+#[test]
+fn reads_pcs_setup_plans_from_a_file_path() {
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
+    let path = temp_file_path("plan.bin");
+    fs::write(
+        &path,
+        encode_pcs_setup_plan(&plan).expect("plan should encode"),
+    )
+    .expect("fixture should be written");
+
+    let parsed = read_pcs_setup_plan_file(&path).expect("plan should read");
+    fs::remove_file(&path).expect("fixture should be removed");
+
+    assert_eq!(parsed, plan);
 }
 
 #[test]

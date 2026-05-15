@@ -86,6 +86,14 @@ cargo run -p lzvm-cli -- setup write-info-bin <setup-info-json> <out-setup-info-
 
 This command validates the JSON metadata and writes the canonical binary setup metadata used by native setup commands.
 
+Generate a native PCS setup-plan artifact from binary setup metadata:
+
+```sh
+cargo run -p lzvm-cli -- setup write-pcs-plan <setup-info-bin> <out-pcs-plan>
+```
+
+This command derives domain sizes, query counts, commitment widths, opening points, and FRI folding layers from repository-owned binary setup metadata, then writes the canonical binary PCS setup-plan artifact used by later native proof setup work.
+
 Generate a raw fixed-column artifact from native binary setup metadata and a native binary fixed-column source:
 
 ```sh

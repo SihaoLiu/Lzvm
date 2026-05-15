@@ -9,6 +9,7 @@ use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
     read_key_directory_layout, validate_key_directory_layout,
 };
+use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, encode_pcs_setup_plan};
 use lzvm_artifacts::proof::read_proof_artifact_file;
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 use lzvm_artifacts::setup_info::{
@@ -52,6 +53,10 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             write_setup_info_bin(setup_info, out_setup_info_bin, stdout, stderr)
         }
         ["setup", "write-info-bin", ..] => write_info_bin_usage(stderr),
+        ["setup", "write-pcs-plan", setup_info_bin, out_pcs_plan] => {
+            write_pcs_setup_plan(setup_info_bin, out_pcs_plan, stdout, stderr)
+        }
+        ["setup", "write-pcs-plan", ..] => write_pcs_plan_usage(stderr),
         ["setup", "write-fixed", setup_info, columns_json, out_const] => {
             write_fixed_columns(setup_info, columns_json, out_const, stdout, stderr)
         }
@@ -459,6 +464,51 @@ fn write_setup_info_bin(
     }
     if let Err(error) = std::fs::write(output, &bytes) {
         let _ = writeln!(stderr, "setup-info binary write failed: {error}");
+        return 1;
+    }
+
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "bytes_written={}", bytes.len());
+    let _ = writeln!(stdout, "output={}", output.display());
+    0
+}
+
+fn write_pcs_setup_plan(
+    setup_info_bin: &str,
+    out_pcs_plan: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let setup = match read_unit_setup_info_binary_file(setup_info_bin) {
+        Ok(setup) => setup,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup PCS plan write failed: {error}");
+            return 1;
+        }
+    };
+    let plan = match derive_pcs_setup_plan(&setup) {
+        Ok(plan) => plan,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup PCS plan write failed: {error}");
+            return 1;
+        }
+    };
+    let bytes = match encode_pcs_setup_plan(&plan) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup PCS plan write failed: {error}");
+            return 1;
+        }
+    };
+    let output = Path::new(out_pcs_plan);
+    if let Some(parent) = output.parent() {
+        if let Err(error) = std::fs::create_dir_all(parent) {
+            let _ = writeln!(stderr, "setup PCS plan write failed: {error}");
+            return 1;
+        }
+    }
+    if let Err(error) = std::fs::write(output, &bytes) {
+        let _ = writeln!(stderr, "setup PCS plan write failed: {error}");
         return 1;
     }
 
@@ -1090,6 +1140,14 @@ fn write_info_bin_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
         "usage: lzvm setup write-info-bin <setup-info-json> <out-setup-info-bin>"
+    );
+    2
+}
+
+fn write_pcs_plan_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm setup write-pcs-plan <setup-info-bin> <out-pcs-plan>"
     );
     2
 }
