@@ -391,10 +391,6 @@ impl KeyUnitPaths {
             .map(|prefix| append_suffix(prefix, ".verifier.bin"))
     }
 
-    pub fn verification_key_json(&self) -> PathBuf {
-        append_suffix(&self.verification_key_prefix, ".verkey.json")
-    }
-
     pub fn verification_key_binary(&self) -> PathBuf {
         append_suffix(&self.verification_key_prefix, ".verkey.bin")
     }

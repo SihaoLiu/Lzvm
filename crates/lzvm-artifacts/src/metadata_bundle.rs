@@ -32,7 +32,6 @@ pub struct GlobalMetadataPaths {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnitArtifactPaths {
     pub metadata: UnitMetadataPaths,
-    pub verification_key_json: PathBuf,
     pub verification_key_binary: PathBuf,
     pub expression_program: PathBuf,
     pub verifier_program: PathBuf,
@@ -118,7 +117,6 @@ impl GlobalMetadataPaths {
 impl UnitArtifactPaths {
     pub fn new(
         metadata: UnitMetadataPaths,
-        verification_key_json: impl Into<PathBuf>,
         verification_key_binary: impl Into<PathBuf>,
         expression_program: impl Into<PathBuf>,
         verifier_program: impl Into<PathBuf>,
@@ -127,7 +125,6 @@ impl UnitArtifactPaths {
     ) -> Self {
         Self {
             metadata,
-            verification_key_json: verification_key_json.into(),
             verification_key_binary: verification_key_binary.into(),
             expression_program: expression_program.into(),
             verifier_program: verifier_program.into(),
@@ -140,7 +137,6 @@ impl UnitArtifactPaths {
         let prefix = prefix.as_ref();
         Self {
             metadata: UnitMetadataPaths::from_unit_prefix(prefix),
-            verification_key_json: append_suffix(prefix, ".verkey.json"),
             verification_key_binary: append_suffix(prefix, ".verkey.bin"),
             expression_program: append_suffix(prefix, ".bin"),
             verifier_program: append_suffix(prefix, ".verifier.bin"),

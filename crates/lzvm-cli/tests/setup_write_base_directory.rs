@@ -284,7 +284,6 @@ fn write_unit_files(
         write_bytes(&path, &verifier_program);
     }
 
-    write_text(&paths.verification_key_json(), "[1,2,3,4]");
     write_bytes(
         &paths.verification_key_binary(),
         encode_verification_key_binary(root).expect("root should encode"),

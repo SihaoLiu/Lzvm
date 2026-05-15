@@ -247,6 +247,11 @@ fn write_text(path: &Path, value: &str) {
     fs::write(path, value).expect("fixture file should be written");
 }
 
+fn stale_verification_key_json_path(unit: &KeyUnitPaths) -> PathBuf {
+    unit.verification_key_binary()
+        .with_file_name("unit-a.verkey.json")
+}
+
 fn write_bytes(path: &Path, value: impl AsRef<[u8]>) {
     fs::create_dir_all(path.parent().expect("path should have a parent"))
         .expect("fixture directory should be created");
@@ -327,7 +332,6 @@ fn write_catalog_unit_files(unit: &KeyUnitPaths) {
         write_bytes(&path, &verifier_program);
     }
 
-    write_text(&unit.verification_key_json(), "[1,2,3,4]");
     let root = VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4]);
     write_bytes(
         &unit.verification_key_binary(),
@@ -702,8 +706,6 @@ fn reads_key_directory_catalog_from_binary_verification_keys_without_json() {
     let layout = read_key_directory_layout(&dir).expect("layout should parse");
     for unit in &layout.units {
         write_catalog_unit_files(unit);
-        fs::remove_file(unit.verification_key_json())
-            .expect("json verification key should be removed");
     }
 
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
@@ -723,7 +725,7 @@ fn reads_key_directory_catalog_ignoring_stale_json_verification_keys() {
     let layout = read_key_directory_layout(&dir).expect("layout should parse");
     for unit in &layout.units {
         write_catalog_unit_files(unit);
-        write_text(&unit.verification_key_json(), "[9,9,9,9]");
+        write_text(&stale_verification_key_json_path(unit), "[9,9,9,9]");
     }
 
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
@@ -836,7 +838,6 @@ fn hashes_key_directory_catalogs_deterministically() {
         digest
     );
 
-    write_text(&layout.units[0].verification_key_json(), "[2,2,2,2]");
     let changed_root = VerificationKeyRoot::FieldElements(vec![2, 2, 2, 2]);
     write_bytes(
         &layout.units[0].verification_key_binary(),

@@ -1262,7 +1262,6 @@ fn write_unit_files_with_setup_info_verifier_and_regular_constraints(
         write_bytes(&path, &verifier_program);
     }
 
-    write_text(&unit.verification_key_json(), "[1,2,3,4]");
     let root = VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4]);
     write_bytes(
         &unit.verification_key_binary(),
@@ -1308,7 +1307,6 @@ fn write_unit_files_with_fri_quotient(unit: &KeyUnitPaths) {
         write_bytes(&path, &verifier_program);
     }
 
-    write_text(&unit.verification_key_json(), "[1,2,3,4]");
     let root = VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4]);
     write_bytes(
         &unit.verification_key_binary(),

@@ -176,6 +176,12 @@ fn write_file(path: &Path, content: &str) {
     fs::write(path, content).expect("fixture should be written");
 }
 
+fn stale_verification_key_json_path(paths: &UnitArtifactPaths) -> PathBuf {
+    paths
+        .verification_key_binary
+        .with_file_name("unit-a.verkey.json")
+}
+
 fn create_clean_dir(name: &str) -> PathBuf {
     let dir = temp_dir(name);
     let _ = fs::remove_dir_all(&dir);
@@ -346,10 +352,6 @@ fn derives_unit_artifact_paths_from_a_unit_prefix() {
         PathBuf::from("/tmp/unit-a.starkinfo.bin")
     );
     assert_eq!(
-        paths.verification_key_json,
-        PathBuf::from("/tmp/unit-a.verkey.json")
-    );
-    assert_eq!(
         paths.verification_key_binary,
         PathBuf::from("/tmp/unit-a.verkey.bin")
     );
@@ -363,6 +365,23 @@ fn derives_unit_artifact_paths_from_a_unit_prefix() {
 }
 
 #[test]
+fn constructs_unit_artifact_paths_without_json_key_path() {
+    let paths = UnitArtifactPaths::new(
+        UnitMetadataPaths::from_unit_prefix("/tmp/unit-a"),
+        "/tmp/unit-a.verkey.bin",
+        "/tmp/unit-a.bin",
+        "/tmp/unit-a.verifier.bin",
+        "/tmp/unit-a.const",
+        "/tmp/unit-a.consttree",
+    );
+
+    assert_eq!(
+        paths.verification_key_binary,
+        PathBuf::from("/tmp/unit-a.verkey.bin")
+    );
+}
+
+#[test]
 fn reads_and_validates_unit_artifacts_from_paths() {
     let dir = create_clean_dir("unit-artifacts-valid");
     let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
@@ -372,7 +391,7 @@ fn reads_and_validates_unit_artifacts_from_paths() {
         sample_expression_info_json(),
         sample_verifier_info_json(),
     );
-    write_file(&paths.verification_key_json, "[9,9,9,9]");
+    write_file(&stale_verification_key_json_path(&paths), "[9,9,9,9]");
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
     write_expression_program(&paths.expression_program, 17);
     write_expression_program(&paths.verifier_program, 9);
@@ -428,7 +447,6 @@ fn rejects_unit_artifacts_when_binary_key_does_not_match_constant_tree() {
         sample_expression_info_json(),
         sample_verifier_info_json(),
     );
-    write_file(&paths.verification_key_json, "[1,2,3,4]");
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 5]);
     write_expression_program(&paths.expression_program, 17);
     write_expression_program(&paths.verifier_program, 9);
@@ -457,7 +475,6 @@ fn rejects_unit_artifacts_with_missing_verifier_programs() {
         sample_expression_info_json(),
         sample_verifier_info_json(),
     );
-    write_file(&paths.verification_key_json, "[1,2,3,4]");
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
     write_expression_program(&paths.expression_program, 17);
     write_fixed_columns(&paths.fixed_columns);
@@ -479,7 +496,6 @@ fn rejects_unit_artifacts_with_missing_fixed_columns() {
         sample_expression_info_json(),
         sample_verifier_info_json(),
     );
-    write_file(&paths.verification_key_json, "[1,2,3,4]");
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
     write_expression_program(&paths.expression_program, 17);
     write_expression_program(&paths.verifier_program, 9);
@@ -500,7 +516,6 @@ fn rejects_unit_artifacts_with_missing_constant_trees() {
         sample_expression_info_json(),
         sample_verifier_info_json(),
     );
-    write_file(&paths.verification_key_json, "[1,2,3,4]");
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
     write_expression_program(&paths.expression_program, 17);
     write_expression_program(&paths.verifier_program, 9);
@@ -522,7 +537,6 @@ fn rejects_unit_artifacts_with_constant_tree_root_mismatches() {
         sample_expression_info_json(),
         sample_verifier_info_json(),
     );
-    write_file(&paths.verification_key_json, "[1,2,3,4]");
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
     write_expression_program(&paths.expression_program, 17);
     write_expression_program(&paths.verifier_program, 9);
@@ -551,7 +565,6 @@ fn rejects_unit_artifacts_with_fixed_row_count_mismatches() {
         sample_expression_info_json(),
         sample_verifier_info_json(),
     );
-    write_file(&paths.verification_key_json, "[1,2,3,4]");
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
     write_expression_program(&paths.expression_program, 17);
     write_expression_program(&paths.verifier_program, 9);
