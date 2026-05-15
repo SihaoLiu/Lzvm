@@ -26,6 +26,20 @@ pub struct PcsTranscriptInputs<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct PcsTranscriptPrefixInputs<'a> {
+    pub arity: usize,
+    pub hash_values: bool,
+    pub constant_root: [Felt; 4],
+    pub public_values: &'a [Felt],
+    pub witness_roots: &'a [[Felt; 4]],
+    pub root_challenge_draws: &'a [usize],
+    pub unit_value_map: &'a [StageValue],
+    pub unit_values: &'a [Felt],
+    pub evaluation_values: &'a [Ext3],
+    pub evaluation_challenge_draws: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct PcsTranscriptSegmentInputs<'a> {
     pub unit_index: usize,
     pub unit: &'a ProveUnitSchedule,
@@ -152,14 +166,63 @@ pub fn derive_pcs_final_query_challenge(
 pub fn derive_pcs_transcript_challenges(
     input: PcsTranscriptInputs<'_>,
 ) -> Result<Vec<Ext3>, PcsTranscriptError> {
+    if input.final_polynomial.is_empty() {
+        return Err(PcsTranscriptError::EmptyFinalPolynomial);
+    }
+
+    let (mut transcript, mut challenges) =
+        build_pcs_transcript_prefix(PcsTranscriptPrefixInputs {
+            arity: input.arity,
+            hash_values: input.hash_values,
+            constant_root: input.constant_root,
+            public_values: input.public_values,
+            witness_roots: input.witness_roots,
+            root_challenge_draws: input.root_challenge_draws,
+            unit_value_map: input.unit_value_map,
+            unit_values: input.unit_values,
+            evaluation_values: input.evaluation_values,
+            evaluation_challenge_draws: input.evaluation_challenge_draws,
+        })?;
+
+    challenges.push(Ext3::ZERO);
+
+    for (index, root) in input.fri_roots.iter().enumerate() {
+        if index > 0 {
+            challenges.push(transcript.get_field());
+        }
+        transcript.put(root);
+    }
+    if !input.fri_roots.is_empty() {
+        challenges.push(transcript.get_field());
+    }
+
+    let final_values = flatten_extension_values(input.final_polynomial);
+    absorb_commit_values(
+        &mut transcript,
+        input.arity,
+        input.hash_values,
+        &final_values,
+    )?;
+
+    challenges.push(transcript.get_field());
+    Ok(challenges)
+}
+
+pub fn derive_pcs_transcript_prefix_challenges(
+    input: PcsTranscriptPrefixInputs<'_>,
+) -> Result<Vec<Ext3>, PcsTranscriptError> {
+    let (_, challenges) = build_pcs_transcript_prefix(input)?;
+    Ok(challenges)
+}
+
+fn build_pcs_transcript_prefix(
+    input: PcsTranscriptPrefixInputs<'_>,
+) -> Result<(PoseidonTranscript, Vec<Ext3>), PcsTranscriptError> {
     if input.witness_roots.len() != input.root_challenge_draws.len() {
         return Err(PcsTranscriptError::RootChallengeDrawMismatch {
             root_count: input.witness_roots.len(),
             draw_count: input.root_challenge_draws.len(),
         });
-    }
-    if input.final_polynomial.is_empty() {
-        return Err(PcsTranscriptError::EmptyFinalPolynomial);
     }
 
     let mut transcript = PoseidonTranscript::new(input.arity)?;
@@ -203,28 +266,7 @@ pub fn derive_pcs_transcript_challenges(
         &mut challenges,
     );
 
-    challenges.push(Ext3::ZERO);
-
-    for (index, root) in input.fri_roots.iter().enumerate() {
-        if index > 0 {
-            challenges.push(transcript.get_field());
-        }
-        transcript.put(root);
-    }
-    if !input.fri_roots.is_empty() {
-        challenges.push(transcript.get_field());
-    }
-
-    let final_values = flatten_extension_values(input.final_polynomial);
-    absorb_commit_values(
-        &mut transcript,
-        input.arity,
-        input.hash_values,
-        &final_values,
-    )?;
-
-    challenges.push(transcript.get_field());
-    Ok(challenges)
+    Ok((transcript, challenges))
 }
 
 pub fn derive_pcs_final_query_challenge_from_segments(
