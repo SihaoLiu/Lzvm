@@ -341,9 +341,24 @@ impl KeyUnitPaths {
     }
 
     pub fn verifier_info(&self) -> Option<PathBuf> {
+        let binary = self.verifier_info_binary()?;
+        if binary.is_file() {
+            Some(binary)
+        } else {
+            self.verifier_info_json()
+        }
+    }
+
+    pub fn verifier_info_json(&self) -> Option<PathBuf> {
         self.metadata_prefix
             .as_ref()
             .map(|prefix| append_suffix(prefix, ".verifierinfo.json"))
+    }
+
+    pub fn verifier_info_binary(&self) -> Option<PathBuf> {
+        self.metadata_prefix
+            .as_ref()
+            .map(|prefix| append_suffix(prefix, ".verifierinfo.bin"))
     }
 
     pub fn pcs_setup_plan(&self) -> Option<PathBuf> {

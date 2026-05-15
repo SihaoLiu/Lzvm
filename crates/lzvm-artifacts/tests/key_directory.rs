@@ -17,6 +17,7 @@ use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, encode_pcs_setup_plan};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
 use lzvm_artifacts::setup_info::{encode_unit_setup_info, parse_unit_setup_info_json};
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
+use lzvm_artifacts::verifier_info::{encode_verifier_info, parse_verifier_info_json};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -604,6 +605,48 @@ fn reads_key_directory_catalog_from_binary_unit_setup_metadata() {
             .expect("setup metadata path should derive")
             .to_string_lossy()
             .ends_with(".starkinfo.bin")
+    }));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn reads_key_directory_catalog_from_binary_verifier_metadata() {
+    let dir = temp_dir("binary-verifier-info");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+
+    let verifier =
+        parse_verifier_info_json(sample_verifier_info_json()).expect("verifier should parse");
+    let verifier_bytes = encode_verifier_info(&verifier).expect("verifier should encode");
+    for unit in &layout.units {
+        let json_path = unit
+            .verifier_info_json()
+            .expect("json verifier metadata path should derive");
+        let binary_path = unit
+            .verifier_info_binary()
+            .expect("binary verifier metadata path should derive");
+        write_bytes(&binary_path, &verifier_bytes);
+        if json_path.is_file() {
+            fs::remove_file(json_path).expect("json verifier metadata should be removed");
+        }
+    }
+
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+
+    assert!(catalog
+        .units
+        .iter()
+        .all(|unit| unit.metadata.verifier == verifier));
+    assert!(catalog.units.iter().all(|unit| {
+        unit.paths
+            .verifier_info()
+            .expect("verifier metadata path should derive")
+            .to_string_lossy()
+            .ends_with(".verifierinfo.bin")
     }));
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }

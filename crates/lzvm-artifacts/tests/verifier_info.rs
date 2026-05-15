@@ -1,5 +1,6 @@
 use lzvm_artifacts::verifier_info::{
-    parse_verifier_info_json, read_verifier_info_file, VerifierInfoError,
+    encode_verifier_info, parse_verifier_info, parse_verifier_info_json,
+    read_verifier_info_binary_file, read_verifier_info_file, VerifierInfoError,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -114,4 +115,29 @@ fn reads_verifier_info_from_a_file_path() {
     fs::remove_file(&path).expect("fixture should be removed");
 
     assert_eq!(info.quotient.operation_count(), 2);
+}
+
+#[test]
+fn encodes_and_parses_verifier_info_binary() {
+    let info = parse_verifier_info_json(sample_verifier_info_json()).expect("fixture should parse");
+    let bytes = encode_verifier_info(&info).expect("fixture should encode");
+
+    let parsed = parse_verifier_info(&bytes).expect("binary fixture should parse");
+
+    assert_eq!(parsed, info);
+}
+
+#[test]
+fn reads_verifier_info_binary_from_a_file_path() {
+    let info = parse_verifier_info_json(sample_verifier_info_json()).expect("fixture should parse");
+    let bytes = encode_verifier_info(&info).expect("fixture should encode");
+    let path = temp_file_path("verifier.bin");
+    fs::write(&path, bytes).expect("fixture should be written");
+
+    let direct = read_verifier_info_binary_file(&path).expect("binary fixture should parse");
+    let inferred = read_verifier_info_file(&path).expect("binary fixture should parse by suffix");
+    fs::remove_file(&path).expect("fixture should be removed");
+
+    assert_eq!(direct, info);
+    assert_eq!(inferred, info);
 }

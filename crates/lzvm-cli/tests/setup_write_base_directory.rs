@@ -22,6 +22,7 @@ use lzvm_artifacts::verification_key::{
     encode_verification_key_binary, read_verification_key_binary_file,
     read_verification_key_json_file, VerificationKeyRoot,
 };
+use lzvm_artifacts::verifier_info::{parse_verifier_info_json, read_verifier_info_binary_file};
 use lzvm_cli::run_cli;
 use lzvm_setup::build_constant_tree_from_fixed_columns;
 
@@ -410,6 +411,38 @@ fn writes_base_directory_unit_setup_metadata_binary() {
             .expect("binary setup metadata path should derive");
         let setup = read_unit_setup_info_binary_file(path).expect("binary setup should parse");
         assert_eq!(setup, expected);
+    }
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn writes_base_directory_verifier_metadata_binary() {
+    let (dir, _) = create_key_directory("verifier-info-bin");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "write-base-directory",
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let expected =
+        parse_verifier_info_json(sample_verifier_info_json()).expect("verifier should parse");
+    for unit in &layout.units {
+        let path = unit
+            .verifier_info_binary()
+            .expect("binary verifier metadata path should derive");
+        let verifier = read_verifier_info_binary_file(path).expect("binary verifier should parse");
+        assert_eq!(verifier, expected);
     }
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 

@@ -41,6 +41,7 @@ use lzvm_artifacts::setup_info::{
 };
 use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
 use lzvm_artifacts::verification_key::{read_verification_key_binary_file, VerificationKeyRoot};
+use lzvm_artifacts::verifier_info::{encode_verifier_info, read_verifier_info_file, VerifierInfo};
 use lzvm_artifacts::witness_opening_segment::{
     parse_witness_opening_segment, WITNESS_OPENING_SEGMENT_ID,
 };
@@ -2224,6 +2225,29 @@ fn write_base_directory(
                 return 1;
             }
         }
+        let verifier_path = match unit.verifier_info() {
+            Some(path) => path,
+            None => {
+                let _ = writeln!(
+                    stderr,
+                    "setup native base directory write failed: missing unit verifier metadata path"
+                );
+                return 1;
+            }
+        };
+        let verifier = match read_verifier_info_file(&verifier_path) {
+            Ok(verifier) => verifier,
+            Err(error) => {
+                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
+                return 1;
+            }
+        };
+        if let Some(path) = unit.verifier_info_binary() {
+            if let Err(error) = write_verifier_info_binary_for_directory(&path, &verifier) {
+                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
+                return 1;
+            }
+        }
         let group_name = unit.group_name.as_deref().unwrap_or("raw");
         let unit_name = unit.unit_name.as_deref().unwrap_or("unit");
         let columns = match read_fixed_columns_file_for_setup(
@@ -2331,6 +2355,20 @@ fn write_unit_setup_info_binary_for_directory(
     std::fs::write(path, &bytes).map_err(|error| {
         format!(
             "write setup metadata binary failed: {}: {error}",
+            path.display()
+        )
+    })?;
+    Ok(bytes.len() as u64)
+}
+
+fn write_verifier_info_binary_for_directory(
+    path: &Path,
+    verifier: &VerifierInfo,
+) -> Result<u64, String> {
+    let bytes = encode_verifier_info(verifier).map_err(|error| error.to_string())?;
+    std::fs::write(path, &bytes).map_err(|error| {
+        format!(
+            "write verifier metadata binary failed: {}: {error}",
             path.display()
         )
     })?;
