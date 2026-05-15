@@ -1,4 +1,5 @@
 use lzvm_artifacts::constant_tree::expected_constant_tree_byte_count;
+use lzvm_artifacts::expression_info::{encode_expression_info, parse_expression_info_json};
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
@@ -8,7 +9,9 @@ use lzvm_artifacts::metadata_bundle::{
     GlobalMetadataPaths, MetadataBundleError, UnitArtifactPaths, UnitMetadataPaths,
 };
 use lzvm_artifacts::metadata_validation::MetadataValidationError;
+use lzvm_artifacts::setup_info::{encode_unit_setup_info, parse_unit_setup_info_json};
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
+use lzvm_artifacts::verifier_info::{encode_verifier_info, parse_verifier_info_json};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -181,9 +184,39 @@ fn create_clean_dir(name: &str) -> PathBuf {
 }
 
 fn write_unit_fixture(paths: &UnitMetadataPaths, setup: &str, expressions: &str, verifier: &str) {
-    write_file(&paths.setup_info, setup);
-    write_file(&paths.expression_info, expressions);
-    write_file(&paths.verifier_info, verifier);
+    write_setup_info_fixture(&paths.setup_info, setup);
+    write_expression_info_fixture(&paths.expression_info, expressions);
+    write_verifier_info_fixture(&paths.verifier_info, verifier);
+}
+
+fn write_setup_info_fixture(path: &Path, content: &str) {
+    if path.extension().and_then(|extension| extension.to_str()) == Some("bin") {
+        let setup = parse_unit_setup_info_json(content).expect("setup should parse");
+        let bytes = encode_unit_setup_info(&setup).expect("setup should encode");
+        fs::write(path, bytes).expect("fixture should be written");
+    } else {
+        write_file(path, content);
+    }
+}
+
+fn write_expression_info_fixture(path: &Path, content: &str) {
+    if path.extension().and_then(|extension| extension.to_str()) == Some("bin") {
+        let expressions = parse_expression_info_json(content).expect("expressions should parse");
+        let bytes = encode_expression_info(&expressions).expect("expressions should encode");
+        fs::write(path, bytes).expect("fixture should be written");
+    } else {
+        write_file(path, content);
+    }
+}
+
+fn write_verifier_info_fixture(path: &Path, content: &str) {
+    if path.extension().and_then(|extension| extension.to_str()) == Some("bin") {
+        let verifier = parse_verifier_info_json(content).expect("verifier should parse");
+        let bytes = encode_verifier_info(&verifier).expect("verifier should encode");
+        fs::write(path, bytes).expect("fixture should be written");
+    } else {
+        write_file(path, content);
+    }
 }
 
 fn write_root_binary(path: &Path, values: Vec<u64>) {
@@ -218,17 +251,14 @@ fn write_constant_tree(path: &Path, root_values: [u64; 4]) {
 fn derives_unit_metadata_paths_from_a_unit_prefix() {
     let paths = UnitMetadataPaths::from_unit_prefix(Path::new("/tmp/unit-a"));
 
-    assert_eq!(
-        paths.setup_info,
-        PathBuf::from("/tmp/unit-a.starkinfo.json")
-    );
+    assert_eq!(paths.setup_info, PathBuf::from("/tmp/unit-a.starkinfo.bin"));
     assert_eq!(
         paths.expression_info,
-        PathBuf::from("/tmp/unit-a.expressionsinfo.json")
+        PathBuf::from("/tmp/unit-a.expressionsinfo.bin")
     );
     assert_eq!(
         paths.verifier_info,
-        PathBuf::from("/tmp/unit-a.verifierinfo.json")
+        PathBuf::from("/tmp/unit-a.verifierinfo.bin")
     );
 }
 
@@ -313,7 +343,7 @@ fn derives_unit_artifact_paths_from_a_unit_prefix() {
 
     assert_eq!(
         paths.metadata.setup_info,
-        PathBuf::from("/tmp/unit-a.starkinfo.json")
+        PathBuf::from("/tmp/unit-a.starkinfo.bin")
     );
     assert_eq!(
         paths.verification_key_json,

@@ -107,9 +107,9 @@ impl UnitMetadataPaths {
     pub fn from_unit_prefix(prefix: impl AsRef<Path>) -> Self {
         let prefix = prefix.as_ref();
         Self {
-            setup_info: append_suffix(prefix, ".starkinfo.json"),
-            expression_info: append_suffix(prefix, ".expressionsinfo.json"),
-            verifier_info: append_suffix(prefix, ".verifierinfo.json"),
+            setup_info: append_suffix(prefix, ".starkinfo.bin"),
+            expression_info: append_suffix(prefix, ".expressionsinfo.bin"),
+            verifier_info: append_suffix(prefix, ".verifierinfo.bin"),
         }
     }
 }
