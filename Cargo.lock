@@ -97,6 +97,13 @@ name = "lzvm-field"
 version = "0.1.0"
 
 [[package]]
+name = "lzvm-prover"
+version = "0.1.0"
+dependencies = [
+ "lzvm-artifacts",
+]
+
+[[package]]
 name = "lzvm-setup"
 version = "0.1.0"
 dependencies = [

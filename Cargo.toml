@@ -4,6 +4,7 @@ members = [
     "crates/lzvm-accel",
     "crates/lzvm-cli",
     "crates/lzvm-field",
+    "crates/lzvm-prover",
     "crates/lzvm-setup",
 ]
 resolver = "2"

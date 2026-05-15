@@ -17,6 +17,7 @@ The goal is to build a native stack with a Rust-first core, C++ integration for 
 - `crates/lzvm-accel`: feature-gated C++/CUDA acceleration boundary with GPU field-arithmetic, NTT, shifted coset-extension, and Poseidon2 width-8/width-16 parity tests.
 - `crates/lzvm-artifacts`: native readers, writers, validators, and PCS setup-plan derivation for setup and proving artifacts.
 - `crates/lzvm-setup`: native setup-generation primitives with validated staging, publish behavior, and optional CUDA fixed-column extension plus native tree hashing.
+- `crates/lzvm-prover`: native proof scheduling and preflight planning derived from setup catalogs.
 - `crates/lzvm-cli`: repository-owned command entry points.
 
 ## Current Commands
