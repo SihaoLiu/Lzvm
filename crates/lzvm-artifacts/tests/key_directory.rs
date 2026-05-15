@@ -3,6 +3,7 @@ use lzvm_artifacts::constraint_program::{
     encode_global_constraint_program, encode_regular_constraint_program, ConstraintEntry,
     ConstraintProgram, GlobalConstraintProgram,
 };
+use lzvm_artifacts::expression_info::{encode_expression_info, parse_expression_info_json};
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
@@ -647,6 +648,48 @@ fn reads_key_directory_catalog_from_binary_verifier_metadata() {
             .expect("verifier metadata path should derive")
             .to_string_lossy()
             .ends_with(".verifierinfo.bin")
+    }));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn reads_key_directory_catalog_from_binary_expression_metadata() {
+    let dir = temp_dir("binary-expression-info");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+
+    let expressions = parse_expression_info_json(sample_expression_info_json())
+        .expect("expressions should parse");
+    let expression_bytes = encode_expression_info(&expressions).expect("expressions should encode");
+    for unit in &layout.units {
+        let json_path = unit
+            .expression_info_json()
+            .expect("json expression metadata path should derive");
+        let binary_path = unit
+            .expression_info_binary()
+            .expect("binary expression metadata path should derive");
+        write_bytes(&binary_path, &expression_bytes);
+        if json_path.is_file() {
+            fs::remove_file(json_path).expect("json expression metadata should be removed");
+        }
+    }
+
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+
+    assert!(catalog
+        .units
+        .iter()
+        .all(|unit| unit.metadata.expressions == expressions));
+    assert!(catalog.units.iter().all(|unit| {
+        unit.paths
+            .expression_info()
+            .expect("expression metadata path should derive")
+            .to_string_lossy()
+            .ends_with(".expressionsinfo.bin")
     }));
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }

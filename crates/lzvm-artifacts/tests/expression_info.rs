@@ -1,5 +1,6 @@
 use lzvm_artifacts::expression_info::{
-    parse_expression_info_json, read_expression_info_file, BoundaryKind, ExpressionInfoError,
+    encode_expression_info, parse_expression_info, parse_expression_info_json,
+    read_expression_info_binary_file, read_expression_info_file, BoundaryKind, ExpressionInfoError,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -163,4 +164,31 @@ fn reads_expression_info_from_a_file_path() {
     fs::remove_file(&path).expect("fixture should be removed");
 
     assert_eq!(info.expressions[0].operation_count(), 2);
+}
+
+#[test]
+fn encodes_and_parses_expression_info_binary() {
+    let info =
+        parse_expression_info_json(sample_expression_info_json()).expect("fixture should parse");
+    let bytes = encode_expression_info(&info).expect("fixture should encode");
+
+    let parsed = parse_expression_info(&bytes).expect("binary fixture should parse");
+
+    assert_eq!(parsed, info);
+}
+
+#[test]
+fn reads_expression_info_binary_from_a_file_path() {
+    let info =
+        parse_expression_info_json(sample_expression_info_json()).expect("fixture should parse");
+    let bytes = encode_expression_info(&info).expect("fixture should encode");
+    let path = temp_file_path("expressions.bin");
+    fs::write(&path, bytes).expect("fixture should be written");
+
+    let direct = read_expression_info_binary_file(&path).expect("binary fixture should parse");
+    let inferred = read_expression_info_file(&path).expect("binary fixture should parse by suffix");
+    fs::remove_file(&path).expect("fixture should be removed");
+
+    assert_eq!(direct, info);
+    assert_eq!(inferred, info);
 }

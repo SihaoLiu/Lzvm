@@ -6,6 +6,9 @@ use lzvm_artifacts::constant_opening_segment::{
     parse_constant_opening_segment, CONSTANT_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::constant_tree::read_constant_tree_file;
+use lzvm_artifacts::expression_info::{
+    encode_expression_info, read_expression_info_file, ExpressionInfo,
+};
 use lzvm_artifacts::fixed::{
     read_fixed_columns_file, read_fixed_columns_file_for_setup, FixedColumn, FixedColumns,
 };
@@ -2225,6 +2228,29 @@ fn write_base_directory(
                 return 1;
             }
         }
+        let expression_path = match unit.expression_info() {
+            Some(path) => path,
+            None => {
+                let _ = writeln!(
+                    stderr,
+                    "setup native base directory write failed: missing unit expression metadata path"
+                );
+                return 1;
+            }
+        };
+        let expressions = match read_expression_info_file(&expression_path) {
+            Ok(expressions) => expressions,
+            Err(error) => {
+                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
+                return 1;
+            }
+        };
+        if let Some(path) = unit.expression_info_binary() {
+            if let Err(error) = write_expression_info_binary_for_directory(&path, &expressions) {
+                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
+                return 1;
+            }
+        }
         let verifier_path = match unit.verifier_info() {
             Some(path) => path,
             None => {
@@ -2355,6 +2381,20 @@ fn write_unit_setup_info_binary_for_directory(
     std::fs::write(path, &bytes).map_err(|error| {
         format!(
             "write setup metadata binary failed: {}: {error}",
+            path.display()
+        )
+    })?;
+    Ok(bytes.len() as u64)
+}
+
+fn write_expression_info_binary_for_directory(
+    path: &Path,
+    expressions: &ExpressionInfo,
+) -> Result<u64, String> {
+    let bytes = encode_expression_info(expressions).map_err(|error| error.to_string())?;
+    std::fs::write(path, &bytes).map_err(|error| {
+        format!(
+            "write expression metadata binary failed: {}: {error}",
             path.display()
         )
     })?;

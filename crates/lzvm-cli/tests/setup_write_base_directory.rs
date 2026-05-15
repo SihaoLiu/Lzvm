@@ -6,6 +6,9 @@ use lzvm_artifacts::constraint_program::{
     encode_global_constraint_program, encode_regular_constraint_program, ConstraintEntry,
     ConstraintProgram, GlobalConstraintProgram,
 };
+use lzvm_artifacts::expression_info::{
+    parse_expression_info_json, read_expression_info_binary_file,
+};
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
@@ -443,6 +446,39 @@ fn writes_base_directory_verifier_metadata_binary() {
             .expect("binary verifier metadata path should derive");
         let verifier = read_verifier_info_binary_file(path).expect("binary verifier should parse");
         assert_eq!(verifier, expected);
+    }
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn writes_base_directory_expression_metadata_binary() {
+    let (dir, _) = create_key_directory("expression-info-bin");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "write-base-directory",
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let expected = parse_expression_info_json(sample_expression_info_json())
+        .expect("expressions should parse");
+    for unit in &layout.units {
+        let path = unit
+            .expression_info_binary()
+            .expect("binary expression metadata path should derive");
+        let expressions =
+            read_expression_info_binary_file(path).expect("binary expressions should parse");
+        assert_eq!(expressions, expected);
     }
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 

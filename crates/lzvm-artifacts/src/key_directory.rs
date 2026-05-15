@@ -335,9 +335,24 @@ impl KeyUnitPaths {
     }
 
     pub fn expression_info(&self) -> Option<PathBuf> {
+        let binary = self.expression_info_binary()?;
+        if binary.is_file() {
+            Some(binary)
+        } else {
+            self.expression_info_json()
+        }
+    }
+
+    pub fn expression_info_json(&self) -> Option<PathBuf> {
         self.metadata_prefix
             .as_ref()
             .map(|prefix| append_suffix(prefix, ".expressionsinfo.json"))
+    }
+
+    pub fn expression_info_binary(&self) -> Option<PathBuf> {
+        self.metadata_prefix
+            .as_ref()
+            .map(|prefix| append_suffix(prefix, ".expressionsinfo.bin"))
     }
 
     pub fn verifier_info(&self) -> Option<PathBuf> {
