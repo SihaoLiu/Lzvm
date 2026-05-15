@@ -12,7 +12,7 @@ use lzvm_artifacts::expression_info::{
 use lzvm_artifacts::fixed::{
     read_fixed_columns_file, read_fixed_columns_file_for_setup, FixedColumn, FixedColumns,
 };
-use lzvm_artifacts::global_info::{encode_global_info, read_global_info_file, GlobalInfo};
+use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo};
 use lzvm_artifacts::group_values_segment::{parse_group_values_segment, GROUP_VALUES_SEGMENT_ID};
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
@@ -108,14 +108,6 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
         ["setup", "fingerprint", ..] => write_fingerprint_usage(stderr),
         ["setup", "validate", setup_dir] => validate_setup_directory(setup_dir, stdout, stderr),
         ["setup", "validate", ..] => write_validate_usage(stderr),
-        ["setup", "write-info-bin", setup_info, out_setup_info_bin] => {
-            write_setup_info_bin(setup_info, out_setup_info_bin, stdout, stderr)
-        }
-        ["setup", "write-info-bin", ..] => write_info_bin_usage(stderr),
-        ["setup", "write-global-info-bin", global_info, out_global_info_bin] => {
-            write_global_info_bin(global_info, out_global_info_bin, stdout, stderr)
-        }
-        ["setup", "write-global-info-bin", ..] => write_global_info_bin_usage(stderr),
         ["setup", "write-pcs-plan", setup_info_bin, out_pcs_plan] => {
             write_pcs_setup_plan(setup_info_bin, out_pcs_plan, stdout, stderr)
         }
@@ -1835,82 +1827,6 @@ fn validate_setup_directory(
     }
 }
 
-fn write_setup_info_bin(
-    setup_info: &str,
-    out_setup_info_bin: &str,
-    stdout: &mut dyn Write,
-    stderr: &mut dyn Write,
-) -> i32 {
-    let setup = match read_unit_setup_info_file(setup_info) {
-        Ok(setup) => setup,
-        Err(error) => {
-            let _ = writeln!(stderr, "setup-info binary write failed: {error}");
-            return 1;
-        }
-    };
-    let bytes = match encode_unit_setup_info(&setup) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            let _ = writeln!(stderr, "setup-info binary write failed: {error}");
-            return 1;
-        }
-    };
-    let output = Path::new(out_setup_info_bin);
-    if let Some(parent) = output.parent().filter(|path| !path.as_os_str().is_empty()) {
-        if let Err(error) = std::fs::create_dir_all(parent) {
-            let _ = writeln!(stderr, "setup-info binary write failed: {error}");
-            return 1;
-        }
-    }
-    if let Err(error) = std::fs::write(output, &bytes) {
-        let _ = writeln!(stderr, "setup-info binary write failed: {error}");
-        return 1;
-    }
-
-    let _ = writeln!(stdout, "status=ok");
-    let _ = writeln!(stdout, "bytes_written={}", bytes.len());
-    let _ = writeln!(stdout, "output={}", output.display());
-    0
-}
-
-fn write_global_info_bin(
-    global_info: &str,
-    out_global_info_bin: &str,
-    stdout: &mut dyn Write,
-    stderr: &mut dyn Write,
-) -> i32 {
-    let global = match read_global_info_file(global_info) {
-        Ok(global) => global,
-        Err(error) => {
-            let _ = writeln!(stderr, "global-info binary write failed: {error}");
-            return 1;
-        }
-    };
-    let bytes = match encode_global_info(&global) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            let _ = writeln!(stderr, "global-info binary write failed: {error}");
-            return 1;
-        }
-    };
-    let output = Path::new(out_global_info_bin);
-    if let Some(parent) = output.parent().filter(|path| !path.as_os_str().is_empty()) {
-        if let Err(error) = std::fs::create_dir_all(parent) {
-            let _ = writeln!(stderr, "global-info binary write failed: {error}");
-            return 1;
-        }
-    }
-    if let Err(error) = std::fs::write(output, &bytes) {
-        let _ = writeln!(stderr, "global-info binary write failed: {error}");
-        return 1;
-    }
-
-    let _ = writeln!(stdout, "status=ok");
-    let _ = writeln!(stdout, "bytes_written={}", bytes.len());
-    let _ = writeln!(stdout, "output={}", output.display());
-    0
-}
-
 fn write_pcs_setup_plan(
     setup_info_bin: &str,
     out_pcs_plan: &str,
@@ -2953,22 +2869,6 @@ fn write_prove_schedule_usage(stderr: &mut dyn Write) -> i32 {
 
 fn write_fingerprint_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(stderr, "usage: lzvm setup fingerprint <setup-dir>");
-    2
-}
-
-fn write_info_bin_usage(stderr: &mut dyn Write) -> i32 {
-    let _ = writeln!(
-        stderr,
-        "usage: lzvm setup write-info-bin <setup-info-json> <out-setup-info-bin>"
-    );
-    2
-}
-
-fn write_global_info_bin_usage(stderr: &mut dyn Write) -> i32 {
-    let _ = writeln!(
-        stderr,
-        "usage: lzvm setup write-global-info-bin <global-info-json> <out-global-info-bin>"
-    );
     2
 }
 
