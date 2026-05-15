@@ -8,6 +8,9 @@ use lzvm_artifacts::key_directory::{
 };
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
+use lzvm_artifacts::witness_library::{
+    read_witness_library_file, WitnessLibraryError, WitnessLibraryInfo,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProveSchedule {
@@ -251,6 +254,7 @@ pub struct ProveExecutionInputArtifacts {
 pub struct ProveExecutionPlan {
     pub run_plan: ProveRunPlan,
     pub inputs: ProveExecutionInputArtifacts,
+    pub witness_library_info: WitnessLibraryInfo,
     pub guest_image_info: GuestImageInfo,
 }
 
@@ -262,6 +266,10 @@ pub enum ProveExecutionPlanError {
     },
     WitnessLibraryIsNotFile {
         path: PathBuf,
+    },
+    InvalidWitnessLibrary {
+        path: PathBuf,
+        source: WitnessLibraryError,
     },
     MissingGuestImage {
         path: PathBuf,
@@ -295,6 +303,11 @@ impl fmt::Display for ProveExecutionPlanError {
             Self::WitnessLibraryIsNotFile { path } => write!(
                 f,
                 "prove execution plan witness library is not a file: {}",
+                path.display()
+            ),
+            Self::InvalidWitnessLibrary { path, source } => write!(
+                f,
+                "prove execution plan witness library is invalid: {}: {source}",
                 path.display()
             ),
             Self::MissingGuestImage { path } => {
@@ -333,6 +346,7 @@ impl fmt::Display for ProveExecutionPlanError {
 impl std::error::Error for ProveExecutionPlanError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::InvalidWitnessLibrary { source, .. } => Some(source),
             Self::InvalidGuestImage { source, .. } => Some(source),
             Self::RunPlan(error) => Some(error),
             _ => None,
@@ -413,6 +427,13 @@ pub fn derive_prove_execution_plan(
         |path| ProveExecutionPlanError::MissingWitnessLibrary { path },
         |path| ProveExecutionPlanError::WitnessLibraryIsNotFile { path },
     )?;
+    let witness_library_info =
+        read_witness_library_file(&inputs.witness_library).map_err(|source| {
+            ProveExecutionPlanError::InvalidWitnessLibrary {
+                path: inputs.witness_library.clone(),
+                source,
+            }
+        })?;
     validate_regular_file(
         &inputs.guest_image,
         |path| ProveExecutionPlanError::MissingGuestImage { path },
@@ -435,6 +456,7 @@ pub fn derive_prove_execution_plan(
     Ok(ProveExecutionPlan {
         run_plan,
         inputs,
+        witness_library_info,
         guest_image_info,
     })
 }

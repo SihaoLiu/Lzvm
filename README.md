@@ -70,6 +70,14 @@ cargo run -p lzvm-cli -- prove plan [options] <setup-dir> <output-dir>
 
 This command loads the setup catalog, derives the native proof run plan, checks partition, aggregation, output, and GPU execution settings, then prints a stable plan summary. It is a proof-runtime planning check, not a full proof constructor.
 
+Validate proof input artifacts for a setup directory:
+
+```sh
+cargo run -p lzvm-cli -- prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]
+```
+
+This command derives the native proof run plan, validates witness library, guest image, and optional public-input paths, parses witness and guest image metadata, and prints stable input fingerprints. It is an execution-input preflight check, not a full proof constructor.
+
 Encode setup metadata JSON into the repository-owned binary setup format:
 
 ```sh

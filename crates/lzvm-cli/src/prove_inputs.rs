@@ -40,6 +40,21 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         "witness_library={}",
         plan.inputs.witness_library.display()
     );
+    let _ = writeln!(
+        stdout,
+        "witness_library_bytes={}",
+        plan.witness_library_info.byte_len
+    );
+    let _ = writeln!(
+        stdout,
+        "witness_library_machine={}",
+        plan.witness_library_info.machine
+    );
+    let _ = writeln!(
+        stdout,
+        "witness_library_digest={}",
+        format_hash(&plan.witness_library_info.digest)
+    );
     let _ = writeln!(stdout, "guest_image={}", plan.inputs.guest_image.display());
     let _ = writeln!(
         stdout,
