@@ -352,7 +352,7 @@ fn compares_query_verifier_outputs_to_first_fri_layer_values() {
                     siblings: Vec::new(),
                 },
                 PcsFriOpeningQuerySegment {
-                    row_index: 17,
+                    row_index: 1,
                     values: vec![
                         e([4, 0, 0]).to_u64s(),
                         expected_second.to_u64s(),
@@ -370,6 +370,7 @@ fn compares_query_verifier_outputs_to_first_fri_layer_values() {
         &schedule,
         VerifierFriComparisonRequest {
             unit_index: 7,
+            query_rows: &[9, 17],
             query_outputs: &[expected_first, expected_second],
             fri: &fri,
         },
@@ -382,6 +383,7 @@ fn compares_query_verifier_outputs_to_first_fri_layer_values() {
         &schedule,
         VerifierFriComparisonRequest {
             unit_index: 7,
+            query_rows: &[9, 17],
             query_outputs: &[expected_first, e([999, 0, 0])],
             fri: &fri,
         },

@@ -57,6 +57,7 @@ pub struct VerifierUnitQueryEvalRequest<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct VerifierFriComparisonRequest<'a> {
     pub unit_index: u32,
+    pub query_rows: &'a [u64],
     pub query_outputs: &'a [Ext3],
     pub fri: &'a PcsFriOpeningUnitSegment,
 }
@@ -115,6 +116,10 @@ pub enum VerifierFriComparisonError {
         expected: usize,
         found: usize,
     },
+    QueryRowCountMismatch {
+        expected: usize,
+        found: usize,
+    },
     FriQueryCountMismatch {
         expected: usize,
         found: usize,
@@ -126,6 +131,11 @@ pub enum VerifierFriComparisonError {
         query_index: usize,
         value_index: usize,
         len: usize,
+    },
+    FriQueryRowMismatch {
+        query_index: usize,
+        expected: u64,
+        found: u64,
     },
     NonCanonicalField {
         value: u64,
@@ -206,6 +216,10 @@ impl fmt::Display for VerifierFriComparisonError {
                 f,
                 "verifier FRI comparison expected {expected} query outputs, found {found}"
             ),
+            Self::QueryRowCountMismatch { expected, found } => write!(
+                f,
+                "verifier FRI comparison expected {expected} query rows, found {found}"
+            ),
             Self::FriQueryCountMismatch { expected, found } => write!(
                 f,
                 "verifier FRI comparison expected {expected} FRI queries, found {found}"
@@ -220,6 +234,14 @@ impl fmt::Display for VerifierFriComparisonError {
             } => write!(
                 f,
                 "verifier FRI comparison query {query_index} value index {value_index} is outside value count {len}"
+            ),
+            Self::FriQueryRowMismatch {
+                query_index,
+                expected,
+                found,
+            } => write!(
+                f,
+                "verifier FRI comparison query {query_index} row {found} does not match expected {expected}"
             ),
             Self::NonCanonicalField { value } => write!(
                 f,
@@ -378,6 +400,12 @@ pub fn verify_query_outputs_against_fri_opening(
             found: request.query_outputs.len(),
         });
     }
+    if request.query_rows.len() != query_count {
+        return Err(VerifierFriComparisonError::QueryRowCountMismatch {
+            expected: query_count,
+            found: request.query_rows.len(),
+        });
+    }
     let Some(first_layer) = request
         .fri
         .layers
@@ -406,13 +434,22 @@ pub fn verify_query_outputs_against_fri_opening(
         },
     )?;
 
-    for (query_index, (query_output, query)) in request
-        .query_outputs
+    for (query_index, ((query_row, query_output), query)) in request
+        .query_rows
         .iter()
+        .zip(request.query_outputs.iter())
         .zip(&first_layer.queries)
         .enumerate()
     {
-        let value_index = usize::try_from((query.row_index % domain_size) / output_size)
+        let expected_layer_row = query_row % output_size;
+        if query.row_index != expected_layer_row {
+            return Err(VerifierFriComparisonError::FriQueryRowMismatch {
+                query_index,
+                expected: expected_layer_row,
+                found: query.row_index,
+            });
+        }
+        let value_index = usize::try_from((*query_row % domain_size) / output_size)
             .map_err(|_| VerifierFriComparisonError::LengthOverflow)?;
         let Some(value) = query.values.get(value_index) else {
             return Err(VerifierFriComparisonError::FriValueIndexOutOfRange {
