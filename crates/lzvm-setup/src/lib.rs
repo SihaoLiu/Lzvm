@@ -1,5 +1,4 @@
 use std::fmt;
-use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::constant_tree::{
@@ -614,32 +613,12 @@ pub fn write_verification_key_from_constant_tree(
 
     let binary_size =
         publish_staging_bytes(&binary_staging, &binary_path, "verification-key binary")?;
-    remove_verification_key_json_companion(&binary_path)?;
 
     Ok(VerificationKeyWriteReport {
         binary_path,
         binary_bytes: binary_size,
         root,
     })
-}
-
-fn remove_verification_key_json_companion(binary_path: &Path) -> Result<(), SetupError> {
-    let Some(file_name) = binary_path.file_name().and_then(|name| name.to_str()) else {
-        return Ok(());
-    };
-    let Some(prefix) = file_name.strip_suffix(".verkey.bin") else {
-        return Ok(());
-    };
-    let json_path = binary_path.with_file_name(format!("{prefix}.verkey.json"));
-    match std::fs::remove_file(&json_path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(SetupError::Io {
-            role: "remove verification-key json companion",
-            path: json_path,
-            message: error.to_string(),
-        }),
-    }
 }
 
 fn staging_path_for(path: &Path) -> PathBuf {

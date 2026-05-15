@@ -92,7 +92,7 @@ fn writes_verification_key_binary_from_constant_tree_root() {
     assert_eq!(report.binary_bytes, 32);
     assert_eq!(report.root, sample_root());
     assert_eq!(binary_root, sample_root());
-    assert!(!json_path.exists());
+    assert!(json_path.exists());
     assert!(staging.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
