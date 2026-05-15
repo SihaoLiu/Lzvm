@@ -11,6 +11,9 @@ use lzvm_artifacts::constraint_program::{
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
+use lzvm_artifacts::group_values_segment::{
+    encode_group_values_segment, GroupValuesSegment, GROUP_VALUES_SEGMENT_ID,
+};
 use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
@@ -95,6 +98,22 @@ fn sample_global_info_json_with_proof_value() -> &'static str {
         "proofValuesMap": [
             {"name": "proof-a", "stage": 2}
         ],
+        "publicsMap": [],
+        "transcriptArity": 4
+    }"#
+}
+
+fn sample_global_info_json_with_group_value() -> &'static str {
+    r#"{
+        "name": "sample-program",
+        "air_groups": ["group-a"],
+        "airs": [[{"name": "unit-a", "num_rows": 2}]],
+        "curve": "None",
+        "latticeSize": 368,
+        "aggTypes": [[{"aggType": 0}]],
+        "nPublics": 0,
+        "numChallenges": [1],
+        "numProofValues": [],
         "publicsMap": [],
         "transcriptArity": 4
     }"#
@@ -427,6 +446,14 @@ fn sample_pcs_proof_values_segment(values: Vec<[u64; 3]>) -> ProofSegment {
         id: PCS_PROOF_VALUES_SEGMENT_ID,
         data: encode_pcs_proof_values_segment(&segment)
             .expect("proof values segment should encode"),
+    }
+}
+
+fn sample_group_values_segment(values: Vec<[u64; 3]>) -> ProofSegment {
+    let segment = GroupValuesSegment { values };
+    ProofSegment {
+        id: GROUP_VALUES_SEGMENT_ID,
+        data: encode_group_values_segment(&segment).expect("group values segment should encode"),
     }
 }
 
@@ -970,6 +997,14 @@ fn write_setup_directory_with_proof_value(root: &Path) {
     }
 }
 
+fn write_setup_directory_with_group_value(root: &Path) {
+    write_global_files_with_info(root, sample_global_info_json_with_group_value());
+    let layout = read_key_directory_layout(root).expect("layout should parse");
+    for unit in &layout.units {
+        write_unit_files(unit);
+    }
+}
+
 fn run_setup_command(args: &[&str]) {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -993,6 +1028,14 @@ fn write_execution_ready_setup_directory(root: &Path) {
 
 fn write_execution_ready_setup_directory_with_proof_value(root: &Path) {
     write_setup_directory_with_proof_value(root);
+    let root = root.to_str().expect("path should be utf-8");
+    run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
+    run_setup_command(&["setup", "write-pcs-directory", root]);
+    run_setup_command(&["setup", "write-pcs-material-directory", root]);
+}
+
+fn write_execution_ready_setup_directory_with_group_value(root: &Path) {
+    write_setup_directory_with_group_value(root);
     let root = root.to_str().expect("path should be utf-8");
     run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
     run_setup_command(&["setup", "write-pcs-directory", root]);
@@ -1245,6 +1288,51 @@ fn write_challenge_global_constraint_preflight_fixture(root: &Path) -> (PathBuf,
         public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
         segments,
     };
+    let proof_path = root.join("proof.bin");
+    let public_values_path = root.join("public_values.json");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_text(
+        &public_values_path,
+        &encode_public_values_json(&public_values).expect("public values should encode"),
+    );
+    (proof_path, public_values_path, segment_count)
+}
+
+fn write_group_value_global_constraint_preflight_fixture(
+    root: &Path,
+    group_value: [u64; 3],
+) -> (PathBuf, PathBuf, usize) {
+    write_execution_ready_setup_directory_with_group_value(root);
+    write_global_constraint_program(
+        root,
+        GlobalConstraintProgram {
+            entries: vec![GlobalConstraintEntry {
+                destination_dimension: 3,
+                destination_id: 0,
+                temp1_count: 0,
+                temp3_count: 1,
+                ops_count: 1,
+                ops_offset: 0,
+                args_count: 6,
+                args_offset: 0,
+                source_line: "group residual".to_owned(),
+            }],
+            ops: vec![2],
+            args: vec![1, 0, 5, 0, 2, 0],
+            numbers: group_value.to_vec(),
+        },
+    );
+    let catalog = read_key_directory_catalog(root).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let mut proof = sample_proof_with_material(&public_values, &catalog);
+    proof
+        .segments
+        .push(sample_group_values_segment(vec![group_value]));
+    let segment_count = proof.segments.len();
     let proof_path = root.join("proof.bin");
     let public_values_path = root.join("public_values.json");
     write_bytes(
@@ -2273,6 +2361,38 @@ fn validates_setup_aware_verify_preflight_with_challenge_global_constraints() {
     let _ = fs::remove_dir_all(&dir);
     let (proof_path, public_values_path, segment_count) =
         write_challenge_global_constraint_preflight_fixture(&dir);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\n")
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn validates_setup_aware_verify_preflight_with_group_value_global_constraints() {
+    let dir = temp_dir("verify-setup-preflight-group-value-global-constraint");
+    let _ = fs::remove_dir_all(&dir);
+    let (proof_path, public_values_path, segment_count) =
+        write_group_value_global_constraint_preflight_fixture(&dir, [61, 62, 63]);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();

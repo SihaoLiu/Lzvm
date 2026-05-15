@@ -9,6 +9,7 @@ use lzvm_artifacts::constant_tree::read_constant_tree_file;
 use lzvm_artifacts::fixed::{
     read_fixed_columns_file, read_fixed_columns_file_for_setup, FixedColumn, FixedColumns,
 };
+use lzvm_artifacts::group_values_segment::{parse_group_values_segment, GROUP_VALUES_SEGMENT_ID};
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
     read_key_directory_layout, validate_key_directory_layout, KeyDirectoryCatalog,
@@ -1419,13 +1420,14 @@ fn validate_global_constraints(
     let packed_proof_values = flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)
         .map_err(|error| format!("global constraint proof values invalid: {error}"))?;
     let challenges = derive_global_constraint_challenges(schedule, proof, public_values)?;
+    let group_values = load_group_values(catalog, proof)?;
     let residuals = evaluate_global_constraints(
         &catalog.global_constraints,
         GlobalConstraintInputs {
             publics: &publics,
             proof_values: &packed_proof_values,
             challenges: &challenges,
-            group_values: &[],
+            group_values: &group_values,
         },
     )
     .map_err(|error| format!("invalid global constraint program: {error}"))?;
@@ -1580,6 +1582,57 @@ fn proof_value_extension_from_words(index: usize, words: [u64; 3]) -> Result<Ext
             .map_err(|error| format!("invalid PCS proof values segment value {index}: {error}"))?,
         Felt::from_canonical(words[2])
             .map_err(|error| format!("invalid PCS proof values segment value {index}: {error}"))?,
+    ))
+}
+
+fn load_group_values(
+    catalog: &KeyDirectoryCatalog,
+    proof: &ProofArtifact,
+) -> Result<Vec<Ext3>, String> {
+    let expected_count = catalog
+        .layout
+        .global_info
+        .aggregation_types
+        .iter()
+        .map(Vec::len)
+        .sum::<usize>();
+    let segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == GROUP_VALUES_SEGMENT_ID);
+    if expected_count == 0 {
+        if segment.is_some() {
+            return Err("unexpected group values segment".to_owned());
+        }
+        return Ok(Vec::new());
+    }
+    let segment = segment.ok_or_else(|| "missing group values segment".to_owned())?;
+    let parsed = parse_group_values_segment(&segment.data)
+        .map_err(|error| format!("invalid group values segment: {error}"))?;
+    if parsed.values.len() != expected_count {
+        return Err(format!(
+            "group values segment count mismatch: expected {expected_count}, found {}",
+            parsed.values.len()
+        ));
+    }
+
+    parsed
+        .values
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, words)| group_value_extension_from_words(index, words))
+        .collect()
+}
+
+fn group_value_extension_from_words(index: usize, words: [u64; 3]) -> Result<Ext3, String> {
+    Ok(Ext3::new(
+        Felt::from_canonical(words[0])
+            .map_err(|error| format!("invalid group values segment value {index}: {error}"))?,
+        Felt::from_canonical(words[1])
+            .map_err(|error| format!("invalid group values segment value {index}: {error}"))?,
+        Felt::from_canonical(words[2])
+            .map_err(|error| format!("invalid group values segment value {index}: {error}"))?,
     ))
 }
 
