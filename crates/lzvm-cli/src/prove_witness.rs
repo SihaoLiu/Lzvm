@@ -10,8 +10,8 @@ use lzvm_prover::{
     build_constant_opening_segment, build_pcs_material_manifest_segment,
     build_pcs_query_plan_segment, build_witness_commitment_segment, build_witness_opening_segment,
     derive_prove_execution_plan, proof_values::build_pcs_proof_values_segment_from_packed_values,
-    run_prove_witness_commitments, ProveExecutionInputArtifacts, ProveSchedule,
-    ProveWitnessCommitments,
+    run_prove_witness_commitments_with_auxiliary_inputs, ProveExecutionInputArtifacts,
+    ProveSchedule, ProveWitnessAuxiliaryInputs, ProveWitnessCommitments,
 };
 
 use crate::prove_plan::{parse_run_args, write_run_plan_summary, ParseError, ParsedRunArgs};
@@ -42,13 +42,21 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
-    let output = match run_prove_witness_commitments(&plan, 0) {
-        Ok(output) => output,
-        Err(error) => {
-            let _ = writeln!(stderr, "prove witness failed: {error}");
+    let auxiliary_inputs = match load_witness_auxiliary_inputs(parsed.proof_values.as_deref()) {
+        Ok(inputs) => inputs,
+        Err(message) => {
+            let _ = writeln!(stderr, "prove witness failed: {message}");
             return 1;
         }
     };
+    let output =
+        match run_prove_witness_commitments_with_auxiliary_inputs(&plan, 0, auxiliary_inputs) {
+            Ok(output) => output,
+            Err(error) => {
+                let _ = writeln!(stderr, "prove witness failed: {error}");
+                return 1;
+            }
+        };
     if plan.run_plan.options.save_outputs {
         if let Err(message) = save_witness_outputs(
             &plan.run_plan.options.output_dir,
@@ -128,6 +136,18 @@ fn parsed_inputs(parsed: &ParsedRunArgs) -> ProveExecutionInputArtifacts {
         guest_image: parsed.positionals[3].clone(),
         public_inputs: parsed.positionals.get(4).cloned(),
     }
+}
+
+fn load_witness_auxiliary_inputs(
+    proof_values_input: Option<&Path>,
+) -> Result<ProveWitnessAuxiliaryInputs, String> {
+    Ok(ProveWitnessAuxiliaryInputs {
+        proof_values: match proof_values_input {
+            Some(path) => read_packed_proof_values(path)?,
+            None => Vec::new(),
+        },
+        ..ProveWitnessAuxiliaryInputs::default()
+    })
 }
 
 fn save_witness_outputs(

@@ -280,11 +280,34 @@ fn sample_regular_constraint_program() -> ConstraintProgram {
     }
 }
 
-fn sample_program_file() -> Vec<u8> {
+fn sample_proof_value_regular_constraint_program() -> ConstraintProgram {
+    ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 0,
+            first_row: 0,
+            last_row: 0,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 8,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "proof value regular constraint".to_owned(),
+        }],
+        ops: vec![0],
+        args: vec![1, 0, 10, 0, 0, 1, 0, 0],
+        numbers: Vec::new(),
+    }
+}
+
+fn sample_program_file_with_regular_constraints(program: ConstraintProgram) -> Vec<u8> {
     let expression = encode_expression_program(&sample_expression_program())
         .expect("expression program should encode");
-    let regular = encode_regular_constraint_program(&sample_regular_constraint_program())
-        .expect("regular constraints should encode");
+    let regular =
+        encode_regular_constraint_program(&program).expect("regular constraints should encode");
     let mut expression_file =
         parse_sectioned_file(&expression, *b"chps", 1).expect("expression file should parse");
     let regular_file =
@@ -991,7 +1014,11 @@ fn write_global_files(root: &Path) {
     write_global_files_with_info(root, sample_global_info_json());
 }
 
-fn write_unit_files_with_verifier_info(unit: &KeyUnitPaths, verifier_info: &str) {
+fn write_unit_files_with_verifier_info_and_regular_constraints(
+    unit: &KeyUnitPaths,
+    verifier_info: &str,
+    regular_constraints: ConstraintProgram,
+) {
     if let Some(path) = unit.setup_info() {
         write_text(&path, sample_setup_info_json());
     }
@@ -1002,7 +1029,7 @@ fn write_unit_files_with_verifier_info(unit: &KeyUnitPaths, verifier_info: &str)
         write_text(&path, verifier_info);
     }
 
-    let program = sample_program_file();
+    let program = sample_program_file_with_regular_constraints(regular_constraints);
     if let Some(path) = unit.expression_program() {
         write_bytes(&path, &program);
     }
@@ -1019,6 +1046,14 @@ fn write_unit_files_with_verifier_info(unit: &KeyUnitPaths, verifier_info: &str)
         encode_verification_key_binary(&root).expect("verification key should encode"),
     );
     write_bytes(&unit.fixed_columns, sample_raw_fixed_columns());
+}
+
+fn write_unit_files_with_verifier_info(unit: &KeyUnitPaths, verifier_info: &str) {
+    write_unit_files_with_verifier_info_and_regular_constraints(
+        unit,
+        verifier_info,
+        sample_regular_constraint_program(),
+    );
 }
 
 fn write_unit_files(unit: &KeyUnitPaths) {
@@ -1038,6 +1073,18 @@ fn write_setup_directory_with_proof_value(root: &Path) {
     let layout = read_key_directory_layout(root).expect("layout should parse");
     for unit in &layout.units {
         write_unit_files_with_verifier_info(unit, sample_verifier_info_json_with_proof_value());
+    }
+}
+
+fn write_setup_directory_with_proof_value_constraint(root: &Path) {
+    write_global_files_with_info(root, sample_global_info_json_with_proof_value());
+    let layout = read_key_directory_layout(root).expect("layout should parse");
+    for unit in &layout.units {
+        write_unit_files_with_verifier_info_and_regular_constraints(
+            unit,
+            sample_verifier_info_json_with_proof_value(),
+            sample_proof_value_regular_constraint_program(),
+        );
     }
 }
 
@@ -1072,6 +1119,14 @@ fn write_execution_ready_setup_directory(root: &Path) {
 
 fn write_execution_ready_setup_directory_with_proof_value(root: &Path) {
     write_setup_directory_with_proof_value(root);
+    let root = root.to_str().expect("path should be utf-8");
+    run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
+    run_setup_command(&["setup", "write-pcs-directory", root]);
+    run_setup_command(&["setup", "write-pcs-material-directory", root]);
+}
+
+fn write_execution_ready_setup_directory_with_proof_value_constraint(root: &Path) {
+    write_setup_directory_with_proof_value_constraint(root);
     let root = root.to_str().expect("path should be utf-8");
     run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
     run_setup_command(&["setup", "write-pcs-directory", root]);
@@ -2008,6 +2063,60 @@ fn saves_prove_witness_proof_values_when_requested() {
         .expect("proof values segment should parse");
     assert_eq!(proof_values.values, vec![[51, 52, 53]]);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn passes_proof_values_to_witness_regular_constraints() {
+    let dir = temp_dir("prove-witness-proof-value-constraint");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_proof_value_constraint(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let proof_values_path = dir.join("proof_values.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [13_u8]);
+    write_field_words(&proof_values_path, &[14, 52, 53]);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let public_values_path = dir.join("public_values.json");
+    write_text(
+        &public_values_path,
+        &encode_public_values_json(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--save-outputs",
+            "--proof-values",
+            proof_values_path
+                .to_str()
+                .expect("proof values path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
 }
 
 #[test]

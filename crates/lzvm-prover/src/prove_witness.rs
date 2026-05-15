@@ -97,6 +97,15 @@ impl ProveWitnessCommitments {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProveWitnessAuxiliaryInputs {
+    pub unit_values: Vec<Felt>,
+    pub proof_values: Vec<Felt>,
+    pub group_values: Vec<Ext3>,
+    pub challenges: Vec<Ext3>,
+    pub evaluations: Vec<Ext3>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProvePcsEvaluationValues {
     pub unit_index: usize,
@@ -793,6 +802,18 @@ pub fn run_prove_witness_commitments(
     plan: &ProveExecutionPlan,
     unit_index: usize,
 ) -> Result<ProveWitnessCommitments, ProveWitnessCommitmentError> {
+    run_prove_witness_commitments_with_auxiliary_inputs(
+        plan,
+        unit_index,
+        ProveWitnessAuxiliaryInputs::default(),
+    )
+}
+
+pub fn run_prove_witness_commitments_with_auxiliary_inputs(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    auxiliary_inputs: ProveWitnessAuxiliaryInputs,
+) -> Result<ProveWitnessCommitments, ProveWitnessCommitmentError> {
     let unit_count = plan.run_plan.schedule.units.len();
     let unit = plan.run_plan.schedule.units.get(unit_index).ok_or(
         ProveWitnessCommitmentError::UnitIndexOutOfRange {
@@ -813,7 +834,14 @@ pub fn run_prove_witness_commitments(
                 unit_index,
                 unit_count: plan.units.len(),
             })?;
-    validate_witness_regular_constraints(execution_unit, unit_index, &layout, &trace, &publics)?;
+    validate_witness_regular_constraints(
+        execution_unit,
+        unit_index,
+        &layout,
+        &trace,
+        &publics,
+        &auxiliary_inputs,
+    )?;
     let trace_rows = trace.row_count();
     let trace_columns = trace.column_count();
     let stage_commitments = commit_witness_trace_stages(&trace, unit)?;
@@ -867,6 +895,7 @@ fn validate_witness_regular_constraints(
     layout: &WitnessTraceLayout,
     trace: &WitnessTraceBuffer,
     publics: &[Felt],
+    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
 ) -> Result<(), ProveWitnessCommitmentError> {
     if plan_unit.regular_constraints.entries.is_empty() {
         return Ok(());
@@ -924,11 +953,11 @@ fn validate_witness_regular_constraints(
             custom_fixed_columns: &[],
             opening_point_offsets: &plan_unit.opening_point_offsets,
             publics,
-            unit_values: &[],
-            proof_values: &[],
-            group_values: &[],
-            challenges: &[],
-            evaluations: &[],
+            unit_values: &auxiliary_inputs.unit_values,
+            proof_values: &auxiliary_inputs.proof_values,
+            group_values: &auxiliary_inputs.group_values,
+            challenges: &auxiliary_inputs.challenges,
+            evaluations: &auxiliary_inputs.evaluations,
         },
     )?;
 
