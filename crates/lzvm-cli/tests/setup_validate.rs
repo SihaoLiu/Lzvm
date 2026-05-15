@@ -2599,6 +2599,109 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
 }
 
 #[test]
+fn writes_prove_witness_proof_without_save_outputs() {
+    let dir = temp_dir("prove-witness-proof-only");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let setup_hash_hex = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let material_bytes = pcs_material_byte_count(&catalog);
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+
+    let public_values = sample_public_values(setup_hash);
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan {
+            input_data: Some(input_data.clone()),
+            partition_count: 1,
+            partition_ids: vec![0],
+            worker_index: 0,
+        }),
+        options: ProveRunOptions::default_for_output(output_dir.clone()),
+        gpu: GpuRunOptions::default(),
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        request,
+        ProveExecutionInputArtifacts {
+            witness_library: witness_library.clone(),
+            guest_image: guest_image.clone(),
+            public_inputs: Some(public_values_path.clone()),
+        },
+    )
+    .expect("execution plan should derive");
+    let output = run_prove_witness_commitments(&plan, 0).expect("witness commitments should run");
+    let mut expected_stages = String::new();
+    for commitment in output.stage_commitments().commitments() {
+        let root = commitment
+            .root()
+            .iter()
+            .map(|value| value.to_u64().to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        expected_stages.push_str(&format!(
+            "stage_{}_root={root}\nstage_{}_tree_bytes={}\n",
+            commitment.stage_index(),
+            commitment.stage_index(),
+            commitment.tree_bytes().len()
+        ));
+    }
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let proof_bytes = fs::read(output_dir.join("proof.bin")).expect("proof output should read");
+    let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
+    assert!(!output_dir.join("unit-0.witness-segment").exists());
+    assert!(!output_dir.join("unit-0-stage-0.witness-root").exists());
+    assert!(!output_dir.join("unit-0-stage-0.witness-tree").exists());
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data={}\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash_hex}\nunit_index=0\ninput_bytes=1\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
+            input_data.display(),
+            output_dir.display(),
+            expected_stages
+        )
+    );
+    assert!(stderr.is_empty());
+    assert_eq!(proof.setup_hash, setup_hash);
+    assert_eq!(proof.segments.len(), 5);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn saves_prove_witness_transcript_fri_outputs_when_requested() {
     let dir = temp_dir("prove-witness-save-fri");
     let _ = fs::remove_dir_all(&dir);

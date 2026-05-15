@@ -8,6 +8,7 @@ use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::group_values::build_group_values_segment;
+use lzvm_prover::setup_preflight::validate_setup_preflight;
 use lzvm_prover::{
     build_constant_opening_segment, build_pcs_evaluation_segment,
     build_pcs_fri_opening_segment_from_transcript_values,
@@ -70,36 +71,60 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
-    if plan.run_plan.options.save_outputs {
-        let output_unit_index = output.commitments().unit_index();
-        let execution_unit = match plan.units.get(output_unit_index) {
-            Some(unit) => unit,
-            None => {
-                let _ = writeln!(
-                    stderr,
-                    "prove witness failed: output unit index out of range: {output_unit_index}"
-                );
+    let commitments = output.commitments();
+    let segment = match build_witness_commitment_segment(commitments) {
+        Ok(segment) => segment,
+        Err(error) => {
+            let _ = writeln!(
+                stderr,
+                "prove witness failed: build witness segment failed: {error}"
+            );
+            return 1;
+        }
+    };
+    let output_unit_index = commitments.unit_index();
+    let execution_unit = match plan.units.get(output_unit_index) {
+        Some(unit) => unit,
+        None => {
+            let _ = writeln!(
+                stderr,
+                "prove witness failed: output unit index out of range: {output_unit_index}"
+            );
+            return 1;
+        }
+    };
+    let request = WitnessOutputSaveRequest {
+        output_dir: &plan.run_plan.options.output_dir,
+        catalog: &catalog,
+        schedule: &plan.run_plan.schedule,
+        execution_unit,
+        public_inputs: plan.inputs.public_inputs.as_deref(),
+        unit_values_input: parsed.unit_values.as_deref(),
+        proof_values_input: parsed.proof_values.as_deref(),
+        output: &output,
+    };
+    let proof_bytes =
+        match build_proof_bytes(&request, &segment, plan.run_plan.options.verify_outputs) {
+            Ok(proof_bytes) => proof_bytes,
+            Err(message) => {
+                let _ = writeln!(stderr, "prove witness failed: {message}");
                 return 1;
             }
         };
-        let request = WitnessOutputSaveRequest {
-            output_dir: &plan.run_plan.options.output_dir,
-            catalog: &catalog,
-            schedule: &plan.run_plan.schedule,
-            execution_unit,
-            public_inputs: plan.inputs.public_inputs.as_deref(),
-            unit_values_input: parsed.unit_values.as_deref(),
-            proof_values_input: parsed.proof_values.as_deref(),
-            output: &output,
-        };
-        if let Err(message) = save_witness_outputs(request) {
+    if plan.run_plan.options.save_outputs {
+        if let Err(message) = save_witness_outputs(&request, &segment) {
+            let _ = writeln!(stderr, "prove witness failed: {message}");
+            return 1;
+        }
+    }
+    if let Some(proof_bytes) = proof_bytes {
+        if let Err(message) = write_proof_output(request.output_dir, &proof_bytes) {
             let _ = writeln!(stderr, "prove witness failed: {message}");
             return 1;
         }
     }
 
     write_run_plan_summary(stdout, &plan.run_plan);
-    let commitments = output.commitments();
     let _ = writeln!(stdout, "unit_index={}", commitments.unit_index());
     let _ = writeln!(stdout, "input_bytes={}", commitments.input_byte_count());
     let _ = writeln!(stdout, "trace_rows={}", commitments.trace_row_count());
@@ -265,7 +290,10 @@ struct WitnessOutputSaveRequest<'a> {
     output: &'a ProveWitnessTraceCommitments,
 }
 
-fn save_witness_outputs(request: WitnessOutputSaveRequest<'_>) -> Result<(), String> {
+fn save_witness_outputs(
+    request: &WitnessOutputSaveRequest<'_>,
+    segment: &ProofSegment,
+) -> Result<(), String> {
     fs::create_dir_all(request.output_dir).map_err(|error| {
         format!(
             "create output directory failed: {}: {error}",
@@ -274,9 +302,6 @@ fn save_witness_outputs(request: WitnessOutputSaveRequest<'_>) -> Result<(), Str
     })?;
 
     let commitments = request.output.commitments();
-    let segment = build_witness_commitment_segment(commitments)
-        .map_err(|error| format!("build witness segment failed: {error}"))?;
-    let proof_bytes = build_proof_bytes(&request, &segment)?;
 
     for commitment in commitments.stage_commitments().commitments() {
         let root_path = request.output_dir.join(format!(
@@ -300,15 +325,13 @@ fn save_witness_outputs(request: WitnessOutputSaveRequest<'_>) -> Result<(), Str
         .output_dir
         .join(format!("unit-{}.witness-segment", commitments.unit_index()));
     write_output_file(&segment_path, &segment.data)?;
-    if let Some(proof_bytes) = proof_bytes {
-        write_output_file(&request.output_dir.join("proof.bin"), &proof_bytes)?;
-    }
     Ok(())
 }
 
 fn build_proof_bytes(
     request: &WitnessOutputSaveRequest<'_>,
     segment: &ProofSegment,
+    verify_outputs: bool,
 ) -> Result<Option<Vec<u8>>, String> {
     let Some(public_inputs) = request.public_inputs else {
         return Ok(None);
@@ -463,9 +486,23 @@ fn build_proof_bytes(
         public_values_hash,
         segments,
     };
+    if verify_outputs {
+        validate_setup_preflight(request.catalog, &proof, &public_values)
+            .map_err(|error| format!("verify proof output failed: {error}"))?;
+    }
     encode_proof_artifact(&proof)
         .map(Some)
         .map_err(|error| format!("encode witness proof artifact failed: {error}"))
+}
+
+fn write_proof_output(output_dir: &Path, proof_bytes: &[u8]) -> Result<(), String> {
+    fs::create_dir_all(output_dir).map_err(|error| {
+        format!(
+            "create output directory failed: {}: {error}",
+            output_dir.display()
+        )
+    })?;
+    write_output_file(&output_dir.join("proof.bin"), proof_bytes)
 }
 
 fn read_packed_values(path: &Path, label: &str) -> Result<Vec<Felt>, String> {
