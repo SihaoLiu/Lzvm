@@ -70,10 +70,10 @@ use lzvm_prover::verifier_query::{
     evaluate_verifier_unit_queries, verify_query_outputs_against_fri_opening,
     VerifierFriComparisonRequest, VerifierUnitQueryEvalRequest,
 };
-use lzvm_prover::witness_commitment::{
-    load_witness_commitment_segments, verify_witness_stage_opening_root, WitnessStageOpening,
+use lzvm_prover::witness_commitment::load_witness_commitment_segments;
+use lzvm_prover::witness_opening::{
+    load_witness_opening_segment_from_segments, validate_witness_opening_segments,
 };
-use lzvm_prover::witness_opening::load_witness_opening_segment_from_segments;
 use lzvm_prover::{
     build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_transcript_segments,
     derive_prove_schedule, ProveSchedule,
@@ -652,128 +652,8 @@ fn validate_witness_opening_segment(
     schedule: &ProveSchedule,
     proof: &ProofArtifact,
 ) -> Result<(), String> {
-    let query_plan =
-        load_pcs_query_plan_from_segments(&proof.segments).map_err(|error| error.to_string())?;
-    let opening = load_witness_opening_segment_from_segments(&proof.segments)
-        .map_err(|error| error.to_string())?;
-    if opening.units.len() != query_plan.units.len() {
-        return Err("witness opening segment unit count mismatch".to_owned());
-    }
-
-    for query_unit in &query_plan.units {
-        let unit_index = usize::try_from(query_unit.unit_index)
-            .map_err(|_| "witness opening segment unit index overflow")?;
-        let unit = schedule
-            .units
-            .get(unit_index)
-            .ok_or_else(|| format!("witness opening segment mismatch for unit {unit_index}"))?;
-        let opening_unit = opening
-            .units
-            .iter()
-            .find(|unit| unit.unit_index == query_unit.unit_index)
-            .ok_or_else(|| format!("witness opening segment mismatch for unit {unit_index}"))?;
-        if opening_unit.queries.len() != query_unit.queries.len() {
-            return Err(format!(
-                "witness opening segment mismatch for unit {unit_index}"
-            ));
-        }
-
-        let witness_segment_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
-            .checked_add(query_unit.unit_index)
-            .ok_or_else(|| "witness opening segment id overflow".to_owned())?;
-        let witness_segment = proof
-            .segments
-            .iter()
-            .find(|segment| segment.id == witness_segment_id)
-            .ok_or_else(|| format!("witness opening segment mismatch for unit {unit_index}"))?;
-        let witness = parse_witness_commitment_segment(&witness_segment.data).map_err(|error| {
-            format!("invalid witness commitment segment for unit {unit_index}: {error}")
-        })?;
-        let arity = usize::try_from(unit.merkle_tree_arity)
-            .map_err(|_| "witness opening segment arity overflow")?;
-        let expected_level_count = expected_merkle_level_count(unit.extended_domain_size, arity)?;
-
-        for (query, expected_row) in opening_unit.queries.iter().zip(query_unit.queries.iter()) {
-            if query.row_index != *expected_row {
-                return Err(format!(
-                    "witness opening segment mismatch for unit {unit_index}"
-                ));
-            }
-            if query.stages.len() != witness.stages.len() {
-                return Err(format!(
-                    "witness opening segment mismatch for unit {unit_index}"
-                ));
-            }
-            for stage in &query.stages {
-                let stage_index = usize::try_from(stage.stage_index)
-                    .map_err(|_| "witness opening segment stage index overflow")?;
-                let Some(width) = stage_index
-                    .checked_sub(1)
-                    .and_then(|index| unit.stage_commit_widths.get(index))
-                else {
-                    return Err(format!(
-                        "witness opening segment mismatch for unit {unit_index}"
-                    ));
-                };
-                if stage.values.len() != *width as usize
-                    || stage.siblings.len() != expected_level_count
-                {
-                    return Err(format!(
-                        "witness opening segment mismatch for unit {unit_index}"
-                    ));
-                }
-                let Some(witness_stage) = witness
-                    .stages
-                    .iter()
-                    .find(|witness_stage| witness_stage.stage_index == stage.stage_index)
-                else {
-                    return Err(format!(
-                        "witness opening segment mismatch for unit {unit_index}"
-                    ));
-                };
-                let values = stage
-                    .values
-                    .iter()
-                    .map(|value| Felt::from_canonical(*value))
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|error| format!("invalid witness opening segment value: {error}"))?;
-                let siblings = stage
-                    .siblings
-                    .iter()
-                    .map(|level| {
-                        if level.siblings.len() + 1 != arity {
-                            return Err(format!(
-                                "witness opening segment mismatch for unit {unit_index}"
-                            ));
-                        }
-                        level
-                            .siblings
-                            .iter()
-                            .map(|digest| field_digest_from_words(*digest))
-                            .collect::<Result<Vec<_>, _>>()
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let opening = WitnessStageOpening::new(query.row_index, values, siblings).map_err(
-                    |error| {
-                        format!("invalid witness opening segment for unit {unit_index}: {error}")
-                    },
-                )?;
-                let root = field_digest_from_words(witness_stage.root)?;
-                let stage_arity = usize::try_from(witness_stage.arity)
-                    .map_err(|_| "witness opening segment arity overflow")?;
-                let valid = verify_witness_stage_opening_root(root, stage_arity, &opening)
-                    .map_err(|error| {
-                        format!("invalid witness opening segment for unit {unit_index}: {error}")
-                    })?;
-                if !valid {
-                    return Err(format!(
-                        "witness opening segment mismatch for unit {unit_index}"
-                    ));
-                }
-            }
-        }
-    }
-    Ok(())
+    validate_witness_opening_segments(&schedule.units, &proof.segments)
+        .map_err(|error| error.to_string())
 }
 
 fn validate_constant_opening_segment(
@@ -1381,22 +1261,6 @@ fn load_group_values(
 ) -> Result<Vec<Ext3>, String> {
     load_group_values_from_segments(&catalog.layout.global_info, &proof.segments)
         .map_err(|error| error.to_string())
-}
-
-fn expected_merkle_level_count(row_count: u64, arity: usize) -> Result<usize, String> {
-    if row_count == 0 || arity < 2 {
-        return Err("witness opening segment invalid tree shape".to_owned());
-    }
-    let arity = u64::try_from(arity).map_err(|_| "witness opening segment arity overflow")?;
-    let mut levels = 0_usize;
-    let mut rows = row_count;
-    while rows > 1 {
-        rows = rows.div_ceil(arity);
-        levels = levels
-            .checked_add(1)
-            .ok_or_else(|| "witness opening segment level count overflow".to_owned())?;
-    }
-    Ok(levels)
 }
 
 fn expected_fri_sibling_level_count(
