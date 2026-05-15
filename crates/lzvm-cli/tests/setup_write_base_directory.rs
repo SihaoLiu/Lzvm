@@ -10,6 +10,7 @@ use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
 use lzvm_artifacts::fixed::{encode_raw_fixed_columns, FixedColumn, FixedColumns};
+use lzvm_artifacts::global_info::read_global_info_binary_file;
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyUnitPaths};
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, read_pcs_setup_material_file};
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, read_pcs_setup_plan_file};
@@ -354,6 +355,31 @@ fn writes_base_directory_constant_trees_for_all_units() {
             "status=ok\nunits={unit_count}\nfixed_bytes={fixed_bytes}\ntree_bytes={tree_bytes}\n"
         )
     );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn writes_base_directory_global_metadata_binary() {
+    let (dir, _) = create_key_directory("global-info-bin");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "write-base-directory",
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
+        .expect("binary global metadata should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(global.name, "sample-program");
     assert!(stderr.is_empty());
 }
 

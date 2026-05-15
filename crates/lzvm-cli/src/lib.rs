@@ -9,7 +9,7 @@ use lzvm_artifacts::constant_tree::read_constant_tree_file;
 use lzvm_artifacts::fixed::{
     read_fixed_columns_file, read_fixed_columns_file_for_setup, FixedColumn, FixedColumns,
 };
-use lzvm_artifacts::global_info::{encode_global_info, read_global_info_file};
+use lzvm_artifacts::global_info::{encode_global_info, read_global_info_file, GlobalInfo};
 use lzvm_artifacts::group_values_segment::{parse_group_values_segment, GROUP_VALUES_SEGMENT_ID};
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
@@ -79,6 +79,8 @@ use serde_json::Value;
 mod prove_inputs;
 mod prove_plan;
 mod prove_witness;
+
+const GLOBAL_INFO_BINARY_FILE_NAME: &str = "pilout.globalInfo.bin";
 
 pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
@@ -2187,6 +2189,12 @@ fn write_base_directory(
         let _ = writeln!(stderr, "setup native base directory write failed: {error}");
         return 1;
     }
+    if let Err(error) =
+        write_global_info_binary_for_directory(Path::new(setup_dir), &layout.global_info)
+    {
+        let _ = writeln!(stderr, "setup native base directory write failed: {error}");
+        return 1;
+    }
 
     let mut fixed_bytes = 0_u64;
     let mut tree_bytes = 0_u64;
@@ -2291,6 +2299,21 @@ fn write_base_directory(
         let _ = writeln!(stdout, "verkey_bytes={verkey_bytes}");
     }
     0
+}
+
+fn write_global_info_binary_for_directory(
+    root: &Path,
+    global_info: &GlobalInfo,
+) -> Result<u64, String> {
+    let bytes = encode_global_info(global_info).map_err(|error| error.to_string())?;
+    let output = root.join(GLOBAL_INFO_BINARY_FILE_NAME);
+    std::fs::write(&output, &bytes).map_err(|error| {
+        format!(
+            "write global-info binary failed: {}: {error}",
+            output.display()
+        )
+    })?;
+    Ok(bytes.len() as u64)
 }
 
 fn write_pcs_directory(setup_dir: &str, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
