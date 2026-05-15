@@ -3090,6 +3090,5 @@ fn format_root(root: &VerificationKeyRoot) -> String {
             .map(u64::to_string)
             .collect::<Vec<_>>()
             .join(","),
-        VerificationKeyRoot::DecimalScalar(value) => value.clone(),
     }
 }

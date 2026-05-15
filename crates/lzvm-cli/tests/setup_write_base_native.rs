@@ -89,7 +89,6 @@ fn format_root(root: VerificationKeyRoot) -> String {
             .map(|value| value.to_string())
             .collect::<Vec<_>>()
             .join(","),
-        VerificationKeyRoot::DecimalScalar(value) => value,
     }
 }
 

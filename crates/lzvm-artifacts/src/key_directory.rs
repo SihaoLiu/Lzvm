@@ -1048,10 +1048,6 @@ fn hash_root(hasher: &mut Sha256, root: &VerificationKeyRoot) {
                 hash_u64(hasher, *value);
             }
         }
-        VerificationKeyRoot::DecimalScalar(value) => {
-            hash_u8(hasher, 2);
-            hash_string(hasher, value);
-        }
     }
 }
 

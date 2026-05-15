@@ -1,7 +1,6 @@
 use lzvm_artifacts::verification_key::{
-    encode_verification_key_binary, encode_verification_key_json, parse_verification_key_binary,
-    parse_verification_key_json, read_verification_key_binary_file,
-    read_verification_key_json_file, VerificationKeyError, VerificationKeyRoot,
+    encode_verification_key_binary, parse_verification_key_binary,
+    read_verification_key_binary_file, VerificationKeyError, VerificationKeyRoot,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -11,36 +10,6 @@ fn temp_file_path(name: &str) -> PathBuf {
         "lzvm-verification-key-{}-{name}",
         std::process::id()
     ))
-}
-
-#[test]
-fn parses_field_root_json_arrays() {
-    let parsed = parse_verification_key_json("[1,2,3,4]").expect("fixture should parse");
-
-    assert_eq!(parsed, VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4]));
-}
-
-#[test]
-fn parses_decimal_scalar_json_strings() {
-    let parsed = parse_verification_key_json("\"123456789\"").expect("fixture should parse");
-
-    assert_eq!(
-        parsed,
-        VerificationKeyRoot::DecimalScalar("123456789".to_owned())
-    );
-}
-
-#[test]
-fn encodes_field_root_json_arrays() {
-    let encoded = encode_verification_key_json(&VerificationKeyRoot::FieldElements(vec![
-        17,
-        18,
-        u64::MAX,
-        20,
-    ]))
-    .expect("fixture should encode");
-
-    assert_eq!(encoded, "[17,18,18446744073709551615,20]");
 }
 
 #[test]
@@ -79,17 +48,6 @@ fn rejects_binary_roots_with_the_wrong_size() {
         parse_verification_key_binary(&[1, 2, 3]),
         Err(VerificationKeyError::InvalidBinaryLength { .. })
     ));
-}
-
-#[test]
-fn reads_verification_key_json_from_a_file_path() {
-    let path = temp_file_path("root.json");
-    fs::write(&path, "[5,6,7,8]").expect("fixture should be written");
-
-    let root = read_verification_key_json_file(&path).expect("fixture should parse");
-    fs::remove_file(&path).expect("fixture should be removed");
-
-    assert_eq!(root, VerificationKeyRoot::FieldElements(vec![5, 6, 7, 8]));
 }
 
 #[test]

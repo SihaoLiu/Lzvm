@@ -220,9 +220,7 @@ fn sample_raw_fixed_columns() -> Vec<u8> {
 }
 
 fn sample_constant_tree(root: &VerificationKeyRoot) -> Vec<u8> {
-    let VerificationKeyRoot::FieldElements(values) = root else {
-        panic!("sample root should use field elements");
-    };
+    let VerificationKeyRoot::FieldElements(values) = root;
     let mut bytes = vec![7_u8; 224];
     for (index, value) in values.iter().enumerate() {
         let offset = bytes.len() - 32 + index * 8;

@@ -124,8 +124,6 @@ fn writes_native_constant_tree_from_binary_setup_and_columns() {
                         .map(|value| value.to_string())
                         .collect::<Vec<_>>()
                         .join(","),
-                lzvm_artifacts::verification_key::VerificationKeyRoot::DecimalScalar(value) =>
-                    value,
             },
             out_path.display()
         )
@@ -201,7 +199,6 @@ fn writes_native_constant_tree_from_raw_columns_with_expected_root() {
                     .map(|value| value.to_string())
                     .collect::<Vec<_>>()
                     .join(","),
-                VerificationKeyRoot::DecimalScalar(value) => value,
             },
             out_path.display()
         )

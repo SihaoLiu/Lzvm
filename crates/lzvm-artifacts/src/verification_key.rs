@@ -4,15 +4,11 @@ use std::path::Path;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerificationKeyRoot {
     FieldElements(Vec<u64>),
-    DecimalScalar(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerificationKeyError {
-    Json { message: String },
-    UnsupportedJsonShape,
     InvalidBinaryLength { expected: usize, found: usize },
-    ScalarHasNoBinaryEncoding,
     FieldElementCountMismatch { expected: usize, found: usize },
     Io { message: String },
 }
@@ -20,18 +16,10 @@ pub enum VerificationKeyError {
 impl fmt::Display for VerificationKeyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Json { message } => write!(f, "verification-key json error: {message}"),
-            Self::UnsupportedJsonShape => write!(f, "unsupported verification-key json shape"),
             Self::InvalidBinaryLength { expected, found } => write!(
                 f,
                 "invalid verification-key binary length: expected {expected}, found {found}"
             ),
-            Self::ScalarHasNoBinaryEncoding => {
-                write!(
-                    f,
-                    "scalar verification-key roots have no fixed binary encoding"
-                )
-            }
             Self::FieldElementCountMismatch { expected, found } => write!(
                 f,
                 "verification-key field element count mismatch: expected {expected}, found {found}"
@@ -42,56 +30,6 @@ impl fmt::Display for VerificationKeyError {
 }
 
 impl std::error::Error for VerificationKeyError {}
-
-pub fn parse_verification_key_json(
-    input: &str,
-) -> Result<VerificationKeyRoot, VerificationKeyError> {
-    let value: serde_json::Value =
-        serde_json::from_str(input).map_err(|error| VerificationKeyError::Json {
-            message: error.to_string(),
-        })?;
-
-    match value {
-        serde_json::Value::Array(values) => {
-            let mut out = Vec::with_capacity(values.len());
-            for value in values {
-                let Some(number) = value.as_u64() else {
-                    return Err(VerificationKeyError::UnsupportedJsonShape);
-                };
-                out.push(number);
-            }
-            Ok(VerificationKeyRoot::FieldElements(out))
-        }
-        serde_json::Value::String(value) => Ok(VerificationKeyRoot::DecimalScalar(value)),
-        _ => Err(VerificationKeyError::UnsupportedJsonShape),
-    }
-}
-
-pub fn read_verification_key_json_file(
-    path: impl AsRef<Path>,
-) -> Result<VerificationKeyRoot, VerificationKeyError> {
-    let input = std::fs::read_to_string(path).map_err(|error| VerificationKeyError::Io {
-        message: error.to_string(),
-    })?;
-    parse_verification_key_json(&input)
-}
-
-pub fn encode_verification_key_json(
-    root: &VerificationKeyRoot,
-) -> Result<String, VerificationKeyError> {
-    match root {
-        VerificationKeyRoot::FieldElements(values) => {
-            serde_json::to_string(values).map_err(|error| VerificationKeyError::Json {
-                message: error.to_string(),
-            })
-        }
-        VerificationKeyRoot::DecimalScalar(value) => {
-            serde_json::to_string(value).map_err(|error| VerificationKeyError::Json {
-                message: error.to_string(),
-            })
-        }
-    }
-}
 
 pub fn parse_verification_key_binary(
     bytes: &[u8],
@@ -130,9 +68,7 @@ pub fn encode_verification_key_binary(
 ) -> Result<Vec<u8>, VerificationKeyError> {
     const ROOT_ELEMENTS: usize = 4;
 
-    let VerificationKeyRoot::FieldElements(values) = root else {
-        return Err(VerificationKeyError::ScalarHasNoBinaryEncoding);
-    };
+    let VerificationKeyRoot::FieldElements(values) = root;
 
     if values.len() != ROOT_ELEMENTS {
         return Err(VerificationKeyError::FieldElementCountMismatch {

@@ -95,9 +95,7 @@ pub fn build_pcs_setup_material(
     constant_tree: &ConstantTree,
 ) -> Result<PcsSetupMaterial, PcsSetupMaterialError> {
     let plan_bytes = encode_pcs_setup_plan(plan)?;
-    let VerificationKeyRoot::FieldElements(root) = constant_tree.root()? else {
-        return Err(PcsSetupMaterialError::InvalidRootWordCount { found: 1 });
-    };
+    let VerificationKeyRoot::FieldElements(root) = constant_tree.root()?;
     if root.len() != ROOT_WORDS {
         return Err(PcsSetupMaterialError::InvalidRootWordCount { found: root.len() });
     }
