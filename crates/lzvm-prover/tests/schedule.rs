@@ -62,6 +62,8 @@ fn sample_setup(n_bits: u32, n_bits_ext: u32, query_count: u32) -> UnitSetupInfo
         challenge_count: 1,
         eval_count: 2,
         boundaries: Vec::new(),
+        unit_value_map: Vec::new(),
+        group_value_map: Vec::new(),
         stark: StarkStruct {
             n_bits,
             n_bits_ext,

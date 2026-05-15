@@ -7,7 +7,7 @@ use crate::sectioned::{
 };
 
 const SETUP_INFO_KIND: [u8; 4] = *b"uinf";
-const SETUP_INFO_VERSION: u32 = 1;
+const SETUP_INFO_VERSION: u32 = 2;
 const SETUP_INFO_SECTION_ID: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,6 +24,8 @@ pub struct UnitSetupInfo {
     pub eval_count: usize,
     pub boundaries: Vec<Boundary>,
     pub commitment_columns: Vec<CommitmentColumn>,
+    pub unit_value_map: Vec<StageValue>,
+    pub group_value_map: Vec<StageValue>,
     pub stark: StarkStruct,
 }
 
@@ -73,6 +75,13 @@ pub struct CommitmentColumn {
     pub stage_id: u32,
     pub stage_position: u32,
     pub intermediate: bool,
+    pub lengths: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StageValue {
+    pub name: String,
+    pub stage: u32,
     pub lengths: Vec<u32>,
 }
 
@@ -134,6 +143,10 @@ pub enum SetupInfoError {
         index: usize,
     },
     InvalidCommitmentColumn {
+        index: usize,
+    },
+    InvalidStageValue {
+        field: &'static str,
         index: usize,
     },
     Io {
@@ -201,6 +214,12 @@ impl fmt::Display for SetupInfoError {
                 write!(
                     f,
                     "invalid setup-info commitment-column entry at index {index}"
+                )
+            }
+            Self::InvalidStageValue { field, index } => {
+                write!(
+                    f,
+                    "invalid setup-info {field} entry at index {index}"
                 )
             }
             Self::Io { message } => write!(f, "setup-info io error: {message}"),
@@ -308,6 +327,12 @@ pub fn parse_unit_setup_info_json(input: &str) -> Result<UnitSetupInfo, SetupInf
     let constant_columns = parse_constant_columns(optional_array(object, "constPolsMap")?)?;
     validate_constant_columns(n_constants, &constant_columns)?;
     let commitment_columns = parse_commitment_columns(optional_array(object, "cmPolsMap")?)?;
+    let unit_value_map =
+        parse_stage_values(optional_array(object, "airValuesMap")?, "airValuesMap")?;
+    let group_value_map = parse_stage_values(
+        optional_array(object, "airgroupValuesMap")?,
+        "airgroupValuesMap",
+    )?;
     let q_degree = required_u32(object, "qDeg")?;
     let opening_points = required_i64_array(object, "openingPoints")?;
     let challenge_count = required_array(object, "challengesMap")?.len();
@@ -331,6 +356,8 @@ pub fn parse_unit_setup_info_json(input: &str) -> Result<UnitSetupInfo, SetupInf
         eval_count,
         boundaries,
         commitment_columns,
+        unit_value_map,
+        group_value_map,
         stark,
     };
 
@@ -431,6 +458,14 @@ fn parse_unit_setup_info_section(bytes: &[u8]) -> Result<UnitSetupInfo, SetupInf
     } else {
         read_commitment_columns(&mut reader)?
     };
+    let (unit_value_map, group_value_map) = if reader.position() == bytes.len() {
+        (Vec::new(), Vec::new())
+    } else {
+        (
+            read_stage_values(&mut reader)?,
+            read_stage_values(&mut reader)?,
+        )
+    };
 
     if reader.position() != bytes.len() {
         return Err(SetupInfoError::UnexpectedTrailingBytes {
@@ -451,6 +486,8 @@ fn parse_unit_setup_info_section(bytes: &[u8]) -> Result<UnitSetupInfo, SetupInf
         eval_count,
         boundaries,
         commitment_columns,
+        unit_value_map,
+        group_value_map,
         stark,
     };
     validate_unit_setup_info(&info)?;
@@ -528,6 +565,9 @@ fn encode_unit_setup_info_section(value: &UnitSetupInfo) -> Result<Vec<u8>, Setu
         }
     }
 
+    write_stage_values(&mut section, &value.unit_value_map)?;
+    write_stage_values(&mut section, &value.group_value_map)?;
+
     Ok(section)
 }
 
@@ -577,6 +617,26 @@ fn parse_commitment_columns(
     Ok(out)
 }
 
+fn parse_stage_values(
+    values: Option<&Vec<serde_json::Value>>,
+    field: &'static str,
+) -> Result<Vec<StageValue>, SetupInfoError> {
+    let Some(values) = values else {
+        return Ok(Vec::new());
+    };
+
+    let mut out = Vec::with_capacity(values.len());
+    for value in values {
+        let object = as_object(value, field)?;
+        out.push(StageValue {
+            name: required_string(object, "name")?,
+            stage: required_u32(object, "stage")?,
+            lengths: optional_u32_array(object, "lengths")?.unwrap_or_default(),
+        });
+    }
+    Ok(out)
+}
+
 fn read_commitment_columns(
     reader: &mut Reader<'_>,
 ) -> Result<Vec<CommitmentColumn>, SetupInfoError> {
@@ -611,6 +671,41 @@ fn read_commitment_columns(
         }
     }
     Ok(commitment_columns)
+}
+
+fn read_stage_values(reader: &mut Reader<'_>) -> Result<Vec<StageValue>, SetupInfoError> {
+    let value_count = reader.read_u32()?;
+    let mut values = Vec::with_capacity(value_count as usize);
+    for index in 0..value_count {
+        let lengths_count = {
+            let name = reader.read_string()?;
+            let stage = reader.read_u32()?;
+            let lengths_count = reader.read_u32()?;
+            values.push(StageValue {
+                name,
+                stage,
+                lengths: Vec::with_capacity(lengths_count as usize),
+            });
+            lengths_count
+        };
+        for _ in 0..lengths_count {
+            values[index as usize].lengths.push(reader.read_u32()?);
+        }
+    }
+    Ok(values)
+}
+
+fn write_stage_values(out: &mut Vec<u8>, values: &[StageValue]) -> Result<(), SetupInfoError> {
+    write_u32(out, usize_to_u32(values.len())?);
+    for value in values {
+        write_string(out, &value.name)?;
+        write_u32(out, value.stage);
+        write_u32(out, usize_to_u32(value.lengths.len())?);
+        for length in &value.lengths {
+            write_u32(out, *length);
+        }
+    }
+    Ok(())
 }
 
 fn validate_constant_columns(
@@ -664,6 +759,19 @@ fn validate_commitment_columns(info: &UnitSetupInfo) -> Result<(), SetupInfoErro
     Ok(())
 }
 
+fn validate_stage_values(
+    field: &'static str,
+    values: &[StageValue],
+    max_stage: u32,
+) -> Result<(), SetupInfoError> {
+    for (index, value) in values.iter().enumerate() {
+        if value.stage == 0 || value.stage > max_stage {
+            return Err(SetupInfoError::InvalidStageValue { field, index });
+        }
+    }
+    Ok(())
+}
+
 fn parse_stark_struct(value: &serde_json::Value) -> Result<StarkStruct, SetupInfoError> {
     let object = as_object(value, "starkStruct")?;
     let steps = parse_fri_steps(required_array(object, "steps")?)?;
@@ -710,6 +818,9 @@ fn validate_domains(stark: &StarkStruct) -> Result<(), SetupInfoError> {
 fn validate_unit_setup_info(info: &UnitSetupInfo) -> Result<(), SetupInfoError> {
     validate_constant_columns(info.n_constants, &info.constant_columns)?;
     validate_commitment_columns(info)?;
+    let max_stage = info.n_stages + 1;
+    validate_stage_values("unit-value-map", &info.unit_value_map, max_stage)?;
+    validate_stage_values("group-value-map", &info.group_value_map, max_stage)?;
     validate_domains(&info.stark)?;
     info.stage_commit_widths()?;
     Ok(())

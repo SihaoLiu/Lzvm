@@ -115,6 +115,8 @@ fn sample_setup() -> UnitSetupInfo {
         challenge_count: 1,
         eval_count: 2,
         boundaries: Vec::new(),
+        unit_value_map: Vec::new(),
+        group_value_map: Vec::new(),
         stark: StarkStruct {
             n_bits: 4,
             n_bits_ext: 6,

@@ -87,6 +87,13 @@ fn sample_setup_info_json() -> &'static str {
             {"stage": 1, "name": "trace.a", "dim": 1, "polsMapId": 0, "stageId": 0, "stagePos": 0},
             {"stage": 2, "name": "aux.a", "dim": 3, "polsMapId": 1, "stageId": 0, "stagePos": 0}
         ],
+        "airValuesMap": [
+            {"stage": 1, "name": "unit.alpha", "lengths": [2]},
+            {"stage": 2, "name": "unit.beta"}
+        ],
+        "airgroupValuesMap": [
+            {"stage": 2, "name": "group.alpha"}
+        ],
         "challengesMap": [{}, {}],
         "evMap": [{}, {}, {}],
         "boundaries": [
@@ -198,9 +205,23 @@ fn sample_setup_info_binary() -> Vec<u8> {
         }
     }
 
+    push_u32(&mut section, 2);
+    push_string(&mut section, "unit.alpha");
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 2);
+    push_string(&mut section, "unit.beta");
+    push_u32(&mut section, 2);
+    push_u32(&mut section, 0);
+
+    push_u32(&mut section, 1);
+    push_string(&mut section, "group.alpha");
+    push_u32(&mut section, 2);
+    push_u32(&mut section, 0);
+
     let mut file = Vec::new();
     file.extend_from_slice(b"uinf");
-    push_u32(&mut file, 1);
+    push_u32(&mut file, 2);
     push_u32(&mut file, 1);
     push_u32(&mut file, 1);
     file.extend_from_slice(&(section.len() as u64).to_le_bytes());
@@ -209,15 +230,15 @@ fn sample_setup_info_binary() -> Vec<u8> {
 }
 
 fn sample_setup_info_binary_without_commitment_columns() -> Vec<u8> {
-    const COMMITMENT_COLUMN_BYTES: usize = 68;
+    const OPTIONAL_TAIL_BYTES: usize = 137;
     let mut file = sample_setup_info_binary();
     let section_len_offset = 16;
     let mut section_len_bytes = [0_u8; 8];
     section_len_bytes.copy_from_slice(&file[section_len_offset..section_len_offset + 8]);
     let section_len = u64::from_le_bytes(section_len_bytes);
-    let adjusted_len = section_len - COMMITMENT_COLUMN_BYTES as u64;
+    let adjusted_len = section_len - OPTIONAL_TAIL_BYTES as u64;
     file[section_len_offset..section_len_offset + 8].copy_from_slice(&adjusted_len.to_le_bytes());
-    file.truncate(file.len() - COMMITMENT_COLUMN_BYTES);
+    file.truncate(file.len() - OPTIONAL_TAIL_BYTES);
     file
 }
 
@@ -238,6 +259,15 @@ fn parses_unit_setup_info_json() {
     assert_eq!(info.commitment_columns[1].stage, 2);
     assert_eq!(info.commitment_columns[1].stage_position, 0);
     assert_eq!(info.commitment_columns[1].dimension, 3);
+    assert_eq!(info.unit_value_map.len(), 2);
+    assert_eq!(info.unit_value_map[0].name, "unit.alpha");
+    assert_eq!(info.unit_value_map[0].stage, 1);
+    assert_eq!(info.unit_value_map[0].lengths, [2]);
+    assert_eq!(info.unit_value_map[1].name, "unit.beta");
+    assert_eq!(info.unit_value_map[1].stage, 2);
+    assert_eq!(info.group_value_map.len(), 1);
+    assert_eq!(info.group_value_map[0].name, "group.alpha");
+    assert_eq!(info.group_value_map[0].stage, 2);
     assert_eq!(info.n_publics, Some(3));
     assert_eq!(info.n_constraints, Some(8));
     assert_eq!(info.q_degree, 7);
@@ -325,6 +355,11 @@ fn parses_unit_setup_info_binary() {
     assert_eq!(info.commitment_columns[1].stage, 2);
     assert_eq!(info.commitment_columns[1].stage_position, 0);
     assert_eq!(info.commitment_columns[1].dimension, 3);
+    assert_eq!(info.unit_value_map.len(), 2);
+    assert_eq!(info.unit_value_map[0].name, "unit.alpha");
+    assert_eq!(info.unit_value_map[0].lengths, [2]);
+    assert_eq!(info.group_value_map.len(), 1);
+    assert_eq!(info.group_value_map[0].name, "group.alpha");
     assert_eq!(info.n_publics, Some(3));
     assert_eq!(info.n_constraints, Some(8));
     assert_eq!(info.q_degree, 7);
