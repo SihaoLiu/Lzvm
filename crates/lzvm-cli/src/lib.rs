@@ -17,10 +17,8 @@ use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
     read_key_directory_layout, validate_key_directory_layout, KeyDirectoryCatalog,
 };
-use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
 use lzvm_artifacts::pcs_fri_segment::PCS_FRI_OPENING_SEGMENT_ID;
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_material};
-use lzvm_artifacts::pcs_nonce_segment::PCS_QUERY_NONCE_SEGMENT_ID;
 use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file,
 };
@@ -48,8 +46,8 @@ use lzvm_prover::pcs_fri::{
 };
 use lzvm_prover::pcs_material_manifest::validate_pcs_material_manifest_segments;
 use lzvm_prover::pcs_query_plan::{
-    load_pcs_query_plan_from_segments, validate_seeded_pcs_query_plan_segments,
-    validate_transcript_pcs_query_plan_segments,
+    load_pcs_query_plan_from_segments, uses_transcript_pcs_query_plan_inputs,
+    validate_pcs_query_plan_segments,
 };
 use lzvm_prover::pcs_transcript_segments::{
     derive_pcs_transcript_challenges_from_proof_segments,
@@ -501,29 +499,18 @@ fn validate_pcs_query_plan(
     proof: &ProofArtifact,
     public_values: &lzvm_artifacts::public_values::PublicValues,
 ) -> Result<(), String> {
-    if !uses_transcript_query_plan_inputs(proof) {
-        return validate_seeded_pcs_query_plan_segments(
-            schedule,
-            proof.public_values_hash,
-            &proof.segments,
-        )
-        .map_err(|error| error.to_string());
-    }
-
-    let public_value_fields = transcript_public_value_fields(public_values)?;
-    validate_transcript_pcs_query_plan_segments(schedule, &public_value_fields, &proof.segments)
-        .map_err(|error| error.to_string())
-}
-
-fn uses_transcript_query_plan_inputs(proof: &ProofArtifact) -> bool {
-    proof
-        .segments
-        .iter()
-        .any(|segment| segment.id == PCS_QUERY_NONCE_SEGMENT_ID)
-        || proof
-            .segments
-            .iter()
-            .any(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
+    let public_value_fields = if uses_transcript_pcs_query_plan_inputs(&proof.segments) {
+        transcript_public_value_fields(public_values)?
+    } else {
+        Vec::new()
+    };
+    validate_pcs_query_plan_segments(
+        schedule,
+        proof.public_values_hash,
+        &public_value_fields,
+        &proof.segments,
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn transcript_public_value_fields(
@@ -570,7 +557,7 @@ fn validate_optional_pcs_fri_opening_segment(
     }
     validate_pcs_fri_opening_segments(&schedule.units, &proof.segments)
         .map_err(|error| error.to_string())?;
-    if !uses_transcript_query_plan_inputs(proof) {
+    if !uses_transcript_pcs_query_plan_inputs(&proof.segments) {
         return Ok(());
     }
 
@@ -696,7 +683,7 @@ fn derive_global_constraint_challenges(
     proof: &ProofArtifact,
     public_values: &PublicValues,
 ) -> Result<Vec<Ext3>, String> {
-    if !uses_transcript_query_plan_inputs(proof) {
+    if !uses_transcript_pcs_query_plan_inputs(&proof.segments) {
         return Ok(Vec::new());
     }
 

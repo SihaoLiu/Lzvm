@@ -1,5 +1,6 @@
 use std::fmt;
 
+use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
 use lzvm_artifacts::pcs_material_segment::{
     parse_pcs_material_manifest_segment, PcsMaterialManifestSegmentError,
     PCS_MATERIAL_MANIFEST_SEGMENT_ID,
@@ -141,6 +142,28 @@ pub fn load_pcs_query_plan_from_segments(
         .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
         .ok_or(LoadPcsQueryPlanSegmentError::MissingSegment)?;
     parse_pcs_query_plan_segment(&segment.data).map_err(LoadPcsQueryPlanSegmentError::Segment)
+}
+
+pub fn uses_transcript_pcs_query_plan_inputs(segments: &[ProofSegment]) -> bool {
+    segments
+        .iter()
+        .any(|segment| segment.id == PCS_QUERY_NONCE_SEGMENT_ID)
+        || segments
+            .iter()
+            .any(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
+}
+
+pub fn validate_pcs_query_plan_segments(
+    schedule: &ProveSchedule,
+    public_values_hash: [u8; 32],
+    public_values: &[Felt],
+    segments: &[ProofSegment],
+) -> Result<(), ValidatePcsQueryPlanSegmentsError> {
+    if uses_transcript_pcs_query_plan_inputs(segments) {
+        validate_transcript_pcs_query_plan_segments(schedule, public_values, segments)
+    } else {
+        validate_seeded_pcs_query_plan_segments(schedule, public_values_hash, segments)
+    }
 }
 
 pub fn validate_seeded_pcs_query_plan_segments(

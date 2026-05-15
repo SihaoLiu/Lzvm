@@ -11,6 +11,7 @@ use lzvm_artifacts::pcs_material_segment::{
     encode_pcs_material_manifest_segment, PcsMaterialManifestSegment, PcsMaterialManifestUnit,
     PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
+use lzvm_artifacts::pcs_nonce_segment::PCS_QUERY_NONCE_SEGMENT_ID;
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::pcs_query_segment::{
     encode_pcs_query_plan_segment, PcsQueryPlanSegment, PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
@@ -21,7 +22,8 @@ use lzvm_artifacts::witness_segment::{
     WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 use lzvm_prover::pcs_query_plan::{
-    load_pcs_query_plan_from_segments, validate_seeded_pcs_query_plan_segments,
+    load_pcs_query_plan_from_segments, uses_transcript_pcs_query_plan_inputs,
+    validate_pcs_query_plan_segments, validate_seeded_pcs_query_plan_segments,
     validate_transcript_pcs_query_plan_segments, LoadPcsQueryPlanSegmentError,
     ValidatePcsQueryPlanSegmentsError,
 };
@@ -89,6 +91,25 @@ fn validates_seeded_pcs_query_plan_segments() {
 }
 
 #[test]
+fn validates_pcs_query_plan_segments_from_seeded_inputs() {
+    let schedule = sample_schedule();
+    let public_hash = [7; 32];
+    let material = material_segment();
+    let witness = witness_segment(0);
+    let query = build_pcs_query_plan_segment(
+        &schedule,
+        public_hash,
+        &material,
+        std::slice::from_ref(&witness),
+    )
+    .expect("query plan should build");
+    let segments = vec![material, witness, query];
+
+    validate_pcs_query_plan_segments(&schedule, public_hash, &[], &segments)
+        .expect("query plan should validate");
+}
+
+#[test]
 fn rejects_seeded_pcs_query_plan_mismatches() {
     let schedule = sample_schedule();
     let public_hash = [7; 32];
@@ -115,6 +136,27 @@ fn validates_transcript_pcs_query_plan_segments() {
 
     validate_transcript_pcs_query_plan_segments(&schedule, &[], &segments)
         .expect("query plan should validate");
+}
+
+#[test]
+fn validates_pcs_query_plan_segments_from_transcript_inputs() {
+    let (schedule, segments) = transcript_query_plan_segments();
+
+    validate_pcs_query_plan_segments(&schedule, [0; 32], &[], &segments)
+        .expect("query plan should validate");
+}
+
+#[test]
+fn detects_transcript_pcs_query_plan_inputs() {
+    assert!(!uses_transcript_pcs_query_plan_inputs(&[]));
+    assert!(uses_transcript_pcs_query_plan_inputs(&[ProofSegment {
+        id: PCS_QUERY_NONCE_SEGMENT_ID,
+        data: Vec::new(),
+    }]));
+    assert!(uses_transcript_pcs_query_plan_inputs(&[ProofSegment {
+        id: PCS_EVALUATION_SEGMENT_ID,
+        data: Vec::new(),
+    }]));
 }
 
 #[test]
