@@ -9,6 +9,7 @@ use lzvm_artifacts::constraint_program::{
     encode_global_constraint_program, encode_regular_constraint_program, ConstraintEntry,
     ConstraintProgram, GlobalConstraintEntry, GlobalConstraintProgram,
 };
+use lzvm_artifacts::expression_info::{encode_expression_info, parse_expression_info_json};
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
@@ -46,11 +47,13 @@ use lzvm_artifacts::public_values::{
     encode_public_values_json, public_values_digest, PublicValueEntry, PublicValues,
 };
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
+use lzvm_artifacts::setup_info::{encode_unit_setup_info, parse_unit_setup_info_json};
 use lzvm_artifacts::unit_values_segment::{
     encode_unit_values_segment, parse_unit_values_segment, UnitValuesSegment,
     UnitValuesUnitSegment, UNIT_VALUES_SEGMENT_ID,
 };
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
+use lzvm_artifacts::verifier_info::{encode_verifier_info, parse_verifier_info_json};
 use lzvm_artifacts::witness_library::parse_witness_library;
 use lzvm_artifacts::witness_opening_segment::{
     parse_witness_opening_segment, WitnessOpeningLevelSegment, WitnessOpeningQuerySegment,
@@ -1146,6 +1149,24 @@ fn write_bytes(path: &Path, value: impl AsRef<[u8]>) {
     fs::write(path, value).expect("fixture file should be written");
 }
 
+fn write_unit_setup_metadata(path: &Path, value: &str) {
+    let setup = parse_unit_setup_info_json(value).expect("setup metadata should parse");
+    let bytes = encode_unit_setup_info(&setup).expect("setup metadata should encode");
+    write_bytes(path, bytes);
+}
+
+fn write_expression_metadata(path: &Path, value: &str) {
+    let expressions = parse_expression_info_json(value).expect("expression metadata should parse");
+    let bytes = encode_expression_info(&expressions).expect("expression metadata should encode");
+    write_bytes(path, bytes);
+}
+
+fn write_verifier_metadata(path: &Path, value: &str) {
+    let verifier = parse_verifier_info_json(value).expect("verifier metadata should parse");
+    let bytes = encode_verifier_info(&verifier).expect("verifier metadata should encode");
+    write_bytes(path, bytes);
+}
+
 fn write_field_words(path: &Path, values: &[u64]) {
     let mut bytes = Vec::with_capacity(values.len() * 8);
     for value in values {
@@ -1242,14 +1263,14 @@ fn write_unit_files_with_setup_info_verifier_and_regular_constraints(
     verifier_info: &str,
     regular_constraints: ConstraintProgram,
 ) {
-    if let Some(path) = unit.setup_info() {
-        write_text(&path, setup_info);
+    if let Some(path) = unit.setup_info_binary() {
+        write_unit_setup_metadata(&path, setup_info);
     }
-    if let Some(path) = unit.expression_info() {
-        write_text(&path, sample_expression_info_json());
+    if let Some(path) = unit.expression_info_binary() {
+        write_expression_metadata(&path, sample_expression_info_json());
     }
-    if let Some(path) = unit.verifier_info() {
-        write_text(&path, verifier_info);
+    if let Some(path) = unit.verifier_info_binary() {
+        write_verifier_metadata(&path, verifier_info);
     }
 
     let program = sample_program_file_with_regular_constraints(regular_constraints);
@@ -1284,14 +1305,14 @@ fn write_unit_files_with_verifier_info_and_regular_constraints(
 }
 
 fn write_unit_files_with_fri_quotient(unit: &KeyUnitPaths) {
-    if let Some(path) = unit.setup_info() {
-        write_text(&path, sample_setup_info_json());
+    if let Some(path) = unit.setup_info_binary() {
+        write_unit_setup_metadata(&path, sample_setup_info_json());
     }
-    if let Some(path) = unit.expression_info() {
-        write_text(&path, sample_expression_info_json());
+    if let Some(path) = unit.expression_info_binary() {
+        write_expression_metadata(&path, sample_expression_info_json());
     }
-    if let Some(path) = unit.verifier_info() {
-        write_text(&path, sample_fri_quotient_verifier_info_json());
+    if let Some(path) = unit.verifier_info_binary() {
+        write_verifier_metadata(&path, sample_fri_quotient_verifier_info_json());
     }
 
     let program = sample_program_file_with_expression_and_regular_constraints(

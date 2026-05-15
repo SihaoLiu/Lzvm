@@ -7,7 +7,7 @@ use lzvm_artifacts::constraint_program::{
     ConstraintProgram, GlobalConstraintProgram,
 };
 use lzvm_artifacts::expression_info::{
-    parse_expression_info_json, read_expression_info_binary_file,
+    encode_expression_info, parse_expression_info_json, read_expression_info_binary_file,
 };
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
@@ -19,12 +19,15 @@ use lzvm_artifacts::pcs_material::{build_pcs_setup_material, read_pcs_setup_mate
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, read_pcs_setup_plan_file};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
 use lzvm_artifacts::setup_info::{
-    parse_unit_setup_info_json, read_unit_setup_info_binary_file, UnitSetupInfo,
+    encode_unit_setup_info, parse_unit_setup_info_json, read_unit_setup_info_binary_file,
+    UnitSetupInfo,
 };
 use lzvm_artifacts::verification_key::{
     encode_verification_key_binary, read_verification_key_binary_file, VerificationKeyRoot,
 };
-use lzvm_artifacts::verifier_info::{parse_verifier_info_json, read_verifier_info_binary_file};
+use lzvm_artifacts::verifier_info::{
+    encode_verifier_info, parse_verifier_info_json, read_verifier_info_binary_file,
+};
 use lzvm_cli::run_cli;
 use lzvm_setup::build_constant_tree_from_fixed_columns;
 
@@ -230,6 +233,24 @@ fn write_text(path: &Path, value: &str) {
     write_bytes(path, value.as_bytes());
 }
 
+fn write_unit_setup_metadata(path: &Path, value: &str) {
+    let setup = parse_unit_setup_info_json(value).expect("setup metadata should parse");
+    let bytes = encode_unit_setup_info(&setup).expect("setup metadata should encode");
+    write_bytes(path, bytes);
+}
+
+fn write_expression_metadata(path: &Path, value: &str) {
+    let expressions = parse_expression_info_json(value).expect("expression metadata should parse");
+    let bytes = encode_expression_info(&expressions).expect("expression metadata should encode");
+    write_bytes(path, bytes);
+}
+
+fn write_verifier_metadata(path: &Path, value: &str) {
+    let verifier = parse_verifier_info_json(value).expect("verifier metadata should parse");
+    let bytes = encode_verifier_info(&verifier).expect("verifier metadata should encode");
+    write_bytes(path, bytes);
+}
+
 fn root_from_tree(tree: &[u8]) -> VerificationKeyRoot {
     VerificationKeyRoot::FieldElements(
         tree[tree.len() - 32..]
@@ -264,14 +285,14 @@ fn write_unit_files(
     raw_fixed: &[u8],
     root: &VerificationKeyRoot,
 ) {
-    if let Some(path) = paths.setup_info() {
-        write_text(&path, sample_setup_info_json());
+    if let Some(path) = paths.setup_info_binary() {
+        write_unit_setup_metadata(&path, sample_setup_info_json());
     }
-    if let Some(path) = paths.expression_info() {
-        write_text(&path, sample_expression_info_json());
+    if let Some(path) = paths.expression_info_binary() {
+        write_expression_metadata(&path, sample_expression_info_json());
     }
-    if let Some(path) = paths.verifier_info() {
-        write_text(&path, sample_verifier_info_json());
+    if let Some(path) = paths.verifier_info_binary() {
+        write_verifier_metadata(&path, sample_verifier_info_json());
     }
 
     let program = sample_program_file();

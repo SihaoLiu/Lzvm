@@ -258,6 +258,24 @@ fn write_bytes(path: &Path, value: impl AsRef<[u8]>) {
     fs::write(path, value).expect("fixture file should be written");
 }
 
+fn write_unit_setup_metadata(path: &Path, value: &str) {
+    let setup = parse_unit_setup_info_json(value).expect("setup metadata should parse");
+    let bytes = encode_unit_setup_info(&setup).expect("setup metadata should encode");
+    write_bytes(path, bytes);
+}
+
+fn write_expression_metadata(path: &Path, value: &str) {
+    let expressions = parse_expression_info_json(value).expect("expression metadata should parse");
+    let bytes = encode_expression_info(&expressions).expect("expression metadata should encode");
+    write_bytes(path, bytes);
+}
+
+fn write_verifier_metadata(path: &Path, value: &str) {
+    let verifier = parse_verifier_info_json(value).expect("verifier metadata should parse");
+    let bytes = encode_verifier_info(&verifier).expect("verifier metadata should encode");
+    write_bytes(path, bytes);
+}
+
 fn write_global_files(root: &Path) {
     fs::create_dir_all(root).expect("fixture root should be created");
     fs::write(
@@ -312,14 +330,14 @@ fn write_binary_catalog_global_files(root: &Path) {
 }
 
 fn write_catalog_unit_files(unit: &KeyUnitPaths) {
-    if let Some(path) = unit.setup_info() {
-        write_text(&path, sample_setup_info_json());
+    if let Some(path) = unit.setup_info_binary() {
+        write_unit_setup_metadata(&path, sample_setup_info_json());
     }
-    if let Some(path) = unit.expression_info() {
-        write_text(&path, sample_expression_info_json());
+    if let Some(path) = unit.expression_info_binary() {
+        write_expression_metadata(&path, sample_expression_info_json());
     }
-    if let Some(path) = unit.verifier_info() {
-        write_text(&path, sample_verifier_info_json());
+    if let Some(path) = unit.verifier_info_binary() {
+        write_verifier_metadata(&path, sample_verifier_info_json());
     }
 
     let program = sample_program_file();
@@ -435,6 +453,21 @@ fn derives_key_directory_units_from_global_metadata() {
             .join("air")
             .join("unit-a")
     );
+    assert!(basic
+        .setup_info()
+        .expect("setup metadata path should derive")
+        .to_string_lossy()
+        .ends_with(".starkinfo.bin"));
+    assert!(basic
+        .expression_info()
+        .expect("expression metadata path should derive")
+        .to_string_lossy()
+        .ends_with(".expressionsinfo.bin"));
+    assert!(basic
+        .verifier_info()
+        .expect("verifier metadata path should derive")
+        .to_string_lossy()
+        .ends_with(".verifierinfo.bin"));
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
@@ -584,19 +617,6 @@ fn reads_key_directory_catalog_from_binary_unit_setup_metadata() {
     }
 
     let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
-    let setup_bytes = encode_unit_setup_info(&setup).expect("setup should encode");
-    for unit in &layout.units {
-        let json_path = unit
-            .setup_info_json()
-            .expect("json setup metadata path should derive");
-        let binary_path = unit
-            .setup_info_binary()
-            .expect("binary setup metadata path should derive");
-        write_bytes(&binary_path, &setup_bytes);
-        if json_path.is_file() {
-            fs::remove_file(json_path).expect("json setup metadata should be removed");
-        }
-    }
 
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
 
@@ -626,19 +646,6 @@ fn reads_key_directory_catalog_from_binary_verifier_metadata() {
 
     let verifier =
         parse_verifier_info_json(sample_verifier_info_json()).expect("verifier should parse");
-    let verifier_bytes = encode_verifier_info(&verifier).expect("verifier should encode");
-    for unit in &layout.units {
-        let json_path = unit
-            .verifier_info_json()
-            .expect("json verifier metadata path should derive");
-        let binary_path = unit
-            .verifier_info_binary()
-            .expect("binary verifier metadata path should derive");
-        write_bytes(&binary_path, &verifier_bytes);
-        if json_path.is_file() {
-            fs::remove_file(json_path).expect("json verifier metadata should be removed");
-        }
-    }
 
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
 
@@ -668,19 +675,6 @@ fn reads_key_directory_catalog_from_binary_expression_metadata() {
 
     let expressions = parse_expression_info_json(sample_expression_info_json())
         .expect("expressions should parse");
-    let expression_bytes = encode_expression_info(&expressions).expect("expressions should encode");
-    for unit in &layout.units {
-        let json_path = unit
-            .expression_info_json()
-            .expect("json expression metadata path should derive");
-        let binary_path = unit
-            .expression_info_binary()
-            .expect("binary expression metadata path should derive");
-        write_bytes(&binary_path, &expression_bytes);
-        if json_path.is_file() {
-            fs::remove_file(json_path).expect("json expression metadata should be removed");
-        }
-    }
 
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
 
