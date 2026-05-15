@@ -1,6 +1,12 @@
 use std::fmt;
 
-use lzvm_field::{Ext3, Felt, PoseidonTranscript, TranscriptError};
+use lzvm_artifacts::pcs_evaluation_segment::PcsEvaluationUnitSegment;
+use lzvm_artifacts::pcs_fri_segment::PcsFriOpeningUnitSegment;
+use lzvm_artifacts::pcs_material_segment::PcsMaterialManifestUnit;
+use lzvm_artifacts::witness_segment::WitnessCommitmentSegment;
+use lzvm_field::{Ext3, Felt, FieldError, PoseidonTranscript, TranscriptError};
+
+use crate::ProveUnitSchedule;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PcsTranscriptInputs<'a> {
@@ -16,12 +22,37 @@ pub struct PcsTranscriptInputs<'a> {
     pub final_polynomial: &'a [Ext3],
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct PcsTranscriptSegmentInputs<'a> {
+    pub unit_index: usize,
+    pub unit: &'a ProveUnitSchedule,
+    pub material: &'a PcsMaterialManifestUnit,
+    pub public_values: &'a [Felt],
+    pub witness: &'a WitnessCommitmentSegment,
+    pub evaluations: &'a PcsEvaluationUnitSegment,
+    pub fri: &'a PcsFriOpeningUnitSegment,
+    pub root_challenge_draws: &'a [usize],
+    pub evaluation_challenge_draws: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcsTranscriptError {
     Transcript(TranscriptError),
+    Field(FieldError),
     RootChallengeDrawMismatch {
         root_count: usize,
         draw_count: usize,
+    },
+    UnitIndexOverflow {
+        unit_index: usize,
+    },
+    MissingTranscriptArity {
+        unit_index: usize,
+    },
+    SegmentUnitIndexMismatch {
+        segment: &'static str,
+        expected: u32,
+        found: u32,
     },
     EmptyFinalPolynomial,
 }
@@ -30,12 +61,27 @@ impl fmt::Display for PcsTranscriptError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Transcript(error) => write!(f, "PCS transcript failed: {error}"),
+            Self::Field(error) => write!(f, "PCS transcript field value failed: {error}"),
             Self::RootChallengeDrawMismatch {
                 root_count,
                 draw_count,
             } => write!(
                 f,
                 "PCS transcript root count {root_count} does not match challenge draw count {draw_count}"
+            ),
+            Self::UnitIndexOverflow { unit_index } => {
+                write!(f, "PCS transcript unit index is too large: {unit_index}")
+            }
+            Self::MissingTranscriptArity { unit_index } => {
+                write!(f, "PCS transcript arity is missing for unit {unit_index}")
+            }
+            Self::SegmentUnitIndexMismatch {
+                segment,
+                expected,
+                found,
+            } => write!(
+                f,
+                "PCS transcript {segment} unit index mismatch: expected {expected}, found {found}"
             ),
             Self::EmptyFinalPolynomial => write!(f, "PCS transcript final polynomial is empty"),
         }
@@ -47,6 +93,12 @@ impl std::error::Error for PcsTranscriptError {}
 impl From<TranscriptError> for PcsTranscriptError {
     fn from(error: TranscriptError) -> Self {
         Self::Transcript(error)
+    }
+}
+
+impl From<FieldError> for PcsTranscriptError {
+    fn from(error: FieldError) -> Self {
+        Self::Field(error)
     }
 }
 
@@ -127,6 +179,65 @@ pub fn derive_pcs_final_query_challenge(
     Ok(transcript.get_field())
 }
 
+pub fn derive_pcs_final_query_challenge_from_segments(
+    input: PcsTranscriptSegmentInputs<'_>,
+) -> Result<Ext3, PcsTranscriptError> {
+    let expected =
+        u32::try_from(input.unit_index).map_err(|_| PcsTranscriptError::UnitIndexOverflow {
+            unit_index: input.unit_index,
+        })?;
+    check_unit_index("material", expected, input.material.unit_index)?;
+    check_unit_index("witness", expected, input.witness.unit_index)?;
+    check_unit_index("evaluations", expected, input.evaluations.unit_index)?;
+    check_unit_index("fri", expected, input.fri.unit_index)?;
+
+    let arity = input
+        .unit
+        .transcript_arity
+        .ok_or(PcsTranscriptError::MissingTranscriptArity {
+            unit_index: input.unit_index,
+        })? as usize;
+
+    let constant_root = root_from_words(input.material.constant_tree_root)?;
+    let witness_roots = input
+        .witness
+        .stages
+        .iter()
+        .map(|stage| root_from_words(stage.root))
+        .collect::<Result<Vec<_>, _>>()?;
+    let evaluation_values = input
+        .evaluations
+        .values
+        .iter()
+        .map(|value| extension_from_words(*value))
+        .collect::<Result<Vec<_>, _>>()?;
+    let fri_roots = input
+        .fri
+        .layers
+        .iter()
+        .map(|layer| root_from_words(layer.root))
+        .collect::<Result<Vec<_>, _>>()?;
+    let final_polynomial = input
+        .fri
+        .final_polynomial
+        .iter()
+        .map(|value| extension_from_words(*value))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    derive_pcs_final_query_challenge(PcsTranscriptInputs {
+        arity,
+        hash_values: input.unit.hash_commits,
+        constant_root,
+        public_values: input.public_values,
+        witness_roots: &witness_roots,
+        root_challenge_draws: input.root_challenge_draws,
+        evaluation_values: &evaluation_values,
+        evaluation_challenge_draws: input.evaluation_challenge_draws,
+        fri_roots: &fri_roots,
+        final_polynomial: &final_polynomial,
+    })
+}
+
 fn flatten_extension_values(values: &[Ext3]) -> Vec<Felt> {
     values
         .iter()
@@ -138,4 +249,37 @@ fn draw_fields(transcript: &mut PoseidonTranscript, count: usize) {
     for _ in 0..count {
         transcript.get_field();
     }
+}
+
+fn check_unit_index(
+    segment: &'static str,
+    expected: u32,
+    found: u32,
+) -> Result<(), PcsTranscriptError> {
+    if found == expected {
+        Ok(())
+    } else {
+        Err(PcsTranscriptError::SegmentUnitIndexMismatch {
+            segment,
+            expected,
+            found,
+        })
+    }
+}
+
+fn root_from_words(words: [u64; 4]) -> Result<[Felt; 4], PcsTranscriptError> {
+    Ok([
+        Felt::from_canonical(words[0])?,
+        Felt::from_canonical(words[1])?,
+        Felt::from_canonical(words[2])?,
+        Felt::from_canonical(words[3])?,
+    ])
+}
+
+fn extension_from_words(words: [u64; 3]) -> Result<Ext3, PcsTranscriptError> {
+    Ok(Ext3::new(
+        Felt::from_canonical(words[0])?,
+        Felt::from_canonical(words[1])?,
+        Felt::from_canonical(words[2])?,
+    ))
 }
