@@ -19,6 +19,7 @@ cuda = ["lzvm-setup/cuda"]
 
 [dependencies]
 lzvm-artifacts = { path = "../lzvm-artifacts" }
+lzvm-field = { path = "../lzvm-field" }
 lzvm-prover = { path = "../lzvm-prover" }
 lzvm-setup = { path = "../lzvm-setup" }
 serde_json = "1"

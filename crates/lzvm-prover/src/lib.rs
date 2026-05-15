@@ -21,9 +21,9 @@ pub mod witness_trace;
 
 pub use prove_witness::{
     build_pcs_material_manifest_segment, build_pcs_query_plan_segment,
-    build_witness_commitment_segment, run_prove_witness_commitments, ProvePcsMaterialSegmentError,
-    ProvePcsQueryPlanSegmentError, ProveWitnessCommitmentError, ProveWitnessCommitments,
-    ProveWitnessSegmentError,
+    build_witness_commitment_segment, build_witness_opening_segment, run_prove_witness_commitments,
+    ProvePcsMaterialSegmentError, ProvePcsQueryPlanSegmentError, ProveWitnessCommitmentError,
+    ProveWitnessCommitments, ProveWitnessOpeningSegmentError, ProveWitnessSegmentError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

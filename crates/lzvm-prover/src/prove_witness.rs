@@ -7,10 +7,15 @@ use lzvm_artifacts::pcs_material_segment::{
     PcsMaterialManifestSegmentError, PcsMaterialManifestUnit, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_query_segment::{
-    encode_pcs_query_plan_segment, PcsQueryPlanSegment, PcsQueryPlanSegmentError, PcsQueryPlanUnit,
-    PCS_QUERY_PLAN_SEGMENT_ID,
+    encode_pcs_query_plan_segment, parse_pcs_query_plan_segment, PcsQueryPlanSegment,
+    PcsQueryPlanSegmentError, PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::ProofSegment;
+use lzvm_artifacts::witness_opening_segment::{
+    encode_witness_opening_segment, WitnessOpeningLevelSegment, WitnessOpeningQuerySegment,
+    WitnessOpeningSegment, WitnessOpeningSegmentError, WitnessOpeningStageSegment,
+    WitnessOpeningUnitSegment, WITNESS_OPENING_SEGMENT_ID,
+};
 use lzvm_artifacts::witness_segment::{
     encode_witness_commitment_segment, parse_witness_commitment_segment, WitnessCommitmentSegment,
     WitnessCommitmentSegmentError, WitnessCommitmentStageSegment,
@@ -20,7 +25,8 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
 use crate::witness_commitment::{
-    commit_witness_trace_stages, WitnessTraceCommitmentError, WitnessTraceCommitments,
+    commit_witness_trace_stages, open_witness_stage_commitment, WitnessStageOpeningError,
+    WitnessTraceCommitmentError, WitnessTraceCommitments,
 };
 use crate::witness_layout::{derive_witness_trace_layout, WitnessTraceLayoutError};
 use crate::witness_loader::{load_witness_library, WitnessLoadError};
@@ -114,6 +120,27 @@ pub enum ProvePcsQueryPlanSegmentError {
     },
     LengthOverflow,
     Segment(PcsQueryPlanSegmentError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProveWitnessOpeningSegmentError {
+    QueryPlan(PcsQueryPlanSegmentError),
+    MissingQueryUnit {
+        unit_index: usize,
+    },
+    UnitIndexOverflow {
+        unit_index: usize,
+    },
+    UnitIndexOutOfRange {
+        unit_index: usize,
+        unit_count: usize,
+    },
+    StageIndexOutOfRange {
+        stage_index: usize,
+        stage_count: usize,
+    },
+    Opening(WitnessStageOpeningError),
+    Segment(WitnessOpeningSegmentError),
 }
 
 impl fmt::Display for ProveWitnessCommitmentError {
@@ -240,6 +267,39 @@ impl fmt::Display for ProvePcsQueryPlanSegmentError {
     }
 }
 
+impl fmt::Display for ProveWitnessOpeningSegmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::QueryPlan(error) => {
+                write!(f, "prove witness opening query plan parse failed: {error}")
+            }
+            Self::MissingQueryUnit { unit_index } => {
+                write!(f, "prove witness opening is missing query unit {unit_index}")
+            }
+            Self::UnitIndexOverflow { unit_index } => write!(
+                f,
+                "prove witness opening unit index does not fit u32: {unit_index}"
+            ),
+            Self::UnitIndexOutOfRange {
+                unit_index,
+                unit_count,
+            } => write!(
+                f,
+                "prove witness opening unit index {unit_index} is outside unit count {unit_count}"
+            ),
+            Self::StageIndexOutOfRange {
+                stage_index,
+                stage_count,
+            } => write!(
+                f,
+                "prove witness opening stage index {stage_index} is outside stage count {stage_count}"
+            ),
+            Self::Opening(error) => write!(f, "prove witness opening failed: {error}"),
+            Self::Segment(error) => write!(f, "prove witness opening segment encode failed: {error}"),
+        }
+    }
+}
+
 impl std::error::Error for ProveWitnessSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -272,6 +332,20 @@ impl std::error::Error for ProvePcsQueryPlanSegmentError {
     }
 }
 
+impl std::error::Error for ProveWitnessOpeningSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::QueryPlan(error) => Some(error),
+            Self::Opening(error) => Some(error),
+            Self::Segment(error) => Some(error),
+            Self::MissingQueryUnit { .. }
+            | Self::UnitIndexOverflow { .. }
+            | Self::UnitIndexOutOfRange { .. }
+            | Self::StageIndexOutOfRange { .. } => None,
+        }
+    }
+}
+
 impl From<WitnessCommitmentSegmentError> for ProveWitnessSegmentError {
     fn from(error: WitnessCommitmentSegmentError) -> Self {
         Self::Segment(error)
@@ -286,6 +360,24 @@ impl From<PcsMaterialManifestSegmentError> for ProvePcsMaterialSegmentError {
 
 impl From<PcsQueryPlanSegmentError> for ProvePcsQueryPlanSegmentError {
     fn from(error: PcsQueryPlanSegmentError) -> Self {
+        Self::Segment(error)
+    }
+}
+
+impl From<PcsQueryPlanSegmentError> for ProveWitnessOpeningSegmentError {
+    fn from(error: PcsQueryPlanSegmentError) -> Self {
+        Self::QueryPlan(error)
+    }
+}
+
+impl From<WitnessStageOpeningError> for ProveWitnessOpeningSegmentError {
+    fn from(error: WitnessStageOpeningError) -> Self {
+        Self::Opening(error)
+    }
+}
+
+impl From<WitnessOpeningSegmentError> for ProveWitnessOpeningSegmentError {
+    fn from(error: WitnessOpeningSegmentError) -> Self {
         Self::Segment(error)
     }
 }
@@ -495,6 +587,100 @@ pub fn build_pcs_query_plan_segment(
     Ok(ProofSegment {
         id: PCS_QUERY_PLAN_SEGMENT_ID,
         data: encode_pcs_query_plan_segment(&query_plan)?,
+    })
+}
+
+pub fn build_witness_opening_segment(
+    schedule: &ProveSchedule,
+    query_segment: &ProofSegment,
+    output: &ProveWitnessCommitments,
+) -> Result<ProofSegment, ProveWitnessOpeningSegmentError> {
+    let unit_index_u32 = u32::try_from(output.unit_index()).map_err(|_| {
+        ProveWitnessOpeningSegmentError::UnitIndexOverflow {
+            unit_index: output.unit_index(),
+        }
+    })?;
+    let unit = schedule.units.get(output.unit_index()).ok_or(
+        ProveWitnessOpeningSegmentError::UnitIndexOutOfRange {
+            unit_index: output.unit_index(),
+            unit_count: schedule.units.len(),
+        },
+    )?;
+    let query_plan = parse_pcs_query_plan_segment(&query_segment.data)?;
+    let query_unit = query_plan
+        .units
+        .iter()
+        .find(|unit| unit.unit_index == unit_index_u32)
+        .ok_or(ProveWitnessOpeningSegmentError::MissingQueryUnit {
+            unit_index: output.unit_index(),
+        })?;
+    let mut queries = Vec::with_capacity(query_unit.queries.len());
+    for row_index in &query_unit.queries {
+        let mut stages = Vec::with_capacity(output.stage_commitments().stage_count());
+        for commitment in output.stage_commitments().commitments() {
+            let stage_index = commitment.stage_index();
+            let width = unit
+                .stage_commit_widths
+                .get(stage_index.checked_sub(1).ok_or(
+                    ProveWitnessOpeningSegmentError::StageIndexOutOfRange {
+                        stage_index,
+                        stage_count: unit.stage_commit_widths.len(),
+                    },
+                )?)
+                .ok_or(ProveWitnessOpeningSegmentError::StageIndexOutOfRange {
+                    stage_index,
+                    stage_count: unit.stage_commit_widths.len(),
+                })?;
+            let opening = open_witness_stage_commitment(
+                commitment,
+                *row_index,
+                unit.extended_domain_size,
+                usize::try_from(*width).map_err(|_| {
+                    ProveWitnessOpeningSegmentError::StageIndexOutOfRange {
+                        stage_index,
+                        stage_count: unit.stage_commit_widths.len(),
+                    }
+                })?,
+            )?;
+            stages.push(WitnessOpeningStageSegment {
+                stage_index: u32::try_from(stage_index).map_err(|_| {
+                    ProveWitnessOpeningSegmentError::StageIndexOutOfRange {
+                        stage_index,
+                        stage_count: unit.stage_commit_widths.len(),
+                    }
+                })?,
+                values: opening
+                    .values()
+                    .iter()
+                    .map(|value| value.to_u64())
+                    .collect(),
+                siblings: opening
+                    .siblings()
+                    .iter()
+                    .map(|level| WitnessOpeningLevelSegment {
+                        siblings: level
+                            .iter()
+                            .map(|digest| digest.map(|value| value.to_u64()))
+                            .collect(),
+                    })
+                    .collect(),
+            });
+        }
+        queries.push(WitnessOpeningQuerySegment {
+            row_index: *row_index,
+            stages,
+        });
+    }
+
+    let segment = WitnessOpeningSegment {
+        units: vec![WitnessOpeningUnitSegment {
+            unit_index: unit_index_u32,
+            queries,
+        }],
+    };
+    Ok(ProofSegment {
+        id: WITNESS_OPENING_SEGMENT_ID,
+        data: encode_witness_opening_segment(&segment)?,
     })
 }
 

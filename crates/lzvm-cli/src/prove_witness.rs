@@ -7,8 +7,9 @@ use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 use lzvm_prover::{
     build_pcs_material_manifest_segment, build_pcs_query_plan_segment,
-    build_witness_commitment_segment, derive_prove_execution_plan, run_prove_witness_commitments,
-    ProveExecutionInputArtifacts, ProveSchedule, ProveWitnessCommitments,
+    build_witness_commitment_segment, build_witness_opening_segment, derive_prove_execution_plan,
+    run_prove_witness_commitments, ProveExecutionInputArtifacts, ProveSchedule,
+    ProveWitnessCommitments,
 };
 
 use crate::prove_plan::{parse_run_args, write_run_plan_summary, ParseError, ParsedRunArgs};
@@ -109,7 +110,7 @@ fn save_witness_outputs(
 
     let segment = build_witness_commitment_segment(output)
         .map_err(|error| format!("build witness segment failed: {error}"))?;
-    let proof_bytes = build_proof_bytes(schedule, public_inputs, &segment)?;
+    let proof_bytes = build_proof_bytes(schedule, public_inputs, output, &segment)?;
 
     for commitment in output.stage_commitments().commitments() {
         let root_path = output_dir.join(format!(
@@ -140,6 +141,7 @@ fn save_witness_outputs(
 fn build_proof_bytes(
     schedule: &ProveSchedule,
     public_inputs: Option<&Path>,
+    output: &ProveWitnessCommitments,
     segment: &ProofSegment,
 ) -> Result<Option<Vec<u8>>, String> {
     let Some(public_inputs) = public_inputs else {
@@ -161,10 +163,17 @@ fn build_proof_bytes(
         std::slice::from_ref(segment),
     )
     .map_err(|error| format!("build query plan segment failed: {error}"))?;
+    let opening_segment = build_witness_opening_segment(schedule, &query_segment, output)
+        .map_err(|error| format!("build witness opening segment failed: {error}"))?;
     let proof = ProofArtifact {
         setup_hash: schedule.setup_hash,
         public_values_hash,
-        segments: vec![material_segment, query_segment, segment.clone()],
+        segments: vec![
+            material_segment,
+            query_segment,
+            opening_segment,
+            segment.clone(),
+        ],
     };
     encode_proof_artifact(&proof)
         .map(Some)

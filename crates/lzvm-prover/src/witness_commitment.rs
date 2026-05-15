@@ -108,6 +108,21 @@ pub struct WitnessStageOpening {
 }
 
 impl WitnessStageOpening {
+    pub fn new(
+        row_index: u64,
+        values: Vec<Felt>,
+        siblings: Vec<Vec<[Felt; HASH_WORDS]>>,
+    ) -> Result<Self, WitnessStageOpeningError> {
+        if values.is_empty() {
+            return Err(WitnessStageOpeningError::EmptyValues);
+        }
+        Ok(Self {
+            row_index,
+            values,
+            siblings,
+        })
+    }
+
     pub fn row_index(&self) -> u64 {
         self.row_index
     }

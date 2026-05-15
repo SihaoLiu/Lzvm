@@ -20,4 +20,5 @@ pub mod setup_info;
 pub mod verification_key;
 pub mod verifier_info;
 pub mod witness_library;
+pub mod witness_opening_segment;
 pub mod witness_segment;
