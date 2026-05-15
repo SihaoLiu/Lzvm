@@ -15,7 +15,7 @@ use lzvm_artifacts::metadata_bundle::UnitMetadataBundle;
 use lzvm_artifacts::pcs_material::PcsSetupMaterial;
 use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
 use lzvm_artifacts::setup_info::{
-    CommitmentColumn, FriStep, StageValue, StarkStruct, UnitSetupInfo,
+    CommitmentColumn, EvaluationMapEntry, FriStep, StageValue, StarkStruct, UnitSetupInfo,
 };
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
@@ -64,6 +64,7 @@ fn sample_setup(n_bits: u32, n_bits_ext: u32, query_count: u32) -> UnitSetupInfo
         section_widths,
         challenge_count: 1,
         eval_count: 2,
+        evaluation_map: vec![EvaluationMapEntry::default(); 2],
         boundaries: Vec::new(),
         unit_value_map: vec![
             StageValue {

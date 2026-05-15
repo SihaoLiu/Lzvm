@@ -582,6 +582,7 @@ fn sample_unit_setup_info() -> UnitSetupInfo {
         section_widths: std::collections::BTreeMap::new(),
         challenge_count: 1,
         eval_count: 0,
+        evaluation_map: Vec::new(),
         boundaries: Vec::<Boundary>::new(),
         commitment_columns: vec![CommitmentColumn {
             name: "trace-a".to_owned(),

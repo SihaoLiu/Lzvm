@@ -7,7 +7,7 @@ use crate::sectioned::{
 };
 
 const SETUP_INFO_KIND: [u8; 4] = *b"uinf";
-const SETUP_INFO_VERSION: u32 = 2;
+const SETUP_INFO_VERSION: u32 = 3;
 const SETUP_INFO_SECTION_ID: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +22,7 @@ pub struct UnitSetupInfo {
     pub section_widths: BTreeMap<String, u32>,
     pub challenge_count: usize,
     pub eval_count: usize,
+    pub evaluation_map: Vec<EvaluationMapEntry>,
     pub boundaries: Vec<Boundary>,
     pub commitment_columns: Vec<CommitmentColumn>,
     pub unit_value_map: Vec<StageValue>,
@@ -86,6 +87,35 @@ pub struct StageValue {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvaluationMapEntry {
+    pub kind: EvaluationMapKind,
+    pub id: u32,
+    pub prime: i64,
+    pub opening_position: u32,
+    pub commit_id: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EvaluationMapKind {
+    #[default]
+    Constant,
+    Commitment,
+    Custom,
+}
+
+impl Default for EvaluationMapEntry {
+    fn default() -> Self {
+        Self {
+            kind: EvaluationMapKind::Constant,
+            id: 0,
+            prime: 0,
+            opening_position: 0,
+            commit_id: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetupInfoError {
     Json {
         message: String,
@@ -147,6 +177,9 @@ pub enum SetupInfoError {
     },
     InvalidStageValue {
         field: &'static str,
+        index: usize,
+    },
+    InvalidEvaluationMap {
         index: usize,
     },
     Io {
@@ -222,6 +255,9 @@ impl fmt::Display for SetupInfoError {
                     "invalid setup-info {field} entry at index {index}"
                 )
             }
+            Self::InvalidEvaluationMap { index } => {
+                write!(f, "invalid setup-info evaluation-map entry at index {index}")
+            }
             Self::Io { message } => write!(f, "setup-info io error: {message}"),
         }
     }
@@ -295,7 +331,7 @@ pub fn parse_unit_setup_info(bytes: &[u8]) -> Result<UnitSetupInfo, SetupInfoErr
         return Err(SetupInfoError::InvalidSectionId { found: section.id });
     }
 
-    parse_unit_setup_info_section(&section.data)
+    parse_unit_setup_info_section(&section.data, file.version)
 }
 
 pub fn encode_unit_setup_info(value: &UnitSetupInfo) -> Result<Vec<u8>, SetupInfoError> {
@@ -333,7 +369,8 @@ pub fn parse_unit_setup_info_json(input: &str) -> Result<UnitSetupInfo, SetupInf
     let q_degree = required_u32(object, "qDeg")?;
     let opening_points = required_i64_array(object, "openingPoints")?;
     let challenge_count = required_array(object, "challengesMap")?.len();
-    let eval_count = required_array(object, "evMap")?.len();
+    let evaluation_map = parse_evaluation_map(required_array(object, "evMap")?)?;
+    let eval_count = evaluation_map.len();
     let boundaries = parse_boundaries(required_array(object, "boundaries")?)?;
     let stark = parse_stark_struct(required(object, "starkStruct")?)?;
     validate_domains(&stark)?;
@@ -351,6 +388,7 @@ pub fn parse_unit_setup_info_json(input: &str) -> Result<UnitSetupInfo, SetupInf
         section_widths,
         challenge_count,
         eval_count,
+        evaluation_map,
         boundaries,
         commitment_columns,
         unit_value_map,
@@ -362,7 +400,10 @@ pub fn parse_unit_setup_info_json(input: &str) -> Result<UnitSetupInfo, SetupInf
     Ok(info)
 }
 
-fn parse_unit_setup_info_section(bytes: &[u8]) -> Result<UnitSetupInfo, SetupInfoError> {
+fn parse_unit_setup_info_section(
+    bytes: &[u8],
+    version: u32,
+) -> Result<UnitSetupInfo, SetupInfoError> {
     let mut reader = Reader::new(bytes);
     let n_stages = reader.read_u32()?;
     let n_constants = reader.read_u32()?;
@@ -463,6 +504,11 @@ fn parse_unit_setup_info_section(bytes: &[u8]) -> Result<UnitSetupInfo, SetupInf
             read_stage_values(&mut reader)?,
         )
     };
+    let evaluation_map = if reader.position() == bytes.len() || version < 3 {
+        default_evaluation_map(eval_count)
+    } else {
+        read_evaluation_map(&mut reader)?
+    };
 
     if reader.position() != bytes.len() {
         return Err(SetupInfoError::UnexpectedTrailingBytes {
@@ -481,6 +527,7 @@ fn parse_unit_setup_info_section(bytes: &[u8]) -> Result<UnitSetupInfo, SetupInf
         section_widths,
         challenge_count,
         eval_count,
+        evaluation_map,
         boundaries,
         commitment_columns,
         unit_value_map,
@@ -564,6 +611,7 @@ fn encode_unit_setup_info_section(value: &UnitSetupInfo) -> Result<Vec<u8>, Setu
 
     write_stage_values(&mut section, &value.unit_value_map)?;
     write_stage_values(&mut section, &value.group_value_map)?;
+    write_evaluation_map(&mut section, &value.evaluation_map)?;
 
     Ok(section)
 }
@@ -634,6 +682,33 @@ fn parse_stage_values(
     Ok(out)
 }
 
+fn parse_evaluation_map(
+    values: &[serde_json::Value],
+) -> Result<Vec<EvaluationMapEntry>, SetupInfoError> {
+    let mut out = Vec::with_capacity(values.len());
+    for (index, value) in values.iter().enumerate() {
+        let object = as_object(value, "evMap")?;
+        let kind = match object.get("type").and_then(|value| value.as_str()) {
+            Some("cm") => EvaluationMapKind::Commitment,
+            Some("custom") => EvaluationMapKind::Custom,
+            Some("const") | None => EvaluationMapKind::Constant,
+            Some(_) => return Err(SetupInfoError::InvalidEvaluationMap { index }),
+        };
+        out.push(EvaluationMapEntry {
+            kind,
+            id: optional_u32(object, "id")?.unwrap_or(0),
+            prime: optional_i64(object, "prime")?.unwrap_or(0),
+            opening_position: optional_u32(object, "openingPos")?.unwrap_or(0),
+            commit_id: optional_u32(object, "commitId")?,
+        });
+    }
+    Ok(out)
+}
+
+fn default_evaluation_map(count: usize) -> Vec<EvaluationMapEntry> {
+    vec![EvaluationMapEntry::default(); count]
+}
+
 fn read_commitment_columns(
     reader: &mut Reader<'_>,
 ) -> Result<Vec<CommitmentColumn>, SetupInfoError> {
@@ -692,6 +767,33 @@ fn read_stage_values(reader: &mut Reader<'_>) -> Result<Vec<StageValue>, SetupIn
     Ok(values)
 }
 
+fn read_evaluation_map(reader: &mut Reader<'_>) -> Result<Vec<EvaluationMapEntry>, SetupInfoError> {
+    let count = reader.read_u32()?;
+    let mut entries = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        let kind = match reader.read_u8()? {
+            0 => EvaluationMapKind::Constant,
+            1 => EvaluationMapKind::Commitment,
+            2 => EvaluationMapKind::Custom,
+            value => {
+                return Err(SetupInfoError::InvalidFlag {
+                    field: "evMap",
+                    value,
+                })
+            }
+        };
+        let entry = EvaluationMapEntry {
+            kind,
+            id: reader.read_u32()?,
+            prime: reader.read_i64()?,
+            opening_position: reader.read_u32()?,
+            commit_id: reader.read_optional_u32("evMap_commit_id")?,
+        };
+        entries.push(entry);
+    }
+    Ok(entries)
+}
+
 fn write_stage_values(out: &mut Vec<u8>, values: &[StageValue]) -> Result<(), SetupInfoError> {
     write_u32(out, usize_to_u32(values.len())?);
     for value in values {
@@ -701,6 +803,25 @@ fn write_stage_values(out: &mut Vec<u8>, values: &[StageValue]) -> Result<(), Se
         for length in &value.lengths {
             write_u32(out, *length);
         }
+    }
+    Ok(())
+}
+
+fn write_evaluation_map(
+    out: &mut Vec<u8>,
+    values: &[EvaluationMapEntry],
+) -> Result<(), SetupInfoError> {
+    write_u32(out, usize_to_u32(values.len())?);
+    for entry in values {
+        out.push(match entry.kind {
+            EvaluationMapKind::Constant => 0,
+            EvaluationMapKind::Commitment => 1,
+            EvaluationMapKind::Custom => 2,
+        });
+        write_u32(out, entry.id);
+        write_i64(out, entry.prime);
+        write_u32(out, entry.opening_position);
+        write_optional_u32(out, entry.commit_id);
     }
     Ok(())
 }

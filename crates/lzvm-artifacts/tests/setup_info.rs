@@ -1,6 +1,7 @@
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, parse_unit_setup_info, parse_unit_setup_info_json,
-    read_unit_setup_info_binary_file, read_unit_setup_info_file, SetupInfoError,
+    read_unit_setup_info_binary_file, read_unit_setup_info_file, EvaluationMapEntry,
+    EvaluationMapKind, SetupInfoError,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -96,6 +97,68 @@ fn sample_setup_info_json() -> &'static str {
         ],
         "challengesMap": [{}, {}],
         "evMap": [{}, {}, {}],
+        "boundaries": [
+            {"name": "first", "offsetMin": 0, "offsetMax": 3},
+            {"offsetMin": -1}
+        ],
+        "starkStruct": {
+            "nBits": 10,
+            "nBitsExt": 13,
+            "nQueries": 4,
+            "steps": [
+                {"nBits": 13},
+                {"nBits": 9},
+                {"nBits": 5}
+            ],
+            "hashCommits": true,
+            "lastLevelVerification": 2,
+            "powBits": 20,
+            "merkleTreeArity": 4,
+            "verificationHashType": "GL",
+            "transcriptArity": 4,
+            "merkleTreeCustom": true
+        }
+    }"#
+}
+
+fn sample_setup_info_json_with_evaluation_map() -> &'static str {
+    r#"{
+        "nStages": 2,
+        "nConstants": 5,
+        "nPublics": 3,
+        "nConstraints": 8,
+        "qDeg": 7,
+        "openingPoints": [0, 1, -1],
+        "mapSectionsN": {
+            "const": 5,
+            "cm1": 2,
+            "cm2": 3,
+            "cm3": 1
+        },
+        "constPolsMap": [
+            {"stage": 0, "name": "main.a", "dim": 1, "polsMapId": 0, "stageId": 0},
+            {"stage": 0, "name": "main.b", "dim": 1, "polsMapId": 1, "stageId": 1},
+            {"stage": 0, "name": "main.c", "dim": 1, "polsMapId": 2, "stageId": 2},
+            {"stage": 0, "name": "main.d", "dim": 1, "polsMapId": 3, "stageId": 3},
+            {"stage": 0, "name": "main.e", "dim": 1, "polsMapId": 4, "stageId": 4, "lengths": [5]}
+        ],
+        "cmPolsMap": [
+            {"stage": 1, "name": "trace.a", "dim": 1, "polsMapId": 0, "stageId": 0, "stagePos": 0},
+            {"stage": 2, "name": "aux.a", "dim": 3, "polsMapId": 1, "stageId": 0, "stagePos": 0}
+        ],
+        "airValuesMap": [
+            {"stage": 1, "name": "unit.alpha", "lengths": [2]},
+            {"stage": 2, "name": "unit.beta"}
+        ],
+        "airgroupValuesMap": [
+            {"stage": 2, "name": "group.alpha"}
+        ],
+        "challengesMap": [{}, {}],
+        "evMap": [
+            {"type": "const", "id": 2, "prime": 0, "openingPos": 0},
+            {"type": "cm", "id": 1, "prime": 1, "openingPos": 1},
+            {"type": "custom", "id": 7, "commitId": 3, "prime": -1, "openingPos": 2}
+        ],
         "boundaries": [
             {"name": "first", "offsetMin": 0, "offsetMax": 3},
             {"offsetMin": -1}
@@ -229,6 +292,29 @@ fn sample_setup_info_binary() -> Vec<u8> {
     file
 }
 
+fn sample_setup_info_binary_with_evaluation_map() -> Vec<u8> {
+    let mut file = sample_setup_info_binary();
+    file[4..8].copy_from_slice(&3_u32.to_le_bytes());
+    let mut section = file[24..].to_vec();
+    push_u32(&mut section, 3);
+    for (kind, id, prime, opening_pos, commit_id) in [
+        (0_u8, 2_u32, 0_i64, 0_u32, None),
+        (1_u8, 1_u32, 1_i64, 1_u32, None),
+        (2_u8, 7_u32, -1_i64, 2_u32, Some(3_u32)),
+    ] {
+        push_u8(&mut section, kind);
+        push_u32(&mut section, id);
+        push_i64(&mut section, prime);
+        push_u32(&mut section, opening_pos);
+        push_optional_u32(&mut section, commit_id);
+    }
+    let section_len = section.len() as u64;
+    file.truncate(24);
+    file[16..24].copy_from_slice(&section_len.to_le_bytes());
+    file.extend_from_slice(&section);
+    file
+}
+
 fn sample_setup_info_binary_without_commitment_columns() -> Vec<u8> {
     const OPTIONAL_TAIL_BYTES: usize = 137;
     let mut file = sample_setup_info_binary();
@@ -285,6 +371,44 @@ fn parses_unit_setup_info_json() {
     assert_eq!(info.stark.n_bits_ext, 13);
     assert_eq!(info.stark.steps.len(), 3);
     assert_eq!(info.stark.verification_hash_type.as_deref(), Some("GL"));
+}
+
+#[test]
+fn parses_evaluation_map_entries_from_json_and_binary() {
+    let info = parse_unit_setup_info_json(sample_setup_info_json_with_evaluation_map())
+        .expect("fixture should parse");
+
+    assert_eq!(
+        info.evaluation_map,
+        vec![
+            EvaluationMapEntry {
+                kind: EvaluationMapKind::Constant,
+                id: 2,
+                prime: 0,
+                opening_position: 0,
+                commit_id: None,
+            },
+            EvaluationMapEntry {
+                kind: EvaluationMapKind::Commitment,
+                id: 1,
+                prime: 1,
+                opening_position: 1,
+                commit_id: None,
+            },
+            EvaluationMapEntry {
+                kind: EvaluationMapKind::Custom,
+                id: 7,
+                prime: -1,
+                opening_position: 2,
+                commit_id: Some(3),
+            },
+        ]
+    );
+
+    let parsed = parse_unit_setup_info(&sample_setup_info_binary_with_evaluation_map())
+        .expect("fixture should parse");
+
+    assert_eq!(parsed.evaluation_map, info.evaluation_map);
 }
 
 #[test]
@@ -404,10 +528,11 @@ fn parses_unit_setup_info_binary_without_commitment_columns() {
 
 #[test]
 fn encodes_unit_setup_info_to_the_canonical_binary_form() {
-    let info = parse_unit_setup_info_json(sample_setup_info_json()).expect("fixture should parse");
+    let info = parse_unit_setup_info_json(sample_setup_info_json_with_evaluation_map())
+        .expect("fixture should parse");
     let encoded = encode_unit_setup_info(&info).expect("fixture should encode");
 
-    assert_eq!(encoded, sample_setup_info_binary());
+    assert_eq!(encoded, sample_setup_info_binary_with_evaluation_map());
 }
 
 #[test]

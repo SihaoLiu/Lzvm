@@ -16,7 +16,7 @@ use lzvm_artifacts::pcs_nonce_segment::parse_pcs_query_nonce_segment;
 use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
 use lzvm_artifacts::pcs_query_segment::parse_pcs_query_plan_segment;
 use lzvm_artifacts::proof::ProofSegment;
-use lzvm_artifacts::setup_info::{FriStep, StarkStruct, UnitSetupInfo};
+use lzvm_artifacts::setup_info::{EvaluationMapEntry, FriStep, StarkStruct, UnitSetupInfo};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
 use lzvm_artifacts::witness_segment::{
@@ -239,6 +239,7 @@ fn sample_setup() -> UnitSetupInfo {
         section_widths,
         challenge_count: 1,
         eval_count: 2,
+        evaluation_map: vec![EvaluationMapEntry::default(); 2],
         boundaries: Vec::new(),
         unit_value_map: Vec::new(),
         group_value_map: Vec::new(),
