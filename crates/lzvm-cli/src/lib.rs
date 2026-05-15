@@ -5,7 +5,9 @@ use lzvm_artifacts::fixed::{
     read_fixed_columns_file, read_fixed_columns_file_for_setup, FixedColumn, FixedColumns,
 };
 use lzvm_artifacts::key_directory::read_key_directory_catalog;
-use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, read_unit_setup_info_file};
+use lzvm_artifacts::setup_info::{
+    encode_unit_setup_info, read_unit_setup_info_binary_file, read_unit_setup_info_file,
+};
 use lzvm_artifacts::verification_key::{read_verification_key_binary_file, VerificationKeyRoot};
 use lzvm_setup::{
     build_constant_tree_from_fixed_columns, write_base_constant_tree, write_base_fixed_columns,
@@ -17,6 +19,10 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
     match args {
         ["setup", "validate", setup_dir] => validate_setup_directory(setup_dir, stdout, stderr),
         ["setup", "validate", ..] => write_validate_usage(stderr),
+        ["setup", "write-info-bin", setup_info, out_setup_info_bin] => {
+            write_setup_info_bin(setup_info, out_setup_info_bin, stdout, stderr)
+        }
+        ["setup", "write-info-bin", ..] => write_info_bin_usage(stderr),
         ["setup", "write-fixed", setup_info, columns_json, out_const] => {
             write_fixed_columns(setup_info, columns_json, out_const, stdout, stderr)
         }
@@ -102,6 +108,44 @@ fn validate_setup_directory(
             1
         }
     }
+}
+
+fn write_setup_info_bin(
+    setup_info: &str,
+    out_setup_info_bin: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let setup = match read_unit_setup_info_file(setup_info) {
+        Ok(setup) => setup,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup-info binary write failed: {error}");
+            return 1;
+        }
+    };
+    let bytes = match encode_unit_setup_info(&setup) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup-info binary write failed: {error}");
+            return 1;
+        }
+    };
+    let output = Path::new(out_setup_info_bin);
+    if let Some(parent) = output.parent().filter(|path| !path.as_os_str().is_empty()) {
+        if let Err(error) = std::fs::create_dir_all(parent) {
+            let _ = writeln!(stderr, "setup-info binary write failed: {error}");
+            return 1;
+        }
+    }
+    if let Err(error) = std::fs::write(output, &bytes) {
+        let _ = writeln!(stderr, "setup-info binary write failed: {error}");
+        return 1;
+    }
+
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "bytes_written={}", bytes.len());
+    let _ = writeln!(stdout, "output={}", output.display());
+    0
 }
 
 fn write_fixed_columns(
@@ -425,6 +469,14 @@ fn read_u64_array(
 
 fn write_validate_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(stderr, "usage: lzvm setup validate <setup-dir>");
+    2
+}
+
+fn write_info_bin_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm setup write-info-bin <setup-info-json> <out-setup-info-bin>"
+    );
     2
 }
 

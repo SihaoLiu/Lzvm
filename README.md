@@ -28,6 +28,14 @@ cargo run -p lzvm-cli -- setup validate <setup-dir>
 
 The command loads the discovered setup catalog, validates companion metadata and binary artifacts, and prints a stable summary.
 
+Encode setup metadata JSON into the repository-owned binary setup format:
+
+```sh
+cargo run -p lzvm-cli -- setup write-info-bin <setup-info-json> <out-setup-info-bin>
+```
+
+This command validates the JSON metadata and writes the canonical binary setup metadata used by native setup commands.
+
 Generate a raw fixed-column artifact from native binary setup metadata and a native binary fixed-column source:
 
 ```sh
