@@ -1109,16 +1109,19 @@ fn validate_optional_pcs_fri_opening_segment(
             field_extension_from_words(*value)?;
         }
 
-        let arity = usize::try_from(unit.merkle_tree_arity)
-            .map_err(|_| "PCS FRI opening segment arity overflow")?;
-        let last_level_count =
-            expected_last_level_digest_count(arity, unit.last_level_verification)?;
         for (layer_offset, (layer, expected_layer)) in opening_unit
             .layers
             .iter()
             .zip(unit.fri_layers.iter())
             .enumerate()
         {
+            let arity = usize::try_from(unit.merkle_tree_arity)
+                .map_err(|_| "PCS FRI opening segment arity overflow")?;
+            let last_level_count = expected_last_level_digest_count(
+                expected_layer.output_bits,
+                arity,
+                unit.last_level_verification,
+            )?;
             if layer.layer_index != layer_offset as u32
                 || layer.queries.len() != query_unit.queries.len()
                 || layer.last_level.len() != last_level_count
@@ -1732,24 +1735,46 @@ fn expected_fri_sibling_level_count(
     arity: usize,
     last_level_verification: u32,
 ) -> Result<usize, String> {
-    if arity < 2 || !arity.is_power_of_two() {
-        return Err("PCS FRI opening segment invalid tree shape".to_owned());
-    }
-    let arity_bits = arity.ilog2();
-    let full_levels = output_bits.div_ceil(arity_bits);
-    Ok(full_levels.saturating_sub(last_level_verification) as usize)
+    Ok(expected_fri_tree_shape(output_bits, arity, last_level_verification)?.0)
 }
 
 fn expected_last_level_digest_count(
+    output_bits: u32,
     arity: usize,
     last_level_verification: u32,
 ) -> Result<usize, String> {
-    if last_level_verification == 0 {
-        return Ok(0);
+    Ok(expected_fri_tree_shape(output_bits, arity, last_level_verification)?.1)
+}
+
+fn expected_fri_tree_shape(
+    output_bits: u32,
+    arity: usize,
+    last_level_verification: u32,
+) -> Result<(usize, usize), String> {
+    if arity < 2 || !arity.is_power_of_two() {
+        return Err("PCS FRI opening segment invalid tree shape".to_owned());
     }
-    arity
-        .checked_pow(last_level_verification)
-        .ok_or_else(|| "PCS FRI opening segment last-level count overflow".to_owned())
+    let mut count = checked_power_of_two(output_bits)
+        .ok_or_else(|| "PCS FRI opening segment layer size overflow".to_owned())?;
+    let target = if last_level_verification == 0 {
+        1
+    } else {
+        arity
+            .checked_pow(last_level_verification)
+            .ok_or_else(|| "PCS FRI opening segment last-level count overflow".to_owned())?
+    };
+    let mut sibling_levels = 0_usize;
+    while count > target {
+        count = count.div_ceil(arity);
+        sibling_levels = sibling_levels
+            .checked_add(1)
+            .ok_or_else(|| "PCS FRI opening segment level count overflow".to_owned())?;
+    }
+    if last_level_verification == 0 {
+        Ok((sibling_levels, 0))
+    } else {
+        Ok((sibling_levels, count))
+    }
 }
 
 fn checked_power_of_two(bits: u32) -> Option<usize> {
