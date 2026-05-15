@@ -85,6 +85,14 @@ cargo run -p lzvm-cli -- setup write-const-leaves <setup-info-bin> <columns-bin>
 
 This command validates fixed columns against setup metadata, extends them over the shifted extended domain, and writes the leaf bytes used by the constant-tree backend.
 
+Generate a native arity-2 GL constant-tree artifact directly from binary setup metadata and binary fixed-column source data:
+
+```sh
+cargo run -p lzvm-cli -- setup write-const-native <setup-info-bin> <columns-bin> <out-consttree>
+```
+
+This command extends fixed columns, builds leaf digests and parent nodes with the repository-owned CPU reference hash, validates the resulting raw tree artifact, and publishes it through a staging path. Wider arities and accelerated backends remain separate parity targets.
+
 ## Verification
 
 ```sh
