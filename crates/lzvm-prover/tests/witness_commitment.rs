@@ -5,9 +5,11 @@ use lzvm_artifacts::witness_segment::{
     encode_witness_commitment_segment, WitnessCommitmentSegment, WitnessCommitmentStageSegment,
     WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
-use lzvm_field::{
-    coset_extend_evaluations, poseidon2_hash_16, poseidon2_hash_8, DomainError, Felt,
-};
+#[cfg(not(feature = "cuda"))]
+use lzvm_field::DomainError;
+use lzvm_field::{coset_extend_evaluations, poseidon2_hash_16, poseidon2_hash_8, Felt};
+#[cfg(feature = "cuda")]
+use lzvm_prover::witness_commitment::extend_witness_stage_leaves_with_cuda;
 use lzvm_prover::witness_commitment::{
     commit_witness_stage_leaves, commit_witness_trace_stages,
     commit_witness_trace_stages_with_workers, decode_witness_stage_leaf_values,
@@ -418,6 +420,22 @@ fn worker_count_preserves_witness_trace_commitments() {
 }
 
 #[test]
+#[cfg(feature = "cuda")]
+fn cuda_coset_extension_matches_cpu_for_witness_stage_leaves() {
+    let unit = sample_unit(2, vec![2]);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let trace =
+        parse_witness_trace(&encode_values(&[5, 9, 1, 9]), 2, 2).expect("trace should parse");
+    let stage = layout.stage_trace(&trace, 1).expect("stage should extract");
+
+    let cpu = extend_witness_stage_leaves(&stage, 1, 2).expect("cpu stage leaves should extend");
+    let cuda = extend_witness_stage_leaves_with_cuda(&stage, 1, 2)
+        .expect("cuda stage leaves should extend");
+
+    assert_eq!(cuda, cpu);
+}
+
+#[test]
 fn extends_all_witness_trace_stages_for_expression_inputs() {
     let unit = sample_unit(2, vec![2, 1]);
     let trace = parse_witness_trace(&encode_values(&[5, 9, 11, 1, 9, 13]), 2, 3)
@@ -504,6 +522,15 @@ fn rejects_witness_stage_extension_domain_mismatches() {
     let trace = parse_witness_trace(&encode_values(&[5, 1]), 2, 1).expect("trace should parse");
     let stage = layout.stage_trace(&trace, 1).expect("stage should extract");
 
+    #[cfg(feature = "cuda")]
+    assert!(matches!(
+        extend_witness_stage_leaves(&stage, 2, 3),
+        Err(WitnessStageLeafError::Accel(
+            lzvm_accel::AccelError::InvalidDomain { bits: 2, len: 2 }
+        ))
+    ));
+
+    #[cfg(not(feature = "cuda"))]
     assert!(matches!(
         extend_witness_stage_leaves(&stage, 2, 3),
         Err(WitnessStageLeafError::Domain(DomainError::LengthMismatch {

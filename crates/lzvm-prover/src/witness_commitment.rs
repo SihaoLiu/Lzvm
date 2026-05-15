@@ -1,11 +1,15 @@
 use std::{fmt, thread};
 
+#[cfg(feature = "cuda")]
+use lzvm_accel::cuda_goldilocks_coset_extend;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
     parse_witness_commitment_segment, WitnessCommitmentSegmentError,
     WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
-use lzvm_field::{coset_extend_evaluations, DomainError, Felt, FieldError};
+#[cfg(not(feature = "cuda"))]
+use lzvm_field::coset_extend_evaluations;
+use lzvm_field::{DomainError, Felt, FieldError};
 
 use crate::merkle_hash::{linear_hash, parent_hash, MerkleHashError};
 use crate::witness_layout::{
@@ -51,6 +55,9 @@ impl WitnessStageLeaves {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WitnessStageLeafError {
     Domain(DomainError),
+    Field(FieldError),
+    #[cfg(feature = "cuda")]
+    Accel(lzvm_accel::AccelError),
     LengthOverflow,
 }
 
@@ -58,6 +65,9 @@ impl fmt::Display for WitnessStageLeafError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Domain(error) => write!(f, "witness stage leaf domain error: {error}"),
+            Self::Field(error) => write!(f, "witness stage leaf field error: {error}"),
+            #[cfg(feature = "cuda")]
+            Self::Accel(error) => write!(f, "witness stage leaf cuda error: {error}"),
             Self::LengthOverflow => write!(f, "witness stage leaf length overflow"),
         }
     }
@@ -67,6 +77,9 @@ impl std::error::Error for WitnessStageLeafError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Domain(error) => Some(error),
+            Self::Field(error) => Some(error),
+            #[cfg(feature = "cuda")]
+            Self::Accel(error) => Some(error),
             Self::LengthOverflow => None,
         }
     }
@@ -75,6 +88,19 @@ impl std::error::Error for WitnessStageLeafError {
 impl From<DomainError> for WitnessStageLeafError {
     fn from(error: DomainError) -> Self {
         Self::Domain(error)
+    }
+}
+
+impl From<FieldError> for WitnessStageLeafError {
+    fn from(error: FieldError) -> Self {
+        Self::Field(error)
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl From<lzvm_accel::AccelError> for WitnessStageLeafError {
+    fn from(error: lzvm_accel::AccelError) -> Self {
+        Self::Accel(error)
     }
 }
 
@@ -577,7 +603,11 @@ pub fn extend_witness_stage_leaves(
                 .ok_or(WitnessStageLeafError::LengthOverflow)?;
             source.push(stage.values()[index]);
         }
-        extended_columns.push(coset_extend_evaluations(&source, source_bits, target_bits)?);
+        extended_columns.push(extend_witness_stage_column_values(
+            &source,
+            source_bits,
+            target_bits,
+        )?);
     }
 
     let extended_rows = extended_columns.first().map_or(0, Vec::len);
@@ -599,6 +629,42 @@ pub fn extend_witness_stage_leaves(
         columns,
         bytes,
     })
+}
+
+#[cfg(feature = "cuda")]
+pub fn extend_witness_stage_leaves_with_cuda(
+    stage: &WitnessTraceStageValues,
+    source_bits: usize,
+    target_bits: usize,
+) -> Result<WitnessStageLeaves, WitnessStageLeafError> {
+    extend_witness_stage_leaves(stage, source_bits, target_bits)
+}
+
+#[cfg(feature = "cuda")]
+fn extend_witness_stage_column_values(
+    source: &[Felt],
+    source_bits: usize,
+    target_bits: usize,
+) -> Result<Vec<Felt>, WitnessStageLeafError> {
+    let source_words = source
+        .iter()
+        .map(|value| value.to_u64())
+        .collect::<Vec<_>>();
+    let extended_words = cuda_goldilocks_coset_extend(&source_words, source_bits, target_bits)?;
+    extended_words
+        .into_iter()
+        .map(Felt::from_canonical)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(WitnessStageLeafError::from)
+}
+
+#[cfg(not(feature = "cuda"))]
+fn extend_witness_stage_column_values(
+    source: &[Felt],
+    source_bits: usize,
+    target_bits: usize,
+) -> Result<Vec<Felt>, WitnessStageLeafError> {
+    Ok(coset_extend_evaluations(source, source_bits, target_bits)?)
 }
 
 pub fn commit_witness_trace_stages(
