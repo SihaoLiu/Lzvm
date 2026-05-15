@@ -212,15 +212,8 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             write_pcs_material_directory(setup_dir, stdout, stderr)
         }
         ["setup", "write-pcs-material-directory", ..] => write_pcs_material_directory_usage(stderr),
-        ["setup", "write-verkey-native", setup_info_bin, consttree, out_verkey_json, out_verkey_bin] => {
-            write_verification_key_native(
-                setup_info_bin,
-                consttree,
-                out_verkey_json,
-                out_verkey_bin,
-                stdout,
-                stderr,
-            )
+        ["setup", "write-verkey-native", setup_info_bin, consttree, out_verkey_bin] => {
+            write_verification_key_native(setup_info_bin, consttree, out_verkey_bin, stdout, stderr)
         }
         ["setup", "write-verkey-native", ..] => write_verkey_native_usage(stderr),
         ["setup", "write-const-tree", setup_info_bin, tree_bin, root_bin, out_consttree] => {
@@ -2328,7 +2321,6 @@ fn write_base_directory(
         };
         if derive_verkey {
             let key_report = match write_verification_key_from_constant_tree(
-                unit.verification_key_json(),
                 unit.verification_key_binary(),
                 &tree,
                 &setup,
@@ -2339,9 +2331,7 @@ fn write_base_directory(
                     return 1;
                 }
             };
-            verkey_bytes = verkey_bytes
-                .saturating_add(key_report.json_bytes)
-                .saturating_add(key_report.binary_bytes);
+            verkey_bytes = verkey_bytes.saturating_add(key_report.binary_bytes);
         }
 
         fixed_bytes = fixed_bytes.saturating_add(fixed_report.bytes_written);
@@ -2639,7 +2629,6 @@ fn validate_base_directory_inputs(
 fn write_verification_key_native(
     setup_info_bin: &str,
     consttree: &str,
-    out_verkey_json: &str,
     out_verkey_bin: &str,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
@@ -2659,14 +2648,11 @@ fn write_verification_key_native(
         }
     };
 
-    match write_verification_key_from_constant_tree(out_verkey_json, out_verkey_bin, &tree, &setup)
-    {
+    match write_verification_key_from_constant_tree(out_verkey_bin, &tree, &setup) {
         Ok(report) => {
             let _ = writeln!(stdout, "status=ok");
-            let _ = writeln!(stdout, "json_bytes={}", report.json_bytes);
             let _ = writeln!(stdout, "binary_bytes={}", report.binary_bytes);
             let _ = writeln!(stdout, "root={}", format_root(&report.root));
-            let _ = writeln!(stdout, "json_output={}", report.json_path.display());
             let _ = writeln!(stdout, "binary_output={}", report.binary_path.display());
             0
         }
@@ -3058,7 +3044,7 @@ fn write_pcs_material_directory_usage(stderr: &mut dyn Write) -> i32 {
 fn write_verkey_native_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm setup write-verkey-native <setup-info-bin> <consttree> <out-verkey-json> <out-verkey-bin>"
+        "usage: lzvm setup write-verkey-native <setup-info-bin> <consttree> <out-verkey-bin>"
     );
     2
 }

@@ -1,4 +1,5 @@
 use std::fmt;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::constant_tree::{
@@ -10,8 +11,7 @@ use lzvm_artifacts::fixed::{
 };
 use lzvm_artifacts::setup_info::UnitSetupInfo;
 use lzvm_artifacts::verification_key::{
-    encode_verification_key_binary, encode_verification_key_json,
-    read_verification_key_binary_file, read_verification_key_json_file, VerificationKeyError,
+    encode_verification_key_binary, read_verification_key_binary_file, VerificationKeyError,
     VerificationKeyRoot,
 };
 use lzvm_field::{
@@ -52,9 +52,7 @@ pub struct ConstantTreeLeavesWriteReport {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerificationKeyWriteReport {
-    pub json_path: PathBuf,
     pub binary_path: PathBuf,
-    pub json_bytes: u64,
     pub binary_bytes: u64,
     pub root: VerificationKeyRoot,
 }
@@ -594,29 +592,18 @@ pub fn write_base_constant_tree(
 }
 
 pub fn write_verification_key_from_constant_tree(
-    json_path: impl AsRef<Path>,
     binary_path: impl AsRef<Path>,
     tree_bytes: &[u8],
     setup: &UnitSetupInfo,
 ) -> Result<VerificationKeyWriteReport, SetupError> {
     let tree = parse_constant_tree_bytes(tree_bytes.to_vec(), setup)?;
     let root = tree.root()?;
-    let json_bytes = encode_verification_key_json(&root)?.into_bytes();
     let binary_bytes = encode_verification_key_binary(&root)?;
 
-    let json_path = json_path.as_ref().to_path_buf();
     let binary_path = binary_path.as_ref().to_path_buf();
-    let json_staging = write_staging_bytes(&json_path, &json_bytes, "verification-key json")?;
     let binary_staging =
         write_staging_bytes(&binary_path, &binary_bytes, "verification-key binary")?;
 
-    let json_root = read_verification_key_json_file(&json_staging)?;
-    if json_root != root {
-        return Err(SetupError::ConstantTreeRootMismatch {
-            expected: root.clone(),
-            found: json_root,
-        });
-    }
     let binary_root = read_verification_key_binary_file(&binary_staging)?;
     if binary_root != root {
         return Err(SetupError::ConstantTreeRootMismatch {
@@ -625,17 +612,34 @@ pub fn write_verification_key_from_constant_tree(
         });
     }
 
-    let json_size = publish_staging_bytes(&json_staging, &json_path, "verification-key json")?;
     let binary_size =
         publish_staging_bytes(&binary_staging, &binary_path, "verification-key binary")?;
+    remove_verification_key_json_companion(&binary_path)?;
 
     Ok(VerificationKeyWriteReport {
-        json_path,
         binary_path,
-        json_bytes: json_size,
         binary_bytes: binary_size,
         root,
     })
+}
+
+fn remove_verification_key_json_companion(binary_path: &Path) -> Result<(), SetupError> {
+    let Some(file_name) = binary_path.file_name().and_then(|name| name.to_str()) else {
+        return Ok(());
+    };
+    let Some(prefix) = file_name.strip_suffix(".verkey.bin") else {
+        return Ok(());
+    };
+    let json_path = binary_path.with_file_name(format!("{prefix}.verkey.json"));
+    match std::fs::remove_file(&json_path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(SetupError::Io {
+            role: "remove verification-key json companion",
+            path: json_path,
+            message: error.to_string(),
+        }),
+    }
 }
 
 fn staging_path_for(path: &Path) -> PathBuf {

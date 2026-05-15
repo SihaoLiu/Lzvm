@@ -2,9 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::setup_info::{encode_unit_setup_info, parse_unit_setup_info_json};
-use lzvm_artifacts::verification_key::{
-    read_verification_key_binary_file, read_verification_key_json_file, VerificationKeyRoot,
-};
+use lzvm_artifacts::verification_key::{read_verification_key_binary_file, VerificationKeyRoot};
 use lzvm_cli::run_cli;
 
 fn sample_setup_info_json() -> &'static str {
@@ -70,13 +68,12 @@ fn write_bytes(path: &Path, bytes: impl AsRef<[u8]>) {
 }
 
 #[test]
-fn writes_verification_key_companions_from_constant_tree() {
+fn writes_verification_key_binary_from_constant_tree() {
     let dir = temp_dir("valid");
     let _ = fs::remove_dir_all(&dir);
     let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
     let setup_path = dir.join("setup.bin");
     let tree_path = dir.join("unit-a.consttree");
-    let json_path = dir.join("unit-a.verkey.json");
     let binary_path = dir.join("unit-a.verkey.bin");
     write_bytes(
         &setup_path,
@@ -92,26 +89,22 @@ fn writes_verification_key_companions_from_constant_tree() {
             "write-verkey-native",
             setup_path.to_str().expect("setup path should be utf-8"),
             tree_path.to_str().expect("tree path should be utf-8"),
-            json_path.to_str().expect("json path should be utf-8"),
             binary_path.to_str().expect("binary path should be utf-8"),
         ],
         &mut stdout,
         &mut stderr,
     );
 
-    let json_root = read_verification_key_json_file(&json_path).expect("json root should read");
     let binary_root =
         read_verification_key_binary_file(&binary_path).expect("binary root should read");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0);
-    assert_eq!(json_root, sample_root());
     assert_eq!(binary_root, sample_root());
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\njson_bytes=9\nbinary_bytes=32\nroot=1,2,3,4\njson_output={}\nbinary_output={}\n",
-            json_path.display(),
+            "status=ok\nbinary_bytes=32\nroot=1,2,3,4\nbinary_output={}\n",
             binary_path.display()
         )
     );
@@ -128,6 +121,6 @@ fn reports_usage_for_missing_verification_key_outputs() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm setup write-verkey-native <setup-info-bin> <consttree> <out-verkey-json> <out-verkey-bin>\n"
+        "usage: lzvm setup write-verkey-native <setup-info-bin> <consttree> <out-verkey-bin>\n"
     );
 }

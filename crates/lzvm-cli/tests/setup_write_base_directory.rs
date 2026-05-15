@@ -22,8 +22,7 @@ use lzvm_artifacts::setup_info::{
     parse_unit_setup_info_json, read_unit_setup_info_binary_file, UnitSetupInfo,
 };
 use lzvm_artifacts::verification_key::{
-    encode_verification_key_binary, read_verification_key_binary_file,
-    read_verification_key_json_file, VerificationKeyRoot,
+    encode_verification_key_binary, read_verification_key_binary_file, VerificationKeyRoot,
 };
 use lzvm_artifacts::verifier_info::{parse_verifier_info_json, read_verifier_info_binary_file};
 use lzvm_cli::run_cli;
@@ -319,7 +318,6 @@ fn create_key_directory(name: &str) -> (PathBuf, VerificationKeyRoot) {
 fn remove_verification_keys(dir: &Path) {
     let layout = read_key_directory_layout(dir).expect("layout should derive");
     for unit in &layout.units {
-        fs::remove_file(unit.verification_key_json()).expect("json key should be removed");
         fs::remove_file(unit.verification_key_binary()).expect("binary key should be removed");
     }
 }
@@ -511,22 +509,16 @@ fn derives_verification_keys_for_base_directory_outputs() {
     let mut verkey_bytes = 0_u64;
     for unit in &layout.units {
         let tree = fs::read(&unit.constant_tree).expect("constant tree should be written");
-        let json_root =
-            read_verification_key_json_file(unit.verification_key_json()).expect("json key");
         let binary_root =
             read_verification_key_binary_file(unit.verification_key_binary()).expect("binary key");
         tree_bytes += u64::try_from(tree.len()).expect("tree length should fit");
         fixed_bytes += fs::metadata(&unit.fixed_columns)
             .expect("fixed output should exist")
             .len();
-        verkey_bytes += fs::metadata(unit.verification_key_json())
-            .expect("json key should exist")
-            .len();
         verkey_bytes += fs::metadata(unit.verification_key_binary())
             .expect("binary key should exist")
             .len();
         assert_eq!(root_from_tree(&tree), root);
-        assert_eq!(json_root, root);
         assert_eq!(binary_root, root);
     }
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
