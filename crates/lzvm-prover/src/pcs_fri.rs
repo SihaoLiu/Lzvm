@@ -1526,15 +1526,15 @@ fn build_fri_transcript_prefix(
         draw_transcript_fields(&mut transcript, *draw_count, &mut challenges);
     }
 
-    if !request.evaluation_values.is_empty() {
-        let values = flatten_extension_values_for_transcript(request.evaluation_values);
-        absorb_commit_values(&mut transcript, request.arity, request.hash_values, &values)?;
-    }
     draw_transcript_fields(
         &mut transcript,
         request.evaluation_challenge_draws,
         &mut challenges,
     );
+    if !request.evaluation_values.is_empty() {
+        let values = flatten_extension_values_for_transcript(request.evaluation_values);
+        absorb_commit_values(&mut transcript, request.arity, request.hash_values, &values)?;
+    }
 
     Ok((transcript, challenges))
 }

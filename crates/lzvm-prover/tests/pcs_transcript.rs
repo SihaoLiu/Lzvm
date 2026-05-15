@@ -9,8 +9,8 @@ use lzvm_field::{Ext3, Felt, PoseidonTranscript, TranscriptError};
 use lzvm_prover::pcs_transcript::{
     absorb_commit_values, derive_pcs_final_query_challenge,
     derive_pcs_final_query_challenge_from_segments, derive_pcs_transcript_challenges,
-    derive_pcs_transcript_challenges_from_segments, PcsTranscriptError, PcsTranscriptInputs,
-    PcsTranscriptSegmentInputs,
+    derive_pcs_transcript_challenges_from_segments, derive_pcs_transcript_prefix_challenges,
+    PcsTranscriptError, PcsTranscriptInputs, PcsTranscriptPrefixInputs, PcsTranscriptSegmentInputs,
 };
 use lzvm_prover::ProveUnitSchedule;
 
@@ -95,8 +95,8 @@ fn derives_final_query_challenge_from_direct_transcript_events() {
     put_root_and_draw(&mut expected, &witness_roots[0], 2);
     put_root_and_draw(&mut expected, &witness_roots[1], 1);
     put_root_and_draw(&mut expected, &witness_roots[2], 1);
-    expected.put(&flatten_ext(&evaluations));
     draw(&mut expected, 2);
+    expected.put(&flatten_ext(&evaluations));
     expected.put(&fri_roots[0]);
     draw(&mut expected, 1);
     expected.put(&fri_roots[1]);
@@ -153,9 +153,9 @@ fn derives_indexed_transcript_challenges_from_direct_events() {
         1,
         &mut expected_challenges,
     );
-    expected.put(&flatten_ext(&evaluations));
     record(&mut expected, 2, &mut expected_challenges);
     expected_challenges.push(Ext3::ZERO);
+    expected.put(&flatten_ext(&evaluations));
     expected.put(&fri_roots[0]);
     expected_challenges.push(expected.get_field());
     expected.put(&fri_roots[1]);
@@ -184,6 +184,50 @@ fn derives_indexed_transcript_challenges_from_direct_events() {
             .expect("final challenge should derive")
         )
     );
+}
+
+#[test]
+fn prefix_challenges_do_not_depend_on_evaluation_values() {
+    let constant_root = root(1);
+    let public_values = values(&[7, 8]);
+    let witness_roots = vec![root(10), root(20)];
+    let unit_values = values(&[30, 31]);
+    let unit_value_map = vec![StageValue {
+        name: "unit.a".to_owned(),
+        stage: 1,
+        lengths: Vec::new(),
+    }];
+    let first_evaluations = vec![ext(40)];
+    let second_evaluations = vec![ext(50)];
+
+    let first = derive_pcs_transcript_prefix_challenges(PcsTranscriptPrefixInputs {
+        arity: 4,
+        hash_values: false,
+        constant_root,
+        public_values: &public_values,
+        witness_roots: &witness_roots,
+        root_challenge_draws: &[1, 1],
+        unit_value_map: &unit_value_map,
+        unit_values: &unit_values,
+        evaluation_values: &first_evaluations,
+        evaluation_challenge_draws: 2,
+    })
+    .expect("prefix challenges should derive");
+    let second = derive_pcs_transcript_prefix_challenges(PcsTranscriptPrefixInputs {
+        arity: 4,
+        hash_values: false,
+        constant_root,
+        public_values: &public_values,
+        witness_roots: &witness_roots,
+        root_challenge_draws: &[1, 1],
+        unit_value_map: &unit_value_map,
+        unit_values: &unit_values,
+        evaluation_values: &second_evaluations,
+        evaluation_challenge_draws: 2,
+    })
+    .expect("prefix challenges should derive");
+
+    assert_eq!(first, second);
 }
 
 #[test]
@@ -277,9 +321,9 @@ fn derives_final_query_challenge_from_hashed_transcript_events() {
     put_root_and_draw(&mut expected, &witness_roots[0], 2);
     put_root_and_draw(&mut expected, &witness_roots[1], 1);
     put_root_and_draw(&mut expected, &witness_roots[2], 1);
+    draw(&mut expected, 2);
     absorb_commit_values(&mut expected, 4, true, &flatten_ext(&evaluations))
         .expect("evaluations should absorb");
-    draw(&mut expected, 2);
     absorb_commit_values(&mut expected, 4, true, &flatten_ext(&final_polynomial))
         .expect("final polynomial should absorb");
 

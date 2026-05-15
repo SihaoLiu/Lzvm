@@ -256,15 +256,15 @@ fn build_pcs_transcript_prefix(
         draw_fields(&mut transcript, *draw_count, &mut challenges);
     }
 
-    if !input.evaluation_values.is_empty() {
-        let values = flatten_extension_values(input.evaluation_values);
-        absorb_commit_values(&mut transcript, input.arity, input.hash_values, &values)?;
-    }
     draw_fields(
         &mut transcript,
         input.evaluation_challenge_draws,
         &mut challenges,
     );
+    if !input.evaluation_values.is_empty() {
+        let values = flatten_extension_values(input.evaluation_values);
+        absorb_commit_values(&mut transcript, input.arity, input.hash_values, &values)?;
+    }
 
     Ok((transcript, challenges))
 }
