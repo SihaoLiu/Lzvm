@@ -318,6 +318,37 @@ fn fingerprints_a_complete_setup_directory() {
 }
 
 #[test]
+fn prints_prove_schedule_for_setup_directory() {
+    let dir = temp_dir("prove-schedule");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let expected = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "schedule",
+            dir.to_str().expect("path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nunits=4\nfixed_bytes=128\nqueries=4\nmax_extended_domain_bits=2\nsetup_hash={expected}\n"
+        )
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn runs_setup_aware_verify_preflight() {
     let dir = temp_dir("verify-setup-preflight");
     let _ = fs::remove_dir_all(&dir);
@@ -408,6 +439,20 @@ fn reports_usage_for_missing_fingerprint_directory() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "usage: lzvm setup fingerprint <setup-dir>\n"
+    );
+}
+
+#[test]
+fn reports_usage_for_missing_prove_schedule_directory() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(&["prove", "schedule"], &mut stdout, &mut stderr);
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "usage: lzvm prove schedule <setup-dir>\n"
     );
 }
 

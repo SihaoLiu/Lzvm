@@ -54,6 +54,14 @@ cargo run -p lzvm-cli -- verify setup-preflight <setup-dir> <proof-bin> <public-
 
 This command runs the proof/public-values preflight and also checks that the proof setup hash matches the deterministic setup catalog fingerprint for the supplied setup directory. It is a setup-aware artifact preflight check, not a full proof verifier.
 
+Inspect the proof schedule derived from a setup directory:
+
+```sh
+cargo run -p lzvm-cli -- prove schedule <setup-dir>
+```
+
+This command loads the setup catalog, derives the native proof schedule, and prints the setup hash, unit count, fixed-byte total, query total, and maximum extended-domain size. It is a proof-runtime preflight summary, not a full proof constructor.
+
 Encode setup metadata JSON into the repository-owned binary setup format:
 
 ```sh

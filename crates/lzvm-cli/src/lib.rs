@@ -15,6 +15,7 @@ use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, read_unit_setup_info_file,
 };
 use lzvm_artifacts::verification_key::{read_verification_key_binary_file, VerificationKeyRoot};
+use lzvm_prover::derive_prove_schedule;
 use lzvm_setup::{
     build_constant_tree_from_fixed_columns_with_backend, write_base_constant_tree,
     write_base_fixed_columns, write_constant_tree_leaves_with_backend,
@@ -24,6 +25,8 @@ use serde_json::Value;
 
 pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
+        ["prove", "schedule", setup_dir] => prove_schedule(setup_dir, stdout, stderr),
+        ["prove", "schedule", ..] => write_prove_schedule_usage(stderr),
         ["verify", "setup-preflight", setup_dir, proof_bin, public_values_json] => {
             verify_setup_preflight(setup_dir, proof_bin, public_values_json, stdout, stderr)
         }
@@ -222,6 +225,35 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
         ["setup", "write-const-native", ..] => write_const_native_usage(stderr),
         _ => write_validate_usage(stderr),
     }
+}
+
+fn prove_schedule(setup_dir: &str, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
+    let catalog = match read_key_directory_catalog(setup_dir) {
+        Ok(catalog) => catalog,
+        Err(error) => {
+            let _ = writeln!(stderr, "prove schedule failed: {error}");
+            return 1;
+        }
+    };
+    let schedule = match derive_prove_schedule(&catalog) {
+        Ok(schedule) => schedule,
+        Err(error) => {
+            let _ = writeln!(stderr, "prove schedule failed: {error}");
+            return 1;
+        }
+    };
+
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "units={}", schedule.unit_count);
+    let _ = writeln!(stdout, "fixed_bytes={}", schedule.total_fixed_bytes);
+    let _ = writeln!(stdout, "queries={}", schedule.total_query_count);
+    let _ = writeln!(
+        stdout,
+        "max_extended_domain_bits={}",
+        schedule.max_extended_domain_bits
+    );
+    let _ = writeln!(stdout, "setup_hash={}", format_hash(&schedule.setup_hash));
+    0
 }
 
 fn fingerprint_setup_directory(
@@ -1037,6 +1069,11 @@ fn write_verify_setup_preflight_usage(stderr: &mut dyn Write) -> i32 {
     2
 }
 
+fn write_prove_schedule_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(stderr, "usage: lzvm prove schedule <setup-dir>");
+    2
+}
+
 fn write_fingerprint_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(stderr, "usage: lzvm setup fingerprint <setup-dir>");
     2
@@ -1120,6 +1157,16 @@ fn write_const_native_usage(stderr: &mut dyn Write) -> i32 {
         "usage: lzvm setup write-const-native [--backend cpu|cuda] <setup-info-bin> <columns-bin> [root-bin] <out-consttree>"
     );
     2
+}
+
+fn format_hash(hash: &[u8; 32]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(64);
+    for byte in hash {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
 }
 
 fn format_root(root: &VerificationKeyRoot) -> String {
