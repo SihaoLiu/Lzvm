@@ -1,7 +1,8 @@
 use lzvm_artifacts::expression_program::{ExpressionEntry, ExpressionProgram};
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::fri_polynomial::{
-    build_fri_polynomial, FriPolynomialColumnMatrix, FriPolynomialInputs, FriPolynomialStageColumns,
+    build_fri_domain_points, build_fri_polynomial, derive_opening_xis, FriPolynomialColumnMatrix,
+    FriPolynomialInputs, FriPolynomialStageColumns,
 };
 
 #[test]
@@ -163,6 +164,44 @@ fn computes_opening_denominator_helpers_from_domain_points_and_opening_xis() {
     .expect("polynomial should build");
 
     assert_eq!(polynomial, vec![expected]);
+}
+
+#[test]
+fn builds_shifted_extended_domain_points() {
+    let root = Felt::root_of_unity(2).expect("domain root should exist");
+
+    let points = build_fri_domain_points(2).expect("domain points should build");
+
+    assert_eq!(
+        points,
+        vec![
+            felt(7),
+            felt(7) * root,
+            felt(7) * root.pow(2),
+            felt(7) * root.pow(3),
+        ]
+    );
+}
+
+#[test]
+fn derives_opening_xis_from_base_domain_offsets() {
+    let root = Felt::root_of_unity(3).expect("domain root should exist");
+    let xi = Ext3::from_u64s([3, 5, 7]);
+
+    let values = derive_opening_xis(3, &[0, 2, -1], xi).expect("opening points should derive");
+
+    assert_eq!(
+        values,
+        vec![
+            xi,
+            xi * Ext3::new(root.pow(2), Felt::ZERO, Felt::ZERO),
+            xi * Ext3::new(
+                root.inverse().expect("root should be nonzero"),
+                Felt::ZERO,
+                Felt::ZERO
+            ),
+        ]
+    );
 }
 
 fn felt(value: u64) -> Felt {

@@ -1,7 +1,7 @@
 use std::fmt;
 
 use lzvm_artifacts::expression_program::{ExpressionEntry, ExpressionProgram};
-use lzvm_field::{Ext3, Felt, FieldError};
+use lzvm_field::{Ext3, Felt, FieldError, SHIFT};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FriPolynomialColumnMatrix<'a> {
@@ -62,6 +62,9 @@ pub enum FriPolynomialError {
     UnsupportedDestinationDimension {
         dimension: u32,
     },
+    UnsupportedDomainBits {
+        bits: u32,
+    },
     UnsupportedSourceBuffer {
         buffer: u16,
     },
@@ -121,6 +124,9 @@ impl fmt::Display for FriPolynomialError {
                 f,
                 "unsupported FRI polynomial destination dimension: {dimension}"
             ),
+            Self::UnsupportedDomainBits { bits } => {
+                write!(f, "unsupported FRI polynomial domain bits: {bits}")
+            }
             Self::UnsupportedSourceBuffer { buffer } => {
                 write!(f, "unsupported FRI polynomial source buffer: {buffer}")
             }
@@ -156,6 +162,45 @@ impl fmt::Display for FriPolynomialError {
 }
 
 impl std::error::Error for FriPolynomialError {}
+
+pub fn build_fri_domain_points(bits: u32) -> Result<Vec<Felt>, FriPolynomialError> {
+    let root = Felt::root_of_unity(bits as usize)
+        .ok_or(FriPolynomialError::UnsupportedDomainBits { bits })?;
+    let size = 1usize
+        .checked_shl(bits)
+        .ok_or(FriPolynomialError::LengthOverflow)?;
+    let mut points = Vec::with_capacity(size);
+    let mut point = SHIFT;
+    for _ in 0..size {
+        points.push(point);
+        point = point * root;
+    }
+    Ok(points)
+}
+
+pub fn derive_opening_xis(
+    base_domain_bits: u32,
+    opening_points: &[i64],
+    xi_challenge: Ext3,
+) -> Result<Vec<Ext3>, FriPolynomialError> {
+    let root = Felt::root_of_unity(base_domain_bits as usize).ok_or(
+        FriPolynomialError::UnsupportedDomainBits {
+            bits: base_domain_bits,
+        },
+    )?;
+    opening_points
+        .iter()
+        .map(|opening_point| {
+            let mut scalar = root.pow(opening_point.unsigned_abs());
+            if *opening_point < 0 {
+                scalar = scalar
+                    .inverse()
+                    .ok_or(FriPolynomialError::ZeroDenominator { opening_index: 0 })?;
+            }
+            Ok(xi_challenge * scalar_ext(scalar))
+        })
+        .collect()
+}
 
 pub fn build_fri_polynomial(
     program: &ExpressionProgram,
