@@ -1,9 +1,11 @@
 use std::fmt;
 
 use lzvm_artifacts::pcs_fri_segment::{
-    PcsFriOpeningLayerSegment, PcsFriOpeningLevelSegment, PcsFriOpeningQuerySegment,
-    PcsFriOpeningUnitSegment,
+    parse_pcs_fri_opening_segment, PcsFriOpeningLayerSegment, PcsFriOpeningLevelSegment,
+    PcsFriOpeningQuerySegment, PcsFriOpeningSegment, PcsFriOpeningSegmentError,
+    PcsFriOpeningUnitSegment, PCS_FRI_OPENING_SEGMENT_ID,
 };
+use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::setup_info::StageValue;
 use lzvm_field::{intt_in_place, DomainError, Ext3, Felt, FieldError, PoseidonTranscript, SHIFT};
 
@@ -50,6 +52,20 @@ pub struct PcsFriTranscriptCommitments {
     pub layer_roots: Vec<[Felt; 4]>,
     pub final_polynomial: Vec<Ext3>,
     pub final_query_challenge: Ext3,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadPcsFriOpeningSegmentError {
+    MissingSegment,
+    Segment(PcsFriOpeningSegmentError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadPcsFriOpeningUnitError {
+    MissingSegment,
+    MissingUnit { unit_index: usize },
+    UnitIndexOverflow,
+    Segment(PcsFriOpeningSegmentError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,6 +127,55 @@ impl std::error::Error for PcsFriFoldError {
     }
 }
 
+impl fmt::Display for LoadPcsFriOpeningSegmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingSegment => write!(f, "missing PCS FRI opening segment"),
+            Self::Segment(error) => write!(f, "invalid PCS FRI opening segment: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for LoadPcsFriOpeningSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Segment(error) => Some(error),
+            Self::MissingSegment => None,
+        }
+    }
+}
+
+impl fmt::Display for LoadPcsFriOpeningUnitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingSegment => write!(f, "missing PCS FRI opening segment"),
+            Self::MissingUnit { unit_index } => {
+                write!(f, "PCS FRI opening segment mismatch for unit {unit_index}")
+            }
+            Self::UnitIndexOverflow => write!(f, "PCS FRI opening segment unit index overflow"),
+            Self::Segment(error) => write!(f, "invalid PCS FRI opening segment: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for LoadPcsFriOpeningUnitError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Segment(error) => Some(error),
+            Self::MissingSegment | Self::MissingUnit { .. } | Self::UnitIndexOverflow => None,
+        }
+    }
+}
+
+impl From<LoadPcsFriOpeningSegmentError> for LoadPcsFriOpeningUnitError {
+    fn from(error: LoadPcsFriOpeningSegmentError) -> Self {
+        match error {
+            LoadPcsFriOpeningSegmentError::MissingSegment => Self::MissingSegment,
+            LoadPcsFriOpeningSegmentError::Segment(error) => Self::Segment(error),
+        }
+    }
+}
+
 impl From<DomainError> for PcsFriFoldError {
     fn from(error: DomainError) -> Self {
         Self::Domain(error)
@@ -121,6 +186,30 @@ impl From<FieldError> for PcsFriFoldError {
     fn from(error: FieldError) -> Self {
         Self::Field(error)
     }
+}
+
+pub fn load_pcs_fri_opening_segment_from_segments(
+    segments: &[ProofSegment],
+) -> Result<PcsFriOpeningSegment, LoadPcsFriOpeningSegmentError> {
+    let segment = segments
+        .iter()
+        .find(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
+        .ok_or(LoadPcsFriOpeningSegmentError::MissingSegment)?;
+    parse_pcs_fri_opening_segment(&segment.data).map_err(LoadPcsFriOpeningSegmentError::Segment)
+}
+
+pub fn load_pcs_fri_opening_unit_from_segments(
+    unit_index: usize,
+    segments: &[ProofSegment],
+) -> Result<PcsFriOpeningUnitSegment, LoadPcsFriOpeningUnitError> {
+    let opening = load_pcs_fri_opening_segment_from_segments(segments)?;
+    let unit_index_u32 =
+        u32::try_from(unit_index).map_err(|_| LoadPcsFriOpeningUnitError::UnitIndexOverflow)?;
+    opening
+        .units
+        .into_iter()
+        .find(|unit| unit.unit_index == unit_index_u32)
+        .ok_or(LoadPcsFriOpeningUnitError::MissingUnit { unit_index })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

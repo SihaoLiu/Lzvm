@@ -1,14 +1,17 @@
 use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_fri_segment::{
-    PcsFriOpeningLayerSegment, PcsFriOpeningQuerySegment, PcsFriOpeningUnitSegment,
+    encode_pcs_fri_opening_segment, PcsFriOpeningLayerSegment, PcsFriOpeningQuerySegment,
+    PcsFriOpeningSegment, PcsFriOpeningUnitSegment, PCS_FRI_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
+use lzvm_artifacts::proof::ProofSegment;
 use lzvm_field::{poseidon2_hash_8, Ext3, Felt, SHIFT};
 use lzvm_prover::pcs_fri::{
-    build_pcs_fri_opening_unit, build_pcs_fri_transcript_commitments, verify_fri_fold,
-    verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path, PcsFriFoldError,
-    PcsFriMerkleError, PcsFriOpeningBuildRequest, PcsFriOpeningFoldRequest,
-    PcsFriTranscriptCommitmentRequest,
+    build_pcs_fri_opening_unit, build_pcs_fri_transcript_commitments,
+    load_pcs_fri_opening_segment_from_segments, load_pcs_fri_opening_unit_from_segments,
+    verify_fri_fold, verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path,
+    LoadPcsFriOpeningSegmentError, LoadPcsFriOpeningUnitError, PcsFriFoldError, PcsFriMerkleError,
+    PcsFriOpeningBuildRequest, PcsFriOpeningFoldRequest, PcsFriTranscriptCommitmentRequest,
 };
 use lzvm_prover::pcs_transcript::{derive_pcs_transcript_challenges, PcsTranscriptInputs};
 use lzvm_prover::ProveUnitSchedule;
@@ -390,6 +393,58 @@ fn builds_fri_opening_unit_from_polynomial_values() {
 }
 
 #[test]
+fn loads_pcs_fri_opening_segment_from_segments() {
+    let unit = sample_fri_opening_unit(0);
+    let segment = pcs_fri_opening_proof_segment(vec![unit.clone()]);
+
+    let loaded =
+        load_pcs_fri_opening_segment_from_segments(&[segment]).expect("segment should load");
+
+    assert_eq!(loaded, PcsFriOpeningSegment { units: vec![unit] });
+}
+
+#[test]
+fn loads_pcs_fri_opening_unit_from_segments() {
+    let unit = sample_fri_opening_unit(0);
+    let segment = pcs_fri_opening_proof_segment(vec![unit.clone()]);
+
+    let loaded = load_pcs_fri_opening_unit_from_segments(0, &[segment]).expect("unit should load");
+
+    assert_eq!(loaded, unit);
+}
+
+#[test]
+fn rejects_missing_pcs_fri_opening_segment() {
+    let error = load_pcs_fri_opening_segment_from_segments(&[]).expect_err("segment should exist");
+
+    assert_eq!(error, LoadPcsFriOpeningSegmentError::MissingSegment);
+}
+
+#[test]
+fn rejects_invalid_pcs_fri_opening_segment() {
+    let error = load_pcs_fri_opening_segment_from_segments(&[ProofSegment {
+        id: PCS_FRI_OPENING_SEGMENT_ID,
+        data: vec![1, 2, 3, 4],
+    }])
+    .expect_err("segment should parse");
+
+    assert!(matches!(error, LoadPcsFriOpeningSegmentError::Segment(_)));
+}
+
+#[test]
+fn rejects_missing_pcs_fri_opening_unit() {
+    let segment = pcs_fri_opening_proof_segment(vec![sample_fri_opening_unit(1)]);
+
+    let error =
+        load_pcs_fri_opening_unit_from_segments(0, &[segment]).expect_err("unit should exist");
+
+    assert_eq!(
+        error,
+        LoadPcsFriOpeningUnitError::MissingUnit { unit_index: 0 }
+    );
+}
+
+#[test]
 fn derives_fri_transcript_commitments_from_polynomial_values() {
     let schedule = ProveUnitSchedule {
         kind: KeyUnitKind::Basic,
@@ -562,6 +617,31 @@ fn fold_full_layer(
 
 fn digest_from_u64s(values: [u64; 4]) -> [Felt; 4] {
     values.map(Felt::from_u64)
+}
+
+fn pcs_fri_opening_proof_segment(units: Vec<PcsFriOpeningUnitSegment>) -> ProofSegment {
+    ProofSegment {
+        id: PCS_FRI_OPENING_SEGMENT_ID,
+        data: encode_pcs_fri_opening_segment(&PcsFriOpeningSegment { units })
+            .expect("segment should encode"),
+    }
+}
+
+fn sample_fri_opening_unit(unit_index: u32) -> PcsFriOpeningUnitSegment {
+    PcsFriOpeningUnitSegment {
+        unit_index,
+        layers: vec![PcsFriOpeningLayerSegment {
+            layer_index: 0,
+            root: [10, 11, 12, 13],
+            last_level: Vec::new(),
+            queries: vec![PcsFriOpeningQuerySegment {
+                row_index: 0,
+                values: vec![[1, 2, 3]],
+                siblings: Vec::new(),
+            }],
+        }],
+        final_polynomial: vec![[4, 5, 6]],
+    }
 }
 
 fn extension_leaf(value: Ext3) -> [Felt; 4] {

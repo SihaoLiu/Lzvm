@@ -21,7 +21,7 @@ use lzvm_artifacts::key_directory::{
     read_key_directory_layout, validate_key_directory_layout, KeyDirectoryCatalog,
 };
 use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
-use lzvm_artifacts::pcs_fri_segment::{parse_pcs_fri_opening_segment, PCS_FRI_OPENING_SEGMENT_ID};
+use lzvm_artifacts::pcs_fri_segment::PCS_FRI_OPENING_SEGMENT_ID;
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_material};
 use lzvm_artifacts::pcs_material_segment::{
     parse_pcs_material_manifest_segment, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
@@ -59,6 +59,7 @@ use lzvm_prover::group_values::load_group_values_from_segments;
 use lzvm_prover::hint_eval::{global_hint_input_requirements, resolve_global_hint_program};
 use lzvm_prover::pcs_evaluation::load_pcs_evaluation_unit_from_segments;
 use lzvm_prover::pcs_fri::{
+    load_pcs_fri_opening_segment_from_segments, load_pcs_fri_opening_unit_from_segments,
     verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path,
     PcsFriOpeningFoldRequest,
 };
@@ -581,12 +582,6 @@ fn validate_transcript_pcs_query_plan(
         .iter()
         .find(|segment| segment.id == PCS_QUERY_NONCE_SEGMENT_ID)
         .ok_or_else(|| "missing PCS query nonce segment".to_owned())?;
-    let fri_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
-        .ok_or_else(|| "missing PCS FRI opening segment".to_owned())?;
-
     let unit_index_u32 = witness_segments[0]
         .id
         .checked_sub(WITNESS_COMMITMENT_SEGMENT_BASE_ID)
@@ -609,13 +604,8 @@ fn validate_transcript_pcs_query_plan(
     })?;
     let evaluation_unit = load_pcs_evaluation_unit_from_segments(unit_index, unit, &proof.segments)
         .map_err(|error| error.to_string())?;
-    let fri = parse_pcs_fri_opening_segment(&fri_segment.data)
-        .map_err(|error| format!("invalid PCS FRI opening segment: {error}"))?;
-    let fri_unit = fri
-        .units
-        .iter()
-        .find(|unit| unit.unit_index == unit_index_u32)
-        .ok_or_else(|| format!("PCS transcript query plan mismatch for unit {unit_index}"))?;
+    let fri_unit = load_pcs_fri_opening_unit_from_segments(unit_index, &proof.segments)
+        .map_err(|error| error.to_string())?;
     let public_value_fields = transcript_public_value_fields(public_values)?;
     let unit_values = load_unit_values(schedule, proof, unit_index)?;
     let expected_segment = build_pcs_query_plan_segment_from_transcript_segments(
@@ -629,7 +619,7 @@ fn validate_transcript_pcs_query_plan(
             unit_values: &unit_values,
             witness: &witness,
             evaluations: &evaluation_unit,
-            fri: fri_unit,
+            fri: &fri_unit,
             root_challenge_draws: &unit.transcript_root_challenge_draws,
             evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
         },
@@ -897,17 +887,17 @@ fn validate_optional_pcs_fri_opening_segment(
     proof: &ProofArtifact,
     public_values: &PublicValues,
 ) -> Result<(), String> {
-    let Some(segment) = proof
+    if !proof
         .segments
         .iter()
-        .find(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
-    else {
+        .any(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
+    {
         return Ok(());
-    };
+    }
     let query_plan =
         load_pcs_query_plan_from_segments(&proof.segments).map_err(|error| error.to_string())?;
-    let opening = parse_pcs_fri_opening_segment(&segment.data)
-        .map_err(|error| format!("invalid PCS FRI opening segment: {error}"))?;
+    let opening = load_pcs_fri_opening_segment_from_segments(&proof.segments)
+        .map_err(|error| error.to_string())?;
     if opening.units.len() != query_plan.units.len() {
         return Err("PCS FRI opening segment unit count mismatch".to_owned());
     }
@@ -1327,18 +1317,12 @@ fn derive_global_constraint_challenges(
         .iter()
         .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
         .ok_or_else(|| "missing PCS material manifest segment".to_owned())?;
-    let fri_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
-        .ok_or_else(|| "missing PCS FRI opening segment".to_owned())?;
-
     let query_plan =
         load_pcs_query_plan_from_segments(&proof.segments).map_err(|error| error.to_string())?;
     let material = parse_pcs_material_manifest_segment(&material_segment.data)
         .map_err(|error| format!("invalid PCS material manifest segment: {error}"))?;
-    let fri = parse_pcs_fri_opening_segment(&fri_segment.data)
-        .map_err(|error| format!("invalid PCS FRI opening segment: {error}"))?;
+    let fri = load_pcs_fri_opening_segment_from_segments(&proof.segments)
+        .map_err(|error| error.to_string())?;
     let witness_segments = collect_witness_commitment_segments(schedule, proof)?;
     let public_value_fields = transcript_public_value_fields(public_values)?;
     let mut challenges = Vec::new();
