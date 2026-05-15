@@ -4,6 +4,14 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
+use crate::sectioned::{
+    encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
+};
+
+const PUBLIC_VALUES_KIND: [u8; 4] = *b"pval";
+const PUBLIC_VALUES_VERSION: u32 = 1;
+const PUBLIC_VALUES_SECTION_ID: u32 = 1;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublicValues {
     pub schema_version: u32,
@@ -19,21 +27,83 @@ pub struct PublicValueEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PublicValuesError {
-    Json { message: String },
-    MissingField { field: &'static str },
-    InvalidField { field: &'static str },
-    InvalidHash { field: &'static str },
-    EmptyName { index: usize },
-    DuplicateName { name: String },
-    EmptyValue { name: String },
-    InvalidElement { name: String },
-    Io { message: String },
+    Json {
+        message: String,
+    },
+    InvalidMagic,
+    UnsupportedVersion {
+        found: u32,
+        max: u32,
+    },
+    InvalidSectionCount {
+        found: u32,
+    },
+    InvalidSectionId {
+        found: u32,
+    },
+    UnexpectedTrailingBytes {
+        count: usize,
+    },
+    UnexpectedEof {
+        offset: usize,
+        needed: usize,
+        available: usize,
+    },
+    LengthOverflow,
+    InvalidUtf8,
+    MissingField {
+        field: &'static str,
+    },
+    InvalidField {
+        field: &'static str,
+    },
+    InvalidHash {
+        field: &'static str,
+    },
+    EmptyName {
+        index: usize,
+    },
+    DuplicateName {
+        name: String,
+    },
+    EmptyValue {
+        name: String,
+    },
+    InvalidElement {
+        name: String,
+    },
+    Io {
+        message: String,
+    },
 }
 
 impl fmt::Display for PublicValuesError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Json { message } => write!(f, "public-values json error: {message}"),
+            Self::InvalidMagic => write!(f, "invalid public-values file magic"),
+            Self::UnsupportedVersion { found, max } => {
+                write!(f, "unsupported public-values file version {found}, max {max}")
+            }
+            Self::InvalidSectionCount { found } => {
+                write!(f, "invalid public-values section count {found}")
+            }
+            Self::InvalidSectionId { found } => {
+                write!(f, "invalid public-values section id {found}")
+            }
+            Self::UnexpectedTrailingBytes { count } => {
+                write!(f, "unexpected trailing bytes in public-values file: {count}")
+            }
+            Self::UnexpectedEof {
+                offset,
+                needed,
+                available,
+            } => write!(
+                f,
+                "unexpected end of public-values file at {offset}, needed {needed}, available {available}"
+            ),
+            Self::LengthOverflow => write!(f, "public-values length overflow"),
+            Self::InvalidUtf8 => write!(f, "public-values string is not valid utf-8"),
             Self::MissingField { field } => write!(f, "missing public-values field: {field}"),
             Self::InvalidField { field } => write!(f, "invalid public-values field: {field}"),
             Self::InvalidHash { field } => write!(f, "invalid public-values hash: {field}"),
@@ -54,11 +124,80 @@ impl fmt::Display for PublicValuesError {
 
 impl std::error::Error for PublicValuesError {}
 
+impl From<SectionedError> for PublicValuesError {
+    fn from(value: SectionedError) -> Self {
+        match value {
+            SectionedError::InvalidKind { .. } => Self::InvalidMagic,
+            SectionedError::UnsupportedVersion { found, max } => {
+                Self::UnsupportedVersion { found, max }
+            }
+            SectionedError::UnexpectedTrailingBytes { count } => {
+                Self::UnexpectedTrailingBytes { count }
+            }
+            SectionedError::UnexpectedEof {
+                offset,
+                needed,
+                available,
+            } => Self::UnexpectedEof {
+                offset,
+                needed,
+                available,
+            },
+            SectionedError::LengthOverflow => Self::LengthOverflow,
+        }
+    }
+}
+
 pub fn read_public_values_file(path: impl AsRef<Path>) -> Result<PublicValues, PublicValuesError> {
+    let path = path.as_ref();
+    if path.extension().and_then(|extension| extension.to_str()) == Some("bin") {
+        return read_public_values_binary_file(path);
+    }
+
     let input = std::fs::read_to_string(path).map_err(|error| PublicValuesError::Io {
         message: error.to_string(),
     })?;
     parse_public_values_json(&input)
+}
+
+pub fn read_public_values_binary_file(
+    path: impl AsRef<Path>,
+) -> Result<PublicValues, PublicValuesError> {
+    let bytes = std::fs::read(path).map_err(|error| PublicValuesError::Io {
+        message: error.to_string(),
+    })?;
+    parse_public_values(&bytes)
+}
+
+pub fn parse_public_values(bytes: &[u8]) -> Result<PublicValues, PublicValuesError> {
+    let file = parse_sectioned_file(bytes, PUBLIC_VALUES_KIND, PUBLIC_VALUES_VERSION)
+        .map_err(PublicValuesError::from)?;
+    if file.sections.len() != 1 {
+        return Err(PublicValuesError::InvalidSectionCount {
+            found: u32::try_from(file.sections.len()).unwrap_or(u32::MAX),
+        });
+    }
+
+    let section = &file.sections[0];
+    if section.id != PUBLIC_VALUES_SECTION_ID {
+        return Err(PublicValuesError::InvalidSectionId { found: section.id });
+    }
+
+    parse_public_values_section(&section.data)
+}
+
+pub fn encode_public_values(value: &PublicValues) -> Result<Vec<u8>, PublicValuesError> {
+    validate_public_values(value)?;
+    let section = encode_public_values_section(value)?;
+    let file = SectionedFile {
+        kind: PUBLIC_VALUES_KIND,
+        version: PUBLIC_VALUES_VERSION,
+        sections: vec![SectionedSection {
+            id: PUBLIC_VALUES_SECTION_ID,
+            data: section,
+        }],
+    };
+    encode_sectioned_file(&file).map_err(PublicValuesError::from)
 }
 
 pub fn parse_public_values_json(input: &str) -> Result<PublicValues, PublicValuesError> {
@@ -170,6 +309,52 @@ pub fn public_values_digest(value: &PublicValues) -> Result<[u8; 32], PublicValu
     Ok(digest.into())
 }
 
+fn parse_public_values_section(bytes: &[u8]) -> Result<PublicValues, PublicValuesError> {
+    let mut reader = Reader::new(bytes);
+    let schema_version = reader.read_u32()?;
+    let setup_hash = reader.read_hash()?;
+    let value_count = reader.read_u32()?;
+    let mut values = Vec::with_capacity(u32_to_usize(value_count)?);
+    for _ in 0..value_count {
+        let name = reader.read_string()?;
+        let element_count = reader.read_u32()?;
+        let mut elements = Vec::with_capacity(u32_to_usize(element_count)?);
+        for _ in 0..element_count {
+            elements.push(reader.read_u64()?);
+        }
+        values.push(PublicValueEntry { name, elements });
+    }
+
+    if reader.position() != bytes.len() {
+        return Err(PublicValuesError::UnexpectedTrailingBytes {
+            count: bytes.len() - reader.position(),
+        });
+    }
+
+    let out = PublicValues {
+        schema_version,
+        setup_hash,
+        values,
+    };
+    validate_public_values(&out)?;
+    Ok(out)
+}
+
+fn encode_public_values_section(value: &PublicValues) -> Result<Vec<u8>, PublicValuesError> {
+    let mut out = Vec::new();
+    write_u32(&mut out, value.schema_version);
+    out.extend_from_slice(&value.setup_hash);
+    write_len(&mut out, value.values.len())?;
+    for entry in &value.values {
+        write_string(&mut out, &entry.name)?;
+        write_len(&mut out, entry.elements.len())?;
+        for element in &entry.elements {
+            write_u64(&mut out, *element);
+        }
+    }
+    Ok(out)
+}
+
 fn validate_public_values(value: &PublicValues) -> Result<(), PublicValuesError> {
     let mut names = BTreeSet::new();
     for (index, entry) in value.values.iter().enumerate() {
@@ -239,5 +424,88 @@ fn hex_value(value: u8) -> Option<u8> {
         b'a'..=b'f' => Some(value - b'a' + 10),
         b'A'..=b'F' => Some(value - b'A' + 10),
         _ => None,
+    }
+}
+
+fn write_string(out: &mut Vec<u8>, value: &str) -> Result<(), PublicValuesError> {
+    write_len(out, value.len())?;
+    out.extend_from_slice(value.as_bytes());
+    Ok(())
+}
+
+fn write_len(out: &mut Vec<u8>, len: usize) -> Result<(), PublicValuesError> {
+    let len = u32::try_from(len).map_err(|_| PublicValuesError::LengthOverflow)?;
+    write_u32(out, len);
+    Ok(())
+}
+
+fn write_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn write_u64(out: &mut Vec<u8>, value: u64) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn u32_to_usize(value: u32) -> Result<usize, PublicValuesError> {
+    usize::try_from(value).map_err(|_| PublicValuesError::LengthOverflow)
+}
+
+struct Reader<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> Reader<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, offset: 0 }
+    }
+
+    fn position(&self) -> usize {
+        self.offset
+    }
+
+    fn read_exact(&mut self, count: usize) -> Result<&'a [u8], PublicValuesError> {
+        let end = self
+            .offset
+            .checked_add(count)
+            .ok_or(PublicValuesError::LengthOverflow)?;
+        if end > self.bytes.len() {
+            return Err(PublicValuesError::UnexpectedEof {
+                offset: self.offset,
+                needed: count,
+                available: self.bytes.len().saturating_sub(self.offset),
+            });
+        }
+        let out = &self.bytes[self.offset..end];
+        self.offset = end;
+        Ok(out)
+    }
+
+    fn read_u32(&mut self) -> Result<u32, PublicValuesError> {
+        let bytes = self.read_exact(4)?;
+        Ok(u32::from_le_bytes(
+            bytes.try_into().expect("slice length checked"),
+        ))
+    }
+
+    fn read_u64(&mut self) -> Result<u64, PublicValuesError> {
+        let bytes = self.read_exact(8)?;
+        Ok(u64::from_le_bytes(
+            bytes.try_into().expect("slice length checked"),
+        ))
+    }
+
+    fn read_hash(&mut self) -> Result<[u8; 32], PublicValuesError> {
+        let bytes = self.read_exact(32)?;
+        Ok(bytes.try_into().expect("slice length checked"))
+    }
+
+    fn read_string(&mut self) -> Result<String, PublicValuesError> {
+        let len = u32_to_usize(self.read_u32()?)?;
+        let bytes = self.read_exact(len)?;
+        std::str::from_utf8(bytes)
+            .map(str::to_owned)
+            .map_err(|_| PublicValuesError::InvalidUtf8)
     }
 }

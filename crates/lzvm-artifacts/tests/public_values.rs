@@ -2,8 +2,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use lzvm_artifacts::public_values::{
-    encode_public_values_json, parse_public_values_json, read_public_values_file, PublicValueEntry,
-    PublicValues, PublicValuesError,
+    encode_public_values, encode_public_values_json, parse_public_values, parse_public_values_json,
+    public_values_digest, read_public_values_binary_file, read_public_values_file,
+    PublicValueEntry, PublicValues, PublicValuesError,
 };
 
 fn sample_hash(byte: u8) -> [u8; 32] {
@@ -59,6 +60,19 @@ fn encodes_public_values_json_canonically() {
 }
 
 #[test]
+fn encodes_and_parses_public_values_binary() {
+    let encoded = encode_public_values(&sample_public_values()).expect("fixture should encode");
+
+    let parsed = parse_public_values(&encoded).expect("fixture should parse");
+
+    assert_eq!(parsed, sample_public_values());
+    assert_eq!(
+        public_values_digest(&parsed).expect("parsed fixture should digest"),
+        public_values_digest(&sample_public_values()).expect("sample fixture should digest")
+    );
+}
+
+#[test]
 fn reads_public_values_from_a_file_path() {
     let path = temp_file_path("values.json");
     let encoded =
@@ -68,6 +82,20 @@ fn reads_public_values_from_a_file_path() {
     let parsed = read_public_values_file(&path).expect("fixture should parse");
     fs::remove_file(&path).expect("fixture should be removed");
 
+    assert_eq!(parsed, sample_public_values());
+}
+
+#[test]
+fn reads_public_values_binary_from_a_file_path() {
+    let path = temp_file_path("values.bin");
+    let encoded = encode_public_values(&sample_public_values()).expect("fixture should encode");
+    fs::write(&path, encoded).expect("fixture should be written");
+
+    let direct = read_public_values_binary_file(&path).expect("binary fixture should parse");
+    let parsed = read_public_values_file(&path).expect("binary fixture should dispatch");
+    fs::remove_file(&path).expect("fixture should be removed");
+
+    assert_eq!(direct, sample_public_values());
     assert_eq!(parsed, sample_public_values());
 }
 
