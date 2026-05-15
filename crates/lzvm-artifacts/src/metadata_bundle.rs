@@ -1,18 +1,20 @@
 use crate::constant_tree::{read_constant_tree_file, ConstantTree, ConstantTreeError};
-use crate::expression_info::{read_expression_info_file, ExpressionInfo, ExpressionInfoError};
+use crate::expression_info::{
+    read_expression_info_binary_file, ExpressionInfo, ExpressionInfoError,
+};
 use crate::expression_program::{
     read_expression_program_file, ExpressionProgram, ExpressionProgramError,
 };
 use crate::fixed::{read_fixed_columns_file_for_setup, FixedColumnError, FixedColumns};
-use crate::global_info::{read_global_info_file, GlobalInfo, GlobalInfoError};
+use crate::global_info::{read_global_info_binary_file, GlobalInfo, GlobalInfoError};
 use crate::metadata_validation::{
     validate_global_metadata, validate_unit_metadata, MetadataValidationError,
 };
-use crate::setup_info::{read_unit_setup_info_file, SetupInfoError, UnitSetupInfo};
+use crate::setup_info::{read_unit_setup_info_binary_file, SetupInfoError, UnitSetupInfo};
 use crate::verification_key::{
     read_verification_key_binary_file, VerificationKeyError, VerificationKeyRoot,
 };
-use crate::verifier_info::{read_verifier_info_file, VerifierInfo, VerifierInfoError};
+use crate::verifier_info::{read_verifier_info_binary_file, VerifierInfo, VerifierInfoError};
 use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -235,9 +237,9 @@ impl From<MetadataValidationError> for MetadataBundleError {
 pub fn read_unit_metadata_bundle(
     paths: &UnitMetadataPaths,
 ) -> Result<UnitMetadataBundle, MetadataBundleError> {
-    let setup = read_unit_setup_info_file(&paths.setup_info)?;
-    let expressions = read_expression_info_file(&paths.expression_info)?;
-    let verifier = read_verifier_info_file(&paths.verifier_info)?;
+    let setup = read_unit_setup_info_binary_file(&paths.setup_info)?;
+    let expressions = read_expression_info_binary_file(&paths.expression_info)?;
+    let verifier = read_verifier_info_binary_file(&paths.verifier_info)?;
 
     validate_unit_metadata(&setup, &expressions, &verifier)?;
 
@@ -311,7 +313,7 @@ fn validate_fixed_column_rows(
 pub fn read_global_metadata_bundle(
     paths: &GlobalMetadataPaths,
 ) -> Result<GlobalMetadataBundle, MetadataBundleError> {
-    let info = read_global_info_file(&paths.info)?;
+    let info = read_global_info_binary_file(&paths.info)?;
     validate_global_metadata(&info)?;
     Ok(GlobalMetadataBundle { info })
 }

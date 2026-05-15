@@ -4,6 +4,7 @@ use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
 use lzvm_artifacts::fixed::{encode_fixed_columns, FixedColumn, FixedColumns};
+use lzvm_artifacts::global_info::{encode_global_info, parse_global_info_json};
 use lzvm_artifacts::metadata_bundle::{
     read_global_metadata_bundle, read_unit_artifact_bundle, read_unit_metadata_bundle,
     GlobalMetadataPaths, MetadataBundleError, UnitArtifactPaths, UnitMetadataPaths,
@@ -225,6 +226,12 @@ fn write_verifier_info_fixture(path: &Path, content: &str) {
     }
 }
 
+fn write_global_info_fixture(path: &Path, content: &str) {
+    let global = parse_global_info_json(content).expect("global info should parse");
+    let bytes = encode_global_info(&global).expect("global info should encode");
+    fs::write(path, bytes).expect("fixture should be written");
+}
+
 fn write_root_binary(path: &Path, values: Vec<u64>) {
     let bytes = encode_verification_key_binary(&VerificationKeyRoot::FieldElements(values))
         .expect("fixture should encode");
@@ -288,6 +295,27 @@ fn reads_and_validates_unit_metadata_from_paths() {
 }
 
 #[test]
+fn rejects_text_unit_metadata_bundle_files() {
+    let dir = create_clean_dir("unit-text-rejected");
+    let paths = UnitMetadataPaths::new(
+        dir.join("unit-a.starkinfo.json"),
+        dir.join("unit-a.expressionsinfo.json"),
+        dir.join("unit-a.verifierinfo.json"),
+    );
+    write_unit_fixture(
+        &paths,
+        sample_setup_info_json(),
+        sample_expression_info_json(),
+        sample_verifier_info_json(),
+    );
+
+    let error = read_unit_metadata_bundle(&paths).expect_err("text bundle should be rejected");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(error, MetadataBundleError::SetupInfo(_)));
+}
+
+#[test]
 fn rejects_unit_metadata_bundles_that_fail_cross_file_validation() {
     let dir = create_clean_dir("unit-invalid");
     let paths = UnitMetadataPaths::from_unit_prefix(dir.join("unit-a"));
@@ -314,8 +342,8 @@ fn rejects_unit_metadata_bundles_that_fail_cross_file_validation() {
 #[test]
 fn reads_and_validates_global_metadata_from_a_path() {
     let dir = create_clean_dir("global-valid");
-    let path = dir.join("global_info.json");
-    write_file(&path, sample_global_info_json());
+    let path = dir.join("global_info.bin");
+    write_global_info_fixture(&path, sample_global_info_json());
 
     let bundle =
         read_global_metadata_bundle(&GlobalMetadataPaths::new(path)).expect("bundle should load");
@@ -326,12 +354,25 @@ fn reads_and_validates_global_metadata_from_a_path() {
 }
 
 #[test]
+fn rejects_text_global_metadata_bundle_files() {
+    let dir = create_clean_dir("global-text-rejected");
+    let path = dir.join("global_info.json");
+    write_file(&path, sample_global_info_json());
+
+    let error = read_global_metadata_bundle(&GlobalMetadataPaths::new(path))
+        .expect_err("text bundle should be rejected");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(error, MetadataBundleError::GlobalInfo(_)));
+}
+
+#[test]
 fn rejects_global_metadata_bundles_that_fail_cross_file_validation() {
     let dir = create_clean_dir("global-invalid");
-    let path = dir.join("global_info.json");
+    let path = dir.join("global_info.bin");
     let global_json =
         sample_global_info_json().replace("\"numChallenges\": [1, 2]", "\"numChallenges\": []");
-    write_file(&path, &global_json);
+    write_global_info_fixture(&path, &global_json);
 
     let error = read_global_metadata_bundle(&GlobalMetadataPaths::new(path))
         .expect_err("bundle should be rejected");
