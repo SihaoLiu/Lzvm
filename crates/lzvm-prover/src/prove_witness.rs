@@ -8,6 +8,10 @@ use lzvm_artifacts::constant_opening_segment::{
 };
 use lzvm_artifacts::constant_tree::{read_constant_tree_file, ConstantTreeError};
 use lzvm_artifacts::key_directory::{KeyDirectoryCatalog, KeyUnitKind};
+use lzvm_artifacts::pcs_evaluation_segment::{
+    encode_pcs_evaluation_segment, PcsEvaluationSegment, PcsEvaluationSegmentError,
+    PcsEvaluationUnitSegment, PCS_EVALUATION_SEGMENT_ID,
+};
 use lzvm_artifacts::pcs_material_segment::{
     encode_pcs_material_manifest_segment, PcsMaterialManifestSegment,
     PcsMaterialManifestSegmentError, PcsMaterialManifestUnit, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
@@ -85,6 +89,12 @@ impl ProveWitnessCommitments {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProvePcsEvaluationValues {
+    pub unit_index: usize,
+    pub values: Vec<Ext3>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProveWitnessCommitmentError {
     UnitIndexOutOfRange {
         unit_index: usize,
@@ -116,6 +126,23 @@ pub enum ProvePcsMaterialSegmentError {
         unit_index: usize,
     },
     Segment(PcsMaterialManifestSegmentError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProvePcsEvaluationSegmentError {
+    UnitIndexOverflow {
+        unit_index: usize,
+    },
+    UnitIndexOutOfRange {
+        unit_index: usize,
+        unit_count: usize,
+    },
+    ValueCountMismatch {
+        unit_index: usize,
+        expected: usize,
+        found: usize,
+    },
+    Segment(PcsEvaluationSegmentError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -282,6 +309,35 @@ impl fmt::Display for ProvePcsMaterialSegmentError {
     }
 }
 
+impl fmt::Display for ProvePcsEvaluationSegmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnitIndexOverflow { unit_index } => write!(
+                f,
+                "prove PCS evaluation segment unit index does not fit u32: {unit_index}"
+            ),
+            Self::UnitIndexOutOfRange {
+                unit_index,
+                unit_count,
+            } => write!(
+                f,
+                "prove PCS evaluation segment unit index {unit_index} is outside unit count {unit_count}"
+            ),
+            Self::ValueCountMismatch {
+                unit_index,
+                expected,
+                found,
+            } => write!(
+                f,
+                "prove PCS evaluation segment unit {unit_index} value count mismatch: expected {expected}, found {found}"
+            ),
+            Self::Segment(error) => {
+                write!(f, "prove PCS evaluation segment encode failed: {error}")
+            }
+        }
+    }
+}
+
 impl fmt::Display for ProvePcsQueryPlanSegmentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -417,6 +473,17 @@ impl std::error::Error for ProvePcsMaterialSegmentError {
     }
 }
 
+impl std::error::Error for ProvePcsEvaluationSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Segment(error) => Some(error),
+            Self::UnitIndexOverflow { .. }
+            | Self::UnitIndexOutOfRange { .. }
+            | Self::ValueCountMismatch { .. } => None,
+        }
+    }
+}
+
 impl std::error::Error for ProvePcsQueryPlanSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -471,6 +538,12 @@ impl From<WitnessCommitmentSegmentError> for ProveWitnessSegmentError {
 
 impl From<PcsMaterialManifestSegmentError> for ProvePcsMaterialSegmentError {
     fn from(error: PcsMaterialManifestSegmentError) -> Self {
+        Self::Segment(error)
+    }
+}
+
+impl From<PcsEvaluationSegmentError> for ProvePcsEvaluationSegmentError {
+    fn from(error: PcsEvaluationSegmentError) -> Self {
         Self::Segment(error)
     }
 }
@@ -668,6 +741,42 @@ pub fn build_pcs_material_manifest_segment(
     Ok(ProofSegment {
         id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
         data: encode_pcs_material_manifest_segment(&manifest)?,
+    })
+}
+
+pub fn build_pcs_evaluation_segment(
+    schedule: &ProveSchedule,
+    values: &[ProvePcsEvaluationValues],
+) -> Result<ProofSegment, ProvePcsEvaluationSegmentError> {
+    let mut units = Vec::with_capacity(values.len());
+    for input in values {
+        let unit = schedule.units.get(input.unit_index).ok_or(
+            ProvePcsEvaluationSegmentError::UnitIndexOutOfRange {
+                unit_index: input.unit_index,
+                unit_count: schedule.units.len(),
+            },
+        )?;
+        if input.values.len() != unit.evaluation_value_count {
+            return Err(ProvePcsEvaluationSegmentError::ValueCountMismatch {
+                unit_index: input.unit_index,
+                expected: unit.evaluation_value_count,
+                found: input.values.len(),
+            });
+        }
+        units.push(PcsEvaluationUnitSegment {
+            unit_index: u32::try_from(input.unit_index).map_err(|_| {
+                ProvePcsEvaluationSegmentError::UnitIndexOverflow {
+                    unit_index: input.unit_index,
+                }
+            })?,
+            values: input.values.iter().copied().map(Ext3::to_u64s).collect(),
+        });
+    }
+
+    let segment = PcsEvaluationSegment { units };
+    Ok(ProofSegment {
+        id: PCS_EVALUATION_SEGMENT_ID,
+        data: encode_pcs_evaluation_segment(&segment)?,
     })
 }
 

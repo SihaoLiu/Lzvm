@@ -11,7 +11,9 @@ use lzvm_artifacts::key_directory::{
     KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry, KeyUnitKind, KeyUnitPaths,
 };
 use lzvm_artifacts::metadata_bundle::UnitMetadataBundle;
-use lzvm_artifacts::pcs_evaluation_segment::PcsEvaluationUnitSegment;
+use lzvm_artifacts::pcs_evaluation_segment::{
+    parse_pcs_evaluation_segment, PcsEvaluationUnitSegment, PCS_EVALUATION_SEGMENT_ID,
+};
 use lzvm_artifacts::pcs_fri_segment::{PcsFriOpeningLayerSegment, PcsFriOpeningUnitSegment};
 use lzvm_artifacts::pcs_material::PcsSetupMaterial;
 use lzvm_artifacts::pcs_material_segment::{
@@ -43,14 +45,14 @@ use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_loader::load_witness_library;
 use lzvm_prover::witness_runner::run_witness_trace;
 use lzvm_prover::{
-    build_pcs_material_manifest_segment, build_pcs_query_nonce_segment,
-    build_pcs_query_nonce_segment_from_transcript_segments, build_pcs_query_plan_segment,
-    build_pcs_query_plan_segment_from_challenge,
+    build_pcs_evaluation_segment, build_pcs_material_manifest_segment,
+    build_pcs_query_nonce_segment, build_pcs_query_nonce_segment_from_transcript_segments,
+    build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_challenge,
     build_pcs_query_plan_segment_from_transcript_segments, build_witness_commitment_segment,
     build_witness_opening_segment, derive_prove_execution_plan, derive_prove_schedule,
     run_prove_witness_commitments, GpuRunOptions, ProveExecutionInputArtifacts, ProvePartitionPlan,
-    ProvePassRequest, ProvePcsQueryPlanSegmentError, ProveRunOptions, ProveRunRequest,
-    ProveSchedule, ProveWitnessCommitmentError,
+    ProvePassRequest, ProvePcsEvaluationValues, ProvePcsQueryPlanSegmentError, ProveRunOptions,
+    ProveRunRequest, ProveSchedule, ProveWitnessCommitmentError,
 };
 use sha2::{Digest, Sha256};
 
@@ -616,6 +618,57 @@ fn builds_pcs_query_nonce_segments_for_transcript_query_plans() {
         schedule.units[0].proof_of_work_bits
     )
     .expect("nonce should verify"));
+}
+
+#[test]
+fn builds_pcs_evaluation_segments_from_values() {
+    let catalog = sample_catalog(sample_unit());
+    let schedule = derive_prove_schedule(&catalog).expect("schedule should derive");
+    let values = vec![Ext3::from_u64s([30, 31, 32]), Ext3::from_u64s([40, 41, 42])];
+
+    let segment = build_pcs_evaluation_segment(
+        &schedule,
+        &[ProvePcsEvaluationValues {
+            unit_index: 0,
+            values: values.clone(),
+        }],
+    )
+    .expect("evaluation segment should build");
+    let parsed =
+        parse_pcs_evaluation_segment(&segment.data).expect("evaluation segment should parse");
+
+    assert_eq!(segment.id, PCS_EVALUATION_SEGMENT_ID);
+    assert_eq!(parsed.units.len(), 1);
+    assert_eq!(parsed.units[0].unit_index, 0);
+    assert_eq!(
+        parsed.units[0].values,
+        values.into_iter().map(Ext3::to_u64s).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn rejects_pcs_evaluation_segments_with_wrong_value_count() {
+    let catalog = sample_catalog(sample_unit());
+    let schedule = derive_prove_schedule(&catalog).expect("schedule should derive");
+
+    let result = build_pcs_evaluation_segment(
+        &schedule,
+        &[ProvePcsEvaluationValues {
+            unit_index: 0,
+            values: vec![Ext3::from_u64s([30, 31, 32])],
+        }],
+    );
+
+    assert!(matches!(
+        result,
+        Err(
+            lzvm_prover::ProvePcsEvaluationSegmentError::ValueCountMismatch {
+                unit_index: 0,
+                expected: 2,
+                found: 1
+            }
+        )
+    ));
 }
 
 #[test]
