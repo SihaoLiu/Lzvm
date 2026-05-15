@@ -9,18 +9,31 @@ use lzvm_artifacts::pcs_query_segment::{
     parse_pcs_query_plan_segment, PcsQueryPlanSegmentError, PCS_QUERY_PLAN_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::ProofSegment;
-use lzvm_field::Ext3;
+use lzvm_field::{Ext3, Felt};
 
 use crate::pcs_fri::{
     build_pcs_fri_opening_unit, PcsFriOpeningBuildError, PcsFriOpeningBuildRequest,
 };
-use crate::ProveSchedule;
+use crate::prove_fri_polynomial::{build_pcs_fri_polynomial_values, ProvePcsFriPolynomialError};
+use crate::witness_trace::WitnessTraceBuffer;
+use crate::{ProveExecutionUnitArtifacts, ProveSchedule, ProveWitnessAuxiliaryInputs};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProvePcsFriOpeningValues {
     pub unit_index: usize,
     pub challenges: Vec<Ext3>,
     pub polynomial: Vec<Ext3>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ProvePcsFriOpeningTraceValues<'a> {
+    pub unit_index: usize,
+    pub execution_unit: &'a ProveExecutionUnitArtifacts,
+    pub trace: &'a WitnessTraceBuffer,
+    pub publics: &'a [Felt],
+    pub auxiliary_inputs: &'a ProveWitnessAuxiliaryInputs,
+    pub challenges: &'a [Ext3],
+    pub xi_challenge: Ext3,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +60,21 @@ pub enum ProvePcsFriOpeningSegmentError {
         source: PcsFriOpeningBuildError,
     },
     Segment(PcsFriOpeningSegmentError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProvePcsFriOpeningTraceSegmentError {
+    UnitIndexOutOfRange {
+        unit_index: usize,
+        unit_count: usize,
+    },
+    Polynomial {
+        unit_index: usize,
+        source: Box<ProvePcsFriPolynomialError>,
+    },
+    Opening {
+        source: Box<ProvePcsFriOpeningSegmentError>,
+    },
 }
 
 impl fmt::Display for ProvePcsFriOpeningSegmentError {
@@ -87,6 +115,27 @@ impl fmt::Display for ProvePcsFriOpeningSegmentError {
     }
 }
 
+impl fmt::Display for ProvePcsFriOpeningTraceSegmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnitIndexOutOfRange {
+                unit_index,
+                unit_count,
+            } => write!(
+                f,
+                "prove PCS FRI trace opening unit index {unit_index} is outside unit count {unit_count}"
+            ),
+            Self::Polynomial { unit_index, source } => write!(
+                f,
+                "prove PCS FRI trace opening polynomial failed for unit {unit_index}: {source}"
+            ),
+            Self::Opening { source } => {
+                write!(f, "prove PCS FRI trace opening segment failed: {source}")
+            }
+        }
+    }
+}
+
 impl std::error::Error for ProvePcsFriOpeningSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -98,6 +147,16 @@ impl std::error::Error for ProvePcsFriOpeningSegmentError {
             | Self::DuplicateUnitIndex { .. }
             | Self::UnitIndexOverflow { .. }
             | Self::UnitIndexOutOfRange { .. } => None,
+        }
+    }
+}
+
+impl std::error::Error for ProvePcsFriOpeningTraceSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Polynomial { source, .. } => Some(source.as_ref()),
+            Self::Opening { source } => Some(source.as_ref()),
+            Self::UnitIndexOutOfRange { .. } => None,
         }
     }
 }
@@ -171,5 +230,45 @@ pub fn build_pcs_fri_opening_segment(
     Ok(ProofSegment {
         id: PCS_FRI_OPENING_SEGMENT_ID,
         data: encode_pcs_fri_opening_segment(&segment)?,
+    })
+}
+
+pub fn build_pcs_fri_opening_segment_from_trace(
+    schedule: &ProveSchedule,
+    query_segment: &ProofSegment,
+    values: &[ProvePcsFriOpeningTraceValues<'_>],
+) -> Result<ProofSegment, ProvePcsFriOpeningTraceSegmentError> {
+    let mut opening_values = Vec::with_capacity(values.len());
+    for input in values {
+        let unit = schedule.units.get(input.unit_index).ok_or(
+            ProvePcsFriOpeningTraceSegmentError::UnitIndexOutOfRange {
+                unit_index: input.unit_index,
+                unit_count: schedule.units.len(),
+            },
+        )?;
+        let polynomial = build_pcs_fri_polynomial_values(
+            input.unit_index,
+            unit,
+            input.execution_unit,
+            input.trace,
+            input.publics,
+            input.auxiliary_inputs,
+            input.xi_challenge,
+        )
+        .map_err(|source| ProvePcsFriOpeningTraceSegmentError::Polynomial {
+            unit_index: input.unit_index,
+            source: Box::new(source),
+        })?;
+        opening_values.push(ProvePcsFriOpeningValues {
+            unit_index: input.unit_index,
+            challenges: input.challenges.to_vec(),
+            polynomial,
+        });
+    }
+
+    build_pcs_fri_opening_segment(schedule, query_segment, &opening_values).map_err(|source| {
+        ProvePcsFriOpeningTraceSegmentError::Opening {
+            source: Box::new(source),
+        }
     })
 }

@@ -57,7 +57,8 @@ use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_loader::load_witness_library;
 use lzvm_prover::witness_runner::run_witness_trace;
 use lzvm_prover::{
-    build_pcs_evaluation_segment, build_pcs_fri_opening_segment, build_pcs_fri_polynomial_values,
+    build_pcs_evaluation_segment, build_pcs_fri_opening_segment,
+    build_pcs_fri_opening_segment_from_trace, build_pcs_fri_polynomial_values,
     build_pcs_material_manifest_segment, build_pcs_query_nonce_segment,
     build_pcs_query_nonce_segment_from_transcript_segments, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_challenge,
@@ -65,9 +66,9 @@ use lzvm_prover::{
     build_witness_opening_segment, derive_prove_execution_plan, derive_prove_schedule,
     run_prove_witness_commitments, run_prove_witness_commitments_with_auxiliary_inputs,
     GpuRunOptions, ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest,
-    ProvePcsEvaluationValues, ProvePcsFriOpeningValues, ProvePcsQueryPlanSegmentError,
-    ProveRunOptions, ProveRunRequest, ProveSchedule, ProveWitnessAuxiliaryInputs,
-    ProveWitnessCommitmentError,
+    ProvePcsEvaluationValues, ProvePcsFriOpeningTraceValues, ProvePcsFriOpeningValues,
+    ProvePcsQueryPlanSegmentError, ProveRunOptions, ProveRunRequest, ProveSchedule,
+    ProveWitnessAuxiliaryInputs, ProveWitnessCommitmentError,
 };
 use sha2::{Digest, Sha256};
 
@@ -1128,6 +1129,107 @@ fn builds_pcs_fri_polynomial_from_execution_material() {
         .collect::<Vec<_>>();
 
     assert_eq!(polynomial, expected);
+}
+
+#[test]
+fn builds_pcs_fri_opening_segments_from_execution_material() {
+    let dir = temp_dir("fri-opening-from-trace");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+
+    let expression_id = 42;
+    let mut unit = sample_unit();
+    unit.paths.fixed_columns = dir.join("unit.const");
+    unit.metadata.verifier.quotient.expression_id = Some(expression_id);
+    unit.expression_program = fixed_plus_stage_expression_program(expression_id);
+    let fixed_columns = FixedColumns {
+        group_name: "group-a".to_owned(),
+        unit_name: "unit-a".to_owned(),
+        row_count: 16,
+        columns: vec![
+            FixedColumn {
+                name: "const_0".to_owned(),
+                dimensions: Vec::new(),
+                values: (0..16).map(|row| row + 10).collect(),
+            },
+            FixedColumn {
+                name: "const_1".to_owned(),
+                dimensions: Vec::new(),
+                values: vec![0; 16],
+            },
+        ],
+    };
+    write_raw_fixed_columns_file(
+        &unit.paths.fixed_columns,
+        &fixed_columns,
+        &unit.metadata.setup,
+    )
+    .expect("fixed columns should be written");
+
+    let catalog = sample_catalog(unit);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), None),
+        ProveExecutionInputArtifacts {
+            witness_library,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let unit = &plan.run_plan.schedule.units[0];
+    let query_plan = PcsQueryPlanSegment {
+        units: vec![PcsQueryPlanUnit {
+            unit_index: 0,
+            queries: vec![1, unit.extended_domain_size - 1],
+        }],
+    };
+    let query_segment = ProofSegment {
+        id: PCS_QUERY_PLAN_SEGMENT_ID,
+        data: encode_pcs_query_plan_segment(&query_plan).expect("query segment should encode"),
+    };
+    let trace_words = (0..16 * 5)
+        .map(|index| index as u64 + 1)
+        .collect::<Vec<_>>();
+    let trace =
+        lzvm_prover::witness_trace::parse_witness_trace(&encode_trace_words(&trace_words), 16, 5)
+            .expect("trace should parse");
+    let mut challenges = vec![Ext3::ZERO; unit.challenge_count + unit.fri_layers.len() + 1];
+    challenges[unit.challenge_count + 1] = Ext3::from_u64s([17, 18, 19]);
+    let auxiliary = ProveWitnessAuxiliaryInputs::default();
+
+    let segment = build_pcs_fri_opening_segment_from_trace(
+        &plan.run_plan.schedule,
+        &query_segment,
+        &[ProvePcsFriOpeningTraceValues {
+            unit_index: 0,
+            execution_unit: &plan.units[0],
+            trace: &trace,
+            publics: &[],
+            auxiliary_inputs: &auxiliary,
+            challenges: &challenges,
+            xi_challenge: Ext3::from_u64s([3, 0, 0]),
+        }],
+    )
+    .expect("FRI opening segment should build");
+    let parsed = parse_pcs_fri_opening_segment(&segment.data).expect("FRI segment should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(segment.id, PCS_FRI_OPENING_SEGMENT_ID);
+    assert_eq!(parsed.units.len(), 1);
+    assert!(verify_fri_opening_folds(
+        unit,
+        PcsFriOpeningFoldRequest {
+            unit_index: 0,
+            query_rows: &query_plan.units[0].queries,
+            challenges: &challenges,
+            fri: &parsed.units[0],
+        },
+    )
+    .expect("folds should verify"));
 }
 
 #[test]

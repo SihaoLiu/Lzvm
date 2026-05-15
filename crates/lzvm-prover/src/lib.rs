@@ -38,7 +38,9 @@ pub mod witness_runner;
 pub mod witness_trace;
 
 pub use prove_fri_opening::{
-    build_pcs_fri_opening_segment, ProvePcsFriOpeningSegmentError, ProvePcsFriOpeningValues,
+    build_pcs_fri_opening_segment, build_pcs_fri_opening_segment_from_trace,
+    ProvePcsFriOpeningSegmentError, ProvePcsFriOpeningTraceSegmentError,
+    ProvePcsFriOpeningTraceValues, ProvePcsFriOpeningValues,
 };
 pub use prove_fri_polynomial::{build_pcs_fri_polynomial_values, ProvePcsFriPolynomialError};
 pub use prove_witness::{
