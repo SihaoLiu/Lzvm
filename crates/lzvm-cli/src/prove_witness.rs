@@ -6,6 +6,7 @@ use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryCata
 use lzvm_artifacts::pcs_nonce_segment::parse_pcs_query_nonce_segment;
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
+use lzvm_artifacts::unit_values_segment::parse_unit_values_segment;
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::group_values::build_group_values_segment;
 use lzvm_prover::setup_preflight::validate_setup_preflight;
@@ -88,12 +89,24 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                 return 1;
             }
         };
+        let unit_values = match load_batch_unit_values_inputs(
+            &plan.run_plan.schedule,
+            parsed.unit_values_segment.as_deref(),
+            &auxiliary_inputs.unit_values,
+        ) {
+            Ok(unit_values) => unit_values,
+            Err(message) => {
+                let _ = writeln!(stderr, "prove witness failed: {message}");
+                return 1;
+            }
+        };
         let proof_bytes = match build_witness_proof_artifact_for_all_units(
             &catalog,
             &plan.run_plan.schedule,
             plan.inputs.public_inputs.as_deref(),
             &outputs,
             &auxiliary_inputs,
+            &unit_values,
             plan.run_plan.options.verify_outputs,
         ) {
             Ok(proof_bytes) => proof_bytes,
@@ -228,6 +241,7 @@ struct ParsedWitnessArgs {
     run_args: ParsedRunArgs,
     all_units: bool,
     unit_values: Option<std::path::PathBuf>,
+    unit_values_segment: Option<std::path::PathBuf>,
     proof_values: Option<std::path::PathBuf>,
     group_values: Option<std::path::PathBuf>,
     challenge_values: Option<std::path::PathBuf>,
@@ -237,6 +251,7 @@ struct ParsedWitnessArgs {
 fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
     let mut all_units = false;
     let mut unit_values = None;
+    let mut unit_values_segment = None;
     let mut proof_values = None;
     let mut group_values = None;
     let mut challenge_values = None;
@@ -254,6 +269,17 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
                 if unit_values.replace((*value).into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --unit-values option".to_owned(),
+                    ));
+                }
+            }
+            "--unit-values-segment" => {
+                index += 1;
+                let value = args.get(index).ok_or_else(|| {
+                    ParseError::Invalid("missing --unit-values-segment value".to_owned())
+                })?;
+                if unit_values_segment.replace((*value).into()).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --unit-values-segment option".to_owned(),
                     ));
                 }
             }
@@ -309,6 +335,7 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
         run_args: parse_run_args(&filtered, 4, 5)?,
         all_units,
         unit_values,
+        unit_values_segment,
         proof_values,
         group_values,
         challenge_values,
@@ -517,6 +544,7 @@ fn build_witness_proof_artifact_for_all_units(
     public_inputs: Option<&Path>,
     outputs: &[ProveWitnessTraceCommitments],
     auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
+    unit_values: &[ProveUnitValues],
     verify_outputs: bool,
 ) -> Result<Option<Vec<u8>>, String> {
     let Some(public_inputs) = public_inputs else {
@@ -533,16 +561,6 @@ fn build_witness_proof_artifact_for_all_units(
         .iter()
         .map(|output| output.commitments())
         .collect::<Vec<_>>();
-    let unit_values = schedule
-        .units
-        .iter()
-        .enumerate()
-        .map(|(unit_index, unit)| ProveUnitValues {
-            unit_index,
-            unit_value_map: unit.unit_value_map.clone(),
-            packed_values: auxiliary_inputs.unit_values.clone(),
-        })
-        .collect::<Vec<_>>();
     let proof = build_witness_proof_artifact(
         catalog,
         schedule,
@@ -550,7 +568,7 @@ fn build_witness_proof_artifact_for_all_units(
         &witness_outputs,
         &auxiliary_inputs.proof_values,
         &auxiliary_inputs.group_values,
-        &unit_values,
+        unit_values,
     )?;
     if verify_outputs {
         validate_setup_preflight(catalog, &proof, &public_values)
@@ -559,6 +577,64 @@ fn build_witness_proof_artifact_for_all_units(
     encode_proof_artifact(&proof)
         .map(Some)
         .map_err(|error| format!("encode witness proof artifact failed: {error}"))
+}
+
+fn load_batch_unit_values_inputs(
+    schedule: &ProveSchedule,
+    unit_values_segment_input: Option<&Path>,
+    shared_unit_values: &[Felt],
+) -> Result<Vec<ProveUnitValues>, String> {
+    if let Some(path) = unit_values_segment_input {
+        let bytes = fs::read(path).map_err(|error| {
+            format!(
+                "read unit values segment failed: {}: {error}",
+                path.display()
+            )
+        })?;
+        let parsed = parse_unit_values_segment(&bytes)
+            .map_err(|error| format!("parse unit values segment failed: {error}"))?;
+        let mut values = Vec::with_capacity(parsed.units.len());
+        for unit in parsed.units {
+            let unit_index = usize::try_from(unit.unit_index).map_err(|_| {
+                format!(
+                    "unit values segment unit index does not fit usize: {}",
+                    unit.unit_index
+                )
+            })?;
+            let schedule_unit = schedule.units.get(unit_index).ok_or_else(|| {
+                format!("unit values segment unit index out of range: {unit_index}")
+            })?;
+            let packed_values = unit
+                .values
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    Felt::from_canonical(value).map_err(|error| {
+                        format!(
+                            "unit values segment unit {unit_index} field word {index} is invalid: {error}"
+                        )
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            values.push(ProveUnitValues {
+                unit_index,
+                unit_value_map: schedule_unit.unit_value_map.clone(),
+                packed_values,
+            });
+        }
+        return Ok(values);
+    }
+
+    Ok(schedule
+        .units
+        .iter()
+        .enumerate()
+        .map(|(unit_index, unit)| ProveUnitValues {
+            unit_index,
+            unit_value_map: unit.unit_value_map.clone(),
+            packed_values: shared_unit_values.to_vec(),
+        })
+        .collect())
 }
 
 fn run_prove_witness_commitments_for_all_units(
