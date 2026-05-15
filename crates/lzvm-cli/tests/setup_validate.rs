@@ -19,11 +19,14 @@ use lzvm_artifacts::public_values::{
 };
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use lzvm_artifacts::witness_library::parse_witness_library;
+use lzvm_artifacts::witness_segment::{
+    parse_witness_commitment_segment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+};
 use lzvm_cli::run_cli;
 use lzvm_prover::{
-    derive_prove_execution_plan, run_prove_witness_commitments, GpuRunOptions,
-    ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest, ProveRunOptions,
-    ProveRunRequest,
+    build_witness_commitment_segment, derive_prove_execution_plan, run_prove_witness_commitments,
+    GpuRunOptions, ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest,
+    ProveRunOptions, ProveRunRequest,
 };
 
 fn sample_global_info_json() -> &'static str {
@@ -750,6 +753,19 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
             commitment.tree_bytes()
         );
     }
+    let expected_segment =
+        build_witness_commitment_segment(&output).expect("witness segment should build");
+    let segment_path = output_dir.join("unit-0.witness-segment");
+    let segment_bytes = fs::read(&segment_path).expect("segment output should read");
+    assert_eq!(expected_segment.id, WITNESS_COMMITMENT_SEGMENT_BASE_ID);
+    assert_eq!(segment_bytes, expected_segment.data);
+    assert_eq!(
+        parse_witness_commitment_segment(&segment_bytes)
+            .expect("segment output should parse")
+            .stages
+            .len(),
+        output.stage_commitments().stage_count()
+    );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 

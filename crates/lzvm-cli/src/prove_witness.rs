@@ -4,8 +4,8 @@ use std::path::Path;
 
 use lzvm_artifacts::key_directory::read_key_directory_catalog;
 use lzvm_prover::{
-    derive_prove_execution_plan, run_prove_witness_commitments, ProveExecutionInputArtifacts,
-    ProveWitnessCommitments,
+    build_witness_commitment_segment, derive_prove_execution_plan, run_prove_witness_commitments,
+    ProveExecutionInputArtifacts, ProveWitnessCommitments,
 };
 
 use crate::prove_plan::{parse_run_args, write_run_plan_summary, ParseError, ParsedRunArgs};
@@ -112,6 +112,10 @@ fn save_witness_outputs(output_dir: &Path, output: &ProveWitnessCommitments) -> 
         write_output_file(&root_path, &root_bytes)?;
         write_output_file(&tree_path, commitment.tree_bytes())?;
     }
+    let segment = build_witness_commitment_segment(output)
+        .map_err(|error| format!("build witness segment failed: {error}"))?;
+    let segment_path = output_dir.join(format!("unit-{}.witness-segment", output.unit_index()));
+    write_output_file(&segment_path, &segment.data)?;
     Ok(())
 }
 
