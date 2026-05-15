@@ -1,5 +1,6 @@
 use std::fmt;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryError, KeyUnitKind,
@@ -238,6 +239,82 @@ impl From<ProveScheduleError> for ProveRunPlanError {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProveExecutionInputArtifacts {
+    pub witness_library: PathBuf,
+    pub guest_image: PathBuf,
+    pub public_inputs: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProveExecutionPlan {
+    pub run_plan: ProveRunPlan,
+    pub inputs: ProveExecutionInputArtifacts,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProveExecutionPlanError {
+    RunPlan(ProveRunPlanError),
+    MissingWitnessLibrary { path: PathBuf },
+    WitnessLibraryIsNotFile { path: PathBuf },
+    MissingGuestImage { path: PathBuf },
+    GuestImageIsNotFile { path: PathBuf },
+    MissingPublicInputs { path: PathBuf },
+    PublicInputsIsNotFile { path: PathBuf },
+}
+
+impl fmt::Display for ProveExecutionPlanError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::RunPlan(error) => write!(f, "prove execution plan run-plan error: {error}"),
+            Self::MissingWitnessLibrary { path } => {
+                write!(
+                    f,
+                    "prove execution plan witness library is missing: {}",
+                    path.display()
+                )
+            }
+            Self::WitnessLibraryIsNotFile { path } => write!(
+                f,
+                "prove execution plan witness library is not a file: {}",
+                path.display()
+            ),
+            Self::MissingGuestImage { path } => {
+                write!(
+                    f,
+                    "prove execution plan guest image is missing: {}",
+                    path.display()
+                )
+            }
+            Self::GuestImageIsNotFile { path } => write!(
+                f,
+                "prove execution plan guest image is not a file: {}",
+                path.display()
+            ),
+            Self::MissingPublicInputs { path } => {
+                write!(
+                    f,
+                    "prove execution plan public inputs are missing: {}",
+                    path.display()
+                )
+            }
+            Self::PublicInputsIsNotFile { path } => write!(
+                f,
+                "prove execution plan public inputs are not a file: {}",
+                path.display()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ProveExecutionPlanError {}
+
+impl From<ProveRunPlanError> for ProveExecutionPlanError {
+    fn from(error: ProveRunPlanError) -> Self {
+        Self::RunPlan(error)
+    }
+}
+
 pub fn derive_prove_schedule(
     catalog: &KeyDirectoryCatalog,
 ) -> Result<ProveSchedule, ProveScheduleError> {
@@ -294,6 +371,33 @@ pub fn derive_prove_schedule(
     })
 }
 
+pub fn derive_prove_execution_plan(
+    catalog: &KeyDirectoryCatalog,
+    request: ProveRunRequest,
+    inputs: ProveExecutionInputArtifacts,
+) -> Result<ProveExecutionPlan, ProveExecutionPlanError> {
+    let run_plan = derive_prove_run_plan(catalog, request)?;
+    validate_regular_file(
+        &inputs.witness_library,
+        |path| ProveExecutionPlanError::MissingWitnessLibrary { path },
+        |path| ProveExecutionPlanError::WitnessLibraryIsNotFile { path },
+    )?;
+    validate_regular_file(
+        &inputs.guest_image,
+        |path| ProveExecutionPlanError::MissingGuestImage { path },
+        |path| ProveExecutionPlanError::GuestImageIsNotFile { path },
+    )?;
+    if let Some(public_inputs) = &inputs.public_inputs {
+        validate_regular_file(
+            public_inputs,
+            |path| ProveExecutionPlanError::MissingPublicInputs { path },
+            |path| ProveExecutionPlanError::PublicInputsIsNotFile { path },
+        )?;
+    }
+
+    Ok(ProveExecutionPlan { run_plan, inputs })
+}
+
 pub fn derive_prove_run_plan(
     catalog: &KeyDirectoryCatalog,
     request: ProveRunRequest,
@@ -345,6 +449,18 @@ fn validate_partition_plan(partitions: &ProvePartitionPlan) -> Result<(), ProveR
                 partition_count: partitions.partition_count,
             });
         }
+    }
+    Ok(())
+}
+
+fn validate_regular_file(
+    path: &Path,
+    missing: fn(PathBuf) -> ProveExecutionPlanError,
+    not_file: fn(PathBuf) -> ProveExecutionPlanError,
+) -> Result<(), ProveExecutionPlanError> {
+    let metadata = fs::metadata(path).map_err(|_| missing(path.to_path_buf()))?;
+    if !metadata.is_file() {
+        return Err(not_file(path.to_path_buf()));
     }
     Ok(())
 }

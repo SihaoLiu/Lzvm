@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::PathBuf;
 
 use lzvm_artifacts::constraint_program::GlobalConstraintProgram;
@@ -14,7 +15,8 @@ use lzvm_artifacts::setup_info::{FriStep, StarkStruct, UnitSetupInfo};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
 use lzvm_prover::{
-    derive_prove_run_plan, derive_prove_schedule, GpuRunOptions, ProvePartitionPlan, ProvePassKind,
+    derive_prove_execution_plan, derive_prove_run_plan, derive_prove_schedule, GpuRunOptions,
+    ProveExecutionInputArtifacts, ProveExecutionPlanError, ProvePartitionPlan, ProvePassKind,
     ProvePassRequest, ProveRunOptions, ProveRunPlanError, ProveRunRequest, ProveScheduleError,
 };
 
@@ -161,6 +163,13 @@ fn sample_catalog(units: Vec<KeyUnitCatalogEntry>) -> KeyDirectoryCatalog {
     }
 }
 
+fn temp_dir(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "lzvm-prover-schedule-{}-{name}",
+        std::process::id()
+    ))
+}
+
 #[test]
 fn derives_prove_schedule_from_key_directory_catalog() {
     let catalog = sample_catalog(vec![
@@ -288,5 +297,69 @@ fn rejects_final_wrap_without_aggregation() {
         derive_prove_run_plan(&catalog, request),
         Err(ProveRunPlanError::AggregationRequired { option })
             if option == "final_wrap"
+    ));
+}
+
+#[test]
+fn derives_prove_execution_plan_with_input_artifacts() {
+    let dir = temp_dir("execution-plan");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let public_inputs = dir.join("public-inputs.bin");
+    fs::write(&witness_library, [1_u8]).expect("witness library should be written");
+    fs::write(&guest_image, [2_u8]).expect("guest image should be written");
+    fs::write(&public_inputs, [3_u8]).expect("public inputs should be written");
+
+    let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
+        options: ProveRunOptions::default_for_output(dir.join("out")),
+        gpu: GpuRunOptions::default(),
+    };
+    let inputs = ProveExecutionInputArtifacts {
+        witness_library: witness_library.clone(),
+        guest_image: guest_image.clone(),
+        public_inputs: Some(public_inputs.clone()),
+    };
+
+    let plan = derive_prove_execution_plan(&catalog, request, inputs)
+        .expect("execution plan should derive");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(plan.run_plan.schedule.unit_count, 1);
+    assert_eq!(plan.inputs.witness_library, witness_library);
+    assert_eq!(plan.inputs.guest_image, guest_image);
+    assert_eq!(plan.inputs.public_inputs, Some(public_inputs));
+}
+
+#[test]
+fn rejects_prove_execution_plan_with_missing_witness_library() {
+    let dir = temp_dir("missing-witness");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = dir.join("missing.so");
+    let guest_image = dir.join("guest.elf");
+    fs::write(&guest_image, [2_u8]).expect("guest image should be written");
+
+    let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
+        options: ProveRunOptions::default_for_output(dir.join("out")),
+        gpu: GpuRunOptions::default(),
+    };
+    let inputs = ProveExecutionInputArtifacts {
+        witness_library: witness_library.clone(),
+        guest_image,
+        public_inputs: None,
+    };
+
+    let result = derive_prove_execution_plan(&catalog, request, inputs);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        result,
+        Err(ProveExecutionPlanError::MissingWitnessLibrary { path }) if path == witness_library
     ));
 }
