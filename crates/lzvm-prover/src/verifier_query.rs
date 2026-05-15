@@ -41,6 +41,18 @@ pub struct VerifierQueryEvalInputRequest<'a> {
     pub evaluations: &'a PcsEvaluationUnitSegment,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct VerifierUnitQueryEvalRequest<'a> {
+    pub unit_index: u32,
+    pub challenges: &'a [Ext3],
+    pub proof_values: &'a [Ext3],
+    pub constant_unit: &'a ConstantOpeningUnitSegment,
+    pub witness_unit: &'a WitnessOpeningUnitSegment,
+    pub evaluations: &'a PcsEvaluationUnitSegment,
+    pub code: &'a VerifierCode,
+    pub publics: &'a [Felt],
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerifierQueryEvalError {
     UnitIndexMismatch {
@@ -247,6 +259,31 @@ pub fn assemble_verifier_query_eval_input(
         proof_values: request.proof_values.to_vec(),
         x_div_x_sub,
     })
+}
+
+pub fn evaluate_verifier_unit_queries(
+    schedule: &ProveUnitSchedule,
+    request: VerifierUnitQueryEvalRequest<'_>,
+) -> Result<Vec<Ext3>, VerifierQueryEvalError> {
+    let query_count = usize::try_from(schedule.query_count)
+        .map_err(|_| VerifierQueryEvalError::LengthOverflow)?;
+    let mut values = Vec::with_capacity(query_count);
+    for query_index in 0..query_count {
+        let input = assemble_verifier_query_eval_input(
+            schedule,
+            VerifierQueryEvalInputRequest {
+                unit_index: request.unit_index,
+                query_index,
+                challenges: request.challenges,
+                proof_values: request.proof_values,
+                constant_unit: request.constant_unit,
+                witness_unit: request.witness_unit,
+                evaluations: request.evaluations,
+            },
+        )?;
+        values.push(input.evaluate(request.code, request.publics)?);
+    }
+    Ok(values)
 }
 
 impl VerifierQueryEvalInput {

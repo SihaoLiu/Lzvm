@@ -10,7 +10,8 @@ use lzvm_artifacts::witness_opening_segment::{
 };
 use lzvm_field::{Ext3, Felt, SHIFT};
 use lzvm_prover::verifier_query::{
-    assemble_verifier_query_eval_input, VerifierQueryEvalInputRequest,
+    assemble_verifier_query_eval_input, evaluate_verifier_unit_queries,
+    VerifierQueryEvalInputRequest, VerifierUnitQueryEvalRequest,
 };
 use lzvm_prover::ProveUnitSchedule;
 use serde_json::json;
@@ -207,4 +208,112 @@ fn assembles_single_query_verifier_inputs_from_opening_segments() {
         .expect("query code should evaluate");
 
     assert_eq!(value, (e([201, 203, 211]) + e([37, 0, 0])) * expected);
+}
+
+#[test]
+fn evaluates_all_unit_query_verifier_outputs() {
+    let mut schedule = schedule();
+    schedule.query_count = 2;
+    let challenges = vec![
+        e([2, 0, 0]),
+        e([3, 0, 0]),
+        e([4, 0, 0]),
+        e([5, 1, 2]),
+        e([7, 0, 0]),
+        e([11, 0, 0]),
+    ];
+    let constants = ConstantOpeningUnitSegment {
+        unit_index: 7,
+        queries: vec![
+            ConstantOpeningQuerySegment {
+                row_index: 9,
+                values: vec![31, 37, 41],
+                siblings: Vec::new(),
+            },
+            ConstantOpeningQuerySegment {
+                row_index: 10,
+                values: vec![43, 47, 53],
+                siblings: Vec::new(),
+            },
+        ],
+    };
+    let witness = WitnessOpeningUnitSegment {
+        unit_index: 7,
+        queries: vec![
+            WitnessOpeningQuerySegment {
+                row_index: 9,
+                stages: vec![
+                    WitnessOpeningStageSegment {
+                        stage_index: 1,
+                        values: vec![101, 103],
+                        siblings: Vec::new(),
+                    },
+                    WitnessOpeningStageSegment {
+                        stage_index: 2,
+                        values: vec![201, 203, 211],
+                        siblings: Vec::new(),
+                    },
+                ],
+            },
+            WitnessOpeningQuerySegment {
+                row_index: 10,
+                stages: vec![
+                    WitnessOpeningStageSegment {
+                        stage_index: 1,
+                        values: vec![107, 109],
+                        siblings: Vec::new(),
+                    },
+                    WitnessOpeningStageSegment {
+                        stage_index: 2,
+                        values: vec![307, 311, 313],
+                        siblings: Vec::new(),
+                    },
+                ],
+            },
+        ],
+    };
+    let evaluations = PcsEvaluationUnitSegment {
+        unit_index: 7,
+        values: vec![[59, 61, 67]],
+    };
+    let code = VerifierCode {
+        expression_id: None,
+        stage: None,
+        line: String::new(),
+        temporary_count: 2,
+        operations: vec![
+            operation(
+                VerifierOperationKind::Add,
+                tmp(1),
+                vec![
+                    json!({"type": "cm", "id": 1, "dim": 3}),
+                    json!({"type": "const", "id": 0, "dim": 1}),
+                ],
+            ),
+            operation(VerifierOperationKind::Copy, tmp(0), vec![tmp(1)]),
+        ],
+    };
+
+    let values = evaluate_verifier_unit_queries(
+        &schedule,
+        VerifierUnitQueryEvalRequest {
+            unit_index: 7,
+            challenges: &challenges,
+            proof_values: &[],
+            constant_unit: &constants,
+            witness_unit: &witness,
+            evaluations: &evaluations,
+            code: &code,
+            publics: &[],
+        },
+    )
+    .expect("unit query verifier should evaluate");
+
+    assert_eq!(
+        values,
+        vec![
+            e([201, 203, 211]) + e([31, 0, 0]),
+            e([307, 311, 313]) + e([43, 0, 0])
+        ]
+    );
 }
