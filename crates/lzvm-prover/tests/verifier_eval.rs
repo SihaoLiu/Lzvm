@@ -1,6 +1,9 @@
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierOperation, VerifierOperationKind};
 use lzvm_field::{Ext3, Felt};
-use lzvm_prover::verifier_eval::{evaluate_verifier_code, VerifierEvalError, VerifierEvalInputs};
+use lzvm_prover::verifier_eval::{
+    evaluate_verifier_code, VerifierCommitmentColumn, VerifierEvalError, VerifierEvalInputs,
+    VerifierOpenedStage,
+};
 use serde_json::json;
 
 fn tmp(id: u32) -> serde_json::Value {
@@ -73,6 +76,8 @@ fn evaluates_verifier_code_arithmetic() {
         publics: &publics,
         constants: &[],
         commitments: &[],
+        opened_stages: &[],
+        commitment_columns: &[],
         zi: &[],
         proof_values: &[],
         x_div_x_sub: &[],
@@ -116,6 +121,8 @@ fn evaluates_verifier_code_with_auxiliary_vectors() {
         publics: &[],
         constants: &[],
         commitments: &[],
+        opened_stages: &[],
+        commitment_columns: &[],
         zi: &zi,
         proof_values: &proof_values,
         x_div_x_sub: &x_div_x_sub,
@@ -165,6 +172,55 @@ fn evaluates_verifier_code_with_opened_values() {
         value,
         Ext3::from_u64s([11, 0, 0]) + Ext3::from_u64s([13, 17, 19])
     );
+}
+
+#[test]
+fn evaluates_verifier_code_with_mapped_commitment_values() {
+    let code = code(
+        1,
+        vec![operation(
+            VerifierOperationKind::Copy,
+            tmp(0),
+            vec![json!({"type": "cm", "id": 1, "dim": 3})],
+        )],
+    );
+    let stage_one_values = [
+        Felt::from_u64(101),
+        Felt::from_u64(103),
+        Felt::from_u64(107),
+        Felt::from_u64(109),
+        Felt::from_u64(113),
+    ];
+    let stage_two_values = [Felt::from_u64(13), Felt::from_u64(17), Felt::from_u64(19)];
+    let opened_stages = [
+        VerifierOpenedStage {
+            stage_index: 1,
+            values: &stage_one_values,
+        },
+        VerifierOpenedStage {
+            stage_index: 2,
+            values: &stage_two_values,
+        },
+    ];
+    let commitment_columns = [
+        VerifierCommitmentColumn {
+            stage_index: 1,
+            position: 4,
+        },
+        VerifierCommitmentColumn {
+            stage_index: 2,
+            position: 0,
+        },
+    ];
+    let inputs = VerifierEvalInputs {
+        opened_stages: &opened_stages,
+        commitment_columns: &commitment_columns,
+        ..VerifierEvalInputs::default()
+    };
+
+    let value = evaluate_verifier_code(&code, &inputs).expect("code should evaluate");
+
+    assert_eq!(value, Ext3::from_u64s([13, 17, 19]));
 }
 
 #[test]

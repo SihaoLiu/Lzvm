@@ -3,6 +3,18 @@ use std::fmt;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierOperationKind};
 use lzvm_field::{Ext3, Felt};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VerifierOpenedStage<'a> {
+    pub stage_index: u32,
+    pub values: &'a [Felt],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VerifierCommitmentColumn {
+    pub stage_index: u32,
+    pub position: usize,
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct VerifierEvalInputs<'a> {
     pub challenges: &'a [Ext3],
@@ -10,6 +22,8 @@ pub struct VerifierEvalInputs<'a> {
     pub publics: &'a [Felt],
     pub constants: &'a [Felt],
     pub commitments: &'a [Felt],
+    pub opened_stages: &'a [VerifierOpenedStage<'a>],
+    pub commitment_columns: &'a [VerifierCommitmentColumn],
     pub zi: &'a [Ext3],
     pub proof_values: &'a [Ext3],
     pub x_div_x_sub: &'a [Ext3],
@@ -33,6 +47,9 @@ pub enum VerifierEvalError {
     },
     UnsupportedDimension {
         dimension: usize,
+    },
+    MissingOpenedStage {
+        stage_index: u32,
     },
     TemporaryIndexOutOfRange {
         index: usize,
@@ -71,6 +88,9 @@ impl fmt::Display for VerifierEvalError {
             }
             Self::UnsupportedDimension { dimension } => {
                 write!(f, "unsupported verifier evaluation dimension: {dimension}")
+            }
+            Self::MissingOpenedStage { stage_index } => {
+                write!(f, "missing verifier evaluation opened stage: {stage_index}")
             }
             Self::TemporaryIndexOutOfRange { index, len } => write!(
                 f,
@@ -206,7 +226,7 @@ fn resolve_source(
         "cm" => {
             let index = usize_field(object, "id")?;
             let dimension = optional_usize_field(object, "dim")?.unwrap_or(1);
-            read_felt_vector("cm", index, dimension, inputs.commitments)
+            read_commitment_vector(index, dimension, inputs)
         }
         "Zi" => {
             let index = match optional_usize_field(object, "boundaryId")? {
@@ -336,6 +356,33 @@ fn read_felt_vector(
         }
         _ => Err(VerifierEvalError::UnsupportedDimension { dimension }),
     }
+}
+
+fn read_commitment_vector(
+    index: usize,
+    dimension: usize,
+    inputs: &VerifierEvalInputs<'_>,
+) -> Result<Ext3, VerifierEvalError> {
+    if inputs.commitment_columns.is_empty() || inputs.opened_stages.is_empty() {
+        return read_felt_vector("cm", index, dimension, inputs.commitments);
+    }
+
+    let column = inputs.commitment_columns.get(index).ok_or_else(|| {
+        VerifierEvalError::SourceIndexOutOfRange {
+            kind: "cm".to_owned(),
+            index,
+            len: inputs.commitment_columns.len(),
+        }
+    })?;
+    let stage = inputs
+        .opened_stages
+        .iter()
+        .find(|stage| stage.stage_index == column.stage_index)
+        .ok_or(VerifierEvalError::MissingOpenedStage {
+            stage_index: column.stage_index,
+        })?;
+
+    read_felt_vector("cm", column.position, dimension, stage.values)
 }
 
 fn check_index(kind: &str, index: usize, len: usize) -> Result<(), VerifierEvalError> {
