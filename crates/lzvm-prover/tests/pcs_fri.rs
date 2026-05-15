@@ -5,10 +5,12 @@ use lzvm_artifacts::pcs_fri_segment::{
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_field::{poseidon2_hash_8, Ext3, Felt, SHIFT};
 use lzvm_prover::pcs_fri::{
-    build_pcs_fri_opening_unit, verify_fri_fold, verify_fri_last_level_root,
-    verify_fri_opening_folds, verify_fri_query_path, PcsFriFoldError, PcsFriMerkleError,
-    PcsFriOpeningBuildRequest, PcsFriOpeningFoldRequest,
+    build_pcs_fri_opening_unit, build_pcs_fri_transcript_commitments, verify_fri_fold,
+    verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path, PcsFriFoldError,
+    PcsFriMerkleError, PcsFriOpeningBuildRequest, PcsFriOpeningFoldRequest,
+    PcsFriTranscriptCommitmentRequest,
 };
+use lzvm_prover::pcs_transcript::{derive_pcs_transcript_challenges, PcsTranscriptInputs};
 use lzvm_prover::ProveUnitSchedule;
 
 #[test]
@@ -387,8 +389,150 @@ fn builds_fri_opening_unit_from_polynomial_values() {
     }
 }
 
+#[test]
+fn derives_fri_transcript_commitments_from_polynomial_values() {
+    let schedule = ProveUnitSchedule {
+        kind: KeyUnitKind::Basic,
+        group_id: None,
+        unit_id: None,
+        group_name: None,
+        unit_name: None,
+        base_domain_bits: 2,
+        extended_domain_bits: 3,
+        base_domain_size: 4,
+        extended_domain_size: 8,
+        blowup_factor: 2,
+        query_count: 2,
+        proof_of_work_bits: 0,
+        merkle_tree_arity: 2,
+        last_level_verification: 1,
+        transcript_arity: Some(2),
+        hash_commits: false,
+        transcript_root_challenge_draws: vec![1, 2],
+        challenge_count: 5,
+        evaluation_value_count: 1,
+        transcript_evaluation_challenge_draws: 2,
+        constant_width: 1,
+        stage_commit_widths: vec![1, 1],
+        commitment_columns: Vec::new(),
+        unit_value_map: Vec::new(),
+        group_value_map: Vec::new(),
+        opening_points: vec![0],
+        fri_layers: vec![
+            PcsFriLayer {
+                input_bits: 3,
+                output_bits: 2,
+                folding_factor: 2,
+            },
+            PcsFriLayer {
+                input_bits: 2,
+                output_bits: 1,
+                folding_factor: 2,
+            },
+        ],
+        final_layer_bits: 1,
+        fixed_bytes: 0,
+        constant_tree_root: None,
+        pcs_material_bytes: None,
+        pcs_material_plan_digest: None,
+        pcs_material_fixed_column_digest: None,
+        pcs_material_constant_tree_digest: None,
+        pcs_material_constant_tree_root: None,
+        pcs_material_fixed_byte_count: None,
+        pcs_material_constant_tree_byte_count: None,
+        pcs_material_leaf_byte_count: None,
+        pcs_material_node_byte_count: None,
+    };
+    let constant_root = root(90);
+    let public_values = values(&[3, 4]);
+    let witness_roots = vec![root(10), root(20)];
+    let evaluations = vec![Ext3::from_u64s([30, 31, 32])];
+    let polynomial = (0_u64..8)
+        .map(|index| Ext3::from_u64s([index + 1, index + 11, index + 21]))
+        .collect::<Vec<_>>();
+
+    let commitments = build_pcs_fri_transcript_commitments(
+        &schedule,
+        PcsFriTranscriptCommitmentRequest {
+            arity: 2,
+            hash_values: false,
+            constant_root,
+            public_values: &public_values,
+            witness_roots: &witness_roots,
+            root_challenge_draws: &[1, 2],
+            unit_value_map: &[],
+            unit_values: &[],
+            evaluation_values: &evaluations,
+            evaluation_challenge_draws: 2,
+            polynomial: &polynomial,
+        },
+    )
+    .expect("FRI transcript commitments should build");
+
+    let expected_challenges = derive_pcs_transcript_challenges(PcsTranscriptInputs {
+        arity: 2,
+        hash_values: false,
+        constant_root,
+        public_values: &public_values,
+        witness_roots: &witness_roots,
+        root_challenge_draws: &[1, 2],
+        unit_value_map: &[],
+        unit_values: &[],
+        evaluation_values: &evaluations,
+        evaluation_challenge_draws: 2,
+        fri_roots: &commitments.layer_roots,
+        final_polynomial: &commitments.final_polynomial,
+    })
+    .expect("transcript challenges should derive");
+    let opening = build_pcs_fri_opening_unit(
+        &schedule,
+        PcsFriOpeningBuildRequest {
+            unit_index: 0,
+            query_rows: &[1, 6],
+            challenges: &commitments.challenges,
+            polynomial: &polynomial,
+        },
+    )
+    .expect("FRI opening should build from derived challenges");
+    let opening_roots = opening
+        .layers
+        .iter()
+        .map(|layer| digest_from_u64s(layer.root))
+        .collect::<Vec<_>>();
+
+    assert_eq!(commitments.challenges, expected_challenges);
+    assert_eq!(
+        commitments.final_query_challenge,
+        *expected_challenges
+            .last()
+            .expect("final challenge should exist")
+    );
+    assert_eq!(commitments.layer_roots, opening_roots);
+    assert_eq!(
+        commitments
+            .final_polynomial
+            .iter()
+            .map(|value| value.to_u64s())
+            .collect::<Vec<_>>(),
+        opening.final_polynomial
+    );
+}
+
 fn scale(value: Ext3, scalar: Felt) -> Ext3 {
     Ext3::new(value.c0 * scalar, value.c1 * scalar, value.c2 * scalar)
+}
+
+fn values(items: &[u64]) -> Vec<Felt> {
+    items.iter().copied().map(Felt::from_u64).collect()
+}
+
+fn root(seed: u64) -> [Felt; 4] {
+    [
+        Felt::from_u64(seed),
+        Felt::from_u64(seed + 1),
+        Felt::from_u64(seed + 2),
+        Felt::from_u64(seed + 3),
+    ]
 }
 
 fn fold_full_layer(

@@ -4,11 +4,13 @@ use lzvm_artifacts::pcs_fri_segment::{
     PcsFriOpeningLayerSegment, PcsFriOpeningLevelSegment, PcsFriOpeningQuerySegment,
     PcsFriOpeningUnitSegment,
 };
-use lzvm_field::{intt_in_place, DomainError, Ext3, Felt, FieldError, SHIFT};
+use lzvm_artifacts::setup_info::StageValue;
+use lzvm_field::{intt_in_place, DomainError, Ext3, Felt, FieldError, PoseidonTranscript, SHIFT};
 
 use crate::merkle_hash::{
     linear_hash, parent_hash, root_from_digest_level, MerkleHashError, HASH_WORDS,
 };
+use crate::pcs_transcript::{absorb_commit_values, PcsTranscriptError};
 use crate::ProveUnitSchedule;
 
 #[derive(Debug, Clone, Copy)]
@@ -25,6 +27,29 @@ pub struct PcsFriOpeningBuildRequest<'a> {
     pub query_rows: &'a [u64],
     pub challenges: &'a [Ext3],
     pub polynomial: &'a [Ext3],
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PcsFriTranscriptCommitmentRequest<'a> {
+    pub arity: usize,
+    pub hash_values: bool,
+    pub constant_root: [Felt; 4],
+    pub public_values: &'a [Felt],
+    pub witness_roots: &'a [[Felt; 4]],
+    pub root_challenge_draws: &'a [usize],
+    pub unit_value_map: &'a [StageValue],
+    pub unit_values: &'a [Felt],
+    pub evaluation_values: &'a [Ext3],
+    pub evaluation_challenge_draws: usize,
+    pub polynomial: &'a [Ext3],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PcsFriTranscriptCommitments {
+    pub challenges: Vec<Ext3>,
+    pub layer_roots: Vec<[Felt; 4]>,
+    pub final_polynomial: Vec<Ext3>,
+    pub final_query_challenge: Ext3,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -228,6 +253,44 @@ impl From<PcsFriMerkleError> for PcsFriOpeningBuildError {
 impl From<PcsFriFoldError> for PcsFriOpeningBuildError {
     fn from(error: PcsFriFoldError) -> Self {
         Self::Fold(error)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PcsFriTranscriptCommitmentError {
+    Transcript(PcsTranscriptError),
+    Opening(PcsFriOpeningBuildError),
+}
+
+impl fmt::Display for PcsFriTranscriptCommitmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Transcript(error) => {
+                write!(f, "PCS FRI transcript commitment failed: {error}")
+            }
+            Self::Opening(error) => write!(f, "PCS FRI transcript opening failed: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for PcsFriTranscriptCommitmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Transcript(error) => Some(error),
+            Self::Opening(error) => Some(error),
+        }
+    }
+}
+
+impl From<PcsTranscriptError> for PcsFriTranscriptCommitmentError {
+    fn from(error: PcsTranscriptError) -> Self {
+        Self::Transcript(error)
+    }
+}
+
+impl From<PcsFriOpeningBuildError> for PcsFriTranscriptCommitmentError {
+    fn from(error: PcsFriOpeningBuildError) -> Self {
+        Self::Opening(error)
     }
 }
 
@@ -538,6 +601,116 @@ pub fn verify_fri_last_level_root(
     Ok(root_from_digest_level(last_level, arity)? == root)
 }
 
+pub fn build_pcs_fri_transcript_commitments(
+    schedule: &ProveUnitSchedule,
+    request: PcsFriTranscriptCommitmentRequest<'_>,
+) -> Result<PcsFriTranscriptCommitments, PcsFriTranscriptCommitmentError> {
+    if schedule.fri_layers.is_empty() {
+        return Err(PcsFriOpeningBuildError::EmptyFriLayers.into());
+    }
+
+    let (mut transcript, mut challenges) = build_fri_transcript_prefix(request)?;
+    challenges.push(Ext3::ZERO);
+
+    let arity = usize::try_from(schedule.merkle_tree_arity)
+        .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
+    let mut current = request.polynomial.to_vec();
+    let mut current_bits = schedule.fri_layers[0].input_bits;
+    let expected_initial_len = build_domain_size(current_bits)?;
+    if current.len() != expected_initial_len {
+        return Err(PcsFriOpeningBuildError::PolynomialLengthMismatch {
+            layer_index: 0,
+            expected: expected_initial_len,
+            found: current.len(),
+        }
+        .into());
+    }
+
+    let mut layer_roots = Vec::with_capacity(schedule.fri_layers.len());
+    for (layer_index, layer) in schedule.fri_layers.iter().enumerate() {
+        if layer.input_bits != current_bits {
+            return Err(PcsFriOpeningBuildError::LayerInputMismatch {
+                layer_index,
+                expected: current_bits,
+                found: layer.input_bits,
+            }
+            .into());
+        }
+        if layer.output_bits >= layer.input_bits {
+            return Err(PcsFriOpeningBuildError::InvalidLayerBits {
+                layer_index,
+                input_bits: layer.input_bits,
+                output_bits: layer.output_bits,
+            }
+            .into());
+        }
+
+        let output_size = build_domain_size(layer.output_bits)?;
+        let folding_factor = usize::try_from(layer.folding_factor)
+            .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
+        let expected_folding_factor = build_domain_size(layer.input_bits - layer.output_bits)?;
+        if folding_factor != expected_folding_factor {
+            return Err(PcsFriOpeningBuildError::FoldingFactorMismatch {
+                layer_index,
+                expected: expected_folding_factor,
+                found: folding_factor,
+            }
+            .into());
+        }
+
+        let grouped_values =
+            group_fri_layer_values(layer_index, &current, output_size, folding_factor)?;
+        let tree = build_fri_layer_tree(&grouped_values, arity, schedule.last_level_verification)?;
+        layer_roots.push(tree.root);
+        transcript.put(&tree.root);
+        let challenge = transcript.get_field();
+        challenges.push(challenge);
+
+        let mut next = Vec::with_capacity(output_size);
+        for (row_index, values) in grouped_values.iter().enumerate() {
+            next.push(
+                verify_fri_fold(
+                    schedule.extended_domain_bits,
+                    layer.output_bits,
+                    layer.input_bits,
+                    challenge,
+                    u64::try_from(row_index)
+                        .map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?,
+                    values,
+                )
+                .map_err(PcsFriOpeningBuildError::from)?,
+            );
+        }
+        current = next;
+        current_bits = layer.output_bits;
+    }
+
+    if current_bits != schedule.final_layer_bits {
+        return Err(PcsFriOpeningBuildError::FinalLayerMismatch {
+            expected: schedule.final_layer_bits,
+            found: current_bits,
+        }
+        .into());
+    }
+
+    let final_values = flatten_extension_values_for_transcript(&current);
+    absorb_commit_values(
+        &mut transcript,
+        request.arity,
+        request.hash_values,
+        &final_values,
+    )?;
+    let final_query_challenge = transcript.get_field();
+    challenges.push(final_query_challenge);
+
+    Ok(PcsFriTranscriptCommitments {
+        challenges,
+        layer_roots,
+        final_polynomial: current,
+        final_query_challenge,
+    })
+}
+
 pub fn build_pcs_fri_opening_unit(
     schedule: &ProveUnitSchedule,
     request: PcsFriOpeningBuildRequest<'_>,
@@ -828,6 +1001,101 @@ fn evaluate_extension_polynomial(coefficients: &[Ext3], point: Ext3) -> Ext3 {
 
 fn scale_extension(value: Ext3, scalar: Felt) -> Ext3 {
     Ext3::new(value.c0 * scalar, value.c1 * scalar, value.c2 * scalar)
+}
+
+fn build_fri_transcript_prefix(
+    request: PcsFriTranscriptCommitmentRequest<'_>,
+) -> Result<(PoseidonTranscript, Vec<Ext3>), PcsTranscriptError> {
+    if request.witness_roots.len() != request.root_challenge_draws.len() {
+        return Err(PcsTranscriptError::RootChallengeDrawMismatch {
+            root_count: request.witness_roots.len(),
+            draw_count: request.root_challenge_draws.len(),
+        });
+    }
+
+    let mut transcript = PoseidonTranscript::new(request.arity)?;
+    let mut challenges = Vec::new();
+    transcript.put(&request.constant_root);
+
+    if !request.public_values.is_empty() {
+        absorb_commit_values(
+            &mut transcript,
+            request.arity,
+            request.hash_values,
+            request.public_values,
+        )?;
+    }
+
+    for (stage_index, (root, draw_count)) in request
+        .witness_roots
+        .iter()
+        .zip(request.root_challenge_draws.iter())
+        .enumerate()
+    {
+        let stage =
+            u32::try_from(stage_index + 1).map_err(|_| PcsTranscriptError::LengthOverflow)?;
+        transcript.put(root);
+        absorb_transcript_stage_unit_values(
+            &mut transcript,
+            stage,
+            request.unit_value_map,
+            request.unit_values,
+        )?;
+        draw_transcript_fields(&mut transcript, *draw_count, &mut challenges);
+    }
+
+    if !request.evaluation_values.is_empty() {
+        let values = flatten_extension_values_for_transcript(request.evaluation_values);
+        absorb_commit_values(&mut transcript, request.arity, request.hash_values, &values)?;
+    }
+    draw_transcript_fields(
+        &mut transcript,
+        request.evaluation_challenge_draws,
+        &mut challenges,
+    );
+
+    Ok((transcript, challenges))
+}
+
+fn absorb_transcript_stage_unit_values(
+    transcript: &mut PoseidonTranscript,
+    stage: u32,
+    value_map: &[StageValue],
+    values: &[Felt],
+) -> Result<(), PcsTranscriptError> {
+    let mut offset = 0_usize;
+    for (value_index, value) in value_map.iter().enumerate() {
+        let width = if value.stage == 1 { 1 } else { 3 };
+        let end = offset
+            .checked_add(width)
+            .ok_or(PcsTranscriptError::LengthOverflow)?;
+        if end > values.len() {
+            return Err(PcsTranscriptError::UnitValueOutOfRange {
+                value_index,
+                offset,
+                width,
+                len: values.len(),
+            });
+        }
+        if value.stage == stage && value.stage > 1 {
+            transcript.put(&values[offset..end]);
+        }
+        offset = end;
+    }
+    Ok(())
+}
+
+fn draw_transcript_fields(transcript: &mut PoseidonTranscript, count: usize, out: &mut Vec<Ext3>) {
+    for _ in 0..count {
+        out.push(transcript.get_field());
+    }
+}
+
+fn flatten_extension_values_for_transcript(values: &[Ext3]) -> Vec<Felt> {
+    values
+        .iter()
+        .flat_map(|value| [value.c0, value.c1, value.c2])
+        .collect()
 }
 
 fn flatten_extension_values(values: &[Ext3]) -> Result<Vec<Felt>, PcsFriMerkleError> {
