@@ -6,8 +6,8 @@ use lzvm_artifacts::fixed::{
     read_fixed_columns_file, read_fixed_columns_file_for_setup, FixedColumn, FixedColumns,
 };
 use lzvm_artifacts::key_directory::{
-    key_directory_catalog_digest_hex, read_key_directory_catalog, read_key_directory_layout,
-    validate_key_directory_layout,
+    key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
+    read_key_directory_layout, validate_key_directory_layout,
 };
 use lzvm_artifacts::proof::read_proof_artifact_file;
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
@@ -24,6 +24,10 @@ use serde_json::Value;
 
 pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
+        ["verify", "setup-preflight", setup_dir, proof_bin, public_values_json] => {
+            verify_setup_preflight(setup_dir, proof_bin, public_values_json, stdout, stderr)
+        }
+        ["verify", "setup-preflight", ..] => write_verify_setup_preflight_usage(stderr),
         ["verify", "preflight", proof_bin, public_values_json] => {
             verify_preflight(proof_bin, public_values_json, stdout, stderr)
         }
@@ -285,6 +289,74 @@ fn verify_preflight(
     }
 
     let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "segments={}", proof.segments.len());
+    let _ = writeln!(stdout, "public_values={}", public_values.values.len());
+    0
+}
+
+fn verify_setup_preflight(
+    setup_dir: &str,
+    proof_bin: &str,
+    public_values_json: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let catalog = match read_key_directory_catalog(setup_dir) {
+        Ok(catalog) => catalog,
+        Err(error) => {
+            let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
+            return 1;
+        }
+    };
+    let setup_hash = match key_directory_catalog_digest(&catalog) {
+        Ok(setup_hash) => setup_hash,
+        Err(error) => {
+            let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
+            return 1;
+        }
+    };
+    let proof = match read_proof_artifact_file(proof_bin) {
+        Ok(proof) => proof,
+        Err(error) => {
+            let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
+            return 1;
+        }
+    };
+    let public_values = match read_public_values_file(public_values_json) {
+        Ok(public_values) => public_values,
+        Err(error) => {
+            let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
+            return 1;
+        }
+    };
+    if proof.setup_hash != public_values.setup_hash {
+        let _ = writeln!(stderr, "verify setup-preflight failed: setup hash mismatch");
+        return 1;
+    }
+    if proof.setup_hash != setup_hash {
+        let _ = writeln!(
+            stderr,
+            "verify setup-preflight failed: setup catalog fingerprint mismatch"
+        );
+        return 1;
+    }
+    let digest = match public_values_digest(&public_values) {
+        Ok(digest) => digest,
+        Err(error) => {
+            let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
+            return 1;
+        }
+    };
+    if proof.public_values_hash != digest {
+        let _ = writeln!(
+            stderr,
+            "verify setup-preflight failed: public-values hash mismatch"
+        );
+        return 1;
+    }
+
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "units={}", catalog.units.len());
     let _ = writeln!(stdout, "segments={}", proof.segments.len());
     let _ = writeln!(stdout, "public_values={}", public_values.values.len());
     0
@@ -953,6 +1025,14 @@ fn write_verify_preflight_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
         "usage: lzvm verify preflight <proof-bin> <public-values-json>"
+    );
+    2
+}
+
+fn write_verify_setup_preflight_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm verify setup-preflight <setup-dir> <proof-bin> <public-values-json>"
     );
     2
 }

@@ -45,6 +45,14 @@ cargo run -p lzvm-cli -- verify preflight <proof-bin> <public-values-json>
 
 This command parses the native proof envelope and public-values JSON, checks that setup hashes match, checks that the proof envelope references the canonical public-values hash, and prints a stable summary. It is an artifact preflight check, not a full proof verifier.
 
+Check proof, public-value, and setup catalog consistency:
+
+```sh
+cargo run -p lzvm-cli -- verify setup-preflight <setup-dir> <proof-bin> <public-values-json>
+```
+
+This command runs the proof/public-values preflight and also checks that the proof setup hash matches the deterministic setup catalog fingerprint for the supplied setup directory. It is a setup-aware artifact preflight check, not a full proof verifier.
+
 Encode setup metadata JSON into the repository-owned binary setup format:
 
 ```sh

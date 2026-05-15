@@ -8,8 +8,12 @@ use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
 use lzvm_artifacts::key_directory::{
-    key_directory_catalog_digest_hex, read_key_directory_catalog, read_key_directory_layout,
-    KeyUnitPaths,
+    key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
+    read_key_directory_layout, KeyUnitPaths,
+};
+use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
+use lzvm_artifacts::public_values::{
+    encode_public_values_json, public_values_digest, PublicValueEntry, PublicValues,
 };
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use lzvm_cli::run_cli;
@@ -138,6 +142,28 @@ fn sample_expression_program() -> ExpressionProgram {
     }
 }
 
+fn sample_public_values(setup_hash: [u8; 32]) -> PublicValues {
+    PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: vec![PublicValueEntry {
+            name: "block_number".to_owned(),
+            elements: vec![12_345],
+        }],
+    }
+}
+
+fn sample_proof(public_values: &PublicValues) -> ProofArtifact {
+    ProofArtifact {
+        setup_hash: public_values.setup_hash,
+        public_values_hash: public_values_digest(public_values).expect("digest should compute"),
+        segments: vec![ProofSegment {
+            id: 100,
+            data: vec![1, 2, 3, 4],
+        }],
+    }
+}
+
 fn sample_raw_fixed_columns() -> Vec<u8> {
     let mut bytes = Vec::new();
     for value in [1_u64, 10, 2, 20] {
@@ -219,6 +245,22 @@ fn write_setup_directory(root: &Path) {
     }
 }
 
+fn write_proof_pair(root: &Path, setup_hash: [u8; 32]) -> (PathBuf, PathBuf) {
+    let public_values = sample_public_values(setup_hash);
+    let proof = sample_proof(&public_values);
+    let proof_path = root.join("proof.bin");
+    let public_values_path = root.join("public_values.json");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_text(
+        &public_values_path,
+        &encode_public_values_json(&public_values).expect("public values should encode"),
+    );
+    (proof_path, public_values_path)
+}
+
 #[test]
 fn validates_a_complete_setup_directory() {
     let dir = temp_dir("valid");
@@ -276,6 +318,72 @@ fn fingerprints_a_complete_setup_directory() {
 }
 
 #[test]
+fn runs_setup_aware_verify_preflight() {
+    let dir = temp_dir("verify-setup-preflight");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let (proof_path, public_values_path) = write_proof_pair(&dir, setup_hash);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        "status=ok\nunits=4\nsegments=1\npublic_values=1\n"
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn rejects_setup_aware_verify_preflight_with_mismatched_setup_catalog() {
+    let dir = temp_dir("verify-setup-preflight-bad-setup");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let (proof_path, public_values_path) = write_proof_pair(&dir, [0x88; 32]);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: setup catalog fingerprint mismatch\n"
+    );
+}
+
+#[test]
 fn reports_usage_for_missing_setup_directory() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -300,5 +408,19 @@ fn reports_usage_for_missing_fingerprint_directory() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "usage: lzvm setup fingerprint <setup-dir>\n"
+    );
+}
+
+#[test]
+fn reports_usage_for_missing_setup_preflight_inputs() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(&["verify", "setup-preflight"], &mut stdout, &mut stderr);
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "usage: lzvm verify setup-preflight <setup-dir> <proof-bin> <public-values-json>\n"
     );
 }
