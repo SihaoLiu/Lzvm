@@ -13,6 +13,7 @@ use lzvm_artifacts::witness_library::{
 };
 
 pub mod constant_tree_opening;
+mod merkle_hash;
 pub mod pcs_fri;
 mod prove_witness;
 pub mod witness_commitment;

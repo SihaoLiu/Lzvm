@@ -2,6 +2,10 @@ use std::fmt;
 
 use lzvm_field::{intt_in_place, DomainError, Ext3, Felt, FieldError, SHIFT};
 
+use crate::merkle_hash::{
+    linear_hash, parent_hash, root_from_digest_level, MerkleHashError, HASH_WORDS,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcsFriFoldError {
     InvalidLayerBits { current_bits: u32, prev_bits: u32 },
@@ -73,6 +77,51 @@ impl From<FieldError> for PcsFriFoldError {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PcsFriMerkleError {
+    UnsupportedArity { arity: usize },
+    EmptyValues,
+    EmptyLastLevel,
+    InvalidSiblingCount { expected: usize, found: usize },
+    LastLevelIndexOutOfRange { index: u64, node_count: usize },
+    LengthOverflow,
+}
+
+impl fmt::Display for PcsFriMerkleError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnsupportedArity { arity } => {
+                write!(f, "PCS FRI Merkle arity is unsupported: {arity}")
+            }
+            Self::EmptyValues => write!(f, "PCS FRI Merkle query has no values"),
+            Self::EmptyLastLevel => write!(f, "PCS FRI Merkle last level is empty"),
+            Self::InvalidSiblingCount { expected, found } => write!(
+                f,
+                "PCS FRI Merkle sibling count mismatch: expected {expected}, found {found}"
+            ),
+            Self::LastLevelIndexOutOfRange { index, node_count } => write!(
+                f,
+                "PCS FRI Merkle last-level index {index} is outside node count {node_count}"
+            ),
+            Self::LengthOverflow => write!(f, "PCS FRI Merkle length overflow"),
+        }
+    }
+}
+
+impl std::error::Error for PcsFriMerkleError {}
+
+impl From<MerkleHashError> for PcsFriMerkleError {
+    fn from(error: MerkleHashError) -> Self {
+        match error {
+            MerkleHashError::UnsupportedArity { arity } => Self::UnsupportedArity { arity },
+            MerkleHashError::InvalidChildCount { expected, found } => {
+                Self::InvalidSiblingCount { expected, found }
+            }
+            MerkleHashError::LengthOverflow => Self::LengthOverflow,
+        }
+    }
+}
+
 pub fn verify_fri_fold(
     n_bits_ext: u32,
     current_bits: u32,
@@ -119,6 +168,74 @@ pub fn verify_fri_fold(
     ))
 }
 
+pub fn verify_fri_query_path(
+    root: [Felt; HASH_WORDS],
+    last_level: &[[Felt; HASH_WORDS]],
+    arity: usize,
+    row_index: u64,
+    values: &[Ext3],
+    siblings: &[Vec<[Felt; HASH_WORDS]>],
+) -> Result<bool, PcsFriMerkleError> {
+    if values.is_empty() {
+        return Err(PcsFriMerkleError::EmptyValues);
+    }
+    let flattened_values = flatten_extension_values(values)?;
+    let mut digest = linear_hash(&flattened_values, arity)?;
+    let mut path_index = row_index;
+    let arity_u64 = u64::try_from(arity).map_err(|_| PcsFriMerkleError::LengthOverflow)?;
+    let expected_siblings = arity
+        .checked_sub(1)
+        .ok_or(PcsFriMerkleError::LengthOverflow)?;
+
+    for level in siblings {
+        if level.len() != expected_siblings {
+            return Err(PcsFriMerkleError::InvalidSiblingCount {
+                expected: expected_siblings,
+                found: level.len(),
+            });
+        }
+
+        let child_slot = usize::try_from(path_index % arity_u64)
+            .map_err(|_| PcsFriMerkleError::LengthOverflow)?;
+        let mut children = vec![[Felt::ZERO; HASH_WORDS]; arity];
+        let mut sibling_index = 0;
+        for (slot, child) in children.iter_mut().enumerate() {
+            if slot == child_slot {
+                *child = digest;
+            } else {
+                *child = level[sibling_index];
+                sibling_index += 1;
+            }
+        }
+        digest = parent_hash(&children, arity)?;
+        path_index /= arity_u64;
+    }
+
+    if last_level.is_empty() {
+        Ok(digest == root)
+    } else {
+        let index = usize::try_from(path_index).map_err(|_| PcsFriMerkleError::LengthOverflow)?;
+        let target = last_level
+            .get(index)
+            .ok_or(PcsFriMerkleError::LastLevelIndexOutOfRange {
+                index: path_index,
+                node_count: last_level.len(),
+            })?;
+        Ok(digest == *target)
+    }
+}
+
+pub fn verify_fri_last_level_root(
+    root: [Felt; HASH_WORDS],
+    arity: usize,
+    last_level: &[[Felt; HASH_WORDS]],
+) -> Result<bool, PcsFriMerkleError> {
+    if last_level.is_empty() {
+        return Err(PcsFriMerkleError::EmptyLastLevel);
+    }
+    Ok(root_from_digest_level(last_level, arity)? == root)
+}
+
 fn interpolate_fold_values(values: &[Ext3], bits: usize) -> Result<Vec<Ext3>, PcsFriFoldError> {
     let mut c0 = Vec::with_capacity(values.len());
     let mut c1 = Vec::with_capacity(values.len());
@@ -156,4 +273,18 @@ fn evaluate_extension_polynomial(coefficients: &[Ext3], point: Ext3) -> Ext3 {
 
 fn scale_extension(value: Ext3, scalar: Felt) -> Ext3 {
     Ext3::new(value.c0 * scalar, value.c1 * scalar, value.c2 * scalar)
+}
+
+fn flatten_extension_values(values: &[Ext3]) -> Result<Vec<Felt>, PcsFriMerkleError> {
+    let len = values
+        .len()
+        .checked_mul(3)
+        .ok_or(PcsFriMerkleError::LengthOverflow)?;
+    let mut out = Vec::with_capacity(len);
+    for value in values {
+        out.push(value.c0);
+        out.push(value.c1);
+        out.push(value.c2);
+    }
+    Ok(out)
 }
