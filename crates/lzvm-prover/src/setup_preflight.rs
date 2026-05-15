@@ -1,10 +1,12 @@
 use std::fmt;
+use std::path::Path;
 
 use lzvm_artifacts::key_directory::{
-    key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryError,
+    key_directory_catalog_digest, read_key_directory_catalog, KeyDirectoryCatalog,
+    KeyDirectoryError,
 };
-use lzvm_artifacts::proof::ProofArtifact;
-use lzvm_artifacts::public_values::PublicValues;
+use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact, ProofArtifactError};
+use lzvm_artifacts::public_values::{read_public_values_file, PublicValues, PublicValuesError};
 
 use crate::constant_opening::{
     validate_constant_opening_segments, ValidateConstantOpeningSegmentsError,
@@ -65,6 +67,14 @@ pub enum SetupPreflightError {
     PcsFri(ValidateOptionalPcsFriOpeningProofSegmentsError),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SetupPreflightFileError {
+    Catalog(KeyDirectoryError),
+    Proof(ProofArtifactError),
+    PublicValues(PublicValuesError),
+    SetupPreflight(SetupPreflightError),
+}
+
 impl fmt::Display for SetupPreflightError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -81,6 +91,17 @@ impl fmt::Display for SetupPreflightError {
             Self::GlobalConstraints(error) => write!(f, "{error}"),
             Self::GlobalHints(error) => write!(f, "{error}"),
             Self::PcsFri(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl fmt::Display for SetupPreflightFileError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Catalog(error) => write!(f, "{error}"),
+            Self::Proof(error) => write!(f, "{error}"),
+            Self::PublicValues(error) => write!(f, "{error}"),
+            Self::SetupPreflight(error) => write!(f, "{error}"),
         }
     }
 }
@@ -102,6 +123,41 @@ impl std::error::Error for SetupPreflightError {
             Self::PcsFri(error) => Some(error),
             Self::CatalogHashMismatch => None,
         }
+    }
+}
+
+impl std::error::Error for SetupPreflightFileError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Catalog(error) => Some(error),
+            Self::Proof(error) => Some(error),
+            Self::PublicValues(error) => Some(error),
+            Self::SetupPreflight(error) => Some(error),
+        }
+    }
+}
+
+impl From<KeyDirectoryError> for SetupPreflightFileError {
+    fn from(error: KeyDirectoryError) -> Self {
+        Self::Catalog(error)
+    }
+}
+
+impl From<ProofArtifactError> for SetupPreflightFileError {
+    fn from(error: ProofArtifactError) -> Self {
+        Self::Proof(error)
+    }
+}
+
+impl From<PublicValuesError> for SetupPreflightFileError {
+    fn from(error: PublicValuesError) -> Self {
+        Self::PublicValues(error)
+    }
+}
+
+impl From<SetupPreflightError> for SetupPreflightFileError {
+    fn from(error: SetupPreflightError) -> Self {
+        Self::SetupPreflight(error)
     }
 }
 
@@ -215,4 +271,15 @@ pub fn validate_setup_preflight(
     .map_err(SetupPreflightError::PcsFri)?;
 
     Ok(report)
+}
+
+pub fn validate_setup_preflight_from_files(
+    setup_dir: impl AsRef<Path>,
+    proof_path: impl AsRef<Path>,
+    public_values_path: impl AsRef<Path>,
+) -> Result<SetupPreflightReport, SetupPreflightFileError> {
+    let catalog = read_key_directory_catalog(setup_dir)?;
+    let proof = read_proof_artifact_file(proof_path)?;
+    let public_values = read_public_values_file(public_values_path)?;
+    validate_setup_preflight(&catalog, &proof, &public_values).map_err(Into::into)
 }

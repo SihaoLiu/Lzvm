@@ -76,6 +76,7 @@ use lzvm_prover::pcs_fri::{verify_fri_fold, verify_fri_opening_folds, PcsFriOpen
 use lzvm_prover::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptSegmentInputs,
 };
+use lzvm_prover::setup_preflight::validate_setup_preflight_from_files;
 use lzvm_prover::verifier_query::{
     evaluate_verifier_unit_queries, verify_query_outputs_against_fri_opening,
     VerifierFriComparisonRequest, VerifierUnitQueryEvalRequest,
@@ -3519,7 +3520,6 @@ fn validates_setup_aware_verify_preflight_with_proof_values() {
         &mut stdout,
         &mut stderr,
     );
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0);
     assert_eq!(
@@ -3527,6 +3527,14 @@ fn validates_setup_aware_verify_preflight_with_proof_values() {
         format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\n")
     );
     assert!(stderr.is_empty());
+
+    let report = validate_setup_preflight_from_files(&dir, &proof_path, &public_values_path)
+        .expect("file-based setup preflight should validate");
+    assert_eq!(report.unit_count, 4);
+    assert_eq!(report.segment_count, segment_count);
+    assert_eq!(report.public_value_count, 1);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]

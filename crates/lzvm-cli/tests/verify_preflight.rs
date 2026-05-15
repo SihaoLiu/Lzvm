@@ -6,6 +6,7 @@ use lzvm_artifacts::public_values::{
     encode_public_values, public_values_digest, PublicValueEntry, PublicValues,
 };
 use lzvm_cli::run_cli;
+use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
 
 fn sample_hash(byte: u8) -> [u8; 32] {
     [byte; 32]
@@ -90,7 +91,6 @@ fn verifies_proof_artifact_preflight() {
         &mut stdout,
         &mut stderr,
     );
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0);
     assert_eq!(
@@ -98,6 +98,13 @@ fn verifies_proof_artifact_preflight() {
         "status=ok\nsegments=1\npublic_values=2\n"
     );
     assert!(stderr.is_empty());
+
+    let report = validate_proof_public_values_from_files(&proof_path, &public_path)
+        .expect("file-based preflight should validate");
+    assert_eq!(report.segment_count, 1);
+    assert_eq!(report.public_value_count, 2);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]

@@ -1,12 +1,10 @@
 use std::io::Write;
 
 use lzvm_artifacts::key_directory::{key_directory_catalog_digest_hex, read_key_directory_catalog};
-use lzvm_artifacts::proof::read_proof_artifact_file;
-use lzvm_artifacts::public_values::read_public_values_file;
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_prover::derive_prove_schedule;
-use lzvm_prover::proof_preflight::validate_proof_public_values;
-use lzvm_prover::setup_preflight::validate_setup_preflight;
+use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
+use lzvm_prover::setup_preflight::validate_setup_preflight_from_files;
 use lzvm_setup::FixedExtensionBackend;
 
 mod prove_inputs;
@@ -295,21 +293,7 @@ fn verify_preflight(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    let proof = match read_proof_artifact_file(proof_bin) {
-        Ok(proof) => proof,
-        Err(error) => {
-            let _ = writeln!(stderr, "verify preflight failed: {error}");
-            return 1;
-        }
-    };
-    let public_values = match read_public_values_file(public_values_path) {
-        Ok(public_values) => public_values,
-        Err(error) => {
-            let _ = writeln!(stderr, "verify preflight failed: {error}");
-            return 1;
-        }
-    };
-    let report = match validate_proof_public_values(&proof, &public_values) {
+    let report = match validate_proof_public_values_from_files(proof_bin, public_values_path) {
         Ok(report) => report,
         Err(error) => {
             let _ = writeln!(stderr, "verify preflight failed: {error}");
@@ -330,34 +314,14 @@ fn verify_setup_preflight(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    let catalog = match read_key_directory_catalog(setup_dir) {
-        Ok(catalog) => catalog,
-        Err(error) => {
-            let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
-            return 1;
-        }
-    };
-    let proof = match read_proof_artifact_file(proof_bin) {
-        Ok(proof) => proof,
-        Err(error) => {
-            let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
-            return 1;
-        }
-    };
-    let public_values = match read_public_values_file(public_values_path) {
-        Ok(public_values) => public_values,
-        Err(error) => {
-            let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
-            return 1;
-        }
-    };
-    let public_report = match validate_setup_preflight(&catalog, &proof, &public_values) {
-        Ok(report) => report,
-        Err(error) => {
-            let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
-            return 1;
-        }
-    };
+    let public_report =
+        match validate_setup_preflight_from_files(setup_dir, proof_bin, public_values_path) {
+            Ok(report) => report,
+            Err(error) => {
+                let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
+                return 1;
+            }
+        };
 
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "units={}", public_report.unit_count);

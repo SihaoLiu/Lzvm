@@ -1,7 +1,10 @@
 use std::fmt;
+use std::path::Path;
 
-use lzvm_artifacts::proof::ProofArtifact;
-use lzvm_artifacts::public_values::{public_values_digest, PublicValues, PublicValuesError};
+use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact, ProofArtifactError};
+use lzvm_artifacts::public_values::{
+    public_values_digest, read_public_values_file, PublicValues, PublicValuesError,
+};
 use lzvm_field::{Felt, FieldError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +25,13 @@ pub enum PublicValueFieldError {
     Field(FieldError),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProofPreflightFileError {
+    Proof(ProofArtifactError),
+    PublicValues(PublicValuesError),
+    ProofPreflight(ProofPreflightError),
+}
+
 impl fmt::Display for ProofPreflightError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -36,6 +46,16 @@ impl fmt::Display for PublicValueFieldError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Field(error) => write!(f, "invalid PCS transcript public value: {error}"),
+        }
+    }
+}
+
+impl fmt::Display for ProofPreflightFileError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Proof(error) => write!(f, "{error}"),
+            Self::PublicValues(error) => write!(f, "{error}"),
+            Self::ProofPreflight(error) => write!(f, "{error}"),
         }
     }
 }
@@ -57,6 +77,34 @@ impl std::error::Error for PublicValueFieldError {
     }
 }
 
+impl std::error::Error for ProofPreflightFileError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Proof(error) => Some(error),
+            Self::PublicValues(error) => Some(error),
+            Self::ProofPreflight(error) => Some(error),
+        }
+    }
+}
+
+impl From<ProofArtifactError> for ProofPreflightFileError {
+    fn from(error: ProofArtifactError) -> Self {
+        Self::Proof(error)
+    }
+}
+
+impl From<PublicValuesError> for ProofPreflightFileError {
+    fn from(error: PublicValuesError) -> Self {
+        Self::PublicValues(error)
+    }
+}
+
+impl From<ProofPreflightError> for ProofPreflightFileError {
+    fn from(error: ProofPreflightError) -> Self {
+        Self::ProofPreflight(error)
+    }
+}
+
 pub fn validate_proof_public_values(
     proof: &ProofArtifact,
     public_values: &PublicValues,
@@ -75,6 +123,15 @@ pub fn validate_proof_public_values(
         segment_count: proof.segments.len(),
         public_value_count: public_values.values.len(),
     })
+}
+
+pub fn validate_proof_public_values_from_files(
+    proof_path: impl AsRef<Path>,
+    public_values_path: impl AsRef<Path>,
+) -> Result<ProofPreflightReport, ProofPreflightFileError> {
+    let proof = read_proof_artifact_file(proof_path)?;
+    let public_values = read_public_values_file(public_values_path)?;
+    validate_proof_public_values(&proof, &public_values).map_err(Into::into)
 }
 
 pub fn public_values_as_fields(
