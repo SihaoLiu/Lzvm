@@ -5,10 +5,75 @@ namespace {
 
 constexpr uint64_t kModulus = 0xffffffff00000001ULL;
 constexpr size_t kThreads = 256;
+constexpr size_t kPoseidon2Width4 = 4;
 constexpr size_t kPoseidon2Width8 = 8;
 constexpr size_t kPoseidon2Width16 = 16;
 constexpr size_t kPoseidon2HalfRounds = 4;
+constexpr size_t kPoseidon2Width4PartialRounds = 21;
 constexpr size_t kPoseidon2PartialRounds = 22;
+
+__device__ __constant__ uint64_t kPoseidon2Width4Diag[kPoseidon2Width4] = {
+    0xf0ce126fe8a83094ULL,
+    0x60f87e0b59fb4ee6ULL,
+    0xa8106c221cd6d882ULL,
+    0x5529eddc46e372e7ULL,
+};
+
+__device__ __constant__ uint64_t kPoseidon2Width4RoundConstants[53] = {
+    0x5098165ee28e503eULL,
+    0x41b84edfee6c0590ULL,
+    0xdda6bc081661f7b8ULL,
+    0xb56f892b5fc6d76cULL,
+    0xb2b7e92b1f70399fULL,
+    0x7075cc44042536e9ULL,
+    0xd5aae31b4968adb1ULL,
+    0x0713f06eb5e40337ULL,
+    0x80dccd8a419cc2d5ULL,
+    0x89ae3f75c9b53e2cULL,
+    0x8aac5449eff27e1dULL,
+    0xef29b2b24bf503f9ULL,
+    0xa1d4f9eaaa62e9fcULL,
+    0x2f215d5c5a0aa622ULL,
+    0x7b3447f34ae22dd9ULL,
+    0x4b614218a8e81eefULL,
+    0xe063343114e0f434ULL,
+    0x2cdedf7f0717ad4eULL,
+    0x4662c297f2537cf5ULL,
+    0x8fe48eee51761f3dULL,
+    0x616aead4ae0ebf00ULL,
+    0x9b40b73022b3089bULL,
+    0xa051e1646094b036ULL,
+    0xf69b2c13f377ff8eULL,
+    0x96f7dec4549af9beULL,
+    0x858371686234c707ULL,
+    0x8483ec4d5e3e8114ULL,
+    0x21aea04a4066e649ULL,
+    0xbed21bd95c72ec7eULL,
+    0x948655aafad4b757ULL,
+    0xd4b2ed65735823e2ULL,
+    0x1930ef5f54c40462ULL,
+    0xb3cc1696b1d3811eULL,
+    0xafe0336077202599ULL,
+    0x11da6a906ef66e3eULL,
+    0xd7abdf7d347fb43fULL,
+    0x65e7d3c9f0e8da86ULL,
+    0x0b73bdafed7f79f4ULL,
+    0x619b24eb14c29f0fULL,
+    0x85904bd8db9e3cd9ULL,
+    0x4c9c28e673abb589ULL,
+    0x73b20f643717949fULL,
+    0x832ab3faa2c0639aULL,
+    0xfa1d702bafb65207ULL,
+    0x03f5f17b0409003cULL,
+    0x2c3ff110b39f84d5ULL,
+    0x4cdfd3ff34ce6f4fULL,
+    0xd3acf5807f208db4ULL,
+    0x13d28634ce48e600ULL,
+    0xb065f0e667d7caf9ULL,
+    0x44f6f3d6b12825caULL,
+    0x243a64c03f36ea35ULL,
+    0x470a3b7c2f6a6a7aULL,
+};
 
 __device__ __constant__ uint64_t kPoseidon2Width8Diag[kPoseidon2Width8] = {
     0xa98811a1fed4e3a5ULL,
@@ -351,6 +416,46 @@ __device__ void poseidon2_matmul_m4(uint64_t* values) {
     values[3] = t4;
 }
 
+__device__ void poseidon2_matmul_external_width4(uint64_t* state) {
+    poseidon2_matmul_m4(state);
+}
+
+__device__ void poseidon2_pow7add_width4(uint64_t* state, size_t offset) {
+    for (size_t index = 0; index < kPoseidon2Width4; ++index) {
+        state[index] =
+            poseidon2_pow7(add_mod(state[index], kPoseidon2Width4RoundConstants[offset + index]));
+    }
+}
+
+__device__ void poseidon2_hash_width4(uint64_t* state) {
+    poseidon2_matmul_external_width4(state);
+
+    for (size_t round = 0; round < kPoseidon2HalfRounds; ++round) {
+        poseidon2_pow7add_width4(state, round * kPoseidon2Width4);
+        poseidon2_matmul_external_width4(state);
+    }
+
+    const size_t partial_offset = kPoseidon2HalfRounds * kPoseidon2Width4;
+    for (size_t round = 0; round < kPoseidon2Width4PartialRounds; ++round) {
+        state[0] =
+            poseidon2_pow7(add_mod(state[0], kPoseidon2Width4RoundConstants[partial_offset + round]));
+        uint64_t sum = 0;
+        for (size_t index = 0; index < kPoseidon2Width4; ++index) {
+            sum = add_mod(sum, state[index]);
+        }
+        for (size_t index = 0; index < kPoseidon2Width4; ++index) {
+            state[index] = add_mod(mul_mod(state[index], kPoseidon2Width4Diag[index]), sum);
+        }
+    }
+
+    const size_t final_offset =
+        kPoseidon2HalfRounds * kPoseidon2Width4 + kPoseidon2Width4PartialRounds;
+    for (size_t round = 0; round < kPoseidon2HalfRounds; ++round) {
+        poseidon2_pow7add_width4(state, final_offset + round * kPoseidon2Width4);
+        poseidon2_matmul_external_width4(state);
+    }
+}
+
 __device__ void poseidon2_matmul_external_width8(uint64_t* state) {
     poseidon2_matmul_m4(&state[0]);
     poseidon2_matmul_m4(&state[4]);
@@ -530,6 +635,21 @@ __global__ void normalize_shift_and_pad_kernel(
             values[index] = mul_mod(mul_mod(values[index], inverse_len), pow_mod(shift, index));
         } else {
             values[index] = 0;
+        }
+    }
+}
+
+__global__ void poseidon2_width4_kernel(const uint64_t* values, uint64_t* out, size_t state_count) {
+    const size_t state_index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (state_index < state_count) {
+        uint64_t state[kPoseidon2Width4];
+        const size_t offset = state_index * kPoseidon2Width4;
+        for (size_t index = 0; index < kPoseidon2Width4; ++index) {
+            state[index] = values[offset + index];
+        }
+        poseidon2_hash_width4(state);
+        for (size_t index = 0; index < kPoseidon2Width4; ++index) {
+            out[offset + index] = state[index];
         }
     }
 }
@@ -930,6 +1050,55 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend(
     }
 
     cudaFree(device_values);
+    return 0;
+}
+
+extern "C" int lzvm_cuda_poseidon2_width4(
+    const uint64_t* values,
+    uint64_t* out,
+    size_t state_count) {
+    if (state_count == 0) {
+        return 0;
+    }
+    if (values == nullptr || out == nullptr) {
+        return -1;
+    }
+
+    uint64_t* device_values = nullptr;
+    uint64_t* device_out = nullptr;
+    const size_t word_count = state_count * kPoseidon2Width4;
+    const size_t bytes = word_count * sizeof(uint64_t);
+    cudaError_t status = cudaMalloc(&device_values, bytes);
+    if (status != cudaSuccess) {
+        return static_cast<int>(status);
+    }
+    status = cudaMalloc(&device_out, bytes);
+    if (status != cudaSuccess) {
+        return free_after_error(status, device_values, device_out, nullptr);
+    }
+
+    status = cudaMemcpy(device_values, values, bytes, cudaMemcpyHostToDevice);
+    if (status != cudaSuccess) {
+        return free_after_error(status, device_values, device_out, nullptr);
+    }
+
+    const size_t blocks = (state_count + kThreads - 1) / kThreads;
+    poseidon2_width4_kernel<<<blocks, kThreads>>>(device_values, device_out, state_count);
+    status = cudaGetLastError();
+    if (status != cudaSuccess) {
+        return free_after_error(status, device_values, device_out, nullptr);
+    }
+    status = cudaDeviceSynchronize();
+    if (status != cudaSuccess) {
+        return free_after_error(status, device_values, device_out, nullptr);
+    }
+    status = cudaMemcpy(out, device_out, bytes, cudaMemcpyDeviceToHost);
+    if (status != cudaSuccess) {
+        return free_after_error(status, device_values, device_out, nullptr);
+    }
+
+    cudaFree(device_values);
+    cudaFree(device_out);
     return 0;
 }
 
