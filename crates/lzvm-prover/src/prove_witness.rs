@@ -1380,10 +1380,11 @@ pub fn build_pcs_evaluation_segment(
                 unit_count: schedule.units.len(),
             },
         )?;
-        if input.values.len() != unit.evaluation_value_count {
+        let expected_value_count = unit.expected_evaluation_value_count();
+        if input.values.len() != expected_value_count {
             return Err(ProvePcsEvaluationSegmentError::ValueCountMismatch {
                 unit_index: input.unit_index,
-                expected: unit.evaluation_value_count,
+                expected: expected_value_count,
                 found: input.values.len(),
             });
         }

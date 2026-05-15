@@ -71,10 +71,11 @@ pub fn load_pcs_evaluation_unit_from_segments(
         .find(|unit| unit.unit_index == unit_index_u32)
         .ok_or(LoadPcsEvaluationUnitError::MissingUnit { unit_index })?;
 
-    if evaluation_unit.values.len() != unit.evaluation_value_count {
+    let expected_value_count = unit.expected_evaluation_value_count();
+    if evaluation_unit.values.len() != expected_value_count {
         return Err(LoadPcsEvaluationUnitError::ValueCountMismatch {
             unit_index,
-            expected: unit.evaluation_value_count,
+            expected: expected_value_count,
             found: evaluation_unit.values.len(),
         });
     }

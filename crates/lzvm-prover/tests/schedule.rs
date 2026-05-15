@@ -320,6 +320,7 @@ fn derives_prove_schedule_from_key_directory_catalog() {
         schedule.units[0].evaluation_map,
         vec![EvaluationMapEntry::default(); 2]
     );
+    assert_eq!(schedule.units[0].expected_evaluation_value_count(), 2);
     assert_eq!(schedule.units[0].transcript_evaluation_challenge_draws, 2);
     assert_eq!(schedule.units[0].constant_width, 2);
     assert_eq!(schedule.units[0].stage_commit_widths, vec![2, 3]);

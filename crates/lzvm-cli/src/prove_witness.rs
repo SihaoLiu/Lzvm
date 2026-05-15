@@ -328,7 +328,7 @@ fn build_proof_bytes(
             return Err(format!(
                 "missing evaluation values for unit {}: expected {}",
                 commitments.unit_index(),
-                request.execution_unit.setup.eval_count
+                request.execution_unit.expected_evaluation_value_count()
             ));
         }
         None

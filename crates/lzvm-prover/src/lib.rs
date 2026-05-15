@@ -129,6 +129,16 @@ pub struct ProveUnitSchedule {
     pub pcs_material_node_byte_count: Option<u64>,
 }
 
+impl ProveUnitSchedule {
+    pub fn expected_evaluation_value_count(&self) -> usize {
+        if self.evaluation_map.is_empty() {
+            self.evaluation_value_count
+        } else {
+            self.evaluation_map.len()
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProveScheduleError {
     EmptyCatalog,
@@ -354,6 +364,16 @@ pub struct ProveExecutionUnitArtifacts {
     pub opening_point_offsets: Vec<i64>,
     pub group_name: String,
     pub unit_name: String,
+}
+
+impl ProveExecutionUnitArtifacts {
+    pub fn expected_evaluation_value_count(&self) -> usize {
+        if self.setup.evaluation_map.is_empty() {
+            self.setup.eval_count
+        } else {
+            self.setup.evaluation_map.len()
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
