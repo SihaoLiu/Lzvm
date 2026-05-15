@@ -1,15 +1,27 @@
 use std::fmt;
 
 use lzvm_artifacts::constant_opening_segment::ConstantOpeningUnitSegment;
+use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::pcs_evaluation_segment::PcsEvaluationUnitSegment;
 use lzvm_artifacts::pcs_fri_segment::PcsFriOpeningUnitSegment;
+use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
+use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::verifier_info::VerifierCode;
 use lzvm_artifacts::witness_opening_segment::WitnessOpeningUnitSegment;
 use lzvm_field::{Ext3, Felt, FieldError, SHIFT};
 
+use crate::constant_opening::{
+    load_constant_opening_segment_from_segments, LoadConstantOpeningSegmentError,
+};
+use crate::pcs_evaluation::{load_pcs_evaluation_unit_from_segments, LoadPcsEvaluationUnitError};
+use crate::pcs_transcript_segments::PcsTranscriptUnitChallenges;
+use crate::proof_values::{load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError};
 use crate::verifier_eval::{
     evaluate_verifier_code, VerifierCommitmentColumn, VerifierEvalError, VerifierEvalInputs,
     VerifierOpenedStage,
+};
+use crate::witness_opening::{
+    load_witness_opening_segment_from_segments, LoadWitnessOpeningSegmentError,
 };
 use crate::ProveUnitSchedule;
 
@@ -74,6 +86,18 @@ pub struct VerifierFriQueryOutputValidationRequest<'a> {
     pub code: &'a VerifierCode,
     pub publics: &'a [Felt],
     pub fri: &'a PcsFriOpeningUnitSegment,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct VerifierFriQueryOutputSegmentsRequest<'a> {
+    pub units: &'a [ProveUnitSchedule],
+    pub verifier_codes: &'a [&'a VerifierCode],
+    pub global_info: &'a GlobalInfo,
+    pub public_values: &'a [Felt],
+    pub query_units: &'a [PcsQueryPlanUnit],
+    pub opening_units: &'a [PcsFriOpeningUnitSegment],
+    pub transcript_challenges: &'a [PcsTranscriptUnitChallenges],
+    pub segments: &'a [ProofSegment],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -161,6 +185,22 @@ pub enum VerifierFriComparisonError {
 pub enum VerifierFriQueryOutputValidationError {
     Query(VerifierQueryEvalError),
     Comparison(VerifierFriComparisonError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VerifierFriQueryOutputSegmentsError {
+    ConstantOpening(LoadConstantOpeningSegmentError),
+    WitnessOpening(LoadWitnessOpeningSegmentError),
+    Evaluation(LoadPcsEvaluationUnitError),
+    ProofValues(LoadPcsProofValuesSegmentError),
+    Validation {
+        unit_index: usize,
+        source: VerifierFriQueryOutputValidationError,
+    },
+    UnitIndexOverflow,
+    UnitMismatch {
+        unit_index: usize,
+    },
 }
 
 impl fmt::Display for VerifierQueryEvalError {
@@ -281,6 +321,25 @@ impl fmt::Display for VerifierFriQueryOutputValidationError {
     }
 }
 
+impl fmt::Display for VerifierFriQueryOutputSegmentsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ConstantOpening(error) => write!(f, "{error}"),
+            Self::WitnessOpening(error) => write!(f, "{error}"),
+            Self::Evaluation(error) => write!(f, "{error}"),
+            Self::ProofValues(error) => write!(f, "{error}"),
+            Self::Validation { unit_index, source } => write!(
+                f,
+                "invalid PCS FRI opening segment for unit {unit_index}: {source}"
+            ),
+            Self::UnitIndexOverflow => write!(f, "PCS FRI opening segment unit index overflow"),
+            Self::UnitMismatch { unit_index } => {
+                write!(f, "PCS FRI opening segment mismatch for unit {unit_index}")
+            }
+        }
+    }
+}
+
 impl std::error::Error for VerifierQueryEvalError {}
 impl std::error::Error for VerifierFriComparisonError {}
 impl std::error::Error for VerifierFriQueryOutputValidationError {
@@ -288,6 +347,18 @@ impl std::error::Error for VerifierFriQueryOutputValidationError {
         match self {
             Self::Query(error) => Some(error),
             Self::Comparison(error) => Some(error),
+        }
+    }
+}
+impl std::error::Error for VerifierFriQueryOutputSegmentsError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ConstantOpening(error) => Some(error),
+            Self::WitnessOpening(error) => Some(error),
+            Self::Evaluation(error) => Some(error),
+            Self::ProofValues(error) => Some(error),
+            Self::Validation { source, .. } => Some(source),
+            Self::UnitIndexOverflow | Self::UnitMismatch { .. } => None,
         }
     }
 }
@@ -540,6 +611,74 @@ pub fn validate_verifier_query_outputs_against_fri_opening(
             fri: request.fri,
         },
     )?)
+}
+
+pub fn validate_verifier_query_outputs_from_segments(
+    request: VerifierFriQueryOutputSegmentsRequest<'_>,
+) -> Result<(), VerifierFriQueryOutputSegmentsError> {
+    let constant_opening = load_constant_opening_segment_from_segments(request.segments)
+        .map_err(VerifierFriQueryOutputSegmentsError::ConstantOpening)?;
+    let witness_opening = load_witness_opening_segment_from_segments(request.segments)
+        .map_err(VerifierFriQueryOutputSegmentsError::WitnessOpening)?;
+    let proof_values = load_pcs_proof_values_from_segments(request.global_info, request.segments)
+        .map_err(VerifierFriQueryOutputSegmentsError::ProofValues)?;
+
+    for query_unit in request.query_units {
+        let unit_index = usize::try_from(query_unit.unit_index)
+            .map_err(|_| VerifierFriQueryOutputSegmentsError::UnitIndexOverflow)?;
+        let unit = request
+            .units
+            .get(unit_index)
+            .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
+        let code = request
+            .verifier_codes
+            .get(unit_index)
+            .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
+        let opening_unit = request
+            .opening_units
+            .iter()
+            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
+        let constant_unit = constant_opening
+            .units
+            .iter()
+            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
+        let witness_unit = witness_opening
+            .units
+            .iter()
+            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
+        let evaluation_unit =
+            load_pcs_evaluation_unit_from_segments(unit_index, unit, request.segments)
+                .map_err(VerifierFriQueryOutputSegmentsError::Evaluation)?;
+        let challenges = request
+            .transcript_challenges
+            .iter()
+            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
+        let valid = validate_verifier_query_outputs_against_fri_opening(
+            unit,
+            VerifierFriQueryOutputValidationRequest {
+                unit_index: query_unit.unit_index,
+                query_rows: &query_unit.queries,
+                challenges: &challenges.challenges,
+                proof_values: &proof_values,
+                constant_unit,
+                witness_unit,
+                evaluations: &evaluation_unit,
+                code,
+                publics: request.public_values,
+                fri: opening_unit,
+            },
+        )
+        .map_err(|source| VerifierFriQueryOutputSegmentsError::Validation { unit_index, source })?;
+        if !valid {
+            return Err(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index });
+        }
+    }
+
+    Ok(())
 }
 
 impl VerifierQueryEvalInput {

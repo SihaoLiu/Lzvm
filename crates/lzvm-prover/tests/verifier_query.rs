@@ -1,24 +1,35 @@
 use lzvm_artifacts::constant_opening_segment::{
-    ConstantOpeningQuerySegment, ConstantOpeningUnitSegment,
+    encode_constant_opening_segment, ConstantOpeningQuerySegment, ConstantOpeningSegment,
+    ConstantOpeningUnitSegment, CONSTANT_OPENING_SEGMENT_ID,
 };
+use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
 use lzvm_artifacts::key_directory::KeyUnitKind;
-use lzvm_artifacts::pcs_evaluation_segment::PcsEvaluationUnitSegment;
+use lzvm_artifacts::pcs_evaluation_segment::{
+    encode_pcs_evaluation_segment, PcsEvaluationSegment, PcsEvaluationUnitSegment,
+    PCS_EVALUATION_SEGMENT_ID,
+};
 use lzvm_artifacts::pcs_fri_segment::{
     PcsFriOpeningLayerSegment, PcsFriOpeningQuerySegment, PcsFriOpeningUnitSegment,
 };
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
+use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
+use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::setup_info::CommitmentColumn;
 use lzvm_artifacts::verifier_info::{
     VerifierCode, VerifierDestination, VerifierOperand, VerifierOperation, VerifierOperationKind,
 };
 use lzvm_artifacts::witness_opening_segment::{
-    WitnessOpeningQuerySegment, WitnessOpeningStageSegment, WitnessOpeningUnitSegment,
+    encode_witness_opening_segment, WitnessOpeningQuerySegment, WitnessOpeningSegment,
+    WitnessOpeningStageSegment, WitnessOpeningUnitSegment, WITNESS_OPENING_SEGMENT_ID,
 };
 use lzvm_field::{Ext3, Felt, SHIFT};
+use lzvm_prover::pcs_transcript_segments::PcsTranscriptUnitChallenges;
 use lzvm_prover::verifier_query::{
     assemble_verifier_query_eval_input, evaluate_verifier_unit_queries,
-    validate_verifier_query_outputs_against_fri_opening, verify_query_outputs_against_fri_opening,
-    VerifierFriComparisonRequest, VerifierFriQueryOutputValidationRequest,
+    validate_verifier_query_outputs_against_fri_opening,
+    validate_verifier_query_outputs_from_segments, verify_query_outputs_against_fri_opening,
+    VerifierFriComparisonRequest, VerifierFriQueryOutputSegmentsError,
+    VerifierFriQueryOutputSegmentsRequest, VerifierFriQueryOutputValidationRequest,
     VerifierQueryEvalInputRequest, VerifierUnitQueryEvalRequest,
 };
 use lzvm_prover::ProveUnitSchedule;
@@ -560,4 +571,231 @@ fn validates_verifier_query_outputs_against_fri_opening() {
     .expect("query output validation should evaluate mismatches");
 
     assert!(!invalid);
+}
+
+#[test]
+fn validates_verifier_query_outputs_from_proof_segments() {
+    let (unit, code, query_unit, fri, challenges, segments) =
+        verifier_query_output_segments_fixture(false);
+    let code_refs = [&code];
+
+    validate_verifier_query_outputs_from_segments(VerifierFriQueryOutputSegmentsRequest {
+        units: &[unit],
+        verifier_codes: &code_refs,
+        global_info: &global_info_without_proof_values(),
+        public_values: &[],
+        query_units: std::slice::from_ref(&query_unit),
+        opening_units: std::slice::from_ref(&fri),
+        transcript_challenges: std::slice::from_ref(&challenges),
+        segments: &segments,
+    })
+    .expect("query outputs should validate");
+}
+
+#[test]
+fn rejects_verifier_query_output_mismatches_from_proof_segments() {
+    let (unit, code, query_unit, fri, challenges, segments) =
+        verifier_query_output_segments_fixture(true);
+    let code_refs = [&code];
+
+    let error =
+        validate_verifier_query_outputs_from_segments(VerifierFriQueryOutputSegmentsRequest {
+            units: &[unit],
+            verifier_codes: &code_refs,
+            global_info: &global_info_without_proof_values(),
+            public_values: &[],
+            query_units: std::slice::from_ref(&query_unit),
+            opening_units: std::slice::from_ref(&fri),
+            transcript_challenges: std::slice::from_ref(&challenges),
+            segments: &segments,
+        })
+        .expect_err("mismatched query output should be rejected");
+
+    assert_eq!(
+        error,
+        VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index: 0 }
+    );
+}
+
+fn verifier_query_output_segments_fixture(
+    mismatch: bool,
+) -> (
+    ProveUnitSchedule,
+    VerifierCode,
+    PcsQueryPlanUnit,
+    PcsFriOpeningUnitSegment,
+    PcsTranscriptUnitChallenges,
+    Vec<ProofSegment>,
+) {
+    let mut unit = schedule();
+    unit.query_count = 2;
+    unit.evaluation_value_count = 1;
+    unit.fri_layers = vec![PcsFriLayer {
+        input_bits: 6,
+        output_bits: 4,
+        folding_factor: 4,
+    }];
+    let query_unit = PcsQueryPlanUnit {
+        unit_index: 0,
+        queries: vec![9, 17],
+    };
+    let constants = ConstantOpeningUnitSegment {
+        unit_index: 0,
+        queries: vec![
+            ConstantOpeningQuerySegment {
+                row_index: 9,
+                values: vec![31, 37, 41],
+                siblings: Vec::new(),
+            },
+            ConstantOpeningQuerySegment {
+                row_index: 10,
+                values: vec![43, 47, 53],
+                siblings: Vec::new(),
+            },
+        ],
+    };
+    let witness = WitnessOpeningUnitSegment {
+        unit_index: 0,
+        queries: vec![
+            WitnessOpeningQuerySegment {
+                row_index: 9,
+                stages: vec![
+                    WitnessOpeningStageSegment {
+                        stage_index: 1,
+                        values: vec![101, 103],
+                        siblings: Vec::new(),
+                    },
+                    WitnessOpeningStageSegment {
+                        stage_index: 2,
+                        values: vec![201, 203, 211],
+                        siblings: Vec::new(),
+                    },
+                ],
+            },
+            WitnessOpeningQuerySegment {
+                row_index: 10,
+                stages: vec![
+                    WitnessOpeningStageSegment {
+                        stage_index: 1,
+                        values: vec![107, 109],
+                        siblings: Vec::new(),
+                    },
+                    WitnessOpeningStageSegment {
+                        stage_index: 2,
+                        values: vec![307, 311, 313],
+                        siblings: Vec::new(),
+                    },
+                ],
+            },
+        ],
+    };
+    let evaluations = PcsEvaluationUnitSegment {
+        unit_index: 0,
+        values: vec![[59, 61, 67]],
+    };
+    let code = VerifierCode {
+        expression_id: None,
+        stage: None,
+        line: String::new(),
+        temporary_count: 2,
+        operations: vec![
+            operation(
+                VerifierOperationKind::Add,
+                destination(1),
+                vec![commitment(1, 3), constant(0, 1)],
+            ),
+            operation(VerifierOperationKind::Copy, destination(0), vec![tmp(1)]),
+        ],
+    };
+    let expected_first = e([201, 203, 211]) + e([31, 0, 0]);
+    let expected_second = e([307, 311, 313]) + e([43, 0, 0]);
+    let second_value = if mismatch {
+        e([999, 0, 0])
+    } else {
+        expected_second
+    };
+    let fri = PcsFriOpeningUnitSegment {
+        unit_index: 0,
+        layers: vec![PcsFriOpeningLayerSegment {
+            layer_index: 0,
+            root: [0, 0, 0, 0],
+            last_level: Vec::new(),
+            queries: vec![
+                PcsFriOpeningQuerySegment {
+                    row_index: 9,
+                    values: vec![
+                        expected_first.to_u64s(),
+                        e([1, 0, 0]).to_u64s(),
+                        e([2, 0, 0]).to_u64s(),
+                        e([3, 0, 0]).to_u64s(),
+                    ],
+                    siblings: Vec::new(),
+                },
+                PcsFriOpeningQuerySegment {
+                    row_index: 1,
+                    values: vec![
+                        e([4, 0, 0]).to_u64s(),
+                        second_value.to_u64s(),
+                        e([5, 0, 0]).to_u64s(),
+                        e([6, 0, 0]).to_u64s(),
+                    ],
+                    siblings: Vec::new(),
+                },
+            ],
+        }],
+        final_polynomial: vec![e([11, 0, 0]).to_u64s()],
+    };
+    let challenges = PcsTranscriptUnitChallenges {
+        unit_index: 0,
+        challenges: vec![
+            e([2, 0, 0]),
+            e([3, 0, 0]),
+            e([4, 0, 0]),
+            e([5, 1, 2]),
+            e([7, 0, 0]),
+            e([11, 0, 0]),
+        ],
+    };
+    let segments = vec![
+        ProofSegment {
+            id: CONSTANT_OPENING_SEGMENT_ID,
+            data: encode_constant_opening_segment(&ConstantOpeningSegment {
+                units: vec![constants],
+            })
+            .expect("constant opening should encode"),
+        },
+        ProofSegment {
+            id: WITNESS_OPENING_SEGMENT_ID,
+            data: encode_witness_opening_segment(&WitnessOpeningSegment {
+                units: vec![witness],
+            })
+            .expect("witness opening should encode"),
+        },
+        ProofSegment {
+            id: PCS_EVALUATION_SEGMENT_ID,
+            data: encode_pcs_evaluation_segment(&PcsEvaluationSegment {
+                units: vec![evaluations],
+            })
+            .expect("evaluation segment should encode"),
+        },
+    ];
+
+    (unit, code, query_unit, fri, challenges, segments)
+}
+
+fn global_info_without_proof_values() -> GlobalInfo {
+    GlobalInfo {
+        name: "global".to_owned(),
+        air_groups: vec!["group".to_owned()],
+        airs: Vec::new(),
+        curve: CurveKind::None,
+        lattice_size: None,
+        aggregation_types: Vec::new(),
+        n_publics: 0,
+        num_challenges: Vec::new(),
+        num_proof_values: Vec::new(),
+        proof_values_map: Vec::new(),
+        publics_map: Vec::new(),
+        transcript_arity: 4,
+    }
 }
