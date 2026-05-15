@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use lzvm_prover::witness_loader::{load_witness_library, WitnessLoadError, WITNESS_ABI_VERSION};
+use lzvm_prover::witness_loader::{WitnessCall, WitnessResult, WITNESS_STATUS_OK};
 
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("lzvm-witness-loader-{}-{name}", std::process::id()))
@@ -32,16 +33,49 @@ fn loads_witness_library_abi_version() {
     let library_path = build_shared_library(
         &dir,
         "valid",
-        "unsigned int lzvm_witness_abi_version(void) { return 1; }\nint lzvm_witness_compute(void) { return 7; }\n",
+        r#"#include <stddef.h>
+typedef struct {
+    const unsigned char *input_ptr;
+    size_t input_len;
+    unsigned char *output_ptr;
+    size_t output_len;
+} LzvmWitnessCall;
+typedef struct {
+    int status;
+    size_t produced_len;
+} LzvmWitnessResult;
+unsigned int lzvm_witness_abi_version(void) { return 1; }
+int lzvm_witness_compute(const LzvmWitnessCall *call, LzvmWitnessResult *result) {
+    if (!call || !result || call->input_len == 0 || call->output_len == 0) {
+        return -1;
+    }
+    result->status = 0;
+    result->produced_len = 1;
+    call->output_ptr[0] = (unsigned char)(call->input_ptr[0] + 1);
+    return 0;
+}
+"#,
     );
 
     let library = load_witness_library(&library_path).expect("witness library should load");
-    let compute_result = unsafe { library.call_compute_for_smoke() };
+    let input = [41_u8];
+    let mut output = [0_u8];
+    let call = WitnessCall {
+        input_ptr: input.as_ptr(),
+        input_len: input.len(),
+        output_ptr: output.as_mut_ptr(),
+        output_len: output.len(),
+    };
+    let mut result = WitnessResult::default();
+    let compute_result = unsafe { library.compute_unchecked(&call, &mut result) };
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(library.path, library_path);
     assert_eq!(library.abi_version, WITNESS_ABI_VERSION);
-    assert_eq!(compute_result, 7);
+    assert_eq!(compute_result, WITNESS_STATUS_OK);
+    assert_eq!(result.status, WITNESS_STATUS_OK);
+    assert_eq!(result.produced_len, 1);
+    assert_eq!(output[0], 42);
 }
 
 #[test]

@@ -5,9 +5,26 @@ use std::path::{Path, PathBuf};
 use libloading::Library;
 
 pub const WITNESS_ABI_VERSION: u32 = 1;
+pub const WITNESS_STATUS_OK: c_int = 0;
 
 type WitnessAbiVersionFn = unsafe extern "C" fn() -> u32;
-type WitnessComputeFn = unsafe extern "C" fn() -> c_int;
+type WitnessComputeFn = unsafe extern "C" fn(*const WitnessCall, *mut WitnessResult) -> c_int;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WitnessCall {
+    pub input_ptr: *const u8,
+    pub input_len: usize,
+    pub output_ptr: *mut u8,
+    pub output_len: usize,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct WitnessResult {
+    pub status: c_int,
+    pub produced_len: usize,
+}
 
 pub struct LoadedWitnessLibrary {
     pub path: PathBuf,
@@ -19,9 +36,14 @@ pub struct LoadedWitnessLibrary {
 impl LoadedWitnessLibrary {
     /// # Safety
     ///
-    /// This only belongs in loader smoke tests until the runtime passes a real witness context.
-    pub unsafe fn call_compute_for_smoke(&self) -> c_int {
-        (self.compute)()
+    /// The caller must ensure that all pointers in `call` and `result` are valid for the loaded
+    /// native library during the call.
+    pub unsafe fn compute_unchecked(
+        &self,
+        call: &WitnessCall,
+        result: &mut WitnessResult,
+    ) -> c_int {
+        (self.compute)(call as *const WitnessCall, result as *mut WitnessResult)
     }
 }
 
