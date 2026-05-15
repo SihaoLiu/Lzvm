@@ -22,6 +22,7 @@ pub mod pcs_fri;
 pub mod pcs_transcript;
 pub mod proof_values;
 mod prove_witness;
+pub mod regular_constraints;
 pub mod verifier_eval;
 pub mod verifier_query;
 pub mod witness_commitment;
