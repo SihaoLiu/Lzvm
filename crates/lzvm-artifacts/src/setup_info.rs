@@ -2,6 +2,14 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 
+use crate::sectioned::{
+    encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
+};
+
+const SETUP_INFO_KIND: [u8; 4] = *b"uinf";
+const SETUP_INFO_VERSION: u32 = 1;
+const SETUP_INFO_SECTION_ID: u32 = 1;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnitSetupInfo {
     pub n_stages: u32,
@@ -57,21 +65,102 @@ pub struct ConstantColumn {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetupInfoError {
-    Json { message: String },
-    MissingField { field: &'static str },
-    InvalidField { field: &'static str },
-    MissingSectionWidth { name: String },
-    InvalidDomainBits { n_bits: u32, n_bits_ext: u32 },
+    Json {
+        message: String,
+    },
+    InvalidMagic,
+    UnsupportedVersion {
+        found: u32,
+        max: u32,
+    },
+    InvalidSectionCount {
+        found: u32,
+    },
+    InvalidSectionId {
+        found: u32,
+    },
+    UnexpectedTrailingBytes {
+        count: usize,
+    },
+    UnexpectedEof {
+        offset: usize,
+        needed: usize,
+        available: usize,
+    },
+    InvalidUtf8,
+    MissingStringTerminator {
+        offset: usize,
+    },
+    LengthOverflow,
+    StringContainsNul {
+        value: String,
+    },
+    InvalidFlag {
+        field: &'static str,
+        value: u8,
+    },
+    MissingField {
+        field: &'static str,
+    },
+    InvalidField {
+        field: &'static str,
+    },
+    MissingSectionWidth {
+        name: String,
+    },
+    InvalidDomainBits {
+        n_bits: u32,
+        n_bits_ext: u32,
+    },
     InvalidFriSteps,
-    ConstantColumnCountMismatch { expected: u32, found: usize },
-    InvalidConstantColumn { index: usize },
-    Io { message: String },
+    ConstantColumnCountMismatch {
+        expected: u32,
+        found: usize,
+    },
+    InvalidConstantColumn {
+        index: usize,
+    },
+    Io {
+        message: String,
+    },
 }
 
 impl fmt::Display for SetupInfoError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Json { message } => write!(f, "setup-info json error: {message}"),
+            Self::InvalidMagic => write!(f, "invalid setup-info file magic"),
+            Self::UnsupportedVersion { found, max } => {
+                write!(f, "unsupported setup-info file version {found}, max {max}")
+            }
+            Self::InvalidSectionCount { found } => {
+                write!(f, "invalid setup-info section count {found}")
+            }
+            Self::InvalidSectionId { found } => {
+                write!(f, "invalid setup-info section id {found}")
+            }
+            Self::UnexpectedTrailingBytes { count } => {
+                write!(f, "unexpected trailing bytes in setup-info file: {count}")
+            }
+            Self::UnexpectedEof {
+                offset,
+                needed,
+                available,
+            } => write!(
+                f,
+                "unexpected end of setup-info file at {offset}, needed {needed}, available {available}"
+            ),
+            Self::InvalidUtf8 => write!(f, "setup-info string is not valid utf-8"),
+            Self::MissingStringTerminator { offset } => {
+                write!(f, "missing setup-info string terminator at offset {offset}")
+            }
+            Self::LengthOverflow => write!(f, "setup-info length overflow"),
+            Self::StringContainsNul { value } => {
+                write!(f, "setup-info string contains nul byte: {value}")
+            }
+            Self::InvalidFlag { field, value } => {
+                write!(f, "invalid setup-info flag for {field}: {value}")
+            }
             Self::MissingField { field } => write!(f, "missing setup-info field: {field}"),
             Self::InvalidField { field } => write!(f, "invalid setup-info field: {field}"),
             Self::MissingSectionWidth { name } => {
@@ -99,6 +188,30 @@ impl fmt::Display for SetupInfoError {
 
 impl std::error::Error for SetupInfoError {}
 
+impl From<SectionedError> for SetupInfoError {
+    fn from(value: SectionedError) -> Self {
+        match value {
+            SectionedError::InvalidKind { .. } => Self::InvalidMagic,
+            SectionedError::UnsupportedVersion { found, max } => {
+                Self::UnsupportedVersion { found, max }
+            }
+            SectionedError::UnexpectedTrailingBytes { count } => {
+                Self::UnexpectedTrailingBytes { count }
+            }
+            SectionedError::UnexpectedEof {
+                offset,
+                needed,
+                available,
+            } => Self::UnexpectedEof {
+                offset,
+                needed,
+                available,
+            },
+            SectionedError::LengthOverflow => Self::LengthOverflow,
+        }
+    }
+}
+
 impl UnitSetupInfo {
     pub fn stage_commit_widths(&self) -> Result<Vec<u32>, SetupInfoError> {
         let mut widths = Vec::with_capacity((self.n_stages + 1) as usize);
@@ -119,6 +232,46 @@ pub fn read_unit_setup_info_file(path: impl AsRef<Path>) -> Result<UnitSetupInfo
         message: error.to_string(),
     })?;
     parse_unit_setup_info_json(&input)
+}
+
+pub fn read_unit_setup_info_binary_file(
+    path: impl AsRef<Path>,
+) -> Result<UnitSetupInfo, SetupInfoError> {
+    let bytes = std::fs::read(path).map_err(|error| SetupInfoError::Io {
+        message: error.to_string(),
+    })?;
+    parse_unit_setup_info(&bytes)
+}
+
+pub fn parse_unit_setup_info(bytes: &[u8]) -> Result<UnitSetupInfo, SetupInfoError> {
+    let file = parse_sectioned_file(bytes, SETUP_INFO_KIND, SETUP_INFO_VERSION)
+        .map_err(SetupInfoError::from)?;
+    if file.sections.len() != 1 {
+        return Err(SetupInfoError::InvalidSectionCount {
+            found: u32::try_from(file.sections.len()).unwrap_or(u32::MAX),
+        });
+    }
+
+    let section = &file.sections[0];
+    if section.id != SETUP_INFO_SECTION_ID {
+        return Err(SetupInfoError::InvalidSectionId { found: section.id });
+    }
+
+    parse_unit_setup_info_section(&section.data)
+}
+
+pub fn encode_unit_setup_info(value: &UnitSetupInfo) -> Result<Vec<u8>, SetupInfoError> {
+    validate_unit_setup_info(value)?;
+    let section = encode_unit_setup_info_section(value)?;
+    let file = SectionedFile {
+        kind: SETUP_INFO_KIND,
+        version: SETUP_INFO_VERSION,
+        sections: vec![SectionedSection {
+            id: SETUP_INFO_SECTION_ID,
+            data: section,
+        }],
+    };
+    encode_sectioned_file(&file).map_err(SetupInfoError::from)
 }
 
 pub fn parse_unit_setup_info_json(input: &str) -> Result<UnitSetupInfo, SetupInfoError> {
@@ -157,8 +310,179 @@ pub fn parse_unit_setup_info_json(input: &str) -> Result<UnitSetupInfo, SetupInf
         stark,
     };
 
-    info.stage_commit_widths()?;
+    validate_unit_setup_info(&info)?;
     Ok(info)
+}
+
+fn parse_unit_setup_info_section(bytes: &[u8]) -> Result<UnitSetupInfo, SetupInfoError> {
+    let mut reader = Reader::new(bytes);
+    let n_stages = reader.read_u32()?;
+    let n_constants = reader.read_u32()?;
+    let n_publics = reader.read_optional_u32("n_publics")?;
+    let n_constraints = reader.read_optional_u32("n_constraints")?;
+    let q_degree = reader.read_u32()?;
+    let challenge_count = reader.read_u32()? as usize;
+    let eval_count = reader.read_u32()? as usize;
+
+    let opening_point_count = reader.read_u32()?;
+    let mut opening_points = Vec::with_capacity(opening_point_count as usize);
+    for _ in 0..opening_point_count {
+        opening_points.push(reader.read_i64()?);
+    }
+
+    let section_width_count = reader.read_u32()?;
+    let mut section_widths = BTreeMap::new();
+    for _ in 0..section_width_count {
+        let name = reader.read_string()?;
+        let width = reader.read_u32()?;
+        section_widths.insert(name, width);
+    }
+
+    let constant_column_count = reader.read_u32()?;
+    let mut constant_columns = Vec::with_capacity(constant_column_count as usize);
+    for index in 0..constant_column_count {
+        let lengths_count = {
+            let name = reader.read_string()?;
+            let stage = reader.read_u32()?;
+            let dimension = reader.read_u32()?;
+            let pols_map_id = reader.read_u32()?;
+            let stage_id = reader.read_u32()?;
+            let lengths_count = reader.read_u32()?;
+            constant_columns.push(ConstantColumn {
+                name,
+                stage,
+                dimension,
+                pols_map_id,
+                stage_id,
+                lengths: Vec::with_capacity(lengths_count as usize),
+            });
+            lengths_count
+        };
+        for _ in 0..lengths_count {
+            constant_columns[index as usize]
+                .lengths
+                .push(reader.read_u32()?);
+        }
+    }
+
+    let boundary_count = reader.read_u32()?;
+    let mut boundaries = Vec::with_capacity(boundary_count as usize);
+    for _ in 0..boundary_count {
+        boundaries.push(Boundary {
+            name: reader.read_optional_string("boundary_name")?,
+            offset_min: reader.read_optional_i64("boundary_offset_min")?,
+            offset_max: reader.read_optional_i64("boundary_offset_max")?,
+        });
+    }
+
+    let step_count;
+    let stark = {
+        let n_bits = reader.read_u32()?;
+        let n_bits_ext = reader.read_u32()?;
+        let n_queries = reader.read_u32()?;
+        step_count = reader.read_u32()?;
+        let mut steps = Vec::with_capacity(step_count as usize);
+        for _ in 0..step_count {
+            steps.push(FriStep {
+                n_bits: reader.read_u32()?,
+            });
+        }
+        StarkStruct {
+            n_bits,
+            n_bits_ext,
+            n_queries,
+            steps,
+            hash_commits: reader.read_bool("hash_commits")?,
+            last_level_verification: reader.read_u32()?,
+            pow_bits: reader.read_u32()?,
+            merkle_tree_arity: reader.read_u32()?,
+            verification_hash_type: reader.read_optional_string("verification_hash_type")?,
+            transcript_arity: reader.read_optional_u32("transcript_arity")?,
+            merkle_tree_custom: reader.read_optional_bool("merkle_tree_custom")?,
+        }
+    };
+
+    if reader.position() != bytes.len() {
+        return Err(SetupInfoError::UnexpectedTrailingBytes {
+            count: bytes.len() - reader.position(),
+        });
+    }
+
+    let info = UnitSetupInfo {
+        n_stages,
+        n_constants,
+        constant_columns,
+        n_publics,
+        n_constraints,
+        q_degree,
+        opening_points,
+        section_widths,
+        challenge_count,
+        eval_count,
+        boundaries,
+        stark,
+    };
+    validate_unit_setup_info(&info)?;
+    Ok(info)
+}
+
+fn encode_unit_setup_info_section(value: &UnitSetupInfo) -> Result<Vec<u8>, SetupInfoError> {
+    let mut section = Vec::new();
+    write_u32(&mut section, value.n_stages);
+    write_u32(&mut section, value.n_constants);
+    write_optional_u32(&mut section, value.n_publics);
+    write_optional_u32(&mut section, value.n_constraints);
+    write_u32(&mut section, value.q_degree);
+    write_u32(&mut section, usize_to_u32(value.challenge_count)?);
+    write_u32(&mut section, usize_to_u32(value.eval_count)?);
+
+    write_u32(&mut section, usize_to_u32(value.opening_points.len())?);
+    for point in &value.opening_points {
+        write_i64(&mut section, *point);
+    }
+
+    write_u32(&mut section, usize_to_u32(value.section_widths.len())?);
+    for (name, width) in &value.section_widths {
+        write_string(&mut section, name)?;
+        write_u32(&mut section, *width);
+    }
+
+    write_u32(&mut section, usize_to_u32(value.constant_columns.len())?);
+    for column in &value.constant_columns {
+        write_string(&mut section, &column.name)?;
+        write_u32(&mut section, column.stage);
+        write_u32(&mut section, column.dimension);
+        write_u32(&mut section, column.pols_map_id);
+        write_u32(&mut section, column.stage_id);
+        write_u32(&mut section, usize_to_u32(column.lengths.len())?);
+        for length in &column.lengths {
+            write_u32(&mut section, *length);
+        }
+    }
+
+    write_u32(&mut section, usize_to_u32(value.boundaries.len())?);
+    for boundary in &value.boundaries {
+        write_optional_string(&mut section, boundary.name.as_deref())?;
+        write_optional_i64(&mut section, boundary.offset_min);
+        write_optional_i64(&mut section, boundary.offset_max);
+    }
+
+    write_u32(&mut section, value.stark.n_bits);
+    write_u32(&mut section, value.stark.n_bits_ext);
+    write_u32(&mut section, value.stark.n_queries);
+    write_u32(&mut section, usize_to_u32(value.stark.steps.len())?);
+    for step in &value.stark.steps {
+        write_u32(&mut section, step.n_bits);
+    }
+    write_bool(&mut section, value.stark.hash_commits);
+    write_u32(&mut section, value.stark.last_level_verification);
+    write_u32(&mut section, value.stark.pow_bits);
+    write_u32(&mut section, value.stark.merkle_tree_arity);
+    write_optional_string(&mut section, value.stark.verification_hash_type.as_deref())?;
+    write_optional_u32(&mut section, value.stark.transcript_arity);
+    write_optional_bool(&mut section, value.stark.merkle_tree_custom);
+
+    Ok(section)
 }
 
 fn parse_constant_columns(
@@ -254,6 +578,13 @@ fn validate_domains(stark: &StarkStruct) -> Result<(), SetupInfoError> {
         }
     }
 
+    Ok(())
+}
+
+fn validate_unit_setup_info(info: &UnitSetupInfo) -> Result<(), SetupInfoError> {
+    validate_constant_columns(info.n_constants, &info.constant_columns)?;
+    validate_domains(&info.stark)?;
+    info.stage_commit_widths()?;
     Ok(())
 }
 
@@ -445,4 +776,177 @@ fn optional_string(
                 .ok_or(SetupInfoError::InvalidField { field })
         })
         .transpose()
+}
+
+fn usize_to_u32(value: usize) -> Result<u32, SetupInfoError> {
+    u32::try_from(value).map_err(|_| SetupInfoError::LengthOverflow)
+}
+
+fn write_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn write_i64(out: &mut Vec<u8>, value: i64) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn write_bool(out: &mut Vec<u8>, value: bool) {
+    out.push(u8::from(value));
+}
+
+fn write_optional_u32(out: &mut Vec<u8>, value: Option<u32>) {
+    match value {
+        Some(value) => {
+            out.push(1);
+            write_u32(out, value);
+        }
+        None => out.push(0),
+    }
+}
+
+fn write_optional_i64(out: &mut Vec<u8>, value: Option<i64>) {
+    match value {
+        Some(value) => {
+            out.push(1);
+            write_i64(out, value);
+        }
+        None => out.push(0),
+    }
+}
+
+fn write_optional_bool(out: &mut Vec<u8>, value: Option<bool>) {
+    match value {
+        Some(value) => {
+            out.push(1);
+            write_bool(out, value);
+        }
+        None => out.push(0),
+    }
+}
+
+fn write_optional_string(out: &mut Vec<u8>, value: Option<&str>) -> Result<(), SetupInfoError> {
+    match value {
+        Some(value) => {
+            out.push(1);
+            write_string(out, value)?;
+        }
+        None => out.push(0),
+    }
+    Ok(())
+}
+
+fn write_string(out: &mut Vec<u8>, value: &str) -> Result<(), SetupInfoError> {
+    if value.as_bytes().contains(&0) {
+        return Err(SetupInfoError::StringContainsNul {
+            value: value.to_owned(),
+        });
+    }
+    out.extend_from_slice(value.as_bytes());
+    out.push(0);
+    Ok(())
+}
+
+struct Reader<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> Reader<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, offset: 0 }
+    }
+
+    fn position(&self) -> usize {
+        self.offset
+    }
+
+    fn read_exact(&mut self, count: usize) -> Result<&'a [u8], SetupInfoError> {
+        let end = self
+            .offset
+            .checked_add(count)
+            .ok_or(SetupInfoError::LengthOverflow)?;
+        if end > self.bytes.len() {
+            return Err(SetupInfoError::UnexpectedEof {
+                offset: self.offset,
+                needed: count,
+                available: self.bytes.len().saturating_sub(self.offset),
+            });
+        }
+        let out = &self.bytes[self.offset..end];
+        self.offset = end;
+        Ok(out)
+    }
+
+    fn read_u8(&mut self) -> Result<u8, SetupInfoError> {
+        Ok(self.read_exact(1)?[0])
+    }
+
+    fn read_u32(&mut self) -> Result<u32, SetupInfoError> {
+        let bytes = self.read_exact(4)?;
+        Ok(u32::from_le_bytes(
+            bytes.try_into().expect("slice length checked"),
+        ))
+    }
+
+    fn read_i64(&mut self) -> Result<i64, SetupInfoError> {
+        let bytes = self.read_exact(8)?;
+        Ok(i64::from_le_bytes(
+            bytes.try_into().expect("slice length checked"),
+        ))
+    }
+
+    fn read_bool(&mut self, field: &'static str) -> Result<bool, SetupInfoError> {
+        match self.read_u8()? {
+            0 => Ok(false),
+            1 => Ok(true),
+            value => Err(SetupInfoError::InvalidFlag { field, value }),
+        }
+    }
+
+    fn read_optional_u32(&mut self, field: &'static str) -> Result<Option<u32>, SetupInfoError> {
+        match self.read_u8()? {
+            0 => Ok(None),
+            1 => Ok(Some(self.read_u32()?)),
+            value => Err(SetupInfoError::InvalidFlag { field, value }),
+        }
+    }
+
+    fn read_optional_i64(&mut self, field: &'static str) -> Result<Option<i64>, SetupInfoError> {
+        match self.read_u8()? {
+            0 => Ok(None),
+            1 => Ok(Some(self.read_i64()?)),
+            value => Err(SetupInfoError::InvalidFlag { field, value }),
+        }
+    }
+
+    fn read_optional_bool(&mut self, field: &'static str) -> Result<Option<bool>, SetupInfoError> {
+        match self.read_u8()? {
+            0 => Ok(None),
+            1 => Ok(Some(self.read_bool(field)?)),
+            value => Err(SetupInfoError::InvalidFlag { field, value }),
+        }
+    }
+
+    fn read_optional_string(
+        &mut self,
+        field: &'static str,
+    ) -> Result<Option<String>, SetupInfoError> {
+        match self.read_u8()? {
+            0 => Ok(None),
+            1 => Ok(Some(self.read_string()?)),
+            value => Err(SetupInfoError::InvalidFlag { field, value }),
+        }
+    }
+
+    fn read_string(&mut self) -> Result<String, SetupInfoError> {
+        let start = self.offset;
+        let Some(relative_end) = self.bytes[start..].iter().position(|byte| *byte == 0) else {
+            return Err(SetupInfoError::MissingStringTerminator { offset: start });
+        };
+        let end = start
+            .checked_add(relative_end)
+            .ok_or(SetupInfoError::LengthOverflow)?;
+        self.offset = end + 1;
+        String::from_utf8(self.bytes[start..end].to_vec()).map_err(|_| SetupInfoError::InvalidUtf8)
+    }
 }

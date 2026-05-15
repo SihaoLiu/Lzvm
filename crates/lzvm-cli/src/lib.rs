@@ -3,7 +3,7 @@ use std::path::Path;
 
 use lzvm_artifacts::fixed::{read_fixed_columns_file, FixedColumn, FixedColumns};
 use lzvm_artifacts::key_directory::read_key_directory_catalog;
-use lzvm_artifacts::setup_info::read_unit_setup_info_file;
+use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, read_unit_setup_info_file};
 use lzvm_setup::write_base_fixed_columns;
 use serde_json::Value;
 
@@ -19,6 +19,10 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             write_fixed_columns_bin(setup_info, columns_bin, out_const, stdout, stderr)
         }
         ["setup", "write-fixed-bin", ..] => write_fixed_bin_usage(stderr),
+        ["setup", "write-fixed-native", setup_info_bin, columns_bin, out_const] => {
+            write_fixed_columns_native(setup_info_bin, columns_bin, out_const, stdout, stderr)
+        }
+        ["setup", "write-fixed-native", ..] => write_fixed_native_usage(stderr),
         _ => write_validate_usage(stderr),
     }
 }
@@ -85,6 +89,31 @@ fn write_fixed_columns_bin(
     stderr: &mut dyn Write,
 ) -> i32 {
     let setup = match read_unit_setup_info_file(setup_info) {
+        Ok(setup) => setup,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup fixed-column write failed: {error}");
+            return 1;
+        }
+    };
+    let columns = match read_fixed_columns_file(columns_bin) {
+        Ok(columns) => columns,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup fixed-column write failed: {error}");
+            return 1;
+        }
+    };
+
+    publish_fixed_columns(out_const, &columns, &setup, stdout, stderr)
+}
+
+fn write_fixed_columns_native(
+    setup_info_bin: &str,
+    columns_bin: &str,
+    out_const: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let setup = match read_unit_setup_info_binary_file(setup_info_bin) {
         Ok(setup) => setup,
         Err(error) => {
             let _ = writeln!(stderr, "setup fixed-column write failed: {error}");
@@ -224,6 +253,14 @@ fn write_fixed_bin_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
         "usage: lzvm setup write-fixed-bin <setup-info-json> <columns-bin> <out-const>"
+    );
+    2
+}
+
+fn write_fixed_native_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm setup write-fixed-native <setup-info-bin> <columns-bin> <out-const>"
     );
     2
 }

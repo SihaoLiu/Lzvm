@@ -1,8 +1,66 @@
 use lzvm_artifacts::setup_info::{
-    parse_unit_setup_info_json, read_unit_setup_info_file, SetupInfoError,
+    encode_unit_setup_info, parse_unit_setup_info, parse_unit_setup_info_json,
+    read_unit_setup_info_binary_file, read_unit_setup_info_file, SetupInfoError,
 };
 use std::fs;
 use std::path::PathBuf;
+
+fn push_u8(out: &mut Vec<u8>, value: u8) {
+    out.push(value);
+}
+
+fn push_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_i64(out: &mut Vec<u8>, value: i64) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_string(out: &mut Vec<u8>, value: &str) {
+    out.extend_from_slice(value.as_bytes());
+    out.push(0);
+}
+
+fn push_optional_u32(out: &mut Vec<u8>, value: Option<u32>) {
+    match value {
+        Some(value) => {
+            push_u8(out, 1);
+            push_u32(out, value);
+        }
+        None => push_u8(out, 0),
+    }
+}
+
+fn push_optional_i64(out: &mut Vec<u8>, value: Option<i64>) {
+    match value {
+        Some(value) => {
+            push_u8(out, 1);
+            push_i64(out, value);
+        }
+        None => push_u8(out, 0),
+    }
+}
+
+fn push_optional_string(out: &mut Vec<u8>, value: Option<&str>) {
+    match value {
+        Some(value) => {
+            push_u8(out, 1);
+            push_string(out, value);
+        }
+        None => push_u8(out, 0),
+    }
+}
+
+fn push_optional_bool(out: &mut Vec<u8>, value: Option<bool>) {
+    match value {
+        Some(value) => {
+            push_u8(out, 1);
+            push_u8(out, u8::from(value));
+        }
+        None => push_u8(out, 0),
+    }
+}
 
 fn sample_setup_info_json() -> &'static str {
     r#"{
@@ -49,6 +107,83 @@ fn sample_setup_info_json() -> &'static str {
             "merkleTreeCustom": true
         }
     }"#
+}
+
+fn sample_setup_info_binary() -> Vec<u8> {
+    let mut section = Vec::new();
+    push_u32(&mut section, 2);
+    push_u32(&mut section, 5);
+    push_optional_u32(&mut section, Some(3));
+    push_optional_u32(&mut section, Some(8));
+    push_u32(&mut section, 7);
+    push_u32(&mut section, 2);
+    push_u32(&mut section, 3);
+
+    push_u32(&mut section, 3);
+    push_i64(&mut section, 0);
+    push_i64(&mut section, 1);
+    push_i64(&mut section, -1);
+
+    push_u32(&mut section, 4);
+    push_string(&mut section, "cm1");
+    push_u32(&mut section, 2);
+    push_string(&mut section, "cm2");
+    push_u32(&mut section, 3);
+    push_string(&mut section, "cm3");
+    push_u32(&mut section, 1);
+    push_string(&mut section, "const");
+    push_u32(&mut section, 5);
+
+    push_u32(&mut section, 5);
+    for (name, pols_map_id, lengths) in [
+        ("main.a", 0_u32, &[][..]),
+        ("main.b", 1, &[][..]),
+        ("main.c", 2, &[][..]),
+        ("main.d", 3, &[][..]),
+        ("main.e", 4, &[5_u32][..]),
+    ] {
+        push_string(&mut section, name);
+        push_u32(&mut section, 0);
+        push_u32(&mut section, 1);
+        push_u32(&mut section, pols_map_id);
+        push_u32(&mut section, pols_map_id);
+        push_u32(&mut section, lengths.len() as u32);
+        for length in lengths {
+            push_u32(&mut section, *length);
+        }
+    }
+
+    push_u32(&mut section, 2);
+    push_optional_string(&mut section, Some("first"));
+    push_optional_i64(&mut section, Some(0));
+    push_optional_i64(&mut section, Some(3));
+    push_optional_string(&mut section, None);
+    push_optional_i64(&mut section, Some(-1));
+    push_optional_i64(&mut section, None);
+
+    push_u32(&mut section, 10);
+    push_u32(&mut section, 13);
+    push_u32(&mut section, 4);
+    push_u32(&mut section, 3);
+    push_u32(&mut section, 13);
+    push_u32(&mut section, 9);
+    push_u32(&mut section, 5);
+    push_u8(&mut section, 1);
+    push_u32(&mut section, 2);
+    push_u32(&mut section, 20);
+    push_u32(&mut section, 4);
+    push_optional_string(&mut section, Some("GL"));
+    push_optional_u32(&mut section, Some(4));
+    push_optional_bool(&mut section, Some(true));
+
+    let mut file = Vec::new();
+    file.extend_from_slice(b"uinf");
+    push_u32(&mut file, 1);
+    push_u32(&mut file, 1);
+    push_u32(&mut file, 1);
+    file.extend_from_slice(&(section.len() as u64).to_le_bytes());
+    file.extend_from_slice(&section);
+    file
 }
 
 fn temp_file_path(name: &str) -> PathBuf {
@@ -136,4 +271,65 @@ fn reads_unit_setup_info_from_a_file_path() {
         info.stage_commit_widths().expect("widths should exist"),
         vec![2, 3, 1]
     );
+}
+
+#[test]
+fn parses_unit_setup_info_binary() {
+    let info = parse_unit_setup_info(&sample_setup_info_binary()).expect("fixture should parse");
+
+    assert_eq!(info.n_stages, 2);
+    assert_eq!(info.n_constants, 5);
+    assert_eq!(info.constant_columns.len(), 5);
+    assert_eq!(info.constant_columns[4].name, "main.e");
+    assert_eq!(info.constant_columns[4].lengths, [5]);
+    assert_eq!(info.n_publics, Some(3));
+    assert_eq!(info.n_constraints, Some(8));
+    assert_eq!(info.q_degree, 7);
+    assert_eq!(info.opening_points, vec![0, 1, -1]);
+    assert_eq!(info.challenge_count, 2);
+    assert_eq!(info.eval_count, 3);
+    assert_eq!(
+        info.stage_commit_widths().expect("widths should exist"),
+        vec![2, 3, 1]
+    );
+    assert_eq!(info.boundaries.len(), 2);
+    assert_eq!(info.boundaries[0].name.as_deref(), Some("first"));
+    assert_eq!(info.boundaries[1].offset_min, Some(-1));
+    assert_eq!(info.stark.n_bits, 10);
+    assert_eq!(info.stark.n_bits_ext, 13);
+    assert_eq!(info.stark.steps.len(), 3);
+    assert_eq!(info.stark.verification_hash_type.as_deref(), Some("GL"));
+}
+
+#[test]
+fn encodes_unit_setup_info_to_the_canonical_binary_form() {
+    let info = parse_unit_setup_info_json(sample_setup_info_json()).expect("fixture should parse");
+    let encoded = encode_unit_setup_info(&info).expect("fixture should encode");
+
+    assert_eq!(encoded, sample_setup_info_binary());
+}
+
+#[test]
+fn reads_unit_setup_info_binary_from_a_file_path() {
+    let path = temp_file_path("unit.setup.bin");
+    fs::write(&path, sample_setup_info_binary()).expect("fixture should be written");
+
+    let info = read_unit_setup_info_binary_file(&path).expect("fixture should parse");
+    fs::remove_file(&path).expect("fixture should be removed");
+
+    assert_eq!(
+        info.stage_commit_widths().expect("widths should exist"),
+        vec![2, 3, 1]
+    );
+}
+
+#[test]
+fn rejects_invalid_binary_setup_info_magic() {
+    let mut bytes = sample_setup_info_binary();
+    bytes[0] = b'x';
+
+    assert!(matches!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::InvalidMagic)
+    ));
 }
