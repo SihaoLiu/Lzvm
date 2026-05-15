@@ -48,7 +48,7 @@ use crate::hint_eval::{
 #[cfg(not(feature = "cuda"))]
 use crate::pcs_challenge::find_query_nonce;
 #[cfg(feature = "cuda")]
-use crate::pcs_challenge::find_query_nonce_cuda;
+use crate::pcs_challenge::find_query_nonce_cuda_with_streams;
 use crate::pcs_challenge::{derive_fri_queries, verify_query_nonce, PcsChallengeError};
 use crate::pcs_transcript::{
     derive_pcs_final_query_challenge_from_segments, PcsTranscriptError, PcsTranscriptSegmentInputs,
@@ -1449,13 +1449,21 @@ pub fn build_pcs_query_nonce_segment(
     schedule: &ProveSchedule,
     challenge: Ext3,
 ) -> Result<ProofSegment, ProvePcsQueryPlanSegmentError> {
+    build_pcs_query_nonce_segment_with_streams(schedule, challenge, 1)
+}
+
+pub fn build_pcs_query_nonce_segment_with_streams(
+    schedule: &ProveSchedule,
+    challenge: Ext3,
+    max_streams: usize,
+) -> Result<ProofSegment, ProvePcsQueryPlanSegmentError> {
     let bits = schedule
         .units
         .iter()
         .map(|unit| unit.proof_of_work_bits)
         .max()
         .unwrap_or(0);
-    let nonce = find_query_nonce_with_available_backend(challenge, bits)?;
+    let nonce = find_query_nonce_with_available_backend(challenge, bits, max_streams)?;
     let segment = PcsQueryNonceSegment {
         nonce: nonce.to_u64(),
     };
@@ -1494,14 +1502,20 @@ pub fn build_pcs_query_plan_segment_from_transcript_segments(
 fn find_query_nonce_with_available_backend(
     challenge: Ext3,
     bits: u32,
+    max_streams: usize,
 ) -> Result<Felt, ProvePcsQueryPlanSegmentError> {
-    Ok(find_query_nonce_cuda(challenge, bits)?)
+    Ok(find_query_nonce_cuda_with_streams(
+        challenge,
+        bits,
+        max_streams,
+    )?)
 }
 
 #[cfg(not(feature = "cuda"))]
 fn find_query_nonce_with_available_backend(
     challenge: Ext3,
     bits: u32,
+    _max_streams: usize,
 ) -> Result<Felt, ProvePcsQueryPlanSegmentError> {
     Ok(find_query_nonce(challenge, bits)?)
 }

@@ -1,9 +1,9 @@
 use lzvm_field::{Ext3, Felt, TranscriptError};
-#[cfg(feature = "cuda")]
-use lzvm_prover::pcs_challenge::find_query_nonce_cuda;
 use lzvm_prover::pcs_challenge::{
     derive_fri_queries, find_query_nonce, verify_query_nonce, PcsChallengeError,
 };
+#[cfg(feature = "cuda")]
+use lzvm_prover::pcs_challenge::{find_query_nonce_cuda, find_query_nonce_cuda_with_streams};
 
 #[test]
 fn verifies_query_nonce_with_the_width_4_hash() {
@@ -55,6 +55,18 @@ fn cuda_query_nonce_search_matches_cpu_search() {
     let expected = find_query_nonce(challenge, 2).expect("CPU nonce search should find a value");
     let actual =
         find_query_nonce_cuda(challenge, 2).expect("CUDA nonce search should find a value");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_query_nonce_search_with_streams_matches_default_search() {
+    let challenge = Ext3::from_u64s([0, 1, 2]);
+
+    let expected = find_query_nonce_cuda(challenge, 2).expect("CUDA nonce search should find");
+    let actual = find_query_nonce_cuda_with_streams(challenge, 2, 8)
+        .expect("stream-aware CUDA nonce search should find");
 
     assert_eq!(actual, expected);
 }

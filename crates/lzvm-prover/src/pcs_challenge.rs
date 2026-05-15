@@ -69,6 +69,15 @@ pub fn find_query_nonce(challenge: Ext3, bits: u32) -> Result<Felt, PcsChallenge
 
 #[cfg(feature = "cuda")]
 pub fn find_query_nonce_cuda(challenge: Ext3, bits: u32) -> Result<Felt, PcsChallengeError> {
+    find_query_nonce_cuda_with_streams(challenge, bits, 1)
+}
+
+#[cfg(feature = "cuda")]
+pub fn find_query_nonce_cuda_with_streams(
+    challenge: Ext3,
+    bits: u32,
+    stream_count: usize,
+) -> Result<Felt, PcsChallengeError> {
     if bits > 64 {
         return Err(PcsChallengeError::InvalidWorkBits { bits });
     }
@@ -84,18 +93,18 @@ pub fn find_query_nonce_cuda(challenge: Ext3, bits: u32) -> Result<Felt, PcsChal
     ];
     let mut start = 0_u64;
     loop {
-        let count = cuda_nonce_batch_len(start);
+        let count = cuda_nonce_batch_len(start, stream_count);
         if let Some(nonce) =
             lzvm_accel::cuda_poseidon2_width4_find_nonce(challenge, start, count, target)
                 .map_err(|error| PcsChallengeError::Cuda(error.to_string()))?
         {
             return Ok(Felt::from_u64(nonce));
         }
-        if count < CUDA_NONCE_BATCH_SIZE {
+        if count < CUDA_NONCE_BATCH_SIZE.saturating_mul(stream_count.max(1)) {
             break;
         }
         start = start
-            .checked_add(CUDA_NONCE_BATCH_SIZE as u64)
+            .checked_add((CUDA_NONCE_BATCH_SIZE.saturating_mul(stream_count.max(1))) as u64)
             .ok_or(PcsChallengeError::QueryNonceNotFound { bits })?;
     }
     Err(PcsChallengeError::QueryNonceNotFound { bits })
@@ -123,12 +132,12 @@ pub fn derive_fri_queries(
 }
 
 #[cfg(feature = "cuda")]
-fn cuda_nonce_batch_len(start: u64) -> usize {
+fn cuda_nonce_batch_len(start: u64, stream_count: usize) -> usize {
     let remaining = u64::MAX - start;
-    let batch = CUDA_NONCE_BATCH_SIZE as u64;
+    let batch = CUDA_NONCE_BATCH_SIZE.saturating_mul(stream_count.max(1)) as u64;
     if remaining < batch - 1 {
         remaining as usize + 1
     } else {
-        CUDA_NONCE_BATCH_SIZE
+        CUDA_NONCE_BATCH_SIZE.saturating_mul(stream_count.max(1))
     }
 }

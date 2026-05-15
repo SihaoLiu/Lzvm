@@ -13,7 +13,7 @@ use lzvm_prover::{
     build_constant_opening_segment, build_pcs_evaluation_segment,
     build_pcs_fri_opening_segment_from_transcript_values,
     build_pcs_fri_transcript_values_from_trace_segments, build_pcs_material_manifest_segment,
-    build_pcs_query_nonce_segment, build_pcs_query_plan_segment,
+    build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_challenge, build_witness_commitment_segment,
     build_witness_opening_segment, derive_prove_execution_plan,
     proof_values::build_pcs_proof_values_segment_from_packed_values,
@@ -98,6 +98,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         catalog: &catalog,
         schedule: &plan.run_plan.schedule,
         execution_unit,
+        gpu_streams: plan.run_plan.gpu.max_streams,
         public_inputs: plan.inputs.public_inputs.as_deref(),
         unit_values_input: parsed.unit_values.as_deref(),
         proof_values_input: parsed.proof_values.as_deref(),
@@ -284,6 +285,7 @@ struct WitnessOutputSaveRequest<'a> {
     catalog: &'a KeyDirectoryCatalog,
     schedule: &'a ProveSchedule,
     execution_unit: &'a ProveExecutionUnitArtifacts,
+    gpu_streams: usize,
     public_inputs: Option<&'a Path>,
     unit_values_input: Option<&'a Path>,
     proof_values_input: Option<&'a Path>,
@@ -387,9 +389,12 @@ fn build_proof_bytes(
                 .ok_or_else(|| "build FRI transcript values failed: no units".to_owned())?
                 .commitments
                 .final_query_challenge;
-            let nonce_segment =
-                build_pcs_query_nonce_segment(request.schedule, final_query_challenge)
-                    .map_err(|error| format!("build query nonce segment failed: {error}"))?;
+            let nonce_segment = build_pcs_query_nonce_segment_with_streams(
+                request.schedule,
+                final_query_challenge,
+                request.gpu_streams,
+            )
+            .map_err(|error| format!("build query nonce segment failed: {error}"))?;
             let nonce = Felt::from_u64(
                 parse_pcs_query_nonce_segment(&nonce_segment.data)
                     .map_err(|error| format!("parse query nonce segment failed: {error}"))?
