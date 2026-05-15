@@ -1,6 +1,7 @@
 use lzvm_artifacts::expression_info::{
     encode_expression_info, parse_expression_info, parse_expression_info_json,
-    read_expression_info_binary_file, read_expression_info_file, BoundaryKind, ExpressionInfoError,
+    read_expression_info_binary_file, read_expression_info_file, BoundaryKind, CodeDestination,
+    CodeOperand, ExpressionInfoError,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -89,10 +90,25 @@ fn parses_expression_info_json() {
     assert_eq!(info.expressions[0].temporary_count, 2);
     assert_eq!(info.expressions[0].operations.len(), 2);
     assert_eq!(info.expressions[0].line, "expr-a");
+    assert_eq!(
+        info.expressions[0].operations[0].destination,
+        CodeDestination::temporary(0, 1)
+    );
+    assert_eq!(
+        info.expressions[0].operations[0].sources,
+        vec![CodeOperand::number(3, 1), CodeOperand::public(0, 1)]
+    );
     assert_eq!(info.constraints.len(), 1);
     assert_eq!(info.constraints[0].boundary, BoundaryKind::EveryFrame);
     assert_eq!(info.constraints[0].offset_min, Some(-1));
     assert!(info.constraints[0].intermediate);
+    assert_eq!(
+        info.constraints[0].operations[0].sources,
+        vec![
+            CodeOperand::challenge(0, Some(1), Some(0), 3),
+            CodeOperand::commitment(2, 3),
+        ]
+    );
 }
 
 #[test]
@@ -189,6 +205,31 @@ fn encodes_and_parses_expression_info_binary() {
     let parsed = parse_expression_info(&bytes).expect("binary fixture should parse");
 
     assert_eq!(parsed, info);
+}
+
+#[test]
+fn encodes_the_current_expression_info_format_version() {
+    let info =
+        parse_expression_info_json(sample_expression_info_json()).expect("fixture should parse");
+    let bytes = encode_expression_info(&info).expect("fixture should encode");
+    let version = u32::from_le_bytes(bytes[4..8].try_into().expect("slice length checked"));
+
+    assert_eq!(version, 2);
+}
+
+#[test]
+fn rejects_stale_expression_info_format_headers() {
+    let info =
+        parse_expression_info_json(sample_expression_info_json()).expect("fixture should parse");
+    let mut bytes = encode_expression_info(&info).expect("fixture should encode");
+    bytes[4..8].copy_from_slice(&1_u32.to_le_bytes());
+
+    let error = parse_expression_info(&bytes).expect_err("stale format should be rejected");
+
+    assert!(matches!(
+        error,
+        ExpressionInfoError::UnsupportedVersion { found: 1, max: 2 }
+    ));
 }
 
 #[test]

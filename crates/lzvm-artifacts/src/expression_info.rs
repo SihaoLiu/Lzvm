@@ -7,7 +7,7 @@ use crate::sectioned::{
 };
 
 const EXPRESSION_INFO_KIND: [u8; 4] = *b"xinf";
-const EXPRESSION_INFO_VERSION: u32 = 1;
+const EXPRESSION_INFO_VERSION: u32 = 2;
 const EXPRESSION_INFO_SECTION_ID: u32 = 1;
 
 const JSON_NULL_TAG: u8 = 0;
@@ -18,6 +18,17 @@ const JSON_F64_TAG: u8 = 4;
 const JSON_STRING_TAG: u8 = 5;
 const JSON_ARRAY_TAG: u8 = 6;
 const JSON_OBJECT_TAG: u8 = 7;
+
+const OPERAND_TEMPORARY_TAG: u8 = 1;
+const OPERAND_NUMBER_TAG: u8 = 2;
+const OPERAND_EVALUATION_TAG: u8 = 3;
+const OPERAND_CHALLENGE_TAG: u8 = 4;
+const OPERAND_PUBLIC_TAG: u8 = 5;
+const OPERAND_CONSTANT_TAG: u8 = 6;
+const OPERAND_COMMITMENT_TAG: u8 = 7;
+const OPERAND_BOUNDARY_TAG: u8 = 8;
+const OPERAND_PROOF_VALUE_TAG: u8 = 9;
+const OPERAND_OPENING_DENOMINATOR_TAG: u8 = 10;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExpressionInfo {
@@ -79,8 +90,8 @@ pub enum BoundaryKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodeOperation {
     pub op: OperationKind,
-    pub destination: serde_json::Value,
-    pub sources: Vec<serde_json::Value>,
+    pub destination: CodeDestination,
+    pub sources: Vec<CodeOperand>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,6 +100,114 @@ pub enum OperationKind {
     Sub,
     Mul,
     Copy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CodeDestination {
+    pub temporary_id: u32,
+    pub dimension: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CodeOperand {
+    Temporary {
+        id: u32,
+        dimension: u32,
+    },
+    Number {
+        value: u64,
+        dimension: u32,
+    },
+    Evaluation {
+        id: u32,
+        dimension: u32,
+    },
+    Challenge {
+        id: u32,
+        stage: Option<u32>,
+        stage_id: Option<u32>,
+        dimension: u32,
+    },
+    Public {
+        id: u32,
+        dimension: u32,
+    },
+    Constant {
+        id: u32,
+        dimension: u32,
+    },
+    Commitment {
+        id: u32,
+        dimension: u32,
+    },
+    BoundaryZerofier {
+        id: u32,
+        dimension: u32,
+    },
+    ProofValue {
+        id: u32,
+        dimension: u32,
+    },
+    OpeningDenominator {
+        id: u32,
+        dimension: u32,
+    },
+}
+
+impl CodeDestination {
+    pub fn temporary(temporary_id: u32, dimension: u32) -> Self {
+        Self {
+            temporary_id,
+            dimension,
+        }
+    }
+}
+
+impl CodeOperand {
+    pub fn temporary(id: u32, dimension: u32) -> Self {
+        Self::Temporary { id, dimension }
+    }
+
+    pub fn number(value: u64, dimension: u32) -> Self {
+        Self::Number { value, dimension }
+    }
+
+    pub fn evaluation(id: u32, dimension: u32) -> Self {
+        Self::Evaluation { id, dimension }
+    }
+
+    pub fn challenge(id: u32, stage: Option<u32>, stage_id: Option<u32>, dimension: u32) -> Self {
+        Self::Challenge {
+            id,
+            stage,
+            stage_id,
+            dimension,
+        }
+    }
+
+    pub fn public(id: u32, dimension: u32) -> Self {
+        Self::Public { id, dimension }
+    }
+
+    pub fn constant(id: u32, dimension: u32) -> Self {
+        Self::Constant { id, dimension }
+    }
+
+    pub fn commitment(id: u32, dimension: u32) -> Self {
+        Self::Commitment { id, dimension }
+    }
+
+    pub fn boundary_zerofier(id: u32, dimension: u32) -> Self {
+        Self::BoundaryZerofier { id, dimension }
+    }
+
+    pub fn proof_value(id: u32, dimension: u32) -> Self {
+        Self::ProofValue { id, dimension }
+    }
+
+    pub fn x_div_x_sub(id: u32, dimension: u32) -> Self {
+        Self::OpeningDenominator { id, dimension }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,6 +223,12 @@ pub enum ExpressionInfoError {
     },
     UnknownOperation {
         op: String,
+    },
+    UnknownReferenceKind {
+        kind: String,
+    },
+    InvalidNumber {
+        value: String,
     },
     UnknownBoundary {
         boundary: String,
@@ -147,6 +272,9 @@ pub enum ExpressionInfoError {
     InvalidBoundaryTag {
         value: u8,
     },
+    InvalidOperandTag {
+        value: u8,
+    },
     InvalidJsonTag {
         value: u8,
     },
@@ -163,6 +291,12 @@ impl fmt::Display for ExpressionInfoError {
             Self::MissingField { field } => write!(f, "missing expression-info field: {field}"),
             Self::InvalidField { field } => write!(f, "invalid expression-info field: {field}"),
             Self::UnknownOperation { op } => write!(f, "unknown expression-info operation: {op}"),
+            Self::UnknownReferenceKind { kind } => {
+                write!(f, "unknown expression-info reference kind: {kind}")
+            }
+            Self::InvalidNumber { value } => {
+                write!(f, "invalid expression-info number: {value}")
+            }
             Self::UnknownBoundary { boundary } => {
                 write!(f, "unknown expression-info boundary: {boundary}")
             }
@@ -210,6 +344,9 @@ impl fmt::Display for ExpressionInfoError {
             }
             Self::InvalidBoundaryTag { value } => {
                 write!(f, "invalid expression-info boundary tag: {value}")
+            }
+            Self::InvalidOperandTag { value } => {
+                write!(f, "invalid expression-info operand tag: {value}")
             }
             Self::InvalidJsonTag { value } => {
                 write!(f, "invalid expression-info value tag: {value}")
@@ -276,6 +413,12 @@ pub fn read_expression_info_binary_file(
 pub fn parse_expression_info(bytes: &[u8]) -> Result<ExpressionInfo, ExpressionInfoError> {
     let file = parse_sectioned_file(bytes, EXPRESSION_INFO_KIND, EXPRESSION_INFO_VERSION)
         .map_err(ExpressionInfoError::from)?;
+    if file.version != EXPRESSION_INFO_VERSION {
+        return Err(ExpressionInfoError::UnsupportedVersion {
+            found: file.version,
+            max: EXPRESSION_INFO_VERSION,
+        });
+    }
     if file.sections.len() != 1 {
         return Err(ExpressionInfoError::InvalidSectionCount {
             found: u32::try_from(file.sections.len()).unwrap_or(u32::MAX),
@@ -370,9 +513,9 @@ fn validate_operations(
     temporary_count: u32,
 ) -> Result<(), ExpressionInfoError> {
     for operation in operations {
-        validate_temporary_reference(&operation.destination, temporary_count)?;
+        validate_destination(&operation.destination, temporary_count)?;
         for source in &operation.sources {
-            validate_temporary_reference(source, temporary_count)?;
+            validate_operand(source, temporary_count)?;
         }
     }
     Ok(())
@@ -602,11 +745,11 @@ fn parse_operations(
     for value in values {
         let object = as_object(value, "code")?;
         let op = parse_operation(&required_string(object, "op")?)?;
-        let destination = required(object, "dest")?.clone();
-        let sources = required_array(object, "src")?.to_vec();
-        validate_temporary_reference(&destination, temporary_count)?;
+        let destination = parse_destination(required(object, "dest")?, temporary_count)?;
+        let sources = parse_operands(required_array(object, "src")?, temporary_count)?;
+        validate_destination(&destination, temporary_count)?;
         for source in &sources {
-            validate_temporary_reference(source, temporary_count)?;
+            validate_operand(source, temporary_count)?;
         }
         operations.push(CodeOperation {
             op,
@@ -622,11 +765,11 @@ fn read_operations(reader: &mut Reader<'_>) -> Result<Vec<CodeOperation>, Expres
     let mut operations = Vec::with_capacity(count as usize);
     for _ in 0..count {
         let op = read_operation_tag(reader.read_u8()?)?;
-        let destination = reader.read_json_value()?;
+        let destination = reader.read_destination()?;
         let source_count = reader.read_u32()?;
         let mut sources = Vec::with_capacity(source_count as usize);
         for _ in 0..source_count {
-            sources.push(reader.read_json_value()?);
+            sources.push(reader.read_operand()?);
         }
         operations.push(CodeOperation {
             op,
@@ -644,10 +787,10 @@ fn write_operations(
     write_len(out, values.len())?;
     for value in values {
         out.push(operation_tag(value.op));
-        write_json_value(out, &value.destination)?;
+        write_destination(out, &value.destination);
         write_len(out, value.sources.len())?;
         for source in &value.sources {
-            write_json_value(out, source)?;
+            write_operand(out, source);
         }
     }
     Ok(())
@@ -716,29 +859,128 @@ fn read_boundary_tag(value: u8) -> Result<BoundaryKind, ExpressionInfoError> {
     }
 }
 
-fn validate_temporary_reference(
-    value: &serde_json::Value,
+fn validate_destination(
+    value: &CodeDestination,
     temporary_count: u32,
 ) -> Result<(), ExpressionInfoError> {
-    let Some(object) = value.as_object() else {
-        return Err(ExpressionInfoError::InvalidField { field: "reference" });
-    };
-    if object.get("type").and_then(serde_json::Value::as_str) != Some("tmp") {
-        return Ok(());
-    }
-    let id = value_to_u32(
-        object
-            .get("id")
-            .ok_or(ExpressionInfoError::MissingField { field: "id" })?,
-        "id",
-    )?;
-    if id >= temporary_count {
+    if value.temporary_id >= temporary_count {
         return Err(ExpressionInfoError::TemporaryReferenceOutOfBounds {
-            temporary_id: id,
+            temporary_id: value.temporary_id,
             temporary_count,
         });
     }
     Ok(())
+}
+
+fn validate_operand(value: &CodeOperand, temporary_count: u32) -> Result<(), ExpressionInfoError> {
+    if let CodeOperand::Temporary { id, .. } = value {
+        if *id >= temporary_count {
+            return Err(ExpressionInfoError::TemporaryReferenceOutOfBounds {
+                temporary_id: *id,
+                temporary_count,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn parse_destination(
+    value: &serde_json::Value,
+    temporary_count: u32,
+) -> Result<CodeDestination, ExpressionInfoError> {
+    let object = as_object(value, "dest")?;
+    if required_string(object, "type")? != "tmp" {
+        return Err(ExpressionInfoError::InvalidField { field: "dest" });
+    }
+    let destination = CodeDestination::temporary(
+        required_u32(object, "id")?,
+        optional_u32(object, "dim")?.unwrap_or(1),
+    );
+    validate_destination(&destination, temporary_count)?;
+    Ok(destination)
+}
+
+fn parse_operands(
+    values: &[serde_json::Value],
+    temporary_count: u32,
+) -> Result<Vec<CodeOperand>, ExpressionInfoError> {
+    let mut operands = Vec::with_capacity(values.len());
+    for value in values {
+        let operand = parse_operand(value)?;
+        validate_operand(&operand, temporary_count)?;
+        operands.push(operand);
+    }
+    Ok(operands)
+}
+
+fn parse_operand(value: &serde_json::Value) -> Result<CodeOperand, ExpressionInfoError> {
+    let object = as_object(value, "reference")?;
+    let kind = required_string(object, "type")?;
+    let dimension = optional_u32(object, "dim")?.unwrap_or(1);
+    match kind.as_str() {
+        "tmp" => Ok(CodeOperand::temporary(
+            required_u32(object, "id")?,
+            dimension,
+        )),
+        "number" => Ok(CodeOperand::number(
+            required_number(object, "value")?,
+            dimension,
+        )),
+        "eval" => Ok(CodeOperand::evaluation(
+            required_u32(object, "id")?,
+            dimension,
+        )),
+        "challenge" => Ok(CodeOperand::challenge(
+            required_u32(object, "id")?,
+            optional_u32(object, "stage")?,
+            optional_u32(object, "stageId")?,
+            dimension,
+        )),
+        "public" => Ok(CodeOperand::public(required_u32(object, "id")?, dimension)),
+        "const" => Ok(CodeOperand::constant(
+            required_u32(object, "id")?,
+            dimension,
+        )),
+        "cm" => Ok(CodeOperand::commitment(
+            required_u32(object, "id")?,
+            dimension,
+        )),
+        "Zi" => {
+            let id = match optional_u32(object, "boundaryId")? {
+                Some(id) => id,
+                None => required_u32(object, "id")?,
+            };
+            Ok(CodeOperand::boundary_zerofier(id, dimension))
+        }
+        "proofvalue" | "proofValue" => Ok(CodeOperand::proof_value(
+            required_u32(object, "id")?,
+            dimension,
+        )),
+        "xDivXSub" | "xdivxsub" => Ok(CodeOperand::x_div_x_sub(
+            required_u32(object, "id")?,
+            dimension,
+        )),
+        _ => Err(ExpressionInfoError::UnknownReferenceKind { kind }),
+    }
+}
+
+fn required_number(
+    object: &serde_json::Map<String, serde_json::Value>,
+    field: &'static str,
+) -> Result<u64, ExpressionInfoError> {
+    let value = required(object, field)?;
+    if let Some(text) = value.as_str() {
+        return text
+            .parse::<u64>()
+            .map_err(|_| ExpressionInfoError::InvalidNumber {
+                value: text.to_owned(),
+            });
+    }
+    value
+        .as_u64()
+        .ok_or_else(|| ExpressionInfoError::InvalidNumber {
+            value: value.to_string(),
+        })
 }
 
 fn as_object<'a>(
@@ -917,6 +1159,79 @@ fn write_optional_i64(out: &mut Vec<u8>, value: Option<i64>) {
     }
 }
 
+fn write_destination(out: &mut Vec<u8>, value: &CodeDestination) {
+    write_u32(out, value.temporary_id);
+    write_u32(out, value.dimension);
+}
+
+fn write_operand(out: &mut Vec<u8>, value: &CodeOperand) {
+    match value {
+        CodeOperand::Temporary { id, dimension } => {
+            out.push(OPERAND_TEMPORARY_TAG);
+            write_reference_body(out, *id, *dimension);
+        }
+        CodeOperand::Number { value, dimension } => {
+            out.push(OPERAND_NUMBER_TAG);
+            write_u64(out, *value);
+            write_u32(out, *dimension);
+        }
+        CodeOperand::Evaluation { id, dimension } => {
+            out.push(OPERAND_EVALUATION_TAG);
+            write_reference_body(out, *id, *dimension);
+        }
+        CodeOperand::Challenge {
+            id,
+            stage,
+            stage_id,
+            dimension,
+        } => {
+            out.push(OPERAND_CHALLENGE_TAG);
+            write_reference_body(out, *id, *dimension);
+            write_optional_u32(out, *stage);
+            write_optional_u32(out, *stage_id);
+        }
+        CodeOperand::Public { id, dimension } => {
+            out.push(OPERAND_PUBLIC_TAG);
+            write_reference_body(out, *id, *dimension);
+        }
+        CodeOperand::Constant { id, dimension } => {
+            out.push(OPERAND_CONSTANT_TAG);
+            write_reference_body(out, *id, *dimension);
+        }
+        CodeOperand::Commitment { id, dimension } => {
+            out.push(OPERAND_COMMITMENT_TAG);
+            write_reference_body(out, *id, *dimension);
+        }
+        CodeOperand::BoundaryZerofier { id, dimension } => {
+            out.push(OPERAND_BOUNDARY_TAG);
+            write_reference_body(out, *id, *dimension);
+        }
+        CodeOperand::ProofValue { id, dimension } => {
+            out.push(OPERAND_PROOF_VALUE_TAG);
+            write_reference_body(out, *id, *dimension);
+        }
+        CodeOperand::OpeningDenominator { id, dimension } => {
+            out.push(OPERAND_OPENING_DENOMINATOR_TAG);
+            write_reference_body(out, *id, *dimension);
+        }
+    }
+}
+
+fn write_reference_body(out: &mut Vec<u8>, id: u32, dimension: u32) {
+    write_u32(out, id);
+    write_u32(out, dimension);
+}
+
+fn write_optional_u32(out: &mut Vec<u8>, value: Option<u32>) {
+    match value {
+        Some(value) => {
+            out.push(1);
+            write_u32(out, value);
+        }
+        None => out.push(0),
+    }
+}
+
 fn write_string(out: &mut Vec<u8>, value: &str) -> Result<(), ExpressionInfoError> {
     write_len(out, value.len())?;
     out.extend_from_slice(value.as_bytes());
@@ -953,6 +1268,63 @@ impl<'a> Reader<'a> {
 
     fn position(&self) -> usize {
         self.offset
+    }
+
+    fn read_destination(&mut self) -> Result<CodeDestination, ExpressionInfoError> {
+        Ok(CodeDestination {
+            temporary_id: self.read_u32()?,
+            dimension: self.read_u32()?,
+        })
+    }
+
+    fn read_operand(&mut self) -> Result<CodeOperand, ExpressionInfoError> {
+        let tag = self.read_u8()?;
+        match tag {
+            OPERAND_TEMPORARY_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                Ok(CodeOperand::temporary(id, dimension))
+            }
+            OPERAND_NUMBER_TAG => Ok(CodeOperand::number(self.read_u64()?, self.read_u32()?)),
+            OPERAND_EVALUATION_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                Ok(CodeOperand::evaluation(id, dimension))
+            }
+            OPERAND_CHALLENGE_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                let stage = self.read_optional_u32("challenge_stage")?;
+                let stage_id = self.read_optional_u32("challenge_stage_id")?;
+                Ok(CodeOperand::challenge(id, stage, stage_id, dimension))
+            }
+            OPERAND_PUBLIC_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                Ok(CodeOperand::public(id, dimension))
+            }
+            OPERAND_CONSTANT_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                Ok(CodeOperand::constant(id, dimension))
+            }
+            OPERAND_COMMITMENT_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                Ok(CodeOperand::commitment(id, dimension))
+            }
+            OPERAND_BOUNDARY_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                Ok(CodeOperand::boundary_zerofier(id, dimension))
+            }
+            OPERAND_PROOF_VALUE_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                Ok(CodeOperand::proof_value(id, dimension))
+            }
+            OPERAND_OPENING_DENOMINATOR_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                Ok(CodeOperand::x_div_x_sub(id, dimension))
+            }
+            value => Err(ExpressionInfoError::InvalidOperandTag { value }),
+        }
+    }
+
+    fn read_reference_body(&mut self) -> Result<(u32, u32), ExpressionInfoError> {
+        Ok((self.read_u32()?, self.read_u32()?))
     }
 
     fn read_json_value(&mut self) -> Result<serde_json::Value, ExpressionInfoError> {
@@ -1016,6 +1388,17 @@ impl<'a> Reader<'a> {
         match self.read_u8()? {
             0 => Ok(None),
             1 => Ok(Some(self.read_i64()?)),
+            value => Err(ExpressionInfoError::InvalidFlag { field, value }),
+        }
+    }
+
+    fn read_optional_u32(
+        &mut self,
+        field: &'static str,
+    ) -> Result<Option<u32>, ExpressionInfoError> {
+        match self.read_u8()? {
+            0 => Ok(None),
+            1 => Ok(Some(self.read_u32()?)),
             value => Err(ExpressionInfoError::InvalidFlag { field, value }),
         }
     }
