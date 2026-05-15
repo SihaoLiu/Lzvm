@@ -324,6 +324,13 @@ fn build_proof_bytes(
         .map_err(|error| format!("build material manifest segment failed: {error}"))?;
     let commitments = request.output.commitments();
     let transcript_values = if request.output.auxiliary_inputs().evaluations.is_empty() {
+        if request.execution_unit.fri_expression_id.is_some() {
+            return Err(format!(
+                "missing evaluation values for unit {}: expected {}",
+                commitments.unit_index(),
+                request.execution_unit.setup.eval_count
+            ));
+        }
         None
     } else {
         let evaluation_segment = build_pcs_evaluation_segment(
