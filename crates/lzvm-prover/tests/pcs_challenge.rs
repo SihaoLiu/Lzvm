@@ -1,5 +1,7 @@
 use lzvm_field::{Ext3, Felt, TranscriptError};
-use lzvm_prover::pcs_challenge::{derive_fri_queries, verify_query_nonce, PcsChallengeError};
+use lzvm_prover::pcs_challenge::{
+    derive_fri_queries, find_query_nonce, verify_query_nonce, PcsChallengeError,
+};
 
 #[test]
 fn verifies_query_nonce_with_the_width_4_hash() {
@@ -15,6 +17,30 @@ fn verifies_query_nonce_with_the_width_4_hash() {
 fn rejects_query_nonce_work_bits_above_the_field_word_size() {
     assert_eq!(
         verify_query_nonce(Ext3::ONE, Felt::ZERO, 65),
+        Err(PcsChallengeError::InvalidWorkBits { bits: 65 })
+    );
+}
+
+#[test]
+fn finds_the_first_query_nonce_that_satisfies_the_work_bits() {
+    let challenge = Ext3::from_u64s([0, 1, 2]);
+
+    let nonce = find_query_nonce(challenge, 2).expect("nonce search should find a value");
+
+    assert!(verify_query_nonce(challenge, nonce, 2).expect("nonce should verify"));
+    for candidate in 0..nonce.to_u64() {
+        assert!(
+            !verify_query_nonce(challenge, Felt::from_u64(candidate), 2)
+                .expect("candidate should evaluate"),
+            "found a smaller valid nonce"
+        );
+    }
+}
+
+#[test]
+fn query_nonce_search_rejects_invalid_work_bits() {
+    assert_eq!(
+        find_query_nonce(Ext3::ONE, 65),
         Err(PcsChallengeError::InvalidWorkBits { bits: 65 })
     );
 }
