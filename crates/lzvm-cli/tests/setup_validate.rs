@@ -2,6 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use lzvm_artifacts::challenge_values_segment::{
+    encode_challenge_values_segment, ChallengeValuesSegment,
+};
 use lzvm_artifacts::constant_opening_segment::{
     parse_constant_opening_segment, CONSTANT_OPENING_SEGMENT_ID,
 };
@@ -4483,6 +4486,66 @@ fn passes_challenge_values_to_witness_regular_constraints() {
             challenge_values_path
                 .to_str()
                 .expect("challenge values path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn passes_challenge_values_segment_to_witness_regular_constraints() {
+    let dir = temp_dir("prove-witness-challenge-constraint-segment");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_challenge_constraint(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let challenge_values_segment_path = dir.join("challenge_values_segment.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [13_u8]);
+    write_bytes(
+        &challenge_values_segment_path,
+        encode_challenge_values_segment(&ChallengeValuesSegment {
+            values: vec![[14, 52, 53]],
+        })
+        .expect("challenge values segment should encode"),
+    );
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--save-outputs",
+            "--challenge-values-segment",
+            challenge_values_segment_path
+                .to_str()
+                .expect("challenge values segment path should be utf-8"),
             "--input-data",
             input_data.to_str().expect("input path should be utf-8"),
             dir.to_str().expect("path should be utf-8"),

@@ -2,6 +2,7 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
+use lzvm_artifacts::challenge_values_segment::parse_challenge_values_segment;
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::group_values_segment::GROUP_VALUES_SEGMENT_ID;
 use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryCatalog};
@@ -83,6 +84,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         group_values_input: parsed.group_values.as_deref(),
         group_values_segment_input: parsed.group_values_segment.as_deref(),
         challenge_values_input: parsed.challenge_values.as_deref(),
+        challenge_values_segment_input: parsed.challenge_values_segment.as_deref(),
         evaluation_values_input: parsed.evaluation_values.as_deref(),
     };
     let auxiliary_inputs = match load_witness_auxiliary_inputs(&auxiliary_request) {
@@ -262,6 +264,7 @@ struct ParsedWitnessArgs {
     group_values: Option<std::path::PathBuf>,
     group_values_segment: Option<std::path::PathBuf>,
     challenge_values: Option<std::path::PathBuf>,
+    challenge_values_segment: Option<std::path::PathBuf>,
     evaluation_values: Option<std::path::PathBuf>,
     evaluation_values_segment: Option<std::path::PathBuf>,
 }
@@ -275,6 +278,7 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
     let mut group_values = None;
     let mut group_values_segment = None;
     let mut challenge_values = None;
+    let mut challenge_values_segment = None;
     let mut evaluation_values = None;
     let mut evaluation_values_segment = None;
     let mut filtered = Vec::with_capacity(args.len());
@@ -359,6 +363,17 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
                     ));
                 }
             }
+            "--challenge-values-segment" => {
+                index += 1;
+                let value = args.get(index).ok_or_else(|| {
+                    ParseError::Invalid("missing --challenge-values-segment value".to_owned())
+                })?;
+                if challenge_values_segment.replace((*value).into()).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --challenge-values-segment option".to_owned(),
+                    ));
+                }
+            }
             "--evaluation-values" => {
                 index += 1;
                 let value = args.get(index).ok_or_else(|| {
@@ -400,6 +415,11 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             "cannot combine --group-values and --group-values-segment".to_owned(),
         ));
     }
+    if challenge_values.is_some() && challenge_values_segment.is_some() {
+        return Err(ParseError::Invalid(
+            "cannot combine --challenge-values and --challenge-values-segment".to_owned(),
+        ));
+    }
     Ok(ParsedWitnessArgs {
         run_args: parse_run_args(&filtered, 4, 5)?,
         all_units,
@@ -410,6 +430,7 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
         group_values,
         group_values_segment,
         challenge_values,
+        challenge_values_segment,
         evaluation_values,
         evaluation_values_segment,
     })
@@ -431,6 +452,7 @@ struct WitnessAuxiliaryInputRequest<'a> {
     group_values_input: Option<&'a Path>,
     group_values_segment_input: Option<&'a Path>,
     challenge_values_input: Option<&'a Path>,
+    challenge_values_segment_input: Option<&'a Path>,
     evaluation_values_input: Option<&'a Path>,
 }
 
@@ -458,7 +480,10 @@ fn load_witness_auxiliary_inputs(
         },
         challenges: match request.challenge_values_input {
             Some(path) => read_packed_extension_values(path, "challenge values")?,
-            None => Vec::new(),
+            None => match request.challenge_values_segment_input {
+                Some(path) => read_challenge_values_segment_input(path)?,
+                None => Vec::new(),
+            },
         },
         evaluations: match request.evaluation_values_input {
             Some(path) => read_packed_extension_values(path, "evaluation values")?,
@@ -883,6 +908,44 @@ fn read_evaluation_values_segment_input(path: &Path) -> Result<ProofSegment, Str
         id: PCS_EVALUATION_SEGMENT_ID,
         data: bytes,
     })
+}
+
+fn read_challenge_values_segment_input(path: &Path) -> Result<Vec<Ext3>, String> {
+    let bytes = fs::read(path).map_err(|error| {
+        format!(
+            "read challenge values segment failed: {}: {error}",
+            path.display()
+        )
+    })?;
+    let segment = parse_challenge_values_segment(&bytes)
+        .map_err(|error| format!("parse challenge values segment failed: {error}"))?;
+    segment
+        .values
+        .into_iter()
+        .enumerate()
+        .map(|(index, words)| {
+            Ok(Ext3::new(
+                Felt::from_canonical(words[0]).map_err(|error| {
+                    format!(
+                        "parse challenge values segment failed: {}: value {index} word 0 is invalid: {error}",
+                        path.display()
+                    )
+                })?,
+                Felt::from_canonical(words[1]).map_err(|error| {
+                    format!(
+                        "parse challenge values segment failed: {}: value {index} word 1 is invalid: {error}",
+                        path.display()
+                    )
+                })?,
+                Felt::from_canonical(words[2]).map_err(|error| {
+                    format!(
+                        "parse challenge values segment failed: {}: value {index} word 2 is invalid: {error}",
+                        path.display()
+                    )
+                })?,
+            ))
+        })
+        .collect()
 }
 
 fn read_packed_proof_values_segment(

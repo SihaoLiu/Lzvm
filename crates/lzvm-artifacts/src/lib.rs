@@ -1,3 +1,4 @@
+pub mod challenge_values_segment;
 pub mod constant_opening_segment;
 pub mod constant_tree;
 pub mod constraint_program;
