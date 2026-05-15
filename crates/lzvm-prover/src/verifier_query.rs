@@ -2,6 +2,7 @@ use std::fmt;
 
 use lzvm_artifacts::constant_opening_segment::ConstantOpeningUnitSegment;
 use lzvm_artifacts::pcs_evaluation_segment::PcsEvaluationUnitSegment;
+use lzvm_artifacts::pcs_fri_segment::PcsFriOpeningUnitSegment;
 use lzvm_artifacts::verifier_info::VerifierCode;
 use lzvm_artifacts::witness_opening_segment::WitnessOpeningUnitSegment;
 use lzvm_field::{Ext3, Felt, FieldError, SHIFT};
@@ -53,6 +54,13 @@ pub struct VerifierUnitQueryEvalRequest<'a> {
     pub publics: &'a [Felt],
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct VerifierFriComparisonRequest<'a> {
+    pub unit_index: u32,
+    pub query_outputs: &'a [Ext3],
+    pub fri: &'a PcsFriOpeningUnitSegment,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerifierQueryEvalError {
     UnitIndexMismatch {
@@ -94,6 +102,35 @@ pub enum VerifierQueryEvalError {
     ZeroBoundaryDenominator,
     LengthOverflow,
     Eval(VerifierEvalError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VerifierFriComparisonError {
+    UnitIndexMismatch {
+        expected: u32,
+        found: u32,
+    },
+    MissingFriLayer,
+    QueryOutputCountMismatch {
+        expected: usize,
+        found: usize,
+    },
+    FriQueryCountMismatch {
+        expected: usize,
+        found: usize,
+    },
+    UnsupportedDomainBits {
+        bits: u32,
+    },
+    FriValueIndexOutOfRange {
+        query_index: usize,
+        value_index: usize,
+        len: usize,
+    },
+    NonCanonicalField {
+        value: u64,
+    },
+    LengthOverflow,
 }
 
 impl fmt::Display for VerifierQueryEvalError {
@@ -157,7 +194,44 @@ impl fmt::Display for VerifierQueryEvalError {
     }
 }
 
+impl fmt::Display for VerifierFriComparisonError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnitIndexMismatch { expected, found } => write!(
+                f,
+                "verifier FRI comparison unit index {found} does not match expected {expected}"
+            ),
+            Self::MissingFriLayer => write!(f, "verifier FRI comparison has no FRI layers"),
+            Self::QueryOutputCountMismatch { expected, found } => write!(
+                f,
+                "verifier FRI comparison expected {expected} query outputs, found {found}"
+            ),
+            Self::FriQueryCountMismatch { expected, found } => write!(
+                f,
+                "verifier FRI comparison expected {expected} FRI queries, found {found}"
+            ),
+            Self::UnsupportedDomainBits { bits } => {
+                write!(f, "unsupported verifier FRI comparison domain bits: {bits}")
+            }
+            Self::FriValueIndexOutOfRange {
+                query_index,
+                value_index,
+                len,
+            } => write!(
+                f,
+                "verifier FRI comparison query {query_index} value index {value_index} is outside value count {len}"
+            ),
+            Self::NonCanonicalField { value } => write!(
+                f,
+                "verifier FRI comparison field value is not canonical: {value}"
+            ),
+            Self::LengthOverflow => write!(f, "verifier FRI comparison length overflow"),
+        }
+    }
+}
+
 impl std::error::Error for VerifierQueryEvalError {}
+impl std::error::Error for VerifierFriComparisonError {}
 
 impl From<VerifierEvalError> for VerifierQueryEvalError {
     fn from(error: VerifierEvalError) -> Self {
@@ -286,6 +360,74 @@ pub fn evaluate_verifier_unit_queries(
     Ok(values)
 }
 
+pub fn verify_query_outputs_against_fri_opening(
+    schedule: &ProveUnitSchedule,
+    request: VerifierFriComparisonRequest<'_>,
+) -> Result<bool, VerifierFriComparisonError> {
+    if request.unit_index != request.fri.unit_index {
+        return Err(VerifierFriComparisonError::UnitIndexMismatch {
+            expected: request.unit_index,
+            found: request.fri.unit_index,
+        });
+    }
+    let query_count = usize::try_from(schedule.query_count)
+        .map_err(|_| VerifierFriComparisonError::LengthOverflow)?;
+    if request.query_outputs.len() != query_count {
+        return Err(VerifierFriComparisonError::QueryOutputCountMismatch {
+            expected: query_count,
+            found: request.query_outputs.len(),
+        });
+    }
+    let Some(first_layer) = request
+        .fri
+        .layers
+        .iter()
+        .find(|layer| layer.layer_index == 0)
+    else {
+        return Err(VerifierFriComparisonError::MissingFriLayer);
+    };
+    if first_layer.queries.len() != query_count {
+        return Err(VerifierFriComparisonError::FriQueryCountMismatch {
+            expected: query_count,
+            found: first_layer.queries.len(),
+        });
+    }
+    let Some(layer) = schedule.fri_layers.first() else {
+        return Err(VerifierFriComparisonError::MissingFriLayer);
+    };
+    let domain_size = 1_u64.checked_shl(layer.input_bits).ok_or(
+        VerifierFriComparisonError::UnsupportedDomainBits {
+            bits: layer.input_bits,
+        },
+    )?;
+    let output_size = 1_u64.checked_shl(layer.output_bits).ok_or(
+        VerifierFriComparisonError::UnsupportedDomainBits {
+            bits: layer.output_bits,
+        },
+    )?;
+
+    for (query_index, (query_output, query)) in request
+        .query_outputs
+        .iter()
+        .zip(&first_layer.queries)
+        .enumerate()
+    {
+        let value_index = usize::try_from((query.row_index % domain_size) / output_size)
+            .map_err(|_| VerifierFriComparisonError::LengthOverflow)?;
+        let Some(value) = query.values.get(value_index) else {
+            return Err(VerifierFriComparisonError::FriValueIndexOutOfRange {
+                query_index,
+                value_index,
+                len: query.values.len(),
+            });
+        };
+        if *query_output != convert_fri_ext(*value)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 impl VerifierQueryEvalInput {
     pub fn evaluate(
         &self,
@@ -350,10 +492,26 @@ fn convert_ext(source: &'static str, values: [u64; 3]) -> Result<Ext3, VerifierQ
     ))
 }
 
+fn convert_fri_ext(values: [u64; 3]) -> Result<Ext3, VerifierFriComparisonError> {
+    Ok(Ext3::new(
+        convert_fri_felt(values[0])?,
+        convert_fri_felt(values[1])?,
+        convert_fri_felt(values[2])?,
+    ))
+}
+
 fn convert_felt(source: &'static str, value: u64) -> Result<Felt, VerifierQueryEvalError> {
     Felt::from_canonical(value).map_err(|error| match error {
         FieldError::NonCanonical { value } => {
             VerifierQueryEvalError::NonCanonicalField { source, value }
+        }
+    })
+}
+
+fn convert_fri_felt(value: u64) -> Result<Felt, VerifierFriComparisonError> {
+    Felt::from_canonical(value).map_err(|error| match error {
+        FieldError::NonCanonical { value } => {
+            VerifierFriComparisonError::NonCanonicalField { value }
         }
     })
 }

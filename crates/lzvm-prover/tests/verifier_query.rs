@@ -3,6 +3,10 @@ use lzvm_artifacts::constant_opening_segment::{
 };
 use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_evaluation_segment::PcsEvaluationUnitSegment;
+use lzvm_artifacts::pcs_fri_segment::{
+    PcsFriOpeningLayerSegment, PcsFriOpeningQuerySegment, PcsFriOpeningUnitSegment,
+};
+use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::setup_info::CommitmentColumn;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierOperation, VerifierOperationKind};
 use lzvm_artifacts::witness_opening_segment::{
@@ -11,6 +15,7 @@ use lzvm_artifacts::witness_opening_segment::{
 use lzvm_field::{Ext3, Felt, SHIFT};
 use lzvm_prover::verifier_query::{
     assemble_verifier_query_eval_input, evaluate_verifier_unit_queries,
+    verify_query_outputs_against_fri_opening, VerifierFriComparisonRequest,
     VerifierQueryEvalInputRequest, VerifierUnitQueryEvalRequest,
 };
 use lzvm_prover::ProveUnitSchedule;
@@ -316,4 +321,72 @@ fn evaluates_all_unit_query_verifier_outputs() {
             e([307, 311, 313]) + e([43, 0, 0])
         ]
     );
+}
+
+#[test]
+fn compares_query_verifier_outputs_to_first_fri_layer_values() {
+    let mut schedule = schedule();
+    schedule.query_count = 2;
+    schedule.fri_layers = vec![PcsFriLayer {
+        input_bits: 6,
+        output_bits: 4,
+        folding_factor: 4,
+    }];
+    let expected_first = e([201, 203, 211]);
+    let expected_second = e([307, 311, 313]);
+    let fri = PcsFriOpeningUnitSegment {
+        unit_index: 7,
+        layers: vec![PcsFriOpeningLayerSegment {
+            layer_index: 0,
+            root: [0, 0, 0, 0],
+            last_level: Vec::new(),
+            queries: vec![
+                PcsFriOpeningQuerySegment {
+                    row_index: 9,
+                    values: vec![
+                        expected_first.to_u64s(),
+                        e([1, 0, 0]).to_u64s(),
+                        e([2, 0, 0]).to_u64s(),
+                        e([3, 0, 0]).to_u64s(),
+                    ],
+                    siblings: Vec::new(),
+                },
+                PcsFriOpeningQuerySegment {
+                    row_index: 17,
+                    values: vec![
+                        e([4, 0, 0]).to_u64s(),
+                        expected_second.to_u64s(),
+                        e([5, 0, 0]).to_u64s(),
+                        e([6, 0, 0]).to_u64s(),
+                    ],
+                    siblings: Vec::new(),
+                },
+            ],
+        }],
+        final_polynomial: vec![e([11, 0, 0]).to_u64s()],
+    };
+
+    let valid = verify_query_outputs_against_fri_opening(
+        &schedule,
+        VerifierFriComparisonRequest {
+            unit_index: 7,
+            query_outputs: &[expected_first, expected_second],
+            fri: &fri,
+        },
+    )
+    .expect("FRI comparison should evaluate");
+
+    assert!(valid);
+
+    let invalid = verify_query_outputs_against_fri_opening(
+        &schedule,
+        VerifierFriComparisonRequest {
+            unit_index: 7,
+            query_outputs: &[expected_first, e([999, 0, 0])],
+            fri: &fri,
+        },
+    )
+    .expect("FRI comparison should evaluate mismatches");
+
+    assert!(!invalid);
 }
