@@ -43,6 +43,7 @@ fn sample_unit_with_rows(
         transcript_arity: Some(4),
         hash_commits: true,
         transcript_root_challenge_draws,
+        challenge_count: 6,
         evaluation_value_count: 2,
         transcript_evaluation_challenge_draws: 2,
         constant_width: 5,

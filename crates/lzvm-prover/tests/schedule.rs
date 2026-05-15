@@ -278,6 +278,7 @@ fn derives_prove_schedule_from_key_directory_catalog() {
         schedule.units[0].transcript_root_challenge_draws,
         vec![2, 1]
     );
+    assert_eq!(schedule.units[0].challenge_count, 1);
     assert_eq!(schedule.units[0].evaluation_value_count, 2);
     assert_eq!(schedule.units[0].transcript_evaluation_challenge_draws, 2);
     assert_eq!(schedule.units[0].constant_width, 2);

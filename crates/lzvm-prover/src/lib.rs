@@ -20,6 +20,7 @@ pub mod pcs_fri;
 pub mod pcs_transcript;
 mod prove_witness;
 pub mod verifier_eval;
+pub mod verifier_query;
 pub mod witness_commitment;
 pub mod witness_layout;
 pub mod witness_loader;
@@ -69,6 +70,7 @@ pub struct ProveUnitSchedule {
     pub transcript_arity: Option<u32>,
     pub hash_commits: bool,
     pub transcript_root_challenge_draws: Vec<usize>,
+    pub challenge_count: usize,
     pub evaluation_value_count: usize,
     pub transcript_evaluation_challenge_draws: usize,
     pub constant_width: u32,
@@ -464,6 +466,7 @@ pub fn derive_prove_schedule(
             transcript_root_challenge_draws: derive_transcript_root_challenge_draws(
                 unit.pcs_plan.stage_commit_widths.len(),
             ),
+            challenge_count: unit.metadata.setup.challenge_count,
             evaluation_value_count: unit.metadata.setup.eval_count,
             transcript_evaluation_challenge_draws: 2,
             constant_width: unit.pcs_plan.constant_width,
