@@ -330,8 +330,8 @@ fn rejects_missing_stage_widths() {
 
 #[test]
 fn reads_unit_setup_info_from_a_file_path() {
-    let path = temp_file_path("unit.json");
-    fs::write(&path, sample_setup_info_json()).expect("fixture should be written");
+    let path = temp_file_path("unit.generic.setup.bin");
+    fs::write(&path, sample_setup_info_binary()).expect("fixture should be written");
 
     let info = read_unit_setup_info_file(&path).expect("fixture should parse");
     fs::remove_file(&path).expect("fixture should be removed");
@@ -340,6 +340,17 @@ fn reads_unit_setup_info_from_a_file_path() {
         info.stage_commit_widths().expect("widths should exist"),
         vec![2, 3, 1]
     );
+}
+
+#[test]
+fn rejects_text_unit_setup_info_from_a_file_path() {
+    let path = temp_file_path("unit.json");
+    fs::write(&path, sample_setup_info_json()).expect("fixture should be written");
+
+    let error = read_unit_setup_info_file(&path).expect_err("text metadata should be rejected");
+    fs::remove_file(&path).expect("fixture should be removed");
+
+    assert!(matches!(error, SetupInfoError::InvalidMagic));
 }
 
 #[test]

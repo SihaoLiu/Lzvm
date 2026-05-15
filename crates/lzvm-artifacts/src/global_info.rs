@@ -240,10 +240,7 @@ impl GlobalInfo {
 }
 
 pub fn read_global_info_file(path: impl AsRef<Path>) -> Result<GlobalInfo, GlobalInfoError> {
-    let input = std::fs::read_to_string(path).map_err(|error| GlobalInfoError::Io {
-        message: error.to_string(),
-    })?;
-    parse_global_info_json(&input)
+    read_global_info_binary_file(path)
 }
 
 pub fn read_global_info_binary_file(path: impl AsRef<Path>) -> Result<GlobalInfo, GlobalInfoError> {

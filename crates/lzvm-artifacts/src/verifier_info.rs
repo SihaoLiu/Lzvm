@@ -192,15 +192,7 @@ impl VerifierCode {
 }
 
 pub fn read_verifier_info_file(path: impl AsRef<Path>) -> Result<VerifierInfo, VerifierInfoError> {
-    let path = path.as_ref();
-    if path.extension().and_then(|extension| extension.to_str()) == Some("bin") {
-        return read_verifier_info_binary_file(path);
-    }
-
-    let input = std::fs::read_to_string(path).map_err(|error| VerifierInfoError::Io {
-        message: error.to_string(),
-    })?;
-    parse_verifier_info_json(&input)
+    read_verifier_info_binary_file(path)
 }
 
 pub fn read_verifier_info_binary_file(

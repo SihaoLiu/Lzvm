@@ -261,15 +261,7 @@ impl ConstraintCode {
 pub fn read_expression_info_file(
     path: impl AsRef<Path>,
 ) -> Result<ExpressionInfo, ExpressionInfoError> {
-    let path = path.as_ref();
-    if path.extension().and_then(|extension| extension.to_str()) == Some("bin") {
-        return read_expression_info_binary_file(path);
-    }
-
-    let input = std::fs::read_to_string(path).map_err(|error| ExpressionInfoError::Io {
-        message: error.to_string(),
-    })?;
-    parse_expression_info_json(&input)
+    read_expression_info_binary_file(path)
 }
 
 pub fn read_expression_info_binary_file(

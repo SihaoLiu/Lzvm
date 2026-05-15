@@ -157,13 +157,27 @@ fn rejects_frame_boundaries_without_offsets() {
 
 #[test]
 fn reads_expression_info_from_a_file_path() {
-    let path = temp_file_path("expressions.json");
-    fs::write(&path, sample_expression_info_json()).expect("fixture should be written");
+    let info =
+        parse_expression_info_json(sample_expression_info_json()).expect("fixture should parse");
+    let bytes = encode_expression_info(&info).expect("fixture should encode");
+    let path = temp_file_path("expressions.generic.bin");
+    fs::write(&path, bytes).expect("fixture should be written");
 
     let info = read_expression_info_file(&path).expect("fixture should parse");
     fs::remove_file(&path).expect("fixture should be removed");
 
     assert_eq!(info.expressions[0].operation_count(), 2);
+}
+
+#[test]
+fn rejects_text_expression_info_from_a_file_path() {
+    let path = temp_file_path("expressions.json");
+    fs::write(&path, sample_expression_info_json()).expect("fixture should be written");
+
+    let error = read_expression_info_file(&path).expect_err("text metadata should be rejected");
+    fs::remove_file(&path).expect("fixture should be removed");
+
+    assert!(matches!(error, ExpressionInfoError::InvalidMagic));
 }
 
 #[test]

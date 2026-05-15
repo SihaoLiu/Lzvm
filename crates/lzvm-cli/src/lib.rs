@@ -7,7 +7,7 @@ use lzvm_artifacts::constant_opening_segment::{
 };
 use lzvm_artifacts::constant_tree::read_constant_tree_file;
 use lzvm_artifacts::expression_info::{
-    encode_expression_info, read_expression_info_file, ExpressionInfo,
+    encode_expression_info, read_expression_info_binary_file, ExpressionInfo,
 };
 use lzvm_artifacts::fixed::{
     read_fixed_columns_file, read_fixed_columns_file_for_setup, FixedColumns,
@@ -39,12 +39,13 @@ use lzvm_artifacts::pcs_query_segment::{
 use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file, PublicValues};
 use lzvm_artifacts::setup_info::{
-    encode_unit_setup_info, read_unit_setup_info_binary_file, read_unit_setup_info_file,
-    UnitSetupInfo,
+    encode_unit_setup_info, read_unit_setup_info_binary_file, UnitSetupInfo,
 };
 use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
 use lzvm_artifacts::verification_key::{read_verification_key_binary_file, VerificationKeyRoot};
-use lzvm_artifacts::verifier_info::{encode_verifier_info, read_verifier_info_file, VerifierInfo};
+use lzvm_artifacts::verifier_info::{
+    encode_verifier_info, read_verifier_info_binary_file, VerifierInfo,
+};
 use lzvm_artifacts::witness_opening_segment::{
     parse_witness_opening_segment, WITNESS_OPENING_SEGMENT_ID,
 };
@@ -2065,7 +2066,7 @@ fn write_base_directory(
                 return 1;
             }
         };
-        let setup = match read_unit_setup_info_file(&setup_path) {
+        let setup = match read_unit_setup_info_binary_file(&setup_path) {
             Ok(setup) => setup,
             Err(error) => {
                 let _ = writeln!(stderr, "setup native base directory write failed: {error}");
@@ -2088,7 +2089,7 @@ fn write_base_directory(
                 return 1;
             }
         };
-        let expressions = match read_expression_info_file(&expression_path) {
+        let expressions = match read_expression_info_binary_file(&expression_path) {
             Ok(expressions) => expressions,
             Err(error) => {
                 let _ = writeln!(stderr, "setup native base directory write failed: {error}");
@@ -2111,7 +2112,7 @@ fn write_base_directory(
                 return 1;
             }
         };
-        let verifier = match read_verifier_info_file(&verifier_path) {
+        let verifier = match read_verifier_info_binary_file(&verifier_path) {
             Ok(verifier) => verifier,
             Err(error) => {
                 let _ = writeln!(stderr, "setup native base directory write failed: {error}");
@@ -2293,7 +2294,7 @@ fn write_pcs_directory(setup_dir: &str, stdout: &mut dyn Write, stderr: &mut dyn
                 return 1;
             }
         };
-        let setup = match read_unit_setup_info_file(&setup_path) {
+        let setup = match read_unit_setup_info_binary_file(&setup_path) {
             Ok(setup) => setup,
             Err(error) => {
                 let _ = writeln!(stderr, "setup PCS directory write failed: {error}");
@@ -2378,7 +2379,7 @@ fn write_pcs_material_directory(
                 return 1;
             }
         };
-        let setup = match read_unit_setup_info_file(&setup_path) {
+        let setup = match read_unit_setup_info_binary_file(&setup_path) {
             Ok(setup) => setup,
             Err(error) => {
                 let _ = writeln!(stderr, "setup PCS material directory write failed: {error}");

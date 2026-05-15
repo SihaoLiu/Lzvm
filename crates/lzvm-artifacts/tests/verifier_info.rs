@@ -108,13 +108,26 @@ fn rejects_empty_verifier_code_blocks() {
 
 #[test]
 fn reads_verifier_info_from_a_file_path() {
-    let path = temp_file_path("verifier.json");
-    fs::write(&path, sample_verifier_info_json()).expect("fixture should be written");
+    let info = parse_verifier_info_json(sample_verifier_info_json()).expect("fixture should parse");
+    let bytes = encode_verifier_info(&info).expect("fixture should encode");
+    let path = temp_file_path("verifier.generic.bin");
+    fs::write(&path, bytes).expect("fixture should be written");
 
     let info = read_verifier_info_file(&path).expect("fixture should parse");
     fs::remove_file(&path).expect("fixture should be removed");
 
     assert_eq!(info.quotient.operation_count(), 2);
+}
+
+#[test]
+fn rejects_text_verifier_info_from_a_file_path() {
+    let path = temp_file_path("verifier.json");
+    fs::write(&path, sample_verifier_info_json()).expect("fixture should be written");
+
+    let error = read_verifier_info_file(&path).expect_err("text metadata should be rejected");
+    fs::remove_file(&path).expect("fixture should be removed");
+
+    assert!(matches!(error, VerifierInfoError::InvalidMagic));
 }
 
 #[test]
