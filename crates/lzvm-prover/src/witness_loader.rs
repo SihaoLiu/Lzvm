@@ -26,6 +26,46 @@ pub struct WitnessResult {
     pub produced_len: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WitnessTraceBuffers {
+    input: Vec<u8>,
+    output: Vec<u8>,
+}
+
+impl WitnessTraceBuffers {
+    pub fn new(input: Vec<u8>, output_len: usize) -> Result<Self, WitnessCallError> {
+        if output_len == 0 {
+            return Err(WitnessCallError::EmptyOutputBuffer);
+        }
+        Ok(Self {
+            input,
+            output: vec![0; output_len],
+        })
+    }
+
+    pub fn input(&self) -> &[u8] {
+        &self.input
+    }
+
+    pub fn output(&self) -> &[u8] {
+        &self.output
+    }
+
+    fn as_call(&mut self) -> WitnessCall {
+        WitnessCall {
+            input_ptr: self.input.as_ptr(),
+            input_len: self.input.len(),
+            output_ptr: self.output.as_mut_ptr(),
+            output_len: self.output.len(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WitnessTraceOutput {
+    pub produced_len: usize,
+}
+
 pub struct LoadedWitnessLibrary {
     pub path: PathBuf,
     pub abi_version: u32,
@@ -34,6 +74,32 @@ pub struct LoadedWitnessLibrary {
 }
 
 impl LoadedWitnessLibrary {
+    pub fn compute(
+        &self,
+        buffers: &mut WitnessTraceBuffers,
+    ) -> Result<WitnessTraceOutput, WitnessCallError> {
+        let call = buffers.as_call();
+        let mut result = WitnessResult::default();
+        let return_code = unsafe { self.compute_unchecked(&call, &mut result) };
+        if return_code != WITNESS_STATUS_OK {
+            return Err(WitnessCallError::NativeReturn { code: return_code });
+        }
+        if result.status != WITNESS_STATUS_OK {
+            return Err(WitnessCallError::NativeStatus {
+                status: result.status,
+            });
+        }
+        if result.produced_len > buffers.output.len() {
+            return Err(WitnessCallError::OutputOverflow {
+                produced_len: result.produced_len,
+                output_len: buffers.output.len(),
+            });
+        }
+        Ok(WitnessTraceOutput {
+            produced_len: result.produced_len,
+        })
+    }
+
     /// # Safety
     ///
     /// The caller must ensure that all pointers in `call` and `result` are valid for the loaded
@@ -55,6 +121,44 @@ impl fmt::Debug for LoadedWitnessLibrary {
             .finish_non_exhaustive()
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WitnessCallError {
+    EmptyOutputBuffer,
+    NativeReturn {
+        code: c_int,
+    },
+    NativeStatus {
+        status: c_int,
+    },
+    OutputOverflow {
+        produced_len: usize,
+        output_len: usize,
+    },
+}
+
+impl fmt::Display for WitnessCallError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyOutputBuffer => write!(f, "witness output buffer is empty"),
+            Self::NativeReturn { code } => {
+                write!(f, "witness native call returned failure code: {code}")
+            }
+            Self::NativeStatus { status } => {
+                write!(f, "witness native result has failure status: {status}")
+            }
+            Self::OutputOverflow {
+                produced_len,
+                output_len,
+            } => write!(
+                f,
+                "witness native result exceeds output buffer: produced {produced_len}, output {output_len}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for WitnessCallError {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WitnessLoadError {
