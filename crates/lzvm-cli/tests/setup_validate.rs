@@ -6,7 +6,7 @@ use lzvm_artifacts::constant_opening_segment::{
     parse_constant_opening_segment, CONSTANT_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::constraint_program::{
-    encode_global_constraint_program, GlobalConstraintProgram,
+    encode_global_constraint_program, GlobalConstraintEntry, GlobalConstraintProgram,
 };
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
@@ -910,6 +910,13 @@ fn write_global_files_with_info(root: &Path, global_info: &str) {
         .expect("global constraints program should be written");
 }
 
+fn write_global_constraint_program(root: &Path, program: GlobalConstraintProgram) {
+    let constraints =
+        encode_global_constraint_program(&program).expect("global constraints should encode");
+    fs::write(root.join("pilout.globalConstraints.bin"), constraints)
+        .expect("global constraints program should be written");
+}
+
 fn write_global_files(root: &Path) {
     write_global_files_with_info(root, sample_global_info_json());
 }
@@ -1081,6 +1088,51 @@ fn write_proof_value_query_preflight_fixture(
         public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
         segments,
     };
+    let proof_path = root.join("proof.bin");
+    let public_values_path = root.join("public_values.json");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_text(
+        &public_values_path,
+        &encode_public_values_json(&public_values).expect("public values should encode"),
+    );
+    (proof_path, public_values_path, segment_count)
+}
+
+fn write_global_constraint_preflight_fixture(
+    root: &Path,
+    proof_value: [u64; 3],
+) -> (PathBuf, PathBuf, usize) {
+    write_execution_ready_setup_directory_with_proof_value(root);
+    write_global_constraint_program(
+        root,
+        GlobalConstraintProgram {
+            entries: vec![GlobalConstraintEntry {
+                destination_dimension: 1,
+                destination_id: 0,
+                temp1_count: 1,
+                temp3_count: 0,
+                ops_count: 1,
+                ops_offset: 0,
+                args_count: 6,
+                args_offset: 0,
+                source_line: "proof residual".to_owned(),
+            }],
+            ops: vec![0],
+            args: vec![1, 0, 3, 0, 2, 0],
+            numbers: vec![51],
+        },
+    );
+    let catalog = read_key_directory_catalog(root).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let mut proof = sample_proof_with_material(&public_values, &catalog);
+    proof
+        .segments
+        .push(sample_pcs_proof_values_segment(vec![proof_value]));
+    let segment_count = proof.segments.len();
     let proof_path = root.join("proof.bin");
     let public_values_path = root.join("public_values.json");
     write_bytes(
@@ -2069,6 +2121,70 @@ fn validates_setup_aware_verify_preflight_with_proof_values() {
         format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\n")
     );
     assert!(stderr.is_empty());
+}
+
+#[test]
+fn validates_setup_aware_verify_preflight_with_global_constraints() {
+    let dir = temp_dir("verify-setup-preflight-global-constraint");
+    let _ = fs::remove_dir_all(&dir);
+    let (proof_path, public_values_path, segment_count) =
+        write_global_constraint_preflight_fixture(&dir, [51, 52, 53]);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\n")
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn rejects_setup_aware_verify_preflight_with_bad_global_constraint() {
+    let dir = temp_dir("verify-setup-preflight-bad-global-constraint");
+    let _ = fs::remove_dir_all(&dir);
+    let (proof_path, public_values_path, _) =
+        write_global_constraint_preflight_fixture(&dir, [50, 52, 53]);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: global constraint 0 is not satisfied\n"
+    );
 }
 
 #[test]

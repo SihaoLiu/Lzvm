@@ -47,6 +47,7 @@ use lzvm_field::{Ext3, Felt};
 use lzvm_prover::constant_tree_opening::{
     constant_tree_merkle_level_count, verify_constant_tree_opening_root, ConstantTreeOpening,
 };
+use lzvm_prover::global_constraints::{evaluate_global_constraints, GlobalConstraintInputs};
 use lzvm_prover::pcs_fri::{
     verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path,
     PcsFriOpeningFoldRequest,
@@ -54,6 +55,7 @@ use lzvm_prover::pcs_fri::{
 use lzvm_prover::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptSegmentInputs,
 };
+use lzvm_prover::proof_values::flatten_pcs_proof_values;
 use lzvm_prover::verifier_query::{
     evaluate_verifier_unit_queries, verify_query_outputs_against_fri_opening,
     VerifierFriComparisonRequest, VerifierUnitQueryEvalRequest,
@@ -498,6 +500,10 @@ fn verify_setup_preflight(
         return 1;
     }
     if let Err(error) = validate_witness_opening_segment(&schedule, &proof) {
+        let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
+        return 1;
+    }
+    if let Err(error) = validate_global_constraints(&catalog, &proof, &public_values) {
         let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
         return 1;
     }
@@ -1396,6 +1402,38 @@ fn validate_pcs_fri_query_outputs(input: PcsFriQueryOutputValidation<'_>) -> Res
             input.unit_index
         ))
     }
+}
+
+fn validate_global_constraints(
+    catalog: &KeyDirectoryCatalog,
+    proof: &ProofArtifact,
+    public_values: &PublicValues,
+) -> Result<(), String> {
+    if catalog.global_constraints.entries.is_empty() {
+        return Ok(());
+    }
+
+    let publics = transcript_public_value_fields(public_values)?;
+    let proof_values = load_pcs_proof_values(catalog, proof)?;
+    let packed_proof_values = flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)
+        .map_err(|error| format!("global constraint proof values invalid: {error}"))?;
+    let residuals = evaluate_global_constraints(
+        &catalog.global_constraints,
+        GlobalConstraintInputs {
+            publics: &publics,
+            proof_values: &packed_proof_values,
+            challenges: &[],
+            group_values: &[],
+        },
+    )
+    .map_err(|error| format!("invalid global constraint program: {error}"))?;
+
+    for (index, residual) in residuals.iter().enumerate() {
+        if *residual != Ext3::ZERO {
+            return Err(format!("global constraint {index} is not satisfied"));
+        }
+    }
+    Ok(())
 }
 
 fn load_pcs_proof_values(
