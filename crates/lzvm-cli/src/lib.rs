@@ -25,6 +25,9 @@ use lzvm_artifacts::pcs_nonce_segment::PCS_QUERY_NONCE_SEGMENT_ID;
 use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file,
 };
+use lzvm_artifacts::pcs_proof_values_segment::{
+    parse_pcs_proof_values_segment, PCS_PROOF_VALUES_SEGMENT_ID,
+};
 use lzvm_artifacts::pcs_query_segment::{
     parse_pcs_query_plan_segment, PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
 };
@@ -1280,6 +1283,7 @@ fn validate_pcs_transcript_fri_opening(
     )
     .map_err(|error| format!("invalid PCS FRI opening segment for unit {unit_index}: {error}"))?;
     if valid {
+        let proof_values = load_pcs_proof_values(catalog, proof)?;
         validate_pcs_fri_query_outputs(PcsFriQueryOutputValidation {
             proof,
             public_values,
@@ -1290,6 +1294,7 @@ fn validate_pcs_transcript_fri_opening(
             catalog_unit,
             evaluation_unit,
             challenges: &challenges,
+            proof_values: &proof_values,
         })
     } else {
         Err(format!(
@@ -1308,6 +1313,7 @@ struct PcsFriQueryOutputValidation<'a> {
     catalog_unit: &'a lzvm_artifacts::key_directory::KeyUnitCatalogEntry,
     evaluation_unit: &'a lzvm_artifacts::pcs_evaluation_segment::PcsEvaluationUnitSegment,
     challenges: &'a [Ext3],
+    proof_values: &'a [Ext3],
 }
 
 fn validate_pcs_fri_query_outputs(input: PcsFriQueryOutputValidation<'_>) -> Result<(), String> {
@@ -1353,7 +1359,7 @@ fn validate_pcs_fri_query_outputs(input: PcsFriQueryOutputValidation<'_>) -> Res
         VerifierUnitQueryEvalRequest {
             unit_index: input.query_unit.unit_index,
             challenges: input.challenges,
-            proof_values: &[],
+            proof_values: input.proof_values,
             constant_unit,
             witness_unit,
             evaluations: input.evaluation_unit,
@@ -1390,6 +1396,56 @@ fn validate_pcs_fri_query_outputs(input: PcsFriQueryOutputValidation<'_>) -> Res
             input.unit_index
         ))
     }
+}
+
+fn load_pcs_proof_values(
+    catalog: &KeyDirectoryCatalog,
+    proof: &ProofArtifact,
+) -> Result<Vec<Ext3>, String> {
+    let expected_count = catalog.layout.global_info.proof_values_map.len();
+    let segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_PROOF_VALUES_SEGMENT_ID);
+    if expected_count == 0 {
+        if segment.is_some() {
+            return Err("unexpected PCS proof values segment".to_owned());
+        }
+        return Ok(Vec::new());
+    }
+    let segment = segment.ok_or_else(|| "missing PCS proof values segment".to_owned())?;
+    let parsed = parse_pcs_proof_values_segment(&segment.data)
+        .map_err(|error| format!("invalid PCS proof values segment: {error}"))?;
+    if parsed.values.len() != expected_count {
+        return Err(format!(
+            "PCS proof values segment count mismatch: expected {expected_count}, found {}",
+            parsed.values.len()
+        ));
+    }
+
+    let mut values = Vec::with_capacity(parsed.values.len());
+    for (index, words) in parsed.values.iter().copied().enumerate() {
+        if catalog.layout.global_info.proof_values_map[index].stage == 1
+            && (words[1] != 0 || words[2] != 0)
+        {
+            return Err(format!(
+                "PCS proof values segment stage-1 value {index} must have zero extension components"
+            ));
+        }
+        values.push(proof_value_extension_from_words(index, words)?);
+    }
+    Ok(values)
+}
+
+fn proof_value_extension_from_words(index: usize, words: [u64; 3]) -> Result<Ext3, String> {
+    Ok(Ext3::new(
+        Felt::from_canonical(words[0])
+            .map_err(|error| format!("invalid PCS proof values segment value {index}: {error}"))?,
+        Felt::from_canonical(words[1])
+            .map_err(|error| format!("invalid PCS proof values segment value {index}: {error}"))?,
+        Felt::from_canonical(words[2])
+            .map_err(|error| format!("invalid PCS proof values segment value {index}: {error}"))?,
+    ))
 }
 
 fn expected_merkle_level_count(row_count: u64, arity: usize) -> Result<usize, String> {

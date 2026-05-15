@@ -28,6 +28,9 @@ use lzvm_artifacts::pcs_fri_segment::{
 use lzvm_artifacts::pcs_material_segment::{
     parse_pcs_material_manifest_segment, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
+use lzvm_artifacts::pcs_proof_values_segment::{
+    encode_pcs_proof_values_segment, PcsProofValuesSegment, PCS_PROOF_VALUES_SEGMENT_ID,
+};
 use lzvm_artifacts::pcs_query_segment::{parse_pcs_query_plan_segment, PCS_QUERY_PLAN_SEGMENT_ID};
 use lzvm_artifacts::proof::{
     encode_proof_artifact, parse_proof_artifact, ProofArtifact, ProofSegment,
@@ -77,6 +80,25 @@ fn sample_global_info_json() -> &'static str {
     }"#
 }
 
+fn sample_global_info_json_with_proof_value() -> &'static str {
+    r#"{
+        "name": "sample-program",
+        "air_groups": ["group-a"],
+        "airs": [[{"name": "unit-a", "num_rows": 2}]],
+        "curve": "None",
+        "latticeSize": 368,
+        "aggTypes": [[]],
+        "nPublics": 0,
+        "numChallenges": [1],
+        "numProofValues": [1],
+        "proofValuesMap": [
+            {"name": "proof-a", "stage": 2}
+        ],
+        "publicsMap": [],
+        "transcriptArity": 4
+    }"#
+}
+
 fn sample_setup_info_json() -> &'static str {
     r#"{
         "nStages": 1,
@@ -112,6 +134,34 @@ fn sample_setup_info_json() -> &'static str {
             "verificationHashType": "GL",
             "transcriptArity": 4,
             "merkleTreeCustom": true
+        }
+    }"#
+}
+
+fn sample_verifier_info_json_with_proof_value() -> &'static str {
+    r#"{
+        "qVerifier": {
+            "tmpUsed": 1,
+            "code": [
+                {
+                    "op": "copy",
+                    "dest": {"type": "tmp", "id": 0, "dim": 3},
+                    "src": [{"type": "number", "value": "1", "dim": 1}]
+                }
+            ]
+        },
+        "queryVerifier": {
+            "expId": 7,
+            "stage": 2,
+            "tmpUsed": 1,
+            "line": "query-expression",
+            "code": [
+                {
+                    "op": "copy",
+                    "dest": {"type": "tmp", "id": 0, "dim": 3},
+                    "src": [{"type": "proofvalue", "id": 0, "dim": 3}]
+                }
+            ]
         }
     }"#
 }
@@ -367,6 +417,15 @@ fn sample_pcs_evaluation_segment_with_values(
     ProofSegment {
         id: PCS_EVALUATION_SEGMENT_ID,
         data: encode_pcs_evaluation_segment(&segment).expect("evaluation segment should encode"),
+    }
+}
+
+fn sample_pcs_proof_values_segment(values: Vec<[u64; 3]>) -> ProofSegment {
+    let segment = PcsProofValuesSegment { values };
+    ProofSegment {
+        id: PCS_PROOF_VALUES_SEGMENT_ID,
+        data: encode_pcs_proof_values_segment(&segment)
+            .expect("proof values segment should encode"),
     }
 }
 
@@ -825,13 +884,10 @@ int lzvm_witness_compute(const LzvmWitnessCall *call, LzvmWitnessResult *result)
 "#
 }
 
-fn write_global_files(root: &Path) {
+fn write_global_files_with_info(root: &Path, global_info: &str) {
     fs::create_dir_all(root).expect("fixture root should be created");
-    fs::write(
-        root.join("pilout.globalInfo.json"),
-        sample_global_info_json(),
-    )
-    .expect("global metadata should be written");
+    fs::write(root.join("pilout.globalInfo.json"), global_info)
+        .expect("global metadata should be written");
     fs::write(root.join("pilout.globalConstraints.json"), "{}")
         .expect("global constraints metadata should be written");
     let constraints = encode_global_constraint_program(&GlobalConstraintProgram {
@@ -845,7 +901,11 @@ fn write_global_files(root: &Path) {
         .expect("global constraints program should be written");
 }
 
-fn write_unit_files(unit: &KeyUnitPaths) {
+fn write_global_files(root: &Path) {
+    write_global_files_with_info(root, sample_global_info_json());
+}
+
+fn write_unit_files_with_verifier_info(unit: &KeyUnitPaths, verifier_info: &str) {
     if let Some(path) = unit.setup_info() {
         write_text(&path, sample_setup_info_json());
     }
@@ -853,7 +913,7 @@ fn write_unit_files(unit: &KeyUnitPaths) {
         write_text(&path, sample_expression_info_json());
     }
     if let Some(path) = unit.verifier_info() {
-        write_text(&path, sample_verifier_info_json());
+        write_text(&path, verifier_info);
     }
 
     let program =
@@ -874,11 +934,23 @@ fn write_unit_files(unit: &KeyUnitPaths) {
     write_bytes(&unit.fixed_columns, sample_raw_fixed_columns());
 }
 
+fn write_unit_files(unit: &KeyUnitPaths) {
+    write_unit_files_with_verifier_info(unit, sample_verifier_info_json());
+}
+
 fn write_setup_directory(root: &Path) {
     write_global_files(root);
     let layout = read_key_directory_layout(root).expect("layout should parse");
     for unit in &layout.units {
         write_unit_files(unit);
+    }
+}
+
+fn write_setup_directory_with_proof_value(root: &Path) {
+    write_global_files_with_info(root, sample_global_info_json_with_proof_value());
+    let layout = read_key_directory_layout(root).expect("layout should parse");
+    for unit in &layout.units {
+        write_unit_files_with_verifier_info(unit, sample_verifier_info_json_with_proof_value());
     }
 }
 
@@ -901,6 +973,116 @@ fn write_execution_ready_setup_directory(root: &Path) {
     run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
     run_setup_command(&["setup", "write-pcs-directory", root]);
     run_setup_command(&["setup", "write-pcs-material-directory", root]);
+}
+
+fn write_execution_ready_setup_directory_with_proof_value(root: &Path) {
+    write_setup_directory_with_proof_value(root);
+    let root = root.to_str().expect("path should be utf-8");
+    run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
+    run_setup_command(&["setup", "write-pcs-directory", root]);
+    run_setup_command(&["setup", "write-pcs-material-directory", root]);
+}
+
+fn write_proof_value_query_preflight_fixture(
+    root: &Path,
+    proof_values: Option<Vec<[u64; 3]>>,
+) -> (PathBuf, PathBuf, usize) {
+    write_execution_ready_setup_directory_with_proof_value(root);
+    let catalog = read_key_directory_catalog(root).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let public_value_fields = public_values
+        .values
+        .iter()
+        .flat_map(|entry| entry.elements.iter().copied().map(Felt::from_u64))
+        .collect::<Vec<_>>();
+    let schedule = derive_prove_schedule(&catalog).expect("schedule should derive");
+    let material_segment =
+        build_pcs_material_manifest_segment(&schedule).expect("material segment should build");
+    let material = parse_pcs_material_manifest_segment(&material_segment.data)
+        .expect("material segment should parse")
+        .units[0]
+        .clone();
+    let witness_segment = sample_witness_proof_segment(&schedule, 0);
+    let witness = parse_witness_commitment_segment(&witness_segment.data)
+        .expect("witness segment should parse");
+    let evaluation_segment = sample_pcs_evaluation_segment(0);
+    let evaluations = parse_pcs_evaluation_segment(&evaluation_segment.data)
+        .expect("evaluation segment should parse")
+        .units[0]
+        .clone();
+    let query_value = [51, 52, 53];
+    let fri_unit = sample_folded_pcs_fri_opening_template_with_values(
+        &schedule,
+        &material,
+        &public_value_fields,
+        &witness,
+        &evaluations,
+        0,
+        query_value,
+    );
+    let transcript_inputs = PcsTranscriptSegmentInputs {
+        unit_index: 0,
+        unit: &schedule.units[0],
+        material: &material,
+        public_values: &public_value_fields,
+        witness: &witness,
+        evaluations: &evaluations,
+        fri: &fri_unit,
+        root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
+        evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+    };
+    let nonce_segment =
+        build_pcs_query_nonce_segment_from_transcript_segments(&schedule, transcript_inputs)
+            .expect("nonce segment should build");
+    let query_segment = build_pcs_query_plan_segment_from_transcript_segments(
+        &schedule,
+        std::slice::from_ref(&witness_segment),
+        transcript_inputs,
+        &nonce_segment,
+    )
+    .expect("query segment should build");
+    let constant_opening_segment =
+        build_constant_opening_segment(&catalog, &schedule, &query_segment)
+            .expect("constant opening segment should build");
+    let opening_segment = sample_witness_opening_segment(&schedule, &query_segment, 0);
+    let fri_segment = sample_folded_pcs_fri_opening_segment_with_values(
+        &schedule,
+        &query_segment,
+        0,
+        fri_unit,
+        query_value,
+    );
+    let mut segments = vec![
+        material_segment,
+        query_segment,
+        constant_opening_segment,
+        opening_segment,
+        witness_segment,
+        evaluation_segment,
+        fri_segment,
+        nonce_segment,
+    ];
+    if let Some(values) = proof_values {
+        segments.push(sample_pcs_proof_values_segment(values));
+    }
+    let segment_count = segments.len();
+    let proof = ProofArtifact {
+        setup_hash: public_values.setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments,
+    };
+    let proof_path = root.join("proof.bin");
+    let public_values_path = root.join("public_values.json");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_text(
+        &public_values_path,
+        &encode_public_values_json(&public_values).expect("public values should encode"),
+    );
+    (proof_path, public_values_path, segment_count)
 }
 
 fn pcs_material_byte_count(catalog: &lzvm_artifacts::key_directory::KeyDirectoryCatalog) -> u64 {
@@ -1782,6 +1964,101 @@ fn validates_setup_aware_verify_preflight_with_transcript_query_plan() {
         "status=ok\nunits=4\nsegments=8\npublic_values=1\n"
     );
     assert!(stderr.is_empty());
+}
+
+#[test]
+fn validates_setup_aware_verify_preflight_with_proof_values() {
+    let dir = temp_dir("verify-setup-preflight-proof-values");
+    let _ = fs::remove_dir_all(&dir);
+    let (proof_path, public_values_path, segment_count) =
+        write_proof_value_query_preflight_fixture(&dir, Some(vec![[51, 52, 53]]));
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\n")
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn rejects_setup_aware_verify_preflight_with_missing_proof_values() {
+    let dir = temp_dir("verify-setup-preflight-missing-proof-values");
+    let _ = fs::remove_dir_all(&dir);
+    let (proof_path, public_values_path, _) = write_proof_value_query_preflight_fixture(&dir, None);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: missing PCS proof values segment\n"
+    );
+}
+
+#[test]
+fn rejects_setup_aware_verify_preflight_with_wrong_proof_value_count() {
+    let dir = temp_dir("verify-setup-preflight-bad-proof-value-count");
+    let _ = fs::remove_dir_all(&dir);
+    let (proof_path, public_values_path, _) =
+        write_proof_value_query_preflight_fixture(&dir, Some(vec![[51, 52, 53], [1, 2, 3]]));
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: PCS proof values segment count mismatch: expected 1, found 2\n"
+    );
 }
 
 #[test]
