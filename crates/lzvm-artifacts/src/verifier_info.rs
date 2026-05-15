@@ -6,17 +6,19 @@ use crate::sectioned::{
 };
 
 const VERIFIER_INFO_KIND: [u8; 4] = *b"vinf";
-const VERIFIER_INFO_VERSION: u32 = 1;
+const VERIFIER_INFO_VERSION: u32 = 2;
 const VERIFIER_INFO_SECTION_ID: u32 = 1;
 
-const JSON_NULL_TAG: u8 = 0;
-const JSON_BOOL_TAG: u8 = 1;
-const JSON_U64_TAG: u8 = 2;
-const JSON_I64_TAG: u8 = 3;
-const JSON_F64_TAG: u8 = 4;
-const JSON_STRING_TAG: u8 = 5;
-const JSON_ARRAY_TAG: u8 = 6;
-const JSON_OBJECT_TAG: u8 = 7;
+const OPERAND_TEMPORARY_TAG: u8 = 1;
+const OPERAND_NUMBER_TAG: u8 = 2;
+const OPERAND_EVALUATION_TAG: u8 = 3;
+const OPERAND_CHALLENGE_TAG: u8 = 4;
+const OPERAND_PUBLIC_TAG: u8 = 5;
+const OPERAND_CONSTANT_TAG: u8 = 6;
+const OPERAND_COMMITMENT_TAG: u8 = 7;
+const OPERAND_BOUNDARY_TAG: u8 = 8;
+const OPERAND_PROOF_VALUE_TAG: u8 = 9;
+const OPERAND_OPENING_DENOMINATOR_TAG: u8 = 10;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct VerifierInfo {
@@ -36,8 +38,8 @@ pub struct VerifierCode {
 #[derive(Debug, Clone, PartialEq)]
 pub struct VerifierOperation {
     pub op: VerifierOperationKind,
-    pub destination: serde_json::Value,
-    pub sources: Vec<serde_json::Value>,
+    pub destination: VerifierDestination,
+    pub sources: Vec<VerifierOperand>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,6 +48,58 @@ pub enum VerifierOperationKind {
     Sub,
     Mul,
     Copy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VerifierDestination {
+    pub temporary_id: u32,
+    pub dimension: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VerifierOperand {
+    Temporary {
+        id: u32,
+        dimension: u32,
+    },
+    Number {
+        value: u64,
+        dimension: u32,
+    },
+    Evaluation {
+        id: u32,
+        dimension: u32,
+    },
+    Challenge {
+        id: u32,
+        stage: Option<u32>,
+        stage_id: Option<u32>,
+        dimension: u32,
+    },
+    Public {
+        id: u32,
+        dimension: u32,
+    },
+    Constant {
+        id: u32,
+        dimension: u32,
+    },
+    Commitment {
+        id: u32,
+        dimension: u32,
+    },
+    BoundaryZerofier {
+        id: u32,
+        dimension: u32,
+    },
+    ProofValue {
+        id: u32,
+        dimension: u32,
+    },
+    OpeningDenominator {
+        id: u32,
+        dimension: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +115,12 @@ pub enum VerifierInfoError {
     },
     UnknownOperation {
         op: String,
+    },
+    UnknownReferenceKind {
+        kind: String,
+    },
+    InvalidNumber {
+        value: String,
     },
     TemporaryReferenceOutOfBounds {
         temporary_id: u32,
@@ -97,10 +157,9 @@ pub enum VerifierInfoError {
     InvalidOperationTag {
         value: u8,
     },
-    InvalidJsonTag {
+    InvalidOperandTag {
         value: u8,
     },
-    InvalidJsonNumber,
     Io {
         message: String,
     },
@@ -113,6 +172,10 @@ impl fmt::Display for VerifierInfoError {
             Self::MissingField { field } => write!(f, "missing verifier-info field: {field}"),
             Self::InvalidField { field } => write!(f, "invalid verifier-info field: {field}"),
             Self::UnknownOperation { op } => write!(f, "unknown verifier-info operation: {op}"),
+            Self::UnknownReferenceKind { kind } => {
+                write!(f, "unknown verifier-info reference kind: {kind}")
+            }
+            Self::InvalidNumber { value } => write!(f, "invalid verifier-info number: {value}"),
             Self::TemporaryReferenceOutOfBounds {
                 temporary_id,
                 temporary_count,
@@ -150,10 +213,9 @@ impl fmt::Display for VerifierInfoError {
             Self::InvalidOperationTag { value } => {
                 write!(f, "invalid verifier-info operation tag: {value}")
             }
-            Self::InvalidJsonTag { value } => {
-                write!(f, "invalid verifier-info value tag: {value}")
+            Self::InvalidOperandTag { value } => {
+                write!(f, "invalid verifier-info operand tag: {value}")
             }
-            Self::InvalidJsonNumber => write!(f, "invalid verifier-info number value"),
             Self::Io { message } => write!(f, "verifier-info io error: {message}"),
         }
     }
@@ -191,6 +253,62 @@ impl VerifierCode {
     }
 }
 
+impl VerifierDestination {
+    pub fn temporary(temporary_id: u32, dimension: u32) -> Self {
+        Self {
+            temporary_id,
+            dimension,
+        }
+    }
+}
+
+impl VerifierOperand {
+    pub fn temporary(id: u32, dimension: u32) -> Self {
+        Self::Temporary { id, dimension }
+    }
+
+    pub fn number(value: u64, dimension: u32) -> Self {
+        Self::Number { value, dimension }
+    }
+
+    pub fn evaluation(id: u32, dimension: u32) -> Self {
+        Self::Evaluation { id, dimension }
+    }
+
+    pub fn challenge(id: u32, stage: Option<u32>, stage_id: Option<u32>, dimension: u32) -> Self {
+        Self::Challenge {
+            id,
+            stage,
+            stage_id,
+            dimension,
+        }
+    }
+
+    pub fn public(id: u32, dimension: u32) -> Self {
+        Self::Public { id, dimension }
+    }
+
+    pub fn constant(id: u32, dimension: u32) -> Self {
+        Self::Constant { id, dimension }
+    }
+
+    pub fn commitment(id: u32, dimension: u32) -> Self {
+        Self::Commitment { id, dimension }
+    }
+
+    pub fn boundary_zerofier(id: u32, dimension: u32) -> Self {
+        Self::BoundaryZerofier { id, dimension }
+    }
+
+    pub fn proof_value(id: u32, dimension: u32) -> Self {
+        Self::ProofValue { id, dimension }
+    }
+
+    pub fn x_div_x_sub(id: u32, dimension: u32) -> Self {
+        Self::OpeningDenominator { id, dimension }
+    }
+}
+
 pub fn read_verifier_info_file(path: impl AsRef<Path>) -> Result<VerifierInfo, VerifierInfoError> {
     read_verifier_info_binary_file(path)
 }
@@ -207,6 +325,12 @@ pub fn read_verifier_info_binary_file(
 pub fn parse_verifier_info(bytes: &[u8]) -> Result<VerifierInfo, VerifierInfoError> {
     let file = parse_sectioned_file(bytes, VERIFIER_INFO_KIND, VERIFIER_INFO_VERSION)
         .map_err(VerifierInfoError::from)?;
+    if file.version != VERIFIER_INFO_VERSION {
+        return Err(VerifierInfoError::UnsupportedVersion {
+            found: file.version,
+            max: VERIFIER_INFO_VERSION,
+        });
+    }
     if file.sections.len() != 1 {
         return Err(VerifierInfoError::InvalidSectionCount {
             found: u32::try_from(file.sections.len()).unwrap_or(u32::MAX),
@@ -281,9 +405,9 @@ fn validate_verifier_code(
         return Err(VerifierInfoError::EmptyCodeBlock { field });
     }
     for operation in &value.operations {
-        validate_temporary_reference(&operation.destination, value.temporary_count)?;
+        validate_destination(&operation.destination, value.temporary_count)?;
         for source in &operation.sources {
-            validate_temporary_reference(source, value.temporary_count)?;
+            validate_operand(source, value.temporary_count)?;
         }
     }
     Ok(())
@@ -344,11 +468,11 @@ fn read_verifier_operation(
     reader: &mut Reader<'_>,
 ) -> Result<VerifierOperation, VerifierInfoError> {
     let op = read_operation_tag(reader.read_u8()?)?;
-    let destination = reader.read_json_value()?;
+    let destination = reader.read_destination()?;
     let source_count = reader.read_u32()?;
     let mut sources = Vec::with_capacity(source_count as usize);
     for _ in 0..source_count {
-        sources.push(reader.read_json_value()?);
+        sources.push(reader.read_operand()?);
     }
     Ok(VerifierOperation {
         op,
@@ -362,10 +486,10 @@ fn write_verifier_operation(
     value: &VerifierOperation,
 ) -> Result<(), VerifierInfoError> {
     out.push(operation_tag(value.op));
-    write_json_value(out, &value.destination)?;
+    write_destination(out, &value.destination);
     write_len(out, value.sources.len())?;
     for source in &value.sources {
-        write_json_value(out, source)?;
+        write_operand(out, source);
     }
     Ok(())
 }
@@ -378,11 +502,11 @@ fn parse_operations(
     for value in values {
         let object = as_object(value, "code")?;
         let op = parse_operation(&required_string(object, "op")?)?;
-        let destination = required(object, "dest")?.clone();
-        let sources = required_array(object, "src")?.to_vec();
-        validate_temporary_reference(&destination, temporary_count)?;
+        let destination = parse_destination(required(object, "dest")?, temporary_count)?;
+        let sources = parse_operands(required_array(object, "src")?, temporary_count)?;
+        validate_destination(&destination, temporary_count)?;
         for source in &sources {
-            validate_temporary_reference(source, temporary_count)?;
+            validate_operand(source, temporary_count)?;
         }
         operations.push(VerifierOperation {
             op,
@@ -422,29 +546,134 @@ fn read_operation_tag(value: u8) -> Result<VerifierOperationKind, VerifierInfoEr
     }
 }
 
-fn validate_temporary_reference(
-    value: &serde_json::Value,
+fn validate_destination(
+    value: &VerifierDestination,
     temporary_count: u32,
 ) -> Result<(), VerifierInfoError> {
-    let Some(object) = value.as_object() else {
-        return Err(VerifierInfoError::InvalidField { field: "reference" });
-    };
-    if object.get("type").and_then(serde_json::Value::as_str) != Some("tmp") {
-        return Ok(());
-    }
-    let id = value_to_u32(
-        object
-            .get("id")
-            .ok_or(VerifierInfoError::MissingField { field: "id" })?,
-        "id",
-    )?;
-    if id >= temporary_count {
+    if value.temporary_id >= temporary_count {
         return Err(VerifierInfoError::TemporaryReferenceOutOfBounds {
-            temporary_id: id,
+            temporary_id: value.temporary_id,
             temporary_count,
         });
     }
     Ok(())
+}
+
+fn validate_operand(
+    value: &VerifierOperand,
+    temporary_count: u32,
+) -> Result<(), VerifierInfoError> {
+    if let VerifierOperand::Temporary { id, .. } = value {
+        if *id >= temporary_count {
+            return Err(VerifierInfoError::TemporaryReferenceOutOfBounds {
+                temporary_id: *id,
+                temporary_count,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn parse_destination(
+    value: &serde_json::Value,
+    temporary_count: u32,
+) -> Result<VerifierDestination, VerifierInfoError> {
+    let object = as_object(value, "dest")?;
+    if required_string(object, "type")? != "tmp" {
+        return Err(VerifierInfoError::InvalidField { field: "dest" });
+    }
+    let destination = VerifierDestination::temporary(
+        required_u32(object, "id")?,
+        optional_u32(object, "dim")?.unwrap_or(1),
+    );
+    validate_destination(&destination, temporary_count)?;
+    Ok(destination)
+}
+
+fn parse_operands(
+    values: &[serde_json::Value],
+    temporary_count: u32,
+) -> Result<Vec<VerifierOperand>, VerifierInfoError> {
+    let mut operands = Vec::with_capacity(values.len());
+    for value in values {
+        let operand = parse_operand(value)?;
+        validate_operand(&operand, temporary_count)?;
+        operands.push(operand);
+    }
+    Ok(operands)
+}
+
+fn parse_operand(value: &serde_json::Value) -> Result<VerifierOperand, VerifierInfoError> {
+    let object = as_object(value, "reference")?;
+    let kind = required_string(object, "type")?;
+    let dimension = optional_u32(object, "dim")?.unwrap_or(1);
+    match kind.as_str() {
+        "tmp" => Ok(VerifierOperand::temporary(
+            required_u32(object, "id")?,
+            dimension,
+        )),
+        "number" => Ok(VerifierOperand::number(
+            required_number(object, "value")?,
+            dimension,
+        )),
+        "eval" => Ok(VerifierOperand::evaluation(
+            required_u32(object, "id")?,
+            dimension,
+        )),
+        "challenge" => Ok(VerifierOperand::challenge(
+            required_u32(object, "id")?,
+            optional_u32(object, "stage")?,
+            optional_u32(object, "stageId")?,
+            dimension,
+        )),
+        "public" => Ok(VerifierOperand::public(
+            required_u32(object, "id")?,
+            dimension,
+        )),
+        "const" => Ok(VerifierOperand::constant(
+            required_u32(object, "id")?,
+            dimension,
+        )),
+        "cm" => Ok(VerifierOperand::commitment(
+            required_u32(object, "id")?,
+            dimension,
+        )),
+        "Zi" => {
+            let id = match optional_u32(object, "boundaryId")? {
+                Some(id) => id,
+                None => required_u32(object, "id")?,
+            };
+            Ok(VerifierOperand::boundary_zerofier(id, dimension))
+        }
+        "proofvalue" | "proofValue" => Ok(VerifierOperand::proof_value(
+            required_u32(object, "id")?,
+            dimension,
+        )),
+        "xDivXSub" | "xdivxsub" => Ok(VerifierOperand::x_div_x_sub(
+            required_u32(object, "id")?,
+            dimension,
+        )),
+        _ => Err(VerifierInfoError::UnknownReferenceKind { kind }),
+    }
+}
+
+fn required_number(
+    object: &serde_json::Map<String, serde_json::Value>,
+    field: &'static str,
+) -> Result<u64, VerifierInfoError> {
+    let value = required(object, field)?;
+    if let Some(text) = value.as_str() {
+        return text
+            .parse::<u64>()
+            .map_err(|_| VerifierInfoError::InvalidNumber {
+                value: text.to_owned(),
+            });
+    }
+    value
+        .as_u64()
+        .ok_or_else(|| VerifierInfoError::InvalidNumber {
+            value: value.to_string(),
+        })
 }
 
 fn as_object<'a>(
@@ -523,48 +752,67 @@ fn optional_string(
         .transpose()
 }
 
-fn write_json_value(out: &mut Vec<u8>, value: &serde_json::Value) -> Result<(), VerifierInfoError> {
+fn write_destination(out: &mut Vec<u8>, value: &VerifierDestination) {
+    write_u32(out, value.temporary_id);
+    write_u32(out, value.dimension);
+}
+
+fn write_operand(out: &mut Vec<u8>, value: &VerifierOperand) {
     match value {
-        serde_json::Value::Null => out.push(JSON_NULL_TAG),
-        serde_json::Value::Bool(value) => {
-            out.push(JSON_BOOL_TAG);
-            out.push(u8::from(*value));
+        VerifierOperand::Temporary { id, dimension } => {
+            out.push(OPERAND_TEMPORARY_TAG);
+            write_reference_body(out, *id, *dimension);
         }
-        serde_json::Value::Number(value) => {
-            if let Some(value) = value.as_u64() {
-                out.push(JSON_U64_TAG);
-                write_u64(out, value);
-            } else if let Some(value) = value.as_i64() {
-                out.push(JSON_I64_TAG);
-                write_i64(out, value);
-            } else if let Some(value) = value.as_f64() {
-                out.push(JSON_F64_TAG);
-                out.extend_from_slice(&value.to_le_bytes());
-            } else {
-                return Err(VerifierInfoError::InvalidJsonNumber);
-            }
+        VerifierOperand::Number { value, dimension } => {
+            out.push(OPERAND_NUMBER_TAG);
+            write_u64(out, *value);
+            write_u32(out, *dimension);
         }
-        serde_json::Value::String(value) => {
-            out.push(JSON_STRING_TAG);
-            write_string(out, value)?;
+        VerifierOperand::Evaluation { id, dimension } => {
+            out.push(OPERAND_EVALUATION_TAG);
+            write_reference_body(out, *id, *dimension);
         }
-        serde_json::Value::Array(values) => {
-            out.push(JSON_ARRAY_TAG);
-            write_len(out, values.len())?;
-            for value in values {
-                write_json_value(out, value)?;
-            }
+        VerifierOperand::Challenge {
+            id,
+            stage,
+            stage_id,
+            dimension,
+        } => {
+            out.push(OPERAND_CHALLENGE_TAG);
+            write_reference_body(out, *id, *dimension);
+            write_optional_u32(out, *stage);
+            write_optional_u32(out, *stage_id);
         }
-        serde_json::Value::Object(values) => {
-            out.push(JSON_OBJECT_TAG);
-            write_len(out, values.len())?;
-            for (key, value) in values {
-                write_string(out, key)?;
-                write_json_value(out, value)?;
-            }
+        VerifierOperand::Public { id, dimension } => {
+            out.push(OPERAND_PUBLIC_TAG);
+            write_reference_body(out, *id, *dimension);
+        }
+        VerifierOperand::Constant { id, dimension } => {
+            out.push(OPERAND_CONSTANT_TAG);
+            write_reference_body(out, *id, *dimension);
+        }
+        VerifierOperand::Commitment { id, dimension } => {
+            out.push(OPERAND_COMMITMENT_TAG);
+            write_reference_body(out, *id, *dimension);
+        }
+        VerifierOperand::BoundaryZerofier { id, dimension } => {
+            out.push(OPERAND_BOUNDARY_TAG);
+            write_reference_body(out, *id, *dimension);
+        }
+        VerifierOperand::ProofValue { id, dimension } => {
+            out.push(OPERAND_PROOF_VALUE_TAG);
+            write_reference_body(out, *id, *dimension);
+        }
+        VerifierOperand::OpeningDenominator { id, dimension } => {
+            out.push(OPERAND_OPENING_DENOMINATOR_TAG);
+            write_reference_body(out, *id, *dimension);
         }
     }
-    Ok(())
+}
+
+fn write_reference_body(out: &mut Vec<u8>, id: u32, dimension: u32) {
+    write_u32(out, id);
+    write_u32(out, dimension);
 }
 
 fn write_optional_u32(out: &mut Vec<u8>, value: Option<u32>) {
@@ -597,10 +845,6 @@ fn write_u64(out: &mut Vec<u8>, value: u64) {
     out.extend_from_slice(&value.to_le_bytes());
 }
 
-fn write_i64(out: &mut Vec<u8>, value: i64) {
-    out.extend_from_slice(&value.to_le_bytes());
-}
-
 struct Reader<'a> {
     bytes: &'a [u8],
     offset: usize,
@@ -615,47 +859,63 @@ impl<'a> Reader<'a> {
         self.offset
     }
 
-    fn read_json_value(&mut self) -> Result<serde_json::Value, VerifierInfoError> {
+    fn read_destination(&mut self) -> Result<VerifierDestination, VerifierInfoError> {
+        Ok(VerifierDestination {
+            temporary_id: self.read_u32()?,
+            dimension: self.read_u32()?,
+        })
+    }
+
+    fn read_operand(&mut self) -> Result<VerifierOperand, VerifierInfoError> {
         let tag = self.read_u8()?;
         match tag {
-            JSON_NULL_TAG => Ok(serde_json::Value::Null),
-            JSON_BOOL_TAG => match self.read_u8()? {
-                0 => Ok(serde_json::Value::Bool(false)),
-                1 => Ok(serde_json::Value::Bool(true)),
-                value => Err(VerifierInfoError::InvalidFlag {
-                    field: "json_bool",
-                    value,
-                }),
-            },
-            JSON_U64_TAG => Ok(serde_json::Value::Number(self.read_u64()?.into())),
-            JSON_I64_TAG => Ok(serde_json::Value::Number(self.read_i64()?.into())),
-            JSON_F64_TAG => {
-                let value = self.read_f64()?;
-                let number = serde_json::Number::from_f64(value)
-                    .ok_or(VerifierInfoError::InvalidJsonNumber)?;
-                Ok(serde_json::Value::Number(number))
+            OPERAND_TEMPORARY_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                Ok(VerifierOperand::temporary(id, dimension))
             }
-            JSON_STRING_TAG => Ok(serde_json::Value::String(self.read_string()?)),
-            JSON_ARRAY_TAG => {
-                let count = self.read_u32()?;
-                let mut values = Vec::with_capacity(count as usize);
-                for _ in 0..count {
-                    values.push(self.read_json_value()?);
-                }
-                Ok(serde_json::Value::Array(values))
+            OPERAND_NUMBER_TAG => Ok(VerifierOperand::number(self.read_u64()?, self.read_u32()?)),
+            OPERAND_EVALUATION_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                Ok(VerifierOperand::evaluation(id, dimension))
             }
-            JSON_OBJECT_TAG => {
-                let count = self.read_u32()?;
-                let mut values = serde_json::Map::new();
-                for _ in 0..count {
-                    let key = self.read_string()?;
-                    let value = self.read_json_value()?;
-                    values.insert(key, value);
-                }
-                Ok(serde_json::Value::Object(values))
+            OPERAND_CHALLENGE_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                let stage = self.read_optional_u32("challenge_stage")?;
+                let stage_id = self.read_optional_u32("challenge_stage_id")?;
+                Ok(VerifierOperand::challenge(id, stage, stage_id, dimension))
             }
-            value => Err(VerifierInfoError::InvalidJsonTag { value }),
+            OPERAND_PUBLIC_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                Ok(VerifierOperand::public(id, dimension))
+            }
+            OPERAND_CONSTANT_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                Ok(VerifierOperand::constant(id, dimension))
+            }
+            OPERAND_COMMITMENT_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                Ok(VerifierOperand::commitment(id, dimension))
+            }
+            OPERAND_BOUNDARY_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                Ok(VerifierOperand::boundary_zerofier(id, dimension))
+            }
+            OPERAND_PROOF_VALUE_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                Ok(VerifierOperand::proof_value(id, dimension))
+            }
+            OPERAND_OPENING_DENOMINATOR_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                Ok(VerifierOperand::x_div_x_sub(id, dimension))
+            }
+            value => Err(VerifierInfoError::InvalidOperandTag { value }),
         }
+    }
+
+    fn read_reference_body(&mut self) -> Result<(u32, u32), VerifierInfoError> {
+        let id = self.read_u32()?;
+        let dimension = self.read_u32()?;
+        Ok((id, dimension))
     }
 
     fn read_optional_u32(&mut self, field: &'static str) -> Result<Option<u32>, VerifierInfoError> {
@@ -689,20 +949,6 @@ impl<'a> Reader<'a> {
     fn read_u64(&mut self) -> Result<u64, VerifierInfoError> {
         let bytes = self.read_exact(8)?;
         Ok(u64::from_le_bytes(
-            bytes.try_into().expect("slice length checked"),
-        ))
-    }
-
-    fn read_i64(&mut self) -> Result<i64, VerifierInfoError> {
-        let bytes = self.read_exact(8)?;
-        Ok(i64::from_le_bytes(
-            bytes.try_into().expect("slice length checked"),
-        ))
-    }
-
-    fn read_f64(&mut self) -> Result<f64, VerifierInfoError> {
-        let bytes = self.read_exact(8)?;
-        Ok(f64::from_le_bytes(
             bytes.try_into().expect("slice length checked"),
         ))
     }

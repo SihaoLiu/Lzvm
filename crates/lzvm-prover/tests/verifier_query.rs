@@ -8,7 +8,9 @@ use lzvm_artifacts::pcs_fri_segment::{
 };
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::setup_info::CommitmentColumn;
-use lzvm_artifacts::verifier_info::{VerifierCode, VerifierOperation, VerifierOperationKind};
+use lzvm_artifacts::verifier_info::{
+    VerifierCode, VerifierDestination, VerifierOperand, VerifierOperation, VerifierOperationKind,
+};
 use lzvm_artifacts::witness_opening_segment::{
     WitnessOpeningQuerySegment, WitnessOpeningStageSegment, WitnessOpeningUnitSegment,
 };
@@ -19,7 +21,6 @@ use lzvm_prover::verifier_query::{
     VerifierQueryEvalInputRequest, VerifierUnitQueryEvalRequest,
 };
 use lzvm_prover::ProveUnitSchedule;
-use serde_json::json;
 
 fn f(value: u64) -> Felt {
     Felt::from_u64(value)
@@ -94,14 +95,26 @@ fn schedule() -> ProveUnitSchedule {
     }
 }
 
-fn tmp(id: u32) -> serde_json::Value {
-    json!({"type": "tmp", "id": id, "dim": 3})
+fn tmp(id: u32) -> VerifierOperand {
+    VerifierOperand::temporary(id, 3)
+}
+
+fn destination(id: u32) -> VerifierDestination {
+    VerifierDestination::temporary(id, 3)
+}
+
+fn constant(id: u32, dimension: u32) -> VerifierOperand {
+    VerifierOperand::constant(id, dimension)
+}
+
+fn commitment(id: u32, dimension: u32) -> VerifierOperand {
+    VerifierOperand::commitment(id, dimension)
 }
 
 fn operation(
     op: VerifierOperationKind,
-    destination: serde_json::Value,
-    sources: Vec<serde_json::Value>,
+    destination: VerifierDestination,
+    sources: Vec<VerifierOperand>,
 ) -> VerifierOperation {
     VerifierOperation {
         op,
@@ -195,18 +208,15 @@ fn assembles_single_query_verifier_inputs_from_opening_segments() {
         operations: vec![
             operation(
                 VerifierOperationKind::Add,
-                tmp(0),
-                vec![
-                    json!({"type": "cm", "id": 1, "dim": 3}),
-                    json!({"type": "const", "id": 1, "dim": 1}),
-                ],
+                destination(0),
+                vec![commitment(1, 3), constant(1, 1)],
             ),
             operation(
                 VerifierOperationKind::Mul,
-                tmp(1),
-                vec![tmp(0), json!({"type": "xDivXSub", "id": 1, "dim": 3})],
+                destination(1),
+                vec![tmp(0), VerifierOperand::x_div_x_sub(1, 3)],
             ),
-            operation(VerifierOperationKind::Copy, tmp(0), vec![tmp(1)]),
+            operation(VerifierOperationKind::Copy, destination(0), vec![tmp(1)]),
         ],
     };
 
@@ -291,13 +301,10 @@ fn evaluates_all_unit_query_verifier_outputs() {
         operations: vec![
             operation(
                 VerifierOperationKind::Add,
-                tmp(1),
-                vec![
-                    json!({"type": "cm", "id": 1, "dim": 3}),
-                    json!({"type": "const", "id": 0, "dim": 1}),
-                ],
+                destination(1),
+                vec![commitment(1, 3), constant(0, 1)],
             ),
-            operation(VerifierOperationKind::Copy, tmp(0), vec![tmp(1)]),
+            operation(VerifierOperationKind::Copy, destination(0), vec![tmp(1)]),
         ],
     };
 

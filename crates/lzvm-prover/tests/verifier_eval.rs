@@ -1,31 +1,48 @@
-use lzvm_artifacts::verifier_info::{VerifierCode, VerifierOperation, VerifierOperationKind};
+use lzvm_artifacts::verifier_info::{
+    VerifierCode, VerifierDestination, VerifierOperand, VerifierOperation, VerifierOperationKind,
+};
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::verifier_eval::{
     evaluate_verifier_code, VerifierCommitmentColumn, VerifierEvalError, VerifierEvalInputs,
     VerifierOpenedStage,
 };
-use serde_json::json;
 
-fn tmp(id: u32) -> serde_json::Value {
-    json!({"type": "tmp", "id": id, "dim": 3})
+fn tmp(id: u32) -> VerifierOperand {
+    VerifierOperand::temporary(id, 3)
 }
 
-fn source(kind: &str, id: u32) -> serde_json::Value {
-    json!({"type": kind, "id": id, "dim": 3})
+fn destination(id: u32) -> VerifierDestination {
+    VerifierDestination::temporary(id, 3)
 }
 
-fn scalar_source(kind: &str, id: u32) -> serde_json::Value {
-    json!({"type": kind, "id": id, "dim": 1})
+fn eval(id: u32) -> VerifierOperand {
+    VerifierOperand::evaluation(id, 3)
 }
 
-fn number(value: &str) -> serde_json::Value {
-    json!({"type": "number", "value": value, "dim": 1})
+fn challenge(id: u32) -> VerifierOperand {
+    VerifierOperand::challenge(id, None, None, 3)
+}
+
+fn public(id: u32) -> VerifierOperand {
+    VerifierOperand::public(id, 1)
+}
+
+fn constant(id: u32, dimension: u32) -> VerifierOperand {
+    VerifierOperand::constant(id, dimension)
+}
+
+fn commitment(id: u32, dimension: u32) -> VerifierOperand {
+    VerifierOperand::commitment(id, dimension)
+}
+
+fn number(value: u64) -> VerifierOperand {
+    VerifierOperand::number(value, 1)
 }
 
 fn operation(
     op: VerifierOperationKind,
-    destination: serde_json::Value,
-    sources: Vec<serde_json::Value>,
+    destination: VerifierDestination,
+    sources: Vec<VerifierOperand>,
 ) -> VerifierOperation {
     VerifierOperation {
         op,
@@ -51,20 +68,20 @@ fn evaluates_verifier_code_arithmetic() {
         vec![
             operation(
                 VerifierOperationKind::Add,
-                tmp(0),
-                vec![number("3"), source("public", 0)],
+                destination(0),
+                vec![number(3), public(0)],
             ),
             operation(
                 VerifierOperationKind::Mul,
-                tmp(1),
-                vec![tmp(0), source("challenge", 0)],
+                destination(1),
+                vec![tmp(0), challenge(0)],
             ),
             operation(
                 VerifierOperationKind::Sub,
-                tmp(2),
-                vec![tmp(1), source("eval", 0)],
+                destination(2),
+                vec![tmp(1), eval(0)],
             ),
-            operation(VerifierOperationKind::Copy, tmp(0), vec![tmp(2)]),
+            operation(VerifierOperationKind::Copy, destination(0), vec![tmp(2)]),
         ],
     );
     let challenges = [Ext3::from_u64s([2, 1, 0])];
@@ -98,18 +115,18 @@ fn evaluates_verifier_code_with_auxiliary_vectors() {
         vec![
             operation(
                 VerifierOperationKind::Add,
-                tmp(0),
+                destination(0),
                 vec![
-                    json!({"type": "Zi", "boundaryId": 0, "dim": 3}),
-                    source("proofvalue", 0),
+                    VerifierOperand::boundary_zerofier(0, 3),
+                    VerifierOperand::proof_value(0, 3),
                 ],
             ),
             operation(
                 VerifierOperationKind::Mul,
-                tmp(1),
-                vec![tmp(0), json!({"type": "xDivXSub", "id": 1, "dim": 3})],
+                destination(1),
+                vec![tmp(0), VerifierOperand::x_div_x_sub(1, 3)],
             ),
-            operation(VerifierOperationKind::Copy, tmp(0), vec![tmp(1)]),
+            operation(VerifierOperationKind::Copy, destination(0), vec![tmp(1)]),
         ],
     );
     let zi = [Ext3::from_u64s([7, 0, 0])];
@@ -140,16 +157,20 @@ fn evaluates_verifier_code_with_opened_values() {
         vec![
             operation(
                 VerifierOperationKind::Copy,
-                tmp(0),
-                vec![scalar_source("const", 1)],
+                destination(0),
+                vec![constant(1, 1)],
             ),
             operation(
                 VerifierOperationKind::Copy,
-                tmp(1),
-                vec![json!({"type": "cm", "id": 2, "dim": 3})],
+                destination(1),
+                vec![commitment(2, 3)],
             ),
-            operation(VerifierOperationKind::Add, tmp(2), vec![tmp(0), tmp(1)]),
-            operation(VerifierOperationKind::Copy, tmp(0), vec![tmp(2)]),
+            operation(
+                VerifierOperationKind::Add,
+                destination(2),
+                vec![tmp(0), tmp(1)],
+            ),
+            operation(VerifierOperationKind::Copy, destination(0), vec![tmp(2)]),
         ],
     );
     let constants = [Felt::from_u64(7), Felt::from_u64(11)];
@@ -180,8 +201,8 @@ fn evaluates_verifier_code_with_mapped_commitment_values() {
         1,
         vec![operation(
             VerifierOperationKind::Copy,
-            tmp(0),
-            vec![json!({"type": "cm", "id": 1, "dim": 3})],
+            destination(0),
+            vec![commitment(1, 3)],
         )],
     );
     let stage_one_values = [
@@ -229,8 +250,8 @@ fn rejects_verifier_code_source_indexes_outside_inputs() {
         1,
         vec![operation(
             VerifierOperationKind::Copy,
-            tmp(0),
-            vec![source("eval", 2)],
+            destination(0),
+            vec![eval(2)],
         )],
     );
     let inputs = VerifierEvalInputs::default();

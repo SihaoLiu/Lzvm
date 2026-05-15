@@ -1,6 +1,8 @@
 use std::fmt;
 
-use lzvm_artifacts::verifier_info::{VerifierCode, VerifierOperationKind};
+use lzvm_artifacts::verifier_info::{
+    VerifierCode, VerifierDestination, VerifierOperand, VerifierOperationKind,
+};
 use lzvm_field::{Ext3, Felt};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -167,48 +169,36 @@ fn expect_arity(
 }
 
 fn destination_index(
-    reference: &serde_json::Value,
+    reference: &VerifierDestination,
     temporary_count: usize,
 ) -> Result<usize, VerifierEvalError> {
-    let object = reference
-        .as_object()
-        .ok_or(VerifierEvalError::InvalidReference)?;
-    let kind = string_field(object, "type")?;
-    if kind != "tmp" {
-        return Err(VerifierEvalError::UnsupportedDestination {
-            kind: kind.to_owned(),
-        });
-    }
-    let index = usize_field(object, "id")?;
+    let index =
+        usize::try_from(reference.temporary_id).map_err(|_| VerifierEvalError::InvalidReference)?;
     check_index("tmp", index, temporary_count)?;
     Ok(index)
 }
 
 fn resolve_source(
-    reference: &serde_json::Value,
+    reference: &VerifierOperand,
     inputs: &VerifierEvalInputs<'_>,
     temporaries: &[Ext3],
 ) -> Result<Ext3, VerifierEvalError> {
-    let object = reference
-        .as_object()
-        .ok_or(VerifierEvalError::InvalidReference)?;
-    let kind = string_field(object, "type")?;
-    match kind {
-        "tmp" => {
-            let index = usize_field(object, "id")?;
+    match reference {
+        VerifierOperand::Temporary { id, .. } => {
+            let index = to_usize(*id)?;
             read_ext3("tmp", index, temporaries)
         }
-        "number" => read_number(object),
-        "eval" => {
-            let index = usize_field(object, "id")?;
+        VerifierOperand::Number { value, .. } => Ok(extension_from_scalar(Felt::from_u64(*value))),
+        VerifierOperand::Evaluation { id, .. } => {
+            let index = to_usize(*id)?;
             read_ext3("eval", index, inputs.evaluations)
         }
-        "challenge" => {
-            let index = usize_field(object, "id")?;
+        VerifierOperand::Challenge { id, .. } => {
+            let index = to_usize(*id)?;
             read_ext3("challenge", index, inputs.challenges)
         }
-        "public" => {
-            let index = usize_field(object, "id")?;
+        VerifierOperand::Public { id, .. } => {
+            let index = to_usize(*id)?;
             let value = *inputs.publics.get(index).ok_or_else(|| {
                 VerifierEvalError::SourceIndexOutOfRange {
                     kind: "public".to_owned(),
@@ -218,90 +208,28 @@ fn resolve_source(
             })?;
             Ok(extension_from_scalar(value))
         }
-        "const" => {
-            let index = usize_field(object, "id")?;
-            let dimension = optional_usize_field(object, "dim")?.unwrap_or(1);
-            read_felt_vector("const", index, dimension, inputs.constants)
+        VerifierOperand::Constant { id, dimension } => read_felt_vector(
+            "const",
+            to_usize(*id)?,
+            to_usize(*dimension)?,
+            inputs.constants,
+        ),
+        VerifierOperand::Commitment { id, dimension } => {
+            read_commitment_vector(to_usize(*id)?, to_usize(*dimension)?, inputs)
         }
-        "cm" => {
-            let index = usize_field(object, "id")?;
-            let dimension = optional_usize_field(object, "dim")?.unwrap_or(1);
-            read_commitment_vector(index, dimension, inputs)
-        }
-        "Zi" => {
-            let index = match optional_usize_field(object, "boundaryId")? {
-                Some(index) => index,
-                None => optional_usize_field(object, "id")?
-                    .ok_or(VerifierEvalError::MissingReferenceField { field: "id" })?,
-            };
+        VerifierOperand::BoundaryZerofier { id, .. } => {
+            let index = to_usize(*id)?;
             read_ext3("Zi", index, inputs.zi)
         }
-        "proofvalue" | "proofValue" => {
-            let index = usize_field(object, "id")?;
-            read_ext3(kind, index, inputs.proof_values)
+        VerifierOperand::ProofValue { id, .. } => {
+            let index = to_usize(*id)?;
+            read_ext3("proofvalue", index, inputs.proof_values)
         }
-        "xDivXSub" | "xdivxsub" => {
-            let index = usize_field(object, "id")?;
-            read_ext3(kind, index, inputs.x_div_x_sub)
+        VerifierOperand::OpeningDenominator { id, .. } => {
+            let index = to_usize(*id)?;
+            read_ext3("xDivXSub", index, inputs.x_div_x_sub)
         }
-        _ => Err(VerifierEvalError::UnknownSourceKind {
-            kind: kind.to_owned(),
-        }),
     }
-}
-
-fn string_field<'a>(
-    object: &'a serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<&'a str, VerifierEvalError> {
-    object
-        .get(field)
-        .ok_or(VerifierEvalError::MissingReferenceField { field })?
-        .as_str()
-        .ok_or(VerifierEvalError::InvalidReference)
-}
-
-fn usize_field(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<usize, VerifierEvalError> {
-    optional_usize_field(object, field)?.ok_or(VerifierEvalError::MissingReferenceField { field })
-}
-
-fn optional_usize_field(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<Option<usize>, VerifierEvalError> {
-    object
-        .get(field)
-        .map(|value| {
-            value
-                .as_u64()
-                .and_then(|value| usize::try_from(value).ok())
-                .ok_or(VerifierEvalError::InvalidReference)
-        })
-        .transpose()
-}
-
-fn read_number(
-    object: &serde_json::Map<String, serde_json::Value>,
-) -> Result<Ext3, VerifierEvalError> {
-    let value = object
-        .get("value")
-        .ok_or(VerifierEvalError::MissingReferenceField { field: "value" })?;
-    let number = if let Some(text) = value.as_str() {
-        text.parse::<u64>()
-            .map_err(|_| VerifierEvalError::InvalidNumber {
-                value: text.to_owned(),
-            })?
-    } else {
-        value
-            .as_u64()
-            .ok_or_else(|| VerifierEvalError::InvalidNumber {
-                value: value.to_string(),
-            })?
-    };
-    Ok(extension_from_scalar(Felt::from_u64(number)))
 }
 
 fn read_ext3(kind: &str, index: usize, values: &[Ext3]) -> Result<Ext3, VerifierEvalError> {
@@ -395,6 +323,10 @@ fn check_index(kind: &str, index: usize, len: usize) -> Result<(), VerifierEvalE
             len,
         })
     }
+}
+
+fn to_usize(value: u32) -> Result<usize, VerifierEvalError> {
+    usize::try_from(value).map_err(|_| VerifierEvalError::InvalidReference)
 }
 
 fn extension_from_scalar(value: Felt) -> Ext3 {

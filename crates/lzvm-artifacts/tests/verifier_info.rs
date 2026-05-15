@@ -141,6 +141,29 @@ fn encodes_and_parses_verifier_info_binary() {
 }
 
 #[test]
+fn encodes_the_current_verifier_info_format_version() {
+    let info = parse_verifier_info_json(sample_verifier_info_json()).expect("fixture should parse");
+    let bytes = encode_verifier_info(&info).expect("fixture should encode");
+    let version = u32::from_le_bytes(bytes[4..8].try_into().expect("slice length checked"));
+
+    assert_eq!(version, 2);
+}
+
+#[test]
+fn rejects_stale_verifier_info_format_headers() {
+    let info = parse_verifier_info_json(sample_verifier_info_json()).expect("fixture should parse");
+    let mut bytes = encode_verifier_info(&info).expect("fixture should encode");
+    bytes[4..8].copy_from_slice(&1_u32.to_le_bytes());
+
+    let error = parse_verifier_info(&bytes).expect_err("stale format should be rejected");
+
+    assert!(matches!(
+        error,
+        VerifierInfoError::UnsupportedVersion { found: 1, max: 2 }
+    ));
+}
+
+#[test]
 fn reads_verifier_info_binary_from_a_file_path() {
     let info = parse_verifier_info_json(sample_verifier_info_json()).expect("fixture should parse");
     let bytes = encode_verifier_info(&info).expect("fixture should encode");
