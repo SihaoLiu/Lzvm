@@ -11,7 +11,7 @@ use lzvm_artifacts::witness_segment::{
 use lzvm_field::coset_extend_evaluations;
 use lzvm_field::{DomainError, Felt, FieldError};
 
-use crate::merkle_hash::{linear_hash, parent_hash, MerkleHashError};
+use crate::merkle_hash::{linear_hash, parent_hash, parent_hashes, MerkleHashError};
 use crate::witness_layout::{
     derive_witness_trace_layout, WitnessTraceLayoutError, WitnessTraceStageValues,
 };
@@ -806,11 +806,9 @@ pub fn commit_witness_stage_leaves(
             level.push(zero);
         }
 
-        let mut next = Vec::with_capacity(level.len() / arity);
-        for children in level.chunks_exact(arity) {
-            let digest = parent_hash(children, arity)?;
-            append_digest(&mut out, digest);
-            next.push(digest);
+        let next = parent_hashes(&level, arity)?;
+        for digest in &next {
+            append_digest(&mut out, *digest);
         }
         level = next;
     }

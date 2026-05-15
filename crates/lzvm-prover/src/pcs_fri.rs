@@ -17,7 +17,7 @@ use lzvm_field::intt_in_place;
 use lzvm_field::{DomainError, Ext3, Felt, FieldError, PoseidonTranscript, SHIFT};
 
 use crate::merkle_hash::{
-    linear_hash, parent_hash, root_from_digest_level, MerkleHashError, HASH_WORDS,
+    linear_hash, parent_hash, parent_hashes, root_from_digest_level, MerkleHashError, HASH_WORDS,
 };
 use crate::pcs_query_plan::{
     load_pcs_query_plan_from_segments, uses_transcript_pcs_query_plan_inputs,
@@ -1810,10 +1810,7 @@ fn build_fri_layer_tree(
             break;
         }
 
-        current = padded
-            .chunks_exact(arity)
-            .map(|children| parent_hash(children, arity).map_err(PcsFriMerkleError::from))
-            .collect::<Result<Vec<_>, PcsFriMerkleError>>()?;
+        current = parent_hashes(&padded, arity).map_err(PcsFriMerkleError::from)?;
     }
 
     let root = *levels

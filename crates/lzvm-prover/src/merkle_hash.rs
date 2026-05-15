@@ -1,5 +1,7 @@
 use std::fmt;
 
+#[cfg(feature = "cuda")]
+use lzvm_accel::{cuda_poseidon2_width16, cuda_poseidon2_width8};
 use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt};
 
 pub(crate) const HASH_WORDS: usize = 4;
@@ -57,6 +59,39 @@ pub(crate) fn parent_hash(
     }
 }
 
+pub(crate) fn parent_hashes(
+    children: &[[Felt; HASH_WORDS]],
+    arity: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    validate_arity(arity)?;
+    if children.is_empty() {
+        return Ok(Vec::new());
+    }
+    if !children.len().is_multiple_of(arity) {
+        return Err(MerkleHashError::InvalidChildCount {
+            expected: arity,
+            found: children.len(),
+        });
+    }
+
+    #[cfg(feature = "cuda")]
+    {
+        match arity {
+            2 => parent_hashes_arity2_cuda(children),
+            4 => parent_hashes_arity4_cuda(children),
+            _ => unreachable!("arity is validated"),
+        }
+    }
+
+    #[cfg(not(feature = "cuda"))]
+    {
+        children
+            .chunks_exact(arity)
+            .map(|chunk| parent_hash(chunk, arity))
+            .collect()
+    }
+}
+
 pub(crate) fn root_from_digest_level(
     level: &[[Felt; HASH_WORDS]],
     arity: usize,
@@ -77,11 +112,7 @@ pub(crate) fn root_from_digest_level(
             [Felt::ZERO; HASH_WORDS],
         );
 
-        let mut next = Vec::with_capacity(level.len() / arity);
-        for children in level.chunks_exact(arity) {
-            next.push(parent_hash(children, arity)?);
-        }
-        level = next;
+        level = parent_hashes(&level, arity)?;
     }
     Ok(level[0])
 }
@@ -168,4 +199,73 @@ fn parent_hash_arity4(children: &[[Felt; HASH_WORDS]]) -> [Felt; HASH_WORDS] {
         children[3][3],
     ]);
     [state[0], state[1], state[2], state[3]]
+}
+
+#[cfg(feature = "cuda")]
+fn parent_hashes_arity2_cuda(
+    children: &[[Felt; HASH_WORDS]],
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    let mut states = Vec::with_capacity(children.len() * HASH_WORDS);
+    for child in children {
+        states.extend(child.iter().map(|value| value.to_u64()));
+    }
+    let hashed = cuda_poseidon2_width8(&states).map_err(|_| MerkleHashError::LengthOverflow)?;
+    digests_from_hashed_states(&hashed, 8)
+}
+
+#[cfg(feature = "cuda")]
+fn parent_hashes_arity4_cuda(
+    children: &[[Felt; HASH_WORDS]],
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    let mut states = Vec::with_capacity(children.len() * HASH_WORDS);
+    for child in children {
+        states.extend(child.iter().map(|value| value.to_u64()));
+    }
+    let hashed = cuda_poseidon2_width16(&states).map_err(|_| MerkleHashError::LengthOverflow)?;
+    digests_from_hashed_states(&hashed, 16)
+}
+
+#[cfg(feature = "cuda")]
+fn digests_from_hashed_states(
+    states: &[u64],
+    state_width: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    let mut out = Vec::with_capacity(states.len() / state_width);
+    for state in states.chunks_exact(state_width) {
+        out.push([
+            Felt::from_canonical(state[0]).map_err(|_| MerkleHashError::LengthOverflow)?,
+            Felt::from_canonical(state[1]).map_err(|_| MerkleHashError::LengthOverflow)?,
+            Felt::from_canonical(state[2]).map_err(|_| MerkleHashError::LengthOverflow)?,
+            Felt::from_canonical(state[3]).map_err(|_| MerkleHashError::LengthOverflow)?,
+        ]);
+    }
+    Ok(out)
+}
+
+#[cfg(all(test, feature = "cuda"))]
+mod tests {
+    use super::{parent_hash, parent_hashes};
+    use lzvm_field::Felt;
+
+    #[test]
+    fn cuda_parent_hashes_match_cpu_reference() {
+        let children = vec![
+            digest([1, 2, 3, 4]),
+            digest([5, 6, 7, 8]),
+            digest([9, 10, 11, 12]),
+            digest([13, 14, 15, 16]),
+        ];
+
+        let actual = parent_hashes(&children, 2).expect("cuda parent hashes should run");
+        let expected = vec![
+            parent_hash(&children[0..2], 2).expect("first parent should hash"),
+            parent_hash(&children[2..4], 2).expect("second parent should hash"),
+        ];
+
+        assert_eq!(actual, expected);
+    }
+
+    fn digest(values: [u64; 4]) -> [Felt; 4] {
+        values.map(Felt::from_u64)
+    }
 }
