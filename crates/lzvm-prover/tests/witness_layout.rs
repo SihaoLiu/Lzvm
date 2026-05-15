@@ -47,6 +47,11 @@ fn sample_unit_with_rows(
         final_layer_bits: 5,
         fixed_bytes: 40960,
         constant_tree_root: None,
+        pcs_material_bytes: None,
+        pcs_material_plan_digest: None,
+        pcs_material_fixed_column_digest: None,
+        pcs_material_constant_tree_digest: None,
+        pcs_material_constant_tree_root: None,
     }
 }
 

@@ -29,6 +29,8 @@ pub struct ProveSchedule {
     pub setup_hash: [u8; 32],
     pub unit_count: usize,
     pub total_fixed_bytes: u64,
+    pub total_pcs_material_bytes: u64,
+    pub pcs_material_unit_count: usize,
     pub total_query_count: u64,
     pub max_extended_domain_bits: u32,
     pub units: Vec<ProveUnitSchedule>,
@@ -57,6 +59,11 @@ pub struct ProveUnitSchedule {
     pub final_layer_bits: u32,
     pub fixed_bytes: u64,
     pub constant_tree_root: Option<VerificationKeyRoot>,
+    pub pcs_material_bytes: Option<u64>,
+    pub pcs_material_plan_digest: Option<[u8; 32]>,
+    pub pcs_material_fixed_column_digest: Option<[u8; 32]>,
+    pub pcs_material_constant_tree_digest: Option<[u8; 32]>,
+    pub pcs_material_constant_tree_root: Option<[u64; 4]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -381,6 +388,8 @@ pub fn derive_prove_schedule(
 
     let setup_hash = key_directory_catalog_digest(catalog)?;
     let mut total_fixed_bytes = 0_u64;
+    let mut total_pcs_material_bytes = 0_u64;
+    let mut pcs_material_unit_count = 0_usize;
     let mut total_query_count = 0_u64;
     let mut max_extended_domain_bits = 0_u32;
     let mut units = Vec::with_capacity(catalog.units.len());
@@ -391,7 +400,16 @@ pub fn derive_prove_schedule(
         total_query_count = total_query_count
             .checked_add(u64::from(unit.pcs_plan.query_count))
             .ok_or(ProveScheduleError::LengthOverflow)?;
+        if unit.pcs_material_present {
+            pcs_material_unit_count += 1;
+        }
+        if let Some(bytes) = unit.pcs_material_bytes {
+            total_pcs_material_bytes = total_pcs_material_bytes
+                .checked_add(bytes)
+                .ok_or(ProveScheduleError::LengthOverflow)?;
+        }
         max_extended_domain_bits = max_extended_domain_bits.max(unit.pcs_plan.extended_domain_bits);
+        let material = unit.pcs_material.as_ref();
 
         units.push(ProveUnitSchedule {
             kind: unit.paths.kind,
@@ -415,6 +433,11 @@ pub fn derive_prove_schedule(
             final_layer_bits: unit.pcs_plan.final_layer_bits,
             fixed_bytes: unit.actual_fixed_bytes,
             constant_tree_root: unit.constant_tree_root.clone(),
+            pcs_material_bytes: unit.pcs_material_bytes,
+            pcs_material_plan_digest: material.map(|value| value.plan_digest),
+            pcs_material_fixed_column_digest: material.map(|value| value.fixed_column_digest),
+            pcs_material_constant_tree_digest: material.map(|value| value.constant_tree_digest),
+            pcs_material_constant_tree_root: material.map(|value| value.constant_tree_root),
         });
     }
 
@@ -422,6 +445,8 @@ pub fn derive_prove_schedule(
         setup_hash,
         unit_count: units.len(),
         total_fixed_bytes,
+        total_pcs_material_bytes,
+        pcs_material_unit_count,
         total_query_count,
         max_extended_domain_bits,
         units,

@@ -438,7 +438,7 @@ fn prints_prove_schedule_for_setup_directory() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nunits=4\nfixed_bytes=128\nqueries=4\nmax_extended_domain_bits=2\nsetup_hash={expected}\n"
+            "status=ok\nunits=4\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nqueries=4\nmax_extended_domain_bits=2\nsetup_hash={expected}\n"
         )
     );
     assert!(stderr.is_empty());
@@ -491,7 +491,7 @@ fn prints_prove_run_plan_for_setup_directory() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npass=full\nunits=4\nfixed_bytes=128\nqueries=4\nmax_extended_domain_bits=2\npartitions=4\npartition_ids=1,3\nworker=2\ninput_data={}\naggregate=true\nremote_aggregation=false\nfinal_wrap=true\nverify_outputs=true\nsave_outputs=true\nminimal_memory=false\noutput={}\ngpu_preallocate=true\ngpu_streams=8\nwitness_thread_pools=2\nstored_witnesses=3\npack_trace=false\nsetup_hash={expected}\n",
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nqueries=4\nmax_extended_domain_bits=2\npartitions=4\npartition_ids=1,3\nworker=2\ninput_data={}\naggregate=true\nremote_aggregation=false\nfinal_wrap=true\nverify_outputs=true\nsave_outputs=true\nminimal_memory=false\noutput={}\ngpu_preallocate=true\ngpu_streams=8\nwitness_thread_pools=2\nstored_witnesses=3\npack_trace=false\nsetup_hash={expected}\n",
             input_path.display(),
             output_dir.display()
         )
@@ -577,7 +577,7 @@ fn prints_prove_inputs_for_setup_directory() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npass=full\nunits=4\nfixed_bytes=128\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nwitness_library_bytes=64\nwitness_library_machine=62\nwitness_library_digest={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs={}\n",
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nwitness_library_bytes=64\nwitness_library_machine=62\nwitness_library_digest={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs={}\n",
             output_dir.display(),
             witness_library.display(),
             format_hash(&witness_library_info.digest),
@@ -664,7 +664,7 @@ fn runs_prove_witness_commitments_for_setup_directory() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npass=full\nunits=4\nfixed_bytes=128\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data={}\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash}\nunit_index=0\ninput_bytes=1\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data={}\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash}\nunit_index=0\ninput_bytes=1\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
             input_data.display(),
             output_dir.display(),
             expected_stages

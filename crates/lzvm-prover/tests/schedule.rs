@@ -11,6 +11,7 @@ use lzvm_artifacts::key_directory::{
     KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry, KeyUnitKind, KeyUnitPaths,
 };
 use lzvm_artifacts::metadata_bundle::UnitMetadataBundle;
+use lzvm_artifacts::pcs_material::PcsSetupMaterial;
 use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
 use lzvm_artifacts::setup_info::{FriStep, StarkStruct, UnitSetupInfo};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
@@ -204,6 +205,19 @@ fn sample_witness_library() -> Vec<u8> {
     bytes
 }
 
+fn sample_pcs_material(seed: u8) -> PcsSetupMaterial {
+    PcsSetupMaterial {
+        plan_digest: [seed; 32],
+        fixed_column_digest: [seed.wrapping_add(1); 32],
+        constant_tree_digest: [seed.wrapping_add(2); 32],
+        constant_tree_root: [1, 2, 3, 4],
+        fixed_byte_count: 64,
+        constant_tree_byte_count: 224,
+        leaf_byte_count: 64,
+        node_byte_count: 160,
+    }
+}
+
 #[test]
 fn derives_prove_schedule_from_key_directory_catalog() {
     let catalog = sample_catalog(vec![
@@ -236,6 +250,37 @@ fn derives_prove_schedule_from_key_directory_catalog() {
     assert_eq!(schedule.units[1].kind, KeyUnitKind::RecursiveFirst);
     assert_eq!(schedule.units[1].extended_domain_bits, 7);
     assert_ne!(schedule.setup_hash, [0_u8; 32]);
+}
+
+#[test]
+fn derives_prove_schedule_with_pcs_material_inputs() {
+    let mut with_material = sample_unit(KeyUnitKind::Basic, 0, 64);
+    with_material.pcs_material_present = true;
+    with_material.pcs_material_bytes = Some(184);
+    with_material.pcs_material = Some(sample_pcs_material(7));
+    let without_material = sample_unit(KeyUnitKind::RecursiveFirst, 1, 128);
+    let catalog = sample_catalog(vec![with_material, without_material]);
+
+    let schedule = derive_prove_schedule(&catalog).expect("prove schedule should derive");
+
+    assert_eq!(schedule.pcs_material_unit_count, 1);
+    assert_eq!(schedule.total_pcs_material_bytes, 184);
+    assert_eq!(schedule.units[0].pcs_material_bytes, Some(184));
+    assert_eq!(schedule.units[0].pcs_material_plan_digest, Some([7; 32]));
+    assert_eq!(
+        schedule.units[0].pcs_material_fixed_column_digest,
+        Some([8; 32])
+    );
+    assert_eq!(
+        schedule.units[0].pcs_material_constant_tree_digest,
+        Some([9; 32])
+    );
+    assert_eq!(
+        schedule.units[0].pcs_material_constant_tree_root,
+        Some([1, 2, 3, 4])
+    );
+    assert_eq!(schedule.units[1].pcs_material_bytes, None);
+    assert_eq!(schedule.units[1].pcs_material_plan_digest, None);
 }
 
 #[test]

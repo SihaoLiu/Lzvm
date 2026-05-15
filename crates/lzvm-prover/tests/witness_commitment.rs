@@ -47,6 +47,11 @@ fn sample_unit(rows: u64, stage_commit_widths: Vec<u32>) -> ProveUnitSchedule {
         final_layer_bits: 1,
         fixed_bytes: 16,
         constant_tree_root: None,
+        pcs_material_bytes: None,
+        pcs_material_plan_digest: None,
+        pcs_material_fixed_column_digest: None,
+        pcs_material_constant_tree_digest: None,
+        pcs_material_constant_tree_root: None,
     }
 }
 

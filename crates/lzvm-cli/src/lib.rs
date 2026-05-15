@@ -282,6 +282,16 @@ fn prove_schedule(setup_dir: &str, stdout: &mut dyn Write, stderr: &mut dyn Writ
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "units={}", schedule.unit_count);
     let _ = writeln!(stdout, "fixed_bytes={}", schedule.total_fixed_bytes);
+    let _ = writeln!(
+        stdout,
+        "pcs_material_units={}",
+        schedule.pcs_material_unit_count
+    );
+    let _ = writeln!(
+        stdout,
+        "pcs_material_bytes={}",
+        schedule.total_pcs_material_bytes
+    );
     let _ = writeln!(stdout, "queries={}", schedule.total_query_count);
     let _ = writeln!(
         stdout,

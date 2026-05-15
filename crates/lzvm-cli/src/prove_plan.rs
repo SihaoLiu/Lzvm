@@ -205,6 +205,16 @@ pub(crate) fn write_run_plan_summary(stdout: &mut dyn Write, plan: &ProveRunPlan
     let _ = writeln!(stdout, "pass={}", format_pass_kind(plan.pass.kind()));
     let _ = writeln!(stdout, "units={}", plan.schedule.unit_count);
     let _ = writeln!(stdout, "fixed_bytes={}", plan.schedule.total_fixed_bytes);
+    let _ = writeln!(
+        stdout,
+        "pcs_material_units={}",
+        plan.schedule.pcs_material_unit_count
+    );
+    let _ = writeln!(
+        stdout,
+        "pcs_material_bytes={}",
+        plan.schedule.total_pcs_material_bytes
+    );
     let _ = writeln!(stdout, "queries={}", plan.schedule.total_query_count);
     let _ = writeln!(
         stdout,
