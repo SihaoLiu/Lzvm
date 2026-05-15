@@ -1,7 +1,7 @@
 use lzvm_artifacts::expression_info::{
     encode_expression_info, parse_expression_info, parse_expression_info_json,
     read_expression_info_binary_file, read_expression_info_file, BoundaryKind, CodeDestination,
-    CodeOperand, ExpressionInfoError,
+    CodeOperand, ExpressionDestination, ExpressionInfoError,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -90,6 +90,10 @@ fn parses_expression_info_json() {
     assert_eq!(info.expressions[0].temporary_count, 2);
     assert_eq!(info.expressions[0].operations.len(), 2);
     assert_eq!(info.expressions[0].line, "expr-a");
+    assert_eq!(
+        info.expressions[0].destination,
+        Some(ExpressionDestination::commitment(8, Some(1), Some(0)))
+    );
     assert_eq!(
         info.expressions[0].operations[0].destination,
         CodeDestination::temporary(0, 1)
@@ -259,7 +263,7 @@ fn encodes_the_current_expression_info_format_version() {
     let bytes = encode_expression_info(&info).expect("fixture should encode");
     let version = u32::from_le_bytes(bytes[4..8].try_into().expect("slice length checked"));
 
-    assert_eq!(version, 3);
+    assert_eq!(version, 4);
 }
 
 #[test]
@@ -267,13 +271,13 @@ fn rejects_stale_expression_info_format_headers() {
     let info =
         parse_expression_info_json(sample_expression_info_json()).expect("fixture should parse");
     let mut bytes = encode_expression_info(&info).expect("fixture should encode");
-    bytes[4..8].copy_from_slice(&2_u32.to_le_bytes());
+    bytes[4..8].copy_from_slice(&3_u32.to_le_bytes());
 
     let error = parse_expression_info(&bytes).expect_err("stale format should be rejected");
 
     assert!(matches!(
         error,
-        ExpressionInfoError::UnsupportedVersion { found: 2, max: 3 }
+        ExpressionInfoError::UnsupportedVersion { found: 3, max: 4 }
     ));
 }
 

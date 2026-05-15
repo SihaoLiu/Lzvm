@@ -7,7 +7,7 @@ use crate::sectioned::{
 };
 
 const EXPRESSION_INFO_KIND: [u8; 4] = *b"xinf";
-const EXPRESSION_INFO_VERSION: u32 = 3;
+const EXPRESSION_INFO_VERSION: u32 = 4;
 const EXPRESSION_INFO_SECTION_ID: u32 = 1;
 
 const JSON_NULL_TAG: u8 = 0;
@@ -18,6 +18,8 @@ const JSON_F64_TAG: u8 = 4;
 const JSON_STRING_TAG: u8 = 5;
 const JSON_ARRAY_TAG: u8 = 6;
 const JSON_OBJECT_TAG: u8 = 7;
+
+const EXPRESSION_DESTINATION_COMMITMENT_TAG: u8 = 1;
 
 const DESTINATION_TEMPORARY_TAG: u8 = 1;
 const DESTINATION_QUOTIENT_TAG: u8 = 2;
@@ -69,7 +71,7 @@ pub struct ExpressionCode {
     pub stage: u32,
     pub line: String,
     pub temporary_count: u32,
-    pub destination: Option<serde_json::Value>,
+    pub destination: Option<ExpressionDestination>,
     pub operations: Vec<CodeOperation>,
 }
 
@@ -107,6 +109,15 @@ pub enum OperationKind {
     Sub,
     Mul,
     Copy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExpressionDestination {
+    Commitment {
+        id: u32,
+        stage: Option<u32>,
+        stage_id: Option<u32>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -181,6 +192,16 @@ pub enum CodeOperand {
         air_group_id: Option<u32>,
         dimension: u32,
     },
+}
+
+impl ExpressionDestination {
+    pub fn commitment(id: u32, stage: Option<u32>, stage_id: Option<u32>) -> Self {
+        Self::Commitment {
+            id,
+            stage,
+            stage_id,
+        }
+    }
 }
 
 impl CodeDestination {
@@ -747,7 +768,10 @@ fn parse_expressions(
             stage: optional_u32(object, "stage")?.unwrap_or(0),
             line: optional_string(object, "line")?.unwrap_or_default(),
             temporary_count,
-            destination: object.get("dest").cloned(),
+            destination: object
+                .get("dest")
+                .map(parse_expression_destination)
+                .transpose()?,
             operations,
         });
     }
@@ -763,7 +787,7 @@ fn read_expressions(reader: &mut Reader<'_>) -> Result<Vec<ExpressionCode>, Expr
             stage: reader.read_u32()?,
             line: reader.read_string()?,
             temporary_count: reader.read_u32()?,
-            destination: reader.read_optional_json_value("expression_destination")?,
+            destination: reader.read_optional_expression_destination("expression_destination")?,
             operations: read_operations(reader)?,
         });
     }
@@ -780,7 +804,7 @@ fn write_expressions(
         write_u32(out, value.stage);
         write_string(out, &value.line)?;
         write_u32(out, value.temporary_count);
-        write_optional_json_value(out, value.destination.as_ref())?;
+        write_optional_expression_destination(out, value.destination.as_ref());
         write_operations(out, &value.operations)?;
     }
     Ok(())
@@ -996,6 +1020,21 @@ fn validate_operand(value: &CodeOperand, temporary_count: u32) -> Result<(), Exp
         }
     }
     Ok(())
+}
+
+fn parse_expression_destination(
+    value: &serde_json::Value,
+) -> Result<ExpressionDestination, ExpressionInfoError> {
+    let object = as_object(value, "dest")?;
+    let kind = required_string(object, "op")?;
+    match kind.as_str() {
+        "cm" => Ok(ExpressionDestination::commitment(
+            required_u32(object, "id")?,
+            optional_u32(object, "stage")?,
+            optional_u32(object, "stageId")?,
+        )),
+        _ => Err(ExpressionInfoError::UnknownReferenceKind { kind }),
+    }
 }
 
 fn parse_destination(
@@ -1272,18 +1311,29 @@ fn write_json_value(
     Ok(())
 }
 
-fn write_optional_json_value(
-    out: &mut Vec<u8>,
-    value: Option<&serde_json::Value>,
-) -> Result<(), ExpressionInfoError> {
+fn write_optional_expression_destination(out: &mut Vec<u8>, value: Option<&ExpressionDestination>) {
     match value {
         Some(value) => {
             out.push(1);
-            write_json_value(out, value)?;
+            write_expression_destination(out, value);
         }
         None => out.push(0),
     }
-    Ok(())
+}
+
+fn write_expression_destination(out: &mut Vec<u8>, value: &ExpressionDestination) {
+    match value {
+        ExpressionDestination::Commitment {
+            id,
+            stage,
+            stage_id,
+        } => {
+            out.push(EXPRESSION_DESTINATION_COMMITMENT_TAG);
+            write_u32(out, *id);
+            write_optional_u32(out, *stage);
+            write_optional_u32(out, *stage_id);
+        }
+    }
 }
 
 fn write_optional_i64(out: &mut Vec<u8>, value: Option<i64>) {
@@ -1467,6 +1517,32 @@ impl<'a> Reader<'a> {
         self.offset
     }
 
+    fn read_optional_expression_destination(
+        &mut self,
+        field: &'static str,
+    ) -> Result<Option<ExpressionDestination>, ExpressionInfoError> {
+        match self.read_u8()? {
+            0 => Ok(None),
+            1 => Ok(Some(self.read_expression_destination()?)),
+            value => Err(ExpressionInfoError::InvalidFlag { field, value }),
+        }
+    }
+
+    fn read_expression_destination(
+        &mut self,
+    ) -> Result<ExpressionDestination, ExpressionInfoError> {
+        let tag = self.read_u8()?;
+        match tag {
+            EXPRESSION_DESTINATION_COMMITMENT_TAG => {
+                let id = self.read_u32()?;
+                let stage = self.read_optional_u32("expression_destination_stage")?;
+                let stage_id = self.read_optional_u32("expression_destination_stage_id")?;
+                Ok(ExpressionDestination::commitment(id, stage, stage_id))
+            }
+            value => Err(ExpressionInfoError::InvalidOperandTag { value }),
+        }
+    }
+
     fn read_destination(&mut self) -> Result<CodeDestination, ExpressionInfoError> {
         let tag = self.read_u8()?;
         let (id, dimension) = self.read_reference_body()?;
@@ -1596,17 +1672,6 @@ impl<'a> Reader<'a> {
                 Ok(serde_json::Value::Object(values))
             }
             value => Err(ExpressionInfoError::InvalidJsonTag { value }),
-        }
-    }
-
-    fn read_optional_json_value(
-        &mut self,
-        field: &'static str,
-    ) -> Result<Option<serde_json::Value>, ExpressionInfoError> {
-        match self.read_u8()? {
-            0 => Ok(None),
-            1 => Ok(Some(self.read_json_value()?)),
-            value => Err(ExpressionInfoError::InvalidFlag { field, value }),
         }
     }
 
