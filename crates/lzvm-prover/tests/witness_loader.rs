@@ -32,14 +32,16 @@ fn loads_witness_library_abi_version() {
     let library_path = build_shared_library(
         &dir,
         "valid",
-        "unsigned int lzvm_witness_abi_version(void) { return 1; }\n",
+        "unsigned int lzvm_witness_abi_version(void) { return 1; }\nint lzvm_witness_compute(void) { return 7; }\n",
     );
 
     let library = load_witness_library(&library_path).expect("witness library should load");
+    let compute_result = unsafe { library.call_compute_for_smoke() };
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(library.path, library_path);
     assert_eq!(library.abi_version, WITNESS_ABI_VERSION);
+    assert_eq!(compute_result, 7);
 }
 
 #[test]
@@ -81,5 +83,24 @@ fn rejects_witness_library_with_unsupported_abi_version() {
             expected: WITNESS_ABI_VERSION,
             found: 999
         }) if path == library_path
+    ));
+}
+
+#[test]
+fn rejects_witness_library_without_compute_symbol() {
+    let dir = temp_dir("missing-compute");
+    let _ = fs::remove_dir_all(&dir);
+    let library_path = build_shared_library(
+        &dir,
+        "missing_compute",
+        "unsigned int lzvm_witness_abi_version(void) { return 1; }\n",
+    );
+
+    let result = load_witness_library(&library_path);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        result,
+        Err(WitnessLoadError::MissingCompute { path, .. }) if path == library_path
     ));
 }
