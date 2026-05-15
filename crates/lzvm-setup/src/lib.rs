@@ -17,6 +17,14 @@ use lzvm_field::{
 const WORD_BYTES: usize = 8;
 const HASH_WORDS: usize = 4;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ConstantTreeShape {
+    arity: usize,
+    row_count: usize,
+    column_count: usize,
+    expected_tree_len: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FixedColumnWriteReport {
     pub path: PathBuf,
@@ -392,64 +400,55 @@ pub fn build_constant_tree_from_fixed_columns_with_backend(
     backend: FixedExtensionBackend,
 ) -> Result<Vec<u8>, SetupError> {
     let leaves = extend_fixed_columns_for_constant_tree_with_backend(value, setup, backend)?;
-    build_constant_tree_from_leaves(&leaves, setup)
+    build_constant_tree_from_leaves_with_backend(&leaves, setup, backend)
 }
 
 pub fn build_constant_tree_from_leaves(
     leaves: &[u8],
     setup: &UnitSetupInfo,
 ) -> Result<Vec<u8>, SetupError> {
-    validate_native_constant_tree_setup(setup)?;
-    let arity =
-        usize::try_from(setup.stark.merkle_tree_arity).map_err(|_| SetupError::LengthOverflow)?;
-    let row_count = checked_domain_len(setup.stark.n_bits_ext)?;
-    let column_count =
-        usize::try_from(setup.n_constants).map_err(|_| SetupError::LengthOverflow)?;
-    let expected_leaf_len = constant_tree_leaf_byte_count(row_count, column_count)?;
-    if leaves.len() != expected_leaf_len {
-        return Err(SetupError::InvalidConstantTreeLeafByteLength {
-            expected: expected_leaf_len,
-            found: leaves.len(),
-        });
-    }
+    build_constant_tree_from_leaves_with_backend(leaves, setup, FixedExtensionBackend::Cpu)
+}
 
-    let mut out = Vec::with_capacity(expected_constant_tree_byte_count_for_setup(setup)?);
+pub fn build_constant_tree_from_leaves_with_backend(
+    leaves: &[u8],
+    setup: &UnitSetupInfo,
+    backend: FixedExtensionBackend,
+) -> Result<Vec<u8>, SetupError> {
+    match backend {
+        FixedExtensionBackend::Cpu => build_constant_tree_from_leaves_on_cpu(leaves, setup),
+        FixedExtensionBackend::Cuda => build_constant_tree_from_leaves_on_cuda(leaves, setup),
+    }
+}
+
+fn build_constant_tree_from_leaves_on_cpu(
+    leaves: &[u8],
+    setup: &UnitSetupInfo,
+) -> Result<Vec<u8>, SetupError> {
+    let shape = constant_tree_shape(leaves, setup)?;
+    let rows = read_constant_tree_leaf_rows(leaves, shape)?;
+
+    let mut out = Vec::with_capacity(shape.expected_tree_len);
     out.extend_from_slice(leaves);
 
-    let mut level = Vec::with_capacity(row_count);
-    for row in 0..row_count {
-        let mut values = Vec::with_capacity(column_count);
-        for column in 0..column_count {
-            let word_index = row
-                .checked_mul(column_count)
-                .and_then(|offset| offset.checked_add(column))
-                .ok_or(SetupError::LengthOverflow)?;
-            let byte_index = word_index
-                .checked_mul(WORD_BYTES)
-                .ok_or(SetupError::LengthOverflow)?;
-            let value = u64::from_le_bytes(
-                leaves[byte_index..byte_index + WORD_BYTES]
-                    .try_into()
-                    .expect("slice length checked"),
-            );
-            values.push(Felt::from_canonical(value)?);
-        }
-        let digest = linear_hash(&values, arity)?;
+    let mut level = Vec::with_capacity(shape.row_count);
+    for row in &rows {
+        let digest = linear_hash(row, shape.arity)?;
         append_digest(&mut out, digest);
         level.push(digest);
     }
 
     while level.len() > 1 {
-        let extra_zeros = (arity - (level.len() % arity)) % arity;
+        let extra_zeros = (shape.arity - (level.len() % shape.arity)) % shape.arity;
         for _ in 0..extra_zeros {
             let zero = [Felt::ZERO; HASH_WORDS];
             append_digest(&mut out, zero);
             level.push(zero);
         }
 
-        let mut next = Vec::with_capacity(level.len() / arity);
-        for children in level.chunks_exact(arity) {
-            let digest = parent_hash(children, arity)?;
+        let mut next = Vec::with_capacity(level.len() / shape.arity);
+        for children in level.chunks_exact(shape.arity) {
+            let digest = parent_hash(children, shape.arity)?;
             append_digest(&mut out, digest);
             next.push(digest);
         }
@@ -458,6 +457,49 @@ pub fn build_constant_tree_from_leaves(
 
     parse_constant_tree_bytes(out.clone(), setup)?;
     Ok(out)
+}
+
+#[cfg(feature = "cuda")]
+fn build_constant_tree_from_leaves_on_cuda(
+    leaves: &[u8],
+    setup: &UnitSetupInfo,
+) -> Result<Vec<u8>, SetupError> {
+    let shape = constant_tree_shape(leaves, setup)?;
+    let rows = read_constant_tree_leaf_rows(leaves, shape)?;
+
+    let mut out = Vec::with_capacity(shape.expected_tree_len);
+    out.extend_from_slice(leaves);
+
+    let mut level = cuda_linear_hashes(&rows, shape.arity)?;
+    for digest in &level {
+        append_digest(&mut out, *digest);
+    }
+
+    while level.len() > 1 {
+        let extra_zeros = (shape.arity - (level.len() % shape.arity)) % shape.arity;
+        for _ in 0..extra_zeros {
+            let zero = [Felt::ZERO; HASH_WORDS];
+            append_digest(&mut out, zero);
+            level.push(zero);
+        }
+
+        let next = cuda_parent_hashes(&level, shape.arity)?;
+        for digest in &next {
+            append_digest(&mut out, *digest);
+        }
+        level = next;
+    }
+
+    parse_constant_tree_bytes(out.clone(), setup)?;
+    Ok(out)
+}
+
+#[cfg(not(feature = "cuda"))]
+fn build_constant_tree_from_leaves_on_cuda(
+    _leaves: &[u8],
+    _setup: &UnitSetupInfo,
+) -> Result<Vec<u8>, SetupError> {
+    Err(SetupError::CudaUnavailable)
 }
 
 pub fn write_constant_tree_from_fixed_columns(
@@ -571,6 +613,58 @@ fn expected_constant_tree_byte_count_for_setup(setup: &UnitSetupInfo) -> Result<
     lzvm_artifacts::constant_tree::expected_constant_tree_byte_count(setup).map_err(Into::into)
 }
 
+fn constant_tree_shape(
+    leaves: &[u8],
+    setup: &UnitSetupInfo,
+) -> Result<ConstantTreeShape, SetupError> {
+    validate_native_constant_tree_setup(setup)?;
+    let arity =
+        usize::try_from(setup.stark.merkle_tree_arity).map_err(|_| SetupError::LengthOverflow)?;
+    let row_count = checked_domain_len(setup.stark.n_bits_ext)?;
+    let column_count =
+        usize::try_from(setup.n_constants).map_err(|_| SetupError::LengthOverflow)?;
+    let expected_leaf_len = constant_tree_leaf_byte_count(row_count, column_count)?;
+    if leaves.len() != expected_leaf_len {
+        return Err(SetupError::InvalidConstantTreeLeafByteLength {
+            expected: expected_leaf_len,
+            found: leaves.len(),
+        });
+    }
+    Ok(ConstantTreeShape {
+        arity,
+        row_count,
+        column_count,
+        expected_tree_len: expected_constant_tree_byte_count_for_setup(setup)?,
+    })
+}
+
+fn read_constant_tree_leaf_rows(
+    leaves: &[u8],
+    shape: ConstantTreeShape,
+) -> Result<Vec<Vec<Felt>>, SetupError> {
+    let mut rows = Vec::with_capacity(shape.row_count);
+    for row in 0..shape.row_count {
+        let mut values = Vec::with_capacity(shape.column_count);
+        for column in 0..shape.column_count {
+            let word_index = row
+                .checked_mul(shape.column_count)
+                .and_then(|offset| offset.checked_add(column))
+                .ok_or(SetupError::LengthOverflow)?;
+            let byte_index = word_index
+                .checked_mul(WORD_BYTES)
+                .ok_or(SetupError::LengthOverflow)?;
+            let value = u64::from_le_bytes(
+                leaves[byte_index..byte_index + WORD_BYTES]
+                    .try_into()
+                    .expect("slice length checked"),
+            );
+            values.push(Felt::from_canonical(value)?);
+        }
+        rows.push(values);
+    }
+    Ok(rows)
+}
+
 fn linear_hash(values: &[Felt], arity: usize) -> Result<[Felt; HASH_WORDS], SetupError> {
     match arity {
         2 => Ok(linear_hash_arity2(values)),
@@ -669,6 +763,180 @@ fn parent_hash_arity4(children: &[[Felt; HASH_WORDS]]) -> [Felt; HASH_WORDS] {
         children[3][3],
     ]);
     [state[0], state[1], state[2], state[3]]
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_linear_hashes(
+    rows: &[Vec<Felt>],
+    arity: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, SetupError> {
+    match arity {
+        2 => cuda_linear_hashes_arity2(rows),
+        4 => cuda_linear_hashes_arity4(rows),
+        _ => Err(SetupError::UnsupportedConstantTreeArity {
+            arity: u32::try_from(arity).unwrap_or(u32::MAX),
+        }),
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_linear_hashes_arity2(rows: &[Vec<Felt>]) -> Result<Vec<[Felt; HASH_WORDS]>, SetupError> {
+    const WIDTH: usize = 8;
+
+    let value_count = rows.first().map_or(0, Vec::len);
+    if value_count <= HASH_WORDS {
+        return Ok(rows.iter().map(|row| padded_digest(row)).collect());
+    }
+
+    let mut states = vec![[Felt::ZERO; WIDTH]; rows.len()];
+    let mut offset = 0;
+    while offset < value_count {
+        let chunk_len = (value_count - offset).min(HASH_WORDS);
+        let mut input = Vec::with_capacity(rows.len() * WIDTH);
+        for (state, row) in states.iter().zip(rows) {
+            let capacity = [state[0], state[1], state[2], state[3]];
+            let mut next = [Felt::ZERO; WIDTH];
+            next[..chunk_len].copy_from_slice(&row[offset..offset + chunk_len]);
+            next[HASH_WORDS..].copy_from_slice(&capacity);
+            push_felt_words(&mut input, &next);
+        }
+
+        let output = lzvm_accel::cuda_poseidon2_width8(&input)
+            .map_err(|error| SetupError::CudaBackend(error.to_string()))?;
+        for (state, chunk) in states.iter_mut().zip(output.chunks_exact(WIDTH)) {
+            *state = felt_array_from_words(chunk)?;
+        }
+        offset += chunk_len;
+    }
+
+    Ok(states
+        .into_iter()
+        .map(|state| [state[0], state[1], state[2], state[3]])
+        .collect())
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_linear_hashes_arity4(rows: &[Vec<Felt>]) -> Result<Vec<[Felt; HASH_WORDS]>, SetupError> {
+    const RATE: usize = 12;
+    const WIDTH: usize = 16;
+
+    let value_count = rows.first().map_or(0, Vec::len);
+    if value_count <= HASH_WORDS {
+        return Ok(rows.iter().map(|row| padded_digest(row)).collect());
+    }
+
+    let mut states = vec![[Felt::ZERO; WIDTH]; rows.len()];
+    let mut offset = 0;
+    while offset < value_count {
+        let chunk_len = (value_count - offset).min(RATE);
+        let mut input = Vec::with_capacity(rows.len() * WIDTH);
+        for (state, row) in states.iter().zip(rows) {
+            let capacity = [state[0], state[1], state[2], state[3]];
+            let mut next = [Felt::ZERO; WIDTH];
+            next[..chunk_len].copy_from_slice(&row[offset..offset + chunk_len]);
+            next[RATE..].copy_from_slice(&capacity);
+            push_felt_words(&mut input, &next);
+        }
+
+        let output = lzvm_accel::cuda_poseidon2_width16(&input)
+            .map_err(|error| SetupError::CudaBackend(error.to_string()))?;
+        for (state, chunk) in states.iter_mut().zip(output.chunks_exact(WIDTH)) {
+            *state = felt_array_from_words(chunk)?;
+        }
+        offset += chunk_len;
+    }
+
+    Ok(states
+        .into_iter()
+        .map(|state| [state[0], state[1], state[2], state[3]])
+        .collect())
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_parent_hashes(
+    level: &[[Felt; HASH_WORDS]],
+    arity: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, SetupError> {
+    match arity {
+        2 => cuda_parent_hashes_arity2(level),
+        4 => cuda_parent_hashes_arity4(level),
+        _ => Err(SetupError::UnsupportedConstantTreeArity {
+            arity: u32::try_from(arity).unwrap_or(u32::MAX),
+        }),
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_parent_hashes_arity2(
+    level: &[[Felt; HASH_WORDS]],
+) -> Result<Vec<[Felt; HASH_WORDS]>, SetupError> {
+    const WIDTH: usize = 8;
+
+    let mut input = Vec::with_capacity(level.len() * HASH_WORDS);
+    for children in level.chunks_exact(2) {
+        push_felt_words(&mut input, &children[0]);
+        push_felt_words(&mut input, &children[1]);
+    }
+
+    let output = lzvm_accel::cuda_poseidon2_width8(&input)
+        .map_err(|error| SetupError::CudaBackend(error.to_string()))?;
+    output
+        .chunks_exact(WIDTH)
+        .map(digest_from_state_words)
+        .collect()
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_parent_hashes_arity4(
+    level: &[[Felt; HASH_WORDS]],
+) -> Result<Vec<[Felt; HASH_WORDS]>, SetupError> {
+    const WIDTH: usize = 16;
+
+    let mut input = Vec::with_capacity(level.len() * HASH_WORDS);
+    for children in level.chunks_exact(4) {
+        for child in children {
+            push_felt_words(&mut input, child);
+        }
+    }
+
+    let output = lzvm_accel::cuda_poseidon2_width16(&input)
+        .map_err(|error| SetupError::CudaBackend(error.to_string()))?;
+    output
+        .chunks_exact(WIDTH)
+        .map(digest_from_state_words)
+        .collect()
+}
+
+#[cfg(feature = "cuda")]
+fn padded_digest(values: &[Felt]) -> [Felt; HASH_WORDS] {
+    let mut digest = [Felt::ZERO; HASH_WORDS];
+    digest[..values.len()].copy_from_slice(values);
+    digest
+}
+
+#[cfg(feature = "cuda")]
+fn push_felt_words(out: &mut Vec<u64>, values: &[Felt]) {
+    out.extend(values.iter().map(|value| value.to_u64()));
+}
+
+#[cfg(feature = "cuda")]
+fn felt_array_from_words<const WIDTH: usize>(words: &[u64]) -> Result<[Felt; WIDTH], SetupError> {
+    debug_assert_eq!(words.len(), WIDTH);
+    let mut values = [Felt::ZERO; WIDTH];
+    for (value, word) in values.iter_mut().zip(words) {
+        *value = Felt::from_canonical(*word)?;
+    }
+    Ok(values)
+}
+
+#[cfg(feature = "cuda")]
+fn digest_from_state_words(words: &[u64]) -> Result<[Felt; HASH_WORDS], SetupError> {
+    debug_assert!(words.len() >= HASH_WORDS);
+    let mut digest = [Felt::ZERO; HASH_WORDS];
+    for (value, word) in digest.iter_mut().zip(words) {
+        *value = Felt::from_canonical(*word)?;
+    }
+    Ok(digest)
 }
 
 fn append_digest(out: &mut Vec<u8>, digest: [Felt; HASH_WORDS]) {

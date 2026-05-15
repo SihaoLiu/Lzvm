@@ -16,7 +16,7 @@ The goal is to build a native stack with a Rust-first core, C++ integration for 
 - `crates/lzvm-field`: CPU reference field arithmetic used by artifact validation and backend parity tests.
 - `crates/lzvm-accel`: feature-gated C++/CUDA acceleration boundary with GPU field-arithmetic, NTT, shifted coset-extension, and Poseidon2 width-8/width-16 parity tests.
 - `crates/lzvm-artifacts`: native readers, writers, and validators for setup and proving artifacts.
-- `crates/lzvm-setup`: native setup-generation primitives with validated staging, publish behavior, and optional CUDA fixed-column extension.
+- `crates/lzvm-setup`: native setup-generation primitives with validated staging, publish behavior, and optional CUDA fixed-column extension plus native tree hashing.
 - `crates/lzvm-cli`: repository-owned command entry points.
 
 ## Current Commands
@@ -100,7 +100,7 @@ Generate a native GL constant-tree artifact directly from binary setup metadata 
 cargo run -p lzvm-cli -- setup write-const-native [--backend cpu|cuda] <setup-info-bin> <columns-bin> [root-bin] <out-consttree>
 ```
 
-This command accepts either sectioned or raw fixed-column bytes, extends fixed columns, builds leaf digests and parent nodes with the repository-owned CPU reference hash, optionally checks the generated root against a binary expected root, validates the resulting raw tree artifact, and publishes it through a staging path. The current native path covers arity 2 and arity 4; the optional `cuda` backend accelerates fixed-column extension while tree hashing remains on the CPU path.
+This command accepts either sectioned or raw fixed-column bytes, extends fixed columns, builds leaf digests and parent nodes, optionally checks the generated root against a binary expected root, validates the resulting raw tree artifact, and publishes it through a staging path. The current native path covers arity 2 and arity 4; the optional `cuda` backend accelerates fixed-column extension and native tree hashing when the CLI is built with the `cuda` feature.
 
 ## Verification
 
@@ -114,4 +114,5 @@ CUDA parity tests require the local CUDA toolchain and a matching architecture t
 ```sh
 source /etc/profile.d/modules.sh && module load intel/compiler cuda openmpi
 cargo test -p lzvm-accel --features cuda --test cuda_field
+cargo test -p lzvm-setup --features cuda --test constant_tree_native
 ```
