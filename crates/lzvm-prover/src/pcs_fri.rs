@@ -12,6 +12,7 @@ use lzvm_field::{intt_in_place, DomainError, Ext3, Felt, FieldError, PoseidonTra
 use crate::merkle_hash::{
     linear_hash, parent_hash, root_from_digest_level, MerkleHashError, HASH_WORDS,
 };
+use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
 use crate::pcs_transcript::{absorb_commit_values, PcsTranscriptError};
 use crate::ProveUnitSchedule;
 
@@ -66,6 +67,30 @@ pub enum LoadPcsFriOpeningUnitError {
     MissingUnit { unit_index: usize },
     UnitIndexOverflow,
     Segment(PcsFriOpeningSegmentError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValidatePcsFriOpeningSegmentsError {
+    QueryPlan(LoadPcsQueryPlanSegmentError),
+    Opening(LoadPcsFriOpeningSegmentError),
+    Merkle {
+        unit_index: usize,
+        source: PcsFriMerkleError,
+    },
+    UnitCountMismatch,
+    UnitMismatch {
+        unit_index: usize,
+    },
+    UnitIndexOverflow,
+    ArityOverflow,
+    FinalLayerSizeOverflow,
+    LayerSizeOverflow,
+    FoldingWidthOverflow,
+    LastLevelCountOverflow,
+    LevelCountOverflow,
+    InvalidTreeShape,
+    FieldValue(FieldError),
+    FieldDigest(FieldError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -176,6 +201,64 @@ impl From<LoadPcsFriOpeningSegmentError> for LoadPcsFriOpeningUnitError {
     }
 }
 
+impl fmt::Display for ValidatePcsFriOpeningSegmentsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::QueryPlan(error) => write!(f, "{error}"),
+            Self::Opening(error) => write!(f, "{error}"),
+            Self::Merkle { unit_index, source } => write!(
+                f,
+                "invalid PCS FRI opening segment for unit {unit_index}: {source}"
+            ),
+            Self::UnitCountMismatch => write!(f, "PCS FRI opening segment unit count mismatch"),
+            Self::UnitMismatch { unit_index } => {
+                write!(f, "PCS FRI opening segment mismatch for unit {unit_index}")
+            }
+            Self::UnitIndexOverflow => write!(f, "PCS FRI opening segment unit index overflow"),
+            Self::ArityOverflow => write!(f, "PCS FRI opening segment arity overflow"),
+            Self::FinalLayerSizeOverflow => {
+                write!(f, "PCS FRI opening segment final layer size overflow")
+            }
+            Self::LayerSizeOverflow => write!(f, "PCS FRI opening segment layer size overflow"),
+            Self::FoldingWidthOverflow => {
+                write!(f, "PCS FRI opening segment folding width overflow")
+            }
+            Self::LastLevelCountOverflow => {
+                write!(f, "PCS FRI opening segment last-level count overflow")
+            }
+            Self::LevelCountOverflow => write!(f, "PCS FRI opening segment level count overflow"),
+            Self::InvalidTreeShape => write!(f, "PCS FRI opening segment invalid tree shape"),
+            Self::FieldValue(error) => {
+                write!(f, "invalid PCS FRI opening segment value: {error}")
+            }
+            Self::FieldDigest(error) => {
+                write!(f, "invalid PCS FRI opening segment digest: {error}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ValidatePcsFriOpeningSegmentsError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::QueryPlan(error) => Some(error),
+            Self::Opening(error) => Some(error),
+            Self::Merkle { source, .. } => Some(source),
+            Self::FieldValue(error) | Self::FieldDigest(error) => Some(error),
+            Self::UnitCountMismatch
+            | Self::UnitMismatch { .. }
+            | Self::UnitIndexOverflow
+            | Self::ArityOverflow
+            | Self::FinalLayerSizeOverflow
+            | Self::LayerSizeOverflow
+            | Self::FoldingWidthOverflow
+            | Self::LastLevelCountOverflow
+            | Self::LevelCountOverflow
+            | Self::InvalidTreeShape => None,
+        }
+    }
+}
+
 impl From<DomainError> for PcsFriFoldError {
     fn from(error: DomainError) -> Self {
         Self::Domain(error)
@@ -210,6 +293,137 @@ pub fn load_pcs_fri_opening_unit_from_segments(
         .into_iter()
         .find(|unit| unit.unit_index == unit_index_u32)
         .ok_or(LoadPcsFriOpeningUnitError::MissingUnit { unit_index })
+}
+
+pub fn validate_pcs_fri_opening_segments(
+    units: &[ProveUnitSchedule],
+    segments: &[ProofSegment],
+) -> Result<(), ValidatePcsFriOpeningSegmentsError> {
+    let query_plan = load_pcs_query_plan_from_segments(segments)
+        .map_err(ValidatePcsFriOpeningSegmentsError::QueryPlan)?;
+    let opening = load_pcs_fri_opening_segment_from_segments(segments)
+        .map_err(ValidatePcsFriOpeningSegmentsError::Opening)?;
+    if opening.units.len() != query_plan.units.len() {
+        return Err(ValidatePcsFriOpeningSegmentsError::UnitCountMismatch);
+    }
+
+    for query_unit in &query_plan.units {
+        let unit_index = usize::try_from(query_unit.unit_index)
+            .map_err(|_| ValidatePcsFriOpeningSegmentsError::UnitIndexOverflow)?;
+        let unit = units
+            .get(unit_index)
+            .ok_or(ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index })?;
+        let opening_unit = opening
+            .units
+            .iter()
+            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .ok_or(ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index })?;
+        let final_len = checked_power_of_two_validation(unit.final_layer_bits)
+            .ok_or(ValidatePcsFriOpeningSegmentsError::FinalLayerSizeOverflow)?;
+        if opening_unit.final_polynomial.len() != final_len
+            || opening_unit.layers.len() != unit.fri_layers.len()
+        {
+            return Err(ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index });
+        }
+        for value in &opening_unit.final_polynomial {
+            field_extension_from_words(*value)?;
+        }
+
+        for (layer_offset, (layer, expected_layer)) in opening_unit
+            .layers
+            .iter()
+            .zip(unit.fri_layers.iter())
+            .enumerate()
+        {
+            let expected_layer_index = u32::try_from(layer_offset)
+                .map_err(|_| ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index })?;
+            let arity = usize::try_from(unit.merkle_tree_arity)
+                .map_err(|_| ValidatePcsFriOpeningSegmentsError::ArityOverflow)?;
+            let last_level_count = expected_last_level_digest_count(
+                expected_layer.output_bits,
+                arity,
+                unit.last_level_verification,
+            )?;
+            if layer.layer_index != expected_layer_index
+                || layer.queries.len() != query_unit.queries.len()
+                || layer.last_level.len() != last_level_count
+            {
+                return Err(ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index });
+            }
+            let root = field_digest_from_words(layer.root)?;
+            let last_level = layer
+                .last_level
+                .iter()
+                .map(|digest| field_digest_from_words(*digest))
+                .collect::<Result<Vec<_>, _>>()?;
+            if !last_level.is_empty() {
+                let valid =
+                    verify_fri_last_level_root(root, arity, &last_level).map_err(|source| {
+                        ValidatePcsFriOpeningSegmentsError::Merkle { unit_index, source }
+                    })?;
+                if !valid {
+                    return Err(ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index });
+                }
+            }
+
+            let output_domain = checked_power_of_two_validation(expected_layer.output_bits)
+                .ok_or(ValidatePcsFriOpeningSegmentsError::LayerSizeOverflow)?;
+            let output_domain_u64 = u64::try_from(output_domain)
+                .map_err(|_| ValidatePcsFriOpeningSegmentsError::LayerSizeOverflow)?;
+            let expected_value_count = usize::try_from(expected_layer.folding_factor)
+                .map_err(|_| ValidatePcsFriOpeningSegmentsError::FoldingWidthOverflow)?;
+            let expected_sibling_levels = expected_fri_sibling_level_count(
+                expected_layer.output_bits,
+                arity,
+                unit.last_level_verification,
+            )?;
+            for (query, source_row) in layer.queries.iter().zip(query_unit.queries.iter()) {
+                if query.row_index != source_row % output_domain_u64
+                    || query.values.len() != expected_value_count
+                    || query.siblings.len() != expected_sibling_levels
+                {
+                    return Err(ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index });
+                }
+                let values = query
+                    .values
+                    .iter()
+                    .map(|value| field_extension_from_words(*value))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let siblings = query
+                    .siblings
+                    .iter()
+                    .map(|sibling_level| {
+                        if sibling_level.siblings.len() + 1 != arity {
+                            return Err(ValidatePcsFriOpeningSegmentsError::UnitMismatch {
+                                unit_index,
+                            });
+                        }
+                        sibling_level
+                            .siblings
+                            .iter()
+                            .map(|digest| field_digest_from_words(*digest))
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let valid = verify_fri_query_path(
+                    root,
+                    &last_level,
+                    arity,
+                    query.row_index,
+                    &values,
+                    &siblings,
+                )
+                .map_err(|source| ValidatePcsFriOpeningSegmentsError::Merkle {
+                    unit_index,
+                    source,
+                })?;
+                if !valid {
+                    return Err(ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index });
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1413,6 +1627,64 @@ fn build_domain_size(bits: u32) -> Result<usize, PcsFriOpeningBuildError> {
         .ok_or(PcsFriOpeningBuildError::UnsupportedDomainBits { bits })
 }
 
+fn expected_fri_sibling_level_count(
+    output_bits: u32,
+    arity: usize,
+    last_level_verification: u32,
+) -> Result<usize, ValidatePcsFriOpeningSegmentsError> {
+    Ok(expected_fri_tree_shape(output_bits, arity, last_level_verification)?.0)
+}
+
+fn expected_last_level_digest_count(
+    output_bits: u32,
+    arity: usize,
+    last_level_verification: u32,
+) -> Result<usize, ValidatePcsFriOpeningSegmentsError> {
+    Ok(expected_fri_tree_shape(output_bits, arity, last_level_verification)?.1)
+}
+
+fn expected_fri_tree_shape(
+    output_bits: u32,
+    arity: usize,
+    last_level_verification: u32,
+) -> Result<(usize, usize), ValidatePcsFriOpeningSegmentsError> {
+    if arity < 2 || !arity.is_power_of_two() {
+        return Err(ValidatePcsFriOpeningSegmentsError::InvalidTreeShape);
+    }
+    let mut count = checked_power_of_two_validation(output_bits)
+        .ok_or(ValidatePcsFriOpeningSegmentsError::LayerSizeOverflow)?;
+    let target = if last_level_verification == 0 {
+        1
+    } else {
+        checked_pow_validation(arity, last_level_verification)
+            .ok_or(ValidatePcsFriOpeningSegmentsError::LastLevelCountOverflow)?
+    };
+    let mut sibling_levels = 0_usize;
+    while count > target {
+        count = count.div_ceil(arity);
+        sibling_levels = sibling_levels
+            .checked_add(1)
+            .ok_or(ValidatePcsFriOpeningSegmentsError::LevelCountOverflow)?;
+    }
+    if last_level_verification == 0 {
+        Ok((sibling_levels, 0))
+    } else {
+        Ok((sibling_levels, count))
+    }
+}
+
+fn checked_power_of_two_validation(bits: u32) -> Option<usize> {
+    1_usize.checked_shl(bits)
+}
+
+fn checked_pow_validation(base: usize, power: u32) -> Option<usize> {
+    let mut out = 1_usize;
+    for _ in 0..power {
+        out = out.checked_mul(base)?;
+    }
+    Some(out)
+}
+
 fn checked_pow(base: usize, power: u32) -> Result<usize, PcsFriOpeningBuildError> {
     let mut out = 1_usize;
     for _ in 0..power {
@@ -1425,4 +1697,23 @@ fn checked_pow(base: usize, power: u32) -> Result<usize, PcsFriOpeningBuildError
 
 fn digest_to_u64s(digest: [Felt; HASH_WORDS]) -> [u64; HASH_WORDS] {
     digest.map(Felt::to_u64)
+}
+
+fn field_extension_from_words(words: [u64; 3]) -> Result<Ext3, ValidatePcsFriOpeningSegmentsError> {
+    Ok(Ext3::new(
+        Felt::from_canonical(words[0]).map_err(ValidatePcsFriOpeningSegmentsError::FieldValue)?,
+        Felt::from_canonical(words[1]).map_err(ValidatePcsFriOpeningSegmentsError::FieldValue)?,
+        Felt::from_canonical(words[2]).map_err(ValidatePcsFriOpeningSegmentsError::FieldValue)?,
+    ))
+}
+
+fn field_digest_from_words(
+    words: [u64; 4],
+) -> Result<[Felt; 4], ValidatePcsFriOpeningSegmentsError> {
+    let mut out = [Felt::ZERO; 4];
+    for (target, value) in out.iter_mut().zip(words) {
+        *target =
+            Felt::from_canonical(value).map_err(ValidatePcsFriOpeningSegmentsError::FieldDigest)?;
+    }
+    Ok(out)
 }

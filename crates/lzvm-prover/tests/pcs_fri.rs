@@ -4,14 +4,19 @@ use lzvm_artifacts::pcs_fri_segment::{
     PcsFriOpeningSegment, PcsFriOpeningUnitSegment, PCS_FRI_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
+use lzvm_artifacts::pcs_query_segment::{
+    encode_pcs_query_plan_segment, PcsQueryPlanSegment, PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
+};
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_field::{poseidon2_hash_8, Ext3, Felt, SHIFT};
 use lzvm_prover::pcs_fri::{
     build_pcs_fri_opening_unit, build_pcs_fri_transcript_commitments,
     load_pcs_fri_opening_segment_from_segments, load_pcs_fri_opening_unit_from_segments,
-    verify_fri_fold, verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path,
-    LoadPcsFriOpeningSegmentError, LoadPcsFriOpeningUnitError, PcsFriFoldError, PcsFriMerkleError,
-    PcsFriOpeningBuildRequest, PcsFriOpeningFoldRequest, PcsFriTranscriptCommitmentRequest,
+    validate_pcs_fri_opening_segments, verify_fri_fold, verify_fri_last_level_root,
+    verify_fri_opening_folds, verify_fri_query_path, LoadPcsFriOpeningSegmentError,
+    LoadPcsFriOpeningUnitError, PcsFriFoldError, PcsFriMerkleError, PcsFriOpeningBuildRequest,
+    PcsFriOpeningFoldRequest, PcsFriTranscriptCommitmentRequest,
+    ValidatePcsFriOpeningSegmentsError,
 };
 use lzvm_prover::pcs_transcript::{derive_pcs_transcript_challenges, PcsTranscriptInputs};
 use lzvm_prover::ProveUnitSchedule;
@@ -445,6 +450,35 @@ fn rejects_missing_pcs_fri_opening_unit() {
 }
 
 #[test]
+fn validates_pcs_fri_opening_segments() {
+    let (unit, segments) = valid_pcs_fri_opening_segments();
+
+    validate_pcs_fri_opening_segments(&[unit], &segments).expect("FRI opening should validate");
+}
+
+#[test]
+fn rejects_pcs_fri_opening_value_mismatches() {
+    let (unit, mut segments) = valid_pcs_fri_opening_segments();
+    let fri_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
+        .expect("FRI opening segment should exist");
+    let opening_segment = fri_segment.clone();
+    let mut opening = load_pcs_fri_opening_segment_from_segments(&[opening_segment])
+        .expect("FRI opening should parse");
+    opening.units[0].layers[0].queries[0].values[0][0] ^= 1;
+    fri_segment.data = encode_pcs_fri_opening_segment(&opening).expect("FRI opening should encode");
+
+    let error = validate_pcs_fri_opening_segments(&[unit], &segments)
+        .expect_err("value mismatch should be rejected");
+
+    assert_eq!(
+        error,
+        ValidatePcsFriOpeningSegmentsError::UnitMismatch { unit_index: 0 }
+    );
+}
+
+#[test]
 fn derives_fri_transcript_commitments_from_polynomial_values() {
     let schedule = ProveUnitSchedule {
         kind: KeyUnitKind::Basic,
@@ -627,6 +661,40 @@ fn pcs_fri_opening_proof_segment(units: Vec<PcsFriOpeningUnitSegment>) -> ProofS
     }
 }
 
+fn valid_pcs_fri_opening_segments() -> (ProveUnitSchedule, Vec<ProofSegment>) {
+    let unit = sample_validation_unit();
+    let query_rows = [1_u64, 6_u64];
+    let polynomial = (0_u64..8)
+        .map(|index| Ext3::from_u64s([index + 1, index + 11, index + 21]))
+        .collect::<Vec<_>>();
+    let mut challenges = vec![Ext3::ZERO; 9];
+    challenges[7] = Ext3::from_u64s([31, 32, 33]);
+    challenges[8] = Ext3::from_u64s([41, 42, 43]);
+    let fri = build_pcs_fri_opening_unit(
+        &unit,
+        PcsFriOpeningBuildRequest {
+            unit_index: 0,
+            query_rows: &query_rows,
+            challenges: &challenges,
+            polynomial: &polynomial,
+        },
+    )
+    .expect("FRI opening should build");
+    let query_segment = ProofSegment {
+        id: PCS_QUERY_PLAN_SEGMENT_ID,
+        data: encode_pcs_query_plan_segment(&PcsQueryPlanSegment {
+            units: vec![PcsQueryPlanUnit {
+                unit_index: 0,
+                queries: query_rows.to_vec(),
+            }],
+        })
+        .expect("query plan should encode"),
+    };
+    let fri_segment = pcs_fri_opening_proof_segment(vec![fri]);
+
+    (unit, vec![query_segment, fri_segment])
+}
+
 fn sample_fri_opening_unit(unit_index: u32) -> PcsFriOpeningUnitSegment {
     PcsFriOpeningUnitSegment {
         unit_index,
@@ -641,6 +709,61 @@ fn sample_fri_opening_unit(unit_index: u32) -> PcsFriOpeningUnitSegment {
             }],
         }],
         final_polynomial: vec![[4, 5, 6]],
+    }
+}
+
+fn sample_validation_unit() -> ProveUnitSchedule {
+    ProveUnitSchedule {
+        kind: KeyUnitKind::Basic,
+        group_id: None,
+        unit_id: None,
+        group_name: None,
+        unit_name: None,
+        base_domain_bits: 2,
+        extended_domain_bits: 3,
+        base_domain_size: 4,
+        extended_domain_size: 8,
+        blowup_factor: 2,
+        query_count: 2,
+        proof_of_work_bits: 0,
+        merkle_tree_arity: 2,
+        last_level_verification: 1,
+        transcript_arity: Some(2),
+        hash_commits: false,
+        transcript_root_challenge_draws: vec![2, 1],
+        challenge_count: 6,
+        evaluation_value_count: 0,
+        transcript_evaluation_challenge_draws: 2,
+        constant_width: 1,
+        stage_commit_widths: vec![1],
+        commitment_columns: Vec::new(),
+        unit_value_map: Vec::new(),
+        group_value_map: Vec::new(),
+        opening_points: vec![0],
+        fri_layers: vec![
+            PcsFriLayer {
+                input_bits: 3,
+                output_bits: 2,
+                folding_factor: 2,
+            },
+            PcsFriLayer {
+                input_bits: 2,
+                output_bits: 1,
+                folding_factor: 2,
+            },
+        ],
+        final_layer_bits: 1,
+        fixed_bytes: 0,
+        constant_tree_root: None,
+        pcs_material_bytes: None,
+        pcs_material_plan_digest: None,
+        pcs_material_fixed_column_digest: None,
+        pcs_material_constant_tree_digest: None,
+        pcs_material_constant_tree_root: None,
+        pcs_material_fixed_byte_count: None,
+        pcs_material_constant_tree_byte_count: None,
+        pcs_material_leaf_byte_count: None,
+        pcs_material_node_byte_count: None,
     }
 }
 
