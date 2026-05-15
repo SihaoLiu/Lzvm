@@ -39,6 +39,7 @@ pub mod witness_trace;
 
 pub use prove_fri_opening::{
     build_pcs_fri_opening_segment, build_pcs_fri_opening_segment_from_trace,
+    build_pcs_fri_opening_segment_from_transcript_values,
     build_pcs_fri_transcript_values_from_trace,
     build_pcs_fri_transcript_values_from_trace_segments, ProvePcsFriOpeningSegmentError,
     ProvePcsFriOpeningTraceSegmentError, ProvePcsFriOpeningTraceValues, ProvePcsFriOpeningValues,

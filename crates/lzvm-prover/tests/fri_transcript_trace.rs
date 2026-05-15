@@ -10,7 +10,10 @@ use lzvm_artifacts::key_directory::{
 };
 use lzvm_artifacts::metadata_bundle::UnitMetadataBundle;
 use lzvm_artifacts::pcs_evaluation_segment::parse_pcs_evaluation_segment;
+use lzvm_artifacts::pcs_fri_segment::parse_pcs_fri_opening_segment;
+use lzvm_artifacts::pcs_nonce_segment::parse_pcs_query_nonce_segment;
 use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
+use lzvm_artifacts::pcs_query_segment::parse_pcs_query_plan_segment;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::setup_info::{FriStep, StarkStruct, UnitSetupInfo};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
@@ -20,13 +23,16 @@ use lzvm_artifacts::witness_segment::{
     WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 use lzvm_field::{Ext3, Felt};
+use lzvm_prover::pcs_fri::{verify_fri_opening_folds, PcsFriOpeningFoldRequest};
 use lzvm_prover::pcs_transcript::{derive_pcs_transcript_challenges, PcsTranscriptInputs};
 use lzvm_prover::witness_trace::parse_witness_trace;
 use lzvm_prover::{
-    build_pcs_evaluation_segment, build_pcs_fri_polynomial_values,
-    build_pcs_fri_transcript_values_from_trace_segments, build_pcs_material_manifest_segment,
-    derive_prove_schedule, ProveExecutionUnitArtifacts, ProvePcsEvaluationValues,
-    ProvePcsFriTranscriptTraceSegmentValues, ProveWitnessAuxiliaryInputs,
+    build_pcs_evaluation_segment, build_pcs_fri_opening_segment_from_transcript_values,
+    build_pcs_fri_polynomial_values, build_pcs_fri_transcript_values_from_trace_segments,
+    build_pcs_material_manifest_segment, build_pcs_query_nonce_segment,
+    build_pcs_query_plan_segment_from_challenge, derive_prove_schedule,
+    ProveExecutionUnitArtifacts, ProvePcsEvaluationValues, ProvePcsFriTranscriptTraceSegmentValues,
+    ProveWitnessAuxiliaryInputs,
 };
 
 #[test]
@@ -152,6 +158,30 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
     .expect("FRI polynomial should build");
     let parsed_evaluations = parse_pcs_evaluation_segment(&evaluation_segment.data)
         .expect("evaluation segment should parse");
+    let nonce_segment = build_pcs_query_nonce_segment(
+        &schedule,
+        transcript_value.commitments.final_query_challenge,
+    )
+    .expect("nonce segment should build");
+    let nonce = Felt::from_u64(
+        parse_pcs_query_nonce_segment(&nonce_segment.data)
+            .expect("nonce segment should parse")
+            .nonce,
+    );
+    let query_segment = build_pcs_query_plan_segment_from_challenge(
+        &schedule,
+        std::slice::from_ref(&witness_segment),
+        transcript_value.commitments.final_query_challenge,
+        nonce,
+    )
+    .expect("query segment should build");
+    let opening_segment =
+        build_pcs_fri_opening_segment_from_transcript_values(&schedule, &query_segment, &values)
+            .expect("FRI opening segment should build from transcript values");
+    let query_plan =
+        parse_pcs_query_plan_segment(&query_segment.data).expect("query segment should parse");
+    let opening =
+        parse_pcs_fri_opening_segment(&opening_segment.data).expect("FRI opening should parse");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(values.len(), 1);
@@ -162,6 +192,16 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
     );
     assert_eq!(transcript_value.commitments.challenges, expected_challenges);
     assert_eq!(transcript_value.polynomial, expected_polynomial);
+    assert!(verify_fri_opening_folds(
+        unit,
+        PcsFriOpeningFoldRequest {
+            unit_index: 0,
+            query_rows: &query_plan.units[0].queries,
+            challenges: &transcript_value.commitments.challenges,
+            fri: &opening.units[0],
+        },
+    )
+    .expect("FRI folds should verify"));
 }
 
 fn sample_setup() -> UnitSetupInfo {

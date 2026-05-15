@@ -690,6 +690,22 @@ pub fn build_pcs_fri_transcript_values_from_trace_segments(
     Ok(out)
 }
 
+pub fn build_pcs_fri_opening_segment_from_transcript_values(
+    schedule: &ProveSchedule,
+    query_segment: &ProofSegment,
+    values: &[ProvePcsFriTranscriptValues],
+) -> Result<ProofSegment, ProvePcsFriOpeningSegmentError> {
+    let opening_values = values
+        .iter()
+        .map(|value| ProvePcsFriOpeningValues {
+            unit_index: value.unit_index,
+            challenges: value.commitments.challenges.clone(),
+            polynomial: value.polynomial.clone(),
+        })
+        .collect::<Vec<_>>();
+    build_pcs_fri_opening_segment(schedule, query_segment, &opening_values)
+}
+
 pub fn build_pcs_fri_opening_segment_from_trace(
     schedule: &ProveSchedule,
     query_segment: &ProofSegment,
