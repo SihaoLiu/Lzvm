@@ -342,6 +342,7 @@ impl TranscriptQueryFixture {
             unit: &self.schedule.units[0],
             material: &self.material,
             public_values: &[],
+            unit_values: &[],
             witness: &self.witness,
             evaluations: &self.evaluations,
             fri: &self.fri,

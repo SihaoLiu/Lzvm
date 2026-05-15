@@ -3,6 +3,7 @@ use std::fmt;
 use lzvm_artifacts::pcs_evaluation_segment::PcsEvaluationUnitSegment;
 use lzvm_artifacts::pcs_fri_segment::PcsFriOpeningUnitSegment;
 use lzvm_artifacts::pcs_material_segment::PcsMaterialManifestUnit;
+use lzvm_artifacts::setup_info::StageValue;
 use lzvm_artifacts::witness_segment::WitnessCommitmentSegment;
 use lzvm_field::{Ext3, Felt, FieldError, PoseidonTranscript, TranscriptError};
 
@@ -16,6 +17,8 @@ pub struct PcsTranscriptInputs<'a> {
     pub public_values: &'a [Felt],
     pub witness_roots: &'a [[Felt; 4]],
     pub root_challenge_draws: &'a [usize],
+    pub unit_value_map: &'a [StageValue],
+    pub unit_values: &'a [Felt],
     pub evaluation_values: &'a [Ext3],
     pub evaluation_challenge_draws: usize,
     pub fri_roots: &'a [[Felt; 4]],
@@ -28,6 +31,7 @@ pub struct PcsTranscriptSegmentInputs<'a> {
     pub unit: &'a ProveUnitSchedule,
     pub material: &'a PcsMaterialManifestUnit,
     pub public_values: &'a [Felt],
+    pub unit_values: &'a [Felt],
     pub witness: &'a WitnessCommitmentSegment,
     pub evaluations: &'a PcsEvaluationUnitSegment,
     pub fri: &'a PcsFriOpeningUnitSegment,
@@ -54,7 +58,14 @@ pub enum PcsTranscriptError {
         expected: u32,
         found: u32,
     },
+    UnitValueOutOfRange {
+        value_index: usize,
+        offset: usize,
+        width: usize,
+        len: usize,
+    },
     EmptyFinalPolynomial,
+    LengthOverflow,
 }
 
 impl fmt::Display for PcsTranscriptError {
@@ -83,7 +94,17 @@ impl fmt::Display for PcsTranscriptError {
                 f,
                 "PCS transcript {segment} unit index mismatch: expected {expected}, found {found}"
             ),
+            Self::UnitValueOutOfRange {
+                value_index,
+                offset,
+                width,
+                len,
+            } => write!(
+                f,
+                "PCS transcript unit value {value_index} offset {offset} with width {width} is outside length {len}"
+            ),
             Self::EmptyFinalPolynomial => write!(f, "PCS transcript final polynomial is empty"),
+            Self::LengthOverflow => write!(f, "PCS transcript length overflow"),
         }
     }
 }
@@ -154,12 +175,21 @@ pub fn derive_pcs_transcript_challenges(
         )?;
     }
 
-    for (root, draw_count) in input
+    for (stage_index, (root, draw_count)) in input
         .witness_roots
         .iter()
         .zip(input.root_challenge_draws.iter())
+        .enumerate()
     {
+        let stage =
+            u32::try_from(stage_index + 1).map_err(|_| PcsTranscriptError::LengthOverflow)?;
         transcript.put(root);
+        absorb_stage_unit_values(
+            &mut transcript,
+            stage,
+            input.unit_value_map,
+            input.unit_values,
+        )?;
         draw_fields(&mut transcript, *draw_count, &mut challenges);
     }
 
@@ -259,6 +289,8 @@ pub fn derive_pcs_transcript_challenges_from_segments(
         public_values: input.public_values,
         witness_roots: &witness_roots,
         root_challenge_draws: input.root_challenge_draws,
+        unit_value_map: &input.unit.unit_value_map,
+        unit_values: input.unit_values,
         evaluation_values: &evaluation_values,
         evaluation_challenge_draws: input.evaluation_challenge_draws,
         fri_roots: &fri_roots,
@@ -271,6 +303,34 @@ fn flatten_extension_values(values: &[Ext3]) -> Vec<Felt> {
         .iter()
         .flat_map(|value| [value.c0, value.c1, value.c2])
         .collect()
+}
+
+fn absorb_stage_unit_values(
+    transcript: &mut PoseidonTranscript,
+    stage: u32,
+    value_map: &[StageValue],
+    values: &[Felt],
+) -> Result<(), PcsTranscriptError> {
+    let mut offset = 0_usize;
+    for (value_index, value) in value_map.iter().enumerate() {
+        let width = if value.stage == 1 { 1 } else { 3 };
+        let end = offset
+            .checked_add(width)
+            .ok_or(PcsTranscriptError::LengthOverflow)?;
+        if end > values.len() {
+            return Err(PcsTranscriptError::UnitValueOutOfRange {
+                value_index,
+                offset,
+                width,
+                len: values.len(),
+            });
+        }
+        if value.stage == stage && value.stage > 1 {
+            transcript.put(&values[offset..end]);
+        }
+        offset = end;
+    }
+    Ok(())
 }
 
 fn draw_fields(transcript: &mut PoseidonTranscript, count: usize, out: &mut Vec<Ext3>) {

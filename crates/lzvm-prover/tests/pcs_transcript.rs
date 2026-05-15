@@ -3,6 +3,7 @@ use lzvm_artifacts::pcs_evaluation_segment::PcsEvaluationUnitSegment;
 use lzvm_artifacts::pcs_fri_segment::{PcsFriOpeningLayerSegment, PcsFriOpeningUnitSegment};
 use lzvm_artifacts::pcs_material_segment::PcsMaterialManifestUnit;
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
+use lzvm_artifacts::setup_info::StageValue;
 use lzvm_artifacts::witness_segment::{WitnessCommitmentSegment, WitnessCommitmentStageSegment};
 use lzvm_field::{Ext3, Felt, PoseidonTranscript, TranscriptError};
 use lzvm_prover::pcs_transcript::{
@@ -79,6 +80,8 @@ fn derives_final_query_challenge_from_direct_transcript_events() {
         public_values: &public_values,
         witness_roots: &witness_roots,
         root_challenge_draws: &[2, 1, 1],
+        unit_value_map: &[],
+        unit_values: &[],
         evaluation_values: &evaluations,
         evaluation_challenge_draws: 2,
         fri_roots: &fri_roots,
@@ -119,6 +122,8 @@ fn derives_indexed_transcript_challenges_from_direct_events() {
         public_values: &public_values,
         witness_roots: &witness_roots,
         root_challenge_draws: &[2, 1, 1],
+        unit_value_map: &[],
+        unit_values: &[],
         evaluation_values: &evaluations,
         evaluation_challenge_draws: 2,
         fri_roots: &fri_roots,
@@ -169,6 +174,8 @@ fn derives_indexed_transcript_challenges_from_direct_events() {
                 public_values: &public_values,
                 witness_roots: &witness_roots,
                 root_challenge_draws: &[2, 1, 1],
+                unit_value_map: &[],
+                unit_values: &[],
                 evaluation_values: &evaluations,
                 evaluation_challenge_draws: 2,
                 fri_roots: &fri_roots,
@@ -177,6 +184,66 @@ fn derives_indexed_transcript_challenges_from_direct_events() {
             .expect("final challenge should derive")
         )
     );
+}
+
+#[test]
+fn absorbs_unit_values_after_matching_stage_roots() {
+    let constant_root = root(1);
+    let witness_roots = vec![root(10), root(20), root(30)];
+    let unit_value_map = vec![
+        StageValue {
+            name: "unit.alpha".to_owned(),
+            stage: 1,
+            lengths: Vec::new(),
+        },
+        StageValue {
+            name: "unit.beta".to_owned(),
+            stage: 2,
+            lengths: Vec::new(),
+        },
+    ];
+    let unit_values = values(&[101, 201, 202, 203]);
+    let final_polynomial = vec![ext(80)];
+
+    let actual = derive_pcs_transcript_challenges(PcsTranscriptInputs {
+        arity: 4,
+        hash_values: false,
+        constant_root,
+        public_values: &[],
+        witness_roots: &witness_roots,
+        root_challenge_draws: &[1, 1, 1],
+        unit_value_map: &unit_value_map,
+        unit_values: &unit_values,
+        evaluation_values: &[],
+        evaluation_challenge_draws: 0,
+        fri_roots: &[],
+        final_polynomial: &final_polynomial,
+    })
+    .expect("challenges should derive");
+
+    let mut expected = PoseidonTranscript::new(4).expect("arity should be supported");
+    let mut expected_challenges = Vec::new();
+    expected.put(&constant_root);
+    put_root_and_record(
+        &mut expected,
+        &witness_roots[0],
+        1,
+        &mut expected_challenges,
+    );
+    expected.put(&witness_roots[1]);
+    expected.put(&values(&[201, 202, 203]));
+    record(&mut expected, 1, &mut expected_challenges);
+    put_root_and_record(
+        &mut expected,
+        &witness_roots[2],
+        1,
+        &mut expected_challenges,
+    );
+    expected_challenges.push(Ext3::ZERO);
+    expected.put(&flatten_ext(&final_polynomial));
+    expected_challenges.push(expected.get_field());
+
+    assert_eq!(actual, expected_challenges);
 }
 
 #[test]
@@ -194,6 +261,8 @@ fn derives_final_query_challenge_from_hashed_transcript_events() {
         public_values: &public_values,
         witness_roots: &witness_roots,
         root_challenge_draws: &[2, 1, 1],
+        unit_value_map: &[],
+        unit_values: &[],
         evaluation_values: &evaluations,
         evaluation_challenge_draws: 2,
         fri_roots: &[],
@@ -227,6 +296,8 @@ fn rejects_root_challenge_draw_mismatches() {
             public_values: &[],
             witness_roots: &[root(10)],
             root_challenge_draws: &[1, 2],
+            unit_value_map: &[],
+            unit_values: &[],
             evaluation_values: &[],
             evaluation_challenge_draws: 0,
             fri_roots: &[],
@@ -249,6 +320,8 @@ fn rejects_empty_final_polynomials() {
             public_values: &[],
             witness_roots: &[],
             root_challenge_draws: &[],
+            unit_value_map: &[],
+            unit_values: &[],
             evaluation_values: &[],
             evaluation_challenge_draws: 0,
             fri_roots: &[],
@@ -272,6 +345,7 @@ fn derives_final_query_challenge_from_parsed_segments() {
         unit: &unit,
         material: &material,
         public_values: &public_values,
+        unit_values: &[],
         witness: &witness,
         evaluations: &evaluations,
         fri: &fri,
@@ -287,6 +361,8 @@ fn derives_final_query_challenge_from_parsed_segments() {
         public_values: &public_values,
         witness_roots: &[root(10), root(20), root(30)],
         root_challenge_draws: &[2, 1, 1],
+        unit_value_map: &[],
+        unit_values: &[],
         evaluation_values: &[ext(40), ext(50)],
         evaluation_challenge_draws: 2,
         fri_roots: &[root(60), root(70)],
@@ -311,6 +387,7 @@ fn derives_indexed_transcript_challenges_from_parsed_segments() {
         unit: &unit,
         material: &material,
         public_values: &public_values,
+        unit_values: &[],
         witness: &witness,
         evaluations: &evaluations,
         fri: &fri,
@@ -326,6 +403,8 @@ fn derives_indexed_transcript_challenges_from_parsed_segments() {
         public_values: &public_values,
         witness_roots: &[root(10), root(20), root(30)],
         root_challenge_draws: &[2, 1, 1],
+        unit_value_map: &[],
+        unit_values: &[],
         evaluation_values: &[ext(40), ext(50)],
         evaluation_challenge_draws: 2,
         fri_roots: &[root(60), root(70)],
@@ -346,6 +425,7 @@ fn segment_challenge_derivation_requires_transcript_arity() {
             unit: &unit,
             material: &sample_material(0, 1),
             public_values: &[],
+            unit_values: &[],
             witness: &sample_witness(0, &[10]),
             evaluations: &sample_evaluations(0, &[20]),
             fri: &sample_fri(0, &[], &[30]),
@@ -366,6 +446,7 @@ fn segment_challenge_derivation_rejects_unit_mismatches() {
             unit: &unit,
             material: &sample_material(1, 1),
             public_values: &[],
+            unit_values: &[],
             witness: &sample_witness(0, &[10]),
             evaluations: &sample_evaluations(0, &[20]),
             fri: &sample_fri(0, &[], &[30]),
