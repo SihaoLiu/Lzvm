@@ -65,6 +65,7 @@ use lzvm_prover::pcs_fri::{
     verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path,
     PcsFriOpeningFoldRequest,
 };
+use lzvm_prover::pcs_material_manifest::validate_pcs_material_manifest_segments;
 use lzvm_prover::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptSegmentInputs,
 };
@@ -457,10 +458,6 @@ fn verify_setup_preflight(
             return 1;
         }
     };
-    if let Err(error) = validate_pcs_material_manifest(&catalog, &proof) {
-        let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
-        return 1;
-    }
     let schedule = match derive_prove_schedule(&catalog) {
         Ok(schedule) => schedule,
         Err(error) => {
@@ -468,6 +465,10 @@ fn verify_setup_preflight(
             return 1;
         }
     };
+    if let Err(error) = validate_pcs_material_manifest_segments(&schedule, &proof.segments) {
+        let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
+        return 1;
+    }
     if let Err(error) = validate_witness_commitment_segments(&schedule, &proof) {
         let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
         return 1;
@@ -504,47 +505,6 @@ fn verify_setup_preflight(
     let _ = writeln!(stdout, "segments={}", public_report.segment_count);
     let _ = writeln!(stdout, "public_values={}", public_report.public_value_count);
     0
-}
-
-fn validate_pcs_material_manifest(
-    catalog: &KeyDirectoryCatalog,
-    proof: &ProofArtifact,
-) -> Result<(), String> {
-    let segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
-        .ok_or_else(|| "missing PCS material manifest segment".to_owned())?;
-    let manifest = parse_pcs_material_manifest_segment(&segment.data)
-        .map_err(|error| format!("invalid PCS material manifest segment: {error}"))?;
-    if manifest.units.len() != catalog.units.len() {
-        return Err("PCS material manifest unit count mismatch".to_owned());
-    }
-    for (index, (manifest_unit, catalog_unit)) in
-        manifest.units.iter().zip(catalog.units.iter()).enumerate()
-    {
-        let expected_unit_index =
-            u32::try_from(index).map_err(|_| "PCS material manifest unit index overflow")?;
-        if manifest_unit.unit_index != expected_unit_index {
-            return Err(format!("PCS material manifest mismatch for unit {index}"));
-        }
-        let material = catalog_unit
-            .pcs_material
-            .as_ref()
-            .ok_or_else(|| format!("setup catalog PCS material missing for unit {index}"))?;
-        if manifest_unit.plan_digest != material.plan_digest
-            || manifest_unit.fixed_column_digest != material.fixed_column_digest
-            || manifest_unit.constant_tree_digest != material.constant_tree_digest
-            || manifest_unit.constant_tree_root != material.constant_tree_root
-            || manifest_unit.fixed_byte_count != material.fixed_byte_count
-            || manifest_unit.constant_tree_byte_count != material.constant_tree_byte_count
-            || manifest_unit.leaf_byte_count != material.leaf_byte_count
-            || manifest_unit.node_byte_count != material.node_byte_count
-        {
-            return Err(format!("PCS material manifest mismatch for unit {index}"));
-        }
-    }
-    Ok(())
 }
 
 fn validate_witness_commitment_segments(
