@@ -16,6 +16,7 @@ use lzvm_artifacts::witness_library::{
     read_witness_library_file, WitnessLibraryError, WitnessLibraryInfo,
 };
 
+pub mod constant_opening;
 pub mod constant_tree_opening;
 pub mod fri_polynomial;
 pub mod global_constraints;

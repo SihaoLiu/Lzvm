@@ -2,9 +2,6 @@ use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::Path;
 
-use lzvm_artifacts::constant_opening_segment::{
-    parse_constant_opening_segment, CONSTANT_OPENING_SEGMENT_ID,
-};
 use lzvm_artifacts::constant_tree::read_constant_tree_file;
 use lzvm_artifacts::expression_info::{
     encode_expression_info, read_expression_info_binary_file, ExpressionInfo,
@@ -45,6 +42,7 @@ use lzvm_artifacts::witness_segment::{
     parse_witness_commitment_segment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 use lzvm_field::{Ext3, Felt};
+use lzvm_prover::constant_opening::load_constant_opening_segment_from_segments;
 use lzvm_prover::constant_tree_opening::{
     constant_tree_merkle_level_count, verify_constant_tree_opening_root, ConstantTreeOpening,
 };
@@ -784,13 +782,8 @@ fn validate_constant_opening_segment(
 ) -> Result<(), String> {
     let query_plan =
         load_pcs_query_plan_from_segments(&proof.segments).map_err(|error| error.to_string())?;
-    let opening_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == CONSTANT_OPENING_SEGMENT_ID)
-        .ok_or_else(|| "missing constant opening segment".to_owned())?;
-    let opening = parse_constant_opening_segment(&opening_segment.data)
-        .map_err(|error| format!("invalid constant opening segment: {error}"))?;
+    let opening = load_constant_opening_segment_from_segments(&proof.segments)
+        .map_err(|error| error.to_string())?;
     if opening.units.len() != query_plan.units.len() {
         return Err("constant opening segment unit count mismatch".to_owned());
     }
@@ -1134,14 +1127,8 @@ struct PcsFriQueryOutputValidation<'a> {
 }
 
 fn validate_pcs_fri_query_outputs(input: PcsFriQueryOutputValidation<'_>) -> Result<(), String> {
-    let constant_segment = input
-        .proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == CONSTANT_OPENING_SEGMENT_ID)
-        .ok_or_else(|| "missing constant opening segment".to_owned())?;
-    let constant_opening = parse_constant_opening_segment(&constant_segment.data)
-        .map_err(|error| format!("invalid constant opening segment: {error}"))?;
+    let constant_opening = load_constant_opening_segment_from_segments(&input.proof.segments)
+        .map_err(|error| error.to_string())?;
     let constant_unit = constant_opening
         .units
         .iter()
