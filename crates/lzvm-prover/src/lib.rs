@@ -13,6 +13,7 @@ use lzvm_artifacts::witness_library::{
 };
 
 pub mod witness_loader;
+pub mod witness_trace;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProveSchedule {
