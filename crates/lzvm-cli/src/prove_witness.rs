@@ -1,8 +1,11 @@
+use std::fs;
 use std::io::Write;
+use std::path::Path;
 
 use lzvm_artifacts::key_directory::read_key_directory_catalog;
 use lzvm_prover::{
     derive_prove_execution_plan, run_prove_witness_commitments, ProveExecutionInputArtifacts,
+    ProveWitnessCommitments,
 };
 
 use crate::prove_plan::{parse_run_args, write_run_plan_summary, ParseError, ParsedRunArgs};
@@ -40,6 +43,12 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
+    if plan.run_plan.options.save_outputs {
+        if let Err(message) = save_witness_outputs(&plan.run_plan.options.output_dir, &output) {
+            let _ = writeln!(stderr, "prove witness failed: {message}");
+            return 1;
+        }
+    }
 
     write_run_plan_summary(stdout, &plan.run_plan);
     let _ = writeln!(stdout, "unit_index={}", output.unit_index());
@@ -75,6 +84,40 @@ fn parsed_inputs(parsed: &ParsedRunArgs) -> ProveExecutionInputArtifacts {
         guest_image: parsed.positionals[3].clone(),
         public_inputs: parsed.positionals.get(4).cloned(),
     }
+}
+
+fn save_witness_outputs(output_dir: &Path, output: &ProveWitnessCommitments) -> Result<(), String> {
+    fs::create_dir_all(output_dir).map_err(|error| {
+        format!(
+            "create output directory failed: {}: {error}",
+            output_dir.display()
+        )
+    })?;
+
+    for commitment in output.stage_commitments().commitments() {
+        let root_path = output_dir.join(format!(
+            "unit-{}-stage-{}.witness-root",
+            output.unit_index(),
+            commitment.stage_index()
+        ));
+        let tree_path = output_dir.join(format!(
+            "unit-{}-stage-{}.witness-tree",
+            output.unit_index(),
+            commitment.stage_index()
+        ));
+        let mut root_bytes = Vec::with_capacity(32);
+        for value in commitment.root() {
+            root_bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        write_output_file(&root_path, &root_bytes)?;
+        write_output_file(&tree_path, commitment.tree_bytes())?;
+    }
+    Ok(())
+}
+
+fn write_output_file(path: &Path, value: &[u8]) -> Result<(), String> {
+    fs::write(path, value)
+        .map_err(|error| format!("write output file failed: {}: {error}", path.display()))
 }
 
 fn write_usage(stderr: &mut dyn Write) -> i32 {

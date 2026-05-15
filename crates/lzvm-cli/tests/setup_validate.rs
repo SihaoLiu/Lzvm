@@ -669,6 +669,91 @@ fn runs_prove_witness_commitments_for_setup_directory() {
 }
 
 #[test]
+fn saves_prove_witness_commitment_outputs_when_requested() {
+    let dir = temp_dir("prove-witness-save");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [11_u8]);
+
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan {
+            input_data: Some(input_data.clone()),
+            partition_count: 1,
+            partition_ids: vec![0],
+            worker_index: 0,
+        }),
+        options: ProveRunOptions {
+            save_outputs: true,
+            ..ProveRunOptions::default_for_output(output_dir.clone())
+        },
+        gpu: GpuRunOptions::default(),
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        request,
+        ProveExecutionInputArtifacts {
+            witness_library: witness_library.clone(),
+            guest_image: guest_image.clone(),
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let output = run_prove_witness_commitments(&plan, 0).expect("witness commitments should run");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--save-outputs",
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    for commitment in output.stage_commitments().commitments() {
+        let root_path = output_dir.join(format!(
+            "unit-0-stage-{}.witness-root",
+            commitment.stage_index()
+        ));
+        let tree_path = output_dir.join(format!(
+            "unit-0-stage-{}.witness-tree",
+            commitment.stage_index()
+        ));
+        let mut expected_root = Vec::new();
+        for value in commitment.root() {
+            expected_root.extend_from_slice(&value.to_le_bytes());
+        }
+        assert_eq!(
+            fs::read(&root_path).expect("root output should read"),
+            expected_root
+        );
+        assert_eq!(
+            fs::read(&tree_path).expect("tree output should read"),
+            commitment.tree_bytes()
+        );
+    }
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn rejects_prove_inputs_with_invalid_guest_image() {
     let dir = temp_dir("prove-inputs-invalid-guest");
     let _ = fs::remove_dir_all(&dir);
