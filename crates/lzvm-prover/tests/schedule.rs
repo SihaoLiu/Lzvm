@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use lzvm_artifacts::constraint_program::GlobalConstraintProgram;
 use lzvm_artifacts::expression_info::ExpressionInfo;
@@ -12,7 +13,10 @@ use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
 use lzvm_artifacts::setup_info::{FriStep, StarkStruct, UnitSetupInfo};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
-use lzvm_prover::{derive_prove_schedule, ProveScheduleError};
+use lzvm_prover::{
+    derive_prove_run_plan, derive_prove_schedule, GpuRunOptions, ProvePartitionPlan, ProvePassKind,
+    ProvePassRequest, ProveRunOptions, ProveRunPlanError, ProveRunRequest, ProveScheduleError,
+};
 
 fn sample_setup(n_bits: u32, n_bits_ext: u32, query_count: u32) -> UnitSetupInfo {
     let mut section_widths = BTreeMap::new();
@@ -198,5 +202,91 @@ fn rejects_empty_prove_schedule_catalogs() {
     assert!(matches!(
         derive_prove_schedule(&catalog),
         Err(ProveScheduleError::EmptyCatalog)
+    ));
+}
+
+#[test]
+fn derives_full_prove_run_plan_from_catalog_and_request() {
+    let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan {
+            input_data: Some(PathBuf::from("input.bin")),
+            partition_count: 4,
+            partition_ids: vec![1, 3],
+            worker_index: 2,
+        }),
+        options: ProveRunOptions {
+            aggregate: true,
+            remote_aggregation: false,
+            final_wrap: true,
+            verify_outputs: true,
+            save_outputs: true,
+            minimal_memory: false,
+            output_dir: PathBuf::from("out"),
+        },
+        gpu: GpuRunOptions {
+            preallocate: true,
+            max_streams: 8,
+            witness_thread_pools: 2,
+            max_stored_witnesses: 3,
+            pack_trace: true,
+        },
+    };
+
+    let plan = derive_prove_run_plan(&catalog, request).expect("run plan should derive");
+
+    assert_eq!(plan.schedule.unit_count, 1);
+    assert_eq!(plan.pass.kind(), ProvePassKind::Full);
+    assert_eq!(plan.options.output_dir, PathBuf::from("out"));
+    assert_eq!(plan.gpu.max_streams, 8);
+    match plan.pass {
+        ProvePassRequest::Full(partitions) => {
+            assert_eq!(partitions.input_data, Some(PathBuf::from("input.bin")));
+            assert_eq!(partitions.partition_count, 4);
+            assert_eq!(partitions.partition_ids, vec![1, 3]);
+            assert_eq!(partitions.worker_index, 2);
+        }
+        _ => panic!("expected full pass"),
+    }
+}
+
+#[test]
+fn rejects_prove_run_plans_with_invalid_partitions() {
+    let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan {
+            input_data: None,
+            partition_count: 2,
+            partition_ids: vec![2],
+            worker_index: 0,
+        }),
+        options: ProveRunOptions::default_for_output(PathBuf::from("out")),
+        gpu: GpuRunOptions::default(),
+    };
+
+    assert!(matches!(
+        derive_prove_run_plan(&catalog, request),
+        Err(ProveRunPlanError::PartitionOutOfRange {
+            partition_id: 2,
+            partition_count: 2,
+        })
+    ));
+}
+
+#[test]
+fn rejects_final_wrap_without_aggregation() {
+    let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
+    let mut options = ProveRunOptions::default_for_output(PathBuf::from("out"));
+    options.final_wrap = true;
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
+        options,
+        gpu: GpuRunOptions::default(),
+    };
+
+    assert!(matches!(
+        derive_prove_run_plan(&catalog, request),
+        Err(ProveRunPlanError::AggregationRequired { option })
+            if option == "final_wrap"
     ));
 }

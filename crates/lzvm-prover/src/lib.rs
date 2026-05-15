@@ -1,4 +1,5 @@
 use std::fmt;
+use std::path::PathBuf;
 
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryError, KeyUnitKind,
@@ -66,6 +67,177 @@ impl From<KeyDirectoryError> for ProveScheduleError {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProveRunRequest {
+    pub pass: ProvePassRequest,
+    pub options: ProveRunOptions,
+    pub gpu: GpuRunOptions,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProveRunPlan {
+    pub schedule: ProveSchedule,
+    pub pass: ProvePassRequest,
+    pub options: ProveRunOptions,
+    pub gpu: GpuRunOptions,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProvePassRequest {
+    Contributions(ProvePartitionPlan),
+    Internal { contribution_count: usize },
+    Full(ProvePartitionPlan),
+}
+
+impl ProvePassRequest {
+    pub fn kind(&self) -> ProvePassKind {
+        match self {
+            Self::Contributions(_) => ProvePassKind::Contributions,
+            Self::Internal { .. } => ProvePassKind::Internal,
+            Self::Full(_) => ProvePassKind::Full,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProvePassKind {
+    Contributions,
+    Internal,
+    Full,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProvePartitionPlan {
+    pub input_data: Option<PathBuf>,
+    pub partition_count: usize,
+    pub partition_ids: Vec<u32>,
+    pub worker_index: usize,
+}
+
+impl ProvePartitionPlan {
+    pub fn single() -> Self {
+        Self {
+            input_data: None,
+            partition_count: 1,
+            partition_ids: vec![0],
+            worker_index: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProveRunOptions {
+    pub aggregate: bool,
+    pub remote_aggregation: bool,
+    pub final_wrap: bool,
+    pub verify_outputs: bool,
+    pub save_outputs: bool,
+    pub minimal_memory: bool,
+    pub output_dir: PathBuf,
+}
+
+impl ProveRunOptions {
+    pub fn default_for_output(output_dir: PathBuf) -> Self {
+        Self {
+            aggregate: false,
+            remote_aggregation: false,
+            final_wrap: false,
+            verify_outputs: true,
+            save_outputs: false,
+            minimal_memory: false,
+            output_dir,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpuRunOptions {
+    pub preallocate: bool,
+    pub max_streams: usize,
+    pub witness_thread_pools: usize,
+    pub max_stored_witnesses: usize,
+    pub pack_trace: bool,
+}
+
+impl Default for GpuRunOptions {
+    fn default() -> Self {
+        Self {
+            preallocate: false,
+            max_streams: 20,
+            witness_thread_pools: 4,
+            max_stored_witnesses: 4,
+            pack_trace: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProveRunPlanError {
+    Schedule(ProveScheduleError),
+    PartitionCountZero,
+    EmptyPartitionSet,
+    PartitionOutOfRange {
+        partition_id: u32,
+        partition_count: usize,
+    },
+    WorkerOutOfRange {
+        worker_index: usize,
+        partition_count: usize,
+    },
+    EmptyContributionSet,
+    EmptyOutputDirectory,
+    AggregationRequired {
+        option: &'static str,
+    },
+    InvalidGpuStreams,
+    InvalidWitnessThreadPools,
+    InvalidStoredWitnesses,
+}
+
+impl fmt::Display for ProveRunPlanError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Schedule(error) => write!(f, "prove run plan schedule error: {error}"),
+            Self::PartitionCountZero => write!(f, "prove run plan partition count is zero"),
+            Self::EmptyPartitionSet => write!(f, "prove run plan partition set is empty"),
+            Self::PartitionOutOfRange {
+                partition_id,
+                partition_count,
+            } => write!(
+                f,
+                "prove run plan partition id {partition_id} is outside partition count {partition_count}"
+            ),
+            Self::WorkerOutOfRange {
+                worker_index,
+                partition_count,
+            } => write!(
+                f,
+                "prove run plan worker index {worker_index} is outside partition count {partition_count}"
+            ),
+            Self::EmptyContributionSet => write!(f, "prove run plan contribution set is empty"),
+            Self::EmptyOutputDirectory => write!(f, "prove run plan output directory is empty"),
+            Self::AggregationRequired { option } => {
+                write!(f, "prove run plan option {option} requires aggregation")
+            }
+            Self::InvalidGpuStreams => write!(f, "prove run plan GPU stream count is invalid"),
+            Self::InvalidWitnessThreadPools => {
+                write!(f, "prove run plan witness thread-pool count is invalid")
+            }
+            Self::InvalidStoredWitnesses => {
+                write!(f, "prove run plan stored witness count is invalid")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ProveRunPlanError {}
+
+impl From<ProveScheduleError> for ProveRunPlanError {
+    fn from(error: ProveScheduleError) -> Self {
+        Self::Schedule(error)
+    }
+}
+
 pub fn derive_prove_schedule(
     catalog: &KeyDirectoryCatalog,
 ) -> Result<ProveSchedule, ProveScheduleError> {
@@ -120,4 +292,89 @@ pub fn derive_prove_schedule(
         max_extended_domain_bits,
         units,
     })
+}
+
+pub fn derive_prove_run_plan(
+    catalog: &KeyDirectoryCatalog,
+    request: ProveRunRequest,
+) -> Result<ProveRunPlan, ProveRunPlanError> {
+    let schedule = derive_prove_schedule(catalog)?;
+    validate_pass(&request.pass)?;
+    validate_run_options(&request.options)?;
+    validate_gpu_options(&request.gpu)?;
+
+    Ok(ProveRunPlan {
+        schedule,
+        pass: request.pass,
+        options: request.options,
+        gpu: request.gpu,
+    })
+}
+
+fn validate_pass(pass: &ProvePassRequest) -> Result<(), ProveRunPlanError> {
+    match pass {
+        ProvePassRequest::Contributions(partitions) | ProvePassRequest::Full(partitions) => {
+            validate_partition_plan(partitions)
+        }
+        ProvePassRequest::Internal { contribution_count } => {
+            if *contribution_count == 0 {
+                return Err(ProveRunPlanError::EmptyContributionSet);
+            }
+            Ok(())
+        }
+    }
+}
+
+fn validate_partition_plan(partitions: &ProvePartitionPlan) -> Result<(), ProveRunPlanError> {
+    if partitions.partition_count == 0 {
+        return Err(ProveRunPlanError::PartitionCountZero);
+    }
+    if partitions.partition_ids.is_empty() {
+        return Err(ProveRunPlanError::EmptyPartitionSet);
+    }
+    if partitions.worker_index >= partitions.partition_count {
+        return Err(ProveRunPlanError::WorkerOutOfRange {
+            worker_index: partitions.worker_index,
+            partition_count: partitions.partition_count,
+        });
+    }
+    for partition_id in &partitions.partition_ids {
+        if *partition_id as usize >= partitions.partition_count {
+            return Err(ProveRunPlanError::PartitionOutOfRange {
+                partition_id: *partition_id,
+                partition_count: partitions.partition_count,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_run_options(options: &ProveRunOptions) -> Result<(), ProveRunPlanError> {
+    if options.output_dir.as_os_str().is_empty() {
+        return Err(ProveRunPlanError::EmptyOutputDirectory);
+    }
+    if options.remote_aggregation && !options.aggregate {
+        return Err(ProveRunPlanError::AggregationRequired {
+            option: "remote_aggregation",
+        });
+    }
+    if options.final_wrap && !options.aggregate {
+        return Err(ProveRunPlanError::AggregationRequired {
+            option: "final_wrap",
+        });
+    }
+    Ok(())
+}
+
+fn validate_gpu_options(options: &GpuRunOptions) -> Result<(), ProveRunPlanError> {
+    if options.max_streams == 0 {
+        return Err(ProveRunPlanError::InvalidGpuStreams);
+    }
+    if options.witness_thread_pools == 0 {
+        return Err(ProveRunPlanError::InvalidWitnessThreadPools);
+    }
+    if options.max_stored_witnesses == 0 {
+        return Err(ProveRunPlanError::InvalidStoredWitnesses);
+    }
+    Ok(())
 }
