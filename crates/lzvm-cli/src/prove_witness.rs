@@ -68,7 +68,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
-    if parsed.all_units {
+    if parsed.all_units || plan.run_plan.options.aggregate {
         if plan
             .units
             .iter()

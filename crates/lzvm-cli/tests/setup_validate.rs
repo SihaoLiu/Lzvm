@@ -3060,7 +3060,7 @@ fn builds_witness_proof_artifact_for_multiple_units_with_tail_segments() {
 }
 
 #[test]
-fn runs_prove_witness_for_all_units_when_requested() {
+fn runs_prove_witness_for_aggregate_when_requested() {
     let dir = temp_dir("prove-witness-all-units");
     let _ = fs::remove_dir_all(&dir);
     write_execution_ready_setup_directory_with_proof_group_and_unit_value(&dir);
@@ -3092,7 +3092,7 @@ fn runs_prove_witness_for_all_units_when_requested() {
         &[
             "prove",
             "witness",
-            "--all-units",
+            "--aggregate",
             "--save-outputs",
             "--unit-values",
             unit_values_path
