@@ -20,9 +20,7 @@ use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
     read_key_directory_layout, validate_key_directory_layout, KeyDirectoryCatalog,
 };
-use lzvm_artifacts::pcs_evaluation_segment::{
-    parse_pcs_evaluation_segment, PCS_EVALUATION_SEGMENT_ID,
-};
+use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
 use lzvm_artifacts::pcs_fri_segment::{parse_pcs_fri_opening_segment, PCS_FRI_OPENING_SEGMENT_ID};
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_material};
 use lzvm_artifacts::pcs_material_segment::{
@@ -61,6 +59,7 @@ use lzvm_prover::global_constraints::{
 };
 use lzvm_prover::group_values::load_group_values_from_segments;
 use lzvm_prover::hint_eval::{global_hint_input_requirements, resolve_global_hint_program};
+use lzvm_prover::pcs_evaluation::load_pcs_evaluation_unit_from_segments;
 use lzvm_prover::pcs_fri::{
     verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path,
     PcsFriOpeningFoldRequest,
@@ -584,11 +583,6 @@ fn validate_transcript_pcs_query_plan(
         .iter()
         .find(|segment| segment.id == PCS_QUERY_NONCE_SEGMENT_ID)
         .ok_or_else(|| "missing PCS query nonce segment".to_owned())?;
-    let evaluation_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
-        .ok_or_else(|| "missing PCS evaluation segment".to_owned())?;
     let fri_segment = proof
         .segments
         .iter()
@@ -615,18 +609,8 @@ fn validate_transcript_pcs_query_plan(
     let witness = parse_witness_commitment_segment(&witness_segments[0].data).map_err(|error| {
         format!("invalid witness commitment segment for unit {unit_index}: {error}")
     })?;
-    let evaluations = parse_pcs_evaluation_segment(&evaluation_segment.data)
-        .map_err(|error| format!("invalid PCS evaluation segment: {error}"))?;
-    let evaluation_unit = evaluations
-        .units
-        .iter()
-        .find(|unit| unit.unit_index == unit_index_u32)
-        .ok_or_else(|| format!("PCS transcript query plan mismatch for unit {unit_index}"))?;
-    if evaluation_unit.values.len() != unit.evaluation_value_count {
-        return Err(format!(
-            "PCS evaluation segment value count mismatch for unit {unit_index}"
-        ));
-    }
+    let evaluation_unit = load_pcs_evaluation_unit_from_segments(unit_index, unit, &proof.segments)
+        .map_err(|error| error.to_string())?;
     let fri = parse_pcs_fri_opening_segment(&fri_segment.data)
         .map_err(|error| format!("invalid PCS FRI opening segment: {error}"))?;
     let fri_unit = fri
@@ -646,7 +630,7 @@ fn validate_transcript_pcs_query_plan(
             public_values: &public_value_fields,
             unit_values: &unit_values,
             witness: &witness,
-            evaluations: evaluation_unit,
+            evaluations: &evaluation_unit,
             fri: fri_unit,
             root_challenge_draws: &unit.transcript_root_challenge_draws,
             evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
@@ -1122,18 +1106,8 @@ fn validate_pcs_transcript_fri_opening(
     let witness = parse_witness_commitment_segment(&witness_segment.data).map_err(|error| {
         format!("invalid witness commitment segment for unit {unit_index}: {error}")
     })?;
-    let evaluation_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
-        .ok_or_else(|| "missing PCS evaluation segment".to_owned())?;
-    let evaluations = parse_pcs_evaluation_segment(&evaluation_segment.data)
-        .map_err(|error| format!("invalid PCS evaluation segment: {error}"))?;
-    let evaluation_unit = evaluations
-        .units
-        .iter()
-        .find(|unit| unit.unit_index == query_unit.unit_index)
-        .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
+    let evaluation_unit = load_pcs_evaluation_unit_from_segments(unit_index, unit, &proof.segments)
+        .map_err(|error| error.to_string())?;
     let public_value_fields = transcript_public_value_fields(public_values)?;
     let unit_values = load_unit_values(schedule, proof, unit_index)?;
     let challenges = derive_pcs_transcript_challenges_from_segments(PcsTranscriptSegmentInputs {
@@ -1143,7 +1117,7 @@ fn validate_pcs_transcript_fri_opening(
         public_values: &public_value_fields,
         unit_values: &unit_values,
         witness: &witness,
-        evaluations: evaluation_unit,
+        evaluations: &evaluation_unit,
         fri: opening_unit,
         root_challenge_draws: &unit.transcript_root_challenge_draws,
         evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
@@ -1169,7 +1143,7 @@ fn validate_pcs_transcript_fri_opening(
             unit_index,
             unit,
             catalog_unit,
-            evaluation_unit,
+            evaluation_unit: &evaluation_unit,
             challenges: &challenges,
             proof_values: &proof_values,
         })
@@ -1375,11 +1349,6 @@ fn derive_global_constraint_challenges(
         .iter()
         .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
         .ok_or_else(|| "missing PCS query plan segment".to_owned())?;
-    let evaluation_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
-        .ok_or_else(|| "missing PCS evaluation segment".to_owned())?;
     let fri_segment = proof
         .segments
         .iter()
@@ -1390,8 +1359,6 @@ fn derive_global_constraint_challenges(
         .map_err(|error| format!("invalid PCS query plan segment: {error}"))?;
     let material = parse_pcs_material_manifest_segment(&material_segment.data)
         .map_err(|error| format!("invalid PCS material manifest segment: {error}"))?;
-    let evaluations = parse_pcs_evaluation_segment(&evaluation_segment.data)
-        .map_err(|error| format!("invalid PCS evaluation segment: {error}"))?;
     let fri = parse_pcs_fri_opening_segment(&fri_segment.data)
         .map_err(|error| format!("invalid PCS FRI opening segment: {error}"))?;
     let witness_segments = collect_witness_commitment_segments(schedule, proof)?;
@@ -1420,11 +1387,9 @@ fn derive_global_constraint_challenges(
         let witness = parse_witness_commitment_segment(&witness_segment.data).map_err(|error| {
             format!("invalid witness commitment segment for unit {unit_index}: {error}")
         })?;
-        let evaluation_unit = evaluations
-            .units
-            .iter()
-            .find(|unit| unit.unit_index == query_unit.unit_index)
-            .ok_or_else(|| format!("global constraint challenge mismatch for unit {unit_index}"))?;
+        let evaluation_unit =
+            load_pcs_evaluation_unit_from_segments(unit_index, unit, &proof.segments)
+                .map_err(|error| error.to_string())?;
         let fri_unit = fri
             .units
             .iter()
@@ -1439,7 +1404,7 @@ fn derive_global_constraint_challenges(
                 public_values: &public_value_fields,
                 unit_values: &unit_values,
                 witness: &witness,
-                evaluations: evaluation_unit,
+                evaluations: &evaluation_unit,
                 fri: fri_unit,
                 root_challenge_draws: &unit.transcript_root_challenge_draws,
                 evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,

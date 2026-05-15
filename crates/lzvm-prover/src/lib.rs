@@ -23,6 +23,7 @@ pub mod group_values;
 pub mod hint_eval;
 mod merkle_hash;
 pub mod pcs_challenge;
+pub mod pcs_evaluation;
 pub mod pcs_fri;
 pub mod pcs_material_manifest;
 pub mod pcs_transcript;
