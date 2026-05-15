@@ -19,6 +19,7 @@ pub mod constant_tree_opening;
 pub mod fri_polynomial;
 pub mod global_constraints;
 pub mod group_values;
+pub mod hint_eval;
 mod merkle_hash;
 pub mod pcs_challenge;
 pub mod pcs_fri;
