@@ -35,6 +35,35 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             write_fixed_columns_native(setup_info_bin, columns_bin, out_const, stdout, stderr)
         }
         ["setup", "write-fixed-native", ..] => write_fixed_native_usage(stderr),
+        ["setup", "write-base-native", "--backend", backend, setup_info_bin, columns_bin, out_const, out_consttree] =>
+        {
+            let Some(backend) =
+                parse_fixed_extension_backend(backend, "setup native base write", stderr)
+            else {
+                return 1;
+            };
+            write_base_native(
+                setup_info_bin,
+                columns_bin,
+                out_const,
+                out_consttree,
+                backend,
+                stdout,
+                stderr,
+            )
+        }
+        ["setup", "write-base-native", setup_info_bin, columns_bin, out_const, out_consttree] => {
+            write_base_native(
+                setup_info_bin,
+                columns_bin,
+                out_const,
+                out_consttree,
+                FixedExtensionBackend::Cpu,
+                stdout,
+                stderr,
+            )
+        }
+        ["setup", "write-base-native", ..] => write_base_native_usage(stderr),
         ["setup", "write-const-tree", setup_info_bin, tree_bin, root_bin, out_consttree] => {
             write_constant_tree(
                 setup_info_bin,
@@ -274,6 +303,61 @@ fn write_fixed_columns_native(
     };
 
     publish_fixed_columns(out_const, &columns, &setup, stdout, stderr)
+}
+
+fn write_base_native(
+    setup_info_bin: &str,
+    columns_bin: &str,
+    out_const: &str,
+    out_consttree: &str,
+    backend: FixedExtensionBackend,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let setup = match read_unit_setup_info_binary_file(setup_info_bin) {
+        Ok(setup) => setup,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup native base write failed: {error}");
+            return 1;
+        }
+    };
+    let columns = match read_fixed_columns_file(columns_bin) {
+        Ok(columns) => columns,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup native base write failed: {error}");
+            return 1;
+        }
+    };
+    let tree = match build_constant_tree_from_fixed_columns_with_backend(&columns, &setup, backend)
+    {
+        Ok(tree) => tree,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup native base write failed: {error}");
+            return 1;
+        }
+    };
+    let fixed_report = match write_base_fixed_columns(out_const, &columns, &setup) {
+        Ok(report) => report,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup native base write failed: {error}");
+            return 1;
+        }
+    };
+    let tree_report = match write_base_constant_tree(out_consttree, &tree, &setup, None) {
+        Ok(report) => report,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup native base write failed: {error}");
+            return 1;
+        }
+    };
+
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "fixed_bytes={}", fixed_report.bytes_written);
+    let _ = writeln!(stdout, "tree_bytes={}", tree_report.bytes_written);
+    let _ = writeln!(stdout, "root={}", format_root(&tree_report.root));
+    let _ = writeln!(stdout, "fixed_output={}", fixed_report.path.display());
+    let _ = writeln!(stdout, "tree_output={}", tree_report.path.display());
+    0
 }
 
 fn write_constant_tree(
@@ -571,6 +655,14 @@ fn write_fixed_native_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
         "usage: lzvm setup write-fixed-native <setup-info-bin> <columns-bin> <out-const>"
+    );
+    2
+}
+
+fn write_base_native_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm setup write-base-native [--backend cpu|cuda] <setup-info-bin> <columns-bin> <out-const> <out-consttree>"
     );
     2
 }
