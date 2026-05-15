@@ -5,7 +5,7 @@ use lzvm_artifacts::constant_tree::read_constant_tree_file;
 use lzvm_artifacts::fixed::{FixedColumn, FixedColumns};
 use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
-use lzvm_field::{poseidon2_hash_8, Felt};
+use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt};
 use lzvm_setup::{
     build_constant_tree_from_fixed_columns, extend_fixed_columns_for_constant_tree,
     write_constant_tree_from_fixed_columns,
@@ -105,6 +105,28 @@ fn parent_hash(left: [Felt; 4], right: [Felt; 4]) -> [Felt; 4] {
     [state[0], state[1], state[2], state[3]]
 }
 
+fn parent_hash_4(children: [[Felt; 4]; 4]) -> [Felt; 4] {
+    let state = poseidon2_hash_16([
+        children[0][0],
+        children[0][1],
+        children[0][2],
+        children[0][3],
+        children[1][0],
+        children[1][1],
+        children[1][2],
+        children[1][3],
+        children[2][0],
+        children[2][1],
+        children[2][2],
+        children[2][3],
+        children[3][0],
+        children[3][1],
+        children[3][2],
+        children[3][3],
+    ]);
+    [state[0], state[1], state[2], state[3]]
+}
+
 fn manual_expected_tree_words(leaves: &[u8]) -> Vec<u64> {
     let leaf_words = words(leaves);
     let rows = leaf_words
@@ -128,6 +150,29 @@ fn manual_expected_tree_words(leaves: &[u8]) -> Vec<u64> {
     }
     encode_digest_words(&mut expected, parent_left);
     encode_digest_words(&mut expected, parent_right);
+    encode_digest_words(&mut expected, root);
+    expected
+}
+
+fn manual_expected_tree_words_arity4(leaves: &[u8]) -> Vec<u64> {
+    let leaf_words = words(leaves);
+    let rows = leaf_words
+        .chunks_exact(2)
+        .map(|row| {
+            [
+                Felt::from_u64(row[0]),
+                Felt::from_u64(row[1]),
+                Felt::ZERO,
+                Felt::ZERO,
+            ]
+        })
+        .collect::<Vec<_>>();
+    let root = parent_hash_4([rows[0], rows[1], rows[2], rows[3]]);
+
+    let mut expected = leaf_words;
+    for row in rows {
+        encode_digest_words(&mut expected, row);
+    }
     encode_digest_words(&mut expected, root);
     expected
 }
@@ -176,4 +221,26 @@ fn writes_native_constant_tree_through_validated_staging() {
         )
     );
     assert!(staging.is_empty());
+}
+
+#[test]
+fn builds_native_arity_4_constant_tree_from_fixed_columns() {
+    let setup_json = sample_setup_info_json()
+        .replace("\"merkleTreeArity\": 2", "\"merkleTreeArity\": 4")
+        .replace("\"transcriptArity\": 2", "\"transcriptArity\": 4");
+    let setup = parse_unit_setup_info_json(&setup_json).expect("setup should parse");
+    let leaves = extend_fixed_columns_for_constant_tree(&sample_columns(), &setup)
+        .expect("leaves should extend");
+
+    let tree = build_constant_tree_from_fixed_columns(&sample_columns(), &setup)
+        .expect("tree should build");
+    let parsed = lzvm_artifacts::constant_tree::parse_constant_tree_bytes(tree.clone(), &setup)
+        .expect("tree should parse");
+
+    assert_eq!(tree.len(), 224);
+    assert_eq!(words(&tree), manual_expected_tree_words_arity4(&leaves));
+    assert_eq!(
+        parsed.root().expect("root should extract"),
+        VerificationKeyRoot::FieldElements(words(&tree[tree.len() - 32..]))
+    );
 }

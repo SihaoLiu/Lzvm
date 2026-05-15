@@ -10,7 +10,9 @@ use lzvm_artifacts::fixed::{
 };
 use lzvm_artifacts::setup_info::UnitSetupInfo;
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
-use lzvm_field::{coset_extend_evaluations, poseidon2_hash_8, DomainError, Felt, FieldError};
+use lzvm_field::{
+    coset_extend_evaluations, poseidon2_hash_16, poseidon2_hash_8, DomainError, Felt, FieldError,
+};
 
 const WORD_BYTES: usize = 8;
 const HASH_WORDS: usize = 4;
@@ -291,6 +293,8 @@ pub fn build_constant_tree_from_leaves(
     setup: &UnitSetupInfo,
 ) -> Result<Vec<u8>, SetupError> {
     validate_native_constant_tree_setup(setup)?;
+    let arity =
+        usize::try_from(setup.stark.merkle_tree_arity).map_err(|_| SetupError::LengthOverflow)?;
     let row_count = checked_domain_len(setup.stark.n_bits_ext)?;
     let column_count =
         usize::try_from(setup.n_constants).map_err(|_| SetupError::LengthOverflow)?;
@@ -323,21 +327,22 @@ pub fn build_constant_tree_from_leaves(
             );
             values.push(Felt::from_canonical(value)?);
         }
-        let digest = linear_hash_arity2(&values);
+        let digest = linear_hash(&values, arity)?;
         append_digest(&mut out, digest);
         level.push(digest);
     }
 
     while level.len() > 1 {
-        if level.len() % 2 != 0 {
+        let extra_zeros = (arity - (level.len() % arity)) % arity;
+        for _ in 0..extra_zeros {
             let zero = [Felt::ZERO; HASH_WORDS];
             append_digest(&mut out, zero);
             level.push(zero);
         }
 
-        let mut next = Vec::with_capacity(level.len() / 2);
-        for pair in level.chunks_exact(2) {
-            let digest = parent_hash_arity2(pair[0], pair[1]);
+        let mut next = Vec::with_capacity(level.len() / arity);
+        for children in level.chunks_exact(arity) {
+            let digest = parent_hash(children, arity)?;
             append_digest(&mut out, digest);
             next.push(digest);
         }
@@ -432,7 +437,7 @@ fn checked_domain_len(bits: u32) -> Result<usize, SetupError> {
 }
 
 fn validate_native_constant_tree_setup(setup: &UnitSetupInfo) -> Result<(), SetupError> {
-    if setup.stark.merkle_tree_arity != 2 {
+    if !matches!(setup.stark.merkle_tree_arity, 2 | 4) {
         return Err(SetupError::UnsupportedConstantTreeArity {
             arity: setup.stark.merkle_tree_arity,
         });
@@ -459,6 +464,16 @@ fn expected_constant_tree_byte_count_for_setup(setup: &UnitSetupInfo) -> Result<
     lzvm_artifacts::constant_tree::expected_constant_tree_byte_count(setup).map_err(Into::into)
 }
 
+fn linear_hash(values: &[Felt], arity: usize) -> Result<[Felt; HASH_WORDS], SetupError> {
+    match arity {
+        2 => Ok(linear_hash_arity2(values)),
+        4 => Ok(linear_hash_arity4(values)),
+        _ => Err(SetupError::UnsupportedConstantTreeArity {
+            arity: u32::try_from(arity).unwrap_or(u32::MAX),
+        }),
+    }
+}
+
 fn linear_hash_arity2(values: &[Felt]) -> [Felt; HASH_WORDS] {
     if values.len() <= HASH_WORDS {
         let mut digest = [Felt::ZERO; HASH_WORDS];
@@ -482,9 +497,69 @@ fn linear_hash_arity2(values: &[Felt]) -> [Felt; HASH_WORDS] {
     [state[0], state[1], state[2], state[3]]
 }
 
+fn linear_hash_arity4(values: &[Felt]) -> [Felt; HASH_WORDS] {
+    const RATE: usize = 12;
+
+    if values.len() <= HASH_WORDS {
+        let mut digest = [Felt::ZERO; HASH_WORDS];
+        digest[..values.len()].copy_from_slice(values);
+        return digest;
+    }
+
+    let mut state = [Felt::ZERO; 16];
+    let mut offset = 0;
+    while offset < values.len() {
+        let capacity = [state[0], state[1], state[2], state[3]];
+        state[RATE..].copy_from_slice(&capacity);
+        state[..RATE].fill(Felt::ZERO);
+
+        let chunk_len = (values.len() - offset).min(RATE);
+        state[..chunk_len].copy_from_slice(&values[offset..offset + chunk_len]);
+        state = poseidon2_hash_16(state);
+        offset += chunk_len;
+    }
+
+    [state[0], state[1], state[2], state[3]]
+}
+
+fn parent_hash(
+    children: &[[Felt; HASH_WORDS]],
+    arity: usize,
+) -> Result<[Felt; HASH_WORDS], SetupError> {
+    match arity {
+        2 => Ok(parent_hash_arity2(children[0], children[1])),
+        4 => Ok(parent_hash_arity4(children)),
+        _ => Err(SetupError::UnsupportedConstantTreeArity {
+            arity: u32::try_from(arity).unwrap_or(u32::MAX),
+        }),
+    }
+}
+
 fn parent_hash_arity2(left: [Felt; HASH_WORDS], right: [Felt; HASH_WORDS]) -> [Felt; HASH_WORDS] {
     let state = poseidon2_hash_8([
         left[0], left[1], left[2], left[3], right[0], right[1], right[2], right[3],
+    ]);
+    [state[0], state[1], state[2], state[3]]
+}
+
+fn parent_hash_arity4(children: &[[Felt; HASH_WORDS]]) -> [Felt; HASH_WORDS] {
+    let state = poseidon2_hash_16([
+        children[0][0],
+        children[0][1],
+        children[0][2],
+        children[0][3],
+        children[1][0],
+        children[1][1],
+        children[1][2],
+        children[1][3],
+        children[2][0],
+        children[2][1],
+        children[2][2],
+        children[2][3],
+        children[3][0],
+        children[3][1],
+        children[3][2],
+        children[3][3],
     ]);
     [state[0], state[1], state[2], state[3]]
 }
