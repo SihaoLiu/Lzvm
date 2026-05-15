@@ -59,6 +59,14 @@ unsafe extern "C" {
         shift: u64,
     ) -> i32;
     fn lzvm_cuda_poseidon2_width4(values: *const u64, out: *mut u64, state_count: usize) -> i32;
+    fn lzvm_cuda_poseidon2_width4_find_nonce(
+        challenge: *const u64,
+        start: u64,
+        count: usize,
+        target: u64,
+        out: *mut u64,
+        found: *mut u32,
+    ) -> i32;
     fn lzvm_cuda_poseidon2_width8(values: *const u64, out: *mut u64, state_count: usize) -> i32;
     fn lzvm_cuda_poseidon2_width16(values: *const u64, out: *mut u64, state_count: usize) -> i32;
 }
@@ -334,6 +342,46 @@ pub fn cuda_poseidon2_width4(values: &[u64]) -> Result<Vec<u64>, AccelError> {
 }
 
 #[cfg(feature = "cuda")]
+pub fn cuda_poseidon2_width4_find_nonce(
+    challenge: [u64; 3],
+    start: u64,
+    count: usize,
+    target: u64,
+) -> Result<Option<u64>, AccelError> {
+    if count == 0 {
+        return Ok(None);
+    }
+    let count_u64 = u64::try_from(count).map_err(|_| AccelError::InvalidDomain {
+        bits: 2,
+        len: count,
+    })?;
+    start
+        .checked_add(count_u64 - 1)
+        .ok_or(AccelError::InvalidDomain {
+            bits: 2,
+            len: count,
+        })?;
+
+    let mut out = 0_u64;
+    let mut found = 0_u32;
+    let code = unsafe {
+        lzvm_cuda_poseidon2_width4_find_nonce(
+            challenge.as_ptr(),
+            start,
+            count,
+            target,
+            &mut out,
+            &mut found,
+        )
+    };
+    if code == 0 {
+        Ok((found != 0).then_some(out))
+    } else {
+        Err(AccelError::Cuda { code })
+    }
+}
+
+#[cfg(feature = "cuda")]
 pub fn cuda_poseidon2_width8(values: &[u64]) -> Result<Vec<u64>, AccelError> {
     const WIDTH: usize = 8;
 
@@ -418,6 +466,16 @@ pub fn cuda_goldilocks_coset_extend(
 
 #[cfg(not(feature = "cuda"))]
 pub fn cuda_poseidon2_width4(_values: &[u64]) -> Result<Vec<u64>, AccelError> {
+    Err(AccelError::CudaUnavailable)
+}
+
+#[cfg(not(feature = "cuda"))]
+pub fn cuda_poseidon2_width4_find_nonce(
+    _challenge: [u64; 3],
+    _start: u64,
+    _count: usize,
+    _target: u64,
+) -> Result<Option<u64>, AccelError> {
     Err(AccelError::CudaUnavailable)
 }
 

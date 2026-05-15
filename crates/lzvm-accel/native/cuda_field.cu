@@ -654,6 +654,30 @@ __global__ void poseidon2_width4_kernel(const uint64_t* values, uint64_t* out, s
     }
 }
 
+__global__ void poseidon2_width4_find_nonce_kernel(
+    const uint64_t* challenge,
+    uint64_t start,
+    size_t count,
+    uint64_t target,
+    uint64_t* out,
+    unsigned int* found) {
+    const size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < count) {
+        const uint64_t candidate = start + index;
+        uint64_t state[kPoseidon2Width4] = {
+            challenge[0],
+            challenge[1],
+            challenge[2],
+            candidate,
+        };
+        poseidon2_hash_width4(state);
+        if (state[0] < target) {
+            atomicMin(reinterpret_cast<unsigned long long*>(out), static_cast<unsigned long long>(candidate));
+            atomicExch(found, 1U);
+        }
+    }
+}
+
 __global__ void poseidon2_width8_kernel(const uint64_t* values, uint64_t* out, size_t state_count) {
     const size_t state_index = blockIdx.x * blockDim.x + threadIdx.x;
     if (state_index < state_count) {
@@ -728,6 +752,17 @@ int free_after_butterfly_error(
 
 int free_single_after_error(cudaError_t status, uint64_t* values) {
     cudaFree(values);
+    return static_cast<int>(status);
+}
+
+int free_nonce_after_error(
+    cudaError_t status,
+    uint64_t* challenge,
+    uint64_t* out,
+    unsigned int* found) {
+    cudaFree(challenge);
+    cudaFree(out);
+    cudaFree(found);
     return static_cast<int>(status);
 }
 
@@ -1099,6 +1134,77 @@ extern "C" int lzvm_cuda_poseidon2_width4(
 
     cudaFree(device_values);
     cudaFree(device_out);
+    return 0;
+}
+
+extern "C" int lzvm_cuda_poseidon2_width4_find_nonce(
+    const uint64_t* challenge,
+    uint64_t start,
+    size_t count,
+    uint64_t target,
+    uint64_t* out,
+    unsigned int* found) {
+    if (count == 0) {
+        return 0;
+    }
+    if (challenge == nullptr || out == nullptr || found == nullptr) {
+        return -1;
+    }
+
+    uint64_t* device_challenge = nullptr;
+    uint64_t* device_out = nullptr;
+    unsigned int* device_found = nullptr;
+    cudaError_t status = cudaMalloc(&device_challenge, 3 * sizeof(uint64_t));
+    if (status != cudaSuccess) {
+        return static_cast<int>(status);
+    }
+    status = cudaMalloc(&device_out, sizeof(uint64_t));
+    if (status != cudaSuccess) {
+        return free_nonce_after_error(status, device_challenge, device_out, device_found);
+    }
+    status = cudaMalloc(&device_found, sizeof(unsigned int));
+    if (status != cudaSuccess) {
+        return free_nonce_after_error(status, device_challenge, device_out, device_found);
+    }
+
+    const uint64_t initial_out = UINT64_MAX;
+    const unsigned int initial_found = 0;
+    status = cudaMemcpy(device_challenge, challenge, 3 * sizeof(uint64_t), cudaMemcpyHostToDevice);
+    if (status != cudaSuccess) {
+        return free_nonce_after_error(status, device_challenge, device_out, device_found);
+    }
+    status = cudaMemcpy(device_out, &initial_out, sizeof(uint64_t), cudaMemcpyHostToDevice);
+    if (status != cudaSuccess) {
+        return free_nonce_after_error(status, device_challenge, device_out, device_found);
+    }
+    status = cudaMemcpy(device_found, &initial_found, sizeof(unsigned int), cudaMemcpyHostToDevice);
+    if (status != cudaSuccess) {
+        return free_nonce_after_error(status, device_challenge, device_out, device_found);
+    }
+
+    const size_t blocks = (count + kThreads - 1) / kThreads;
+    poseidon2_width4_find_nonce_kernel<<<blocks, kThreads>>>(
+        device_challenge, start, count, target, device_out, device_found);
+    status = cudaGetLastError();
+    if (status != cudaSuccess) {
+        return free_nonce_after_error(status, device_challenge, device_out, device_found);
+    }
+    status = cudaDeviceSynchronize();
+    if (status != cudaSuccess) {
+        return free_nonce_after_error(status, device_challenge, device_out, device_found);
+    }
+    status = cudaMemcpy(out, device_out, sizeof(uint64_t), cudaMemcpyDeviceToHost);
+    if (status != cudaSuccess) {
+        return free_nonce_after_error(status, device_challenge, device_out, device_found);
+    }
+    status = cudaMemcpy(found, device_found, sizeof(unsigned int), cudaMemcpyDeviceToHost);
+    if (status != cudaSuccess) {
+        return free_nonce_after_error(status, device_challenge, device_out, device_found);
+    }
+
+    cudaFree(device_challenge);
+    cudaFree(device_out);
+    cudaFree(device_found);
     return 0;
 }
 

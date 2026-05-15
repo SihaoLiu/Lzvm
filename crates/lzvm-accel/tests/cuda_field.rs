@@ -3,7 +3,8 @@ use lzvm_accel::{cuda_goldilocks_add, cuda_goldilocks_mul};
 #[cfg(feature = "cuda")]
 use lzvm_accel::{
     cuda_goldilocks_butterfly, cuda_goldilocks_coset_extend, cuda_goldilocks_ntt,
-    cuda_poseidon2_width16, cuda_poseidon2_width4, cuda_poseidon2_width8,
+    cuda_poseidon2_width16, cuda_poseidon2_width4, cuda_poseidon2_width4_find_nonce,
+    cuda_poseidon2_width8,
 };
 #[cfg(feature = "cuda")]
 use lzvm_field::{
@@ -203,6 +204,38 @@ fn cuda_hashes_poseidon2_width_4_states() {
     let actual = cuda_poseidon2_width4(&input).expect("cuda hash should run");
 
     assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_finds_poseidon2_width_4_nonce_ranges() {
+    let challenge = [0_u64, 1, 2];
+    let target = 1_u64 << 62;
+    let expected = (0_u64..128)
+        .find(|candidate| {
+            let state = [
+                Felt::from_u64(challenge[0]),
+                Felt::from_u64(challenge[1]),
+                Felt::from_u64(challenge[2]),
+                Felt::from_u64(*candidate),
+            ];
+            poseidon2_hash_4(state)[0].to_u64() < target
+        })
+        .expect("fixture should contain a matching nonce");
+
+    let actual = cuda_poseidon2_width4_find_nonce(challenge, 0, 128, target)
+        .expect("cuda nonce search should run");
+
+    assert_eq!(actual, Some(expected));
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_reports_empty_poseidon2_width_4_nonce_ranges() {
+    let actual = cuda_poseidon2_width4_find_nonce([0, 1, 2], 0, 16, 0)
+        .expect("cuda nonce search should run");
+
+    assert_eq!(actual, None);
 }
 
 #[test]
