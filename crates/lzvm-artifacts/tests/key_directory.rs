@@ -288,8 +288,6 @@ fn write_global_files(root: &Path) {
         &root.join("pilout.globalInfo.bin"),
         sample_global_info_json(),
     );
-    fs::write(root.join("pilout.globalConstraints.json"), "{}")
-        .expect("global constraints metadata should be written");
     fs::write(root.join("pilout.globalConstraints.bin"), [])
         .expect("global constraints program should be written");
 }
@@ -300,8 +298,6 @@ fn write_catalog_global_files(root: &Path) {
         &root.join("pilout.globalInfo.bin"),
         sample_catalog_global_info_json(),
     );
-    fs::write(root.join("pilout.globalConstraints.json"), "{}")
-        .expect("global constraints metadata should be written");
     let constraints = encode_global_constraint_program(&GlobalConstraintProgram {
         entries: vec![],
         ops: vec![],
@@ -319,8 +315,6 @@ fn write_binary_catalog_global_files(root: &Path) {
         &root.join("pilout.globalInfo.bin"),
         sample_catalog_global_info_json(),
     );
-    fs::write(root.join("pilout.globalConstraints.json"), "{}")
-        .expect("global constraints metadata should be written");
     let constraints = encode_global_constraint_program(&GlobalConstraintProgram {
         entries: vec![],
         ops: vec![],
@@ -484,25 +478,6 @@ fn validates_required_key_directory_files() {
     let layout = read_key_directory_layout(&dir).expect("layout should parse");
     for required in layout.required_paths() {
         write_file(&required.path);
-    }
-
-    validate_key_directory_layout(&layout).expect("layout should validate");
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
-}
-
-#[test]
-fn validates_without_global_constraint_json_metadata() {
-    let dir = temp_dir("validate-global-constraints-bin");
-    let _ = fs::remove_dir_all(&dir);
-    write_global_files(&dir);
-    fs::remove_file(dir.join("pilout.globalConstraints.json"))
-        .expect("global constraint json metadata should be removed");
-
-    let layout = read_key_directory_layout(&dir).expect("layout should parse");
-    for required in layout.required_paths() {
-        if required.role != "global constraints metadata" {
-            write_file(&required.path);
-        }
     }
 
     validate_key_directory_layout(&layout).expect("layout should validate");

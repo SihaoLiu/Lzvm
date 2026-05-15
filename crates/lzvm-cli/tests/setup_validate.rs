@@ -1239,8 +1239,6 @@ int lzvm_witness_compute(const LzvmWitnessCall *call, LzvmWitnessResult *result)
 fn write_global_files_with_info(root: &Path, global_info: &str) {
     fs::create_dir_all(root).expect("fixture root should be created");
     write_global_metadata(&root.join("pilout.globalInfo.bin"), global_info);
-    fs::write(root.join("pilout.globalConstraints.json"), "{}")
-        .expect("global constraints metadata should be written");
     let constraints = encode_global_constraint_program(&GlobalConstraintProgram {
         entries: vec![],
         ops: vec![],

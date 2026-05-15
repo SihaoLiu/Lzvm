@@ -231,10 +231,6 @@ fn write_bytes(path: &Path, bytes: impl AsRef<[u8]>) {
     fs::write(path, bytes).expect("fixture should be written");
 }
 
-fn write_text(path: &Path, value: &str) {
-    write_bytes(path, value.as_bytes());
-}
-
 fn write_unit_setup_metadata(path: &Path, value: &str) {
     let setup = parse_unit_setup_info_json(value).expect("setup metadata should parse");
     let bytes = encode_unit_setup_info(&setup).expect("setup metadata should encode");
@@ -274,7 +270,6 @@ fn write_global_files(root: &Path) {
         &root.join("pilout.globalInfo.bin"),
         sample_global_info_json(),
     );
-    write_text(&root.join("pilout.globalConstraints.json"), "{}");
     write_bytes(
         &root.join("pilout.globalConstraints.bin"),
         encode_global_constraint_program(&GlobalConstraintProgram {

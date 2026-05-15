@@ -28,7 +28,6 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 const GLOBAL_INFO_BIN_FILE: &str = "pilout.globalInfo.bin";
-const GLOBAL_CONSTRAINTS_JSON_FILE: &str = "pilout.globalConstraints.json";
 const GLOBAL_CONSTRAINTS_BIN_FILE: &str = "pilout.globalConstraints.bin";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,7 +48,6 @@ pub struct KeyDirectoryCatalog {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GlobalKeyPaths {
     pub info: PathBuf,
-    pub constraints_json: PathBuf,
     pub constraints_program: PathBuf,
 }
 
@@ -539,7 +537,6 @@ impl GlobalKeyPaths {
     pub fn from_root(root: &Path) -> Self {
         Self {
             info: root.join(GLOBAL_INFO_BIN_FILE),
-            constraints_json: root.join(GLOBAL_CONSTRAINTS_JSON_FILE),
             constraints_program: root.join(GLOBAL_CONSTRAINTS_BIN_FILE),
         }
     }

@@ -205,7 +205,6 @@ fn sample_catalog(units: Vec<KeyUnitCatalogEntry>) -> KeyDirectoryCatalog {
             },
             global_paths: lzvm_artifacts::key_directory::GlobalKeyPaths {
                 info: "global-info.json".into(),
-                constraints_json: "global-constraints.json".into(),
                 constraints_program: "global-constraints.bin".into(),
             },
             units: Vec::new(),
