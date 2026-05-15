@@ -7,7 +7,8 @@ use lzvm_artifacts::constraint_program::{
     ConstraintEntry, ConstraintProgram, GlobalConstraintProgram,
 };
 use lzvm_artifacts::expression_info::ExpressionInfo;
-use lzvm_artifacts::expression_program::ExpressionProgram;
+use lzvm_artifacts::expression_program::{ExpressionEntry, ExpressionProgram};
+use lzvm_artifacts::fixed::{write_raw_fixed_columns_file, FixedColumn, FixedColumns};
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry,
@@ -45,7 +46,7 @@ use lzvm_artifacts::witness_segment::{
     encode_witness_commitment_segment, parse_witness_commitment_segment, WitnessCommitmentSegment,
     WitnessCommitmentStageSegment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
-use lzvm_field::{Ext3, Felt};
+use lzvm_field::{coset_extend_evaluations, Ext3, Felt};
 use lzvm_prover::pcs_challenge::{derive_fri_queries, verify_query_nonce};
 use lzvm_prover::pcs_fri::{verify_fri_opening_folds, PcsFriOpeningFoldRequest};
 use lzvm_prover::pcs_transcript::{
@@ -56,7 +57,7 @@ use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_loader::load_witness_library;
 use lzvm_prover::witness_runner::run_witness_trace;
 use lzvm_prover::{
-    build_pcs_evaluation_segment, build_pcs_fri_opening_segment,
+    build_pcs_evaluation_segment, build_pcs_fri_opening_segment, build_pcs_fri_polynomial_values,
     build_pcs_material_manifest_segment, build_pcs_query_nonce_segment,
     build_pcs_query_nonce_segment_from_transcript_segments, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_challenge,
@@ -281,6 +282,39 @@ fn challenge_row_zero_stage_constraint() -> ConstraintProgram {
         args: vec![1, 0, 12, 0, 0, 1, 0, 0],
         numbers: Vec::new(),
     }
+}
+
+fn fixed_plus_stage_expression_program(expression_id: u32) -> ExpressionProgram {
+    ExpressionProgram {
+        max_tmp1: 1,
+        max_tmp3: 0,
+        max_args: 8,
+        max_ops: 1,
+        entries: vec![ExpressionEntry {
+            expression_id,
+            destination_dimension: 1,
+            destination_id: 0,
+            stage: 2,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 8,
+            args_offset: 0,
+            source_line: "fixed plus stage".to_owned(),
+        }],
+        ops: vec![0],
+        args: vec![0, 0, 0, 0, 0, 1, 0, 0],
+        numbers: Vec::new(),
+    }
+}
+
+fn encode_trace_words(values: &[u64]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(values.len() * 8);
+    for value in values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes
 }
 
 fn write_public_values(path: &Path, setup_hash: [u8; 32], elements: Vec<u64>) {
@@ -999,6 +1033,101 @@ fn builds_pcs_fri_opening_segments_from_polynomial_values() {
         },
     )
     .expect("folds should verify"));
+}
+
+#[test]
+fn builds_pcs_fri_polynomial_from_execution_material() {
+    let dir = temp_dir("fri-polynomial");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+
+    let expression_id = 42;
+    let mut unit = sample_unit();
+    unit.paths.fixed_columns = dir.join("unit.const");
+    unit.metadata.verifier.quotient.expression_id = Some(expression_id);
+    unit.expression_program = fixed_plus_stage_expression_program(expression_id);
+
+    let fixed_left = (0..16).map(|row| row + 10).collect::<Vec<_>>();
+    let fixed_columns = FixedColumns {
+        group_name: "group-a".to_owned(),
+        unit_name: "unit-a".to_owned(),
+        row_count: 16,
+        columns: vec![
+            FixedColumn {
+                name: "const_0".to_owned(),
+                dimensions: Vec::new(),
+                values: fixed_left.clone(),
+            },
+            FixedColumn {
+                name: "const_1".to_owned(),
+                dimensions: Vec::new(),
+                values: vec![0; 16],
+            },
+        ],
+    };
+    write_raw_fixed_columns_file(
+        &unit.paths.fixed_columns,
+        &fixed_columns,
+        &unit.metadata.setup,
+    )
+    .expect("fixed columns should be written");
+
+    let catalog = sample_catalog(unit);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), None),
+        ProveExecutionInputArtifacts {
+            witness_library,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let unit = &plan.run_plan.schedule.units[0];
+    let trace_words = (0..16 * 5)
+        .map(|index| index as u64 + 1)
+        .collect::<Vec<_>>();
+    let trace =
+        lzvm_prover::witness_trace::parse_witness_trace(&encode_trace_words(&trace_words), 16, 5)
+            .expect("trace should parse");
+
+    let polynomial = build_pcs_fri_polynomial_values(
+        0,
+        unit,
+        &plan.units[0],
+        &trace,
+        &[],
+        &ProveWitnessAuxiliaryInputs::default(),
+        Ext3::from_u64s([3, 0, 0]),
+    )
+    .expect("polynomial should build");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let fixed_extended = coset_extend_evaluations(
+        &fixed_left
+            .iter()
+            .copied()
+            .map(Felt::from_u64)
+            .collect::<Vec<_>>(),
+        4,
+        6,
+    )
+    .expect("fixed column should extend");
+    let stage_source = (0..16)
+        .map(|row| Felt::from_u64(trace_words[row * 5]))
+        .collect::<Vec<_>>();
+    let stage_extended =
+        coset_extend_evaluations(&stage_source, 4, 6).expect("stage column should extend");
+    let expected = fixed_extended
+        .iter()
+        .zip(stage_extended.iter())
+        .map(|(fixed, stage)| Ext3::new(*fixed + *stage, Felt::ZERO, Felt::ZERO))
+        .collect::<Vec<_>>();
+
+    assert_eq!(polynomial, expected);
 }
 
 #[test]

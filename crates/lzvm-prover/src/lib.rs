@@ -25,6 +25,7 @@ pub mod pcs_fri;
 pub mod pcs_transcript;
 pub mod proof_values;
 mod prove_fri_opening;
+mod prove_fri_polynomial;
 mod prove_witness;
 pub mod regular_constraints;
 pub mod unit_values;
@@ -39,6 +40,7 @@ pub mod witness_trace;
 pub use prove_fri_opening::{
     build_pcs_fri_opening_segment, ProvePcsFriOpeningSegmentError, ProvePcsFriOpeningValues,
 };
+pub use prove_fri_polynomial::{build_pcs_fri_polynomial_values, ProvePcsFriPolynomialError};
 pub use prove_witness::{
     build_constant_opening_segment, build_pcs_evaluation_segment,
     build_pcs_material_manifest_segment, build_pcs_query_nonce_segment,
