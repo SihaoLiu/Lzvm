@@ -10,7 +10,8 @@ use lzvm_prover::{
     build_constant_opening_segment, build_pcs_material_manifest_segment,
     build_pcs_query_plan_segment, build_witness_commitment_segment, build_witness_opening_segment,
     derive_prove_execution_plan, proof_values::build_pcs_proof_values_segment_from_packed_values,
-    run_prove_witness_commitments_with_auxiliary_inputs, ProveExecutionInputArtifacts,
+    run_prove_witness_commitments_with_auxiliary_inputs,
+    unit_values::build_unit_values_segment_from_packed_values, ProveExecutionInputArtifacts,
     ProveSchedule, ProveWitnessAuxiliaryInputs, ProveWitnessCommitments,
 };
 
@@ -42,7 +43,10 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
-    let auxiliary_inputs = match load_witness_auxiliary_inputs(parsed.proof_values.as_deref()) {
+    let auxiliary_inputs = match load_witness_auxiliary_inputs(
+        parsed.unit_values.as_deref(),
+        parsed.proof_values.as_deref(),
+    ) {
         Ok(inputs) => inputs,
         Err(message) => {
             let _ = writeln!(stderr, "prove witness failed: {message}");
@@ -63,6 +67,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             &catalog,
             &plan.run_plan.schedule,
             plan.inputs.public_inputs.as_deref(),
+            parsed.unit_values.as_deref(),
             parsed.proof_values.as_deref(),
             &output,
         ) {
@@ -101,31 +106,46 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
 
 struct ParsedWitnessArgs {
     run_args: ParsedRunArgs,
+    unit_values: Option<std::path::PathBuf>,
     proof_values: Option<std::path::PathBuf>,
 }
 
 fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
+    let mut unit_values = None;
     let mut proof_values = None;
     let mut filtered = Vec::with_capacity(args.len());
     let mut index = 0;
     while index < args.len() {
-        if args[index] == "--proof-values" {
-            index += 1;
-            let value = args
-                .get(index)
-                .ok_or_else(|| ParseError::Invalid("missing --proof-values value".to_owned()))?;
-            if proof_values.replace((*value).into()).is_some() {
-                return Err(ParseError::Invalid(
-                    "duplicate --proof-values option".to_owned(),
-                ));
+        match args[index] {
+            "--unit-values" => {
+                index += 1;
+                let value = args
+                    .get(index)
+                    .ok_or_else(|| ParseError::Invalid("missing --unit-values value".to_owned()))?;
+                if unit_values.replace((*value).into()).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --unit-values option".to_owned(),
+                    ));
+                }
             }
-        } else {
-            filtered.push(args[index]);
+            "--proof-values" => {
+                index += 1;
+                let value = args.get(index).ok_or_else(|| {
+                    ParseError::Invalid("missing --proof-values value".to_owned())
+                })?;
+                if proof_values.replace((*value).into()).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --proof-values option".to_owned(),
+                    ));
+                }
+            }
+            _ => filtered.push(args[index]),
         }
         index += 1;
     }
     Ok(ParsedWitnessArgs {
         run_args: parse_run_args(&filtered, 4, 5)?,
+        unit_values,
         proof_values,
     })
 }
@@ -139,11 +159,16 @@ fn parsed_inputs(parsed: &ParsedRunArgs) -> ProveExecutionInputArtifacts {
 }
 
 fn load_witness_auxiliary_inputs(
+    unit_values_input: Option<&Path>,
     proof_values_input: Option<&Path>,
 ) -> Result<ProveWitnessAuxiliaryInputs, String> {
     Ok(ProveWitnessAuxiliaryInputs {
+        unit_values: match unit_values_input {
+            Some(path) => read_packed_values(path, "unit values")?,
+            None => Vec::new(),
+        },
         proof_values: match proof_values_input {
-            Some(path) => read_packed_proof_values(path)?,
+            Some(path) => read_packed_values(path, "proof values")?,
             None => Vec::new(),
         },
         ..ProveWitnessAuxiliaryInputs::default()
@@ -155,6 +180,7 @@ fn save_witness_outputs(
     catalog: &lzvm_artifacts::key_directory::KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     public_inputs: Option<&Path>,
+    unit_values_input: Option<&Path>,
     proof_values_input: Option<&Path>,
     output: &ProveWitnessCommitments,
 ) -> Result<(), String> {
@@ -171,6 +197,7 @@ fn save_witness_outputs(
         catalog,
         schedule,
         public_inputs,
+        unit_values_input,
         proof_values_input,
         output,
         &segment,
@@ -206,6 +233,7 @@ fn build_proof_bytes(
     catalog: &lzvm_artifacts::key_directory::KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     public_inputs: Option<&Path>,
+    unit_values_input: Option<&Path>,
     proof_values_input: Option<&Path>,
     output: &ProveWitnessCommitments,
     segment: &ProofSegment,
@@ -234,8 +262,23 @@ fn build_proof_bytes(
             .map_err(|error| format!("build constant opening segment failed: {error}"))?;
     let opening_segment = build_witness_opening_segment(schedule, &query_segment, output)
         .map_err(|error| format!("build witness opening segment failed: {error}"))?;
+    let packed_unit_values = match unit_values_input {
+        Some(path) => read_packed_values(path, "unit values")?,
+        None => Vec::new(),
+    };
+    let unit_index = output.unit_index();
+    let unit = schedule
+        .units
+        .get(unit_index)
+        .ok_or_else(|| format!("unit values segment unit index out of range: {unit_index}"))?;
+    let unit_values_segment = build_unit_values_segment_from_packed_values(
+        unit_index,
+        &unit.unit_value_map,
+        &packed_unit_values,
+    )
+    .map_err(|error| format!("build unit values segment failed: {error}"))?;
     let packed_proof_values = match proof_values_input {
-        Some(path) => read_packed_proof_values(path)?,
+        Some(path) => read_packed_values(path, "proof values")?,
         None => Vec::new(),
     };
     let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(
@@ -253,6 +296,9 @@ fn build_proof_bytes(
     if let Some(proof_values_segment) = proof_values_segment {
         segments.push(proof_values_segment);
     }
+    if let Some(unit_values_segment) = unit_values_segment {
+        segments.push(unit_values_segment);
+    }
     let proof = ProofArtifact {
         setup_hash: schedule.setup_hash,
         public_values_hash,
@@ -263,16 +309,12 @@ fn build_proof_bytes(
         .map_err(|error| format!("encode witness proof artifact failed: {error}"))
 }
 
-fn read_packed_proof_values(path: &Path) -> Result<Vec<Felt>, String> {
-    let bytes = fs::read(path).map_err(|error| {
-        format!(
-            "read proof values input failed: {}: {error}",
-            path.display()
-        )
-    })?;
+fn read_packed_values(path: &Path, label: &str) -> Result<Vec<Felt>, String> {
+    let bytes = fs::read(path)
+        .map_err(|error| format!("read {label} input failed: {}: {error}", path.display()))?;
     if bytes.len() % 8 != 0 {
         return Err(format!(
-            "read proof values input failed: {}: byte length is not aligned to field words",
+            "read {label} input failed: {}: byte length is not aligned to field words",
             path.display()
         ));
     }
@@ -283,7 +325,7 @@ fn read_packed_proof_values(path: &Path) -> Result<Vec<Felt>, String> {
             let value = u64::from_le_bytes(chunk.try_into().expect("chunk length checked"));
             Felt::from_canonical(value).map_err(|error| {
                 format!(
-                    "read proof values input failed: {}: field word {index} is invalid: {error}",
+                    "read {label} input failed: {}: field word {index} is invalid: {error}",
                     path.display()
                 )
             })

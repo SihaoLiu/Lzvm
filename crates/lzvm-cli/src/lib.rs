@@ -37,6 +37,7 @@ use lzvm_artifacts::public_values::{public_values_digest, read_public_values_fil
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, read_unit_setup_info_file,
 };
+use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
 use lzvm_artifacts::verification_key::{read_verification_key_binary_file, VerificationKeyRoot};
 use lzvm_artifacts::witness_opening_segment::{
     parse_witness_opening_segment, WITNESS_OPENING_SEGMENT_ID,
@@ -57,6 +58,7 @@ use lzvm_prover::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptSegmentInputs,
 };
 use lzvm_prover::proof_values::flatten_pcs_proof_values;
+use lzvm_prover::unit_values::expected_packed_unit_value_count;
 use lzvm_prover::verifier_query::{
     evaluate_verifier_unit_queries, verify_query_outputs_against_fri_opening,
     VerifierFriComparisonRequest, VerifierUnitQueryEvalRequest,
@@ -758,6 +760,7 @@ fn validate_transcript_pcs_query_plan(
         .find(|unit| unit.unit_index == unit_index_u32)
         .ok_or_else(|| format!("PCS transcript query plan mismatch for unit {unit_index}"))?;
     let public_value_fields = transcript_public_value_fields(public_values)?;
+    let unit_values = load_unit_values(schedule, proof, unit_index)?;
     let expected_segment = build_pcs_query_plan_segment_from_transcript_segments(
         schedule,
         witness_segments,
@@ -766,7 +769,7 @@ fn validate_transcript_pcs_query_plan(
             unit,
             material: material_unit,
             public_values: &public_value_fields,
-            unit_values: &[],
+            unit_values: &unit_values,
             witness: &witness,
             evaluations: evaluation_unit,
             fri: fri_unit,
@@ -1268,12 +1271,13 @@ fn validate_pcs_transcript_fri_opening(
         .find(|unit| unit.unit_index == query_unit.unit_index)
         .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
     let public_value_fields = transcript_public_value_fields(public_values)?;
+    let unit_values = load_unit_values(schedule, proof, unit_index)?;
     let challenges = derive_pcs_transcript_challenges_from_segments(PcsTranscriptSegmentInputs {
         unit_index,
         unit,
         material: material_unit,
         public_values: &public_value_fields,
-        unit_values: &[],
+        unit_values: &unit_values,
         witness: &witness,
         evaluations: evaluation_unit,
         fri: opening_unit,
@@ -1516,13 +1520,14 @@ fn derive_global_constraint_challenges(
             .iter()
             .find(|unit| unit.unit_index == query_unit.unit_index)
             .ok_or_else(|| format!("global constraint challenge mismatch for unit {unit_index}"))?;
+        let unit_values = load_unit_values(schedule, proof, unit_index)?;
         let mut unit_challenges =
             derive_pcs_transcript_challenges_from_segments(PcsTranscriptSegmentInputs {
                 unit_index,
                 unit,
                 material: material_unit,
                 public_values: &public_value_fields,
-                unit_values: &[],
+                unit_values: &unit_values,
                 witness: &witness,
                 evaluations: evaluation_unit,
                 fri: fri_unit,
@@ -1536,6 +1541,73 @@ fn derive_global_constraint_challenges(
     }
 
     Ok(challenges)
+}
+
+fn load_unit_values(
+    schedule: &ProveSchedule,
+    proof: &ProofArtifact,
+    unit_index: usize,
+) -> Result<Vec<Felt>, String> {
+    let unit = schedule
+        .units
+        .get(unit_index)
+        .ok_or_else(|| format!("unit values segment mismatch for unit {unit_index}"))?;
+    let expected_count = expected_packed_unit_value_count(&unit.unit_value_map)
+        .map_err(|error| format!("unit values segment metadata invalid: {error}"))?;
+    let segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == UNIT_VALUES_SEGMENT_ID);
+    let parsed = match segment {
+        Some(segment) => Some(
+            parse_unit_values_segment(&segment.data)
+                .map_err(|error| format!("invalid unit values segment: {error}"))?,
+        ),
+        None => None,
+    };
+    let unit_index_u32 =
+        u32::try_from(unit_index).map_err(|_| "unit values segment unit index overflow")?;
+    let unit_values = parsed.as_ref().and_then(|parsed| {
+        parsed
+            .units
+            .iter()
+            .find(|unit| unit.unit_index == unit_index_u32)
+    });
+
+    if expected_count == 0 {
+        if unit_values.is_some() {
+            return Err(format!(
+                "unexpected unit values segment for unit {unit_index}"
+            ));
+        }
+        return Ok(Vec::new());
+    }
+
+    let unit_values = match (segment, unit_values) {
+        (None, _) => return Err("missing unit values segment".to_owned()),
+        (Some(_), None) => {
+            return Err(format!("missing unit values segment for unit {unit_index}"));
+        }
+        (Some(_), Some(values)) => values,
+    };
+    if unit_values.values.len() != expected_count {
+        return Err(format!(
+            "unit values segment count mismatch for unit {unit_index}: expected {expected_count}, found {}",
+            unit_values.values.len()
+        ));
+    }
+
+    unit_values
+        .values
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, value)| {
+            Felt::from_canonical(value).map_err(|error| {
+                format!("invalid unit values segment value {index} for unit {unit_index}: {error}")
+            })
+        })
+        .collect()
 }
 
 fn load_pcs_proof_values(
