@@ -6,6 +6,7 @@ use lzvm_artifacts::constraint_program::GlobalConstraintProgram;
 use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::ExpressionProgram;
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
+use lzvm_artifacts::guest_image::GuestImageError;
 use lzvm_artifacts::key_directory::{
     KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry, KeyUnitKind, KeyUnitPaths,
 };
@@ -170,6 +171,21 @@ fn temp_dir(name: &str) -> PathBuf {
     ))
 }
 
+fn sample_guest_image() -> Vec<u8> {
+    let mut bytes = vec![0_u8; 64];
+    bytes[0..4].copy_from_slice(b"\x7fELF");
+    bytes[4] = 2;
+    bytes[5] = 1;
+    bytes[6] = 1;
+    bytes[16..18].copy_from_slice(&2_u16.to_le_bytes());
+    bytes[18..20].copy_from_slice(&243_u16.to_le_bytes());
+    bytes[20..24].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[24..32].copy_from_slice(&0x8000_0000_u64.to_le_bytes());
+    bytes[32..40].copy_from_slice(&64_u64.to_le_bytes());
+    bytes[52..54].copy_from_slice(&64_u16.to_le_bytes());
+    bytes
+}
+
 #[test]
 fn derives_prove_schedule_from_key_directory_catalog() {
     let catalog = sample_catalog(vec![
@@ -309,7 +325,7 @@ fn derives_prove_execution_plan_with_input_artifacts() {
     let guest_image = dir.join("guest.elf");
     let public_inputs = dir.join("public-inputs.bin");
     fs::write(&witness_library, [1_u8]).expect("witness library should be written");
-    fs::write(&guest_image, [2_u8]).expect("guest image should be written");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
     fs::write(&public_inputs, [3_u8]).expect("public inputs should be written");
 
     let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
@@ -332,6 +348,9 @@ fn derives_prove_execution_plan_with_input_artifacts() {
     assert_eq!(plan.inputs.witness_library, witness_library);
     assert_eq!(plan.inputs.guest_image, guest_image);
     assert_eq!(plan.inputs.public_inputs, Some(public_inputs));
+    assert_eq!(plan.guest_image_info.byte_len, 64);
+    assert_eq!(plan.guest_image_info.machine, 243);
+    assert_eq!(plan.guest_image_info.entry, 0x8000_0000);
 }
 
 #[test]
@@ -361,5 +380,37 @@ fn rejects_prove_execution_plan_with_missing_witness_library() {
     assert!(matches!(
         result,
         Err(ProveExecutionPlanError::MissingWitnessLibrary { path }) if path == witness_library
+    ));
+}
+
+#[test]
+fn rejects_prove_execution_plan_with_invalid_guest_image() {
+    let dir = temp_dir("invalid-guest-image");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    fs::write(&witness_library, [1_u8]).expect("witness library should be written");
+    fs::write(&guest_image, b"not-an-elf").expect("guest image should be written");
+
+    let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
+        options: ProveRunOptions::default_for_output(dir.join("out")),
+        gpu: GpuRunOptions::default(),
+    };
+    let inputs = ProveExecutionInputArtifacts {
+        witness_library,
+        guest_image: guest_image.clone(),
+        public_inputs: None,
+    };
+
+    let result = derive_prove_execution_plan(&catalog, request, inputs);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        result,
+        Err(ProveExecutionPlanError::InvalidGuestImage { path, source })
+            if path == guest_image && source == GuestImageError::InvalidMagic
     ));
 }

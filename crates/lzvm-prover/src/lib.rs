@@ -2,6 +2,7 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use lzvm_artifacts::guest_image::{read_guest_image_file, GuestImageError, GuestImageInfo};
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryError, KeyUnitKind,
 };
@@ -250,17 +251,34 @@ pub struct ProveExecutionInputArtifacts {
 pub struct ProveExecutionPlan {
     pub run_plan: ProveRunPlan,
     pub inputs: ProveExecutionInputArtifacts,
+    pub guest_image_info: GuestImageInfo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProveExecutionPlanError {
     RunPlan(ProveRunPlanError),
-    MissingWitnessLibrary { path: PathBuf },
-    WitnessLibraryIsNotFile { path: PathBuf },
-    MissingGuestImage { path: PathBuf },
-    GuestImageIsNotFile { path: PathBuf },
-    MissingPublicInputs { path: PathBuf },
-    PublicInputsIsNotFile { path: PathBuf },
+    MissingWitnessLibrary {
+        path: PathBuf,
+    },
+    WitnessLibraryIsNotFile {
+        path: PathBuf,
+    },
+    MissingGuestImage {
+        path: PathBuf,
+    },
+    GuestImageIsNotFile {
+        path: PathBuf,
+    },
+    InvalidGuestImage {
+        path: PathBuf,
+        source: GuestImageError,
+    },
+    MissingPublicInputs {
+        path: PathBuf,
+    },
+    PublicInputsIsNotFile {
+        path: PathBuf,
+    },
 }
 
 impl fmt::Display for ProveExecutionPlanError {
@@ -291,6 +309,11 @@ impl fmt::Display for ProveExecutionPlanError {
                 "prove execution plan guest image is not a file: {}",
                 path.display()
             ),
+            Self::InvalidGuestImage { path, source } => write!(
+                f,
+                "prove execution plan guest image is invalid: {}: {source}",
+                path.display()
+            ),
             Self::MissingPublicInputs { path } => {
                 write!(
                     f,
@@ -307,7 +330,15 @@ impl fmt::Display for ProveExecutionPlanError {
     }
 }
 
-impl std::error::Error for ProveExecutionPlanError {}
+impl std::error::Error for ProveExecutionPlanError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidGuestImage { source, .. } => Some(source),
+            Self::RunPlan(error) => Some(error),
+            _ => None,
+        }
+    }
+}
 
 impl From<ProveRunPlanError> for ProveExecutionPlanError {
     fn from(error: ProveRunPlanError) -> Self {
@@ -387,6 +418,12 @@ pub fn derive_prove_execution_plan(
         |path| ProveExecutionPlanError::MissingGuestImage { path },
         |path| ProveExecutionPlanError::GuestImageIsNotFile { path },
     )?;
+    let guest_image_info = read_guest_image_file(&inputs.guest_image).map_err(|source| {
+        ProveExecutionPlanError::InvalidGuestImage {
+            path: inputs.guest_image.clone(),
+            source,
+        }
+    })?;
     if let Some(public_inputs) = &inputs.public_inputs {
         validate_regular_file(
             public_inputs,
@@ -395,7 +432,11 @@ pub fn derive_prove_execution_plan(
         )?;
     }
 
-    Ok(ProveExecutionPlan { run_plan, inputs })
+    Ok(ProveExecutionPlan {
+        run_plan,
+        inputs,
+        guest_image_info,
+    })
 }
 
 pub fn derive_prove_run_plan(
