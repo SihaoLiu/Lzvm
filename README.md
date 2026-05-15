@@ -29,6 +29,14 @@ cargo run -p lzvm-cli -- setup validate <setup-dir>
 
 The command loads the discovered setup catalog, validates companion metadata and binary artifacts, and prints a stable summary.
 
+Check proof and public-value artifact consistency:
+
+```sh
+cargo run -p lzvm-cli -- verify preflight <proof-bin> <public-values-json>
+```
+
+This command parses the native proof envelope and public-values JSON, checks that setup hashes match, checks that the proof envelope references the canonical public-values hash, and prints a stable summary. It is an artifact preflight check, not a full proof verifier.
+
 Encode setup metadata JSON into the repository-owned binary setup format:
 
 ```sh

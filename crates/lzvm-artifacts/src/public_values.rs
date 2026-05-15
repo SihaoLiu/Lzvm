@@ -2,6 +2,8 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::path::Path;
 
+use sha2::{Digest, Sha256};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublicValues {
     pub schema_version: u32,
@@ -160,6 +162,12 @@ pub fn encode_public_values_json(value: &PublicValues) -> Result<String, PublicV
     }
     out.push_str("]}");
     Ok(out)
+}
+
+pub fn public_values_digest(value: &PublicValues) -> Result<[u8; 32], PublicValuesError> {
+    let encoded = encode_public_values_json(value)?;
+    let digest = Sha256::digest(encoded.as_bytes());
+    Ok(digest.into())
 }
 
 fn validate_public_values(value: &PublicValues) -> Result<(), PublicValuesError> {

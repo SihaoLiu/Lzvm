@@ -8,6 +8,8 @@ use lzvm_artifacts::fixed::{
 use lzvm_artifacts::key_directory::{
     read_key_directory_catalog, read_key_directory_layout, validate_key_directory_layout,
 };
+use lzvm_artifacts::proof::read_proof_artifact_file;
+use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, read_unit_setup_info_file,
 };
@@ -21,6 +23,10 @@ use serde_json::Value;
 
 pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
+        ["verify", "preflight", proof_bin, public_values_json] => {
+            verify_preflight(proof_bin, public_values_json, stdout, stderr)
+        }
+        ["verify", "preflight", ..] => write_verify_preflight_usage(stderr),
         ["setup", "validate", setup_dir] => validate_setup_directory(setup_dir, stdout, stderr),
         ["setup", "validate", ..] => write_validate_usage(stderr),
         ["setup", "write-info-bin", setup_info, out_setup_info_bin] => {
@@ -207,6 +213,51 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
         ["setup", "write-const-native", ..] => write_const_native_usage(stderr),
         _ => write_validate_usage(stderr),
     }
+}
+
+fn verify_preflight(
+    proof_bin: &str,
+    public_values_json: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let proof = match read_proof_artifact_file(proof_bin) {
+        Ok(proof) => proof,
+        Err(error) => {
+            let _ = writeln!(stderr, "verify preflight failed: {error}");
+            return 1;
+        }
+    };
+    let public_values = match read_public_values_file(public_values_json) {
+        Ok(public_values) => public_values,
+        Err(error) => {
+            let _ = writeln!(stderr, "verify preflight failed: {error}");
+            return 1;
+        }
+    };
+    if proof.setup_hash != public_values.setup_hash {
+        let _ = writeln!(stderr, "verify preflight failed: setup hash mismatch");
+        return 1;
+    }
+    let digest = match public_values_digest(&public_values) {
+        Ok(digest) => digest,
+        Err(error) => {
+            let _ = writeln!(stderr, "verify preflight failed: {error}");
+            return 1;
+        }
+    };
+    if proof.public_values_hash != digest {
+        let _ = writeln!(
+            stderr,
+            "verify preflight failed: public-values hash mismatch"
+        );
+        return 1;
+    }
+
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "segments={}", proof.segments.len());
+    let _ = writeln!(stdout, "public_values={}", public_values.values.len());
+    0
 }
 
 fn validate_setup_directory(
@@ -865,6 +916,14 @@ fn read_u64_array(
 
 fn write_validate_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(stderr, "usage: lzvm setup validate <setup-dir>");
+    2
+}
+
+fn write_verify_preflight_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm verify preflight <proof-bin> <public-values-json>"
+    );
     2
 }
 
