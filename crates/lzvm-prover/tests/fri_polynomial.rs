@@ -71,6 +71,100 @@ fn builds_fri_polynomial_from_expression_program_over_extended_rows() {
     );
 }
 
+#[test]
+fn reads_domain_and_zerofier_helper_values() {
+    let program = ExpressionProgram {
+        max_tmp1: 1,
+        max_tmp3: 0,
+        max_args: 8,
+        max_ops: 1,
+        entries: vec![ExpressionEntry {
+            expression_id: 8,
+            destination_dimension: 1,
+            destination_id: 0,
+            stage: 3,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 8,
+            args_offset: 0,
+            source_line: "native helper row".to_owned(),
+        }],
+        ops: vec![0],
+        args: vec![0, 0, 3, 0, 0, 3, 1, 0],
+        numbers: Vec::new(),
+    };
+    let zerofier_values = [felt(3), felt(4)];
+
+    let polynomial = build_fri_polynomial(
+        &program,
+        8,
+        FriPolynomialInputs {
+            domain_size: 2,
+            stage_count: 1,
+            fixed_columns: FriPolynomialColumnMatrix::default(),
+            domain_points: &[felt(10), felt(20)],
+            zerofier_values: FriPolynomialColumnMatrix {
+                column_count: 1,
+                values: &zerofier_values,
+            },
+            ..FriPolynomialInputs::default()
+        },
+    )
+    .expect("polynomial should build");
+
+    assert_eq!(
+        polynomial,
+        vec![Ext3::from_u64s([13, 0, 0]), Ext3::from_u64s([24, 0, 0])]
+    );
+}
+
+#[test]
+fn computes_opening_denominator_helpers_from_domain_points_and_opening_xis() {
+    let program = ExpressionProgram {
+        max_tmp1: 0,
+        max_tmp3: 1,
+        max_args: 8,
+        max_ops: 1,
+        entries: vec![ExpressionEntry {
+            expression_id: 9,
+            destination_dimension: 3,
+            destination_id: 0,
+            stage: 3,
+            temp1_count: 0,
+            temp3_count: 1,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 8,
+            args_offset: 0,
+            source_line: "native opening row".to_owned(),
+        }],
+        ops: vec![2],
+        args: vec![0, 0, 4, 0, 0, 8, 0, 0],
+        numbers: vec![0, 0, 0],
+    };
+    let expected = (Ext3::from_u64s([5, 0, 0]) - Ext3::from_u64s([2, 1, 0]))
+        .inverse()
+        .expect("denominator should be nonzero");
+
+    let polynomial = build_fri_polynomial(
+        &program,
+        9,
+        FriPolynomialInputs {
+            domain_size: 1,
+            stage_count: 1,
+            fixed_columns: FriPolynomialColumnMatrix::default(),
+            domain_points: &[felt(5)],
+            opening_xis: &[Ext3::from_u64s([2, 1, 0])],
+            ..FriPolynomialInputs::default()
+        },
+    )
+    .expect("polynomial should build");
+
+    assert_eq!(polynomial, vec![expected]);
+}
+
 fn felt(value: u64) -> Felt {
     Felt::from_u64(value)
 }
