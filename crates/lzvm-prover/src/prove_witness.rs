@@ -12,6 +12,10 @@ use lzvm_artifacts::pcs_material_segment::{
     encode_pcs_material_manifest_segment, PcsMaterialManifestSegment,
     PcsMaterialManifestSegmentError, PcsMaterialManifestUnit, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
+use lzvm_artifacts::pcs_nonce_segment::{
+    encode_pcs_query_nonce_segment, PcsQueryNonceSegment, PcsQueryNonceSegmentError,
+    PCS_QUERY_NONCE_SEGMENT_ID,
+};
 use lzvm_artifacts::pcs_query_segment::{
     encode_pcs_query_plan_segment, parse_pcs_query_plan_segment, PcsQueryPlanSegment,
     PcsQueryPlanSegmentError, PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
@@ -32,7 +36,9 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
 use crate::constant_tree_opening::{open_constant_tree_row, ConstantTreeOpeningError};
-use crate::pcs_challenge::{derive_fri_queries, verify_query_nonce, PcsChallengeError};
+use crate::pcs_challenge::{
+    derive_fri_queries, find_query_nonce, verify_query_nonce, PcsChallengeError,
+};
 use crate::witness_commitment::{
     commit_witness_trace_stages, open_witness_stage_commitment, WitnessStageOpeningError,
     WitnessTraceCommitmentError, WitnessTraceCommitments,
@@ -137,6 +143,7 @@ pub enum ProvePcsQueryPlanSegmentError {
     Challenge(PcsChallengeError),
     LengthOverflow,
     Segment(PcsQueryPlanSegmentError),
+    NonceSegment(PcsQueryNonceSegmentError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -307,6 +314,9 @@ impl fmt::Display for ProvePcsQueryPlanSegmentError {
             Self::Challenge(error) => write!(f, "prove PCS query plan challenge failed: {error}"),
             Self::LengthOverflow => write!(f, "prove PCS query plan length overflow"),
             Self::Segment(error) => write!(f, "prove PCS query plan encode failed: {error}"),
+            Self::NonceSegment(error) => {
+                write!(f, "prove PCS query nonce segment encode failed: {error}")
+            }
         }
     }
 }
@@ -397,6 +407,7 @@ impl std::error::Error for ProvePcsQueryPlanSegmentError {
             Self::InvalidWitnessSegment { source, .. } => Some(source),
             Self::Challenge(error) => Some(error),
             Self::Segment(error) => Some(error),
+            Self::NonceSegment(error) => Some(error),
             Self::MissingWitnessSegments
             | Self::UnitIndexOutOfRange { .. }
             | Self::WitnessUnitMismatch { .. }
@@ -455,6 +466,12 @@ impl From<PcsQueryPlanSegmentError> for ProvePcsQueryPlanSegmentError {
 impl From<PcsChallengeError> for ProvePcsQueryPlanSegmentError {
     fn from(error: PcsChallengeError) -> Self {
         Self::Challenge(error)
+    }
+}
+
+impl From<PcsQueryNonceSegmentError> for ProvePcsQueryPlanSegmentError {
+    fn from(error: PcsQueryNonceSegmentError) -> Self {
+        Self::NonceSegment(error)
     }
 }
 
@@ -666,6 +683,26 @@ pub fn build_pcs_query_plan_segment(
     Ok(ProofSegment {
         id: PCS_QUERY_PLAN_SEGMENT_ID,
         data: encode_pcs_query_plan_segment(&query_plan)?,
+    })
+}
+
+pub fn build_pcs_query_nonce_segment(
+    schedule: &ProveSchedule,
+    challenge: Ext3,
+) -> Result<ProofSegment, ProvePcsQueryPlanSegmentError> {
+    let bits = schedule
+        .units
+        .iter()
+        .map(|unit| unit.proof_of_work_bits)
+        .max()
+        .unwrap_or(0);
+    let nonce = find_query_nonce(challenge, bits)?;
+    let segment = PcsQueryNonceSegment {
+        nonce: nonce.to_u64(),
+    };
+    Ok(ProofSegment {
+        id: PCS_QUERY_NONCE_SEGMENT_ID,
+        data: encode_pcs_query_nonce_segment(&segment)?,
     })
 }
 
