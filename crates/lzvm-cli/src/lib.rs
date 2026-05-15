@@ -23,10 +23,12 @@ use lzvm_setup::{
 };
 use serde_json::Value;
 
+mod prove_inputs;
 mod prove_plan;
 
 pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
+        ["prove", "inputs", rest @ ..] => prove_inputs::run(rest, stdout, stderr),
         ["prove", "plan", rest @ ..] => prove_plan::run(rest, stdout, stderr),
         ["prove", "schedule", setup_dir] => prove_schedule(setup_dir, stdout, stderr),
         ["prove", "schedule", ..] => write_prove_schedule_usage(stderr),

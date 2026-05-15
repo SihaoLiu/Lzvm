@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use lzvm_artifacts::key_directory::read_key_directory_catalog;
 use lzvm_prover::{
     derive_prove_run_plan, GpuRunOptions, ProvePartitionPlan, ProvePassKind, ProvePassRequest,
-    ProveRunOptions, ProveRunRequest,
+    ProveRunOptions, ProveRunPlan, ProveRunRequest,
 };
 
 pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -33,61 +33,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
 
-    let _ = writeln!(stdout, "status=ok");
-    let _ = writeln!(stdout, "pass={}", format_pass_kind(plan.pass.kind()));
-    let _ = writeln!(stdout, "units={}", plan.schedule.unit_count);
-    let _ = writeln!(stdout, "fixed_bytes={}", plan.schedule.total_fixed_bytes);
-    let _ = writeln!(stdout, "queries={}", plan.schedule.total_query_count);
-    let _ = writeln!(
-        stdout,
-        "max_extended_domain_bits={}",
-        plan.schedule.max_extended_domain_bits
-    );
-    if let ProvePassRequest::Contributions(partitions) | ProvePassRequest::Full(partitions) =
-        &plan.pass
-    {
-        let _ = writeln!(stdout, "partitions={}", partitions.partition_count);
-        let _ = writeln!(
-            stdout,
-            "partition_ids={}",
-            format_partition_ids(&partitions.partition_ids)
-        );
-        let _ = writeln!(stdout, "worker={}", partitions.worker_index);
-        let _ = writeln!(
-            stdout,
-            "input_data={}",
-            partitions
-                .input_data
-                .as_ref()
-                .map(|path| path.display().to_string())
-                .unwrap_or_else(|| "none".to_owned())
-        );
-    }
-    let _ = writeln!(stdout, "aggregate={}", plan.options.aggregate);
-    let _ = writeln!(
-        stdout,
-        "remote_aggregation={}",
-        plan.options.remote_aggregation
-    );
-    let _ = writeln!(stdout, "final_wrap={}", plan.options.final_wrap);
-    let _ = writeln!(stdout, "verify_outputs={}", plan.options.verify_outputs);
-    let _ = writeln!(stdout, "save_outputs={}", plan.options.save_outputs);
-    let _ = writeln!(stdout, "minimal_memory={}", plan.options.minimal_memory);
-    let _ = writeln!(stdout, "output={}", plan.options.output_dir.display());
-    let _ = writeln!(stdout, "gpu_preallocate={}", plan.gpu.preallocate);
-    let _ = writeln!(stdout, "gpu_streams={}", plan.gpu.max_streams);
-    let _ = writeln!(
-        stdout,
-        "witness_thread_pools={}",
-        plan.gpu.witness_thread_pools
-    );
-    let _ = writeln!(stdout, "stored_witnesses={}", plan.gpu.max_stored_witnesses);
-    let _ = writeln!(stdout, "pack_trace={}", plan.gpu.pack_trace);
-    let _ = writeln!(
-        stdout,
-        "setup_hash={}",
-        format_hash(&plan.schedule.setup_hash)
-    );
+    write_run_plan_summary(stdout, &plan);
     0
 }
 
@@ -96,12 +42,29 @@ struct ParsedProvePlan {
     request: ProveRunRequest,
 }
 
-enum ParseError {
+pub(crate) struct ParsedRunArgs {
+    pub positionals: Vec<PathBuf>,
+    pub request: ProveRunRequest,
+}
+
+pub(crate) enum ParseError {
     Usage,
     Invalid(String),
 }
 
 fn parse_args(args: &[&str]) -> Result<ParsedProvePlan, ParseError> {
+    let parsed = parse_run_args(args, 2, 2)?;
+    Ok(ParsedProvePlan {
+        setup_dir: parsed.positionals[0].clone(),
+        request: parsed.request,
+    })
+}
+
+pub(crate) fn parse_run_args(
+    args: &[&str],
+    min_positionals: usize,
+    max_positionals: usize,
+) -> Result<ParsedRunArgs, ParseError> {
     let mut aggregate = false;
     let mut remote_aggregation = false;
     let mut final_wrap = false;
@@ -165,12 +128,15 @@ fn parse_args(args: &[&str]) -> Result<ParsedProvePlan, ParseError> {
         index += 1;
     }
 
-    if positionals.len() != 2 {
+    if positionals.len() < min_positionals || positionals.len() > max_positionals {
         return Err(ParseError::Usage);
     }
 
-    let setup_dir = PathBuf::from(positionals[0]);
-    let output_dir = PathBuf::from(positionals[1]);
+    let positionals = positionals
+        .into_iter()
+        .map(PathBuf::from)
+        .collect::<Vec<_>>();
+    let output_dir = positionals[1].clone();
     let options = ProveRunOptions {
         aggregate,
         remote_aggregation,
@@ -187,8 +153,8 @@ fn parse_args(args: &[&str]) -> Result<ParsedProvePlan, ParseError> {
         worker_index,
     });
 
-    Ok(ParsedProvePlan {
-        setup_dir,
+    Ok(ParsedRunArgs {
+        positionals,
         request: ProveRunRequest { pass, options, gpu },
     })
 }
@@ -234,7 +200,65 @@ fn format_partition_ids(partition_ids: &[u32]) -> String {
         .join(",")
 }
 
-fn format_hash(hash: &[u8; 32]) -> String {
+pub(crate) fn write_run_plan_summary(stdout: &mut dyn Write, plan: &ProveRunPlan) {
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "pass={}", format_pass_kind(plan.pass.kind()));
+    let _ = writeln!(stdout, "units={}", plan.schedule.unit_count);
+    let _ = writeln!(stdout, "fixed_bytes={}", plan.schedule.total_fixed_bytes);
+    let _ = writeln!(stdout, "queries={}", plan.schedule.total_query_count);
+    let _ = writeln!(
+        stdout,
+        "max_extended_domain_bits={}",
+        plan.schedule.max_extended_domain_bits
+    );
+    if let ProvePassRequest::Contributions(partitions) | ProvePassRequest::Full(partitions) =
+        &plan.pass
+    {
+        let _ = writeln!(stdout, "partitions={}", partitions.partition_count);
+        let _ = writeln!(
+            stdout,
+            "partition_ids={}",
+            format_partition_ids(&partitions.partition_ids)
+        );
+        let _ = writeln!(stdout, "worker={}", partitions.worker_index);
+        let _ = writeln!(
+            stdout,
+            "input_data={}",
+            partitions
+                .input_data
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "none".to_owned())
+        );
+    }
+    let _ = writeln!(stdout, "aggregate={}", plan.options.aggregate);
+    let _ = writeln!(
+        stdout,
+        "remote_aggregation={}",
+        plan.options.remote_aggregation
+    );
+    let _ = writeln!(stdout, "final_wrap={}", plan.options.final_wrap);
+    let _ = writeln!(stdout, "verify_outputs={}", plan.options.verify_outputs);
+    let _ = writeln!(stdout, "save_outputs={}", plan.options.save_outputs);
+    let _ = writeln!(stdout, "minimal_memory={}", plan.options.minimal_memory);
+    let _ = writeln!(stdout, "output={}", plan.options.output_dir.display());
+    let _ = writeln!(stdout, "gpu_preallocate={}", plan.gpu.preallocate);
+    let _ = writeln!(stdout, "gpu_streams={}", plan.gpu.max_streams);
+    let _ = writeln!(
+        stdout,
+        "witness_thread_pools={}",
+        plan.gpu.witness_thread_pools
+    );
+    let _ = writeln!(stdout, "stored_witnesses={}", plan.gpu.max_stored_witnesses);
+    let _ = writeln!(stdout, "pack_trace={}", plan.gpu.pack_trace);
+    let _ = writeln!(
+        stdout,
+        "setup_hash={}",
+        format_hash(&plan.schedule.setup_hash)
+    );
+}
+
+pub(crate) fn format_hash(hash: &[u8; 32]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(64);
     for byte in hash {

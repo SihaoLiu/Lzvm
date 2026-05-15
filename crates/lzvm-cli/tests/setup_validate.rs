@@ -7,6 +7,7 @@ use lzvm_artifacts::constraint_program::{
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
+use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
     read_key_directory_layout, KeyUnitPaths,
@@ -169,6 +170,21 @@ fn sample_raw_fixed_columns() -> Vec<u8> {
     for value in [1_u64, 10, 2, 20] {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
+    bytes
+}
+
+fn sample_guest_image() -> Vec<u8> {
+    let mut bytes = vec![0_u8; 64];
+    bytes[0..4].copy_from_slice(b"\x7fELF");
+    bytes[4] = 2;
+    bytes[5] = 1;
+    bytes[6] = 1;
+    bytes[16..18].copy_from_slice(&2_u16.to_le_bytes());
+    bytes[18..20].copy_from_slice(&243_u16.to_le_bytes());
+    bytes[20..24].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[24..32].copy_from_slice(&0x8000_0000_u64.to_le_bytes());
+    bytes[32..40].copy_from_slice(&64_u64.to_le_bytes());
+    bytes[52..54].copy_from_slice(&64_u16.to_le_bytes());
     bytes
 }
 
@@ -437,6 +453,99 @@ fn rejects_prove_run_plan_with_invalid_partition() {
 }
 
 #[test]
+fn prints_prove_inputs_for_setup_directory() {
+    let dir = temp_dir("prove-inputs");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let expected = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let output_dir = dir.join("proof-out");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let public_inputs = dir.join("public-inputs.bin");
+    write_bytes(&witness_library, [1_u8]);
+    let guest_image_bytes = sample_guest_image();
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    write_bytes(&guest_image, &guest_image_bytes);
+    write_bytes(&public_inputs, [3_u8]);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_inputs
+                .to_str()
+                .expect("public inputs path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs={}\n",
+            output_dir.display(),
+            witness_library.display(),
+            guest_image.display(),
+            format_hash(&guest_image_info.digest),
+            public_inputs.display()
+        )
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn rejects_prove_inputs_with_invalid_guest_image() {
+    let dir = temp_dir("prove-inputs-invalid-guest");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    write_bytes(&witness_library, [1_u8]);
+    write_bytes(&guest_image, b"not-an-elf");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        format!(
+            "prove inputs failed: prove execution plan guest image is invalid: {}: invalid guest image magic\n",
+            guest_image.display()
+        )
+    );
+}
+
+#[test]
 fn runs_setup_aware_verify_preflight() {
     let dir = temp_dir("verify-setup-preflight");
     let _ = fs::remove_dir_all(&dir);
@@ -559,6 +668,20 @@ fn reports_usage_for_missing_prove_plan_paths() {
 }
 
 #[test]
+fn reports_usage_for_missing_prove_input_paths() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(&["prove", "inputs"], &mut stdout, &mut stderr);
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "usage: lzvm prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n"
+    );
+}
+
+#[test]
 fn reports_usage_for_missing_setup_preflight_inputs() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -570,4 +693,14 @@ fn reports_usage_for_missing_setup_preflight_inputs() {
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "usage: lzvm verify setup-preflight <setup-dir> <proof-bin> <public-values-json>\n"
     );
+}
+
+fn format_hash(hash: &[u8; 32]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(64);
+    for byte in hash {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
 }
