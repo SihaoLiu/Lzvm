@@ -14,6 +14,9 @@ use lzvm_artifacts::fixed::{
 };
 use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo};
 use lzvm_artifacts::group_values_segment::{parse_group_values_segment, GROUP_VALUES_SEGMENT_ID};
+use lzvm_artifacts::hint_program::{
+    encode_regular_hint_program, regular_hint_program_from_expression_info,
+};
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
     read_key_directory_layout, validate_key_directory_layout, KeyDirectoryCatalog,
@@ -38,6 +41,7 @@ use lzvm_artifacts::pcs_query_segment::{
 };
 use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file, PublicValues};
+use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, UnitSetupInfo,
 };
@@ -2102,6 +2106,12 @@ fn write_base_directory(
                 return 1;
             }
         }
+        if let Some(path) = unit.expression_program() {
+            if let Err(error) = write_regular_hint_program_for_directory(&path, &expressions) {
+                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
+                return 1;
+            }
+        }
         let verifier_path = match unit.verifier_info() {
             Some(path) => path,
             None => {
@@ -2243,6 +2253,45 @@ fn write_expression_info_binary_for_directory(
     std::fs::write(path, &bytes).map_err(|error| {
         format!(
             "write expression metadata binary failed: {}: {error}",
+            path.display()
+        )
+    })?;
+    Ok(bytes.len() as u64)
+}
+
+fn write_regular_hint_program_for_directory(
+    path: &Path,
+    expressions: &ExpressionInfo,
+) -> Result<u64, String> {
+    let program = regular_hint_program_from_expression_info(expressions)
+        .map_err(|error| error.to_string())?;
+    let hint_file = encode_regular_hint_program(&program).map_err(|error| error.to_string())?;
+    let hint_section = parse_sectioned_file(&hint_file, *b"chps", 1)
+        .map_err(|error| error.to_string())?
+        .sections
+        .into_iter()
+        .find(|section| section.id == 3)
+        .ok_or_else(|| "encoded hint program is missing hint section".to_owned())?;
+
+    let existing = std::fs::read(path).map_err(|error| {
+        format!(
+            "read expression program for hint merge failed: {}: {error}",
+            path.display()
+        )
+    })?;
+    let mut file = parse_sectioned_file(&existing, *b"chps", 1).map_err(|error| {
+        format!(
+            "parse expression program for hint merge failed: {}: {error}",
+            path.display()
+        )
+    })?;
+    file.sections.retain(|section| section.id != 3);
+    file.sections.push(hint_section);
+    file.sections.sort_by_key(|section| section.id);
+    let bytes = encode_sectioned_file(&file).map_err(|error| error.to_string())?;
+    std::fs::write(path, &bytes).map_err(|error| {
+        format!(
+            "write expression program hint section failed: {}: {error}",
             path.display()
         )
     })?;

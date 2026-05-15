@@ -16,6 +16,7 @@ use lzvm_artifacts::fixed::{encode_raw_fixed_columns, FixedColumn, FixedColumns}
 use lzvm_artifacts::global_info::{
     encode_global_info, parse_global_info_json, read_global_info_binary_file,
 };
+use lzvm_artifacts::hint_program::{read_regular_hint_program_file, HintOperand};
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyUnitPaths};
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, read_pcs_setup_material_file};
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, read_pcs_setup_plan_file};
@@ -90,7 +91,19 @@ fn sample_setup_info_json() -> &'static str {
 
 fn sample_expression_info_json() -> &'static str {
     r#"{
-        "hintsInfo": [],
+        "hintsInfo": [
+            {
+                "name": "hint-a",
+                "fields": [
+                    {
+                        "name": "field-a",
+                        "values": [
+                            {"op": "cm", "id": 0, "rowOffset": 0, "rowOffsetIndex": 0, "stage": 1, "stageId": 0, "dim": 1, "pos": [0]}
+                        ]
+                    }
+                ]
+            }
+        ],
         "expressionsCode": [
             {
                 "expId": 7,
@@ -500,6 +513,44 @@ fn writes_base_directory_expression_metadata_binary() {
         let expressions =
             read_expression_info_binary_file(path).expect("binary expressions should parse");
         assert_eq!(expressions, expected);
+    }
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn writes_base_directory_regular_hint_programs_from_expression_metadata() {
+    let (dir, _) = create_key_directory("regular-hints");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "write-base-directory",
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    for unit in &layout.units {
+        let path = unit
+            .expression_program()
+            .expect("expression program path should derive");
+        let hints = read_regular_hint_program_file(path).expect("hint program should parse");
+        assert_eq!(hints.hints.len(), 1);
+        assert_eq!(hints.hints[0].name, "hint-a");
+        assert_eq!(
+            hints.hints[0].fields[0].values[0].operand,
+            HintOperand::Commitment {
+                id: 0,
+                row_offset_index: 0
+            }
+        );
     }
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
