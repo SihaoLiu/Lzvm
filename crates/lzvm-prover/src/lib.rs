@@ -40,6 +40,7 @@ pub mod verifier_query;
 pub mod witness_commitment;
 pub mod witness_layout;
 pub mod witness_loader;
+pub mod witness_opening;
 pub mod witness_runner;
 pub mod witness_trace;
 

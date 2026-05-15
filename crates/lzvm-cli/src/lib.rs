@@ -41,9 +41,6 @@ use lzvm_artifacts::verification_key::{read_verification_key_binary_file, Verifi
 use lzvm_artifacts::verifier_info::{
     encode_verifier_info, read_verifier_info_binary_file, VerifierInfo,
 };
-use lzvm_artifacts::witness_opening_segment::{
-    parse_witness_opening_segment, WITNESS_OPENING_SEGMENT_ID,
-};
 use lzvm_artifacts::witness_segment::{
     parse_witness_commitment_segment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
@@ -78,6 +75,7 @@ use lzvm_prover::verifier_query::{
 use lzvm_prover::witness_commitment::{
     load_witness_commitment_segments, verify_witness_stage_opening_root, WitnessStageOpening,
 };
+use lzvm_prover::witness_opening::load_witness_opening_segment_from_segments;
 use lzvm_prover::{
     build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_transcript_segments,
     derive_prove_schedule, ProveSchedule,
@@ -658,13 +656,8 @@ fn validate_witness_opening_segment(
 ) -> Result<(), String> {
     let query_plan =
         load_pcs_query_plan_from_segments(&proof.segments).map_err(|error| error.to_string())?;
-    let opening_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == WITNESS_OPENING_SEGMENT_ID)
-        .ok_or_else(|| "missing witness opening segment".to_owned())?;
-    let opening = parse_witness_opening_segment(&opening_segment.data)
-        .map_err(|error| format!("invalid witness opening segment: {error}"))?;
+    let opening = load_witness_opening_segment_from_segments(&proof.segments)
+        .map_err(|error| error.to_string())?;
     if opening.units.len() != query_plan.units.len() {
         return Err("witness opening segment unit count mismatch".to_owned());
     }
@@ -1159,14 +1152,8 @@ fn validate_pcs_fri_query_outputs(input: PcsFriQueryOutputValidation<'_>) -> Res
                 input.unit_index
             )
         })?;
-    let witness_segment = input
-        .proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == WITNESS_OPENING_SEGMENT_ID)
-        .ok_or_else(|| "missing witness opening segment".to_owned())?;
-    let witness_opening = parse_witness_opening_segment(&witness_segment.data)
-        .map_err(|error| format!("invalid witness opening segment: {error}"))?;
+    let witness_opening = load_witness_opening_segment_from_segments(&input.proof.segments)
+        .map_err(|error| error.to_string())?;
     let witness_unit = witness_opening
         .units
         .iter()
