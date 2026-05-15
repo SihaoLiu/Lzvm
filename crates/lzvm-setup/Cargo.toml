@@ -11,3 +11,4 @@ path = "src/lib.rs"
 
 [dependencies]
 lzvm-artifacts = { path = "../lzvm-artifacts" }
+lzvm-field = { path = "../lzvm-field" }

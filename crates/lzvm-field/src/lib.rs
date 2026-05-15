@@ -48,6 +48,23 @@ pub enum FieldError {
     NonCanonical { value: u64 },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DomainError {
+    UnsupportedBits {
+        bits: usize,
+        max_bits: usize,
+    },
+    LengthMismatch {
+        expected: usize,
+        found: usize,
+    },
+    InvalidExtensionBits {
+        source_bits: usize,
+        target_bits: usize,
+    },
+    LengthOverflow,
+}
+
 impl fmt::Display for FieldError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -57,6 +74,32 @@ impl fmt::Display for FieldError {
 }
 
 impl std::error::Error for FieldError {}
+
+impl fmt::Display for DomainError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnsupportedBits { bits, max_bits } => {
+                write!(f, "unsupported field domain bits {bits}, max {max_bits}")
+            }
+            Self::LengthMismatch { expected, found } => {
+                write!(
+                    f,
+                    "field domain length mismatch: expected {expected}, found {found}"
+                )
+            }
+            Self::InvalidExtensionBits {
+                source_bits,
+                target_bits,
+            } => write!(
+                f,
+                "invalid field extension bits: source {source_bits}, target {target_bits}"
+            ),
+            Self::LengthOverflow => write!(f, "field domain length overflow"),
+        }
+    }
+}
+
+impl std::error::Error for DomainError {}
 
 impl Felt {
     pub const ZERO: Self = Self(0);
@@ -110,6 +153,117 @@ impl Felt {
     pub fn root_of_unity(bits: usize) -> Option<Self> {
         ROOTS_OF_UNITY.get(bits).copied().map(Self)
     }
+}
+
+pub fn ntt_in_place(values: &mut [Felt], bits: usize) -> Result<(), DomainError> {
+    transform_in_place(values, bits, false)
+}
+
+pub fn intt_in_place(values: &mut [Felt], bits: usize) -> Result<(), DomainError> {
+    transform_in_place(values, bits, true)
+}
+
+pub fn interpolate_subgroup_evaluations(
+    values: &[Felt],
+    bits: usize,
+) -> Result<Vec<Felt>, DomainError> {
+    let mut coefficients = values.to_vec();
+    intt_in_place(&mut coefficients, bits)?;
+    Ok(coefficients)
+}
+
+pub fn evaluate_polynomial(coefficients: &[Felt], point: Felt) -> Felt {
+    coefficients
+        .iter()
+        .rev()
+        .fold(Felt::ZERO, |acc, coefficient| acc * point + *coefficient)
+}
+
+pub fn coset_extend_evaluations(
+    values: &[Felt],
+    source_bits: usize,
+    target_bits: usize,
+) -> Result<Vec<Felt>, DomainError> {
+    if target_bits < source_bits {
+        return Err(DomainError::InvalidExtensionBits {
+            source_bits,
+            target_bits,
+        });
+    }
+    validate_domain_len(values.len(), source_bits)?;
+    let target_len = domain_len(target_bits)?;
+    let target_root = domain_root(target_bits)?;
+    let coefficients = interpolate_subgroup_evaluations(values, source_bits)?;
+
+    let mut out = Vec::with_capacity(target_len);
+    let mut power = Felt::ONE;
+    for _ in 0..target_len {
+        out.push(evaluate_polynomial(&coefficients, SHIFT * power));
+        power = power * target_root;
+    }
+    Ok(out)
+}
+
+fn transform_in_place(values: &mut [Felt], bits: usize, inverse: bool) -> Result<(), DomainError> {
+    let n = validate_domain_len(values.len(), bits)?;
+    let root = domain_root(bits)?;
+    let twiddle = if inverse {
+        root.inverse().expect("domain roots are nonzero")
+    } else {
+        root
+    };
+    let mut out = vec![Felt::ZERO; n];
+    for (k, slot) in out.iter_mut().enumerate() {
+        let mut acc = Felt::ZERO;
+        for (j, value) in values.iter().enumerate() {
+            let exponent = checked_index_product(j, k)?;
+            acc = acc + *value * twiddle.pow(exponent);
+        }
+        *slot = acc;
+    }
+    if inverse {
+        let n_u64 = u64::try_from(n).map_err(|_| DomainError::LengthOverflow)?;
+        let inv_n = Felt::from_u64(n_u64)
+            .inverse()
+            .expect("domain length is nonzero");
+        for value in &mut out {
+            *value = *value * inv_n;
+        }
+    }
+    values.copy_from_slice(&out);
+    Ok(())
+}
+
+fn domain_root(bits: usize) -> Result<Felt, DomainError> {
+    Felt::root_of_unity(bits).ok_or(DomainError::UnsupportedBits {
+        bits,
+        max_bits: ROOTS_OF_UNITY.len() - 1,
+    })
+}
+
+fn validate_domain_len(found: usize, bits: usize) -> Result<usize, DomainError> {
+    let expected = domain_len(bits)?;
+    if found != expected {
+        return Err(DomainError::LengthMismatch { expected, found });
+    }
+    Ok(expected)
+}
+
+fn domain_len(bits: usize) -> Result<usize, DomainError> {
+    if bits >= ROOTS_OF_UNITY.len() {
+        return Err(DomainError::UnsupportedBits {
+            bits,
+            max_bits: ROOTS_OF_UNITY.len() - 1,
+        });
+    }
+    1_usize
+        .checked_shl(u32::try_from(bits).map_err(|_| DomainError::LengthOverflow)?)
+        .ok_or(DomainError::LengthOverflow)
+}
+
+fn checked_index_product(a: usize, b: usize) -> Result<u64, DomainError> {
+    let product = a.checked_mul(b).ok_or(DomainError::LengthOverflow)?;
+    u64::try_from(product).map_err(|_| DomainError::LengthOverflow)
 }
 
 impl Add for Felt {

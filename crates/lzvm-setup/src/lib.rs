@@ -5,10 +5,12 @@ use lzvm_artifacts::constant_tree::{
     parse_constant_tree_bytes, read_constant_tree_file, ConstantTreeError,
 };
 use lzvm_artifacts::fixed::{
-    read_raw_fixed_column_layout_file, write_raw_fixed_columns_file, FixedColumnError, FixedColumns,
+    encode_raw_fixed_columns, read_raw_fixed_column_layout_file, write_raw_fixed_columns_file,
+    FixedColumnError, FixedColumns,
 };
 use lzvm_artifacts::setup_info::UnitSetupInfo;
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
+use lzvm_field::{coset_extend_evaluations, DomainError, Felt, FieldError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FixedColumnWriteReport {
@@ -27,10 +29,13 @@ pub struct ConstantTreeWriteReport {
 pub enum SetupError {
     FixedColumns(FixedColumnError),
     ConstantTree(ConstantTreeError),
+    Domain(DomainError),
+    Field(FieldError),
     ConstantTreeRootMismatch {
         expected: VerificationKeyRoot,
         found: VerificationKeyRoot,
     },
+    LengthOverflow,
     MissingParent {
         path: PathBuf,
     },
@@ -46,10 +51,13 @@ impl fmt::Display for SetupError {
         match self {
             Self::FixedColumns(error) => write!(f, "setup fixed-column error: {error}"),
             Self::ConstantTree(error) => write!(f, "setup constant-tree error: {error}"),
+            Self::Domain(error) => write!(f, "setup field-domain error: {error}"),
+            Self::Field(error) => write!(f, "setup field error: {error}"),
             Self::ConstantTreeRootMismatch { expected, found } => write!(
                 f,
                 "setup constant-tree root mismatch: expected {expected:?}, found {found:?}"
             ),
+            Self::LengthOverflow => write!(f, "setup length overflow"),
             Self::MissingParent { path } => {
                 write!(f, "setup output path has no parent: {}", path.display())
             }
@@ -74,6 +82,76 @@ impl From<ConstantTreeError> for SetupError {
     fn from(error: ConstantTreeError) -> Self {
         Self::ConstantTree(error)
     }
+}
+
+impl From<DomainError> for SetupError {
+    fn from(error: DomainError) -> Self {
+        Self::Domain(error)
+    }
+}
+
+impl From<FieldError> for SetupError {
+    fn from(error: FieldError) -> Self {
+        Self::Field(error)
+    }
+}
+
+pub fn extend_fixed_columns_for_constant_tree(
+    value: &FixedColumns,
+    setup: &UnitSetupInfo,
+) -> Result<Vec<u8>, SetupError> {
+    let raw = encode_raw_fixed_columns(value, setup)?;
+    let row_count = checked_domain_len(setup.stark.n_bits)?;
+    let extended_row_count = checked_domain_len(setup.stark.n_bits_ext)?;
+    let column_count =
+        usize::try_from(setup.n_constants).map_err(|_| SetupError::LengthOverflow)?;
+    let word_count = row_count
+        .checked_mul(column_count)
+        .ok_or(SetupError::LengthOverflow)?;
+    if raw.len()
+        != word_count
+            .checked_mul(8)
+            .ok_or(SetupError::LengthOverflow)?
+    {
+        return Err(SetupError::LengthOverflow);
+    }
+
+    let mut extended_columns = Vec::with_capacity(column_count);
+    for column in 0..column_count {
+        let mut values = Vec::with_capacity(row_count);
+        for row in 0..row_count {
+            let word_index = row
+                .checked_mul(column_count)
+                .and_then(|offset| offset.checked_add(column))
+                .ok_or(SetupError::LengthOverflow)?;
+            let byte_index = word_index
+                .checked_mul(8)
+                .ok_or(SetupError::LengthOverflow)?;
+            let value = u64::from_le_bytes(
+                raw[byte_index..byte_index + 8]
+                    .try_into()
+                    .expect("slice length checked"),
+            );
+            values.push(Felt::from_canonical(value)?);
+        }
+        extended_columns.push(coset_extend_evaluations(
+            &values,
+            setup.stark.n_bits as usize,
+            setup.stark.n_bits_ext as usize,
+        )?);
+    }
+
+    let byte_count = extended_row_count
+        .checked_mul(column_count)
+        .and_then(|count| count.checked_mul(8))
+        .ok_or(SetupError::LengthOverflow)?;
+    let mut out = Vec::with_capacity(byte_count);
+    for row in 0..extended_row_count {
+        for column_values in &extended_columns {
+            out.extend_from_slice(&column_values[row].to_le_bytes());
+        }
+    }
+    Ok(out)
 }
 
 pub fn write_base_fixed_columns(
@@ -181,4 +259,8 @@ fn staging_path_for(path: &Path) -> PathBuf {
         .unwrap_or_else(|| "fixed-columns".into());
     name.push(format!(".staging.{}", std::process::id()));
     path.with_file_name(name)
+}
+
+fn checked_domain_len(bits: u32) -> Result<usize, SetupError> {
+    1_usize.checked_shl(bits).ok_or(SetupError::LengthOverflow)
 }
