@@ -96,6 +96,13 @@ pub struct BaseDirectoryWriteReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyDirectoryWriteReport {
+    pub base: BaseDirectoryWriteReport,
+    pub pcs_plan: PcsDirectoryWriteReport,
+    pub pcs_material: PcsDirectoryWriteReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SetupDirectorySummaryReport {
     pub unit_count: usize,
     pub global_constraint_count: usize,
@@ -501,6 +508,57 @@ pub fn write_base_directory_from_layout(
         } else {
             None
         },
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeyDirectoryWriteError {
+    Base(BaseDirectoryWriteError),
+    Pcs(PcsDirectoryWriteError),
+}
+
+impl fmt::Display for KeyDirectoryWriteError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Base(error) => write!(f, "{error}"),
+            Self::Pcs(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for KeyDirectoryWriteError {}
+
+impl From<BaseDirectoryWriteError> for KeyDirectoryWriteError {
+    fn from(error: BaseDirectoryWriteError) -> Self {
+        Self::Base(error)
+    }
+}
+
+impl From<PcsDirectoryWriteError> for KeyDirectoryWriteError {
+    fn from(error: PcsDirectoryWriteError) -> Self {
+        Self::Pcs(error)
+    }
+}
+
+pub fn write_key_directory(
+    root: impl AsRef<Path>,
+    backend: FixedExtensionBackend,
+) -> Result<KeyDirectoryWriteReport, KeyDirectoryWriteError> {
+    let layout = read_key_directory_layout(root).map_err(BaseDirectoryWriteError::from)?;
+    write_key_directory_from_layout(&layout, backend)
+}
+
+pub fn write_key_directory_from_layout(
+    layout: &KeyDirectoryLayout,
+    backend: FixedExtensionBackend,
+) -> Result<KeyDirectoryWriteReport, KeyDirectoryWriteError> {
+    let base = write_base_directory_from_layout(layout, backend, true)?;
+    let pcs_plan = write_pcs_directory_from_layout(layout)?;
+    let pcs_material = write_pcs_material_directory_from_layout(layout)?;
+    Ok(KeyDirectoryWriteReport {
+        base,
+        pcs_plan,
+        pcs_material,
     })
 }
 

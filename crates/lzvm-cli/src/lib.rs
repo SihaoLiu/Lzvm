@@ -114,6 +114,18 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             write_base_directory(setup_dir, FixedExtensionBackend::Cpu, false, stdout, stderr)
         }
         ["setup", "write-base-directory", ..] => write_base_directory_usage(stderr),
+        ["setup", "write-key-directory", "--backend", backend, setup_dir] => {
+            let Some(backend) =
+                parse_fixed_extension_backend(backend, "setup key directory write", stderr)
+            else {
+                return 1;
+            };
+            write_key_directory(setup_dir, backend, stdout, stderr)
+        }
+        ["setup", "write-key-directory", setup_dir] => {
+            write_key_directory(setup_dir, FixedExtensionBackend::Cpu, stdout, stderr)
+        }
+        ["setup", "write-key-directory", ..] => write_key_directory_usage(stderr),
         ["setup", "write-pcs-directory", setup_dir] => {
             write_pcs_directory(setup_dir, stdout, stderr)
         }
@@ -504,6 +516,36 @@ fn write_pcs_material_directory(
     }
 }
 
+fn write_key_directory(
+    setup_dir: &str,
+    backend: FixedExtensionBackend,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    match lzvm_setup::write_key_directory(setup_dir, backend) {
+        Ok(report) => {
+            let _ = writeln!(stdout, "status=ok");
+            let _ = writeln!(stdout, "units={}", report.base.unit_count);
+            let _ = writeln!(stdout, "fixed_bytes={}", report.base.fixed_bytes);
+            let _ = writeln!(stdout, "tree_bytes={}", report.base.tree_bytes);
+            if let Some(verkey_bytes) = report.base.verkey_bytes {
+                let _ = writeln!(stdout, "verkey_bytes={verkey_bytes}");
+            }
+            let _ = writeln!(stdout, "pcs_plan_bytes={}", report.pcs_plan.bytes_written);
+            let _ = writeln!(
+                stdout,
+                "pcs_material_bytes={}",
+                report.pcs_material.bytes_written
+            );
+            0
+        }
+        Err(error) => {
+            let _ = writeln!(stderr, "setup key directory write failed: {error}");
+            1
+        }
+    }
+}
+
 fn write_verification_key_native(
     setup_info_bin: &str,
     consttree: &str,
@@ -704,6 +746,14 @@ fn write_pcs_material_directory_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
         "usage: lzvm setup write-pcs-material-directory <setup-dir>"
+    );
+    2
+}
+
+fn write_key_directory_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm setup write-key-directory [--backend cpu|cuda] <setup-dir>"
     );
     2
 }

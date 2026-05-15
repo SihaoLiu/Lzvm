@@ -761,6 +761,96 @@ fn writes_pcs_setup_materials_for_all_units() {
 }
 
 #[test]
+fn writes_key_directory_outputs_with_one_command() {
+    let (dir, root) = create_key_directory("key-directory");
+    remove_verification_keys(&dir);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "write-key-directory",
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0);
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit_count = layout.units.len();
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let expected_plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
+    let mut fixed_bytes = 0_u64;
+    let mut tree_bytes = 0_u64;
+    let mut verkey_bytes = 0_u64;
+    let mut pcs_plan_bytes = 0_u64;
+    let mut pcs_material_bytes = 0_u64;
+
+    for unit in &layout.units {
+        let tree = fs::read(&unit.constant_tree).expect("constant tree should be written");
+        let binary_root =
+            read_verification_key_binary_file(unit.verification_key_binary()).expect("binary key");
+        let fixed = fs::read(&unit.fixed_columns).expect("fixed columns should read");
+        let parsed_tree =
+            parse_constant_tree_bytes(tree.clone(), &setup).expect("constant tree should parse");
+        let plan_path = unit.pcs_setup_plan().expect("PCS plan path should derive");
+        let plan = read_pcs_setup_plan_file(&plan_path).expect("PCS plan should parse");
+        let material_path = unit
+            .pcs_setup_material()
+            .expect("PCS material path should derive");
+        let material =
+            read_pcs_setup_material_file(&material_path).expect("PCS material should parse");
+        let expected_material =
+            build_pcs_setup_material(&plan, &fixed, &parsed_tree).expect("material should build");
+
+        fixed_bytes += fs::metadata(&unit.fixed_columns)
+            .expect("fixed output should exist")
+            .len();
+        tree_bytes += u64::try_from(tree.len()).expect("tree length should fit");
+        verkey_bytes += fs::metadata(unit.verification_key_binary())
+            .expect("binary key should exist")
+            .len();
+        pcs_plan_bytes += fs::metadata(plan_path)
+            .expect("PCS plan output should exist")
+            .len();
+        pcs_material_bytes += fs::metadata(material_path)
+            .expect("PCS material output should exist")
+            .len();
+
+        assert_eq!(root_from_tree(&tree), root);
+        assert_eq!(binary_root, root);
+        assert_eq!(plan, expected_plan);
+        assert_eq!(material, expected_material);
+    }
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nunits={unit_count}\nfixed_bytes={fixed_bytes}\ntree_bytes={tree_bytes}\nverkey_bytes={verkey_bytes}\npcs_plan_bytes={pcs_plan_bytes}\npcs_material_bytes={pcs_material_bytes}\n"
+        )
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn reports_usage_for_missing_key_directory_path() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(&["setup", "write-key-directory"], &mut stdout, &mut stderr);
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "usage: lzvm setup write-key-directory [--backend cpu|cuda] <setup-dir>\n"
+    );
+}
+
+#[test]
 fn reports_usage_for_missing_pcs_material_directory_path() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
