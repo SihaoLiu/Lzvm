@@ -1,9 +1,12 @@
 #[cfg(feature = "cuda")]
 use lzvm_accel::{cuda_goldilocks_add, cuda_goldilocks_mul};
 #[cfg(feature = "cuda")]
-use lzvm_accel::{cuda_goldilocks_butterfly, cuda_goldilocks_coset_extend, cuda_goldilocks_ntt};
+use lzvm_accel::{
+    cuda_goldilocks_butterfly, cuda_goldilocks_coset_extend, cuda_goldilocks_ntt,
+    cuda_poseidon2_width8,
+};
 #[cfg(feature = "cuda")]
-use lzvm_field::{coset_extend_evaluations, ntt_in_place, Felt};
+use lzvm_field::{coset_extend_evaluations, ntt_in_place, poseidon2_hash_8, Felt};
 
 #[cfg(feature = "cuda")]
 const MODULUS: u64 = 0xffff_ffff_0000_0001;
@@ -178,6 +181,23 @@ fn cuda_extends_evaluations_over_shifted_cosets() {
 
     let actual =
         cuda_goldilocks_coset_extend(&input, 2, 4).expect("cuda coset extension should run");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_hashes_poseidon2_width_8_states() {
+    let input = (0_u64..16).collect::<Vec<_>>();
+    let expected = input
+        .chunks_exact(8)
+        .flat_map(|chunk| {
+            let state = std::array::from_fn(|index| Felt::from_u64(chunk[index]));
+            poseidon2_hash_8(state).map(Felt::to_u64)
+        })
+        .collect::<Vec<_>>();
+
+    let actual = cuda_poseidon2_width8(&input).expect("cuda hash should run");
 
     assert_eq!(actual, expected);
 }

@@ -58,6 +58,7 @@ unsafe extern "C" {
         target_root: u64,
         shift: u64,
     ) -> i32;
+    fn lzvm_cuda_poseidon2_width8(values: *const u64, out: *mut u64, state_count: usize) -> i32;
 }
 
 #[cfg(feature = "cuda")]
@@ -305,6 +306,31 @@ pub fn cuda_goldilocks_coset_extend(
     }
 }
 
+#[cfg(feature = "cuda")]
+pub fn cuda_poseidon2_width8(values: &[u64]) -> Result<Vec<u64>, AccelError> {
+    const WIDTH: usize = 8;
+
+    if !values.len().is_multiple_of(WIDTH) {
+        return Err(AccelError::InvalidDomain {
+            bits: 3,
+            len: values.len(),
+        });
+    }
+    let mut out = vec![0_u64; values.len()];
+    let code = if values.is_empty() {
+        0
+    } else {
+        unsafe {
+            lzvm_cuda_poseidon2_width8(values.as_ptr(), out.as_mut_ptr(), values.len() / WIDTH)
+        }
+    };
+    if code == 0 {
+        Ok(out)
+    } else {
+        Err(AccelError::Cuda { code })
+    }
+}
+
 #[cfg(not(feature = "cuda"))]
 pub fn cuda_goldilocks_add(_lhs: &[u64], _rhs: &[u64]) -> Result<Vec<u64>, AccelError> {
     Err(AccelError::CudaUnavailable)
@@ -335,5 +361,10 @@ pub fn cuda_goldilocks_coset_extend(
     _source_bits: usize,
     _target_bits: usize,
 ) -> Result<Vec<u64>, AccelError> {
+    Err(AccelError::CudaUnavailable)
+}
+
+#[cfg(not(feature = "cuda"))]
+pub fn cuda_poseidon2_width8(_values: &[u64]) -> Result<Vec<u64>, AccelError> {
     Err(AccelError::CudaUnavailable)
 }

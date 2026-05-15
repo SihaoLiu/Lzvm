@@ -14,7 +14,7 @@ The goal is to build a native stack with a Rust-first core, C++ integration for 
 ## Workspace
 
 - `crates/lzvm-field`: CPU reference field arithmetic used by artifact validation and backend parity tests.
-- `crates/lzvm-accel`: feature-gated C++/CUDA acceleration boundary with GPU field-arithmetic, NTT, and shifted coset-extension parity tests.
+- `crates/lzvm-accel`: feature-gated C++/CUDA acceleration boundary with GPU field-arithmetic, NTT, shifted coset-extension, and Poseidon2 width-8 parity tests.
 - `crates/lzvm-artifacts`: native readers, writers, and validators for setup and proving artifacts.
 - `crates/lzvm-setup`: native setup-generation primitives with validated staging, publish behavior, and optional CUDA fixed-column extension.
 - `crates/lzvm-cli`: repository-owned command entry points.
