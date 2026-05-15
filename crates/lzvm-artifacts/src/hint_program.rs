@@ -32,10 +32,42 @@ pub struct HintValue {
 pub enum HintOperand {
     Number(u64),
     String(String),
-    GroupValue { group_id: u32, id: u32 },
-    Temporary { id: u32 },
-    Public { id: u32 },
-    ProofValue { id: u32 },
+    GroupValue {
+        group_id: u32,
+        id: u32,
+    },
+    AirGroupValue {
+        id: u32,
+    },
+    AirValue {
+        id: u32,
+    },
+    Challenge {
+        id: u32,
+    },
+    Commitment {
+        id: u32,
+        row_offset_index: u32,
+    },
+    Constant {
+        id: u32,
+        row_offset_index: u32,
+    },
+    CustomCommitment {
+        id: u32,
+        row_offset_index: u32,
+        commit_id: u32,
+    },
+    Temporary {
+        id: u32,
+        dimension: Option<u32>,
+    },
+    Public {
+        id: u32,
+    },
+    ProofValue {
+        id: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,10 +94,20 @@ pub enum HintProgramError {
     UnknownOperand {
         op: String,
     },
+    InvalidOperandSection {
+        op: &'static str,
+        section: &'static str,
+    },
     LengthOverflow,
     Io {
         message: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HintSectionKind {
+    Regular,
+    Global,
 }
 
 impl fmt::Display for HintProgramError {
@@ -94,6 +136,9 @@ impl fmt::Display for HintProgramError {
                 write!(f, "hint string contains nul byte: {value}")
             }
             Self::UnknownOperand { op } => write!(f, "unknown hint operand: {op}"),
+            Self::InvalidOperandSection { op, section } => {
+                write!(f, "hint operand {op} is invalid for {section} section")
+            }
             Self::LengthOverflow => write!(f, "hint program length overflow"),
             Self::Io { message } => write!(f, "hint program io error: {message}"),
         }
@@ -123,36 +168,41 @@ fn read_file(path: impl AsRef<Path>) -> Result<Vec<u8>, HintProgramError> {
 }
 
 pub fn parse_regular_hint_program(bytes: &[u8]) -> Result<HintProgram, HintProgramError> {
-    parse_hint_program(bytes, 3)
+    parse_hint_program(bytes, 3, HintSectionKind::Regular)
 }
 
 pub fn encode_regular_hint_program(program: &HintProgram) -> Result<Vec<u8>, HintProgramError> {
-    encode_hint_program(program, 3)
+    encode_hint_program(program, 3, HintSectionKind::Regular)
 }
 
 pub fn parse_global_hint_program(bytes: &[u8]) -> Result<HintProgram, HintProgramError> {
-    parse_hint_program(bytes, 2)
+    parse_hint_program(bytes, 2, HintSectionKind::Global)
 }
 
 pub fn encode_global_hint_program(program: &HintProgram) -> Result<Vec<u8>, HintProgramError> {
-    encode_hint_program(program, 2)
+    encode_hint_program(program, 2, HintSectionKind::Global)
 }
 
-fn parse_hint_program(bytes: &[u8], section_id: u32) -> Result<HintProgram, HintProgramError> {
+fn parse_hint_program(
+    bytes: &[u8],
+    section_id: u32,
+    kind: HintSectionKind,
+) -> Result<HintProgram, HintProgramError> {
     let file = parse_sectioned_file(bytes, *b"chps", 1).map_err(HintProgramError::Sectioned)?;
     let section = file
         .sections
         .iter()
         .find(|section| section.id == section_id)
         .ok_or(HintProgramError::MissingHintSection { section_id })?;
-    parse_hint_section(&section.data)
+    parse_hint_section(&section.data, kind)
 }
 
 fn encode_hint_program(
     program: &HintProgram,
     section_id: u32,
+    kind: HintSectionKind,
 ) -> Result<Vec<u8>, HintProgramError> {
-    let section = encode_hint_section(program)?;
+    let section = encode_hint_section(program, kind)?;
     let file = SectionedFile {
         kind: *b"chps",
         version: 1,
@@ -164,7 +214,10 @@ fn encode_hint_program(
     encode_sectioned_file(&file).map_err(HintProgramError::Sectioned)
 }
 
-fn parse_hint_section(bytes: &[u8]) -> Result<HintProgram, HintProgramError> {
+fn parse_hint_section(
+    bytes: &[u8],
+    kind: HintSectionKind,
+) -> Result<HintProgram, HintProgramError> {
     let mut reader = Reader::new(bytes);
     let hint_count = reader.read_u32()?;
     let mut hints = Vec::with_capacity(hint_count as usize);
@@ -180,7 +233,7 @@ fn parse_hint_section(bytes: &[u8]) -> Result<HintProgram, HintProgramError> {
             let mut values = Vec::with_capacity(value_count as usize);
 
             for _ in 0..value_count {
-                values.push(read_hint_value(&mut reader)?);
+                values.push(read_hint_value(&mut reader, kind)?);
             }
 
             fields.push(HintField { name, values });
@@ -198,18 +251,63 @@ fn parse_hint_section(bytes: &[u8]) -> Result<HintProgram, HintProgramError> {
     Ok(HintProgram { hints })
 }
 
-fn read_hint_value(reader: &mut Reader<'_>) -> Result<HintValue, HintProgramError> {
+fn read_hint_value(
+    reader: &mut Reader<'_>,
+    kind: HintSectionKind,
+) -> Result<HintValue, HintProgramError> {
     let op = reader.read_string()?;
     let operand = match op.as_str() {
         "number" => HintOperand::Number(reader.read_u64()?),
         "string" => HintOperand::String(reader.read_string()?),
-        "airgroupvalue" => HintOperand::GroupValue {
-            group_id: reader.read_u32()?,
+        "airgroupvalue" => match kind {
+            HintSectionKind::Global => HintOperand::GroupValue {
+                group_id: reader.read_u32()?,
+                id: reader.read_u32()?,
+            },
+            HintSectionKind::Regular => HintOperand::AirGroupValue {
+                id: reader.read_u32()?,
+            },
+        },
+        "airvalue" if kind == HintSectionKind::Regular => HintOperand::AirValue {
             id: reader.read_u32()?,
         },
-        "tmp" => HintOperand::Temporary {
+        "challenge" if kind == HintSectionKind::Regular => HintOperand::Challenge {
             id: reader.read_u32()?,
         },
+        "cm" if kind == HintSectionKind::Regular => {
+            let id = reader.read_u32()?;
+            let row_offset_index = reader.read_u32()?;
+            HintOperand::Commitment {
+                id,
+                row_offset_index,
+            }
+        }
+        "const" if kind == HintSectionKind::Regular => {
+            let id = reader.read_u32()?;
+            let row_offset_index = reader.read_u32()?;
+            HintOperand::Constant {
+                id,
+                row_offset_index,
+            }
+        }
+        "custom" if kind == HintSectionKind::Regular => {
+            let id = reader.read_u32()?;
+            let row_offset_index = reader.read_u32()?;
+            let commit_id = reader.read_u32()?;
+            HintOperand::CustomCommitment {
+                id,
+                row_offset_index,
+                commit_id,
+            }
+        }
+        "tmp" => {
+            let id = reader.read_u32()?;
+            let dimension = match kind {
+                HintSectionKind::Regular => Some(reader.read_u32()?),
+                HintSectionKind::Global => None,
+            };
+            HintOperand::Temporary { id, dimension }
+        }
         "public" => HintOperand::Public {
             id: reader.read_u32()?,
         },
@@ -228,7 +326,10 @@ fn read_hint_value(reader: &mut Reader<'_>) -> Result<HintValue, HintProgramErro
     Ok(HintValue { operand, positions })
 }
 
-fn encode_hint_section(program: &HintProgram) -> Result<Vec<u8>, HintProgramError> {
+fn encode_hint_section(
+    program: &HintProgram,
+    kind: HintSectionKind,
+) -> Result<Vec<u8>, HintProgramError> {
     let mut out = Vec::new();
     write_u32(
         &mut out,
@@ -250,7 +351,7 @@ fn encode_hint_section(program: &HintProgram) -> Result<Vec<u8>, HintProgramErro
             );
 
             for value in &field.values {
-                write_hint_value(&mut out, value)?;
+                write_hint_value(&mut out, value, kind)?;
             }
         }
     }
@@ -258,7 +359,11 @@ fn encode_hint_section(program: &HintProgram) -> Result<Vec<u8>, HintProgramErro
     Ok(out)
 }
 
-fn write_hint_value(out: &mut Vec<u8>, value: &HintValue) -> Result<(), HintProgramError> {
+fn write_hint_value(
+    out: &mut Vec<u8>,
+    value: &HintValue,
+    kind: HintSectionKind,
+) -> Result<(), HintProgramError> {
     match &value.operand {
         HintOperand::Number(number) => {
             write_string(out, "number")?;
@@ -268,14 +373,76 @@ fn write_hint_value(out: &mut Vec<u8>, value: &HintValue) -> Result<(), HintProg
             write_string(out, "string")?;
             write_string(out, string)?;
         }
-        HintOperand::GroupValue { group_id, id } => {
+        HintOperand::GroupValue { group_id, id } if kind == HintSectionKind::Global => {
             write_string(out, "airgroupvalue")?;
             write_u32(out, *group_id);
             write_u32(out, *id);
         }
-        HintOperand::Temporary { id } => {
+        HintOperand::GroupValue { .. } => {
+            return Err(invalid_operand_section("airgroupvalue", kind));
+        }
+        HintOperand::AirGroupValue { id } if kind == HintSectionKind::Regular => {
+            write_string(out, "airgroupvalue")?;
+            write_u32(out, *id);
+        }
+        HintOperand::AirGroupValue { .. } => {
+            return Err(invalid_operand_section("airgroupvalue", kind));
+        }
+        HintOperand::AirValue { id } if kind == HintSectionKind::Regular => {
+            write_string(out, "airvalue")?;
+            write_u32(out, *id);
+        }
+        HintOperand::AirValue { .. } => {
+            return Err(invalid_operand_section("airvalue", kind));
+        }
+        HintOperand::Challenge { id } if kind == HintSectionKind::Regular => {
+            write_string(out, "challenge")?;
+            write_u32(out, *id);
+        }
+        HintOperand::Challenge { .. } => {
+            return Err(invalid_operand_section("challenge", kind));
+        }
+        HintOperand::Commitment {
+            id,
+            row_offset_index,
+        } if kind == HintSectionKind::Regular => {
+            write_string(out, "cm")?;
+            write_u32(out, *id);
+            write_u32(out, *row_offset_index);
+        }
+        HintOperand::Commitment { .. } => {
+            return Err(invalid_operand_section("cm", kind));
+        }
+        HintOperand::Constant {
+            id,
+            row_offset_index,
+        } if kind == HintSectionKind::Regular => {
+            write_string(out, "const")?;
+            write_u32(out, *id);
+            write_u32(out, *row_offset_index);
+        }
+        HintOperand::Constant { .. } => {
+            return Err(invalid_operand_section("const", kind));
+        }
+        HintOperand::CustomCommitment {
+            id,
+            row_offset_index,
+            commit_id,
+        } if kind == HintSectionKind::Regular => {
+            write_string(out, "custom")?;
+            write_u32(out, *id);
+            write_u32(out, *row_offset_index);
+            write_u32(out, *commit_id);
+        }
+        HintOperand::CustomCommitment { .. } => {
+            return Err(invalid_operand_section("custom", kind));
+        }
+        HintOperand::Temporary { id, dimension } => {
             write_string(out, "tmp")?;
             write_u32(out, *id);
+            if kind == HintSectionKind::Regular {
+                write_u32(out, dimension.unwrap_or(1));
+            }
         }
         HintOperand::Public { id } => {
             write_string(out, "public")?;
@@ -295,6 +462,22 @@ fn write_hint_value(out: &mut Vec<u8>, value: &HintValue) -> Result<(), HintProg
         write_u32(out, *position);
     }
     Ok(())
+}
+
+fn invalid_operand_section(op: &'static str, kind: HintSectionKind) -> HintProgramError {
+    HintProgramError::InvalidOperandSection {
+        op,
+        section: kind.name(),
+    }
+}
+
+impl HintSectionKind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Regular => "regular",
+            Self::Global => "global",
+        }
+    }
 }
 
 fn write_u32(out: &mut Vec<u8>, value: u32) {
