@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use lzvm_artifacts::constraint_program::GlobalConstraintProgram;
+use lzvm_artifacts::constraint_program::{ConstraintProgram, GlobalConstraintProgram};
 use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::ExpressionProgram;
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
@@ -166,6 +166,15 @@ fn empty_program() -> ExpressionProgram {
     }
 }
 
+fn empty_regular_constraints() -> ConstraintProgram {
+    ConstraintProgram {
+        entries: Vec::new(),
+        ops: Vec::new(),
+        args: Vec::new(),
+        numbers: Vec::new(),
+    }
+}
+
 fn sample_pcs_material() -> PcsSetupMaterial {
     PcsSetupMaterial {
         plan_digest: [7; 32],
@@ -292,6 +301,7 @@ fn sample_unit() -> KeyUnitCatalogEntry {
         pcs_plan,
         verification_key: VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4]),
         expression_program: empty_program(),
+        regular_constraints: empty_regular_constraints(),
         verifier_program: empty_program(),
         expected_fixed_bytes: 64,
         actual_fixed_bytes: 64,

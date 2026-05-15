@@ -6,7 +6,8 @@ use lzvm_artifacts::constant_opening_segment::{
     parse_constant_opening_segment, CONSTANT_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::constraint_program::{
-    encode_global_constraint_program, GlobalConstraintEntry, GlobalConstraintProgram,
+    encode_global_constraint_program, encode_regular_constraint_program, ConstraintEntry,
+    ConstraintProgram, GlobalConstraintEntry, GlobalConstraintProgram,
 };
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
@@ -42,6 +43,7 @@ use lzvm_artifacts::proof::{
 use lzvm_artifacts::public_values::{
     encode_public_values_json, public_values_digest, PublicValueEntry, PublicValues,
 };
+use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use lzvm_artifacts::witness_library::parse_witness_library;
 use lzvm_artifacts::witness_opening_segment::{
@@ -253,6 +255,47 @@ fn sample_expression_program() -> ExpressionProgram {
         args: vec![2],
         numbers: vec![],
     }
+}
+
+fn sample_regular_constraint_program() -> ConstraintProgram {
+    ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 0,
+            first_row: 0,
+            last_row: 1,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 8,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "fixture regular constraint".to_owned(),
+        }],
+        ops: vec![0],
+        args: vec![1, 0, 0, 0, 0, 8, 0, 0],
+        numbers: vec![1],
+    }
+}
+
+fn sample_program_file() -> Vec<u8> {
+    let expression = encode_expression_program(&sample_expression_program())
+        .expect("expression program should encode");
+    let regular = encode_regular_constraint_program(&sample_regular_constraint_program())
+        .expect("regular constraints should encode");
+    let mut expression_file =
+        parse_sectioned_file(&expression, *b"chps", 1).expect("expression file should parse");
+    let regular_file =
+        parse_sectioned_file(&regular, *b"chps", 1).expect("regular file should parse");
+    expression_file.sections.extend(regular_file.sections);
+    encode_sectioned_file(&SectionedFile {
+        kind: *b"chps",
+        version: 1,
+        sections: expression_file.sections,
+    })
+    .expect("combined program should encode")
 }
 
 fn sample_public_values(setup_hash: [u8; 32]) -> PublicValues {
@@ -959,13 +1002,14 @@ fn write_unit_files_with_verifier_info(unit: &KeyUnitPaths, verifier_info: &str)
         write_text(&path, verifier_info);
     }
 
-    let program =
-        encode_expression_program(&sample_expression_program()).expect("program should encode");
+    let program = sample_program_file();
     if let Some(path) = unit.expression_program() {
         write_bytes(&path, &program);
     }
+    let verifier_program = encode_expression_program(&sample_expression_program())
+        .expect("verifier program should encode");
     if let Some(path) = unit.verifier_program() {
-        write_bytes(&path, &program);
+        write_bytes(&path, &verifier_program);
     }
 
     write_text(&unit.verification_key_json(), "[1,2,3,4]");

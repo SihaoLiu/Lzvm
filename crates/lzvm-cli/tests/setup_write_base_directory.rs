@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::constant_tree::parse_constant_tree_bytes;
 use lzvm_artifacts::constraint_program::{
-    encode_global_constraint_program, GlobalConstraintProgram,
+    encode_global_constraint_program, encode_regular_constraint_program, ConstraintEntry,
+    ConstraintProgram, GlobalConstraintProgram,
 };
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
@@ -12,6 +13,7 @@ use lzvm_artifacts::fixed::{encode_raw_fixed_columns, FixedColumn, FixedColumns}
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyUnitPaths};
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, read_pcs_setup_material_file};
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, read_pcs_setup_plan_file};
+use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
 use lzvm_artifacts::setup_info::{parse_unit_setup_info_json, UnitSetupInfo};
 use lzvm_artifacts::verification_key::{
     encode_verification_key_binary, read_verification_key_binary_file,
@@ -144,6 +146,47 @@ fn sample_expression_program() -> ExpressionProgram {
     }
 }
 
+fn sample_regular_constraint_program() -> ConstraintProgram {
+    ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 0,
+            first_row: 0,
+            last_row: 1,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 8,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "fixture regular constraint".to_owned(),
+        }],
+        ops: vec![0],
+        args: vec![1, 0, 0, 0, 0, 8, 0, 0],
+        numbers: vec![1],
+    }
+}
+
+fn sample_program_file() -> Vec<u8> {
+    let expression = encode_expression_program(&sample_expression_program())
+        .expect("expression program should encode");
+    let regular = encode_regular_constraint_program(&sample_regular_constraint_program())
+        .expect("regular constraints should encode");
+    let mut expression_file =
+        parse_sectioned_file(&expression, *b"chps", 1).expect("expression file should parse");
+    let regular_file =
+        parse_sectioned_file(&regular, *b"chps", 1).expect("regular file should parse");
+    expression_file.sections.extend(regular_file.sections);
+    encode_sectioned_file(&SectionedFile {
+        kind: *b"chps",
+        version: 1,
+        sections: expression_file.sections,
+    })
+    .expect("combined program should encode")
+}
+
 fn sample_columns() -> FixedColumns {
     FixedColumns {
         group_name: "group-a".to_owned(),
@@ -225,13 +268,14 @@ fn write_unit_files(
         write_text(&path, sample_verifier_info_json());
     }
 
-    let program =
-        encode_expression_program(&sample_expression_program()).expect("program should encode");
+    let program = sample_program_file();
     if let Some(path) = paths.expression_program() {
         write_bytes(&path, &program);
     }
+    let verifier_program = encode_expression_program(&sample_expression_program())
+        .expect("verifier program should encode");
     if let Some(path) = paths.verifier_program() {
-        write_bytes(&path, &program);
+        write_bytes(&path, &verifier_program);
     }
 
     write_text(&paths.verification_key_json(), "[1,2,3,4]");

@@ -1,7 +1,8 @@
 use crate::constant_tree::{read_constant_tree_file, ConstantTreeError};
 use crate::constraint_program::{
-    encode_global_constraint_program, read_global_constraint_program_file, ConstraintProgramError,
-    GlobalConstraintProgram,
+    encode_global_constraint_program, encode_regular_constraint_program,
+    read_global_constraint_program_file, read_regular_constraint_program_file, ConstraintProgram,
+    ConstraintProgramError, GlobalConstraintProgram,
 };
 use crate::expression_program::{
     encode_expression_program, read_expression_program_file, ExpressionProgram,
@@ -85,6 +86,7 @@ pub struct KeyUnitCatalogEntry {
     pub pcs_plan: PcsSetupPlan,
     pub verification_key: VerificationKeyRoot,
     pub expression_program: ExpressionProgram,
+    pub regular_constraints: ConstraintProgram,
     pub verifier_program: ExpressionProgram,
     pub expected_fixed_bytes: usize,
     pub actual_fixed_bytes: u64,
@@ -106,6 +108,7 @@ pub struct RequiredPath {
 pub enum KeyDirectoryError {
     GlobalInfo(GlobalInfoError),
     GlobalConstraints(ConstraintProgramError),
+    RegularConstraints(ConstraintProgramError),
     ConstantTree(ConstantTreeError),
     Metadata(MetadataBundleError),
     PcsPlan(PcsPlanError),
@@ -173,6 +176,9 @@ impl fmt::Display for KeyDirectoryError {
             Self::GlobalInfo(error) => write!(f, "key-directory global metadata error: {error}"),
             Self::GlobalConstraints(error) => {
                 write!(f, "key-directory global constraint program error: {error}")
+            }
+            Self::RegularConstraints(error) => {
+                write!(f, "key-directory regular constraint program error: {error}")
             }
             Self::ConstantTree(error) => {
                 write!(f, "key-directory constant-tree error: {error}")
@@ -450,7 +456,8 @@ pub fn read_key_directory_catalog_from_layout(
 ) -> Result<KeyDirectoryCatalog, KeyDirectoryError> {
     validate_key_directory_layout(layout)?;
     let global_constraints =
-        read_global_constraint_program_file(&layout.global_paths.constraints_program)?;
+        read_global_constraint_program_file(&layout.global_paths.constraints_program)
+            .map_err(KeyDirectoryError::GlobalConstraints)?;
     let mut units = Vec::with_capacity(layout.units.len());
     for unit in &layout.units {
         units.push(read_key_unit_catalog_entry(unit)?);
@@ -496,6 +503,14 @@ pub fn key_directory_catalog_digest(
         hash_bytes(
             &mut hasher,
             &encode_expression_program(&unit.expression_program).map_err(|error| {
+                KeyDirectoryError::Digest {
+                    message: error.to_string(),
+                }
+            })?,
+        );
+        hash_bytes(
+            &mut hasher,
+            &encode_regular_constraint_program(&unit.regular_constraints).map_err(|error| {
                 KeyDirectoryError::Digest {
                     message: error.to_string(),
                 }
@@ -576,12 +591,16 @@ fn read_key_unit_catalog_entry(
         });
     }
 
-    let expression_program = read_expression_program_file(paths.expression_program().ok_or(
-        KeyDirectoryError::MissingDerivedPath {
-            role: "expression program",
-            unit: paths.kind,
-        },
-    )?)?;
+    let expression_program_path =
+        paths
+            .expression_program()
+            .ok_or(KeyDirectoryError::MissingDerivedPath {
+                role: "expression program",
+                unit: paths.kind,
+            })?;
+    let expression_program = read_expression_program_file(&expression_program_path)?;
+    let regular_constraints = read_regular_constraint_program_file(&expression_program_path)
+        .map_err(KeyDirectoryError::RegularConstraints)?;
     let verifier_program = read_expression_program_file(paths.verifier_program().ok_or(
         KeyDirectoryError::MissingDerivedPath {
             role: "verifier program",
@@ -638,6 +657,7 @@ fn read_key_unit_catalog_entry(
         pcs_plan,
         verification_key: json_root,
         expression_program,
+        regular_constraints,
         verifier_program,
         expected_fixed_bytes,
         actual_fixed_bytes,

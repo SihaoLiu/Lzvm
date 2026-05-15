@@ -1,6 +1,7 @@
 use lzvm_artifacts::constant_tree::parse_constant_tree_bytes;
 use lzvm_artifacts::constraint_program::{
-    encode_global_constraint_program, GlobalConstraintProgram,
+    encode_global_constraint_program, encode_regular_constraint_program, ConstraintEntry,
+    ConstraintProgram, GlobalConstraintProgram,
 };
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
@@ -12,6 +13,7 @@ use lzvm_artifacts::key_directory::{
 };
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_material};
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, encode_pcs_setup_plan};
+use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
 use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use std::fs;
@@ -165,6 +167,47 @@ fn sample_expression_program() -> ExpressionProgram {
     }
 }
 
+fn sample_regular_constraint_program() -> ConstraintProgram {
+    ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 0,
+            first_row: 0,
+            last_row: 1,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 8,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "catalog regular constraint".to_owned(),
+        }],
+        ops: vec![0],
+        args: vec![1, 0, 0, 0, 0, 8, 0, 0],
+        numbers: vec![1],
+    }
+}
+
+fn sample_program_file() -> Vec<u8> {
+    let expression = encode_expression_program(&sample_expression_program())
+        .expect("expression program should encode");
+    let regular = encode_regular_constraint_program(&sample_regular_constraint_program())
+        .expect("regular constraints should encode");
+    let mut expression_file =
+        parse_sectioned_file(&expression, *b"chps", 1).expect("expression file should parse");
+    let regular_file =
+        parse_sectioned_file(&regular, *b"chps", 1).expect("regular file should parse");
+    expression_file.sections.extend(regular_file.sections);
+    encode_sectioned_file(&SectionedFile {
+        kind: *b"chps",
+        version: 1,
+        sections: expression_file.sections,
+    })
+    .expect("combined program should encode")
+}
+
 fn sample_raw_fixed_columns() -> Vec<u8> {
     let mut bytes = Vec::new();
     for value in [1_u64, 10, 2, 20] {
@@ -251,13 +294,14 @@ fn write_catalog_unit_files(unit: &KeyUnitPaths) {
         write_text(&path, sample_verifier_info_json());
     }
 
-    let program = encode_expression_program(&sample_expression_program())
-        .expect("expression program should encode");
+    let program = sample_program_file();
     if let Some(path) = unit.expression_program() {
         write_bytes(&path, &program);
     }
+    let verifier_program = encode_expression_program(&sample_expression_program())
+        .expect("verifier program should encode");
     if let Some(path) = unit.verifier_program() {
-        write_bytes(&path, &program);
+        write_bytes(&path, &verifier_program);
     }
 
     write_text(&unit.verification_key_json(), "[1,2,3,4]");
@@ -445,6 +489,10 @@ fn reads_key_directory_catalog_without_loading_fixed_values() {
     assert!(catalog
         .units
         .iter()
+        .all(|unit| unit.regular_constraints.entries.len() == 1));
+    assert!(catalog
+        .units
+        .iter()
         .any(|unit| unit.paths.kind == KeyUnitKind::FinalAggregation));
     assert!(catalog
         .units
@@ -546,6 +594,16 @@ fn hashes_key_directory_catalogs_deterministically() {
         !changed_commit_mode.units[0].pcs_plan.hash_commits;
     assert_ne!(
         key_directory_catalog_digest(&changed_commit_mode).expect("changed digest should compute"),
+        digest
+    );
+
+    let mut changed_regular = catalog.clone();
+    changed_regular.units[0]
+        .regular_constraints
+        .numbers
+        .push(99);
+    assert_ne!(
+        key_directory_catalog_digest(&changed_regular).expect("changed digest should compute"),
         digest
     );
 
