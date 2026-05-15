@@ -70,13 +70,14 @@ use lzvm_artifacts::witness_segment::{
     encode_witness_commitment_segment, parse_witness_commitment_segment, WitnessCommitmentSegment,
     WitnessCommitmentStageSegment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
-use lzvm_cli::{build_witness_proof_core_artifact, run_cli};
+use lzvm_cli::{build_witness_proof_artifact, build_witness_proof_core_artifact, run_cli};
 use lzvm_field::{poseidon2_hash_16, Ext3, Felt};
 use lzvm_prover::pcs_fri::{verify_fri_fold, verify_fri_opening_folds, PcsFriOpeningFoldRequest};
 use lzvm_prover::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptSegmentInputs,
 };
-use lzvm_prover::setup_preflight::validate_setup_preflight_from_files;
+use lzvm_prover::setup_preflight::{validate_setup_preflight, validate_setup_preflight_from_files};
+use lzvm_prover::unit_values::ProveUnitValues;
 use lzvm_prover::verifier_query::{
     evaluate_verifier_unit_queries, verify_query_outputs_against_fri_opening,
     VerifierFriComparisonRequest, VerifierUnitQueryEvalRequest,
@@ -2808,6 +2809,100 @@ fn builds_witness_proof_core_for_multiple_units() {
             .collect::<Vec<_>>(),
         vec![0, 1]
     );
+}
+
+#[test]
+fn builds_witness_proof_artifact_for_multiple_units_with_unit_values() {
+    let dir = temp_dir("prove-witness-artifact-multi-values");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_unit_value(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+
+    let public_values = sample_public_values(setup_hash);
+    let public_values_hash = public_values_digest(&public_values).expect("hash should compute");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan {
+            input_data: Some(input_data),
+            partition_count: 1,
+            partition_ids: vec![0],
+            worker_index: 0,
+        }),
+        options: ProveRunOptions::default_for_output(output_dir),
+        gpu: GpuRunOptions::default(),
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        request,
+        ProveExecutionInputArtifacts {
+            witness_library,
+            guest_image,
+            public_inputs: Some(public_values_path),
+        },
+    )
+    .expect("execution plan should derive");
+    let first = run_prove_witness_commitments(&plan, 0).expect("first unit should run");
+    let second = run_prove_witness_commitments(&plan, 1).expect("second unit should run");
+
+    let packed_unit_values = vec![
+        Felt::from_u64(101),
+        Felt::from_u64(201),
+        Felt::from_u64(202),
+        Felt::from_u64(203),
+    ];
+    let unit_values = vec![
+        ProveUnitValues {
+            unit_index: 0,
+            unit_value_map: plan.run_plan.schedule.units[0].unit_value_map.clone(),
+            packed_values: packed_unit_values.clone(),
+        },
+        ProveUnitValues {
+            unit_index: 1,
+            unit_value_map: plan.run_plan.schedule.units[1].unit_value_map.clone(),
+            packed_values: packed_unit_values.clone(),
+        },
+    ];
+
+    let proof = build_witness_proof_artifact(
+        &catalog,
+        &plan.run_plan.schedule,
+        public_values_hash,
+        &[&first, &second],
+        &[],
+        &[],
+        &unit_values,
+    )
+    .expect("proof artifact should build");
+    let encoded = encode_proof_artifact(&proof).expect("proof should encode");
+    let proof = parse_proof_artifact(&encoded).expect("proof should parse");
+
+    let unit_values_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == UNIT_VALUES_SEGMENT_ID)
+        .expect("unit values segment should exist");
+    let unit_values =
+        parse_unit_values_segment(&unit_values_segment.data).expect("unit values should parse");
+    assert_eq!(unit_values.units.len(), 2);
+    assert_eq!(unit_values.units[0].unit_index, 0);
+    assert_eq!(unit_values.units[1].unit_index, 1);
+    assert_eq!(unit_values.units[0].values, vec![101, 201, 202, 203]);
+    assert_eq!(unit_values.units[1].values, vec![101, 201, 202, 203]);
+    validate_setup_preflight(&catalog, &proof, &public_values)
+        .expect("setup preflight should validate");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]

@@ -11,7 +11,7 @@ mod prove_inputs;
 mod prove_plan;
 mod prove_witness;
 
-pub use prove_witness::build_witness_proof_core_artifact;
+pub use prove_witness::{build_witness_proof_artifact, build_witness_proof_core_artifact};
 
 pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {

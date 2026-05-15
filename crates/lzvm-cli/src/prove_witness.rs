@@ -9,6 +9,9 @@ use lzvm_artifacts::public_values::{public_values_digest, read_public_values_fil
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::group_values::build_group_values_segment;
 use lzvm_prover::setup_preflight::validate_setup_preflight;
+use lzvm_prover::unit_values::{
+    build_unit_values_segment_from_packed_values_batch, ProveUnitValues,
+};
 use lzvm_prover::{
     build_constant_opening_segment, build_pcs_evaluation_segment,
     build_pcs_fri_opening_segment_from_transcript_values,
@@ -375,6 +378,39 @@ pub fn build_witness_proof_core_artifact(
         public_values_hash,
         segments,
     })
+}
+
+pub fn build_witness_proof_artifact(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
+    public_values_hash: [u8; 32],
+    witness_outputs: &[&ProveWitnessCommitments],
+    proof_values: &[Felt],
+    group_values: &[Ext3],
+    unit_values: &[ProveUnitValues],
+) -> Result<ProofArtifact, String> {
+    let mut proof =
+        build_witness_proof_core_artifact(catalog, schedule, public_values_hash, witness_outputs)?;
+    let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(
+        &catalog.layout.global_info,
+        proof_values,
+    )
+    .map_err(|error| format!("build proof values segment failed: {error}"))?;
+    if let Some(segment) = proof_values_segment {
+        proof.segments.push(segment);
+    }
+    let group_values_segment =
+        build_group_values_segment(&catalog.layout.global_info, group_values)
+            .map_err(|error| format!("build group values segment failed: {error}"))?;
+    if let Some(segment) = group_values_segment {
+        proof.segments.push(segment);
+    }
+    let unit_values_segment = build_unit_values_segment_from_packed_values_batch(unit_values)
+        .map_err(|error| format!("build unit values segment failed: {error}"))?;
+    if let Some(segment) = unit_values_segment {
+        proof.segments.push(segment);
+    }
+    Ok(proof)
 }
 
 fn build_proof_bytes(
