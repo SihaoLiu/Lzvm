@@ -2,11 +2,22 @@ use std::fmt;
 
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::hint_program::{HintOperand, HintProgram};
+use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::setup_info::{CommitmentColumn, ConstantColumn, StageValue, UnitSetupInfo};
 use lzvm_field::{Ext3, Felt};
 
 use crate::global_constraints::GlobalConstraintInputs;
+use crate::group_values::{load_group_values_from_segments, LoadGroupValuesSegmentError};
+use crate::pcs_query_plan::uses_transcript_pcs_query_plan_inputs;
+use crate::pcs_transcript_segments::{
+    derive_pcs_transcript_challenges_from_proof_segments, PcsTranscriptProofSegmentsError,
+};
+use crate::proof_values::{
+    flatten_pcs_proof_values, load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError,
+    ProvePcsProofValuesSegmentError,
+};
 use crate::regular_constraints::{RegularColumnMatrix, RegularConstraintInputs};
+use crate::ProveSchedule;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedHintValue {
@@ -50,6 +61,15 @@ pub struct RegularHintInputRequirements {
     pub proof_values: bool,
     pub group_values: bool,
     pub challenges: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ResolveGlobalHintProofSegmentsRequest<'a> {
+    pub global_info: &'a GlobalInfo,
+    pub program: &'a HintProgram,
+    pub schedule: &'a ProveSchedule,
+    pub public_values: &'a [Felt],
+    pub segments: &'a [ProofSegment],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +120,15 @@ pub enum HintEvalError {
         dimension: u32,
     },
     LengthOverflow,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolveGlobalHintProofSegmentsError {
+    ProofValues(LoadPcsProofValuesSegmentError),
+    PackedProofValues(ProvePcsProofValuesSegmentError),
+    Transcript(PcsTranscriptProofSegmentsError),
+    GroupValues(LoadGroupValuesSegmentError),
+    Eval(HintEvalError),
 }
 
 impl fmt::Display for HintEvalError {
@@ -161,6 +190,32 @@ impl fmt::Display for HintEvalError {
 }
 
 impl std::error::Error for HintEvalError {}
+
+impl fmt::Display for ResolveGlobalHintProofSegmentsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ProofValues(error) => write!(f, "{error}"),
+            Self::PackedProofValues(error) => {
+                write!(f, "global hint proof values invalid: {error}")
+            }
+            Self::Transcript(error) => write!(f, "{error}"),
+            Self::GroupValues(error) => write!(f, "{error}"),
+            Self::Eval(error) => write!(f, "invalid global hint program: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for ResolveGlobalHintProofSegmentsError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ProofValues(error) => Some(error),
+            Self::PackedProofValues(error) => Some(error),
+            Self::Transcript(error) => Some(error),
+            Self::GroupValues(error) => Some(error),
+            Self::Eval(error) => Some(error),
+        }
+    }
+}
 
 pub fn global_hint_input_requirements(program: &HintProgram) -> GlobalHintInputRequirements {
     let mut requirements = GlobalHintInputRequirements::default();
@@ -273,6 +328,62 @@ pub fn resolve_global_hint_program(
             })
         })
         .collect()
+}
+
+pub fn resolve_global_hint_program_from_proof_segments(
+    request: ResolveGlobalHintProofSegmentsRequest<'_>,
+) -> Result<Vec<ResolvedHint>, ResolveGlobalHintProofSegmentsError> {
+    if request.program.hints.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let requirements = global_hint_input_requirements(request.program);
+    let public_values = if requirements.publics {
+        request.public_values
+    } else {
+        &[]
+    };
+    let packed_proof_values = if requirements.proof_values {
+        let proof_values =
+            load_pcs_proof_values_from_segments(request.global_info, request.segments)
+                .map_err(ResolveGlobalHintProofSegmentsError::ProofValues)?;
+        flatten_pcs_proof_values(request.global_info, &proof_values)
+            .map_err(ResolveGlobalHintProofSegmentsError::PackedProofValues)?
+    } else {
+        Vec::new()
+    };
+    let challenges = if requirements.challenges {
+        if uses_transcript_pcs_query_plan_inputs(request.segments) {
+            derive_pcs_transcript_challenges_from_proof_segments(
+                request.schedule,
+                request.public_values,
+                request.segments,
+            )
+            .map_err(ResolveGlobalHintProofSegmentsError::Transcript)?
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+    let group_values = if requirements.group_values {
+        load_group_values_from_segments(request.global_info, request.segments)
+            .map_err(ResolveGlobalHintProofSegmentsError::GroupValues)?
+    } else {
+        Vec::new()
+    };
+
+    resolve_global_hint_program(
+        request.global_info,
+        request.program,
+        GlobalConstraintInputs {
+            publics: public_values,
+            proof_values: &packed_proof_values,
+            challenges: &challenges,
+            group_values: &group_values,
+        },
+    )
+    .map_err(ResolveGlobalHintProofSegmentsError::Eval)
 }
 
 pub fn resolve_regular_hint_field(

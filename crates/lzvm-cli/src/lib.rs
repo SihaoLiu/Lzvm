@@ -31,14 +31,14 @@ use lzvm_artifacts::verification_key::{read_verification_key_binary_file, Verifi
 use lzvm_artifacts::verifier_info::{
     encode_verifier_info, read_verifier_info_binary_file, VerifierInfo,
 };
-use lzvm_field::{Ext3, Felt};
+use lzvm_field::Felt;
 use lzvm_prover::constant_opening::validate_constant_opening_segments;
 use lzvm_prover::global_constraints::{
-    validate_global_constraints_from_proof_segments, GlobalConstraintInputs,
-    ValidateGlobalConstraintProofSegmentsRequest,
+    validate_global_constraints_from_proof_segments, ValidateGlobalConstraintProofSegmentsRequest,
 };
-use lzvm_prover::group_values::load_group_values_from_segments;
-use lzvm_prover::hint_eval::{global_hint_input_requirements, resolve_global_hint_program};
+use lzvm_prover::hint_eval::{
+    resolve_global_hint_program_from_proof_segments, ResolveGlobalHintProofSegmentsRequest,
+};
 use lzvm_prover::pcs_fri::{
     validate_optional_pcs_fri_opening_proof_segments,
     ValidateOptionalPcsFriOpeningProofSegmentsRequest,
@@ -47,9 +47,7 @@ use lzvm_prover::pcs_material_manifest::validate_pcs_material_manifest_segments;
 use lzvm_prover::pcs_query_plan::{
     uses_transcript_pcs_query_plan_inputs, validate_pcs_query_plan_segments,
 };
-use lzvm_prover::pcs_transcript_segments::derive_pcs_transcript_challenges_from_proof_segments;
 use lzvm_prover::proof_preflight::validate_proof_public_values;
-use lzvm_prover::proof_values::{flatten_pcs_proof_values, load_pcs_proof_values_from_segments};
 use lzvm_prover::witness_commitment::load_witness_commitment_segments;
 use lzvm_prover::witness_opening::validate_witness_opening_segments;
 use lzvm_prover::{derive_prove_schedule, ProveSchedule};
@@ -593,76 +591,16 @@ fn validate_global_hints(
         return Ok(());
     }
 
-    let requirements = global_hint_input_requirements(&catalog.global_hints);
-    let publics = if requirements.publics {
-        transcript_public_value_fields(public_values)?
-    } else {
-        Vec::new()
-    };
-    let packed_proof_values = if requirements.proof_values {
-        let proof_values = load_pcs_proof_values(catalog, proof)?;
-        flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)
-            .map_err(|error| format!("global hint proof values invalid: {error}"))?
-    } else {
-        Vec::new()
-    };
-    let challenges = if requirements.challenges {
-        derive_global_constraint_challenges(schedule, proof, public_values)?
-    } else {
-        Vec::new()
-    };
-    let group_values = if requirements.group_values {
-        load_group_values(catalog, proof)?
-    } else {
-        Vec::new()
-    };
-
-    resolve_global_hint_program(
-        &catalog.layout.global_info,
-        &catalog.global_hints,
-        GlobalConstraintInputs {
-            publics: &publics,
-            proof_values: &packed_proof_values,
-            challenges: &challenges,
-            group_values: &group_values,
-        },
-    )
-    .map(|_| ())
-    .map_err(|error| format!("invalid global hint program: {error}"))
-}
-
-fn derive_global_constraint_challenges(
-    schedule: &ProveSchedule,
-    proof: &ProofArtifact,
-    public_values: &PublicValues,
-) -> Result<Vec<Ext3>, String> {
-    if !uses_transcript_pcs_query_plan_inputs(&proof.segments) {
-        return Ok(Vec::new());
-    }
-
     let public_value_fields = transcript_public_value_fields(public_values)?;
-    derive_pcs_transcript_challenges_from_proof_segments(
+    resolve_global_hint_program_from_proof_segments(ResolveGlobalHintProofSegmentsRequest {
+        global_info: &catalog.layout.global_info,
+        program: &catalog.global_hints,
         schedule,
-        &public_value_fields,
-        &proof.segments,
-    )
+        public_values: &public_value_fields,
+        segments: &proof.segments,
+    })
+    .map(|_| ())
     .map_err(|error| error.to_string())
-}
-
-fn load_pcs_proof_values(
-    catalog: &KeyDirectoryCatalog,
-    proof: &ProofArtifact,
-) -> Result<Vec<Ext3>, String> {
-    load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
-        .map_err(|error| error.to_string())
-}
-
-fn load_group_values(
-    catalog: &KeyDirectoryCatalog,
-    proof: &ProofArtifact,
-) -> Result<Vec<Ext3>, String> {
-    load_group_values_from_segments(&catalog.layout.global_info, &proof.segments)
-        .map_err(|error| error.to_string())
 }
 
 fn validate_setup_directory(

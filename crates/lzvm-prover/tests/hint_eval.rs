@@ -9,12 +9,16 @@ use lzvm_field::{Ext3, Felt};
 use lzvm_prover::global_constraints::GlobalConstraintInputs;
 use lzvm_prover::hint_eval::{
     global_hint_input_requirements, regular_hint_input_requirements, resolve_global_hint_field,
-    resolve_regular_hint_field, GlobalHintInputRequirements, HintEvalError,
-    RegularHintInputRequirements, ResolvedHintPayload, ResolvedHintValue,
+    resolve_global_hint_program_from_proof_segments, resolve_regular_hint_field,
+    GlobalHintInputRequirements, HintEvalError, RegularHintInputRequirements,
+    ResolveGlobalHintProofSegmentsError, ResolveGlobalHintProofSegmentsRequest,
+    ResolvedHintPayload, ResolvedHintValue,
 };
+use lzvm_prover::proof_values::LoadPcsProofValuesSegmentError;
 use lzvm_prover::regular_constraints::{
     RegularColumnMatrix, RegularConstraintInputs, RegularStageColumns,
 };
+use lzvm_prover::ProveSchedule;
 
 #[test]
 fn resolves_global_hint_values_from_runtime_inputs() {
@@ -179,6 +183,72 @@ fn identifies_global_hint_runtime_inputs() {
             challenges: true,
             group_values: true,
         }
+    );
+}
+
+#[test]
+fn resolves_global_hint_program_from_proof_segments() {
+    let program = HintProgram {
+        hints: vec![Hint {
+            name: "hint-a".to_owned(),
+            fields: vec![HintField {
+                name: "values".to_owned(),
+                values: vec![HintValue {
+                    operand: HintOperand::Public { id: 1 },
+                    positions: vec![3],
+                }],
+            }],
+        }],
+    };
+
+    let resolved =
+        resolve_global_hint_program_from_proof_segments(ResolveGlobalHintProofSegmentsRequest {
+            global_info: &sample_global_info(),
+            program: &program,
+            schedule: &empty_schedule(),
+            public_values: &[felt(7), felt(11)],
+            segments: &[],
+        })
+        .expect("global hint should resolve from proof segments");
+
+    assert_eq!(resolved.len(), 1);
+    assert_eq!(
+        resolved[0].fields[0].values[0].payload,
+        ResolvedHintPayload::Scalar(felt(11))
+    );
+    assert_eq!(resolved[0].fields[0].values[0].positions, vec![3]);
+}
+
+#[test]
+fn rejects_global_hint_proof_values_missing_from_proof_segments() {
+    let program = HintProgram {
+        hints: vec![Hint {
+            name: "hint-a".to_owned(),
+            fields: vec![HintField {
+                name: "values".to_owned(),
+                values: vec![HintValue {
+                    operand: HintOperand::ProofValue { id: 0 },
+                    positions: vec![],
+                }],
+            }],
+        }],
+    };
+
+    let error =
+        resolve_global_hint_program_from_proof_segments(ResolveGlobalHintProofSegmentsRequest {
+            global_info: &sample_global_info(),
+            program: &program,
+            schedule: &empty_schedule(),
+            public_values: &[],
+            segments: &[],
+        })
+        .expect_err("proof values should be required");
+
+    assert_eq!(
+        error,
+        ResolveGlobalHintProofSegmentsError::ProofValues(
+            LoadPcsProofValuesSegmentError::MissingSegment
+        )
     );
 }
 
@@ -561,6 +631,19 @@ fn sample_air(name: &str) -> GlobalAir {
         name: name.to_owned(),
         num_rows: 2,
         has_compressor: false,
+    }
+}
+
+fn empty_schedule() -> ProveSchedule {
+    ProveSchedule {
+        setup_hash: [0; 32],
+        unit_count: 0,
+        total_fixed_bytes: 0,
+        total_pcs_material_bytes: 0,
+        pcs_material_unit_count: 0,
+        total_query_count: 0,
+        max_extended_domain_bits: 0,
+        units: Vec::new(),
     }
 }
 
