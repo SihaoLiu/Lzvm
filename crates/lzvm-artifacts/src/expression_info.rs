@@ -7,7 +7,7 @@ use crate::sectioned::{
 };
 
 const EXPRESSION_INFO_KIND: [u8; 4] = *b"xinf";
-const EXPRESSION_INFO_VERSION: u32 = 2;
+const EXPRESSION_INFO_VERSION: u32 = 3;
 const EXPRESSION_INFO_SECTION_ID: u32 = 1;
 
 const JSON_NULL_TAG: u8 = 0;
@@ -19,6 +19,10 @@ const JSON_STRING_TAG: u8 = 5;
 const JSON_ARRAY_TAG: u8 = 6;
 const JSON_OBJECT_TAG: u8 = 7;
 
+const DESTINATION_TEMPORARY_TAG: u8 = 1;
+const DESTINATION_QUOTIENT_TAG: u8 = 2;
+const DESTINATION_FRI_TAG: u8 = 3;
+
 const OPERAND_TEMPORARY_TAG: u8 = 1;
 const OPERAND_NUMBER_TAG: u8 = 2;
 const OPERAND_EVALUATION_TAG: u8 = 3;
@@ -29,6 +33,9 @@ const OPERAND_COMMITMENT_TAG: u8 = 7;
 const OPERAND_BOUNDARY_TAG: u8 = 8;
 const OPERAND_PROOF_VALUE_TAG: u8 = 9;
 const OPERAND_OPENING_DENOMINATOR_TAG: u8 = 10;
+const OPERAND_CUSTOM_COMMITMENT_TAG: u8 = 11;
+const OPERAND_AIR_GROUP_VALUE_TAG: u8 = 12;
+const OPERAND_AIR_VALUE_TAG: u8 = 13;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExpressionInfo {
@@ -102,10 +109,11 @@ pub enum OperationKind {
     Copy,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CodeDestination {
-    pub temporary_id: u32,
-    pub dimension: u32,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CodeDestination {
+    Temporary { id: u32, dimension: u32 },
+    Quotient { id: u32, dimension: u32 },
+    FriExpression { id: u32, dimension: u32 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,6 +146,7 @@ pub enum CodeOperand {
     },
     Commitment {
         id: u32,
+        prime: Option<i64>,
         dimension: u32,
     },
     BoundaryZerofier {
@@ -146,20 +155,45 @@ pub enum CodeOperand {
     },
     ProofValue {
         id: u32,
+        stage: Option<u32>,
         dimension: u32,
     },
     OpeningDenominator {
         id: u32,
+        opening: Option<u32>,
+        dimension: u32,
+    },
+    CustomCommitment {
+        id: u32,
+        commit_id: Option<u32>,
+        prime: Option<i64>,
+        dimension: u32,
+    },
+    AirGroupValue {
+        id: u32,
+        stage: Option<u32>,
+        air_group_id: Option<u32>,
+        dimension: u32,
+    },
+    AirValue {
+        id: u32,
+        stage: Option<u32>,
+        air_group_id: Option<u32>,
         dimension: u32,
     },
 }
 
 impl CodeDestination {
-    pub fn temporary(temporary_id: u32, dimension: u32) -> Self {
-        Self {
-            temporary_id,
-            dimension,
-        }
+    pub fn temporary(id: u32, dimension: u32) -> Self {
+        Self::Temporary { id, dimension }
+    }
+
+    pub fn quotient(id: u32, dimension: u32) -> Self {
+        Self::Quotient { id, dimension }
+    }
+
+    pub fn fri_expression(id: u32, dimension: u32) -> Self {
+        Self::FriExpression { id, dimension }
     }
 }
 
@@ -194,7 +228,19 @@ impl CodeOperand {
     }
 
     pub fn commitment(id: u32, dimension: u32) -> Self {
-        Self::Commitment { id, dimension }
+        Self::Commitment {
+            id,
+            prime: None,
+            dimension,
+        }
+    }
+
+    pub fn commitment_at(id: u32, prime: Option<i64>, dimension: u32) -> Self {
+        Self::Commitment {
+            id,
+            prime,
+            dimension,
+        }
     }
 
     pub fn boundary_zerofier(id: u32, dimension: u32) -> Self {
@@ -202,11 +248,77 @@ impl CodeOperand {
     }
 
     pub fn proof_value(id: u32, dimension: u32) -> Self {
-        Self::ProofValue { id, dimension }
+        Self::ProofValue {
+            id,
+            stage: None,
+            dimension,
+        }
+    }
+
+    pub fn proof_value_at(id: u32, stage: Option<u32>, dimension: u32) -> Self {
+        Self::ProofValue {
+            id,
+            stage,
+            dimension,
+        }
     }
 
     pub fn x_div_x_sub(id: u32, dimension: u32) -> Self {
-        Self::OpeningDenominator { id, dimension }
+        Self::OpeningDenominator {
+            id,
+            opening: None,
+            dimension,
+        }
+    }
+
+    pub fn opening_denominator(id: u32, opening: Option<u32>, dimension: u32) -> Self {
+        Self::OpeningDenominator {
+            id,
+            opening,
+            dimension,
+        }
+    }
+
+    pub fn custom_commitment(
+        id: u32,
+        commit_id: Option<u32>,
+        prime: Option<i64>,
+        dimension: u32,
+    ) -> Self {
+        Self::CustomCommitment {
+            id,
+            commit_id,
+            prime,
+            dimension,
+        }
+    }
+
+    pub fn air_group_value(
+        id: u32,
+        stage: Option<u32>,
+        air_group_id: Option<u32>,
+        dimension: u32,
+    ) -> Self {
+        Self::AirGroupValue {
+            id,
+            stage,
+            air_group_id,
+            dimension,
+        }
+    }
+
+    pub fn air_value(
+        id: u32,
+        stage: Option<u32>,
+        air_group_id: Option<u32>,
+        dimension: u32,
+    ) -> Self {
+        Self::AirValue {
+            id,
+            stage,
+            air_group_id,
+            dimension,
+        }
     }
 }
 
@@ -863,11 +975,13 @@ fn validate_destination(
     value: &CodeDestination,
     temporary_count: u32,
 ) -> Result<(), ExpressionInfoError> {
-    if value.temporary_id >= temporary_count {
-        return Err(ExpressionInfoError::TemporaryReferenceOutOfBounds {
-            temporary_id: value.temporary_id,
-            temporary_count,
-        });
+    if let CodeDestination::Temporary { id, .. } = value {
+        if *id >= temporary_count {
+            return Err(ExpressionInfoError::TemporaryReferenceOutOfBounds {
+                temporary_id: *id,
+                temporary_count,
+            });
+        }
     }
     Ok(())
 }
@@ -889,13 +1003,15 @@ fn parse_destination(
     temporary_count: u32,
 ) -> Result<CodeDestination, ExpressionInfoError> {
     let object = as_object(value, "dest")?;
-    if required_string(object, "type")? != "tmp" {
-        return Err(ExpressionInfoError::InvalidField { field: "dest" });
-    }
-    let destination = CodeDestination::temporary(
-        required_u32(object, "id")?,
-        optional_u32(object, "dim")?.unwrap_or(1),
-    );
+    let kind = required_string(object, "type")?;
+    let id = required_u32(object, "id")?;
+    let dimension = optional_u32(object, "dim")?.unwrap_or(1);
+    let destination = match kind.as_str() {
+        "tmp" => CodeDestination::temporary(id, dimension),
+        "q" => CodeDestination::quotient(id, dimension),
+        "f" => CodeDestination::fri_expression(id, dimension),
+        _ => return Err(ExpressionInfoError::UnknownReferenceKind { kind }),
+    };
     validate_destination(&destination, temporary_count)?;
     Ok(destination)
 }
@@ -941,8 +1057,15 @@ fn parse_operand(value: &serde_json::Value) -> Result<CodeOperand, ExpressionInf
             required_u32(object, "id")?,
             dimension,
         )),
-        "cm" => Ok(CodeOperand::commitment(
+        "cm" => Ok(CodeOperand::commitment_at(
             required_u32(object, "id")?,
+            optional_i64(object, "prime")?,
+            dimension,
+        )),
+        "custom" => Ok(CodeOperand::custom_commitment(
+            required_u32(object, "id")?,
+            optional_u32(object, "commitId")?,
+            optional_i64(object, "prime")?,
             dimension,
         )),
         "Zi" => {
@@ -952,12 +1075,26 @@ fn parse_operand(value: &serde_json::Value) -> Result<CodeOperand, ExpressionInf
             };
             Ok(CodeOperand::boundary_zerofier(id, dimension))
         }
-        "proofvalue" | "proofValue" => Ok(CodeOperand::proof_value(
+        "proofvalue" | "proofValue" => Ok(CodeOperand::proof_value_at(
             required_u32(object, "id")?,
+            optional_u32(object, "stage")?,
             dimension,
         )),
-        "xDivXSub" | "xdivxsub" => Ok(CodeOperand::x_div_x_sub(
+        "xDivXSub" | "xdivxsub" | "xDivXSubXi" => Ok(CodeOperand::opening_denominator(
             required_u32(object, "id")?,
+            optional_u32(object, "opening")?,
+            dimension,
+        )),
+        "airgroupvalue" => Ok(CodeOperand::air_group_value(
+            required_u32(object, "id")?,
+            optional_u32(object, "stage")?,
+            optional_u32(object, "airgroupId")?,
+            dimension,
+        )),
+        "airvalue" => Ok(CodeOperand::air_value(
+            required_u32(object, "id")?,
+            optional_u32(object, "stage")?,
+            optional_u32(object, "airgroupId")?,
             dimension,
         )),
         _ => Err(ExpressionInfoError::UnknownReferenceKind { kind }),
@@ -1160,8 +1297,20 @@ fn write_optional_i64(out: &mut Vec<u8>, value: Option<i64>) {
 }
 
 fn write_destination(out: &mut Vec<u8>, value: &CodeDestination) {
-    write_u32(out, value.temporary_id);
-    write_u32(out, value.dimension);
+    match value {
+        CodeDestination::Temporary { id, dimension } => {
+            out.push(DESTINATION_TEMPORARY_TAG);
+            write_reference_body(out, *id, *dimension);
+        }
+        CodeDestination::Quotient { id, dimension } => {
+            out.push(DESTINATION_QUOTIENT_TAG);
+            write_reference_body(out, *id, *dimension);
+        }
+        CodeDestination::FriExpression { id, dimension } => {
+            out.push(DESTINATION_FRI_TAG);
+            write_reference_body(out, *id, *dimension);
+        }
+    }
 }
 
 fn write_operand(out: &mut Vec<u8>, value: &CodeOperand) {
@@ -1198,21 +1347,69 @@ fn write_operand(out: &mut Vec<u8>, value: &CodeOperand) {
             out.push(OPERAND_CONSTANT_TAG);
             write_reference_body(out, *id, *dimension);
         }
-        CodeOperand::Commitment { id, dimension } => {
+        CodeOperand::Commitment {
+            id,
+            prime,
+            dimension,
+        } => {
             out.push(OPERAND_COMMITMENT_TAG);
             write_reference_body(out, *id, *dimension);
+            write_optional_i64(out, *prime);
         }
         CodeOperand::BoundaryZerofier { id, dimension } => {
             out.push(OPERAND_BOUNDARY_TAG);
             write_reference_body(out, *id, *dimension);
         }
-        CodeOperand::ProofValue { id, dimension } => {
+        CodeOperand::ProofValue {
+            id,
+            stage,
+            dimension,
+        } => {
             out.push(OPERAND_PROOF_VALUE_TAG);
             write_reference_body(out, *id, *dimension);
+            write_optional_u32(out, *stage);
         }
-        CodeOperand::OpeningDenominator { id, dimension } => {
+        CodeOperand::OpeningDenominator {
+            id,
+            opening,
+            dimension,
+        } => {
             out.push(OPERAND_OPENING_DENOMINATOR_TAG);
             write_reference_body(out, *id, *dimension);
+            write_optional_u32(out, *opening);
+        }
+        CodeOperand::CustomCommitment {
+            id,
+            commit_id,
+            prime,
+            dimension,
+        } => {
+            out.push(OPERAND_CUSTOM_COMMITMENT_TAG);
+            write_reference_body(out, *id, *dimension);
+            write_optional_u32(out, *commit_id);
+            write_optional_i64(out, *prime);
+        }
+        CodeOperand::AirGroupValue {
+            id,
+            stage,
+            air_group_id,
+            dimension,
+        } => {
+            out.push(OPERAND_AIR_GROUP_VALUE_TAG);
+            write_reference_body(out, *id, *dimension);
+            write_optional_u32(out, *stage);
+            write_optional_u32(out, *air_group_id);
+        }
+        CodeOperand::AirValue {
+            id,
+            stage,
+            air_group_id,
+            dimension,
+        } => {
+            out.push(OPERAND_AIR_VALUE_TAG);
+            write_reference_body(out, *id, *dimension);
+            write_optional_u32(out, *stage);
+            write_optional_u32(out, *air_group_id);
         }
     }
 }
@@ -1271,10 +1468,14 @@ impl<'a> Reader<'a> {
     }
 
     fn read_destination(&mut self) -> Result<CodeDestination, ExpressionInfoError> {
-        Ok(CodeDestination {
-            temporary_id: self.read_u32()?,
-            dimension: self.read_u32()?,
-        })
+        let tag = self.read_u8()?;
+        let (id, dimension) = self.read_reference_body()?;
+        match tag {
+            DESTINATION_TEMPORARY_TAG => Ok(CodeDestination::temporary(id, dimension)),
+            DESTINATION_QUOTIENT_TAG => Ok(CodeDestination::quotient(id, dimension)),
+            DESTINATION_FRI_TAG => Ok(CodeDestination::fri_expression(id, dimension)),
+            value => Err(ExpressionInfoError::InvalidOperandTag { value }),
+        }
     }
 
     fn read_operand(&mut self) -> Result<CodeOperand, ExpressionInfoError> {
@@ -1305,7 +1506,8 @@ impl<'a> Reader<'a> {
             }
             OPERAND_COMMITMENT_TAG => {
                 let (id, dimension) = self.read_reference_body()?;
-                Ok(CodeOperand::commitment(id, dimension))
+                let prime = self.read_optional_i64("commitment_prime")?;
+                Ok(CodeOperand::commitment_at(id, prime, dimension))
             }
             OPERAND_BOUNDARY_TAG => {
                 let (id, dimension) = self.read_reference_body()?;
@@ -1313,11 +1515,38 @@ impl<'a> Reader<'a> {
             }
             OPERAND_PROOF_VALUE_TAG => {
                 let (id, dimension) = self.read_reference_body()?;
-                Ok(CodeOperand::proof_value(id, dimension))
+                let stage = self.read_optional_u32("proof_value_stage")?;
+                Ok(CodeOperand::proof_value_at(id, stage, dimension))
             }
             OPERAND_OPENING_DENOMINATOR_TAG => {
                 let (id, dimension) = self.read_reference_body()?;
-                Ok(CodeOperand::x_div_x_sub(id, dimension))
+                let opening = self.read_optional_u32("opening_denominator_opening")?;
+                Ok(CodeOperand::opening_denominator(id, opening, dimension))
+            }
+            OPERAND_CUSTOM_COMMITMENT_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                let commit_id = self.read_optional_u32("custom_commitment_id")?;
+                let prime = self.read_optional_i64("custom_commitment_prime")?;
+                Ok(CodeOperand::custom_commitment(
+                    id, commit_id, prime, dimension,
+                ))
+            }
+            OPERAND_AIR_GROUP_VALUE_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                let stage = self.read_optional_u32("air_group_value_stage")?;
+                let air_group_id = self.read_optional_u32("air_group_value_group")?;
+                Ok(CodeOperand::air_group_value(
+                    id,
+                    stage,
+                    air_group_id,
+                    dimension,
+                ))
+            }
+            OPERAND_AIR_VALUE_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                let stage = self.read_optional_u32("air_value_stage")?;
+                let air_group_id = self.read_optional_u32("air_value_group")?;
+                Ok(CodeOperand::air_value(id, stage, air_group_id, dimension))
             }
             value => Err(ExpressionInfoError::InvalidOperandTag { value }),
         }

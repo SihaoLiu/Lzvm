@@ -106,8 +106,53 @@ fn parses_expression_info_json() {
         info.constraints[0].operations[0].sources,
         vec![
             CodeOperand::challenge(0, Some(1), Some(0), 3),
-            CodeOperand::commitment(2, 3),
+            CodeOperand::commitment_at(2, Some(0), 3),
         ]
+    );
+}
+
+#[test]
+fn parses_non_temporary_expression_operation_references() {
+    let json = r#"{
+        "hintsInfo": [],
+        "expressionsCode": [
+            {
+                "expId": 7,
+                "tmpUsed": 0,
+                "code": [
+                    {
+                        "op": "copy",
+                        "dest": {"type": "q", "id": 0, "dim": 3},
+                        "src": [{"type": "airgroupvalue", "id": 2, "stage": 1, "airgroupId": 3, "dim": 3}]
+                    },
+                    {
+                        "op": "copy",
+                        "dest": {"type": "f", "id": 0, "dim": 3},
+                        "src": [{"type": "xDivXSubXi", "id": 4, "opening": 1, "dim": 3}]
+                    }
+                ]
+            }
+        ],
+        "constraints": []
+    }"#;
+
+    let info = parse_expression_info_json(json).expect("fixture should parse");
+
+    assert_eq!(
+        info.expressions[0].operations[0].destination,
+        CodeDestination::quotient(0, 3)
+    );
+    assert_eq!(
+        info.expressions[0].operations[0].sources,
+        vec![CodeOperand::air_group_value(2, Some(1), Some(3), 3)]
+    );
+    assert_eq!(
+        info.expressions[0].operations[1].destination,
+        CodeDestination::fri_expression(0, 3)
+    );
+    assert_eq!(
+        info.expressions[0].operations[1].sources,
+        vec![CodeOperand::opening_denominator(4, Some(1), 3)]
     );
 }
 
@@ -214,7 +259,7 @@ fn encodes_the_current_expression_info_format_version() {
     let bytes = encode_expression_info(&info).expect("fixture should encode");
     let version = u32::from_le_bytes(bytes[4..8].try_into().expect("slice length checked"));
 
-    assert_eq!(version, 2);
+    assert_eq!(version, 3);
 }
 
 #[test]
@@ -222,13 +267,13 @@ fn rejects_stale_expression_info_format_headers() {
     let info =
         parse_expression_info_json(sample_expression_info_json()).expect("fixture should parse");
     let mut bytes = encode_expression_info(&info).expect("fixture should encode");
-    bytes[4..8].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[4..8].copy_from_slice(&2_u32.to_le_bytes());
 
     let error = parse_expression_info(&bytes).expect_err("stale format should be rejected");
 
     assert!(matches!(
         error,
-        ExpressionInfoError::UnsupportedVersion { found: 1, max: 2 }
+        ExpressionInfoError::UnsupportedVersion { found: 2, max: 3 }
     ));
 }
 
