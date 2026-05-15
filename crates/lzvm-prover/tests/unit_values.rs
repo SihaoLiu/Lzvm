@@ -6,8 +6,9 @@ use lzvm_artifacts::unit_values_segment::{
 };
 use lzvm_field::{Felt, FieldError, MODULUS};
 use lzvm_prover::unit_values::{
-    build_unit_values_segment_from_packed_values, load_unit_values_from_segments,
-    LoadUnitValuesSegmentError, ProveUnitValuesSegmentError,
+    build_unit_values_segment_from_packed_values,
+    build_unit_values_segment_from_packed_values_batch, load_unit_values_from_segments,
+    LoadUnitValuesSegmentError, ProveUnitValues, ProveUnitValuesSegmentError,
 };
 
 fn stage_value(name: &str, stage: u32) -> StageValue {
@@ -38,6 +39,34 @@ fn builds_unit_values_segment_from_packed_values() {
     assert_eq!(parsed.units.len(), 1);
     assert_eq!(parsed.units[0].unit_index, 3);
     assert_eq!(parsed.units[0].values, vec![11, 21, 22, 23]);
+}
+
+#[test]
+fn builds_unit_values_segment_for_multiple_units() {
+    let inputs = vec![
+        ProveUnitValues {
+            unit_index: 7,
+            unit_value_map: vec![stage_value("unit.gamma", 1)],
+            packed_values: values(&[31]),
+        },
+        ProveUnitValues {
+            unit_index: 3,
+            unit_value_map: vec![stage_value("unit.alpha", 1), stage_value("unit.beta", 2)],
+            packed_values: values(&[11, 21, 22, 23]),
+        },
+    ];
+
+    let segment = build_unit_values_segment_from_packed_values_batch(&inputs)
+        .expect("segment should build")
+        .expect("segment should be present");
+
+    assert_eq!(segment.id, UNIT_VALUES_SEGMENT_ID);
+    let parsed = parse_unit_values_segment(&segment.data).expect("segment should parse");
+    assert_eq!(parsed.units.len(), 2);
+    assert_eq!(parsed.units[0].unit_index, 3);
+    assert_eq!(parsed.units[0].values, vec![11, 21, 22, 23]);
+    assert_eq!(parsed.units[1].unit_index, 7);
+    assert_eq!(parsed.units[1].values, vec![31]);
 }
 
 #[test]

@@ -28,6 +28,13 @@ pub enum ProveUnitValuesSegmentError {
     Segment(UnitValuesSegmentError),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProveUnitValues {
+    pub unit_index: usize,
+    pub unit_value_map: Vec<StageValue>,
+    pub packed_values: Vec<Felt>,
+}
+
 impl fmt::Display for ProveUnitValuesSegmentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -148,6 +155,48 @@ pub fn build_unit_values_segment_from_packed_values(
     unit_value_map: &[StageValue],
     packed_values: &[Felt],
 ) -> Result<Option<ProofSegment>, ProveUnitValuesSegmentError> {
+    let Some(unit) = build_unit_values_unit_segment(unit_index, unit_value_map, packed_values)?
+    else {
+        return Ok(None);
+    };
+
+    let segment = UnitValuesSegment { units: vec![unit] };
+    Ok(Some(ProofSegment {
+        id: UNIT_VALUES_SEGMENT_ID,
+        data: encode_unit_values_segment(&segment)?,
+    }))
+}
+
+pub fn build_unit_values_segment_from_packed_values_batch(
+    inputs: &[ProveUnitValues],
+) -> Result<Option<ProofSegment>, ProveUnitValuesSegmentError> {
+    let mut units = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        if let Some(unit) = build_unit_values_unit_segment(
+            input.unit_index,
+            &input.unit_value_map,
+            &input.packed_values,
+        )? {
+            units.push(unit);
+        }
+    }
+    if units.is_empty() {
+        return Ok(None);
+    }
+    units.sort_by_key(|unit| unit.unit_index);
+
+    let segment = UnitValuesSegment { units };
+    Ok(Some(ProofSegment {
+        id: UNIT_VALUES_SEGMENT_ID,
+        data: encode_unit_values_segment(&segment)?,
+    }))
+}
+
+fn build_unit_values_unit_segment(
+    unit_index: usize,
+    unit_value_map: &[StageValue],
+    packed_values: &[Felt],
+) -> Result<Option<UnitValuesUnitSegment>, ProveUnitValuesSegmentError> {
     if unit_value_map.is_empty() {
         if packed_values.is_empty() {
             return Ok(None);
@@ -167,16 +216,10 @@ pub fn build_unit_values_segment_from_packed_values(
         });
     }
 
-    let segment = UnitValuesSegment {
-        units: vec![UnitValuesUnitSegment {
-            unit_index: u32::try_from(unit_index)
-                .map_err(|_| ProveUnitValuesSegmentError::UnitIndexOverflow { unit_index })?,
-            values: packed_values.iter().map(|value| value.to_u64()).collect(),
-        }],
-    };
-    Ok(Some(ProofSegment {
-        id: UNIT_VALUES_SEGMENT_ID,
-        data: encode_unit_values_segment(&segment)?,
+    Ok(Some(UnitValuesUnitSegment {
+        unit_index: u32::try_from(unit_index)
+            .map_err(|_| ProveUnitValuesSegmentError::UnitIndexOverflow { unit_index })?,
+        values: packed_values.iter().map(|value| value.to_u64()).collect(),
     }))
 }
 
