@@ -13,8 +13,8 @@ use lzvm_artifacts::pcs_material_segment::{
     PcsMaterialManifestSegmentError, PcsMaterialManifestUnit, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_nonce_segment::{
-    encode_pcs_query_nonce_segment, PcsQueryNonceSegment, PcsQueryNonceSegmentError,
-    PCS_QUERY_NONCE_SEGMENT_ID,
+    encode_pcs_query_nonce_segment, parse_pcs_query_nonce_segment, PcsQueryNonceSegment,
+    PcsQueryNonceSegmentError, PCS_QUERY_NONCE_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_query_segment::{
     encode_pcs_query_plan_segment, parse_pcs_query_plan_segment, PcsQueryPlanSegment,
@@ -140,6 +140,9 @@ pub enum ProvePcsQueryPlanSegmentError {
     },
     MissingTranscriptArity {
         unit_index: usize,
+    },
+    InvalidNonceSegmentId {
+        segment_id: u32,
     },
     QueryNonceMismatch {
         unit_index: usize,
@@ -313,6 +316,10 @@ impl fmt::Display for ProvePcsQueryPlanSegmentError {
                 f,
                 "prove PCS query plan unit {unit_index} is missing transcript arity"
             ),
+            Self::InvalidNonceSegmentId { segment_id } => write!(
+                f,
+                "prove PCS query plan expected query nonce segment id {PCS_QUERY_NONCE_SEGMENT_ID}, found {segment_id}"
+            ),
             Self::QueryNonceMismatch { unit_index, bits } => write!(
                 f,
                 "prove PCS query plan unit {unit_index} query nonce does not satisfy {bits} work bits"
@@ -423,6 +430,7 @@ impl std::error::Error for ProvePcsQueryPlanSegmentError {
             | Self::WitnessUnitMismatch { .. }
             | Self::QueryCountExceedsDomain { .. }
             | Self::MissingTranscriptArity { .. }
+            | Self::InvalidNonceSegmentId { .. }
             | Self::QueryNonceMismatch { .. }
             | Self::LengthOverflow => None,
         }
@@ -728,6 +736,23 @@ pub fn build_pcs_query_nonce_segment_from_transcript_segments(
 ) -> Result<ProofSegment, ProvePcsQueryPlanSegmentError> {
     let challenge = derive_pcs_final_query_challenge_from_segments(input)?;
     build_pcs_query_nonce_segment(schedule, challenge)
+}
+
+pub fn build_pcs_query_plan_segment_from_transcript_segments(
+    schedule: &ProveSchedule,
+    witness_segments: &[ProofSegment],
+    input: PcsTranscriptSegmentInputs<'_>,
+    nonce_segment: &ProofSegment,
+) -> Result<ProofSegment, ProvePcsQueryPlanSegmentError> {
+    if nonce_segment.id != PCS_QUERY_NONCE_SEGMENT_ID {
+        return Err(ProvePcsQueryPlanSegmentError::InvalidNonceSegmentId {
+            segment_id: nonce_segment.id,
+        });
+    }
+
+    let challenge = derive_pcs_final_query_challenge_from_segments(input)?;
+    let nonce = Felt::from_u64(parse_pcs_query_nonce_segment(&nonce_segment.data)?.nonce);
+    build_pcs_query_plan_segment_from_challenge(schedule, witness_segments, challenge, nonce)
 }
 
 #[cfg(feature = "cuda")]
