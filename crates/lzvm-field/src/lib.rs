@@ -337,6 +337,13 @@ pub enum DomainError {
     LengthOverflow,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TranscriptError {
+    UnsupportedArity { arity: usize },
+    InvalidPermutationBits { bits: u32 },
+    LengthOverflow,
+}
+
 impl fmt::Display for FieldError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -372,6 +379,22 @@ impl fmt::Display for DomainError {
 }
 
 impl std::error::Error for DomainError {}
+
+impl fmt::Display for TranscriptError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnsupportedArity { arity } => {
+                write!(f, "unsupported transcript arity: {arity}")
+            }
+            Self::InvalidPermutationBits { bits } => {
+                write!(f, "invalid transcript permutation bits: {bits}")
+            }
+            Self::LengthOverflow => write!(f, "transcript length overflow"),
+        }
+    }
+}
+
+impl std::error::Error for TranscriptError {}
 
 impl Felt {
     pub const ZERO: Self = Self(0);
@@ -490,6 +513,152 @@ pub fn poseidon2_hash_16(input: [Felt; 16]) -> [Felt; 16] {
         &POSEIDON2_WIDTH_16_DIAG,
         &POSEIDON2_WIDTH_16_ROUND_CONSTANTS,
     )
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PoseidonTranscript {
+    arity: usize,
+    width: usize,
+    pending_size: usize,
+    state: [Felt; 4],
+    pending: Vec<Felt>,
+    out: Vec<Felt>,
+    pending_cursor: usize,
+    out_cursor: usize,
+}
+
+impl PoseidonTranscript {
+    pub fn new(arity: usize) -> Result<Self, TranscriptError> {
+        match arity {
+            2 | 4 => {
+                let width = arity
+                    .checked_mul(4)
+                    .ok_or(TranscriptError::LengthOverflow)?;
+                let pending_size = arity
+                    .checked_sub(1)
+                    .and_then(|value| value.checked_mul(4))
+                    .ok_or(TranscriptError::LengthOverflow)?;
+                Ok(Self {
+                    arity,
+                    width,
+                    pending_size,
+                    state: [Felt::ZERO; 4],
+                    pending: vec![Felt::ZERO; pending_size],
+                    out: vec![Felt::ZERO; width],
+                    pending_cursor: 0,
+                    out_cursor: 0,
+                })
+            }
+            _ => Err(TranscriptError::UnsupportedArity { arity }),
+        }
+    }
+
+    pub fn put(&mut self, values: &[Felt]) {
+        for value in values {
+            self.add_scalar(*value);
+        }
+    }
+
+    pub fn get_state(&mut self) -> [Felt; 4] {
+        if self.pending_cursor > 0 {
+            self.update_state();
+        }
+        self.state
+    }
+
+    pub fn get_field(&mut self) -> Ext3 {
+        Ext3::new(self.get_scalar(), self.get_scalar(), self.get_scalar())
+    }
+
+    pub fn get_permutations(
+        &mut self,
+        count: usize,
+        bits: u32,
+    ) -> Result<Vec<u64>, TranscriptError> {
+        if bits == 0 || bits >= 64 {
+            return Err(TranscriptError::InvalidPermutationBits { bits });
+        }
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        let total_bits = count
+            .checked_mul(usize::try_from(bits).map_err(|_| TranscriptError::LengthOverflow)?)
+            .ok_or(TranscriptError::LengthOverflow)?;
+        let field_count = total_bits
+            .checked_add(62)
+            .ok_or(TranscriptError::LengthOverflow)?
+            / 63;
+        let mut fields = Vec::with_capacity(field_count);
+        for _ in 0..field_count {
+            fields.push(self.get_scalar().to_u64());
+        }
+
+        let mut field_index = 0_usize;
+        let mut bit_index = 0_u32;
+        let mut out = Vec::with_capacity(count);
+        for _ in 0..count {
+            let mut sample = 0_u64;
+            for output_bit in 0..bits {
+                let bit = (fields[field_index] >> bit_index) & 1;
+                if bit == 1 {
+                    sample |= 1_u64 << output_bit;
+                }
+                bit_index += 1;
+                if bit_index == 63 {
+                    bit_index = 0;
+                    field_index += 1;
+                }
+            }
+            out.push(sample);
+        }
+        Ok(out)
+    }
+
+    fn add_scalar(&mut self, value: Felt) {
+        self.pending[self.pending_cursor] = value;
+        self.pending_cursor += 1;
+        self.out_cursor = 0;
+        if self.pending_cursor == self.pending_size {
+            self.update_state();
+        }
+    }
+
+    fn get_scalar(&mut self) -> Felt {
+        if self.out_cursor == 0 {
+            self.update_state();
+        }
+        let index = (self.width - self.out_cursor) % self.width;
+        let value = self.out[index];
+        self.out_cursor -= 1;
+        value
+    }
+
+    fn update_state(&mut self) {
+        while self.pending_cursor < self.pending_size {
+            self.pending[self.pending_cursor] = Felt::ZERO;
+            self.pending_cursor += 1;
+        }
+        let hash = match self.arity {
+            2 => {
+                let mut input = [Felt::ZERO; 8];
+                input[..self.pending_size].copy_from_slice(&self.pending);
+                input[self.pending_size..self.width].copy_from_slice(&self.state);
+                poseidon2_hash_8(input).to_vec()
+            }
+            4 => {
+                let mut input = [Felt::ZERO; 16];
+                input[..self.pending_size].copy_from_slice(&self.pending);
+                input[self.pending_size..self.width].copy_from_slice(&self.state);
+                poseidon2_hash_16(input).to_vec()
+            }
+            _ => unreachable!("unsupported arities are rejected at construction"),
+        };
+        self.out = hash;
+        self.out_cursor = self.width;
+        self.pending.fill(Felt::ZERO);
+        self.pending_cursor = 0;
+        self.state.copy_from_slice(&self.out[..4]);
+    }
 }
 
 fn poseidon2_hash<const WIDTH: usize>(
