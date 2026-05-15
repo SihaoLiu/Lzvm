@@ -45,7 +45,6 @@ pub enum ConstantOpeningSegmentError {
     EmptyQueries { unit_index: u32 },
     EmptyValues { unit_index: u32, row_index: u64 },
     DuplicateUnitIndex { unit_index: u32 },
-    DuplicateQueryRow { unit_index: u32, row_index: u64 },
     LengthOverflow,
 }
 
@@ -77,13 +76,6 @@ impl fmt::Display for ConstantOpeningSegmentError {
             Self::DuplicateUnitIndex { unit_index } => {
                 write!(f, "duplicate constant opening unit index: {unit_index}")
             }
-            Self::DuplicateQueryRow {
-                unit_index,
-                row_index,
-            } => write!(
-                f,
-                "duplicate constant opening query row: unit {unit_index}, row {row_index}"
-            ),
             Self::LengthOverflow => write!(f, "constant opening segment length overflow"),
         }
     }
@@ -221,16 +213,9 @@ fn validate_constant_opening_segment(
                 unit_index: unit.unit_index,
             });
         }
-        let mut seen_rows = BTreeSet::new();
         for query in &unit.queries {
             if query.values.is_empty() {
                 return Err(ConstantOpeningSegmentError::EmptyValues {
-                    unit_index: unit.unit_index,
-                    row_index: query.row_index,
-                });
-            }
-            if !seen_rows.insert(query.row_index) {
-                return Err(ConstantOpeningSegmentError::DuplicateQueryRow {
                     unit_index: unit.unit_index,
                     row_index: query.row_index,
                 });

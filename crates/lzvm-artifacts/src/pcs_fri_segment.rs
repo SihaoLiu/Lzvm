@@ -79,11 +79,6 @@ pub enum PcsFriOpeningSegmentError {
         unit_index: u32,
         layer_index: u32,
     },
-    DuplicateQueryRow {
-        unit_index: u32,
-        layer_index: u32,
-        row_index: u64,
-    },
     LengthOverflow,
 }
 
@@ -133,14 +128,6 @@ impl fmt::Display for PcsFriOpeningSegmentError {
             } => write!(
                 f,
                 "duplicate PCS FRI opening layer index: unit {unit_index}, layer {layer_index}"
-            ),
-            Self::DuplicateQueryRow {
-                unit_index,
-                layer_index,
-                row_index,
-            } => write!(
-                f,
-                "duplicate PCS FRI opening query row: unit {unit_index}, layer {layer_index}, row {row_index}"
             ),
             Self::LengthOverflow => write!(f, "PCS FRI opening segment length overflow"),
         }
@@ -335,17 +322,9 @@ fn validate_pcs_fri_opening_segment(
                     layer_index: layer.layer_index,
                 });
             }
-            let mut seen_rows = BTreeSet::new();
             for query in &layer.queries {
                 if query.values.is_empty() {
                     return Err(PcsFriOpeningSegmentError::EmptyQueryValues {
-                        unit_index: unit.unit_index,
-                        layer_index: layer.layer_index,
-                        row_index: query.row_index,
-                    });
-                }
-                if !seen_rows.insert(query.row_index) {
-                    return Err(PcsFriOpeningSegmentError::DuplicateQueryRow {
                         unit_index: unit.unit_index,
                         layer_index: layer.layer_index,
                         row_index: query.row_index,

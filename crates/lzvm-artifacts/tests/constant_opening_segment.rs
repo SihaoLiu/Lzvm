@@ -67,16 +67,13 @@ fn rejects_constant_opening_queries_without_values() {
 }
 
 #[test]
-fn rejects_duplicate_constant_opening_rows() {
+fn encodes_duplicate_constant_opening_rows() {
     let mut segment = sample_segment();
     let query = segment.units[0].queries[0].clone();
     segment.units[0].queries.push(query);
 
-    assert!(matches!(
-        encode_constant_opening_segment(&segment),
-        Err(ConstantOpeningSegmentError::DuplicateQueryRow {
-            unit_index: 0,
-            row_index: 3
-        })
-    ));
+    let encoded = encode_constant_opening_segment(&segment).expect("duplicate rows should encode");
+    let parsed = parse_constant_opening_segment(&encoded).expect("opening segment should parse");
+
+    assert_eq!(parsed, segment);
 }

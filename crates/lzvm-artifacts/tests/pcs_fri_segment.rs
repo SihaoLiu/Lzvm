@@ -70,3 +70,15 @@ fn rejects_duplicate_pcs_fri_layer_indices() {
         })
     ));
 }
+
+#[test]
+fn encodes_duplicate_pcs_fri_query_rows() {
+    let mut segment = sample_segment();
+    let query = segment.units[0].layers[0].queries[0].clone();
+    segment.units[0].layers[0].queries.push(query);
+
+    let encoded = encode_pcs_fri_opening_segment(&segment).expect("duplicate rows should encode");
+    let parsed = parse_pcs_fri_opening_segment(&encoded).expect("FRI segment should parse");
+
+    assert_eq!(parsed, segment);
+}
