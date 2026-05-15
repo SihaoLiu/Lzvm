@@ -13,7 +13,9 @@ use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
     read_key_directory_layout, KeyUnitPaths,
 };
-use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
+use lzvm_artifacts::proof::{
+    encode_proof_artifact, parse_proof_artifact, ProofArtifact, ProofSegment,
+};
 use lzvm_artifacts::public_values::{
     encode_public_values_json, public_values_digest, PublicValueEntry, PublicValues,
 };
@@ -683,6 +685,13 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
     let input_data = dir.join("input.bin");
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(&input_data, [11_u8]);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let public_values_path = dir.join("public_values.json");
+    write_text(
+        &public_values_path,
+        &encode_public_values_json(&public_values).expect("public values should encode"),
+    );
 
     let request = ProveRunRequest {
         pass: ProvePassRequest::Full(ProvePartitionPlan {
@@ -703,7 +712,7 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
         ProveExecutionInputArtifacts {
             witness_library: witness_library.clone(),
             guest_image: guest_image.clone(),
-            public_inputs: None,
+            public_inputs: Some(public_values_path.clone()),
         },
     )
     .expect("execution plan should derive");
@@ -724,6 +733,9 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
                 .to_str()
                 .expect("witness path should be utf-8"),
             guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
         ],
         &mut stdout,
         &mut stderr,
@@ -766,7 +778,65 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
             .len(),
         output.stage_commitments().stage_count()
     );
+    let proof_bytes = fs::read(output_dir.join("proof.bin")).expect("proof output should read");
+    let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
+    assert_eq!(proof.setup_hash, setup_hash);
+    assert_eq!(
+        proof.public_values_hash,
+        public_values_digest(&public_values).expect("digest should compute")
+    );
+    assert_eq!(proof.segments, vec![expected_segment]);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_prove_witness_proof_output_with_mismatched_public_inputs() {
+    let dir = temp_dir("prove-witness-bad-public-inputs");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let public_values_path = dir.join("public_values.json");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [11_u8]);
+    write_text(
+        &public_values_path,
+        &encode_public_values_json(&sample_public_values([0x99; 32]))
+            .expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--save-outputs",
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove witness failed: public inputs setup hash mismatch\n"
+    );
 }
 
 #[test]

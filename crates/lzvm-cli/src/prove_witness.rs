@@ -3,6 +3,8 @@ use std::io::Write;
 use std::path::Path;
 
 use lzvm_artifacts::key_directory::read_key_directory_catalog;
+use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
+use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 use lzvm_prover::{
     build_witness_commitment_segment, derive_prove_execution_plan, run_prove_witness_commitments,
     ProveExecutionInputArtifacts, ProveWitnessCommitments,
@@ -44,7 +46,12 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
     if plan.run_plan.options.save_outputs {
-        if let Err(message) = save_witness_outputs(&plan.run_plan.options.output_dir, &output) {
+        if let Err(message) = save_witness_outputs(
+            &plan.run_plan.options.output_dir,
+            &plan.run_plan.schedule.setup_hash,
+            plan.inputs.public_inputs.as_deref(),
+            &output,
+        ) {
             let _ = writeln!(stderr, "prove witness failed: {message}");
             return 1;
         }
@@ -86,13 +93,22 @@ fn parsed_inputs(parsed: &ParsedRunArgs) -> ProveExecutionInputArtifacts {
     }
 }
 
-fn save_witness_outputs(output_dir: &Path, output: &ProveWitnessCommitments) -> Result<(), String> {
+fn save_witness_outputs(
+    output_dir: &Path,
+    setup_hash: &[u8; 32],
+    public_inputs: Option<&Path>,
+    output: &ProveWitnessCommitments,
+) -> Result<(), String> {
     fs::create_dir_all(output_dir).map_err(|error| {
         format!(
             "create output directory failed: {}: {error}",
             output_dir.display()
         )
     })?;
+
+    let segment = build_witness_commitment_segment(output)
+        .map_err(|error| format!("build witness segment failed: {error}"))?;
+    let proof_bytes = build_proof_bytes(setup_hash, public_inputs, &segment)?;
 
     for commitment in output.stage_commitments().commitments() {
         let root_path = output_dir.join(format!(
@@ -112,11 +128,37 @@ fn save_witness_outputs(output_dir: &Path, output: &ProveWitnessCommitments) -> 
         write_output_file(&root_path, &root_bytes)?;
         write_output_file(&tree_path, commitment.tree_bytes())?;
     }
-    let segment = build_witness_commitment_segment(output)
-        .map_err(|error| format!("build witness segment failed: {error}"))?;
     let segment_path = output_dir.join(format!("unit-{}.witness-segment", output.unit_index()));
     write_output_file(&segment_path, &segment.data)?;
+    if let Some(proof_bytes) = proof_bytes {
+        write_output_file(&output_dir.join("proof.bin"), &proof_bytes)?;
+    }
     Ok(())
+}
+
+fn build_proof_bytes(
+    setup_hash: &[u8; 32],
+    public_inputs: Option<&Path>,
+    segment: &ProofSegment,
+) -> Result<Option<Vec<u8>>, String> {
+    let Some(public_inputs) = public_inputs else {
+        return Ok(None);
+    };
+    let public_values = read_public_values_file(public_inputs)
+        .map_err(|error| format!("read public inputs failed: {error}"))?;
+    if public_values.setup_hash != *setup_hash {
+        return Err("public inputs setup hash mismatch".to_owned());
+    }
+    let public_values_hash = public_values_digest(&public_values)
+        .map_err(|error| format!("hash public inputs failed: {error}"))?;
+    let proof = ProofArtifact {
+        setup_hash: *setup_hash,
+        public_values_hash,
+        segments: vec![segment.clone()],
+    };
+    encode_proof_artifact(&proof)
+        .map(Some)
+        .map_err(|error| format!("encode witness proof artifact failed: {error}"))
 }
 
 fn write_output_file(path: &Path, value: &[u8]) -> Result<(), String> {
