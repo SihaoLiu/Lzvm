@@ -94,12 +94,12 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
         ["prove", "schedule", setup_dir] => prove_schedule(setup_dir, stdout, stderr),
         ["prove", "schedule", ..] => write_prove_schedule_usage(stderr),
         ["prove", "witness", rest @ ..] => prove_witness::run(rest, stdout, stderr),
-        ["verify", "setup-preflight", setup_dir, proof_bin, public_values_json] => {
-            verify_setup_preflight(setup_dir, proof_bin, public_values_json, stdout, stderr)
+        ["verify", "setup-preflight", setup_dir, proof_bin, public_values_path] => {
+            verify_setup_preflight(setup_dir, proof_bin, public_values_path, stdout, stderr)
         }
         ["verify", "setup-preflight", ..] => write_verify_setup_preflight_usage(stderr),
-        ["verify", "preflight", proof_bin, public_values_json] => {
-            verify_preflight(proof_bin, public_values_json, stdout, stderr)
+        ["verify", "preflight", proof_bin, public_values_path] => {
+            verify_preflight(proof_bin, public_values_path, stdout, stderr)
         }
         ["verify", "preflight", ..] => write_verify_preflight_usage(stderr),
         ["setup", "fingerprint", setup_dir] => {
@@ -388,7 +388,7 @@ fn fingerprint_setup_directory(
 
 fn verify_preflight(
     proof_bin: &str,
-    public_values_json: &str,
+    public_values_path: &str,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
@@ -399,7 +399,7 @@ fn verify_preflight(
             return 1;
         }
     };
-    let public_values = match read_public_values_file(public_values_json) {
+    let public_values = match read_public_values_file(public_values_path) {
         Ok(public_values) => public_values,
         Err(error) => {
             let _ = writeln!(stderr, "verify preflight failed: {error}");
@@ -434,7 +434,7 @@ fn verify_preflight(
 fn verify_setup_preflight(
     setup_dir: &str,
     proof_bin: &str,
-    public_values_json: &str,
+    public_values_path: &str,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
@@ -459,7 +459,7 @@ fn verify_setup_preflight(
             return 1;
         }
     };
-    let public_values = match read_public_values_file(public_values_json) {
+    let public_values = match read_public_values_file(public_values_path) {
         Ok(public_values) => public_values,
         Err(error) => {
             let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
@@ -2947,7 +2947,7 @@ fn write_validate_usage(stderr: &mut dyn Write) -> i32 {
 fn write_verify_preflight_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm verify preflight <proof-bin> <public-values-json>"
+        "usage: lzvm verify preflight <proof-bin> <public-values>"
     );
     2
 }
@@ -2955,7 +2955,7 @@ fn write_verify_preflight_usage(stderr: &mut dyn Write) -> i32 {
 fn write_verify_setup_preflight_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm verify setup-preflight <setup-dir> <proof-bin> <public-values-json>"
+        "usage: lzvm verify setup-preflight <setup-dir> <proof-bin> <public-values>"
     );
     2
 }

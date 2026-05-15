@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{
-    encode_public_values_json, public_values_digest, PublicValueEntry, PublicValues,
+    encode_public_values, encode_public_values_json, public_values_digest, PublicValueEntry,
+    PublicValues,
 };
 use lzvm_cli::run_cli;
 
@@ -101,6 +102,45 @@ fn verifies_proof_artifact_preflight() {
 }
 
 #[test]
+fn verifies_proof_artifact_preflight_with_binary_public_values() {
+    let values = sample_public_values();
+    let proof = sample_proof(&values);
+    let dir = temp_dir("valid-bin");
+    let _ = fs::remove_dir_all(&dir);
+    let proof_path = dir.join("proof.bin");
+    let public_path = dir.join("public_values.bin");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_path,
+        encode_public_values(&values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "preflight",
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_path.to_str().expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        "status=ok\nsegments=1\npublic_values=2\n"
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn rejects_preflight_with_mismatched_setup_hashes() {
     let values = sample_public_values();
     let mut proof = sample_proof(&values);
@@ -169,6 +209,6 @@ fn reports_usage_for_missing_preflight_inputs() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm verify preflight <proof-bin> <public-values-json>\n"
+        "usage: lzvm verify preflight <proof-bin> <public-values>\n"
     );
 }

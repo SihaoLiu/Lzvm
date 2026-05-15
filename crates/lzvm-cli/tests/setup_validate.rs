@@ -4396,7 +4396,7 @@ fn reports_usage_for_missing_setup_preflight_inputs() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm verify setup-preflight <setup-dir> <proof-bin> <public-values-json>\n"
+        "usage: lzvm verify setup-preflight <setup-dir> <proof-bin> <public-values>\n"
     );
 }
 
