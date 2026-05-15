@@ -75,7 +75,9 @@ use lzvm_prover::verifier_query::{
     evaluate_verifier_unit_queries, verify_query_outputs_against_fri_opening,
     VerifierFriComparisonRequest, VerifierUnitQueryEvalRequest,
 };
-use lzvm_prover::witness_commitment::{verify_witness_stage_opening_root, WitnessStageOpening};
+use lzvm_prover::witness_commitment::{
+    load_witness_commitment_segments, verify_witness_stage_opening_root, WitnessStageOpening,
+};
 use lzvm_prover::{
     build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_transcript_segments,
     derive_prove_schedule, ProveSchedule,
@@ -549,76 +551,9 @@ fn validate_witness_commitment_segments(
     schedule: &ProveSchedule,
     proof: &ProofArtifact,
 ) -> Result<(), String> {
-    let unit_count = u32::try_from(schedule.units.len())
-        .map_err(|_| "witness commitment segment unit count overflow")?;
-    let end_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
-        .checked_add(unit_count)
-        .ok_or_else(|| "witness commitment segment id overflow".to_owned())?;
-    let mut found = false;
-
-    for segment in &proof.segments {
-        if segment.id < WITNESS_COMMITMENT_SEGMENT_BASE_ID || segment.id >= end_id {
-            continue;
-        }
-        found = true;
-        let unit_index_u32 = segment.id - WITNESS_COMMITMENT_SEGMENT_BASE_ID;
-        let unit_index = usize::try_from(unit_index_u32)
-            .map_err(|_| "witness commitment segment unit index overflow")?;
-        let parsed = parse_witness_commitment_segment(&segment.data).map_err(|error| {
-            format!("invalid witness commitment segment for unit {unit_index}: {error}")
-        })?;
-        if parsed.unit_index != unit_index_u32 {
-            return Err(format!(
-                "witness commitment segment unit mismatch for unit {unit_index}"
-            ));
-        }
-        let unit = &schedule.units[unit_index];
-        if parsed.trace_rows != unit.base_domain_size {
-            return Err(format!(
-                "witness commitment segment row count mismatch for unit {unit_index}"
-            ));
-        }
-        let trace_columns = unit
-            .stage_commit_widths
-            .iter()
-            .try_fold(0_u64, |acc, width| acc.checked_add(u64::from(*width)))
-            .ok_or_else(|| "witness commitment segment column count overflow".to_owned())?;
-        if parsed.trace_columns != trace_columns {
-            return Err(format!(
-                "witness commitment segment column count mismatch for unit {unit_index}"
-            ));
-        }
-        if parsed.stages.len() != unit.stage_commit_widths.len() {
-            return Err(format!(
-                "witness commitment segment stage count mismatch for unit {unit_index}"
-            ));
-        }
-        for (stage_index, stage) in parsed.stages.iter().enumerate() {
-            let expected_stage_index = u32::try_from(stage_index + 1)
-                .map_err(|_| "witness commitment segment stage index overflow")?;
-            if stage.stage_index != expected_stage_index {
-                return Err(format!(
-                    "witness commitment segment stage index mismatch for unit {unit_index}"
-                ));
-            }
-            if stage.arity != unit.merkle_tree_arity {
-                return Err(format!(
-                    "witness commitment segment arity mismatch for unit {unit_index}"
-                ));
-            }
-            if stage.tree_byte_count == 0 {
-                return Err(format!(
-                    "witness commitment segment empty tree for unit {unit_index}"
-                ));
-            }
-        }
-    }
-
-    if found {
-        Ok(())
-    } else {
-        Err("missing witness commitment segment".to_owned())
-    }
+    load_witness_commitment_segments(&schedule.units, &proof.segments)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 fn validate_pcs_query_plan(
@@ -781,22 +716,8 @@ fn collect_witness_commitment_segments(
     schedule: &ProveSchedule,
     proof: &ProofArtifact,
 ) -> Result<Vec<ProofSegment>, String> {
-    let unit_count = u32::try_from(schedule.units.len())
-        .map_err(|_| "witness commitment segment unit count overflow")?;
-    let end_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
-        .checked_add(unit_count)
-        .ok_or_else(|| "witness commitment segment id overflow".to_owned())?;
-    let mut segments = proof
-        .segments
-        .iter()
-        .filter(|segment| segment.id >= WITNESS_COMMITMENT_SEGMENT_BASE_ID && segment.id < end_id)
-        .cloned()
-        .collect::<Vec<_>>();
-    if segments.is_empty() {
-        return Err("missing witness commitment segment".to_owned());
-    }
-    segments.sort_by_key(|segment| segment.id);
-    Ok(segments)
+    load_witness_commitment_segments(&schedule.units, &proof.segments)
+        .map_err(|error| error.to_string())
 }
 
 fn validate_witness_opening_segment(

@@ -1,5 +1,10 @@
 use std::fmt;
 
+use lzvm_artifacts::proof::ProofSegment;
+use lzvm_artifacts::witness_segment::{
+    parse_witness_commitment_segment, WitnessCommitmentSegmentError,
+    WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+};
 use lzvm_field::{coset_extend_evaluations, DomainError, Felt, FieldError};
 
 use crate::merkle_hash::{linear_hash, parent_hash, MerkleHashError};
@@ -273,6 +278,115 @@ impl From<WitnessStageCommitmentError> for WitnessStageOpeningError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadWitnessCommitmentSegmentsError {
+    UnitCountOverflow,
+    SegmentIdOverflow,
+    UnitIndexOverflow,
+    MissingSegment,
+    Segment {
+        unit_index: usize,
+        source: WitnessCommitmentSegmentError,
+    },
+    UnitMismatch {
+        unit_index: usize,
+    },
+    RowCountMismatch {
+        unit_index: usize,
+    },
+    ColumnCountOverflow,
+    ColumnCountMismatch {
+        unit_index: usize,
+    },
+    StageCountMismatch {
+        unit_index: usize,
+    },
+    StageIndexOverflow,
+    StageIndexMismatch {
+        unit_index: usize,
+    },
+    ArityMismatch {
+        unit_index: usize,
+    },
+    EmptyTree {
+        unit_index: usize,
+    },
+}
+
+impl fmt::Display for LoadWitnessCommitmentSegmentsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnitCountOverflow => write!(f, "witness commitment segment unit count overflow"),
+            Self::SegmentIdOverflow => write!(f, "witness commitment segment id overflow"),
+            Self::UnitIndexOverflow => write!(f, "witness commitment segment unit index overflow"),
+            Self::MissingSegment => write!(f, "missing witness commitment segment"),
+            Self::Segment { unit_index, source } => write!(
+                f,
+                "invalid witness commitment segment for unit {unit_index}: {source}"
+            ),
+            Self::UnitMismatch { unit_index } => {
+                write!(
+                    f,
+                    "witness commitment segment unit mismatch for unit {unit_index}"
+                )
+            }
+            Self::RowCountMismatch { unit_index } => write!(
+                f,
+                "witness commitment segment row count mismatch for unit {unit_index}"
+            ),
+            Self::ColumnCountOverflow => {
+                write!(f, "witness commitment segment column count overflow")
+            }
+            Self::ColumnCountMismatch { unit_index } => write!(
+                f,
+                "witness commitment segment column count mismatch for unit {unit_index}"
+            ),
+            Self::StageCountMismatch { unit_index } => write!(
+                f,
+                "witness commitment segment stage count mismatch for unit {unit_index}"
+            ),
+            Self::StageIndexOverflow => {
+                write!(f, "witness commitment segment stage index overflow")
+            }
+            Self::StageIndexMismatch { unit_index } => write!(
+                f,
+                "witness commitment segment stage index mismatch for unit {unit_index}"
+            ),
+            Self::ArityMismatch { unit_index } => write!(
+                f,
+                "witness commitment segment arity mismatch for unit {unit_index}"
+            ),
+            Self::EmptyTree { unit_index } => {
+                write!(
+                    f,
+                    "witness commitment segment empty tree for unit {unit_index}"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for LoadWitnessCommitmentSegmentsError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Segment { source, .. } => Some(source),
+            Self::UnitCountOverflow
+            | Self::SegmentIdOverflow
+            | Self::UnitIndexOverflow
+            | Self::MissingSegment
+            | Self::UnitMismatch { .. }
+            | Self::RowCountMismatch { .. }
+            | Self::ColumnCountOverflow
+            | Self::ColumnCountMismatch { .. }
+            | Self::StageCountMismatch { .. }
+            | Self::StageIndexOverflow
+            | Self::StageIndexMismatch { .. }
+            | Self::ArityMismatch { .. }
+            | Self::EmptyTree { .. } => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WitnessTraceCommitments {
     commitments: Vec<WitnessStageCommitment>,
 }
@@ -368,6 +482,80 @@ impl From<WitnessStageCommitmentError> for WitnessTraceCommitmentError {
     fn from(error: WitnessStageCommitmentError) -> Self {
         Self::StageCommitment(error)
     }
+}
+
+pub fn load_witness_commitment_segments(
+    units: &[ProveUnitSchedule],
+    segments: &[ProofSegment],
+) -> Result<Vec<ProofSegment>, LoadWitnessCommitmentSegmentsError> {
+    let unit_count = u32::try_from(units.len())
+        .map_err(|_| LoadWitnessCommitmentSegmentsError::UnitCountOverflow)?;
+    let end_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
+        .checked_add(unit_count)
+        .ok_or(LoadWitnessCommitmentSegmentsError::SegmentIdOverflow)?;
+    let mut out = Vec::new();
+
+    for segment in segments {
+        if segment.id < WITNESS_COMMITMENT_SEGMENT_BASE_ID || segment.id >= end_id {
+            continue;
+        }
+        validate_witness_commitment_segment(units, segment)?;
+        out.push(segment.clone());
+    }
+
+    if out.is_empty() {
+        return Err(LoadWitnessCommitmentSegmentsError::MissingSegment);
+    }
+    out.sort_by_key(|segment| segment.id);
+    Ok(out)
+}
+
+fn validate_witness_commitment_segment(
+    units: &[ProveUnitSchedule],
+    segment: &ProofSegment,
+) -> Result<(), LoadWitnessCommitmentSegmentsError> {
+    let unit_index_u32 = segment
+        .id
+        .checked_sub(WITNESS_COMMITMENT_SEGMENT_BASE_ID)
+        .ok_or(LoadWitnessCommitmentSegmentsError::UnitIndexOverflow)?;
+    let unit_index = usize::try_from(unit_index_u32)
+        .map_err(|_| LoadWitnessCommitmentSegmentsError::UnitIndexOverflow)?;
+    let parsed = parse_witness_commitment_segment(&segment.data)
+        .map_err(|source| LoadWitnessCommitmentSegmentsError::Segment { unit_index, source })?;
+    if parsed.unit_index != unit_index_u32 {
+        return Err(LoadWitnessCommitmentSegmentsError::UnitMismatch { unit_index });
+    }
+    let unit = units
+        .get(unit_index)
+        .ok_or(LoadWitnessCommitmentSegmentsError::UnitIndexOverflow)?;
+    if parsed.trace_rows != unit.base_domain_size {
+        return Err(LoadWitnessCommitmentSegmentsError::RowCountMismatch { unit_index });
+    }
+    let trace_columns = unit
+        .stage_commit_widths
+        .iter()
+        .try_fold(0_u64, |acc, width| acc.checked_add(u64::from(*width)))
+        .ok_or(LoadWitnessCommitmentSegmentsError::ColumnCountOverflow)?;
+    if parsed.trace_columns != trace_columns {
+        return Err(LoadWitnessCommitmentSegmentsError::ColumnCountMismatch { unit_index });
+    }
+    if parsed.stages.len() != unit.stage_commit_widths.len() {
+        return Err(LoadWitnessCommitmentSegmentsError::StageCountMismatch { unit_index });
+    }
+    for (stage_index, stage) in parsed.stages.iter().enumerate() {
+        let expected_stage_index = u32::try_from(stage_index + 1)
+            .map_err(|_| LoadWitnessCommitmentSegmentsError::StageIndexOverflow)?;
+        if stage.stage_index != expected_stage_index {
+            return Err(LoadWitnessCommitmentSegmentsError::StageIndexMismatch { unit_index });
+        }
+        if stage.arity != unit.merkle_tree_arity {
+            return Err(LoadWitnessCommitmentSegmentsError::ArityMismatch { unit_index });
+        }
+        if stage.tree_byte_count == 0 {
+            return Err(LoadWitnessCommitmentSegmentsError::EmptyTree { unit_index });
+        }
+    }
+    Ok(())
 }
 
 pub fn extend_witness_stage_leaves(

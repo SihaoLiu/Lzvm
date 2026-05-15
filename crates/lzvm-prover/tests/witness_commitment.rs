@@ -1,5 +1,10 @@
 use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
+use lzvm_artifacts::proof::ProofSegment;
+use lzvm_artifacts::witness_segment::{
+    encode_witness_commitment_segment, WitnessCommitmentSegment, WitnessCommitmentStageSegment,
+    WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+};
 use lzvm_field::{
     coset_extend_evaluations, poseidon2_hash_16, poseidon2_hash_8, DomainError, Felt,
 };
@@ -10,6 +15,9 @@ use lzvm_prover::witness_commitment::{
     WitnessTraceCommitmentError,
 };
 use lzvm_prover::witness_commitment::{extend_witness_stage_leaves, WitnessStageLeafError};
+use lzvm_prover::witness_commitment::{
+    load_witness_commitment_segments, LoadWitnessCommitmentSegmentsError,
+};
 use lzvm_prover::witness_layout::{derive_witness_trace_layout, WitnessTraceLayoutError};
 use lzvm_prover::witness_trace::parse_witness_trace;
 use lzvm_prover::ProveUnitSchedule;
@@ -147,6 +155,63 @@ fn manual_expected_wide_arity4_tree_words(leaves: &[u8]) -> Vec<u64> {
     }
     encode_digest_words(&mut expected, root);
     expected
+}
+
+#[test]
+fn loads_witness_commitment_segments_sorted_by_unit() {
+    let units = vec![sample_unit(2, vec![1]), sample_unit(2, vec![2])];
+    let segments = vec![
+        witness_commitment_proof_segment(1, &units[1]),
+        witness_commitment_proof_segment(0, &units[0]),
+    ];
+
+    let loaded = load_witness_commitment_segments(&units, &segments).expect("segments should load");
+
+    assert_eq!(loaded.len(), 2);
+    assert_eq!(loaded[0].id, WITNESS_COMMITMENT_SEGMENT_BASE_ID);
+    assert_eq!(loaded[1].id, WITNESS_COMMITMENT_SEGMENT_BASE_ID + 1);
+}
+
+#[test]
+fn rejects_missing_witness_commitment_segments() {
+    let units = vec![sample_unit(2, vec![1])];
+
+    let error = load_witness_commitment_segments(&units, &[])
+        .expect_err("at least one witness commitment should be present");
+
+    assert_eq!(error, LoadWitnessCommitmentSegmentsError::MissingSegment);
+}
+
+#[test]
+fn rejects_witness_commitment_unit_mismatches() {
+    let units = vec![sample_unit(2, vec![1])];
+    let segment = witness_commitment_proof_segment_with_payload_unit(0, 1, &units[0]);
+
+    let error = load_witness_commitment_segments(&units, &[segment])
+        .expect_err("segment id and payload unit should match");
+
+    assert_eq!(
+        error,
+        LoadWitnessCommitmentSegmentsError::UnitMismatch { unit_index: 0 }
+    );
+}
+
+#[test]
+fn rejects_witness_commitment_row_count_mismatches() {
+    let units = vec![sample_unit(2, vec![1])];
+    let mut segment = sample_witness_commitment_segment(0, &units[0]);
+    segment.trace_rows = 3;
+
+    let error = load_witness_commitment_segments(
+        &units,
+        &[encode_witness_commitment_proof_segment(0, &segment)],
+    )
+    .expect_err("segment row count should match schedule");
+
+    assert_eq!(
+        error,
+        LoadWitnessCommitmentSegmentsError::RowCountMismatch { unit_index: 0 }
+    );
 }
 
 #[test]
@@ -427,4 +492,60 @@ fn rejects_witness_stage_extension_domain_mismatches() {
             found: 2
         }))
     ));
+}
+
+fn witness_commitment_proof_segment(unit_index: u32, unit: &ProveUnitSchedule) -> ProofSegment {
+    witness_commitment_proof_segment_with_payload_unit(unit_index, unit_index, unit)
+}
+
+fn witness_commitment_proof_segment_with_payload_unit(
+    segment_unit_index: u32,
+    payload_unit_index: u32,
+    unit: &ProveUnitSchedule,
+) -> ProofSegment {
+    let segment = sample_witness_commitment_segment(payload_unit_index, unit);
+    encode_witness_commitment_proof_segment(segment_unit_index, &segment)
+}
+
+fn encode_witness_commitment_proof_segment(
+    segment_unit_index: u32,
+    segment: &WitnessCommitmentSegment,
+) -> ProofSegment {
+    ProofSegment {
+        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID + segment_unit_index,
+        data: encode_witness_commitment_segment(segment).expect("segment should encode"),
+    }
+}
+
+fn sample_witness_commitment_segment(
+    unit_index: u32,
+    unit: &ProveUnitSchedule,
+) -> WitnessCommitmentSegment {
+    WitnessCommitmentSegment {
+        unit_index,
+        input_byte_count: 8,
+        trace_rows: unit.base_domain_size,
+        trace_columns: unit
+            .stage_commit_widths
+            .iter()
+            .map(|width| u64::from(*width))
+            .sum(),
+        stages: unit
+            .stage_commit_widths
+            .iter()
+            .enumerate()
+            .map(|(index, _)| WitnessCommitmentStageSegment {
+                stage_index: u32::try_from(index + 1).expect("stage index should fit"),
+                arity: unit.merkle_tree_arity,
+                root: [
+                    u64::try_from(index + 1).expect("root seed should fit"),
+                    0,
+                    0,
+                    0,
+                ],
+                tree_byte_count: 32,
+                tree_digest: [u8::try_from(index + 1).expect("digest seed should fit"); 32],
+            })
+            .collect(),
+    }
 }
