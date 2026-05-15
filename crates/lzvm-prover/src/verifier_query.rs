@@ -62,6 +62,20 @@ pub struct VerifierFriComparisonRequest<'a> {
     pub fri: &'a PcsFriOpeningUnitSegment,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct VerifierFriQueryOutputValidationRequest<'a> {
+    pub unit_index: u32,
+    pub query_rows: &'a [u64],
+    pub challenges: &'a [Ext3],
+    pub proof_values: &'a [Ext3],
+    pub constant_unit: &'a ConstantOpeningUnitSegment,
+    pub witness_unit: &'a WitnessOpeningUnitSegment,
+    pub evaluations: &'a PcsEvaluationUnitSegment,
+    pub code: &'a VerifierCode,
+    pub publics: &'a [Felt],
+    pub fri: &'a PcsFriOpeningUnitSegment,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerifierQueryEvalError {
     UnitIndexMismatch {
@@ -141,6 +155,12 @@ pub enum VerifierFriComparisonError {
         value: u64,
     },
     LengthOverflow,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VerifierFriQueryOutputValidationError {
+    Query(VerifierQueryEvalError),
+    Comparison(VerifierFriComparisonError),
 }
 
 impl fmt::Display for VerifierQueryEvalError {
@@ -252,12 +272,41 @@ impl fmt::Display for VerifierFriComparisonError {
     }
 }
 
+impl fmt::Display for VerifierFriQueryOutputValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Query(error) => write!(f, "{error}"),
+            Self::Comparison(error) => write!(f, "{error}"),
+        }
+    }
+}
+
 impl std::error::Error for VerifierQueryEvalError {}
 impl std::error::Error for VerifierFriComparisonError {}
+impl std::error::Error for VerifierFriQueryOutputValidationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Query(error) => Some(error),
+            Self::Comparison(error) => Some(error),
+        }
+    }
+}
 
 impl From<VerifierEvalError> for VerifierQueryEvalError {
     fn from(error: VerifierEvalError) -> Self {
         Self::Eval(error)
+    }
+}
+
+impl From<VerifierQueryEvalError> for VerifierFriQueryOutputValidationError {
+    fn from(error: VerifierQueryEvalError) -> Self {
+        Self::Query(error)
+    }
+}
+
+impl From<VerifierFriComparisonError> for VerifierFriQueryOutputValidationError {
+    fn from(error: VerifierFriComparisonError) -> Self {
+        Self::Comparison(error)
     }
 }
 
@@ -463,6 +512,34 @@ pub fn verify_query_outputs_against_fri_opening(
         }
     }
     Ok(true)
+}
+
+pub fn validate_verifier_query_outputs_against_fri_opening(
+    schedule: &ProveUnitSchedule,
+    request: VerifierFriQueryOutputValidationRequest<'_>,
+) -> Result<bool, VerifierFriQueryOutputValidationError> {
+    let query_outputs = evaluate_verifier_unit_queries(
+        schedule,
+        VerifierUnitQueryEvalRequest {
+            unit_index: request.unit_index,
+            challenges: request.challenges,
+            proof_values: request.proof_values,
+            constant_unit: request.constant_unit,
+            witness_unit: request.witness_unit,
+            evaluations: request.evaluations,
+            code: request.code,
+            publics: request.publics,
+        },
+    )?;
+    Ok(verify_query_outputs_against_fri_opening(
+        schedule,
+        VerifierFriComparisonRequest {
+            unit_index: request.unit_index,
+            query_rows: request.query_rows,
+            query_outputs: &query_outputs,
+            fri: request.fri,
+        },
+    )?)
 }
 
 impl VerifierQueryEvalInput {

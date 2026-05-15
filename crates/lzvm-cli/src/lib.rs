@@ -65,8 +65,7 @@ use lzvm_prover::proof_preflight::validate_proof_public_values;
 use lzvm_prover::proof_values::{flatten_pcs_proof_values, load_pcs_proof_values_from_segments};
 use lzvm_prover::unit_values::load_unit_values_from_segments;
 use lzvm_prover::verifier_query::{
-    evaluate_verifier_unit_queries, verify_query_outputs_against_fri_opening,
-    VerifierFriComparisonRequest, VerifierUnitQueryEvalRequest,
+    validate_verifier_query_outputs_against_fri_opening, VerifierFriQueryOutputValidationRequest,
 };
 use lzvm_prover::witness_commitment::load_witness_commitment_segments;
 use lzvm_prover::witness_opening::{
@@ -834,10 +833,11 @@ fn validate_pcs_fri_query_outputs(input: PcsFriQueryOutputValidation<'_>) -> Res
             )
         })?;
     let public_value_fields = transcript_public_value_fields(input.public_values)?;
-    let query_outputs = evaluate_verifier_unit_queries(
+    let valid = validate_verifier_query_outputs_against_fri_opening(
         input.unit,
-        VerifierUnitQueryEvalRequest {
+        VerifierFriQueryOutputValidationRequest {
             unit_index: input.query_unit.unit_index,
+            query_rows: &input.query_unit.queries,
             challenges: input.challenges,
             proof_values: input.proof_values,
             constant_unit,
@@ -845,20 +845,6 @@ fn validate_pcs_fri_query_outputs(input: PcsFriQueryOutputValidation<'_>) -> Res
             evaluations: input.evaluation_unit,
             code: &input.catalog_unit.metadata.verifier.query,
             publics: &public_value_fields,
-        },
-    )
-    .map_err(|error| {
-        format!(
-            "invalid PCS FRI opening segment for unit {}: {error}",
-            input.unit_index
-        )
-    })?;
-    let valid = verify_query_outputs_against_fri_opening(
-        input.unit,
-        VerifierFriComparisonRequest {
-            unit_index: input.query_unit.unit_index,
-            query_rows: &input.query_unit.queries,
-            query_outputs: &query_outputs,
             fri: input.opening_unit,
         },
     )
