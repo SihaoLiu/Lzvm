@@ -222,6 +222,217 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
     .expect("FRI folds should verify"));
 }
 
+#[test]
+fn derives_fri_transcript_values_and_openings_for_multiple_units() {
+    let dir = temp_dir("fri-transcript-trace-multi-unit");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+
+    let mut first_unit = sample_unit(dir.join("unit-a.const"));
+    first_unit.metadata.setup.challenge_count = 5;
+    first_unit.metadata.verifier.quotient.expression_id = Some(42);
+    first_unit.expression_program = fixed_plus_stage_expression_program(42);
+    let first_columns = FixedColumns {
+        group_name: "group-a".to_owned(),
+        unit_name: "unit-a".to_owned(),
+        row_count: 16,
+        columns: vec![
+            FixedColumn {
+                name: "const_0".to_owned(),
+                dimensions: Vec::new(),
+                values: (0..16).map(|row| row + 10).collect(),
+            },
+            FixedColumn {
+                name: "const_1".to_owned(),
+                dimensions: Vec::new(),
+                values: vec![0; 16],
+            },
+        ],
+    };
+    write_raw_fixed_columns_file(
+        &first_unit.paths.fixed_columns,
+        &first_columns,
+        &first_unit.metadata.setup,
+    )
+    .expect("first fixed columns should be written");
+
+    let mut second_unit = sample_unit(dir.join("unit-b.const"));
+    second_unit.paths.unit_id = Some(1);
+    second_unit.paths.unit_name = Some("unit-b".to_owned());
+    second_unit.paths.prefix = "unit-b".into();
+    second_unit.paths.metadata_prefix = Some("unit-b".into());
+    second_unit.paths.program_prefix = Some("unit-b".into());
+    second_unit.paths.verification_key_prefix = "unit-b".into();
+    second_unit.paths.constant_tree = "unit-b.consttree".into();
+    second_unit.metadata.setup.challenge_count = 5;
+    second_unit.metadata.verifier.quotient.expression_id = Some(43);
+    second_unit.expression_program = fixed_plus_stage_expression_program(43);
+    let second_columns = FixedColumns {
+        group_name: "group-a".to_owned(),
+        unit_name: "unit-b".to_owned(),
+        row_count: 16,
+        columns: vec![
+            FixedColumn {
+                name: "const_0".to_owned(),
+                dimensions: Vec::new(),
+                values: (0..16).map(|row| row + 110).collect(),
+            },
+            FixedColumn {
+                name: "const_1".to_owned(),
+                dimensions: Vec::new(),
+                values: vec![1; 16],
+            },
+        ],
+    };
+    write_raw_fixed_columns_file(
+        &second_unit.paths.fixed_columns,
+        &second_columns,
+        &second_unit.metadata.setup,
+    )
+    .expect("second fixed columns should be written");
+
+    let first_execution_unit = sample_execution_unit(&first_unit);
+    let second_execution_unit = sample_execution_unit(&second_unit);
+
+    let schedule = derive_prove_schedule(&sample_catalog_units(vec![first_unit, second_unit]))
+        .expect("schedule should derive");
+
+    let trace0_words = (0..16 * 5)
+        .map(|index| index as u64 + 1)
+        .collect::<Vec<_>>();
+    let trace1_words = (0..16 * 5)
+        .map(|index| index as u64 + 1001)
+        .collect::<Vec<_>>();
+    let trace0 = parse_witness_trace(&encode_trace_words(&trace0_words), 16, 5)
+        .expect("first trace should parse");
+    let trace1 = parse_witness_trace(&encode_trace_words(&trace1_words), 16, 5)
+        .expect("second trace should parse");
+
+    let material_segment =
+        build_pcs_material_manifest_segment(&schedule).expect("material segment should build");
+    let witness0 = sample_witness_commitment_segment(0, &[10, 20]);
+    let witness1 = sample_witness_commitment_segment(1, &[110, 120]);
+    let witness_segment0 = ProofSegment {
+        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+        data: encode_witness_commitment_segment(&witness0)
+            .expect("first witness segment should encode"),
+    };
+    let witness_segment1 = ProofSegment {
+        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID + 1,
+        data: encode_witness_commitment_segment(&witness1)
+            .expect("second witness segment should encode"),
+    };
+    let evaluations0 = vec![Ext3::from_u64s([30, 31, 32]), Ext3::from_u64s([40, 41, 42])];
+    let evaluations1 = vec![Ext3::from_u64s([50, 51, 52]), Ext3::from_u64s([60, 61, 62])];
+    let evaluation_segment = build_pcs_evaluation_segment(
+        &schedule,
+        &[
+            ProvePcsEvaluationValues {
+                unit_index: 0,
+                values: evaluations0.clone(),
+            },
+            ProvePcsEvaluationValues {
+                unit_index: 1,
+                values: evaluations1.clone(),
+            },
+        ],
+    )
+    .expect("evaluation segment should build");
+    let parsed_evaluations = parse_pcs_evaluation_segment(&evaluation_segment.data)
+        .expect("evaluation segment should parse");
+    let auxiliary = ProveWitnessAuxiliaryInputs::default();
+
+    let transcript_inputs = [
+        ProvePcsFriTranscriptTraceSegmentValues {
+            unit_index: 0,
+            execution_unit: &first_execution_unit,
+            trace: &trace0,
+            publics: &[],
+            auxiliary_inputs: &auxiliary,
+            material_segment: &material_segment,
+            witness_segment: &witness_segment0,
+            evaluation_segment: &evaluation_segment,
+        },
+        ProvePcsFriTranscriptTraceSegmentValues {
+            unit_index: 1,
+            execution_unit: &second_execution_unit,
+            trace: &trace1,
+            publics: &[],
+            auxiliary_inputs: &auxiliary,
+            material_segment: &material_segment,
+            witness_segment: &witness_segment1,
+            evaluation_segment: &evaluation_segment,
+        },
+    ];
+    let values = build_pcs_fri_transcript_values_from_trace_segments(&schedule, &transcript_inputs)
+        .expect("FRI transcript values should build from proof segments");
+
+    let nonce_segment =
+        build_pcs_query_nonce_segment(&schedule, values[0].commitments.final_query_challenge)
+            .expect("nonce segment should build");
+    let nonce = Felt::from_u64(
+        parse_pcs_query_nonce_segment(&nonce_segment.data)
+            .expect("nonce segment should parse")
+            .nonce,
+    );
+    let query_segment = build_pcs_query_plan_segment_from_challenge(
+        &schedule,
+        &[witness_segment0.clone(), witness_segment1.clone()],
+        values[0].commitments.final_query_challenge,
+        nonce,
+    )
+    .expect("query segment should build");
+    let opening_segment =
+        build_pcs_fri_opening_segment_from_transcript_values(&schedule, &query_segment, &values)
+            .expect("FRI opening segment should build from transcript values");
+    let wrapped_opening_segment = build_pcs_fri_opening_segment_from_trace_segments(
+        &schedule,
+        &query_segment,
+        &transcript_inputs,
+    )
+    .expect("FRI opening segment should build from trace segments");
+    let query_plan =
+        parse_pcs_query_plan_segment(&query_segment.data).expect("query segment should parse");
+    let opening =
+        parse_pcs_fri_opening_segment(&opening_segment.data).expect("FRI opening should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(values.len(), 2);
+    assert_eq!(values[0].unit_index, 0);
+    assert_eq!(values[1].unit_index, 1);
+    assert_eq!(parsed_evaluations.units.len(), 2);
+    assert_eq!(
+        parsed_evaluations.units[0].values,
+        vec![[30, 31, 32], [40, 41, 42]]
+    );
+    assert_eq!(
+        parsed_evaluations.units[1].values,
+        vec![[50, 51, 52], [60, 61, 62]]
+    );
+    assert_eq!(wrapped_opening_segment, opening_segment);
+    assert_eq!(query_plan.units.len(), 2);
+    assert_eq!(opening.units.len(), 2);
+    assert_eq!(query_plan.units[0].unit_index, 0);
+    assert_eq!(query_plan.units[1].unit_index, 1);
+    assert_eq!(opening.units[0].unit_index, 0);
+    assert_eq!(opening.units[1].unit_index, 1);
+
+    for (index, unit) in schedule.units.iter().enumerate() {
+        let opening_unit = &opening.units[index];
+        let query_unit = &query_plan.units[index];
+        assert!(verify_fri_opening_folds(
+            unit,
+            PcsFriOpeningFoldRequest {
+                unit_index: index as u32,
+                query_rows: &query_unit.queries,
+                challenges: &values[index].commitments.challenges,
+                fri: opening_unit,
+            },
+        )
+        .expect("FRI folds should verify"));
+    }
+}
+
 fn sample_setup() -> UnitSetupInfo {
     let mut section_widths = BTreeMap::new();
     section_widths.insert("cm1".to_owned(), 2);
@@ -380,6 +591,10 @@ fn sample_unit(fixed_columns: PathBuf) -> KeyUnitCatalogEntry {
 }
 
 fn sample_catalog(unit: KeyUnitCatalogEntry) -> KeyDirectoryCatalog {
+    sample_catalog_units(vec![unit])
+}
+
+fn sample_catalog_units(units: Vec<KeyUnitCatalogEntry>) -> KeyDirectoryCatalog {
     KeyDirectoryCatalog {
         layout: KeyDirectoryLayout {
             root: ".".into(),
@@ -410,7 +625,31 @@ fn sample_catalog(unit: KeyUnitCatalogEntry) -> KeyDirectoryCatalog {
             numbers: Vec::new(),
         },
         global_hints: HintProgram { hints: Vec::new() },
-        units: vec![unit],
+        units,
+    }
+}
+
+fn sample_execution_unit(unit: &KeyUnitCatalogEntry) -> ProveExecutionUnitArtifacts {
+    ProveExecutionUnitArtifacts {
+        fixed_columns: unit.paths.fixed_columns.clone(),
+        expression_program: unit.expression_program.clone(),
+        fri_expression_id: unit.metadata.verifier.quotient.expression_id,
+        regular_constraints: unit.regular_constraints.clone(),
+        regular_hints: unit.regular_hints.clone(),
+        setup: unit.metadata.setup.clone(),
+        fixed_column_count: 2,
+        stage_count: 1,
+        opening_point_offsets: unit.metadata.setup.opening_points.clone(),
+        group_name: unit
+            .paths
+            .group_name
+            .clone()
+            .expect("group name should be present"),
+        unit_name: unit
+            .paths
+            .unit_name
+            .clone()
+            .expect("unit name should be present"),
     }
 }
 
