@@ -4,7 +4,8 @@ use lzvm_field::{
     coset_extend_evaluations, poseidon2_hash_16, poseidon2_hash_8, DomainError, Felt,
 };
 use lzvm_prover::witness_commitment::{
-    commit_witness_stage_leaves, commit_witness_trace_stages, WitnessStageCommitmentError,
+    commit_witness_stage_leaves, commit_witness_trace_stages, open_witness_stage_commitment,
+    verify_witness_stage_opening_root, WitnessStageCommitmentError, WitnessStageOpeningError,
     WitnessTraceCommitmentError,
 };
 use lzvm_prover::witness_commitment::{extend_witness_stage_leaves, WitnessStageLeafError};
@@ -214,6 +215,59 @@ fn commits_wide_witness_stage_leaves_with_arity4_hashing() {
             Felt::from_canonical(root_words[3]).expect("canonical"),
         ]
     );
+}
+
+#[test]
+fn opens_and_verifies_witness_stage_commitments() {
+    let unit = sample_unit(2, vec![2]);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let trace =
+        parse_witness_trace(&encode_values(&[5, 9, 1, 9]), 2, 2).expect("trace should parse");
+    let stage = layout.stage_trace(&trace, 1).expect("stage should extract");
+    let leaves =
+        extend_witness_stage_leaves(&stage, 1, 2).expect("witness stage leaves should extend");
+    let commitment = commit_witness_stage_leaves(&leaves, 2).expect("witness stage should commit");
+
+    let opening = open_witness_stage_commitment(&commitment, 2, 4, 2)
+        .expect("witness stage opening should build");
+    let expected_values = decode_words(leaves.bytes())[4..6]
+        .iter()
+        .map(|value| Felt::from_canonical(*value).expect("canonical"))
+        .collect::<Vec<_>>();
+    let mut bad_root = commitment.root();
+    bad_root[0] = bad_root[0] + Felt::ONE;
+
+    assert_eq!(opening.row_index(), 2);
+    assert_eq!(opening.values(), expected_values);
+    assert_eq!(opening.siblings().len(), 2);
+    assert!(
+        verify_witness_stage_opening_root(commitment.root(), commitment.arity(), &opening)
+            .expect("opening should verify")
+    );
+    assert!(
+        !verify_witness_stage_opening_root(bad_root, commitment.arity(), &opening)
+            .expect("opening should check")
+    );
+}
+
+#[test]
+fn rejects_witness_stage_openings_outside_the_domain() {
+    let unit = sample_unit(2, vec![2]);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let trace =
+        parse_witness_trace(&encode_values(&[5, 9, 1, 9]), 2, 2).expect("trace should parse");
+    let stage = layout.stage_trace(&trace, 1).expect("stage should extract");
+    let leaves =
+        extend_witness_stage_leaves(&stage, 1, 2).expect("witness stage leaves should extend");
+    let commitment = commit_witness_stage_leaves(&leaves, 2).expect("witness stage should commit");
+
+    assert!(matches!(
+        open_witness_stage_commitment(&commitment, 4, 4, 2),
+        Err(WitnessStageOpeningError::RowOutOfRange {
+            row_index: 4,
+            row_count: 4
+        })
+    ));
 }
 
 #[test]
