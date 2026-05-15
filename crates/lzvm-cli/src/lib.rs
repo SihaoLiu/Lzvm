@@ -1,8 +1,6 @@
 use std::io::Write;
 
-use lzvm_artifacts::fixed::{
-    read_fixed_columns_file, read_fixed_columns_file_for_setup, FixedColumns,
-};
+use lzvm_artifacts::fixed::{read_fixed_columns_file, read_fixed_columns_file_for_setup};
 use lzvm_artifacts::key_directory::{key_directory_catalog_digest_hex, read_key_directory_catalog};
 use lzvm_artifacts::proof::read_proof_artifact_file;
 use lzvm_artifacts::public_values::read_public_values_file;
@@ -13,8 +11,8 @@ use lzvm_prover::proof_preflight::validate_proof_public_values;
 use lzvm_prover::setup_preflight::validate_setup_preflight;
 use lzvm_setup::{
     build_constant_tree_from_fixed_columns_with_backend, write_base_constant_tree,
-    write_base_fixed_columns, write_constant_tree_leaves_with_backend,
-    write_verification_key_from_constant_tree, FixedExtensionBackend,
+    write_constant_tree_leaves_with_backend, write_verification_key_from_constant_tree,
+    FixedExtensionBackend,
 };
 
 mod prove_inputs;
@@ -459,22 +457,18 @@ fn write_fixed_columns_native(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    let setup = match read_unit_setup_info_binary_file(setup_info_bin) {
-        Ok(setup) => setup,
+    match lzvm_setup::write_fixed_columns_native_file(setup_info_bin, columns_bin, out_const) {
+        Ok(report) => {
+            let _ = writeln!(stdout, "status=ok");
+            let _ = writeln!(stdout, "bytes_written={}", report.bytes_written);
+            let _ = writeln!(stdout, "output={}", report.path.display());
+            0
+        }
         Err(error) => {
             let _ = writeln!(stderr, "setup fixed-column write failed: {error}");
-            return 1;
+            1
         }
-    };
-    let columns = match read_fixed_columns_file(columns_bin) {
-        Ok(columns) => columns,
-        Err(error) => {
-            let _ = writeln!(stderr, "setup fixed-column write failed: {error}");
-            return 1;
-        }
-    };
-
-    publish_fixed_columns(out_const, &columns, &setup, stdout, stderr)
+    }
 }
 
 fn write_base_native(
@@ -486,50 +480,27 @@ fn write_base_native(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    let setup = match read_unit_setup_info_binary_file(setup_info_bin) {
-        Ok(setup) => setup,
+    match lzvm_setup::write_base_native_files(
+        setup_info_bin,
+        columns_bin,
+        out_const,
+        out_consttree,
+        backend,
+    ) {
+        Ok(report) => {
+            let _ = writeln!(stdout, "status=ok");
+            let _ = writeln!(stdout, "fixed_bytes={}", report.fixed.bytes_written);
+            let _ = writeln!(stdout, "tree_bytes={}", report.tree.bytes_written);
+            let _ = writeln!(stdout, "root={}", format_root(&report.tree.root));
+            let _ = writeln!(stdout, "fixed_output={}", report.fixed.path.display());
+            let _ = writeln!(stdout, "tree_output={}", report.tree.path.display());
+            0
+        }
         Err(error) => {
             let _ = writeln!(stderr, "setup native base write failed: {error}");
-            return 1;
+            1
         }
-    };
-    let columns = match read_fixed_columns_file_for_setup(columns_bin, &setup, "raw", "unit") {
-        Ok(columns) => columns,
-        Err(error) => {
-            let _ = writeln!(stderr, "setup native base write failed: {error}");
-            return 1;
-        }
-    };
-    let tree = match build_constant_tree_from_fixed_columns_with_backend(&columns, &setup, backend)
-    {
-        Ok(tree) => tree,
-        Err(error) => {
-            let _ = writeln!(stderr, "setup native base write failed: {error}");
-            return 1;
-        }
-    };
-    let fixed_report = match write_base_fixed_columns(out_const, &columns, &setup) {
-        Ok(report) => report,
-        Err(error) => {
-            let _ = writeln!(stderr, "setup native base write failed: {error}");
-            return 1;
-        }
-    };
-    let tree_report = match write_base_constant_tree(out_consttree, &tree, &setup, None) {
-        Ok(report) => report,
-        Err(error) => {
-            let _ = writeln!(stderr, "setup native base write failed: {error}");
-            return 1;
-        }
-    };
-
-    let _ = writeln!(stdout, "status=ok");
-    let _ = writeln!(stdout, "fixed_bytes={}", fixed_report.bytes_written);
-    let _ = writeln!(stdout, "tree_bytes={}", tree_report.bytes_written);
-    let _ = writeln!(stdout, "root={}", format_root(&tree_report.root));
-    let _ = writeln!(stdout, "fixed_output={}", fixed_report.path.display());
-    let _ = writeln!(stdout, "tree_output={}", tree_report.path.display());
-    0
+    }
 }
 
 fn write_base_directory(
@@ -765,27 +736,6 @@ fn write_constant_tree_native(
         }
         Err(error) => {
             let _ = writeln!(stderr, "setup native constant-tree write failed: {error}");
-            1
-        }
-    }
-}
-
-fn publish_fixed_columns(
-    out_const: &str,
-    columns: &FixedColumns,
-    setup: &lzvm_artifacts::setup_info::UnitSetupInfo,
-    stdout: &mut dyn Write,
-    stderr: &mut dyn Write,
-) -> i32 {
-    match write_base_fixed_columns(out_const, columns, setup) {
-        Ok(report) => {
-            let _ = writeln!(stdout, "status=ok");
-            let _ = writeln!(stdout, "bytes_written={}", report.bytes_written);
-            let _ = writeln!(stdout, "output={}", report.path.display());
-            0
-        }
-        Err(error) => {
-            let _ = writeln!(stderr, "setup fixed-column write failed: {error}");
             1
         }
     }

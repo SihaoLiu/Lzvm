@@ -9,8 +9,9 @@ use lzvm_artifacts::expression_info::{
     encode_expression_info, read_expression_info_binary_file, ExpressionInfo, ExpressionInfoError,
 };
 use lzvm_artifacts::fixed::{
-    encode_raw_fixed_columns, read_fixed_columns_file_for_setup, read_raw_fixed_column_layout_file,
-    write_raw_fixed_columns_file, FixedColumnError, FixedColumns,
+    encode_raw_fixed_columns, read_fixed_columns_file, read_fixed_columns_file_for_setup,
+    read_raw_fixed_column_layout_file, write_raw_fixed_columns_file, FixedColumnError,
+    FixedColumns,
 };
 use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo, GlobalInfoError};
 use lzvm_artifacts::hint_program::{
@@ -77,6 +78,12 @@ pub struct VerificationKeyWriteReport {
     pub binary_path: PathBuf,
     pub binary_bytes: u64,
     pub root: VerificationKeyRoot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BaseNativeWriteReport {
+    pub fixed: FixedColumnWriteReport,
+    pub tree: ConstantTreeWriteReport,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -177,6 +184,68 @@ impl fmt::Display for SetupError {
 }
 
 impl std::error::Error for SetupError {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NativeFileWriteError {
+    SetupInfo(SetupInfoError),
+    FixedColumns(FixedColumnError),
+    Setup(SetupError),
+}
+
+impl fmt::Display for NativeFileWriteError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::SetupInfo(error) => write!(f, "{error}"),
+            Self::FixedColumns(error) => write!(f, "{error}"),
+            Self::Setup(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for NativeFileWriteError {}
+
+impl From<SetupInfoError> for NativeFileWriteError {
+    fn from(error: SetupInfoError) -> Self {
+        Self::SetupInfo(error)
+    }
+}
+
+impl From<FixedColumnError> for NativeFileWriteError {
+    fn from(error: FixedColumnError) -> Self {
+        Self::FixedColumns(error)
+    }
+}
+
+impl From<SetupError> for NativeFileWriteError {
+    fn from(error: SetupError) -> Self {
+        Self::Setup(error)
+    }
+}
+
+pub fn write_fixed_columns_native_file(
+    setup_info_path: impl AsRef<Path>,
+    columns_path: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
+) -> Result<FixedColumnWriteReport, NativeFileWriteError> {
+    let setup = read_unit_setup_info_binary_file(setup_info_path)?;
+    let columns = read_fixed_columns_file(columns_path)?;
+    write_base_fixed_columns(output_path, &columns, &setup).map_err(Into::into)
+}
+
+pub fn write_base_native_files(
+    setup_info_path: impl AsRef<Path>,
+    columns_path: impl AsRef<Path>,
+    fixed_output_path: impl AsRef<Path>,
+    tree_output_path: impl AsRef<Path>,
+    backend: FixedExtensionBackend,
+) -> Result<BaseNativeWriteReport, NativeFileWriteError> {
+    let setup = read_unit_setup_info_binary_file(setup_info_path)?;
+    let columns = read_fixed_columns_file_for_setup(columns_path, &setup, "raw", "unit")?;
+    let tree = build_constant_tree_from_fixed_columns_with_backend(&columns, &setup, backend)?;
+    let fixed = write_base_fixed_columns(fixed_output_path, &columns, &setup)?;
+    let tree = write_base_constant_tree(tree_output_path, &tree, &setup, None)?;
+    Ok(BaseNativeWriteReport { fixed, tree })
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BaseDirectoryWriteError {
