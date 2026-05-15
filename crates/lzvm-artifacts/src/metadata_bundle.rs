@@ -264,14 +264,16 @@ pub fn read_unit_artifact_bundle(
     paths: &UnitArtifactPaths,
 ) -> Result<UnitArtifactBundle, MetadataBundleError> {
     let metadata = read_unit_metadata_bundle(&paths.metadata)?;
-    let json_root = read_verification_key_json_file(&paths.verification_key_json)?;
     let binary_root = read_verification_key_binary_file(&paths.verification_key_binary)?;
 
-    if json_root != binary_root {
-        return Err(MetadataBundleError::VerificationKeyMismatch {
-            json_root,
-            binary_root,
-        });
+    if paths.verification_key_json.is_file() {
+        let json_root = read_verification_key_json_file(&paths.verification_key_json)?;
+        if json_root != binary_root {
+            return Err(MetadataBundleError::VerificationKeyMismatch {
+                json_root,
+                binary_root,
+            });
+        }
     }
     let expression_program = read_expression_program_file(&paths.expression_program)?;
     let verifier_program = read_expression_program_file(&paths.verifier_program)?;
@@ -283,11 +285,11 @@ pub fn read_unit_artifact_bundle(
     )?;
     validate_fixed_column_rows(&metadata, &fixed_columns)?;
     let constant_tree = read_constant_tree_file(&paths.constant_tree, &metadata.setup)?;
-    validate_constant_tree_root(&constant_tree, &json_root)?;
+    validate_constant_tree_root(&constant_tree, &binary_root)?;
 
     Ok(UnitArtifactBundle {
         metadata,
-        verification_key: json_root,
+        verification_key: binary_root,
         expression_program,
         verifier_program,
         fixed_columns,

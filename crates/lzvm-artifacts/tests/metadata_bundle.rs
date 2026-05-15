@@ -364,6 +364,31 @@ fn reads_and_validates_unit_artifacts_from_paths() {
 }
 
 #[test]
+fn reads_and_validates_unit_artifacts_from_binary_key_without_json() {
+    let dir = create_clean_dir("unit-artifacts-binary-key");
+    let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
+    write_unit_fixture(
+        &paths.metadata,
+        sample_setup_info_json(),
+        sample_expression_info_json(),
+        sample_verifier_info_json(),
+    );
+    write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
+    write_expression_program(&paths.expression_program, 17);
+    write_expression_program(&paths.verifier_program, 9);
+    write_fixed_columns(&paths.fixed_columns);
+    write_constant_tree(&paths.constant_tree, [1, 2, 3, 4]);
+
+    let bundle = read_unit_artifact_bundle(&paths).expect("bundle should load");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        bundle.verification_key,
+        VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4])
+    );
+}
+
+#[test]
 fn rejects_unit_artifacts_with_mismatched_key_roots() {
     let dir = create_clean_dir("unit-artifacts-invalid");
     let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
