@@ -12,11 +12,16 @@ use lzvm_artifacts::witness_library::{
     read_witness_library_file, WitnessLibraryError, WitnessLibraryInfo,
 };
 
+mod prove_witness;
 pub mod witness_commitment;
 pub mod witness_layout;
 pub mod witness_loader;
 pub mod witness_runner;
 pub mod witness_trace;
+
+pub use prove_witness::{
+    run_prove_witness_commitments, ProveWitnessCommitmentError, ProveWitnessCommitments,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProveSchedule {
