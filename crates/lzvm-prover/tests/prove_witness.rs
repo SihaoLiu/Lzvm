@@ -23,15 +23,18 @@ use lzvm_artifacts::witness_opening_segment::{
 use lzvm_artifacts::witness_segment::{
     parse_witness_commitment_segment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
+use lzvm_field::{Ext3, Felt};
+use lzvm_prover::pcs_challenge::derive_fri_queries;
 use lzvm_prover::witness_commitment::commit_witness_trace_stages;
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_loader::load_witness_library;
 use lzvm_prover::witness_runner::run_witness_trace;
 use lzvm_prover::{
     build_pcs_material_manifest_segment, build_pcs_query_plan_segment,
-    build_witness_commitment_segment, build_witness_opening_segment, derive_prove_execution_plan,
-    run_prove_witness_commitments, GpuRunOptions, ProveExecutionInputArtifacts, ProvePartitionPlan,
-    ProvePassRequest, ProveRunOptions, ProveRunRequest, ProveWitnessCommitmentError,
+    build_pcs_query_plan_segment_from_challenge, build_witness_commitment_segment,
+    build_witness_opening_segment, derive_prove_execution_plan, run_prove_witness_commitments,
+    GpuRunOptions, ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest,
+    ProveRunOptions, ProveRunRequest, ProveWitnessCommitmentError,
 };
 use sha2::{Digest, Sha256};
 
@@ -432,6 +435,64 @@ fn builds_pcs_query_plan_segments_from_proof_inputs() {
     for query in &parsed.units[0].queries {
         assert!(*query < plan.run_plan.schedule.units[0].extended_domain_size);
     }
+}
+
+#[test]
+fn builds_pcs_query_plan_segments_from_transcript_challenge() {
+    let dir = temp_dir("query-plan-transcript");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [23_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.pcs_plan.proof_of_work_bits = 0;
+    unit.metadata.setup.stark.pow_bits = 0;
+    let catalog = sample_catalog(unit);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let output = run_prove_witness_commitments(&plan, 0).expect("witness commitments should run");
+    let witness_segment =
+        build_witness_commitment_segment(&output).expect("witness segment should build");
+    let challenge = Ext3::from_u64s([11, 22, 33]);
+    let nonce = Felt::ZERO;
+
+    let query_segment = build_pcs_query_plan_segment_from_challenge(
+        &plan.run_plan.schedule,
+        std::slice::from_ref(&witness_segment),
+        challenge,
+        nonce,
+    )
+    .expect("query segment should build");
+    let parsed =
+        parse_pcs_query_plan_segment(&query_segment.data).expect("query segment should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let unit = &plan.run_plan.schedule.units[0];
+    let expected_queries = derive_fri_queries(
+        unit.transcript_arity
+            .expect("transcript arity should exist") as usize,
+        challenge,
+        nonce,
+        unit.query_count as usize,
+        unit.extended_domain_bits,
+    )
+    .expect("query sampling should fit");
+    assert_eq!(query_segment.id, PCS_QUERY_PLAN_SEGMENT_ID);
+    assert_eq!(parsed.units.len(), 1);
+    assert_eq!(parsed.units[0].unit_index, 0);
+    assert_eq!(parsed.units[0].queries, expected_queries);
 }
 
 #[test]
