@@ -1,5 +1,7 @@
 use std::fmt;
 
+#[cfg(feature = "cuda")]
+use lzvm_accel::cuda_goldilocks_intt;
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::pcs_fri_segment::{
     parse_pcs_fri_opening_segment, PcsFriOpeningLayerSegment, PcsFriOpeningLevelSegment,
@@ -10,7 +12,9 @@ use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::setup_info::StageValue;
 use lzvm_artifacts::verifier_info::VerifierCode;
-use lzvm_field::{intt_in_place, DomainError, Ext3, Felt, FieldError, PoseidonTranscript, SHIFT};
+#[cfg(not(feature = "cuda"))]
+use lzvm_field::intt_in_place;
+use lzvm_field::{DomainError, Ext3, Felt, FieldError, PoseidonTranscript, SHIFT};
 
 use crate::merkle_hash::{
     linear_hash, parent_hash, root_from_digest_level, MerkleHashError, HASH_WORDS,
@@ -140,13 +144,26 @@ pub enum ValidateOptionalPcsFriOpeningProofSegmentsError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcsFriFoldError {
-    InvalidLayerBits { current_bits: u32, prev_bits: u32 },
-    InvalidExtensionBits { n_bits_ext: u32, prev_bits: u32 },
-    ValueLengthMismatch { expected: usize, found: usize },
-    UnsupportedRoot { bits: u32 },
+    InvalidLayerBits {
+        current_bits: u32,
+        prev_bits: u32,
+    },
+    InvalidExtensionBits {
+        n_bits_ext: u32,
+        prev_bits: u32,
+    },
+    ValueLengthMismatch {
+        expected: usize,
+        found: usize,
+    },
+    UnsupportedRoot {
+        bits: u32,
+    },
     ZeroEvaluationPoint,
     Domain(DomainError),
     Field(FieldError),
+    #[cfg(feature = "cuda")]
+    Accel(lzvm_accel::AccelError),
     LengthOverflow,
 }
 
@@ -177,6 +194,8 @@ impl fmt::Display for PcsFriFoldError {
             Self::ZeroEvaluationPoint => write!(f, "PCS FRI fold evaluation point is zero"),
             Self::Domain(error) => write!(f, "PCS FRI fold domain error: {error}"),
             Self::Field(error) => write!(f, "PCS FRI fold field error: {error}"),
+            #[cfg(feature = "cuda")]
+            Self::Accel(error) => write!(f, "PCS FRI fold cuda error: {error}"),
             Self::LengthOverflow => write!(f, "PCS FRI fold length overflow"),
         }
     }
@@ -187,6 +206,8 @@ impl std::error::Error for PcsFriFoldError {
         match self {
             Self::Domain(error) => Some(error),
             Self::Field(error) => Some(error),
+            #[cfg(feature = "cuda")]
+            Self::Accel(error) => Some(error),
             Self::InvalidLayerBits { .. }
             | Self::InvalidExtensionBits { .. }
             | Self::ValueLengthMismatch { .. }
@@ -1455,15 +1476,36 @@ fn interpolate_fold_values(values: &[Ext3], bits: usize) -> Result<Vec<Ext3>, Pc
         c1.push(value.c1);
         c2.push(value.c2);
     }
-    intt_in_place(&mut c0, bits)?;
-    intt_in_place(&mut c1, bits)?;
-    intt_in_place(&mut c2, bits)?;
+    c0 = interpolate_fold_column(&c0, bits)?;
+    c1 = interpolate_fold_column(&c1, bits)?;
+    c2 = interpolate_fold_column(&c2, bits)?;
     Ok(c0
         .into_iter()
         .zip(c1)
         .zip(c2)
         .map(|((c0, c1), c2)| Ext3::new(c0, c1, c2))
         .collect())
+}
+
+#[cfg(feature = "cuda")]
+fn interpolate_fold_column(values: &[Felt], bits: usize) -> Result<Vec<Felt>, PcsFriFoldError> {
+    let raw = values
+        .iter()
+        .map(|value| value.to_u64())
+        .collect::<Vec<_>>();
+    let transformed = cuda_goldilocks_intt(&raw, bits).map_err(PcsFriFoldError::Accel)?;
+    transformed
+        .into_iter()
+        .map(Felt::from_canonical)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(PcsFriFoldError::Field)
+}
+
+#[cfg(not(feature = "cuda"))]
+fn interpolate_fold_column(values: &[Felt], bits: usize) -> Result<Vec<Felt>, PcsFriFoldError> {
+    let mut values = values.to_vec();
+    intt_in_place(&mut values, bits).map_err(PcsFriFoldError::Domain)?;
+    Ok(values)
 }
 
 fn fold_shift(n_bits_ext: u32, prev_bits: u32) -> Felt {

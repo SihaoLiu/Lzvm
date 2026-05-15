@@ -639,6 +639,13 @@ __global__ void normalize_shift_and_pad_kernel(
     }
 }
 
+__global__ void scale_kernel(uint64_t* values, size_t len, uint64_t factor) {
+    const size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < len) {
+        values[index] = mul_mod(values[index], factor);
+    }
+}
+
 __global__ void poseidon2_width4_kernel(const uint64_t* values, uint64_t* out, size_t state_count) {
     const size_t state_index = blockIdx.x * blockDim.x + threadIdx.x;
     if (state_index < state_count) {
@@ -1009,6 +1016,58 @@ extern "C" int lzvm_cuda_goldilocks_ntt(
     }
 
     status = run_ntt(device_values, len, bits, root);
+    if (status != cudaSuccess) {
+        return free_single_after_error(status, device_values);
+    }
+
+    status = cudaDeviceSynchronize();
+    if (status != cudaSuccess) {
+        return free_single_after_error(status, device_values);
+    }
+    status = cudaMemcpy(out, device_values, bytes, cudaMemcpyDeviceToHost);
+    if (status != cudaSuccess) {
+        return free_single_after_error(status, device_values);
+    }
+
+    cudaFree(device_values);
+    return 0;
+}
+
+extern "C" int lzvm_cuda_goldilocks_intt(
+    const uint64_t* values,
+    uint64_t* out,
+    size_t len,
+    size_t bits,
+    uint64_t root) {
+    if (values == nullptr || out == nullptr) {
+        return -1;
+    }
+    if (len == 0) {
+        return -2;
+    }
+
+    uint64_t* device_values = nullptr;
+    const size_t bytes = len * sizeof(uint64_t);
+    cudaError_t status = cudaMalloc(&device_values, bytes);
+    if (status != cudaSuccess) {
+        return static_cast<int>(status);
+    }
+
+    status = cudaMemcpy(device_values, values, bytes, cudaMemcpyHostToDevice);
+    if (status != cudaSuccess) {
+        return free_single_after_error(status, device_values);
+    }
+
+    const uint64_t root_inverse = host_pow_mod(root, kModulus - 2);
+    status = run_ntt(device_values, len, bits, root_inverse);
+    if (status != cudaSuccess) {
+        return free_single_after_error(status, device_values);
+    }
+
+    const uint64_t inverse_len = host_pow_mod(static_cast<uint64_t>(len), kModulus - 2);
+    const size_t blocks = (len + kThreads - 1) / kThreads;
+    scale_kernel<<<blocks, kThreads>>>(device_values, len, inverse_len);
+    status = cudaGetLastError();
     if (status != cudaSuccess) {
         return free_single_after_error(status, device_values);
     }

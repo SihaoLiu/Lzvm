@@ -2,14 +2,14 @@
 use lzvm_accel::{cuda_goldilocks_add, cuda_goldilocks_mul};
 #[cfg(feature = "cuda")]
 use lzvm_accel::{
-    cuda_goldilocks_butterfly, cuda_goldilocks_coset_extend, cuda_goldilocks_ntt,
-    cuda_poseidon2_width16, cuda_poseidon2_width4, cuda_poseidon2_width4_find_nonce,
-    cuda_poseidon2_width8,
+    cuda_goldilocks_butterfly, cuda_goldilocks_coset_extend, cuda_goldilocks_intt,
+    cuda_goldilocks_ntt, cuda_poseidon2_width16, cuda_poseidon2_width4,
+    cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8,
 };
 #[cfg(feature = "cuda")]
 use lzvm_field::{
-    coset_extend_evaluations, ntt_in_place, poseidon2_hash_16, poseidon2_hash_4, poseidon2_hash_8,
-    Felt,
+    coset_extend_evaluations, intt_in_place, ntt_in_place, poseidon2_hash_16, poseidon2_hash_4,
+    poseidon2_hash_8, Felt,
 };
 
 #[cfg(feature = "cuda")]
@@ -165,6 +165,22 @@ fn cuda_computes_forward_ntt() {
     let expected = expected.into_iter().map(Felt::to_u64).collect::<Vec<_>>();
 
     let actual = cuda_goldilocks_ntt(&input, 3).expect("cuda ntt should run");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_computes_inverse_ntt() {
+    let input = vec![3, 5, 7, 11];
+    let mut expected = input
+        .iter()
+        .map(|value| Felt::from_u64(*value))
+        .collect::<Vec<_>>();
+    intt_in_place(&mut expected, 2).expect("cpu intt should run");
+    let expected = expected.into_iter().map(Felt::to_u64).collect::<Vec<_>>();
+
+    let actual = cuda_goldilocks_intt(&input, 2).expect("cuda intt should run");
 
     assert_eq!(actual, expected);
 }

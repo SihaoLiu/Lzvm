@@ -47,6 +47,13 @@ unsafe extern "C" {
         bits: usize,
         root: u64,
     ) -> i32;
+    fn lzvm_cuda_goldilocks_intt(
+        values: *const u64,
+        out: *mut u64,
+        len: usize,
+        bits: usize,
+        root: u64,
+    ) -> i32;
     fn lzvm_cuda_goldilocks_coset_extend(
         values: *const u64,
         out: *mut u64,
@@ -234,6 +241,41 @@ pub fn cuda_goldilocks_ntt(values: &[u64], bits: usize) -> Result<Vec<u64>, Acce
     let mut out = vec![0_u64; values.len()];
     let code = unsafe {
         lzvm_cuda_goldilocks_ntt(values.as_ptr(), out.as_mut_ptr(), values.len(), bits, root)
+    };
+    if code == 0 {
+        Ok(out)
+    } else {
+        Err(AccelError::Cuda { code })
+    }
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_goldilocks_intt(values: &[u64], bits: usize) -> Result<Vec<u64>, AccelError> {
+    let Some(root) = ROOTS_OF_UNITY.get(bits).copied() else {
+        return Err(AccelError::InvalidDomain {
+            bits,
+            len: values.len(),
+        });
+    };
+    let expected_len = 1_usize
+        .checked_shl(u32::try_from(bits).map_err(|_| AccelError::InvalidDomain {
+            bits,
+            len: values.len(),
+        })?)
+        .ok_or(AccelError::InvalidDomain {
+            bits,
+            len: values.len(),
+        })?;
+    if values.len() != expected_len {
+        return Err(AccelError::InvalidDomain {
+            bits,
+            len: values.len(),
+        });
+    }
+
+    let mut out = vec![0_u64; values.len()];
+    let code = unsafe {
+        lzvm_cuda_goldilocks_intt(values.as_ptr(), out.as_mut_ptr(), values.len(), bits, root)
     };
     if code == 0 {
         Ok(out)
@@ -452,6 +494,11 @@ pub fn cuda_goldilocks_butterfly(
 
 #[cfg(not(feature = "cuda"))]
 pub fn cuda_goldilocks_ntt(_values: &[u64], _bits: usize) -> Result<Vec<u64>, AccelError> {
+    Err(AccelError::CudaUnavailable)
+}
+
+#[cfg(not(feature = "cuda"))]
+pub fn cuda_goldilocks_intt(_values: &[u64], _bits: usize) -> Result<Vec<u64>, AccelError> {
     Err(AccelError::CudaUnavailable)
 }
 
