@@ -1,8 +1,12 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "cuda")]
+use lzvm_accel::cuda_goldilocks_coset_extend;
 use lzvm_artifacts::fixed::{read_fixed_columns_file_for_setup, FixedColumnError, FixedColumns};
-use lzvm_field::{coset_extend_evaluations, DomainError, Ext3, Felt, FieldError};
+#[cfg(not(feature = "cuda"))]
+use lzvm_field::coset_extend_evaluations;
+use lzvm_field::{DomainError, Ext3, Felt, FieldError};
 
 use crate::fri_polynomial::{
     build_fri_domain_points, build_fri_polynomial, derive_opening_xis, FriPolynomialColumnMatrix,
@@ -59,6 +63,16 @@ pub enum ProvePcsFriPolynomialError {
     FixedExtension {
         unit_index: usize,
         source: DomainError,
+    },
+    #[cfg(feature = "cuda")]
+    FixedExtensionCuda {
+        unit_index: usize,
+        source: lzvm_accel::AccelError,
+    },
+    #[cfg(feature = "cuda")]
+    FixedExtensionValue {
+        unit_index: usize,
+        source: FieldError,
     },
     StageInput {
         unit_index: usize,
@@ -152,6 +166,16 @@ impl fmt::Display for ProvePcsFriPolynomialError {
                 f,
                 "prove PCS FRI polynomial fixed extension failed for unit {unit_index}: {source}"
             ),
+            #[cfg(feature = "cuda")]
+            Self::FixedExtensionCuda { unit_index, source } => write!(
+                f,
+                "prove PCS FRI polynomial fixed cuda extension failed for unit {unit_index}: {source}"
+            ),
+            #[cfg(feature = "cuda")]
+            Self::FixedExtensionValue { unit_index, source } => write!(
+                f,
+                "prove PCS FRI polynomial fixed extension value failed for unit {unit_index}: {source}"
+            ),
             Self::StageInput { unit_index, source } => write!(
                 f,
                 "prove PCS FRI polynomial stage input failed for unit {unit_index}: {source}"
@@ -180,6 +204,10 @@ impl std::error::Error for ProvePcsFriPolynomialError {
         match self {
             Self::FixedColumns { source, .. } => Some(source),
             Self::FixedExtension { source, .. } => Some(source),
+            #[cfg(feature = "cuda")]
+            Self::FixedExtensionCuda { source, .. } => Some(source),
+            #[cfg(feature = "cuda")]
+            Self::FixedExtensionValue { source, .. } => Some(source),
             Self::StageInput { source, .. } => Some(source),
             Self::FriPolynomial { source, .. } => Some(source.as_ref()),
             Self::MissingFriExpression { .. }
@@ -393,11 +421,12 @@ fn extend_row_major_columns(
         for row in 0..source_rows {
             source.push(values[row * column_count + column]);
         }
-        extended_columns.push(
-            coset_extend_evaluations(&source, source_bits, target_bits).map_err(|source| {
-                ProvePcsFriPolynomialError::FixedExtension { unit_index, source }
-            })?,
-        );
+        extended_columns.push(extend_row_major_column_values(
+            &source,
+            source_bits,
+            target_bits,
+            unit_index,
+        )?);
     }
 
     let extended_rows = extended_columns.first().map_or(0, Vec::len);
@@ -414,9 +443,78 @@ fn extend_row_major_columns(
     Ok(out)
 }
 
+#[cfg(feature = "cuda")]
+fn extend_row_major_column_values(
+    source: &[Felt],
+    source_bits: usize,
+    target_bits: usize,
+    unit_index: usize,
+) -> Result<Vec<Felt>, ProvePcsFriPolynomialError> {
+    let source_words = source
+        .iter()
+        .map(|value| value.to_u64())
+        .collect::<Vec<_>>();
+    let extended_words = cuda_goldilocks_coset_extend(&source_words, source_bits, target_bits)
+        .map_err(|source| ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source })?;
+    extended_words
+        .into_iter()
+        .map(Felt::from_canonical)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|source| ProvePcsFriPolynomialError::FixedExtensionValue { unit_index, source })
+}
+
+#[cfg(not(feature = "cuda"))]
+fn extend_row_major_column_values(
+    source: &[Felt],
+    source_bits: usize,
+    target_bits: usize,
+    unit_index: usize,
+) -> Result<Vec<Felt>, ProvePcsFriPolynomialError> {
+    coset_extend_evaluations(source, source_bits, target_bits)
+        .map_err(|source| ProvePcsFriPolynomialError::FixedExtension { unit_index, source })
+}
+
 fn fri_error(unit_index: usize, source: FriPolynomialError) -> ProvePcsFriPolynomialError {
     ProvePcsFriPolynomialError::FriPolynomial {
         unit_index,
         source: Box::new(source),
+    }
+}
+
+#[cfg(all(test, feature = "cuda"))]
+mod tests {
+    use super::{extend_row_major_columns, ProvePcsFriPolynomialError};
+    use lzvm_field::{coset_extend_evaluations, Felt};
+
+    fn extend_row_major_columns_with_cuda(
+        values: &[Felt],
+        column_count: usize,
+        source_bits: usize,
+        target_bits: usize,
+        unit_index: usize,
+    ) -> Result<Vec<Felt>, ProvePcsFriPolynomialError> {
+        extend_row_major_columns(values, column_count, source_bits, target_bits, unit_index)
+    }
+
+    #[test]
+    fn cuda_row_major_extension_matches_cpu_reference() {
+        let values = vec![
+            Felt::from_u64(5),
+            Felt::from_u64(9),
+            Felt::from_u64(1),
+            Felt::from_u64(9),
+        ];
+
+        let cuda = extend_row_major_columns_with_cuda(&values, 2, 1, 2, 7)
+            .expect("cuda extension should run");
+        let column_0 = coset_extend_evaluations(&[Felt::from_u64(5), Felt::from_u64(1)], 1, 2)
+            .expect("first column should extend");
+        let column_1 = coset_extend_evaluations(&[Felt::from_u64(9), Felt::from_u64(9)], 1, 2)
+            .expect("second column should extend");
+        let expected = (0..4)
+            .flat_map(|row| [column_0[row], column_1[row]])
+            .collect::<Vec<_>>();
+
+        assert_eq!(cuda, expected);
     }
 }
