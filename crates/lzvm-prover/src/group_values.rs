@@ -2,11 +2,11 @@ use std::fmt;
 
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::group_values_segment::{
-    encode_group_values_segment, GroupValuesSegment, GroupValuesSegmentError,
-    GROUP_VALUES_SEGMENT_ID,
+    encode_group_values_segment, parse_group_values_segment, GroupValuesSegment,
+    GroupValuesSegmentError, GROUP_VALUES_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::ProofSegment;
-use lzvm_field::Ext3;
+use lzvm_field::{Ext3, Felt, FieldError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProveGroupValuesSegmentError {
@@ -48,6 +48,47 @@ impl From<GroupValuesSegmentError> for ProveGroupValuesSegmentError {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadGroupValuesSegmentError {
+    MissingSegment,
+    UnexpectedSegment,
+    ValueCountMismatch { expected: usize, found: usize },
+    NonCanonicalValue { index: usize, source: FieldError },
+    Segment(GroupValuesSegmentError),
+    LengthOverflow,
+}
+
+impl fmt::Display for LoadGroupValuesSegmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingSegment => write!(f, "missing group values segment"),
+            Self::UnexpectedSegment => write!(f, "unexpected group values segment"),
+            Self::ValueCountMismatch { expected, found } => write!(
+                f,
+                "group values segment count mismatch: expected {expected}, found {found}"
+            ),
+            Self::NonCanonicalValue { index, source } => {
+                write!(f, "invalid group values segment value {index}: {source}")
+            }
+            Self::Segment(error) => write!(f, "invalid group values segment: {error}"),
+            Self::LengthOverflow => write!(f, "group values segment length overflow"),
+        }
+    }
+}
+
+impl std::error::Error for LoadGroupValuesSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::NonCanonicalValue { source, .. } => Some(source),
+            Self::Segment(error) => Some(error),
+            Self::MissingSegment
+            | Self::UnexpectedSegment
+            | Self::ValueCountMismatch { .. }
+            | Self::LengthOverflow => None,
+        }
+    }
+}
+
 pub fn build_group_values_segment(
     global_info: &GlobalInfo,
     values: &[Ext3],
@@ -75,6 +116,55 @@ pub fn build_group_values_segment(
         id: GROUP_VALUES_SEGMENT_ID,
         data: encode_group_values_segment(&segment)?,
     }))
+}
+
+pub fn load_group_values_from_segments(
+    global_info: &GlobalInfo,
+    segments: &[ProofSegment],
+) -> Result<Vec<Ext3>, LoadGroupValuesSegmentError> {
+    let expected_count = expected_group_value_count(global_info)
+        .map_err(|_| LoadGroupValuesSegmentError::LengthOverflow)?;
+    let segment = segments
+        .iter()
+        .find(|segment| segment.id == GROUP_VALUES_SEGMENT_ID);
+    if expected_count == 0 {
+        if segment.is_some() {
+            return Err(LoadGroupValuesSegmentError::UnexpectedSegment);
+        }
+        return Ok(Vec::new());
+    }
+
+    let segment = segment.ok_or(LoadGroupValuesSegmentError::MissingSegment)?;
+    let parsed =
+        parse_group_values_segment(&segment.data).map_err(LoadGroupValuesSegmentError::Segment)?;
+    if parsed.values.len() != expected_count {
+        return Err(LoadGroupValuesSegmentError::ValueCountMismatch {
+            expected: expected_count,
+            found: parsed.values.len(),
+        });
+    }
+
+    parsed
+        .values
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, words)| group_value_extension_from_words(index, words))
+        .collect()
+}
+
+fn group_value_extension_from_words(
+    index: usize,
+    words: [u64; 3],
+) -> Result<Ext3, LoadGroupValuesSegmentError> {
+    Ok(Ext3::new(
+        Felt::from_canonical(words[0])
+            .map_err(|source| LoadGroupValuesSegmentError::NonCanonicalValue { index, source })?,
+        Felt::from_canonical(words[1])
+            .map_err(|source| LoadGroupValuesSegmentError::NonCanonicalValue { index, source })?,
+        Felt::from_canonical(words[2])
+            .map_err(|source| LoadGroupValuesSegmentError::NonCanonicalValue { index, source })?,
+    ))
 }
 
 fn expected_group_value_count(

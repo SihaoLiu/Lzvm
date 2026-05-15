@@ -2,11 +2,14 @@ use lzvm_artifacts::global_info::{
     AggregationType, CurveKind, GlobalAir, GlobalInfo, NamedStageValue,
 };
 use lzvm_artifacts::pcs_proof_values_segment::{
-    parse_pcs_proof_values_segment, PCS_PROOF_VALUES_SEGMENT_ID,
+    encode_pcs_proof_values_segment, parse_pcs_proof_values_segment, PcsProofValuesSegment,
+    PCS_PROOF_VALUES_SEGMENT_ID,
 };
-use lzvm_field::{Ext3, Felt};
+use lzvm_artifacts::proof::ProofSegment;
+use lzvm_field::{Ext3, Felt, FieldError, MODULUS};
 use lzvm_prover::proof_values::{
     build_pcs_proof_values_segment_from_packed_values, flatten_pcs_proof_values,
+    load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError,
     ProvePcsProofValuesSegmentError,
 };
 
@@ -51,6 +54,110 @@ fn flattens_segment_values_for_global_constraint_offsets() {
             Felt::from_u64(12),
             Felt::from_u64(13)
         ]
+    );
+}
+
+#[test]
+fn loads_pcs_proof_values_from_segments() {
+    let global = sample_global_info(vec![
+        sample_proof_value("scalar-value", 1),
+        sample_proof_value("extension-value", 2),
+    ]);
+    let segment = build_pcs_proof_values_segment_from_packed_values(
+        &global,
+        &[
+            Felt::from_u64(7),
+            Felt::from_u64(11),
+            Felt::from_u64(12),
+            Felt::from_u64(13),
+        ],
+    )
+    .expect("segment should build")
+    .expect("metadata declares proof values");
+
+    let values =
+        load_pcs_proof_values_from_segments(&global, &[segment]).expect("segment should load");
+
+    assert_eq!(
+        values,
+        vec![Ext3::from_u64s([7, 0, 0]), Ext3::from_u64s([11, 12, 13])]
+    );
+}
+
+#[test]
+fn rejects_missing_pcs_proof_values_segment() {
+    let global = sample_global_info(vec![sample_proof_value("scalar-value", 1)]);
+
+    let error = load_pcs_proof_values_from_segments(&global, &[])
+        .expect_err("required segment should be present");
+
+    assert_eq!(error, LoadPcsProofValuesSegmentError::MissingSegment);
+}
+
+#[test]
+fn rejects_unexpected_pcs_proof_values_segment() {
+    let global = sample_global_info(Vec::new());
+
+    let error = load_pcs_proof_values_from_segments(
+        &global,
+        &[ProofSegment {
+            id: PCS_PROOF_VALUES_SEGMENT_ID,
+            data: vec![1, 2, 3, 4],
+        }],
+    )
+    .expect_err("segment should not be present");
+
+    assert_eq!(error, LoadPcsProofValuesSegmentError::UnexpectedSegment);
+}
+
+#[test]
+fn rejects_loaded_pcs_proof_values_count_mismatch() {
+    let global = sample_global_info(vec![
+        sample_proof_value("scalar-value", 1),
+        sample_proof_value("extension-value", 2),
+    ]);
+    let segment = pcs_proof_values_segment([[7, 0, 0]]);
+
+    let error = load_pcs_proof_values_from_segments(&global, &[segment])
+        .expect_err("segment value count should match metadata");
+
+    assert_eq!(
+        error,
+        LoadPcsProofValuesSegmentError::ValueCountMismatch {
+            expected: 2,
+            found: 1
+        }
+    );
+}
+
+#[test]
+fn rejects_loaded_stage_one_extension_components() {
+    let global = sample_global_info(vec![sample_proof_value("scalar-value", 1)]);
+    let segment = pcs_proof_values_segment([[7, 1, 0]]);
+
+    let error = load_pcs_proof_values_from_segments(&global, &[segment])
+        .expect_err("stage-1 value should be scalar");
+
+    assert_eq!(
+        error,
+        LoadPcsProofValuesSegmentError::StageOneExtensionComponents { index: 0 }
+    );
+}
+
+#[test]
+fn rejects_loaded_noncanonical_pcs_proof_values() {
+    let global = sample_global_info(vec![sample_proof_value("extension-value", 2)]);
+    let segment = pcs_proof_values_segment([[MODULUS, 0, 0]]);
+
+    let error = load_pcs_proof_values_from_segments(&global, &[segment])
+        .expect_err("segment values should be canonical field elements");
+
+    assert_eq!(
+        error,
+        LoadPcsProofValuesSegmentError::NonCanonicalValue {
+            index: 0,
+            source: FieldError::NonCanonical { value: MODULUS }
+        }
     );
 }
 
@@ -142,5 +249,15 @@ fn sample_proof_value(name: &str, stage: u64) -> NamedStageValue {
         stage,
         id: None,
         lengths: Vec::new(),
+    }
+}
+
+fn pcs_proof_values_segment<const N: usize>(values: [[u64; 3]; N]) -> ProofSegment {
+    ProofSegment {
+        id: PCS_PROOF_VALUES_SEGMENT_ID,
+        data: encode_pcs_proof_values_segment(&PcsProofValuesSegment {
+            values: values.to_vec(),
+        })
+        .expect("segment should encode"),
     }
 }

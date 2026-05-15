@@ -13,7 +13,6 @@ use lzvm_artifacts::fixed::{
     read_fixed_columns_file, read_fixed_columns_file_for_setup, FixedColumns,
 };
 use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo};
-use lzvm_artifacts::group_values_segment::{parse_group_values_segment, GROUP_VALUES_SEGMENT_ID};
 use lzvm_artifacts::hint_program::{
     encode_regular_hint_program, regular_hint_program_from_expression_info,
 };
@@ -32,9 +31,6 @@ use lzvm_artifacts::pcs_material_segment::{
 use lzvm_artifacts::pcs_nonce_segment::PCS_QUERY_NONCE_SEGMENT_ID;
 use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file,
-};
-use lzvm_artifacts::pcs_proof_values_segment::{
-    parse_pcs_proof_values_segment, PCS_PROOF_VALUES_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_query_segment::{
     parse_pcs_query_plan_segment, PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
@@ -64,6 +60,7 @@ use lzvm_prover::global_constraints::{
     validate_global_constraints as validate_global_constraint_program, GlobalConstraintInputs,
     GlobalConstraintValidationError,
 };
+use lzvm_prover::group_values::load_group_values_from_segments;
 use lzvm_prover::hint_eval::{global_hint_input_requirements, resolve_global_hint_program};
 use lzvm_prover::pcs_fri::{
     verify_fri_last_level_root, verify_fri_opening_folds, verify_fri_query_path,
@@ -73,7 +70,7 @@ use lzvm_prover::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptSegmentInputs,
 };
 use lzvm_prover::proof_preflight::validate_proof_public_values;
-use lzvm_prover::proof_values::flatten_pcs_proof_values;
+use lzvm_prover::proof_values::{flatten_pcs_proof_values, load_pcs_proof_values_from_segments};
 use lzvm_prover::unit_values::expected_packed_unit_value_count;
 use lzvm_prover::verifier_query::{
     evaluate_verifier_unit_queries, verify_query_outputs_against_fri_opening,
@@ -1647,101 +1644,16 @@ fn load_pcs_proof_values(
     catalog: &KeyDirectoryCatalog,
     proof: &ProofArtifact,
 ) -> Result<Vec<Ext3>, String> {
-    let expected_count = catalog.layout.global_info.proof_values_map.len();
-    let segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == PCS_PROOF_VALUES_SEGMENT_ID);
-    if expected_count == 0 {
-        if segment.is_some() {
-            return Err("unexpected PCS proof values segment".to_owned());
-        }
-        return Ok(Vec::new());
-    }
-    let segment = segment.ok_or_else(|| "missing PCS proof values segment".to_owned())?;
-    let parsed = parse_pcs_proof_values_segment(&segment.data)
-        .map_err(|error| format!("invalid PCS proof values segment: {error}"))?;
-    if parsed.values.len() != expected_count {
-        return Err(format!(
-            "PCS proof values segment count mismatch: expected {expected_count}, found {}",
-            parsed.values.len()
-        ));
-    }
-
-    let mut values = Vec::with_capacity(parsed.values.len());
-    for (index, words) in parsed.values.iter().copied().enumerate() {
-        if catalog.layout.global_info.proof_values_map[index].stage == 1
-            && (words[1] != 0 || words[2] != 0)
-        {
-            return Err(format!(
-                "PCS proof values segment stage-1 value {index} must have zero extension components"
-            ));
-        }
-        values.push(proof_value_extension_from_words(index, words)?);
-    }
-    Ok(values)
-}
-
-fn proof_value_extension_from_words(index: usize, words: [u64; 3]) -> Result<Ext3, String> {
-    Ok(Ext3::new(
-        Felt::from_canonical(words[0])
-            .map_err(|error| format!("invalid PCS proof values segment value {index}: {error}"))?,
-        Felt::from_canonical(words[1])
-            .map_err(|error| format!("invalid PCS proof values segment value {index}: {error}"))?,
-        Felt::from_canonical(words[2])
-            .map_err(|error| format!("invalid PCS proof values segment value {index}: {error}"))?,
-    ))
+    load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
+        .map_err(|error| error.to_string())
 }
 
 fn load_group_values(
     catalog: &KeyDirectoryCatalog,
     proof: &ProofArtifact,
 ) -> Result<Vec<Ext3>, String> {
-    let expected_count = catalog
-        .layout
-        .global_info
-        .aggregation_types
-        .iter()
-        .map(Vec::len)
-        .sum::<usize>();
-    let segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == GROUP_VALUES_SEGMENT_ID);
-    if expected_count == 0 {
-        if segment.is_some() {
-            return Err("unexpected group values segment".to_owned());
-        }
-        return Ok(Vec::new());
-    }
-    let segment = segment.ok_or_else(|| "missing group values segment".to_owned())?;
-    let parsed = parse_group_values_segment(&segment.data)
-        .map_err(|error| format!("invalid group values segment: {error}"))?;
-    if parsed.values.len() != expected_count {
-        return Err(format!(
-            "group values segment count mismatch: expected {expected_count}, found {}",
-            parsed.values.len()
-        ));
-    }
-
-    parsed
-        .values
-        .iter()
-        .copied()
-        .enumerate()
-        .map(|(index, words)| group_value_extension_from_words(index, words))
-        .collect()
-}
-
-fn group_value_extension_from_words(index: usize, words: [u64; 3]) -> Result<Ext3, String> {
-    Ok(Ext3::new(
-        Felt::from_canonical(words[0])
-            .map_err(|error| format!("invalid group values segment value {index}: {error}"))?,
-        Felt::from_canonical(words[1])
-            .map_err(|error| format!("invalid group values segment value {index}: {error}"))?,
-        Felt::from_canonical(words[2])
-            .map_err(|error| format!("invalid group values segment value {index}: {error}"))?,
-    ))
+    load_group_values_from_segments(&catalog.layout.global_info, &proof.segments)
+        .map_err(|error| error.to_string())
 }
 
 fn expected_merkle_level_count(row_count: u64, arity: usize) -> Result<usize, String> {
