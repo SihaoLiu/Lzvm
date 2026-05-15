@@ -47,6 +47,17 @@ unsafe extern "C" {
         bits: usize,
         root: u64,
     ) -> i32;
+    fn lzvm_cuda_goldilocks_coset_extend(
+        values: *const u64,
+        out: *mut u64,
+        source_len: usize,
+        source_bits: usize,
+        target_len: usize,
+        target_bits: usize,
+        source_root_inverse: u64,
+        target_root: u64,
+        shift: u64,
+    ) -> i32;
 }
 
 #[cfg(feature = "cuda")]
@@ -85,6 +96,24 @@ const ROOTS_OF_UNITY: [u64; 33] = [
     3_524_815_499_551_269_279,
     7_277_203_076_849_721_926,
 ];
+
+#[cfg(feature = "cuda")]
+const SHIFT: u64 = 7;
+
+#[cfg(feature = "cuda")]
+fn pow_mod(mut base: u64, mut exponent: u64) -> u64 {
+    const MODULUS: u64 = 0xffff_ffff_0000_0001;
+
+    let mut result = 1_u64;
+    while exponent > 0 {
+        if exponent & 1 == 1 {
+            result = ((result as u128 * base as u128) % MODULUS as u128) as u64;
+        }
+        base = ((base as u128 * base as u128) % MODULUS as u128) as u64;
+        exponent >>= 1;
+    }
+    result
+}
 
 #[cfg(feature = "cuda")]
 type CudaBinaryOp = unsafe extern "C" fn(*const u64, *const u64, *mut u64, usize) -> i32;
@@ -202,6 +231,80 @@ pub fn cuda_goldilocks_ntt(values: &[u64], bits: usize) -> Result<Vec<u64>, Acce
     }
 }
 
+#[cfg(feature = "cuda")]
+pub fn cuda_goldilocks_coset_extend(
+    values: &[u64],
+    source_bits: usize,
+    target_bits: usize,
+) -> Result<Vec<u64>, AccelError> {
+    if target_bits < source_bits {
+        return Err(AccelError::InvalidDomain {
+            bits: target_bits,
+            len: values.len(),
+        });
+    }
+    let Some(source_root) = ROOTS_OF_UNITY.get(source_bits).copied() else {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: values.len(),
+        });
+    };
+    let Some(target_root) = ROOTS_OF_UNITY.get(target_bits).copied() else {
+        return Err(AccelError::InvalidDomain {
+            bits: target_bits,
+            len: values.len(),
+        });
+    };
+    let source_len = 1_usize
+        .checked_shl(
+            u32::try_from(source_bits).map_err(|_| AccelError::InvalidDomain {
+                bits: source_bits,
+                len: values.len(),
+            })?,
+        )
+        .ok_or(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: values.len(),
+        })?;
+    let target_len = 1_usize
+        .checked_shl(
+            u32::try_from(target_bits).map_err(|_| AccelError::InvalidDomain {
+                bits: target_bits,
+                len: values.len(),
+            })?,
+        )
+        .ok_or(AccelError::InvalidDomain {
+            bits: target_bits,
+            len: values.len(),
+        })?;
+    if values.len() != source_len {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: values.len(),
+        });
+    }
+
+    let mut out = vec![0_u64; target_len];
+    let code = unsafe {
+        lzvm_cuda_goldilocks_coset_extend(
+            values.as_ptr(),
+            out.as_mut_ptr(),
+            source_len,
+            source_bits,
+            target_len,
+            target_bits,
+            pow_mod(source_root, 0xffff_ffff_0000_0001 - 2),
+            target_root,
+            SHIFT,
+        )
+    };
+    if code == 0 {
+        Ok(out)
+    } else {
+        Err(AccelError::Cuda { code })
+    }
+}
+
 #[cfg(not(feature = "cuda"))]
 pub fn cuda_goldilocks_add(_lhs: &[u64], _rhs: &[u64]) -> Result<Vec<u64>, AccelError> {
     Err(AccelError::CudaUnavailable)
@@ -223,5 +326,14 @@ pub fn cuda_goldilocks_butterfly(
 
 #[cfg(not(feature = "cuda"))]
 pub fn cuda_goldilocks_ntt(_values: &[u64], _bits: usize) -> Result<Vec<u64>, AccelError> {
+    Err(AccelError::CudaUnavailable)
+}
+
+#[cfg(not(feature = "cuda"))]
+pub fn cuda_goldilocks_coset_extend(
+    _values: &[u64],
+    _source_bits: usize,
+    _target_bits: usize,
+) -> Result<Vec<u64>, AccelError> {
     Err(AccelError::CudaUnavailable)
 }

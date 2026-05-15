@@ -1,9 +1,9 @@
 #[cfg(feature = "cuda")]
 use lzvm_accel::{cuda_goldilocks_add, cuda_goldilocks_mul};
 #[cfg(feature = "cuda")]
-use lzvm_accel::{cuda_goldilocks_butterfly, cuda_goldilocks_ntt};
+use lzvm_accel::{cuda_goldilocks_butterfly, cuda_goldilocks_coset_extend, cuda_goldilocks_ntt};
 #[cfg(feature = "cuda")]
-use lzvm_field::{ntt_in_place, Felt};
+use lzvm_field::{coset_extend_evaluations, ntt_in_place, Felt};
 
 #[cfg(feature = "cuda")]
 const MODULUS: u64 = 0xffff_ffff_0000_0001;
@@ -158,6 +158,26 @@ fn cuda_computes_forward_ntt() {
     let expected = expected.into_iter().map(Felt::to_u64).collect::<Vec<_>>();
 
     let actual = cuda_goldilocks_ntt(&input, 3).expect("cuda ntt should run");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_extends_evaluations_over_shifted_cosets() {
+    let input = vec![5, 1, 9, 9];
+    let source = input
+        .iter()
+        .map(|value| Felt::from_u64(*value))
+        .collect::<Vec<_>>();
+    let expected = coset_extend_evaluations(&source, 2, 4)
+        .expect("cpu coset extension should run")
+        .into_iter()
+        .map(Felt::to_u64)
+        .collect::<Vec<_>>();
+
+    let actual =
+        cuda_goldilocks_coset_extend(&input, 2, 4).expect("cuda coset extension should run");
 
     assert_eq!(actual, expected);
 }

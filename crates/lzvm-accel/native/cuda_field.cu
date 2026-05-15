@@ -4,10 +4,29 @@
 namespace {
 
 constexpr uint64_t kModulus = 0xffffffff00000001ULL;
+constexpr size_t kThreads = 256;
 
 __device__ uint64_t add_mod(uint64_t lhs, uint64_t rhs) {
     const uint64_t threshold = kModulus - rhs;
     return lhs >= threshold ? lhs - threshold : lhs + rhs;
+}
+
+uint64_t host_mul_mod(uint64_t lhs, uint64_t rhs) {
+    const unsigned __int128 product =
+        static_cast<unsigned __int128>(lhs) * static_cast<unsigned __int128>(rhs);
+    return static_cast<uint64_t>(product % kModulus);
+}
+
+uint64_t host_pow_mod(uint64_t base, uint64_t exponent) {
+    uint64_t result = 1;
+    while (exponent > 0) {
+        if ((exponent & 1) != 0) {
+            result = host_mul_mod(result, base);
+        }
+        base = host_mul_mod(base, base);
+        exponent >>= 1;
+    }
+    return result;
 }
 
 __device__ uint64_t mul_mod(uint64_t lhs, uint64_t rhs) {
@@ -100,6 +119,42 @@ __global__ void ntt_stage_kernel(uint64_t* values, size_t len, size_t stage_len,
     }
 }
 
+__global__ void normalize_shift_and_pad_kernel(
+    uint64_t* values,
+    size_t source_len,
+    size_t target_len,
+    uint64_t inverse_len,
+    uint64_t shift) {
+    const size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < target_len) {
+        if (index < source_len) {
+            values[index] = mul_mod(mul_mod(values[index], inverse_len), pow_mod(shift, index));
+        } else {
+            values[index] = 0;
+        }
+    }
+}
+
+cudaError_t run_ntt(uint64_t* device_values, size_t len, size_t bits, uint64_t root) {
+    const size_t blocks = (len + kThreads - 1) / kThreads;
+    bit_reverse_kernel<<<blocks, kThreads>>>(device_values, len, bits);
+    cudaError_t status = cudaGetLastError();
+    if (status != cudaSuccess) {
+        return status;
+    }
+
+    for (size_t stage_len = 2; stage_len <= len; stage_len <<= 1) {
+        const size_t pair_count = len / 2;
+        const size_t stage_blocks = (pair_count + kThreads - 1) / kThreads;
+        ntt_stage_kernel<<<stage_blocks, kThreads>>>(device_values, len, stage_len, root);
+        status = cudaGetLastError();
+        if (status != cudaSuccess) {
+            return status;
+        }
+    }
+    return cudaSuccess;
+}
+
 int free_after_error(cudaError_t status, uint64_t* lhs, uint64_t* rhs, uint64_t* out) {
     cudaFree(lhs);
     cudaFree(rhs);
@@ -168,9 +223,8 @@ extern "C" int lzvm_cuda_goldilocks_add(
         return free_after_error(status, device_lhs, device_rhs, device_out);
     }
 
-    const size_t threads = 256;
-    const size_t blocks = (len + threads - 1) / threads;
-    add_kernel<<<blocks, threads>>>(device_lhs, device_rhs, device_out, len);
+    const size_t blocks = (len + kThreads - 1) / kThreads;
+    add_kernel<<<blocks, kThreads>>>(device_lhs, device_rhs, device_out, len);
     status = cudaGetLastError();
     if (status != cudaSuccess) {
         return free_after_error(status, device_lhs, device_rhs, device_out);
@@ -253,9 +307,8 @@ extern "C" int lzvm_cuda_goldilocks_butterfly(
             status, device_even, device_odd, device_twiddle, device_out_even, device_out_odd);
     }
 
-    const size_t threads = 256;
-    const size_t blocks = (len + threads - 1) / threads;
-    butterfly_kernel<<<blocks, threads>>>(
+    const size_t blocks = (len + kThreads - 1) / kThreads;
+    butterfly_kernel<<<blocks, kThreads>>>(
         device_even, device_odd, device_twiddle, device_out_even, device_out_odd, len);
     status = cudaGetLastError();
     if (status != cudaSuccess) {
@@ -325,9 +378,8 @@ extern "C" int lzvm_cuda_goldilocks_mul(
         return free_after_error(status, device_lhs, device_rhs, device_out);
     }
 
-    const size_t threads = 256;
-    const size_t blocks = (len + threads - 1) / threads;
-    mul_kernel<<<blocks, threads>>>(device_lhs, device_rhs, device_out, len);
+    const size_t blocks = (len + kThreads - 1) / kThreads;
+    mul_kernel<<<blocks, kThreads>>>(device_lhs, device_rhs, device_out, len);
     status = cudaGetLastError();
     if (status != cudaSuccess) {
         return free_after_error(status, device_lhs, device_rhs, device_out);
@@ -372,22 +424,9 @@ extern "C" int lzvm_cuda_goldilocks_ntt(
         return free_single_after_error(status, device_values);
     }
 
-    const size_t threads = 256;
-    const size_t blocks = (len + threads - 1) / threads;
-    bit_reverse_kernel<<<blocks, threads>>>(device_values, len, bits);
-    status = cudaGetLastError();
+    status = run_ntt(device_values, len, bits, root);
     if (status != cudaSuccess) {
         return free_single_after_error(status, device_values);
-    }
-
-    for (size_t stage_len = 2; stage_len <= len; stage_len <<= 1) {
-        const size_t pair_count = len / 2;
-        const size_t stage_blocks = (pair_count + threads - 1) / threads;
-        ntt_stage_kernel<<<stage_blocks, threads>>>(device_values, len, stage_len, root);
-        status = cudaGetLastError();
-        if (status != cudaSuccess) {
-            return free_single_after_error(status, device_values);
-        }
     }
 
     status = cudaDeviceSynchronize();
@@ -395,6 +434,68 @@ extern "C" int lzvm_cuda_goldilocks_ntt(
         return free_single_after_error(status, device_values);
     }
     status = cudaMemcpy(out, device_values, bytes, cudaMemcpyDeviceToHost);
+    if (status != cudaSuccess) {
+        return free_single_after_error(status, device_values);
+    }
+
+    cudaFree(device_values);
+    return 0;
+}
+
+extern "C" int lzvm_cuda_goldilocks_coset_extend(
+    const uint64_t* values,
+    uint64_t* out,
+    size_t source_len,
+    size_t source_bits,
+    size_t target_len,
+    size_t target_bits,
+    uint64_t source_root_inverse,
+    uint64_t target_root,
+    uint64_t shift) {
+    if (values == nullptr || out == nullptr) {
+        return -1;
+    }
+    if (source_len == 0 || target_len == 0 || source_len > target_len) {
+        return -2;
+    }
+
+    uint64_t* device_values = nullptr;
+    const size_t source_bytes = source_len * sizeof(uint64_t);
+    const size_t target_bytes = target_len * sizeof(uint64_t);
+    cudaError_t status = cudaMalloc(&device_values, target_bytes);
+    if (status != cudaSuccess) {
+        return static_cast<int>(status);
+    }
+
+    status = cudaMemcpy(device_values, values, source_bytes, cudaMemcpyHostToDevice);
+    if (status != cudaSuccess) {
+        return free_single_after_error(status, device_values);
+    }
+
+    status = run_ntt(device_values, source_len, source_bits, source_root_inverse);
+    if (status != cudaSuccess) {
+        return free_single_after_error(status, device_values);
+    }
+
+    const uint64_t inverse_len = host_pow_mod(static_cast<uint64_t>(source_len), kModulus - 2);
+    const size_t blocks = (target_len + kThreads - 1) / kThreads;
+    normalize_shift_and_pad_kernel<<<blocks, kThreads>>>(
+        device_values, source_len, target_len, inverse_len, shift);
+    status = cudaGetLastError();
+    if (status != cudaSuccess) {
+        return free_single_after_error(status, device_values);
+    }
+
+    status = run_ntt(device_values, target_len, target_bits, target_root);
+    if (status != cudaSuccess) {
+        return free_single_after_error(status, device_values);
+    }
+
+    status = cudaDeviceSynchronize();
+    if (status != cudaSuccess) {
+        return free_single_after_error(status, device_values);
+    }
+    status = cudaMemcpy(out, device_values, target_bytes, cudaMemcpyDeviceToHost);
     if (status != cudaSuccess) {
         return free_single_after_error(status, device_values);
     }
