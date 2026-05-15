@@ -1,9 +1,13 @@
 use lzvm_artifacts::constraint_program::{GlobalConstraintEntry, GlobalConstraintProgram};
+use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::global_constraints::{
-    evaluate_global_constraints, validate_global_constraints, GlobalConstraintEvalError,
+    evaluate_global_constraints, validate_global_constraints,
+    validate_global_constraints_from_proof_segments, GlobalConstraintEvalError,
     GlobalConstraintInputs, GlobalConstraintValidationError,
+    ValidateGlobalConstraintProofSegmentsError, ValidateGlobalConstraintProofSegmentsRequest,
 };
+use lzvm_prover::ProveSchedule;
 
 #[test]
 fn evaluates_base_global_constraint_residuals() {
@@ -66,6 +70,22 @@ fn validates_satisfied_global_constraints() {
 }
 
 #[test]
+fn validates_global_constraints_from_proof_segments() {
+    let program = base_residual_program();
+    let global_info = global_info_without_values();
+    let schedule = empty_schedule();
+
+    validate_global_constraints_from_proof_segments(ValidateGlobalConstraintProofSegmentsRequest {
+        program: &program,
+        global_info: &global_info,
+        schedule: &schedule,
+        public_values: &[felt(17)],
+        segments: &[],
+    })
+    .expect("zero residual should validate from proof segments");
+}
+
+#[test]
 fn rejects_unsatisfied_global_constraints() {
     let program = base_residual_program();
 
@@ -86,6 +106,34 @@ fn rejects_unsatisfied_global_constraints() {
             constraint_index: 0,
             value: [5, 0, 0],
         }
+    );
+}
+
+#[test]
+fn rejects_global_constraint_violations_from_proof_segments() {
+    let program = base_residual_program();
+    let global_info = global_info_without_values();
+    let schedule = empty_schedule();
+
+    let error = validate_global_constraints_from_proof_segments(
+        ValidateGlobalConstraintProofSegmentsRequest {
+            program: &program,
+            global_info: &global_info,
+            schedule: &schedule,
+            public_values: &[felt(12)],
+            segments: &[],
+        },
+    )
+    .expect_err("nonzero residual should reject");
+
+    assert_eq!(
+        error,
+        ValidateGlobalConstraintProofSegmentsError::Validation(
+            GlobalConstraintValidationError::ConstraintViolation {
+                constraint_index: 0,
+                value: [5, 0, 0],
+            }
+        )
     );
 }
 
@@ -302,5 +350,35 @@ fn base_residual_program() -> GlobalConstraintProgram {
         ops: vec![0],
         args: vec![1, 0, 2, 0, 1, 0],
         numbers: vec![17],
+    }
+}
+
+fn global_info_without_values() -> GlobalInfo {
+    GlobalInfo {
+        name: "global".to_owned(),
+        air_groups: Vec::new(),
+        airs: Vec::new(),
+        curve: CurveKind::None,
+        lattice_size: None,
+        aggregation_types: Vec::new(),
+        n_publics: 1,
+        num_challenges: Vec::new(),
+        num_proof_values: Vec::new(),
+        proof_values_map: Vec::new(),
+        publics_map: Vec::new(),
+        transcript_arity: 2,
+    }
+}
+
+fn empty_schedule() -> ProveSchedule {
+    ProveSchedule {
+        setup_hash: [0; 32],
+        unit_count: 0,
+        total_fixed_bytes: 0,
+        total_pcs_material_bytes: 0,
+        pcs_material_unit_count: 0,
+        total_query_count: 0,
+        max_extended_domain_bits: 0,
+        units: Vec::new(),
     }
 }

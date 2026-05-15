@@ -1,7 +1,20 @@
 use std::fmt;
 
 use lzvm_artifacts::constraint_program::{GlobalConstraintEntry, GlobalConstraintProgram};
+use lzvm_artifacts::global_info::GlobalInfo;
+use lzvm_artifacts::proof::ProofSegment;
 use lzvm_field::{Ext3, Felt, FieldError};
+
+use crate::group_values::{load_group_values_from_segments, LoadGroupValuesSegmentError};
+use crate::pcs_query_plan::uses_transcript_pcs_query_plan_inputs;
+use crate::pcs_transcript_segments::{
+    derive_pcs_transcript_challenges_from_proof_segments, PcsTranscriptProofSegmentsError,
+};
+use crate::proof_values::{
+    flatten_pcs_proof_values, load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError,
+    ProvePcsProofValuesSegmentError,
+};
+use crate::ProveSchedule;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GlobalConstraintInputs<'a> {
@@ -9,6 +22,15 @@ pub struct GlobalConstraintInputs<'a> {
     pub proof_values: &'a [Felt],
     pub challenges: &'a [Ext3],
     pub group_values: &'a [Ext3],
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ValidateGlobalConstraintProofSegmentsRequest<'a> {
+    pub program: &'a GlobalConstraintProgram,
+    pub global_info: &'a GlobalInfo,
+    pub schedule: &'a ProveSchedule,
+    pub public_values: &'a [Felt],
+    pub segments: &'a [ProofSegment],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,6 +130,15 @@ pub enum GlobalConstraintValidationError {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValidateGlobalConstraintProofSegmentsError {
+    ProofValues(LoadPcsProofValuesSegmentError),
+    PackedProofValues(ProvePcsProofValuesSegmentError),
+    Transcript(PcsTranscriptProofSegmentsError),
+    GroupValues(LoadGroupValuesSegmentError),
+    Validation(GlobalConstraintValidationError),
+}
+
 impl fmt::Display for GlobalConstraintValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -126,6 +157,35 @@ impl std::error::Error for GlobalConstraintValidationError {
         match self {
             Self::Eval(error) => Some(error),
             Self::ConstraintViolation { .. } => None,
+        }
+    }
+}
+
+impl fmt::Display for ValidateGlobalConstraintProofSegmentsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ProofValues(error) => write!(f, "{error}"),
+            Self::PackedProofValues(error) => {
+                write!(f, "global constraint proof values invalid: {error}")
+            }
+            Self::Transcript(error) => write!(f, "{error}"),
+            Self::GroupValues(error) => write!(f, "{error}"),
+            Self::Validation(GlobalConstraintValidationError::Eval(source)) => {
+                write!(f, "invalid global constraint program: {source}")
+            }
+            Self::Validation(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for ValidateGlobalConstraintProofSegmentsError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ProofValues(error) => Some(error),
+            Self::PackedProofValues(error) => Some(error),
+            Self::Transcript(error) => Some(error),
+            Self::GroupValues(error) => Some(error),
+            Self::Validation(error) => Some(error),
         }
     }
 }
@@ -162,6 +222,42 @@ pub fn validate_global_constraints(
         }
     }
     Ok(())
+}
+
+pub fn validate_global_constraints_from_proof_segments(
+    request: ValidateGlobalConstraintProofSegmentsRequest<'_>,
+) -> Result<(), ValidateGlobalConstraintProofSegmentsError> {
+    if request.program.entries.is_empty() {
+        return Ok(());
+    }
+
+    let proof_values = load_pcs_proof_values_from_segments(request.global_info, request.segments)
+        .map_err(ValidateGlobalConstraintProofSegmentsError::ProofValues)?;
+    let packed_proof_values = flatten_pcs_proof_values(request.global_info, &proof_values)
+        .map_err(ValidateGlobalConstraintProofSegmentsError::PackedProofValues)?;
+    let challenges = if uses_transcript_pcs_query_plan_inputs(request.segments) {
+        derive_pcs_transcript_challenges_from_proof_segments(
+            request.schedule,
+            request.public_values,
+            request.segments,
+        )
+        .map_err(ValidateGlobalConstraintProofSegmentsError::Transcript)?
+    } else {
+        Vec::new()
+    };
+    let group_values = load_group_values_from_segments(request.global_info, request.segments)
+        .map_err(ValidateGlobalConstraintProofSegmentsError::GroupValues)?;
+
+    validate_global_constraints(
+        request.program,
+        GlobalConstraintInputs {
+            publics: request.public_values,
+            proof_values: &packed_proof_values,
+            challenges: &challenges,
+            group_values: &group_values,
+        },
+    )
+    .map_err(ValidateGlobalConstraintProofSegmentsError::Validation)
 }
 
 fn evaluate_entry(

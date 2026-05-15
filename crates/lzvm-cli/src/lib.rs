@@ -34,8 +34,8 @@ use lzvm_artifacts::verifier_info::{
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::constant_opening::validate_constant_opening_segments;
 use lzvm_prover::global_constraints::{
-    validate_global_constraints as validate_global_constraint_program, GlobalConstraintInputs,
-    GlobalConstraintValidationError,
+    validate_global_constraints_from_proof_segments, GlobalConstraintInputs,
+    ValidateGlobalConstraintProofSegmentsRequest,
 };
 use lzvm_prover::group_values::load_group_values_from_segments;
 use lzvm_prover::hint_eval::{global_hint_input_requirements, resolve_global_hint_program};
@@ -573,26 +573,14 @@ fn validate_global_constraints(
     }
 
     let publics = transcript_public_value_fields(public_values)?;
-    let proof_values = load_pcs_proof_values(catalog, proof)?;
-    let packed_proof_values = flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)
-        .map_err(|error| format!("global constraint proof values invalid: {error}"))?;
-    let challenges = derive_global_constraint_challenges(schedule, proof, public_values)?;
-    let group_values = load_group_values(catalog, proof)?;
-    validate_global_constraint_program(
-        &catalog.global_constraints,
-        GlobalConstraintInputs {
-            publics: &publics,
-            proof_values: &packed_proof_values,
-            challenges: &challenges,
-            group_values: &group_values,
-        },
-    )
-    .map_err(|error| match error {
-        GlobalConstraintValidationError::Eval(source) => {
-            format!("invalid global constraint program: {source}")
-        }
-        source => source.to_string(),
+    validate_global_constraints_from_proof_segments(ValidateGlobalConstraintProofSegmentsRequest {
+        program: &catalog.global_constraints,
+        global_info: &catalog.layout.global_info,
+        schedule,
+        public_values: &publics,
+        segments: &proof.segments,
     })
+    .map_err(|error| error.to_string())
 }
 
 fn validate_global_hints(
