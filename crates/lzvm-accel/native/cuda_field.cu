@@ -16,8 +16,29 @@ __device__ uint64_t mul_mod(uint64_t lhs, uint64_t rhs) {
     return static_cast<uint64_t>(product % kModulus);
 }
 
+__device__ uint64_t pow_mod(uint64_t base, size_t exponent) {
+    uint64_t result = 1;
+    while (exponent > 0) {
+        if ((exponent & 1) != 0) {
+            result = mul_mod(result, base);
+        }
+        base = mul_mod(base, base);
+        exponent >>= 1;
+    }
+    return result;
+}
+
 __device__ uint64_t sub_mod(uint64_t lhs, uint64_t rhs) {
     return lhs >= rhs ? lhs - rhs : kModulus - (rhs - lhs);
+}
+
+__device__ size_t reverse_bits(size_t value, size_t bits) {
+    size_t out = 0;
+    for (size_t index = 0; index < bits; ++index) {
+        out = (out << 1) | (value & 1);
+        value >>= 1;
+    }
+    return out;
 }
 
 __global__ void add_kernel(const uint64_t* lhs, const uint64_t* rhs, uint64_t* out, size_t len) {
@@ -49,6 +70,36 @@ __global__ void butterfly_kernel(
     }
 }
 
+__global__ void bit_reverse_kernel(uint64_t* values, size_t len, size_t bits) {
+    const size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < len) {
+        const size_t reverse = reverse_bits(index, bits);
+        if (index < reverse) {
+            const uint64_t tmp = values[index];
+            values[index] = values[reverse];
+            values[reverse] = tmp;
+        }
+    }
+}
+
+__global__ void ntt_stage_kernel(uint64_t* values, size_t len, size_t stage_len, uint64_t root) {
+    const size_t pair_count = len / 2;
+    const size_t pair = blockIdx.x * blockDim.x + threadIdx.x;
+    if (pair < pair_count) {
+        const size_t half = stage_len / 2;
+        const size_t group = pair / half;
+        const size_t offset = pair % half;
+        const size_t even_index = group * stage_len + offset;
+        const size_t odd_index = even_index + half;
+        const uint64_t stage_twiddle = pow_mod(root, len / stage_len);
+        const uint64_t factor = pow_mod(stage_twiddle, offset);
+        const uint64_t even = values[even_index];
+        const uint64_t odd = mul_mod(values[odd_index], factor);
+        values[even_index] = add_mod(even, odd);
+        values[odd_index] = sub_mod(even, odd);
+    }
+}
+
 int free_after_error(cudaError_t status, uint64_t* lhs, uint64_t* rhs, uint64_t* out) {
     cudaFree(lhs);
     cudaFree(rhs);
@@ -68,6 +119,11 @@ int free_after_butterfly_error(
     cudaFree(twiddle);
     cudaFree(out_even);
     cudaFree(out_odd);
+    return static_cast<int>(status);
+}
+
+int free_single_after_error(cudaError_t status, uint64_t* values) {
+    cudaFree(values);
     return static_cast<int>(status);
 }
 
@@ -288,5 +344,61 @@ extern "C" int lzvm_cuda_goldilocks_mul(
     cudaFree(device_lhs);
     cudaFree(device_rhs);
     cudaFree(device_out);
+    return 0;
+}
+
+extern "C" int lzvm_cuda_goldilocks_ntt(
+    const uint64_t* values,
+    uint64_t* out,
+    size_t len,
+    size_t bits,
+    uint64_t root) {
+    if (values == nullptr || out == nullptr) {
+        return -1;
+    }
+    if (len == 0) {
+        return -2;
+    }
+
+    uint64_t* device_values = nullptr;
+    const size_t bytes = len * sizeof(uint64_t);
+    cudaError_t status = cudaMalloc(&device_values, bytes);
+    if (status != cudaSuccess) {
+        return static_cast<int>(status);
+    }
+
+    status = cudaMemcpy(device_values, values, bytes, cudaMemcpyHostToDevice);
+    if (status != cudaSuccess) {
+        return free_single_after_error(status, device_values);
+    }
+
+    const size_t threads = 256;
+    const size_t blocks = (len + threads - 1) / threads;
+    bit_reverse_kernel<<<blocks, threads>>>(device_values, len, bits);
+    status = cudaGetLastError();
+    if (status != cudaSuccess) {
+        return free_single_after_error(status, device_values);
+    }
+
+    for (size_t stage_len = 2; stage_len <= len; stage_len <<= 1) {
+        const size_t pair_count = len / 2;
+        const size_t stage_blocks = (pair_count + threads - 1) / threads;
+        ntt_stage_kernel<<<stage_blocks, threads>>>(device_values, len, stage_len, root);
+        status = cudaGetLastError();
+        if (status != cudaSuccess) {
+            return free_single_after_error(status, device_values);
+        }
+    }
+
+    status = cudaDeviceSynchronize();
+    if (status != cudaSuccess) {
+        return free_single_after_error(status, device_values);
+    }
+    status = cudaMemcpy(out, device_values, bytes, cudaMemcpyDeviceToHost);
+    if (status != cudaSuccess) {
+        return free_single_after_error(status, device_values);
+    }
+
+    cudaFree(device_values);
     return 0;
 }

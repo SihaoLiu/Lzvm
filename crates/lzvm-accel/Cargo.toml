@@ -14,3 +14,6 @@ default = []
 cuda = []
 
 [dependencies]
+
+[dev-dependencies]
+lzvm-field = { path = "../lzvm-field" }

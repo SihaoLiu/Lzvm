@@ -1,7 +1,9 @@
 #[cfg(feature = "cuda")]
-use lzvm_accel::cuda_goldilocks_butterfly;
-#[cfg(feature = "cuda")]
 use lzvm_accel::{cuda_goldilocks_add, cuda_goldilocks_mul};
+#[cfg(feature = "cuda")]
+use lzvm_accel::{cuda_goldilocks_butterfly, cuda_goldilocks_ntt};
+#[cfg(feature = "cuda")]
+use lzvm_field::{ntt_in_place, Felt};
 
 #[cfg(feature = "cuda")]
 const MODULUS: u64 = 0xffff_ffff_0000_0001;
@@ -142,4 +144,20 @@ fn cuda_computes_goldilocks_butterflies() {
 
     assert_eq!(actual_even, expected_even);
     assert_eq!(actual_odd, expected_odd);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_computes_forward_ntt() {
+    let input = vec![3, 5, 7, 11, 13, 17, 19, 23];
+    let mut expected = input
+        .iter()
+        .map(|value| Felt::from_u64(*value))
+        .collect::<Vec<_>>();
+    ntt_in_place(&mut expected, 3).expect("cpu ntt should run");
+    let expected = expected.into_iter().map(Felt::to_u64).collect::<Vec<_>>();
+
+    let actual = cuda_goldilocks_ntt(&input, 3).expect("cuda ntt should run");
+
+    assert_eq!(actual, expected);
 }
