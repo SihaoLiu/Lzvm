@@ -730,7 +730,6 @@ fn validate_transcript_pcs_query_plan(
         .find(|unit| unit.unit_index == unit_index_u32)
         .ok_or_else(|| format!("PCS transcript query plan mismatch for unit {unit_index}"))?;
     let public_value_fields = transcript_public_value_fields(public_values)?;
-    let root_challenge_draws = transcript_root_challenge_draws(witness.stages.len());
     let expected_segment = build_pcs_query_plan_segment_from_transcript_segments(
         schedule,
         witness_segments,
@@ -742,8 +741,8 @@ fn validate_transcript_pcs_query_plan(
             witness: &witness,
             evaluations: evaluation_unit,
             fri: fri_unit,
-            root_challenge_draws: &root_challenge_draws,
-            evaluation_challenge_draws: 2,
+            root_challenge_draws: &unit.transcript_root_challenge_draws,
+            evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
         },
         nonce_segment,
     )
@@ -764,14 +763,6 @@ fn transcript_public_value_fields(
         .map(Felt::from_canonical)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("invalid PCS transcript public value: {error}"))
-}
-
-fn transcript_root_challenge_draws(root_count: usize) -> Vec<usize> {
-    let mut draws = vec![1; root_count];
-    if let Some(first) = draws.first_mut() {
-        *first = 2;
-    }
-    draws
 }
 
 fn collect_witness_commitment_segments(

@@ -21,6 +21,10 @@ fn sample_unit_with_rows(
     stage_commit_widths: Vec<u32>,
     base_domain_size: u64,
 ) -> ProveUnitSchedule {
+    let mut transcript_root_challenge_draws = vec![1; stage_commit_widths.len()];
+    if let Some(first) = transcript_root_challenge_draws.first_mut() {
+        *first = 2;
+    }
     ProveUnitSchedule {
         kind: KeyUnitKind::Basic,
         group_id: Some(0),
@@ -38,6 +42,8 @@ fn sample_unit_with_rows(
         last_level_verification: 0,
         transcript_arity: Some(4),
         hash_commits: true,
+        transcript_root_challenge_draws,
+        transcript_evaluation_challenge_draws: 2,
         constant_width: 5,
         stage_commit_widths,
         opening_points: vec![0, 1, -1],

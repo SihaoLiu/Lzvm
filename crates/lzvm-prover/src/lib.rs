@@ -64,6 +64,8 @@ pub struct ProveUnitSchedule {
     pub last_level_verification: u32,
     pub transcript_arity: Option<u32>,
     pub hash_commits: bool,
+    pub transcript_root_challenge_draws: Vec<usize>,
+    pub transcript_evaluation_challenge_draws: usize,
     pub constant_width: u32,
     pub stage_commit_widths: Vec<u32>,
     pub opening_points: Vec<i64>,
@@ -453,6 +455,10 @@ pub fn derive_prove_schedule(
             last_level_verification: unit.metadata.setup.stark.last_level_verification,
             transcript_arity: unit.pcs_plan.transcript_arity,
             hash_commits: unit.pcs_plan.hash_commits,
+            transcript_root_challenge_draws: derive_transcript_root_challenge_draws(
+                unit.pcs_plan.stage_commit_widths.len(),
+            ),
+            transcript_evaluation_challenge_draws: unit.metadata.setup.eval_count,
             constant_width: unit.pcs_plan.constant_width,
             stage_commit_widths: unit.pcs_plan.stage_commit_widths.clone(),
             opening_points: unit.pcs_plan.opening_points.clone(),
@@ -483,6 +489,14 @@ pub fn derive_prove_schedule(
         max_extended_domain_bits,
         units,
     })
+}
+
+fn derive_transcript_root_challenge_draws(root_count: usize) -> Vec<usize> {
+    let mut draws = vec![1; root_count];
+    if let Some(first) = draws.first_mut() {
+        *first = 2;
+    }
+    draws
 }
 
 pub fn derive_prove_execution_plan(

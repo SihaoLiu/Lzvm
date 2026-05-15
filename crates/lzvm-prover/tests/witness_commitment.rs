@@ -22,6 +22,10 @@ fn encode_values(values: &[u64]) -> Vec<u8> {
 }
 
 fn sample_unit(rows: u64, stage_commit_widths: Vec<u32>) -> ProveUnitSchedule {
+    let mut transcript_root_challenge_draws = vec![1; stage_commit_widths.len()];
+    if let Some(first) = transcript_root_challenge_draws.first_mut() {
+        *first = 2;
+    }
     ProveUnitSchedule {
         kind: KeyUnitKind::Basic,
         group_id: Some(0),
@@ -39,6 +43,8 @@ fn sample_unit(rows: u64, stage_commit_widths: Vec<u32>) -> ProveUnitSchedule {
         last_level_verification: 0,
         transcript_arity: Some(2),
         hash_commits: true,
+        transcript_root_challenge_draws,
+        transcript_evaluation_challenge_draws: 2,
         constant_width: 1,
         stage_commit_widths,
         opening_points: vec![0],

@@ -252,6 +252,11 @@ fn derives_prove_schedule_from_key_directory_catalog() {
     assert_eq!(schedule.units[0].merkle_tree_arity, 4);
     assert_eq!(schedule.units[0].transcript_arity, Some(4));
     assert!(schedule.units[0].hash_commits);
+    assert_eq!(
+        schedule.units[0].transcript_root_challenge_draws,
+        vec![2, 1]
+    );
+    assert_eq!(schedule.units[0].transcript_evaluation_challenge_draws, 2);
     assert_eq!(schedule.units[0].constant_width, 2);
     assert_eq!(schedule.units[0].stage_commit_widths, vec![2, 3]);
     assert_eq!(schedule.units[0].opening_points, vec![0, 1]);

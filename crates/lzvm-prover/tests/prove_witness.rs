@@ -218,8 +218,9 @@ impl TranscriptQueryFixture {
             witness: &self.witness,
             evaluations: &self.evaluations,
             fri: &self.fri,
-            root_challenge_draws: &[2, 1],
-            evaluation_challenge_draws: 2,
+            root_challenge_draws: &self.schedule.units[0].transcript_root_challenge_draws,
+            evaluation_challenge_draws: self.schedule.units[0]
+                .transcript_evaluation_challenge_draws,
         }
     }
 }

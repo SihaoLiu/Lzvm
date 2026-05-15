@@ -1573,8 +1573,8 @@ fn validates_setup_aware_verify_preflight_with_transcript_query_plan() {
         witness: &witness,
         evaluations: &evaluations,
         fri: &fri_unit,
-        root_challenge_draws: &[2, 1],
-        evaluation_challenge_draws: 2,
+        root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
+        evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
     };
     let nonce_segment =
         build_pcs_query_nonce_segment_from_transcript_segments(&schedule, transcript_inputs)
