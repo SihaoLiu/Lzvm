@@ -9,7 +9,11 @@ use lzvm_artifacts::fixed::{
     FixedColumnError, FixedColumns,
 };
 use lzvm_artifacts::setup_info::UnitSetupInfo;
-use lzvm_artifacts::verification_key::VerificationKeyRoot;
+use lzvm_artifacts::verification_key::{
+    encode_verification_key_binary, encode_verification_key_json,
+    read_verification_key_binary_file, read_verification_key_json_file, VerificationKeyError,
+    VerificationKeyRoot,
+};
 use lzvm_field::{
     coset_extend_evaluations, poseidon2_hash_16, poseidon2_hash_8, DomainError, Felt, FieldError,
 };
@@ -46,6 +50,15 @@ pub struct ConstantTreeLeavesWriteReport {
     pub column_count: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerificationKeyWriteReport {
+    pub json_path: PathBuf,
+    pub binary_path: PathBuf,
+    pub json_bytes: u64,
+    pub binary_bytes: u64,
+    pub root: VerificationKeyRoot,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FixedExtensionBackend {
     Cpu,
@@ -56,6 +69,7 @@ pub enum FixedExtensionBackend {
 pub enum SetupError {
     FixedColumns(FixedColumnError),
     ConstantTree(ConstantTreeError),
+    VerificationKey(VerificationKeyError),
     Domain(DomainError),
     Field(FieldError),
     CudaUnavailable,
@@ -90,6 +104,7 @@ impl fmt::Display for SetupError {
         match self {
             Self::FixedColumns(error) => write!(f, "setup fixed-column error: {error}"),
             Self::ConstantTree(error) => write!(f, "setup constant-tree error: {error}"),
+            Self::VerificationKey(error) => write!(f, "setup verification-key error: {error}"),
             Self::Domain(error) => write!(f, "setup field-domain error: {error}"),
             Self::Field(error) => write!(f, "setup field error: {error}"),
             Self::CudaUnavailable => write!(f, "setup cuda backend is not enabled"),
@@ -132,6 +147,12 @@ impl From<FixedColumnError> for SetupError {
 impl From<ConstantTreeError> for SetupError {
     fn from(error: ConstantTreeError) -> Self {
         Self::ConstantTree(error)
+    }
+}
+
+impl From<VerificationKeyError> for SetupError {
+    fn from(error: VerificationKeyError) -> Self {
+        Self::VerificationKey(error)
     }
 }
 
@@ -572,6 +593,51 @@ pub fn write_base_constant_tree(
     })
 }
 
+pub fn write_verification_key_from_constant_tree(
+    json_path: impl AsRef<Path>,
+    binary_path: impl AsRef<Path>,
+    tree_bytes: &[u8],
+    setup: &UnitSetupInfo,
+) -> Result<VerificationKeyWriteReport, SetupError> {
+    let tree = parse_constant_tree_bytes(tree_bytes.to_vec(), setup)?;
+    let root = tree.root()?;
+    let json_bytes = encode_verification_key_json(&root)?.into_bytes();
+    let binary_bytes = encode_verification_key_binary(&root)?;
+
+    let json_path = json_path.as_ref().to_path_buf();
+    let binary_path = binary_path.as_ref().to_path_buf();
+    let json_staging = write_staging_bytes(&json_path, &json_bytes, "verification-key json")?;
+    let binary_staging =
+        write_staging_bytes(&binary_path, &binary_bytes, "verification-key binary")?;
+
+    let json_root = read_verification_key_json_file(&json_staging)?;
+    if json_root != root {
+        return Err(SetupError::ConstantTreeRootMismatch {
+            expected: root.clone(),
+            found: json_root,
+        });
+    }
+    let binary_root = read_verification_key_binary_file(&binary_staging)?;
+    if binary_root != root {
+        return Err(SetupError::ConstantTreeRootMismatch {
+            expected: root.clone(),
+            found: binary_root,
+        });
+    }
+
+    let json_size = publish_staging_bytes(&json_staging, &json_path, "verification-key json")?;
+    let binary_size =
+        publish_staging_bytes(&binary_staging, &binary_path, "verification-key binary")?;
+
+    Ok(VerificationKeyWriteReport {
+        json_path,
+        binary_path,
+        json_bytes: json_size,
+        binary_bytes: binary_size,
+        root,
+    })
+}
+
 fn staging_path_for(path: &Path) -> PathBuf {
     let mut name = path
         .file_name()
@@ -579,6 +645,49 @@ fn staging_path_for(path: &Path) -> PathBuf {
         .unwrap_or_else(|| "fixed-columns".into());
     name.push(format!(".staging.{}", std::process::id()));
     path.with_file_name(name)
+}
+
+fn write_staging_bytes(
+    path: &Path,
+    bytes: &[u8],
+    role: &'static str,
+) -> Result<PathBuf, SetupError> {
+    let parent = path.parent().ok_or_else(|| SetupError::MissingParent {
+        path: path.to_path_buf(),
+    })?;
+    std::fs::create_dir_all(parent).map_err(|error| SetupError::Io {
+        role: "create output directory",
+        path: parent.to_path_buf(),
+        message: error.to_string(),
+    })?;
+
+    let staging_path = staging_path_for(path);
+    std::fs::write(&staging_path, bytes).map_err(|error| SetupError::Io {
+        role,
+        path: staging_path.clone(),
+        message: error.to_string(),
+    })?;
+    Ok(staging_path)
+}
+
+fn publish_staging_bytes(
+    staging_path: &Path,
+    output_path: &Path,
+    role: &'static str,
+) -> Result<u64, SetupError> {
+    let bytes_written = std::fs::metadata(staging_path)
+        .map_err(|error| SetupError::Io {
+            role: "read staging metadata",
+            path: staging_path.to_path_buf(),
+            message: error.to_string(),
+        })?
+        .len();
+    std::fs::rename(staging_path, output_path).map_err(|error| SetupError::Io {
+        role,
+        path: output_path.to_path_buf(),
+        message: error.to_string(),
+    })?;
+    Ok(bytes_written)
 }
 
 fn checked_domain_len(bits: u32) -> Result<usize, SetupError> {

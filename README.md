@@ -61,6 +61,14 @@ cargo run -p lzvm-cli -- setup write-base-directory [--backend cpu|cuda] <setup-
 
 This command derives units from the setup directory metadata, reads each unit's setup metadata, fixed columns, and binary verification key, then rewrites the raw fixed-column artifact and publishes a validated native constant tree for every unit. The default backend is `cpu`; `cuda` is available when the CLI is built with the `cuda` feature.
 
+Generate verification-key companions from a native constant tree:
+
+```sh
+cargo run -p lzvm-cli -- setup write-verkey-native <setup-info-bin> <consttree> <out-verkey-json> <out-verkey-bin>
+```
+
+This command reads binary setup metadata and a raw constant-tree artifact, extracts the tree root through the native artifact parser, writes JSON and binary verification-key companions through staging paths, and validates both companions before publishing them.
+
 Generate the same raw artifact from JSON setup metadata and a native binary fixed-column source:
 
 ```sh

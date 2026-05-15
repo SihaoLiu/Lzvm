@@ -13,7 +13,8 @@ use lzvm_artifacts::setup_info::{
 use lzvm_artifacts::verification_key::{read_verification_key_binary_file, VerificationKeyRoot};
 use lzvm_setup::{
     build_constant_tree_from_fixed_columns_with_backend, write_base_constant_tree,
-    write_base_fixed_columns, write_constant_tree_leaves_with_backend, FixedExtensionBackend,
+    write_base_fixed_columns, write_constant_tree_leaves_with_backend,
+    write_verification_key_from_constant_tree, FixedExtensionBackend,
 };
 use serde_json::Value;
 
@@ -78,6 +79,17 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             write_base_directory(setup_dir, FixedExtensionBackend::Cpu, stdout, stderr)
         }
         ["setup", "write-base-directory", ..] => write_base_directory_usage(stderr),
+        ["setup", "write-verkey-native", setup_info_bin, consttree, out_verkey_json, out_verkey_bin] => {
+            write_verification_key_native(
+                setup_info_bin,
+                consttree,
+                out_verkey_json,
+                out_verkey_bin,
+                stdout,
+                stderr,
+            )
+        }
+        ["setup", "write-verkey-native", ..] => write_verkey_native_usage(stderr),
         ["setup", "write-const-tree", setup_info_bin, tree_bin, root_bin, out_consttree] => {
             write_constant_tree(
                 setup_info_bin,
@@ -473,6 +485,47 @@ fn write_base_directory(
     0
 }
 
+fn write_verification_key_native(
+    setup_info_bin: &str,
+    consttree: &str,
+    out_verkey_json: &str,
+    out_verkey_bin: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let setup = match read_unit_setup_info_binary_file(setup_info_bin) {
+        Ok(setup) => setup,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup verification-key write failed: {error}");
+            return 1;
+        }
+    };
+    let tree = match std::fs::read(consttree) {
+        Ok(tree) => tree,
+        Err(error) => {
+            let _ = writeln!(stderr, "setup verification-key write failed: {error}");
+            return 1;
+        }
+    };
+
+    match write_verification_key_from_constant_tree(out_verkey_json, out_verkey_bin, &tree, &setup)
+    {
+        Ok(report) => {
+            let _ = writeln!(stdout, "status=ok");
+            let _ = writeln!(stdout, "json_bytes={}", report.json_bytes);
+            let _ = writeln!(stdout, "binary_bytes={}", report.binary_bytes);
+            let _ = writeln!(stdout, "root={}", format_root(&report.root));
+            let _ = writeln!(stdout, "json_output={}", report.json_path.display());
+            let _ = writeln!(stdout, "binary_output={}", report.binary_path.display());
+            0
+        }
+        Err(error) => {
+            let _ = writeln!(stderr, "setup verification-key write failed: {error}");
+            1
+        }
+    }
+}
+
 fn write_constant_tree(
     setup_info_bin: &str,
     tree_bin: &str,
@@ -784,6 +837,14 @@ fn write_base_directory_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
         "usage: lzvm setup write-base-directory [--backend cpu|cuda] <setup-dir>"
+    );
+    2
+}
+
+fn write_verkey_native_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm setup write-verkey-native <setup-info-bin> <consttree> <out-verkey-json> <out-verkey-bin>"
     );
     2
 }
