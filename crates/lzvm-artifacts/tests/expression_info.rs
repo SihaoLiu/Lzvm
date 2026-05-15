@@ -1,7 +1,7 @@
 use lzvm_artifacts::expression_info::{
     encode_expression_info, parse_expression_info, parse_expression_info_json,
     read_expression_info_binary_file, read_expression_info_file, BoundaryKind, CodeDestination,
-    CodeOperand, ExpressionDestination, ExpressionInfoError,
+    CodeOperand, ExpressionDestination, ExpressionInfoError, HintPayload,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -85,6 +85,19 @@ fn parses_expression_info_json() {
 
     assert_eq!(info.hints.len(), 1);
     assert_eq!(info.hints[0].fields[0].values.len(), 3);
+    assert_eq!(
+        info.hints[0].fields[0].values[0].payload,
+        HintPayload::number(7)
+    );
+    assert_eq!(
+        info.hints[0].fields[0].values[1].payload,
+        HintPayload::string("tag")
+    );
+    assert_eq!(
+        info.hints[0].fields[0].values[2].payload,
+        HintPayload::temporary(3, Some(1))
+    );
+    assert_eq!(info.hints[0].fields[0].values[2].positions, vec![1, 2]);
     assert_eq!(info.expressions.len(), 1);
     assert_eq!(info.expressions[0].expression_id, 4);
     assert_eq!(info.expressions[0].temporary_count, 2);
@@ -113,6 +126,89 @@ fn parses_expression_info_json() {
             CodeOperand::commitment_at(2, Some(0), 3),
         ]
     );
+}
+
+#[test]
+fn parses_native_expression_hint_payloads() {
+    let json = r#"{
+        "hintsInfo": [
+            {
+                "name": "hint-a",
+                "fields": [
+                    {
+                        "name": "field-a",
+                        "values": [
+                            {"op": "cm", "id": 2, "rowOffsetIndex": 1, "stage": 2, "stageId": 0, "rowOffset": -1, "dim": 3, "airgroupId": 4, "airId": 5, "pos": [0]},
+                            {"op": "custom", "id": 3, "commitId": 6, "rowOffsetIndex": 2, "stage": 2, "stageId": 1, "rowOffset": 0, "dim": 3, "airgroupId": 4, "airId": 5, "pos": [1]},
+                            {"op": "const", "id": 4, "rowOffsetIndex": 0, "rowOffset": 1, "dim": 1, "airgroupId": 4, "airId": 5, "pos": [2]},
+                            {"op": "challenge", "id": 5, "stage": 3, "stageId": 2, "pos": [3]},
+                            {"op": "public", "id": 6, "stage": 1, "pos": [4]},
+                            {"op": "airgroupvalue", "id": 7, "airgroupId": 8, "stage": 2, "dim": 3, "pos": [5]},
+                            {"op": "airvalue", "id": 9, "stage": 2, "dim": 3, "pos": [6]},
+                            {"op": "proofvalue", "id": 10, "stage": 2, "dim": 3, "pos": [7]}
+                        ]
+                    }
+                ]
+            }
+        ],
+        "expressionsCode": [],
+        "constraints": []
+    }"#;
+
+    let info = parse_expression_info_json(json).expect("fixture should parse");
+
+    let values = &info.hints[0].fields[0].values;
+    assert_eq!(
+        values[0].payload,
+        HintPayload::Commitment {
+            id: 2,
+            row_offset_index: Some(1),
+            row_offset: Some(-1),
+            stage: Some(2),
+            stage_id: Some(0),
+            dimension: Some(3),
+            air_group_id: Some(4),
+            air_id: Some(5),
+        }
+    );
+    assert_eq!(
+        values[1].payload,
+        HintPayload::CustomCommitment {
+            id: 3,
+            commit_id: Some(6),
+            row_offset_index: Some(2),
+            row_offset: Some(0),
+            stage: Some(2),
+            stage_id: Some(1),
+            dimension: Some(3),
+            air_group_id: Some(4),
+            air_id: Some(5),
+        }
+    );
+    assert_eq!(
+        values[2].payload,
+        HintPayload::constant(4, Some(0), Some(1), Some(1), Some(4), Some(5))
+    );
+    assert_eq!(
+        values[3].payload,
+        HintPayload::challenge(5, Some(3), Some(2))
+    );
+    assert_eq!(values[4].payload, HintPayload::public(6, Some(1)));
+    assert_eq!(
+        values[5].payload,
+        HintPayload::air_group_value(7, Some(8), Some(2), Some(3))
+    );
+    assert_eq!(
+        values[6].payload,
+        HintPayload::air_value(9, Some(2), Some(3))
+    );
+    assert_eq!(
+        values[7].payload,
+        HintPayload::proof_value(10, Some(2), Some(3))
+    );
+    for (index, value) in values.iter().enumerate() {
+        assert_eq!(value.positions, vec![index as u32]);
+    }
 }
 
 #[test]
@@ -263,7 +359,7 @@ fn encodes_the_current_expression_info_format_version() {
     let bytes = encode_expression_info(&info).expect("fixture should encode");
     let version = u32::from_le_bytes(bytes[4..8].try_into().expect("slice length checked"));
 
-    assert_eq!(version, 4);
+    assert_eq!(version, 5);
 }
 
 #[test]
@@ -271,13 +367,13 @@ fn rejects_stale_expression_info_format_headers() {
     let info =
         parse_expression_info_json(sample_expression_info_json()).expect("fixture should parse");
     let mut bytes = encode_expression_info(&info).expect("fixture should encode");
-    bytes[4..8].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[4..8].copy_from_slice(&4_u32.to_le_bytes());
 
     let error = parse_expression_info(&bytes).expect_err("stale format should be rejected");
 
     assert!(matches!(
         error,
-        ExpressionInfoError::UnsupportedVersion { found: 3, max: 4 }
+        ExpressionInfoError::UnsupportedVersion { found: 4, max: 5 }
     ));
 }
 

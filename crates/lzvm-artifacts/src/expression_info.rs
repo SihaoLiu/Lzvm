@@ -6,38 +6,11 @@ use crate::sectioned::{
     encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
 
+mod binary;
+
 const EXPRESSION_INFO_KIND: [u8; 4] = *b"xinf";
-const EXPRESSION_INFO_VERSION: u32 = 4;
+const EXPRESSION_INFO_VERSION: u32 = 5;
 const EXPRESSION_INFO_SECTION_ID: u32 = 1;
-
-const JSON_NULL_TAG: u8 = 0;
-const JSON_BOOL_TAG: u8 = 1;
-const JSON_U64_TAG: u8 = 2;
-const JSON_I64_TAG: u8 = 3;
-const JSON_F64_TAG: u8 = 4;
-const JSON_STRING_TAG: u8 = 5;
-const JSON_ARRAY_TAG: u8 = 6;
-const JSON_OBJECT_TAG: u8 = 7;
-
-const EXPRESSION_DESTINATION_COMMITMENT_TAG: u8 = 1;
-
-const DESTINATION_TEMPORARY_TAG: u8 = 1;
-const DESTINATION_QUOTIENT_TAG: u8 = 2;
-const DESTINATION_FRI_TAG: u8 = 3;
-
-const OPERAND_TEMPORARY_TAG: u8 = 1;
-const OPERAND_NUMBER_TAG: u8 = 2;
-const OPERAND_EVALUATION_TAG: u8 = 3;
-const OPERAND_CHALLENGE_TAG: u8 = 4;
-const OPERAND_PUBLIC_TAG: u8 = 5;
-const OPERAND_CONSTANT_TAG: u8 = 6;
-const OPERAND_COMMITMENT_TAG: u8 = 7;
-const OPERAND_BOUNDARY_TAG: u8 = 8;
-const OPERAND_PROOF_VALUE_TAG: u8 = 9;
-const OPERAND_OPENING_DENOMINATOR_TAG: u8 = 10;
-const OPERAND_CUSTOM_COMMITMENT_TAG: u8 = 11;
-const OPERAND_AIR_GROUP_VALUE_TAG: u8 = 12;
-const OPERAND_AIR_VALUE_TAG: u8 = 13;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExpressionInfo {
@@ -60,9 +33,76 @@ pub struct HintFieldInfo {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct HintValueInfo {
-    pub op: String,
     pub positions: Vec<u32>,
-    pub payload: serde_json::Value,
+    pub payload: HintPayload,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HintPayload {
+    Number {
+        value: u64,
+    },
+    String {
+        value: String,
+    },
+    Temporary {
+        id: u32,
+        dimension: Option<u32>,
+    },
+    Commitment {
+        id: u32,
+        row_offset_index: Option<u32>,
+        row_offset: Option<i64>,
+        stage: Option<u32>,
+        stage_id: Option<u32>,
+        dimension: Option<u32>,
+        air_group_id: Option<u32>,
+        air_id: Option<u32>,
+    },
+    CustomCommitment {
+        id: u32,
+        commit_id: Option<u32>,
+        row_offset_index: Option<u32>,
+        row_offset: Option<i64>,
+        stage: Option<u32>,
+        stage_id: Option<u32>,
+        dimension: Option<u32>,
+        air_group_id: Option<u32>,
+        air_id: Option<u32>,
+    },
+    Constant {
+        id: u32,
+        row_offset_index: Option<u32>,
+        row_offset: Option<i64>,
+        dimension: Option<u32>,
+        air_group_id: Option<u32>,
+        air_id: Option<u32>,
+    },
+    Challenge {
+        id: u32,
+        stage: Option<u32>,
+        stage_id: Option<u32>,
+    },
+    Public {
+        id: u32,
+        stage: Option<u32>,
+    },
+    AirGroupValue {
+        id: u32,
+        air_group_id: Option<u32>,
+        stage: Option<u32>,
+        dimension: Option<u32>,
+    },
+    AirValue {
+        id: u32,
+        stage: Option<u32>,
+        dimension: Option<u32>,
+    },
+    ProofValue {
+        id: u32,
+        stage: Option<u32>,
+        dimension: Option<u32>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -200,6 +240,82 @@ impl ExpressionDestination {
             id,
             stage,
             stage_id,
+        }
+    }
+}
+
+impl HintPayload {
+    pub fn number(value: u64) -> Self {
+        Self::Number { value }
+    }
+
+    pub fn string(value: impl Into<String>) -> Self {
+        Self::String {
+            value: value.into(),
+        }
+    }
+
+    pub fn temporary(id: u32, dimension: Option<u32>) -> Self {
+        Self::Temporary { id, dimension }
+    }
+
+    pub fn constant(
+        id: u32,
+        row_offset_index: Option<u32>,
+        row_offset: Option<i64>,
+        dimension: Option<u32>,
+        air_group_id: Option<u32>,
+        air_id: Option<u32>,
+    ) -> Self {
+        Self::Constant {
+            id,
+            row_offset_index,
+            row_offset,
+            dimension,
+            air_group_id,
+            air_id,
+        }
+    }
+
+    pub fn challenge(id: u32, stage: Option<u32>, stage_id: Option<u32>) -> Self {
+        Self::Challenge {
+            id,
+            stage,
+            stage_id,
+        }
+    }
+
+    pub fn public(id: u32, stage: Option<u32>) -> Self {
+        Self::Public { id, stage }
+    }
+
+    pub fn air_group_value(
+        id: u32,
+        air_group_id: Option<u32>,
+        stage: Option<u32>,
+        dimension: Option<u32>,
+    ) -> Self {
+        Self::AirGroupValue {
+            id,
+            air_group_id,
+            stage,
+            dimension,
+        }
+    }
+
+    pub fn air_value(id: u32, stage: Option<u32>, dimension: Option<u32>) -> Self {
+        Self::AirValue {
+            id,
+            stage,
+            dimension,
+        }
+    }
+
+    pub fn proof_value(id: u32, stage: Option<u32>, dimension: Option<u32>) -> Self {
+        Self::ProofValue {
+            id,
+            stage,
+            dimension,
         }
     }
 }
@@ -408,10 +524,9 @@ pub enum ExpressionInfoError {
     InvalidOperandTag {
         value: u8,
     },
-    InvalidJsonTag {
+    InvalidHintPayloadTag {
         value: u8,
     },
-    InvalidJsonNumber,
     Io {
         message: String,
     },
@@ -481,10 +596,9 @@ impl fmt::Display for ExpressionInfoError {
             Self::InvalidOperandTag { value } => {
                 write!(f, "invalid expression-info operand tag: {value}")
             }
-            Self::InvalidJsonTag { value } => {
-                write!(f, "invalid expression-info value tag: {value}")
+            Self::InvalidHintPayloadTag { value } => {
+                write!(f, "invalid expression-info hint payload tag: {value}")
             }
-            Self::InvalidJsonNumber => write!(f, "invalid expression-info number value"),
             Self::Io { message } => write!(f, "expression-info io error: {message}"),
         }
     }
@@ -561,12 +675,14 @@ pub fn parse_expression_info(bytes: &[u8]) -> Result<ExpressionInfo, ExpressionI
     if section.id != EXPRESSION_INFO_SECTION_ID {
         return Err(ExpressionInfoError::InvalidSectionId { found: section.id });
     }
-    parse_expression_info_section(&section.data)
+    let value = binary::parse_section(&section.data)?;
+    validate_expression_info(&value)?;
+    Ok(value)
 }
 
 pub fn encode_expression_info(value: &ExpressionInfo) -> Result<Vec<u8>, ExpressionInfoError> {
     validate_expression_info(value)?;
-    let section = encode_expression_info_section(value)?;
+    let section = binary::encode_section(value)?;
     let file = SectionedFile {
         kind: EXPRESSION_INFO_KIND,
         version: EXPRESSION_INFO_VERSION,
@@ -594,30 +710,6 @@ pub fn parse_expression_info_json(input: &str) -> Result<ExpressionInfo, Express
         expressions,
         constraints,
     })
-}
-
-fn parse_expression_info_section(bytes: &[u8]) -> Result<ExpressionInfo, ExpressionInfoError> {
-    let mut reader = Reader::new(bytes);
-    let value = ExpressionInfo {
-        hints: read_hints(&mut reader)?,
-        expressions: read_expressions(&mut reader)?,
-        constraints: read_constraints(&mut reader)?,
-    };
-    if reader.position() != bytes.len() {
-        return Err(ExpressionInfoError::UnexpectedTrailingBytes {
-            count: bytes.len() - reader.position(),
-        });
-    }
-    validate_expression_info(&value)?;
-    Ok(value)
-}
-
-fn encode_expression_info_section(value: &ExpressionInfo) -> Result<Vec<u8>, ExpressionInfoError> {
-    let mut out = Vec::new();
-    write_hints(&mut out, &value.hints)?;
-    write_expressions(&mut out, &value.expressions)?;
-    write_constraints(&mut out, &value.constraints)?;
-    Ok(out)
 }
 
 fn validate_expression_info(value: &ExpressionInfo) -> Result<(), ExpressionInfoError> {
@@ -689,65 +781,80 @@ fn parse_hint_values(
     for value in values {
         let object = as_object(value, "values")?;
         out.push(HintValueInfo {
-            op: required_string(object, "op")?,
             positions: required_u32_array(object, "pos")?,
-            payload: value.clone(),
+            payload: parse_hint_payload(object)?,
         });
     }
     Ok(out)
 }
 
-fn read_hints(reader: &mut Reader<'_>) -> Result<Vec<HintInfo>, ExpressionInfoError> {
-    let count = reader.read_u32()?;
-    let mut hints = Vec::with_capacity(count as usize);
-    for _ in 0..count {
-        let name = reader.read_string()?;
-        let field_count = reader.read_u32()?;
-        let mut fields = Vec::with_capacity(field_count as usize);
-        for _ in 0..field_count {
-            let name = reader.read_string()?;
-            let value_count = reader.read_u32()?;
-            let mut values = Vec::with_capacity(value_count as usize);
-            for _ in 0..value_count {
-                let op = reader.read_string()?;
-                let position_count = reader.read_u32()?;
-                let mut positions = Vec::with_capacity(position_count as usize);
-                for _ in 0..position_count {
-                    positions.push(reader.read_u32()?);
-                }
-                let payload = reader.read_json_value()?;
-                values.push(HintValueInfo {
-                    op,
-                    positions,
-                    payload,
-                });
-            }
-            fields.push(HintFieldInfo { name, values });
-        }
-        hints.push(HintInfo { name, fields });
+fn parse_hint_payload(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Result<HintPayload, ExpressionInfoError> {
+    let kind = required_string(object, "op")?;
+    match kind.as_str() {
+        "number" => Ok(HintPayload::number(required_number(object, "value")?)),
+        "string" => Ok(HintPayload::string(required_string(object, "string")?)),
+        "tmp" | "exp" => Ok(HintPayload::temporary(
+            required_u32(object, "id")?,
+            optional_u32(object, "dim")?,
+        )),
+        "cm" => Ok(HintPayload::Commitment {
+            id: required_u32(object, "id")?,
+            row_offset_index: optional_u32(object, "rowOffsetIndex")?,
+            row_offset: optional_i64(object, "rowOffset")?,
+            stage: optional_u32(object, "stage")?,
+            stage_id: optional_u32(object, "stageId")?,
+            dimension: optional_u32(object, "dim")?,
+            air_group_id: optional_u32(object, "airgroupId")?,
+            air_id: optional_u32(object, "airId")?,
+        }),
+        "custom" => Ok(HintPayload::CustomCommitment {
+            id: required_u32(object, "id")?,
+            commit_id: optional_u32(object, "commitId")?,
+            row_offset_index: optional_u32(object, "rowOffsetIndex")?,
+            row_offset: optional_i64(object, "rowOffset")?,
+            stage: optional_u32(object, "stage")?,
+            stage_id: optional_u32(object, "stageId")?,
+            dimension: optional_u32(object, "dim")?,
+            air_group_id: optional_u32(object, "airgroupId")?,
+            air_id: optional_u32(object, "airId")?,
+        }),
+        "const" => Ok(HintPayload::constant(
+            required_u32(object, "id")?,
+            optional_u32(object, "rowOffsetIndex")?,
+            optional_i64(object, "rowOffset")?,
+            optional_u32(object, "dim")?,
+            optional_u32(object, "airgroupId")?,
+            optional_u32(object, "airId")?,
+        )),
+        "challenge" => Ok(HintPayload::challenge(
+            required_u32(object, "id")?,
+            optional_u32(object, "stage")?,
+            optional_u32(object, "stageId")?,
+        )),
+        "public" => Ok(HintPayload::public(
+            required_u32(object, "id")?,
+            optional_u32(object, "stage")?,
+        )),
+        "airgroupvalue" => Ok(HintPayload::air_group_value(
+            required_u32(object, "id")?,
+            optional_u32(object, "airgroupId")?,
+            optional_u32(object, "stage")?,
+            optional_u32(object, "dim")?,
+        )),
+        "airvalue" => Ok(HintPayload::air_value(
+            required_u32(object, "id")?,
+            optional_u32(object, "stage")?,
+            optional_u32(object, "dim")?,
+        )),
+        "proofvalue" | "proofValue" => Ok(HintPayload::proof_value(
+            required_u32(object, "id")?,
+            optional_u32(object, "stage")?,
+            optional_u32(object, "dim")?,
+        )),
+        _ => Err(ExpressionInfoError::UnknownReferenceKind { kind }),
     }
-    Ok(hints)
-}
-
-fn write_hints(out: &mut Vec<u8>, values: &[HintInfo]) -> Result<(), ExpressionInfoError> {
-    write_len(out, values.len())?;
-    for hint in values {
-        write_string(out, &hint.name)?;
-        write_len(out, hint.fields.len())?;
-        for field in &hint.fields {
-            write_string(out, &field.name)?;
-            write_len(out, field.values.len())?;
-            for value in &field.values {
-                write_string(out, &value.op)?;
-                write_len(out, value.positions.len())?;
-                for position in &value.positions {
-                    write_u32(out, *position);
-                }
-                write_json_value(out, &value.payload)?;
-            }
-        }
-    }
-    Ok(())
 }
 
 fn parse_expressions(
@@ -778,38 +885,6 @@ fn parse_expressions(
     Ok(expressions)
 }
 
-fn read_expressions(reader: &mut Reader<'_>) -> Result<Vec<ExpressionCode>, ExpressionInfoError> {
-    let count = reader.read_u32()?;
-    let mut expressions = Vec::with_capacity(count as usize);
-    for _ in 0..count {
-        expressions.push(ExpressionCode {
-            expression_id: reader.read_u32()?,
-            stage: reader.read_u32()?,
-            line: reader.read_string()?,
-            temporary_count: reader.read_u32()?,
-            destination: reader.read_optional_expression_destination("expression_destination")?,
-            operations: read_operations(reader)?,
-        });
-    }
-    Ok(expressions)
-}
-
-fn write_expressions(
-    out: &mut Vec<u8>,
-    values: &[ExpressionCode],
-) -> Result<(), ExpressionInfoError> {
-    write_len(out, values.len())?;
-    for value in values {
-        write_u32(out, value.expression_id);
-        write_u32(out, value.stage);
-        write_string(out, &value.line)?;
-        write_u32(out, value.temporary_count);
-        write_optional_expression_destination(out, value.destination.as_ref());
-        write_operations(out, &value.operations)?;
-    }
-    Ok(())
-}
-
 fn parse_constraints(
     values: &[serde_json::Value],
 ) -> Result<Vec<ConstraintCode>, ExpressionInfoError> {
@@ -837,42 +912,6 @@ fn parse_constraints(
     Ok(constraints)
 }
 
-fn read_constraints(reader: &mut Reader<'_>) -> Result<Vec<ConstraintCode>, ExpressionInfoError> {
-    let count = reader.read_u32()?;
-    let mut constraints = Vec::with_capacity(count as usize);
-    for _ in 0..count {
-        constraints.push(ConstraintCode {
-            stage: reader.read_u32()?,
-            boundary: read_boundary_tag(reader.read_u8()?)?,
-            offset_min: reader.read_optional_i64("offset_min")?,
-            offset_max: reader.read_optional_i64("offset_max")?,
-            line: reader.read_string()?,
-            intermediate: reader.read_bool("intermediate")?,
-            temporary_count: reader.read_u32()?,
-            operations: read_operations(reader)?,
-        });
-    }
-    Ok(constraints)
-}
-
-fn write_constraints(
-    out: &mut Vec<u8>,
-    values: &[ConstraintCode],
-) -> Result<(), ExpressionInfoError> {
-    write_len(out, values.len())?;
-    for value in values {
-        write_u32(out, value.stage);
-        out.push(boundary_tag(value.boundary));
-        write_optional_i64(out, value.offset_min);
-        write_optional_i64(out, value.offset_max);
-        write_string(out, &value.line)?;
-        out.push(u8::from(value.intermediate));
-        write_u32(out, value.temporary_count);
-        write_operations(out, &value.operations)?;
-    }
-    Ok(())
-}
-
 fn parse_operations(
     values: &[serde_json::Value],
     temporary_count: u32,
@@ -896,42 +935,6 @@ fn parse_operations(
     Ok(operations)
 }
 
-fn read_operations(reader: &mut Reader<'_>) -> Result<Vec<CodeOperation>, ExpressionInfoError> {
-    let count = reader.read_u32()?;
-    let mut operations = Vec::with_capacity(count as usize);
-    for _ in 0..count {
-        let op = read_operation_tag(reader.read_u8()?)?;
-        let destination = reader.read_destination()?;
-        let source_count = reader.read_u32()?;
-        let mut sources = Vec::with_capacity(source_count as usize);
-        for _ in 0..source_count {
-            sources.push(reader.read_operand()?);
-        }
-        operations.push(CodeOperation {
-            op,
-            destination,
-            sources,
-        });
-    }
-    Ok(operations)
-}
-
-fn write_operations(
-    out: &mut Vec<u8>,
-    values: &[CodeOperation],
-) -> Result<(), ExpressionInfoError> {
-    write_len(out, values.len())?;
-    for value in values {
-        out.push(operation_tag(value.op));
-        write_destination(out, &value.destination);
-        write_len(out, value.sources.len())?;
-        for source in &value.sources {
-            write_operand(out, source);
-        }
-    }
-    Ok(())
-}
-
 fn parse_operation(op: &str) -> Result<OperationKind, ExpressionInfoError> {
     match op {
         "add" => Ok(OperationKind::Add),
@@ -939,25 +942,6 @@ fn parse_operation(op: &str) -> Result<OperationKind, ExpressionInfoError> {
         "mul" => Ok(OperationKind::Mul),
         "copy" => Ok(OperationKind::Copy),
         _ => Err(ExpressionInfoError::UnknownOperation { op: op.to_owned() }),
-    }
-}
-
-fn operation_tag(value: OperationKind) -> u8 {
-    match value {
-        OperationKind::Add => 1,
-        OperationKind::Sub => 2,
-        OperationKind::Mul => 3,
-        OperationKind::Copy => 4,
-    }
-}
-
-fn read_operation_tag(value: u8) -> Result<OperationKind, ExpressionInfoError> {
-    match value {
-        1 => Ok(OperationKind::Add),
-        2 => Ok(OperationKind::Sub),
-        3 => Ok(OperationKind::Mul),
-        4 => Ok(OperationKind::Copy),
-        _ => Err(ExpressionInfoError::InvalidOperationTag { value }),
     }
 }
 
@@ -971,27 +955,6 @@ fn parse_boundary(boundary: &str) -> Result<BoundaryKind, ExpressionInfoError> {
         _ => Err(ExpressionInfoError::UnknownBoundary {
             boundary: boundary.to_owned(),
         }),
-    }
-}
-
-fn boundary_tag(value: BoundaryKind) -> u8 {
-    match value {
-        BoundaryKind::EveryRow => 1,
-        BoundaryKind::FirstRow => 2,
-        BoundaryKind::LastRow => 3,
-        BoundaryKind::EveryFrame => 4,
-        BoundaryKind::FinalProof => 5,
-    }
-}
-
-fn read_boundary_tag(value: u8) -> Result<BoundaryKind, ExpressionInfoError> {
-    match value {
-        1 => Ok(BoundaryKind::EveryRow),
-        2 => Ok(BoundaryKind::FirstRow),
-        3 => Ok(BoundaryKind::LastRow),
-        4 => Ok(BoundaryKind::EveryFrame),
-        5 => Ok(BoundaryKind::FinalProof),
-        _ => Err(ExpressionInfoError::InvalidBoundaryTag { value }),
     }
 }
 
@@ -1262,504 +1225,4 @@ fn required_u32_array(
         out.push(value_to_u32(value, field)?);
     }
     Ok(out)
-}
-
-fn write_json_value(
-    out: &mut Vec<u8>,
-    value: &serde_json::Value,
-) -> Result<(), ExpressionInfoError> {
-    match value {
-        serde_json::Value::Null => out.push(JSON_NULL_TAG),
-        serde_json::Value::Bool(value) => {
-            out.push(JSON_BOOL_TAG);
-            out.push(u8::from(*value));
-        }
-        serde_json::Value::Number(value) => {
-            if let Some(value) = value.as_u64() {
-                out.push(JSON_U64_TAG);
-                write_u64(out, value);
-            } else if let Some(value) = value.as_i64() {
-                out.push(JSON_I64_TAG);
-                write_i64(out, value);
-            } else if let Some(value) = value.as_f64() {
-                out.push(JSON_F64_TAG);
-                out.extend_from_slice(&value.to_le_bytes());
-            } else {
-                return Err(ExpressionInfoError::InvalidJsonNumber);
-            }
-        }
-        serde_json::Value::String(value) => {
-            out.push(JSON_STRING_TAG);
-            write_string(out, value)?;
-        }
-        serde_json::Value::Array(values) => {
-            out.push(JSON_ARRAY_TAG);
-            write_len(out, values.len())?;
-            for value in values {
-                write_json_value(out, value)?;
-            }
-        }
-        serde_json::Value::Object(values) => {
-            out.push(JSON_OBJECT_TAG);
-            write_len(out, values.len())?;
-            for (key, value) in values {
-                write_string(out, key)?;
-                write_json_value(out, value)?;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn write_optional_expression_destination(out: &mut Vec<u8>, value: Option<&ExpressionDestination>) {
-    match value {
-        Some(value) => {
-            out.push(1);
-            write_expression_destination(out, value);
-        }
-        None => out.push(0),
-    }
-}
-
-fn write_expression_destination(out: &mut Vec<u8>, value: &ExpressionDestination) {
-    match value {
-        ExpressionDestination::Commitment {
-            id,
-            stage,
-            stage_id,
-        } => {
-            out.push(EXPRESSION_DESTINATION_COMMITMENT_TAG);
-            write_u32(out, *id);
-            write_optional_u32(out, *stage);
-            write_optional_u32(out, *stage_id);
-        }
-    }
-}
-
-fn write_optional_i64(out: &mut Vec<u8>, value: Option<i64>) {
-    match value {
-        Some(value) => {
-            out.push(1);
-            write_i64(out, value);
-        }
-        None => out.push(0),
-    }
-}
-
-fn write_destination(out: &mut Vec<u8>, value: &CodeDestination) {
-    match value {
-        CodeDestination::Temporary { id, dimension } => {
-            out.push(DESTINATION_TEMPORARY_TAG);
-            write_reference_body(out, *id, *dimension);
-        }
-        CodeDestination::Quotient { id, dimension } => {
-            out.push(DESTINATION_QUOTIENT_TAG);
-            write_reference_body(out, *id, *dimension);
-        }
-        CodeDestination::FriExpression { id, dimension } => {
-            out.push(DESTINATION_FRI_TAG);
-            write_reference_body(out, *id, *dimension);
-        }
-    }
-}
-
-fn write_operand(out: &mut Vec<u8>, value: &CodeOperand) {
-    match value {
-        CodeOperand::Temporary { id, dimension } => {
-            out.push(OPERAND_TEMPORARY_TAG);
-            write_reference_body(out, *id, *dimension);
-        }
-        CodeOperand::Number { value, dimension } => {
-            out.push(OPERAND_NUMBER_TAG);
-            write_u64(out, *value);
-            write_u32(out, *dimension);
-        }
-        CodeOperand::Evaluation { id, dimension } => {
-            out.push(OPERAND_EVALUATION_TAG);
-            write_reference_body(out, *id, *dimension);
-        }
-        CodeOperand::Challenge {
-            id,
-            stage,
-            stage_id,
-            dimension,
-        } => {
-            out.push(OPERAND_CHALLENGE_TAG);
-            write_reference_body(out, *id, *dimension);
-            write_optional_u32(out, *stage);
-            write_optional_u32(out, *stage_id);
-        }
-        CodeOperand::Public { id, dimension } => {
-            out.push(OPERAND_PUBLIC_TAG);
-            write_reference_body(out, *id, *dimension);
-        }
-        CodeOperand::Constant { id, dimension } => {
-            out.push(OPERAND_CONSTANT_TAG);
-            write_reference_body(out, *id, *dimension);
-        }
-        CodeOperand::Commitment {
-            id,
-            prime,
-            dimension,
-        } => {
-            out.push(OPERAND_COMMITMENT_TAG);
-            write_reference_body(out, *id, *dimension);
-            write_optional_i64(out, *prime);
-        }
-        CodeOperand::BoundaryZerofier { id, dimension } => {
-            out.push(OPERAND_BOUNDARY_TAG);
-            write_reference_body(out, *id, *dimension);
-        }
-        CodeOperand::ProofValue {
-            id,
-            stage,
-            dimension,
-        } => {
-            out.push(OPERAND_PROOF_VALUE_TAG);
-            write_reference_body(out, *id, *dimension);
-            write_optional_u32(out, *stage);
-        }
-        CodeOperand::OpeningDenominator {
-            id,
-            opening,
-            dimension,
-        } => {
-            out.push(OPERAND_OPENING_DENOMINATOR_TAG);
-            write_reference_body(out, *id, *dimension);
-            write_optional_u32(out, *opening);
-        }
-        CodeOperand::CustomCommitment {
-            id,
-            commit_id,
-            prime,
-            dimension,
-        } => {
-            out.push(OPERAND_CUSTOM_COMMITMENT_TAG);
-            write_reference_body(out, *id, *dimension);
-            write_optional_u32(out, *commit_id);
-            write_optional_i64(out, *prime);
-        }
-        CodeOperand::AirGroupValue {
-            id,
-            stage,
-            air_group_id,
-            dimension,
-        } => {
-            out.push(OPERAND_AIR_GROUP_VALUE_TAG);
-            write_reference_body(out, *id, *dimension);
-            write_optional_u32(out, *stage);
-            write_optional_u32(out, *air_group_id);
-        }
-        CodeOperand::AirValue {
-            id,
-            stage,
-            air_group_id,
-            dimension,
-        } => {
-            out.push(OPERAND_AIR_VALUE_TAG);
-            write_reference_body(out, *id, *dimension);
-            write_optional_u32(out, *stage);
-            write_optional_u32(out, *air_group_id);
-        }
-    }
-}
-
-fn write_reference_body(out: &mut Vec<u8>, id: u32, dimension: u32) {
-    write_u32(out, id);
-    write_u32(out, dimension);
-}
-
-fn write_optional_u32(out: &mut Vec<u8>, value: Option<u32>) {
-    match value {
-        Some(value) => {
-            out.push(1);
-            write_u32(out, value);
-        }
-        None => out.push(0),
-    }
-}
-
-fn write_string(out: &mut Vec<u8>, value: &str) -> Result<(), ExpressionInfoError> {
-    write_len(out, value.len())?;
-    out.extend_from_slice(value.as_bytes());
-    Ok(())
-}
-
-fn write_len(out: &mut Vec<u8>, value: usize) -> Result<(), ExpressionInfoError> {
-    let value = u32::try_from(value).map_err(|_| ExpressionInfoError::LengthOverflow)?;
-    write_u32(out, value);
-    Ok(())
-}
-
-fn write_u32(out: &mut Vec<u8>, value: u32) {
-    out.extend_from_slice(&value.to_le_bytes());
-}
-
-fn write_u64(out: &mut Vec<u8>, value: u64) {
-    out.extend_from_slice(&value.to_le_bytes());
-}
-
-fn write_i64(out: &mut Vec<u8>, value: i64) {
-    out.extend_from_slice(&value.to_le_bytes());
-}
-
-struct Reader<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-}
-
-impl<'a> Reader<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, offset: 0 }
-    }
-
-    fn position(&self) -> usize {
-        self.offset
-    }
-
-    fn read_optional_expression_destination(
-        &mut self,
-        field: &'static str,
-    ) -> Result<Option<ExpressionDestination>, ExpressionInfoError> {
-        match self.read_u8()? {
-            0 => Ok(None),
-            1 => Ok(Some(self.read_expression_destination()?)),
-            value => Err(ExpressionInfoError::InvalidFlag { field, value }),
-        }
-    }
-
-    fn read_expression_destination(
-        &mut self,
-    ) -> Result<ExpressionDestination, ExpressionInfoError> {
-        let tag = self.read_u8()?;
-        match tag {
-            EXPRESSION_DESTINATION_COMMITMENT_TAG => {
-                let id = self.read_u32()?;
-                let stage = self.read_optional_u32("expression_destination_stage")?;
-                let stage_id = self.read_optional_u32("expression_destination_stage_id")?;
-                Ok(ExpressionDestination::commitment(id, stage, stage_id))
-            }
-            value => Err(ExpressionInfoError::InvalidOperandTag { value }),
-        }
-    }
-
-    fn read_destination(&mut self) -> Result<CodeDestination, ExpressionInfoError> {
-        let tag = self.read_u8()?;
-        let (id, dimension) = self.read_reference_body()?;
-        match tag {
-            DESTINATION_TEMPORARY_TAG => Ok(CodeDestination::temporary(id, dimension)),
-            DESTINATION_QUOTIENT_TAG => Ok(CodeDestination::quotient(id, dimension)),
-            DESTINATION_FRI_TAG => Ok(CodeDestination::fri_expression(id, dimension)),
-            value => Err(ExpressionInfoError::InvalidOperandTag { value }),
-        }
-    }
-
-    fn read_operand(&mut self) -> Result<CodeOperand, ExpressionInfoError> {
-        let tag = self.read_u8()?;
-        match tag {
-            OPERAND_TEMPORARY_TAG => {
-                let (id, dimension) = self.read_reference_body()?;
-                Ok(CodeOperand::temporary(id, dimension))
-            }
-            OPERAND_NUMBER_TAG => Ok(CodeOperand::number(self.read_u64()?, self.read_u32()?)),
-            OPERAND_EVALUATION_TAG => {
-                let (id, dimension) = self.read_reference_body()?;
-                Ok(CodeOperand::evaluation(id, dimension))
-            }
-            OPERAND_CHALLENGE_TAG => {
-                let (id, dimension) = self.read_reference_body()?;
-                let stage = self.read_optional_u32("challenge_stage")?;
-                let stage_id = self.read_optional_u32("challenge_stage_id")?;
-                Ok(CodeOperand::challenge(id, stage, stage_id, dimension))
-            }
-            OPERAND_PUBLIC_TAG => {
-                let (id, dimension) = self.read_reference_body()?;
-                Ok(CodeOperand::public(id, dimension))
-            }
-            OPERAND_CONSTANT_TAG => {
-                let (id, dimension) = self.read_reference_body()?;
-                Ok(CodeOperand::constant(id, dimension))
-            }
-            OPERAND_COMMITMENT_TAG => {
-                let (id, dimension) = self.read_reference_body()?;
-                let prime = self.read_optional_i64("commitment_prime")?;
-                Ok(CodeOperand::commitment_at(id, prime, dimension))
-            }
-            OPERAND_BOUNDARY_TAG => {
-                let (id, dimension) = self.read_reference_body()?;
-                Ok(CodeOperand::boundary_zerofier(id, dimension))
-            }
-            OPERAND_PROOF_VALUE_TAG => {
-                let (id, dimension) = self.read_reference_body()?;
-                let stage = self.read_optional_u32("proof_value_stage")?;
-                Ok(CodeOperand::proof_value_at(id, stage, dimension))
-            }
-            OPERAND_OPENING_DENOMINATOR_TAG => {
-                let (id, dimension) = self.read_reference_body()?;
-                let opening = self.read_optional_u32("opening_denominator_opening")?;
-                Ok(CodeOperand::opening_denominator(id, opening, dimension))
-            }
-            OPERAND_CUSTOM_COMMITMENT_TAG => {
-                let (id, dimension) = self.read_reference_body()?;
-                let commit_id = self.read_optional_u32("custom_commitment_id")?;
-                let prime = self.read_optional_i64("custom_commitment_prime")?;
-                Ok(CodeOperand::custom_commitment(
-                    id, commit_id, prime, dimension,
-                ))
-            }
-            OPERAND_AIR_GROUP_VALUE_TAG => {
-                let (id, dimension) = self.read_reference_body()?;
-                let stage = self.read_optional_u32("air_group_value_stage")?;
-                let air_group_id = self.read_optional_u32("air_group_value_group")?;
-                Ok(CodeOperand::air_group_value(
-                    id,
-                    stage,
-                    air_group_id,
-                    dimension,
-                ))
-            }
-            OPERAND_AIR_VALUE_TAG => {
-                let (id, dimension) = self.read_reference_body()?;
-                let stage = self.read_optional_u32("air_value_stage")?;
-                let air_group_id = self.read_optional_u32("air_value_group")?;
-                Ok(CodeOperand::air_value(id, stage, air_group_id, dimension))
-            }
-            value => Err(ExpressionInfoError::InvalidOperandTag { value }),
-        }
-    }
-
-    fn read_reference_body(&mut self) -> Result<(u32, u32), ExpressionInfoError> {
-        Ok((self.read_u32()?, self.read_u32()?))
-    }
-
-    fn read_json_value(&mut self) -> Result<serde_json::Value, ExpressionInfoError> {
-        let tag = self.read_u8()?;
-        match tag {
-            JSON_NULL_TAG => Ok(serde_json::Value::Null),
-            JSON_BOOL_TAG => match self.read_u8()? {
-                0 => Ok(serde_json::Value::Bool(false)),
-                1 => Ok(serde_json::Value::Bool(true)),
-                value => Err(ExpressionInfoError::InvalidFlag {
-                    field: "json_bool",
-                    value,
-                }),
-            },
-            JSON_U64_TAG => Ok(serde_json::Value::Number(self.read_u64()?.into())),
-            JSON_I64_TAG => Ok(serde_json::Value::Number(self.read_i64()?.into())),
-            JSON_F64_TAG => {
-                let value = self.read_f64()?;
-                let number = serde_json::Number::from_f64(value)
-                    .ok_or(ExpressionInfoError::InvalidJsonNumber)?;
-                Ok(serde_json::Value::Number(number))
-            }
-            JSON_STRING_TAG => Ok(serde_json::Value::String(self.read_string()?)),
-            JSON_ARRAY_TAG => {
-                let count = self.read_u32()?;
-                let mut values = Vec::with_capacity(count as usize);
-                for _ in 0..count {
-                    values.push(self.read_json_value()?);
-                }
-                Ok(serde_json::Value::Array(values))
-            }
-            JSON_OBJECT_TAG => {
-                let count = self.read_u32()?;
-                let mut values = serde_json::Map::new();
-                for _ in 0..count {
-                    let key = self.read_string()?;
-                    let value = self.read_json_value()?;
-                    values.insert(key, value);
-                }
-                Ok(serde_json::Value::Object(values))
-            }
-            value => Err(ExpressionInfoError::InvalidJsonTag { value }),
-        }
-    }
-
-    fn read_optional_i64(
-        &mut self,
-        field: &'static str,
-    ) -> Result<Option<i64>, ExpressionInfoError> {
-        match self.read_u8()? {
-            0 => Ok(None),
-            1 => Ok(Some(self.read_i64()?)),
-            value => Err(ExpressionInfoError::InvalidFlag { field, value }),
-        }
-    }
-
-    fn read_optional_u32(
-        &mut self,
-        field: &'static str,
-    ) -> Result<Option<u32>, ExpressionInfoError> {
-        match self.read_u8()? {
-            0 => Ok(None),
-            1 => Ok(Some(self.read_u32()?)),
-            value => Err(ExpressionInfoError::InvalidFlag { field, value }),
-        }
-    }
-
-    fn read_bool(&mut self, field: &'static str) -> Result<bool, ExpressionInfoError> {
-        match self.read_u8()? {
-            0 => Ok(false),
-            1 => Ok(true),
-            value => Err(ExpressionInfoError::InvalidFlag { field, value }),
-        }
-    }
-
-    fn read_string(&mut self) -> Result<String, ExpressionInfoError> {
-        let count = self.read_u32()?;
-        let count = usize::try_from(count).map_err(|_| ExpressionInfoError::LengthOverflow)?;
-        let bytes = self.read_exact(count)?;
-        std::str::from_utf8(bytes)
-            .map(str::to_owned)
-            .map_err(|_| ExpressionInfoError::InvalidUtf8)
-    }
-
-    fn read_u8(&mut self) -> Result<u8, ExpressionInfoError> {
-        Ok(self.read_exact(1)?[0])
-    }
-
-    fn read_u32(&mut self) -> Result<u32, ExpressionInfoError> {
-        let bytes = self.read_exact(4)?;
-        Ok(u32::from_le_bytes(
-            bytes.try_into().expect("slice length checked"),
-        ))
-    }
-
-    fn read_u64(&mut self) -> Result<u64, ExpressionInfoError> {
-        let bytes = self.read_exact(8)?;
-        Ok(u64::from_le_bytes(
-            bytes.try_into().expect("slice length checked"),
-        ))
-    }
-
-    fn read_i64(&mut self) -> Result<i64, ExpressionInfoError> {
-        let bytes = self.read_exact(8)?;
-        Ok(i64::from_le_bytes(
-            bytes.try_into().expect("slice length checked"),
-        ))
-    }
-
-    fn read_f64(&mut self) -> Result<f64, ExpressionInfoError> {
-        let bytes = self.read_exact(8)?;
-        Ok(f64::from_le_bytes(
-            bytes.try_into().expect("slice length checked"),
-        ))
-    }
-
-    fn read_exact(&mut self, count: usize) -> Result<&'a [u8], ExpressionInfoError> {
-        let end = self
-            .offset
-            .checked_add(count)
-            .ok_or(ExpressionInfoError::LengthOverflow)?;
-        if end > self.bytes.len() {
-            return Err(ExpressionInfoError::UnexpectedEof {
-                offset: self.offset,
-                needed: count,
-                available: self.bytes.len().saturating_sub(self.offset),
-            });
-        }
-        let out = &self.bytes[self.offset..end];
-        self.offset = end;
-        Ok(out)
-    }
 }
