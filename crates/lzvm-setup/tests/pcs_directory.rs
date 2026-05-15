@@ -14,7 +14,8 @@ use lzvm_artifacts::setup_info::{
 };
 use lzvm_setup::{
     build_constant_tree_from_fixed_columns, write_pcs_directory_from_layout,
-    write_pcs_material_directory_from_layout, PcsDirectoryWriteReport,
+    write_pcs_material_directory_from_layout, write_pcs_setup_material_file,
+    write_pcs_setup_plan_file, PcsDirectoryWriteReport, PcsFileWriteReport,
 };
 
 fn sample_global_info_json() -> &'static str {
@@ -191,6 +192,71 @@ fn writes_pcs_plan_and_material_from_layout() {
         material_report,
         PcsDirectoryWriteReport {
             unit_count: 1,
+            bytes_written: material_bytes
+        }
+    );
+}
+
+#[test]
+fn writes_pcs_plan_and_material_from_files() {
+    let dir = temp_dir("files");
+    let _ = fs::remove_dir_all(&dir);
+    let layout = one_unit_layout(&dir);
+    let unit = &layout.units[0];
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let columns = sample_columns();
+    let fixed = encode_raw_fixed_columns(&columns, &setup).expect("fixed columns should encode");
+    let tree_bytes =
+        build_constant_tree_from_fixed_columns(&columns, &setup).expect("tree should build");
+    let tree = parse_constant_tree_bytes(tree_bytes.clone(), &setup).expect("tree should parse");
+
+    write_setup_fixture(&layout, &setup);
+    write_bytes(&unit.fixed_columns, &fixed);
+    write_bytes(&unit.constant_tree, &tree_bytes);
+
+    let setup_path = unit.setup_info().expect("setup path should derive");
+    let plan_path = dir.join("single.pcs-plan");
+    let material_path = dir.join("single.pcs-material");
+    let plan_report =
+        write_pcs_setup_plan_file(&setup_path, &plan_path).expect("plan should write");
+    let plan = read_pcs_setup_plan_file(&plan_path).expect("plan should parse");
+    let plan_bytes = fs::metadata(&plan_path)
+        .expect("plan output should exist")
+        .len();
+    assert_eq!(
+        plan,
+        derive_pcs_setup_plan(&setup).expect("plan should derive")
+    );
+    assert_eq!(
+        plan_report,
+        PcsFileWriteReport {
+            path: plan_path.clone(),
+            bytes_written: plan_bytes
+        }
+    );
+
+    let material_report = write_pcs_setup_material_file(
+        &setup_path,
+        &plan_path,
+        &unit.fixed_columns,
+        &unit.constant_tree,
+        &material_path,
+    )
+    .expect("material should write");
+    let material = read_pcs_setup_material_file(&material_path).expect("material should parse");
+    let expected_material =
+        build_pcs_setup_material(&plan, &fixed, &tree).expect("material should build");
+    let material_bytes = fs::metadata(&material_path)
+        .expect("material output should exist")
+        .len();
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(material, expected_material);
+    assert_eq!(
+        material_report,
+        PcsFileWriteReport {
+            path: material_path,
             bytes_written: material_bytes
         }
     );

@@ -93,6 +93,12 @@ pub struct PcsDirectoryWriteReport {
     pub bytes_written: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PcsFileWriteReport {
+    pub path: PathBuf,
+    pub bytes_written: u64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FixedExtensionBackend {
     Cpu,
@@ -546,6 +552,40 @@ impl From<PcsSetupMaterialError> for PcsDirectoryWriteError {
     }
 }
 
+pub fn write_pcs_setup_plan_file(
+    setup_info_path: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
+) -> Result<PcsFileWriteReport, PcsDirectoryWriteError> {
+    let output_path = output_path.as_ref().to_path_buf();
+    let bytes = encode_pcs_setup_plan_from_path(setup_info_path.as_ref())?;
+    write_output_bytes(&output_path, &bytes)?;
+    Ok(PcsFileWriteReport {
+        path: output_path,
+        bytes_written: bytes.len() as u64,
+    })
+}
+
+pub fn write_pcs_setup_material_file(
+    setup_info_path: impl AsRef<Path>,
+    plan_path: impl AsRef<Path>,
+    fixed_columns_path: impl AsRef<Path>,
+    constant_tree_path: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
+) -> Result<PcsFileWriteReport, PcsDirectoryWriteError> {
+    let output_path = output_path.as_ref().to_path_buf();
+    let bytes = encode_pcs_setup_material_from_paths(
+        setup_info_path.as_ref(),
+        plan_path.as_ref(),
+        fixed_columns_path.as_ref(),
+        constant_tree_path.as_ref(),
+    )?;
+    write_output_bytes(&output_path, &bytes)?;
+    Ok(PcsFileWriteReport {
+        path: output_path,
+        bytes_written: bytes.len() as u64,
+    })
+}
+
 pub fn write_pcs_directory(
     root: impl AsRef<Path>,
 ) -> Result<PcsDirectoryWriteReport, PcsDirectoryWriteError> {
@@ -562,9 +602,7 @@ pub fn write_pcs_directory_from_layout(
         let setup_path = require_unit_path(unit.setup_info(), "setup metadata path")?;
         let output = require_unit_path(unit.pcs_setup_plan(), "PCS plan output path")?;
 
-        let setup = read_unit_setup_info_binary_file(&setup_path)?;
-        let plan = derive_pcs_setup_plan(&setup)?;
-        let bytes = encode_pcs_setup_plan(&plan)?;
+        let bytes = encode_pcs_setup_plan_from_path(&setup_path)?;
         write_output_bytes(&output, &bytes)?;
         bytes_written = bytes_written.saturating_add(bytes.len() as u64);
     }
@@ -592,20 +630,12 @@ pub fn write_pcs_material_directory_from_layout(
         let plan_path = require_unit_path(unit.pcs_setup_plan(), "PCS plan path")?;
         let output = require_unit_path(unit.pcs_setup_material(), "PCS material output path")?;
 
-        let setup = read_unit_setup_info_binary_file(&setup_path)?;
-        let plan = read_pcs_setup_plan_file(&plan_path)?;
-        let expected_plan = derive_pcs_setup_plan(&setup)?;
-        if plan != expected_plan {
-            return Err(PcsDirectoryWriteError::PcsPlanMismatch);
-        }
-
-        let fixed_bytes =
-            std::fs::read(&unit.fixed_columns).map_err(|error| PcsDirectoryWriteError::Io {
-                message: error.to_string(),
-            })?;
-        let tree = read_constant_tree_file(&unit.constant_tree, &setup)?;
-        let material = build_pcs_setup_material(&plan, &fixed_bytes, &tree)?;
-        let bytes = encode_pcs_setup_material(&material)?;
+        let bytes = encode_pcs_setup_material_from_paths(
+            &setup_path,
+            &plan_path,
+            &unit.fixed_columns,
+            &unit.constant_tree,
+        )?;
         write_output_bytes(&output, &bytes)?;
         bytes_written = bytes_written.saturating_add(bytes.len() as u64);
     }
@@ -621,6 +651,34 @@ fn require_unit_path(
     role: &'static str,
 ) -> Result<PathBuf, PcsDirectoryWriteError> {
     path.ok_or(PcsDirectoryWriteError::MissingUnitPath { role })
+}
+
+fn encode_pcs_setup_plan_from_path(path: &Path) -> Result<Vec<u8>, PcsDirectoryWriteError> {
+    let setup = read_unit_setup_info_binary_file(path)?;
+    let plan = derive_pcs_setup_plan(&setup)?;
+    encode_pcs_setup_plan(&plan).map_err(Into::into)
+}
+
+fn encode_pcs_setup_material_from_paths(
+    setup_info_path: &Path,
+    plan_path: &Path,
+    fixed_columns_path: &Path,
+    constant_tree_path: &Path,
+) -> Result<Vec<u8>, PcsDirectoryWriteError> {
+    let setup = read_unit_setup_info_binary_file(setup_info_path)?;
+    let plan = read_pcs_setup_plan_file(plan_path)?;
+    let expected_plan = derive_pcs_setup_plan(&setup)?;
+    if plan != expected_plan {
+        return Err(PcsDirectoryWriteError::PcsPlanMismatch);
+    }
+
+    let fixed_bytes =
+        std::fs::read(fixed_columns_path).map_err(|error| PcsDirectoryWriteError::Io {
+            message: error.to_string(),
+        })?;
+    let tree = read_constant_tree_file(constant_tree_path, &setup)?;
+    let material = build_pcs_setup_material(&plan, &fixed_bytes, &tree)?;
+    encode_pcs_setup_material(&material).map_err(Into::into)
 }
 
 fn write_output_bytes(path: &Path, bytes: &[u8]) -> Result<(), PcsDirectoryWriteError> {
