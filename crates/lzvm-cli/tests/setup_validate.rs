@@ -17,9 +17,9 @@ use lzvm_artifacts::key_directory::{
     read_key_directory_layout, KeyUnitPaths,
 };
 use lzvm_artifacts::pcs_fri_segment::{
-    encode_pcs_fri_opening_segment, PcsFriOpeningLayerSegment, PcsFriOpeningLevelSegment,
-    PcsFriOpeningQuerySegment, PcsFriOpeningSegment, PcsFriOpeningUnitSegment,
-    PCS_FRI_OPENING_SEGMENT_ID,
+    encode_pcs_fri_opening_segment, parse_pcs_fri_opening_segment, PcsFriOpeningLayerSegment,
+    PcsFriOpeningLevelSegment, PcsFriOpeningQuerySegment, PcsFriOpeningSegment,
+    PcsFriOpeningUnitSegment, PCS_FRI_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_material_segment::{
     parse_pcs_material_manifest_segment, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
@@ -361,22 +361,35 @@ fn sample_pcs_fri_opening_segment(
         .map(|(layer_index, layer)| {
             let output_domain = 1_u64 << layer.output_bits;
             let value_count = layer.folding_factor as usize;
+            let query_values = vec![[11, 12, 13]; value_count];
+            let leaf_digest = sample_fri_value_digest(&query_values);
+            let mut last_level =
+                vec![[0_u64; 4]; unit.merkle_tree_arity.pow(unit.last_level_verification) as usize];
+            let queries = query_unit
+                .queries
+                .iter()
+                .map(|row_index| {
+                    let row_index = *row_index % output_domain;
+                    if !last_level.is_empty() {
+                        last_level[row_index as usize] = leaf_digest;
+                    }
+                    PcsFriOpeningQuerySegment {
+                        row_index,
+                        values: query_values.clone(),
+                        siblings: Vec::<PcsFriOpeningLevelSegment>::new(),
+                    }
+                })
+                .collect();
+            let root = if last_level.is_empty() {
+                leaf_digest
+            } else {
+                sample_digest_tree_root(last_level.clone(), unit.merkle_tree_arity as usize)
+            };
             PcsFriOpeningLayerSegment {
                 layer_index: layer_index as u32,
-                root: [layer_index as u64 + 1, 2, 3, 4],
-                last_level: vec![
-                    [layer_index as u64 + 5, 6, 7, 8];
-                    unit.merkle_tree_arity.pow(unit.last_level_verification) as usize
-                ],
-                queries: query_unit
-                    .queries
-                    .iter()
-                    .map(|row_index| PcsFriOpeningQuerySegment {
-                        row_index: *row_index % output_domain,
-                        values: vec![[11, 12, 13]; value_count],
-                        siblings: Vec::<PcsFriOpeningLevelSegment>::new(),
-                    })
-                    .collect(),
+                root,
+                last_level,
+                queries,
             }
         })
         .collect();
@@ -391,6 +404,72 @@ fn sample_pcs_fri_opening_segment(
         id: PCS_FRI_OPENING_SEGMENT_ID,
         data: encode_pcs_fri_opening_segment(&segment).expect("FRI segment should encode"),
     }
+}
+
+fn sample_fri_value_digest(values: &[[u64; 3]]) -> [u64; 4] {
+    let flattened = values
+        .iter()
+        .flat_map(|value| value.iter().copied().map(Felt::from_u64))
+        .collect::<Vec<_>>();
+    if flattened.len() <= 4 {
+        let mut digest = [Felt::ZERO; 4];
+        digest[..flattened.len()].copy_from_slice(&flattened);
+        return digest.map(Felt::to_u64);
+    }
+
+    let mut state = [Felt::ZERO; 16];
+    let mut offset = 0;
+    while offset < flattened.len() {
+        let capacity = [state[0], state[1], state[2], state[3]];
+        state[12..].copy_from_slice(&capacity);
+        state[..12].fill(Felt::ZERO);
+
+        let chunk_len = (flattened.len() - offset).min(12);
+        state[..chunk_len].copy_from_slice(&flattened[offset..offset + chunk_len]);
+        state = poseidon2_hash_16(state);
+        offset += chunk_len;
+    }
+    [state[0], state[1], state[2], state[3]].map(Felt::to_u64)
+}
+
+fn sample_digest_tree_root(mut level: Vec<[u64; 4]>, arity: usize) -> [u64; 4] {
+    assert_eq!(arity, 4);
+    if level.is_empty() {
+        return [0; 4];
+    }
+    while level.len() > 1 {
+        let extra_zeros = (arity - (level.len() % arity)) % arity;
+        level.resize(level.len() + extra_zeros, [0; 4]);
+        level = level
+            .chunks_exact(arity)
+            .map(sample_parent_arity4)
+            .collect();
+    }
+    level[0]
+}
+
+fn sample_parent_arity4(children: &[[u64; 4]]) -> [u64; 4] {
+    let input = [
+        children[0][0],
+        children[0][1],
+        children[0][2],
+        children[0][3],
+        children[1][0],
+        children[1][1],
+        children[1][2],
+        children[1][3],
+        children[2][0],
+        children[2][1],
+        children[2][2],
+        children[2][3],
+        children[3][0],
+        children[3][1],
+        children[3][2],
+        children[3][3],
+    ]
+    .map(Felt::from_u64);
+    let state = poseidon2_hash_16(input);
+    [state[0], state[1], state[2], state[3]].map(Felt::to_u64)
 }
 
 fn sample_uniform_stage_root(stage_index: usize, width: u32) -> [u64; 4] {
@@ -1524,7 +1603,10 @@ fn rejects_setup_aware_verify_preflight_with_mismatched_pcs_fri_opening() {
     let mut proof = sample_proof_with_material(&public_values, &catalog);
     let schedule = derive_prove_schedule(&catalog).expect("schedule should derive");
     let mut fri_segment = sample_pcs_fri_opening_segment(&schedule, &proof.segments[1], 0);
-    fri_segment.data[72] ^= 0x01;
+    let mut opening =
+        parse_pcs_fri_opening_segment(&fri_segment.data).expect("FRI opening should parse");
+    opening.units[0].layers[0].queries[0].values[0][0] ^= 1;
+    fri_segment.data = encode_pcs_fri_opening_segment(&opening).expect("FRI opening should encode");
     proof.segments.push(fri_segment);
     let proof_path = dir.join("proof.bin");
     let public_values_path = dir.join("public_values.json");

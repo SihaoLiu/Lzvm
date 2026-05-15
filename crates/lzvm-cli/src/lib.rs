@@ -34,10 +34,11 @@ use lzvm_artifacts::witness_opening_segment::{
 use lzvm_artifacts::witness_segment::{
     parse_witness_commitment_segment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
-use lzvm_field::Felt;
+use lzvm_field::{Ext3, Felt};
 use lzvm_prover::constant_tree_opening::{
     constant_tree_merkle_level_count, verify_constant_tree_opening_root, ConstantTreeOpening,
 };
+use lzvm_prover::pcs_fri::{verify_fri_last_level_root, verify_fri_query_path};
 use lzvm_prover::witness_commitment::{verify_witness_stage_opening_root, WitnessStageOpening};
 use lzvm_prover::{build_pcs_query_plan_segment, derive_prove_schedule, ProveSchedule};
 use lzvm_setup::{
@@ -962,9 +963,22 @@ fn validate_optional_pcs_fri_opening_segment(
                     "PCS FRI opening segment mismatch for unit {unit_index}"
                 ));
             }
-            field_digest_from_words(layer.root)?;
-            for digest in &layer.last_level {
-                field_digest_from_words(*digest)?;
+            let root = field_digest_from_words(layer.root)?;
+            let last_level = layer
+                .last_level
+                .iter()
+                .map(|digest| field_digest_from_words(*digest))
+                .collect::<Result<Vec<_>, _>>()?;
+            if !last_level.is_empty() {
+                let valid =
+                    verify_fri_last_level_root(root, arity, &last_level).map_err(|error| {
+                        format!("invalid PCS FRI opening segment for unit {unit_index}: {error}")
+                    })?;
+                if !valid {
+                    return Err(format!(
+                        "PCS FRI opening segment mismatch for unit {unit_index}"
+                    ));
+                }
             }
 
             let output_domain = checked_power_of_two(expected_layer.output_bits)
@@ -985,18 +999,42 @@ fn validate_optional_pcs_fri_opening_segment(
                         "PCS FRI opening segment mismatch for unit {unit_index}"
                     ));
                 }
-                for value in &query.values {
-                    field_extension_from_words(*value)?;
-                }
-                for sibling_level in &query.siblings {
-                    if sibling_level.siblings.len() + 1 != arity {
-                        return Err(format!(
-                            "PCS FRI opening segment mismatch for unit {unit_index}"
-                        ));
-                    }
-                    for digest in &sibling_level.siblings {
-                        field_digest_from_words(*digest)?;
-                    }
+                let values = query
+                    .values
+                    .iter()
+                    .map(|value| field_extension_from_words(*value))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let siblings = query
+                    .siblings
+                    .iter()
+                    .map(|sibling_level| {
+                        if sibling_level.siblings.len() + 1 != arity {
+                            return Err(format!(
+                                "PCS FRI opening segment mismatch for unit {unit_index}"
+                            ));
+                        }
+                        sibling_level
+                            .siblings
+                            .iter()
+                            .map(|digest| field_digest_from_words(*digest))
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let valid = verify_fri_query_path(
+                    root,
+                    &last_level,
+                    arity,
+                    query.row_index,
+                    &values,
+                    &siblings,
+                )
+                .map_err(|error| {
+                    format!("invalid PCS FRI opening segment for unit {unit_index}: {error}")
+                })?;
+                if !valid {
+                    return Err(format!(
+                        "PCS FRI opening segment mismatch for unit {unit_index}"
+                    ));
                 }
             }
         }
@@ -1049,13 +1087,15 @@ fn checked_power_of_two(bits: u32) -> Option<usize> {
     1_usize.checked_shl(bits)
 }
 
-fn field_extension_from_words(words: [u64; 3]) -> Result<[Felt; 3], String> {
-    let mut out = [Felt::ZERO; 3];
-    for (target, value) in out.iter_mut().zip(words) {
-        *target = Felt::from_canonical(value)
-            .map_err(|error| format!("invalid PCS FRI opening segment value: {error}"))?;
-    }
-    Ok(out)
+fn field_extension_from_words(words: [u64; 3]) -> Result<Ext3, String> {
+    Ok(Ext3::new(
+        Felt::from_canonical(words[0])
+            .map_err(|error| format!("invalid PCS FRI opening segment value: {error}"))?,
+        Felt::from_canonical(words[1])
+            .map_err(|error| format!("invalid PCS FRI opening segment value: {error}"))?,
+        Felt::from_canonical(words[2])
+            .map_err(|error| format!("invalid PCS FRI opening segment value: {error}"))?,
+    ))
 }
 
 fn field_digest_from_words(words: [u64; 4]) -> Result<[Felt; 4], String> {
