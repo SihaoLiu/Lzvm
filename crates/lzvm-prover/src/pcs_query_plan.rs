@@ -211,7 +211,7 @@ pub fn validate_transcript_pcs_query_plan_segments(
         .iter()
         .find(|segment| segment.id == PCS_QUERY_NONCE_SEGMENT_ID)
         .ok_or(ValidatePcsQueryPlanSegmentsError::MissingNonceSegment)?;
-    load_pcs_query_plan_from_segments(segments)
+    let query_plan = load_pcs_query_plan_from_segments(segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::QueryPlan)?;
     let query_segment = segments
         .iter()
@@ -221,14 +221,11 @@ pub fn validate_transcript_pcs_query_plan_segments(
         ))?;
     let witness_segments = load_witness_commitment_segments(&schedule.units, segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::Witness)?;
-    if witness_segments.len() != 1 {
-        return Err(ValidatePcsQueryPlanSegmentsError::TranscriptUnitCountMismatch);
-    }
-
-    let unit_index_u32 = witness_segments[0]
-        .id
-        .checked_sub(WITNESS_COMMITMENT_SEGMENT_BASE_ID)
-        .ok_or(ValidatePcsQueryPlanSegmentsError::WitnessSegmentIdOverflow)?;
+    let query_unit = query_plan
+        .units
+        .first()
+        .ok_or(ValidatePcsQueryPlanSegmentsError::TranscriptUnitCountMismatch)?;
+    let unit_index_u32 = query_unit.unit_index;
     let unit_index = usize::try_from(unit_index_u32)
         .map_err(|_| ValidatePcsQueryPlanSegmentsError::UnitIndexOverflow)?;
     let unit = schedule
@@ -242,10 +239,16 @@ pub fn validate_transcript_pcs_query_plan_segments(
         .iter()
         .find(|unit| unit.unit_index == unit_index_u32)
         .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
-    let witness =
-        parse_witness_commitment_segment(&witness_segments[0].data).map_err(|source| {
-            ValidatePcsQueryPlanSegmentsError::WitnessSegment { unit_index, source }
-        })?;
+    let witness_segment_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
+        .checked_add(unit_index_u32)
+        .ok_or(ValidatePcsQueryPlanSegmentsError::WitnessSegmentIdOverflow)?;
+    let witness_segment = witness_segments
+        .iter()
+        .find(|segment| segment.id == witness_segment_id)
+        .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
+    let witness = parse_witness_commitment_segment(&witness_segment.data).map_err(|source| {
+        ValidatePcsQueryPlanSegmentsError::WitnessSegment { unit_index, source }
+    })?;
     let evaluation_unit = load_pcs_evaluation_unit_from_segments(unit_index, unit, segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::Evaluation)?;
     let fri_unit = load_pcs_fri_opening_unit_from_segments(unit_index, segments)
