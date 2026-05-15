@@ -65,13 +65,13 @@ use lzvm_prover::{
     build_pcs_query_nonce_segment, build_pcs_query_nonce_segment_from_transcript_segments,
     build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_challenge,
     build_pcs_query_plan_segment_from_transcript_segments, build_witness_commitment_segment,
-    build_witness_opening_segment, derive_prove_execution_plan, derive_prove_schedule,
-    run_prove_witness_commitments, run_prove_witness_commitments_with_auxiliary_inputs,
-    run_prove_witness_commitments_with_trace, GpuRunOptions, ProveExecutionInputArtifacts,
-    ProvePartitionPlan, ProvePassRequest, ProvePcsEvaluationValues, ProvePcsFriOpeningTraceValues,
-    ProvePcsFriOpeningValues, ProvePcsFriTranscriptTraceValues, ProvePcsQueryPlanSegmentError,
-    ProveRunOptions, ProveRunRequest, ProveSchedule, ProveWitnessAuxiliaryInputs,
-    ProveWitnessCommitmentError,
+    build_witness_opening_segment, build_witness_opening_segment_batch,
+    derive_prove_execution_plan, derive_prove_schedule, run_prove_witness_commitments,
+    run_prove_witness_commitments_with_auxiliary_inputs, run_prove_witness_commitments_with_trace,
+    GpuRunOptions, ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest,
+    ProvePcsEvaluationValues, ProvePcsFriOpeningTraceValues, ProvePcsFriOpeningValues,
+    ProvePcsFriTranscriptTraceValues, ProvePcsQueryPlanSegmentError, ProveRunOptions,
+    ProveRunRequest, ProveSchedule, ProveWitnessAuxiliaryInputs, ProveWitnessCommitmentError,
 };
 use sha2::{Digest, Sha256};
 
@@ -499,6 +499,10 @@ fn sample_unit() -> KeyUnitCatalogEntry {
 }
 
 fn sample_catalog(unit: KeyUnitCatalogEntry) -> KeyDirectoryCatalog {
+    sample_catalog_units(vec![unit])
+}
+
+fn sample_catalog_units(units: Vec<KeyUnitCatalogEntry>) -> KeyDirectoryCatalog {
     KeyDirectoryCatalog {
         layout: KeyDirectoryLayout {
             root: ".".into(),
@@ -529,7 +533,7 @@ fn sample_catalog(unit: KeyUnitCatalogEntry) -> KeyDirectoryCatalog {
             numbers: Vec::new(),
         },
         global_hints: empty_regular_hints(),
-        units: vec![unit],
+        units,
     }
 }
 
@@ -1720,6 +1724,74 @@ fn builds_witness_opening_segments_from_query_plans() {
             assert_eq!(stage.values.len(), *width as usize);
             assert_eq!(stage.siblings.len(), 3);
         }
+    }
+}
+
+#[test]
+fn builds_witness_opening_segment_for_all_query_units() {
+    let dir = temp_dir("openings-all-units");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [29_u8]).expect("input data should be written");
+
+    let mut second_unit = sample_unit();
+    second_unit.paths.unit_id = Some(1);
+    second_unit.paths.unit_name = Some("unit-b".to_owned());
+    second_unit.paths.prefix = "unit-b".into();
+    second_unit.paths.metadata_prefix = Some("unit-b".into());
+    second_unit.paths.program_prefix = Some("unit-b".into());
+    second_unit.paths.verification_key_prefix = "unit-b".into();
+    let catalog = sample_catalog_units(vec![sample_unit(), second_unit]);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let first = run_prove_witness_commitments(&plan, 0).expect("first unit should run");
+    let second = run_prove_witness_commitments(&plan, 1).expect("second unit should run");
+    let material_segment = build_pcs_material_manifest_segment(&plan.run_plan.schedule)
+        .expect("material segment should build");
+    let witness_segments = vec![
+        build_witness_commitment_segment(&first).expect("first witness segment should build"),
+        build_witness_commitment_segment(&second).expect("second witness segment should build"),
+    ];
+    let query_segment = build_pcs_query_plan_segment(
+        &plan.run_plan.schedule,
+        [0x66; 32],
+        &material_segment,
+        &witness_segments,
+    )
+    .expect("query segment should build");
+
+    let opening_segment = build_witness_opening_segment_batch(
+        &plan.run_plan.schedule,
+        &query_segment,
+        &[&first, &second],
+    )
+    .expect("opening segment should build");
+    let query_plan =
+        parse_pcs_query_plan_segment(&query_segment.data).expect("query segment should parse");
+    let opening =
+        parse_witness_opening_segment(&opening_segment.data).expect("opening segment should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(opening_segment.id, WITNESS_OPENING_SEGMENT_ID);
+    assert_eq!(query_plan.units.len(), 2);
+    assert_eq!(opening.units.len(), 2);
+    assert_eq!(opening.units[0].unit_index, 0);
+    assert_eq!(opening.units[1].unit_index, 1);
+    for (opening_unit, query_unit) in opening.units.iter().zip(query_plan.units.iter()) {
+        assert_eq!(opening_unit.unit_index, query_unit.unit_index);
+        assert_eq!(opening_unit.queries.len(), query_unit.queries.len());
     }
 }
 

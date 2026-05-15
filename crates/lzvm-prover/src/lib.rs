@@ -66,12 +66,13 @@ pub use prove_witness::{
     build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_challenge,
     build_pcs_query_plan_segment_from_transcript_segments, build_witness_commitment_segment,
-    build_witness_opening_segment, run_prove_witness_commitments,
-    run_prove_witness_commitments_with_auxiliary_inputs, run_prove_witness_commitments_with_trace,
-    ProveConstantOpeningSegmentError, ProvePcsEvaluationSegmentError, ProvePcsEvaluationValues,
-    ProvePcsMaterialSegmentError, ProvePcsQueryPlanSegmentError, ProveWitnessAuxiliaryInputs,
-    ProveWitnessCommitmentError, ProveWitnessCommitments, ProveWitnessOpeningSegmentError,
-    ProveWitnessSegmentError, ProveWitnessTraceCommitments,
+    build_witness_opening_segment, build_witness_opening_segment_batch,
+    run_prove_witness_commitments, run_prove_witness_commitments_with_auxiliary_inputs,
+    run_prove_witness_commitments_with_trace, ProveConstantOpeningSegmentError,
+    ProvePcsEvaluationSegmentError, ProvePcsEvaluationValues, ProvePcsMaterialSegmentError,
+    ProvePcsQueryPlanSegmentError, ProveWitnessAuxiliaryInputs, ProveWitnessCommitmentError,
+    ProveWitnessCommitments, ProveWitnessOpeningSegmentError, ProveWitnessSegmentError,
+    ProveWitnessTraceCommitments,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

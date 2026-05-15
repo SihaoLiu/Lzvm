@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -39,7 +40,6 @@ use lzvm_artifacts::witness_segment::{
 };
 use lzvm_field::{Ext3, Felt, FieldError};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
 
 use crate::constant_tree_opening::{open_constant_tree_row, ConstantTreeOpeningError};
 use crate::hint_eval::{
@@ -308,6 +308,12 @@ pub enum ProvePcsQueryPlanSegmentError {
 pub enum ProveWitnessOpeningSegmentError {
     QueryPlan(PcsQueryPlanSegmentError),
     MissingQueryUnit {
+        unit_index: usize,
+    },
+    MissingOutputUnit {
+        unit_index: usize,
+    },
+    DuplicateOutputUnit {
         unit_index: usize,
     },
     UnitIndexOverflow {
@@ -652,6 +658,12 @@ impl fmt::Display for ProveWitnessOpeningSegmentError {
             Self::MissingQueryUnit { unit_index } => {
                 write!(f, "prove witness opening is missing query unit {unit_index}")
             }
+            Self::MissingOutputUnit { unit_index } => {
+                write!(f, "prove witness opening is missing output unit {unit_index}")
+            }
+            Self::DuplicateOutputUnit { unit_index } => {
+                write!(f, "duplicate prove witness opening output unit: {unit_index}")
+            }
             Self::UnitIndexOverflow { unit_index } => write!(
                 f,
                 "prove witness opening unit index does not fit u32: {unit_index}"
@@ -761,6 +773,8 @@ impl std::error::Error for ProveWitnessOpeningSegmentError {
             Self::Opening(error) => Some(error),
             Self::Segment(error) => Some(error),
             Self::MissingQueryUnit { .. }
+            | Self::MissingOutputUnit { .. }
+            | Self::DuplicateOutputUnit { .. }
             | Self::UnitIndexOverflow { .. }
             | Self::UnitIndexOutOfRange { .. }
             | Self::StageIndexOutOfRange { .. } => None,
@@ -1570,25 +1584,90 @@ pub fn build_witness_opening_segment(
     query_segment: &ProofSegment,
     output: &ProveWitnessCommitments,
 ) -> Result<ProofSegment, ProveWitnessOpeningSegmentError> {
+    let query_plan = parse_pcs_query_plan_segment(&query_segment.data)?;
+    build_witness_opening_segment_from_query_plan(schedule, &query_plan, &[output])
+}
+
+pub fn build_witness_opening_segment_batch(
+    schedule: &ProveSchedule,
+    query_segment: &ProofSegment,
+    outputs: &[&ProveWitnessCommitments],
+) -> Result<ProofSegment, ProveWitnessOpeningSegmentError> {
+    let query_plan = parse_pcs_query_plan_segment(&query_segment.data)?;
+    build_witness_opening_segment_from_query_plan(schedule, &query_plan, outputs)
+}
+
+fn build_witness_opening_segment_from_query_plan(
+    schedule: &ProveSchedule,
+    query_plan: &PcsQueryPlanSegment,
+    outputs: &[&ProveWitnessCommitments],
+) -> Result<ProofSegment, ProveWitnessOpeningSegmentError> {
+    let mut outputs_by_unit = BTreeMap::new();
+    for output in outputs {
+        let unit_index_u32 = u32::try_from(output.unit_index()).map_err(|_| {
+            ProveWitnessOpeningSegmentError::UnitIndexOverflow {
+                unit_index: output.unit_index(),
+            }
+        })?;
+        if outputs_by_unit.insert(unit_index_u32, *output).is_some() {
+            return Err(ProveWitnessOpeningSegmentError::DuplicateOutputUnit {
+                unit_index: output.unit_index(),
+            });
+        }
+    }
+
+    let query_units = query_plan
+        .units
+        .iter()
+        .map(|unit| unit.unit_index)
+        .collect::<BTreeSet<_>>();
+    for unit_index_u32 in outputs_by_unit.keys() {
+        if !query_units.contains(unit_index_u32) {
+            return Err(ProveWitnessOpeningSegmentError::MissingQueryUnit {
+                unit_index: *unit_index_u32 as usize,
+            });
+        }
+    }
+
+    let mut units = Vec::with_capacity(query_plan.units.len());
+    for query_unit in &query_plan.units {
+        let unit_index = query_unit.unit_index as usize;
+        let output = outputs_by_unit
+            .get(&query_unit.unit_index)
+            .ok_or(ProveWitnessOpeningSegmentError::MissingOutputUnit { unit_index })?;
+        units.push(build_witness_opening_unit_segment(
+            schedule, query_unit, output,
+        )?);
+    }
+
+    let segment = WitnessOpeningSegment { units };
+    Ok(ProofSegment {
+        id: WITNESS_OPENING_SEGMENT_ID,
+        data: encode_witness_opening_segment(&segment)?,
+    })
+}
+
+fn build_witness_opening_unit_segment(
+    schedule: &ProveSchedule,
+    query_unit: &PcsQueryPlanUnit,
+    output: &ProveWitnessCommitments,
+) -> Result<WitnessOpeningUnitSegment, ProveWitnessOpeningSegmentError> {
     let unit_index_u32 = u32::try_from(output.unit_index()).map_err(|_| {
         ProveWitnessOpeningSegmentError::UnitIndexOverflow {
             unit_index: output.unit_index(),
         }
     })?;
+    if query_unit.unit_index != unit_index_u32 {
+        return Err(ProveWitnessOpeningSegmentError::MissingQueryUnit {
+            unit_index: output.unit_index(),
+        });
+    }
     let unit = schedule.units.get(output.unit_index()).ok_or(
         ProveWitnessOpeningSegmentError::UnitIndexOutOfRange {
             unit_index: output.unit_index(),
             unit_count: schedule.units.len(),
         },
     )?;
-    let query_plan = parse_pcs_query_plan_segment(&query_segment.data)?;
-    let query_unit = query_plan
-        .units
-        .iter()
-        .find(|unit| unit.unit_index == unit_index_u32)
-        .ok_or(ProveWitnessOpeningSegmentError::MissingQueryUnit {
-            unit_index: output.unit_index(),
-        })?;
     let mut queries = Vec::with_capacity(query_unit.queries.len());
     for row_index in &query_unit.queries {
         let mut stages = Vec::with_capacity(output.stage_commitments().stage_count());
@@ -1647,15 +1726,9 @@ pub fn build_witness_opening_segment(
         });
     }
 
-    let segment = WitnessOpeningSegment {
-        units: vec![WitnessOpeningUnitSegment {
-            unit_index: unit_index_u32,
-            queries,
-        }],
-    };
-    Ok(ProofSegment {
-        id: WITNESS_OPENING_SEGMENT_ID,
-        data: encode_witness_opening_segment(&segment)?,
+    Ok(WitnessOpeningUnitSegment {
+        unit_index: unit_index_u32,
+        queries,
     })
 }
 
