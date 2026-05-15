@@ -4,9 +4,10 @@ use lzvm_artifacts::global_info::{
 use lzvm_artifacts::pcs_proof_values_segment::{
     parse_pcs_proof_values_segment, PCS_PROOF_VALUES_SEGMENT_ID,
 };
-use lzvm_field::Felt;
+use lzvm_field::{Ext3, Felt};
 use lzvm_prover::proof_values::{
-    build_pcs_proof_values_segment_from_packed_values, ProvePcsProofValuesSegmentError,
+    build_pcs_proof_values_segment_from_packed_values, flatten_pcs_proof_values,
+    ProvePcsProofValuesSegmentError,
 };
 
 #[test]
@@ -30,6 +31,40 @@ fn packs_stage_one_values_as_scalars_and_later_stages_as_extensions() {
 
     assert_eq!(segment.id, PCS_PROOF_VALUES_SEGMENT_ID);
     assert_eq!(parsed.values, vec![[7, 0, 0], [11, 12, 13]]);
+}
+
+#[test]
+fn flattens_segment_values_for_global_constraint_offsets() {
+    let global = sample_global_info(vec![
+        sample_proof_value("scalar-value", 1),
+        sample_proof_value("extension-value", 2),
+    ]);
+    let values = [Ext3::from_u64s([7, 0, 0]), Ext3::from_u64s([11, 12, 13])];
+
+    let packed = flatten_pcs_proof_values(&global, &values).expect("values should flatten");
+
+    assert_eq!(
+        packed,
+        vec![
+            Felt::from_u64(7),
+            Felt::from_u64(11),
+            Felt::from_u64(12),
+            Felt::from_u64(13)
+        ]
+    );
+}
+
+#[test]
+fn rejects_stage_one_extension_components_when_flattening() {
+    let global = sample_global_info(vec![sample_proof_value("scalar-value", 1)]);
+    let values = [Ext3::from_u64s([7, 1, 0])];
+
+    let result = flatten_pcs_proof_values(&global, &values);
+
+    assert!(matches!(
+        result,
+        Err(ProvePcsProofValuesSegmentError::StageOneExtensionComponents { index: 0 })
+    ));
 }
 
 #[test]
