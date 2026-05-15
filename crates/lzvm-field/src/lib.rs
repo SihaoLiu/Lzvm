@@ -464,16 +464,16 @@ pub fn coset_extend_evaluations(
     }
     validate_domain_len(values.len(), source_bits)?;
     let target_len = domain_len(target_bits)?;
-    let target_root = domain_root(target_bits)?;
-    let coefficients = interpolate_subgroup_evaluations(values, source_bits)?;
+    let mut coefficients = interpolate_subgroup_evaluations(values, source_bits)?;
+    coefficients.resize(target_len, Felt::ZERO);
 
-    let mut out = Vec::with_capacity(target_len);
-    let mut power = Felt::ONE;
-    for _ in 0..target_len {
-        out.push(evaluate_polynomial(&coefficients, SHIFT * power));
-        power = power * target_root;
+    let mut shift_power = Felt::ONE;
+    for coefficient in &mut coefficients {
+        *coefficient = *coefficient * shift_power;
+        shift_power = shift_power * SHIFT;
     }
-    Ok(out)
+    ntt_in_place(&mut coefficients, target_bits)?;
+    Ok(coefficients)
 }
 
 pub fn poseidon2_hash_8(input: [Felt; 8]) -> [Felt; 8] {
@@ -587,26 +587,45 @@ fn transform_in_place(values: &mut [Felt], bits: usize, inverse: bool) -> Result
     } else {
         root
     };
-    let mut out = vec![Felt::ZERO; n];
-    for (k, slot) in out.iter_mut().enumerate() {
-        let mut acc = Felt::ZERO;
-        for (j, value) in values.iter().enumerate() {
-            let exponent = checked_index_product(j, k)?;
-            acc = acc + *value * twiddle.pow(exponent);
+
+    bit_reverse_permute(values);
+    let mut len = 2;
+    while len <= n {
+        let stage_exponent = u64::try_from(n / len).map_err(|_| DomainError::LengthOverflow)?;
+        let stage_twiddle = twiddle.pow(stage_exponent);
+        for chunk in values.chunks_exact_mut(len) {
+            let mut factor = Felt::ONE;
+            for index in 0..(len / 2) {
+                let even = chunk[index];
+                let odd = chunk[index + len / 2] * factor;
+                chunk[index] = even + odd;
+                chunk[index + len / 2] = even - odd;
+                factor = factor * stage_twiddle;
+            }
         }
-        *slot = acc;
+        len = len.checked_mul(2).ok_or(DomainError::LengthOverflow)?;
     }
+
     if inverse {
         let n_u64 = u64::try_from(n).map_err(|_| DomainError::LengthOverflow)?;
         let inv_n = Felt::from_u64(n_u64)
             .inverse()
             .expect("domain length is nonzero");
-        for value in &mut out {
+        for value in values {
             *value = *value * inv_n;
         }
     }
-    values.copy_from_slice(&out);
     Ok(())
+}
+
+fn bit_reverse_permute(values: &mut [Felt]) {
+    let bits = values.len().trailing_zeros();
+    for index in 0..values.len() {
+        let reverse = index.reverse_bits() >> (usize::BITS - bits);
+        if index < reverse {
+            values.swap(index, reverse);
+        }
+    }
 }
 
 fn domain_root(bits: usize) -> Result<Felt, DomainError> {
@@ -634,11 +653,6 @@ fn domain_len(bits: usize) -> Result<usize, DomainError> {
     1_usize
         .checked_shl(u32::try_from(bits).map_err(|_| DomainError::LengthOverflow)?)
         .ok_or(DomainError::LengthOverflow)
-}
-
-fn checked_index_product(a: usize, b: usize) -> Result<u64, DomainError> {
-    let product = a.checked_mul(b).ok_or(DomainError::LengthOverflow)?;
-    u64::try_from(product).map_err(|_| DomainError::LengthOverflow)
 }
 
 impl Add for Felt {

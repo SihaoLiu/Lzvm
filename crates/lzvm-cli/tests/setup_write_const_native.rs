@@ -2,9 +2,13 @@ use std::fs;
 use std::path::PathBuf;
 
 use lzvm_artifacts::constant_tree::read_constant_tree_file;
-use lzvm_artifacts::fixed::{encode_fixed_columns, FixedColumn, FixedColumns};
+use lzvm_artifacts::fixed::{
+    encode_fixed_columns, encode_raw_fixed_columns, FixedColumn, FixedColumns,
+};
 use lzvm_artifacts::setup_info::{encode_unit_setup_info, parse_unit_setup_info_json};
+use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use lzvm_cli::run_cli;
+use lzvm_setup::build_constant_tree_from_fixed_columns;
 
 fn sample_setup_info_json() -> &'static str {
     r#"{
@@ -130,6 +134,82 @@ fn writes_native_constant_tree_from_binary_setup_and_columns() {
 }
 
 #[test]
+fn writes_native_constant_tree_from_raw_columns_with_expected_root() {
+    let dir = temp_dir("raw-root");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let setup_path = dir.join("unit.setup.bin");
+    let columns_path = dir.join("unit.raw.bin");
+    let root_path = dir.join("unit.root.bin");
+    let out_path = dir.join("unit.consttree");
+    let setup_json = sample_setup_info_json()
+        .replace("\"merkleTreeArity\": 2", "\"merkleTreeArity\": 4")
+        .replace("\"transcriptArity\": 2", "\"transcriptArity\": 4");
+    let setup = parse_unit_setup_info_json(&setup_json).expect("setup should parse");
+    let columns = sample_columns();
+    let expected_tree =
+        build_constant_tree_from_fixed_columns(&columns, &setup).expect("tree should build");
+    let expected_root = VerificationKeyRoot::FieldElements(
+        expected_tree[expected_tree.len() - 32..]
+            .chunks_exact(8)
+            .map(|chunk| u64::from_le_bytes(chunk.try_into().expect("slice length checked")))
+            .collect(),
+    );
+    fs::write(
+        &setup_path,
+        encode_unit_setup_info(&setup).expect("setup should encode"),
+    )
+    .expect("setup fixture should be written");
+    fs::write(
+        &columns_path,
+        encode_raw_fixed_columns(&columns, &setup).expect("raw columns should encode"),
+    )
+    .expect("columns fixture should be written");
+    fs::write(
+        &root_path,
+        encode_verification_key_binary(&expected_root).expect("root should encode"),
+    )
+    .expect("root fixture should be written");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "write-const-native",
+            setup_path.to_str().expect("setup path should be utf-8"),
+            columns_path.to_str().expect("columns path should be utf-8"),
+            root_path.to_str().expect("root path should be utf-8"),
+            out_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let tree = fs::read(&out_path).expect("tree output should be written");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(tree, expected_tree);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nbytes_written=224\nroot={}\noutput={}\n",
+            match expected_root {
+                VerificationKeyRoot::FieldElements(values) => values
+                    .into_iter()
+                    .map(|value| value.to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+                VerificationKeyRoot::DecimalScalar(value) => value,
+            },
+            out_path.display()
+        )
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn reports_usage_for_missing_native_constant_tree_output_path() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -148,6 +228,6 @@ fn reports_usage_for_missing_native_constant_tree_output_path() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm setup write-const-native <setup-info-bin> <columns-bin> <out-consttree>\n"
+        "usage: lzvm setup write-const-native <setup-info-bin> <columns-bin> [root-bin] <out-consttree>\n"
     );
 }

@@ -88,10 +88,10 @@ This command validates fixed columns against setup metadata, extends them over t
 Generate a native GL constant-tree artifact directly from binary setup metadata and binary fixed-column source data:
 
 ```sh
-cargo run -p lzvm-cli -- setup write-const-native <setup-info-bin> <columns-bin> <out-consttree>
+cargo run -p lzvm-cli -- setup write-const-native <setup-info-bin> <columns-bin> [root-bin] <out-consttree>
 ```
 
-This command extends fixed columns, builds leaf digests and parent nodes with the repository-owned CPU reference hash, validates the resulting raw tree artifact, and publishes it through a staging path. The current native path covers arity 2 and arity 4; accelerated backends remain separate parity targets.
+This command accepts either sectioned or raw fixed-column bytes, extends fixed columns, builds leaf digests and parent nodes with the repository-owned CPU reference hash, optionally checks the generated root against a binary expected root, validates the resulting raw tree artifact, and publishes it through a staging path. The current native path covers arity 2 and arity 4; accelerated backends remain separate parity targets.
 
 ## Verification
 
