@@ -1,36 +1,19 @@
-use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::Path;
 
 use lzvm_artifacts::constant_tree::read_constant_tree_file;
-use lzvm_artifacts::expression_info::{
-    encode_expression_info, read_expression_info_binary_file, ExpressionInfo,
-};
 use lzvm_artifacts::fixed::{
     read_fixed_columns_file, read_fixed_columns_file_for_setup, FixedColumns,
 };
-use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo};
-use lzvm_artifacts::hint_program::{
-    encode_regular_hint_program, regular_hint_program_from_expression_info,
-};
-use lzvm_artifacts::key_directory::{
-    key_directory_catalog_digest_hex, read_key_directory_catalog, read_key_directory_layout,
-    validate_key_directory_layout,
-};
+use lzvm_artifacts::key_directory::{key_directory_catalog_digest_hex, read_key_directory_catalog};
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_material};
 use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file,
 };
 use lzvm_artifacts::proof::read_proof_artifact_file;
 use lzvm_artifacts::public_values::read_public_values_file;
-use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
-use lzvm_artifacts::setup_info::{
-    encode_unit_setup_info, read_unit_setup_info_binary_file, UnitSetupInfo,
-};
+use lzvm_artifacts::setup_info::read_unit_setup_info_binary_file;
 use lzvm_artifacts::verification_key::{read_verification_key_binary_file, VerificationKeyRoot};
-use lzvm_artifacts::verifier_info::{
-    encode_verifier_info, read_verifier_info_binary_file, VerifierInfo,
-};
 use lzvm_prover::derive_prove_schedule;
 use lzvm_prover::proof_preflight::validate_proof_public_values;
 use lzvm_prover::setup_preflight::validate_setup_preflight;
@@ -43,8 +26,6 @@ use lzvm_setup::{
 mod prove_inputs;
 mod prove_plan;
 mod prove_witness;
-
-const GLOBAL_INFO_BINARY_FILE_NAME: &str = "pilout.globalInfo.bin";
 
 pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
@@ -643,278 +624,22 @@ fn write_base_directory(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    let layout = match read_key_directory_layout(setup_dir) {
-        Ok(layout) => layout,
+    match lzvm_setup::write_base_directory(setup_dir, backend, derive_verkey) {
+        Ok(report) => {
+            let _ = writeln!(stdout, "status=ok");
+            let _ = writeln!(stdout, "units={}", report.unit_count);
+            let _ = writeln!(stdout, "fixed_bytes={}", report.fixed_bytes);
+            let _ = writeln!(stdout, "tree_bytes={}", report.tree_bytes);
+            if let Some(verkey_bytes) = report.verkey_bytes {
+                let _ = writeln!(stdout, "verkey_bytes={verkey_bytes}");
+            }
+            0
+        }
         Err(error) => {
             let _ = writeln!(stderr, "setup native base directory write failed: {error}");
-            return 1;
+            1
         }
-    };
-    if let Err(error) = validate_base_directory_inputs(&layout, derive_verkey) {
-        let _ = writeln!(stderr, "setup native base directory write failed: {error}");
-        return 1;
     }
-    if let Err(error) =
-        write_global_info_binary_for_directory(Path::new(setup_dir), &layout.global_info)
-    {
-        let _ = writeln!(stderr, "setup native base directory write failed: {error}");
-        return 1;
-    }
-
-    let mut fixed_bytes = 0_u64;
-    let mut tree_bytes = 0_u64;
-    let mut verkey_bytes = 0_u64;
-    for unit in &layout.units {
-        let setup_path = match unit.setup_info() {
-            Some(path) => path,
-            None => {
-                let _ = writeln!(
-                    stderr,
-                    "setup native base directory write failed: missing unit setup metadata path"
-                );
-                return 1;
-            }
-        };
-        let setup = match read_unit_setup_info_binary_file(&setup_path) {
-            Ok(setup) => setup,
-            Err(error) => {
-                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
-                return 1;
-            }
-        };
-        if let Some(path) = unit.setup_info_binary() {
-            if let Err(error) = write_unit_setup_info_binary_for_directory(&path, &setup) {
-                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
-                return 1;
-            }
-        }
-        let expression_path = match unit.expression_info() {
-            Some(path) => path,
-            None => {
-                let _ = writeln!(
-                    stderr,
-                    "setup native base directory write failed: missing unit expression metadata path"
-                );
-                return 1;
-            }
-        };
-        let expressions = match read_expression_info_binary_file(&expression_path) {
-            Ok(expressions) => expressions,
-            Err(error) => {
-                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
-                return 1;
-            }
-        };
-        if let Some(path) = unit.expression_info_binary() {
-            if let Err(error) = write_expression_info_binary_for_directory(&path, &expressions) {
-                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
-                return 1;
-            }
-        }
-        if let Some(path) = unit.expression_program() {
-            if let Err(error) = write_regular_hint_program_for_directory(&path, &expressions) {
-                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
-                return 1;
-            }
-        }
-        let verifier_path = match unit.verifier_info() {
-            Some(path) => path,
-            None => {
-                let _ = writeln!(
-                    stderr,
-                    "setup native base directory write failed: missing unit verifier metadata path"
-                );
-                return 1;
-            }
-        };
-        let verifier = match read_verifier_info_binary_file(&verifier_path) {
-            Ok(verifier) => verifier,
-            Err(error) => {
-                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
-                return 1;
-            }
-        };
-        if let Some(path) = unit.verifier_info_binary() {
-            if let Err(error) = write_verifier_info_binary_for_directory(&path, &verifier) {
-                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
-                return 1;
-            }
-        }
-        let group_name = unit.group_name.as_deref().unwrap_or("raw");
-        let unit_name = unit.unit_name.as_deref().unwrap_or("unit");
-        let columns = match read_fixed_columns_file_for_setup(
-            &unit.fixed_columns,
-            &setup,
-            group_name,
-            unit_name,
-        ) {
-            Ok(columns) => columns,
-            Err(error) => {
-                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
-                return 1;
-            }
-        };
-        let expected_root = if derive_verkey {
-            None
-        } else {
-            match read_verification_key_binary_file(unit.verification_key_binary()) {
-                Ok(root) => Some(root),
-                Err(error) => {
-                    let _ = writeln!(stderr, "setup native base directory write failed: {error}");
-                    return 1;
-                }
-            }
-        };
-        let tree =
-            match build_constant_tree_from_fixed_columns_with_backend(&columns, &setup, backend) {
-                Ok(tree) => tree,
-                Err(error) => {
-                    let _ = writeln!(stderr, "setup native base directory write failed: {error}");
-                    return 1;
-                }
-            };
-        let fixed_report = match write_base_fixed_columns(&unit.fixed_columns, &columns, &setup) {
-            Ok(report) => report,
-            Err(error) => {
-                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
-                return 1;
-            }
-        };
-        let tree_report = match write_base_constant_tree(
-            &unit.constant_tree,
-            &tree,
-            &setup,
-            expected_root.as_ref(),
-        ) {
-            Ok(report) => report,
-            Err(error) => {
-                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
-                return 1;
-            }
-        };
-        if derive_verkey {
-            let key_report = match write_verification_key_from_constant_tree(
-                unit.verification_key_binary(),
-                &tree,
-                &setup,
-            ) {
-                Ok(report) => report,
-                Err(error) => {
-                    let _ = writeln!(stderr, "setup native base directory write failed: {error}");
-                    return 1;
-                }
-            };
-            verkey_bytes = verkey_bytes.saturating_add(key_report.binary_bytes);
-        }
-
-        fixed_bytes = fixed_bytes.saturating_add(fixed_report.bytes_written);
-        tree_bytes = tree_bytes.saturating_add(tree_report.bytes_written);
-    }
-
-    let _ = writeln!(stdout, "status=ok");
-    let _ = writeln!(stdout, "units={}", layout.units.len());
-    let _ = writeln!(stdout, "fixed_bytes={fixed_bytes}");
-    let _ = writeln!(stdout, "tree_bytes={tree_bytes}");
-    if derive_verkey {
-        let _ = writeln!(stdout, "verkey_bytes={verkey_bytes}");
-    }
-    0
-}
-
-fn write_global_info_binary_for_directory(
-    root: &Path,
-    global_info: &GlobalInfo,
-) -> Result<u64, String> {
-    let bytes = encode_global_info(global_info).map_err(|error| error.to_string())?;
-    let output = root.join(GLOBAL_INFO_BINARY_FILE_NAME);
-    std::fs::write(&output, &bytes).map_err(|error| {
-        format!(
-            "write global-info binary failed: {}: {error}",
-            output.display()
-        )
-    })?;
-    Ok(bytes.len() as u64)
-}
-
-fn write_unit_setup_info_binary_for_directory(
-    path: &Path,
-    setup: &UnitSetupInfo,
-) -> Result<u64, String> {
-    let bytes = encode_unit_setup_info(setup).map_err(|error| error.to_string())?;
-    std::fs::write(path, &bytes).map_err(|error| {
-        format!(
-            "write setup metadata binary failed: {}: {error}",
-            path.display()
-        )
-    })?;
-    Ok(bytes.len() as u64)
-}
-
-fn write_expression_info_binary_for_directory(
-    path: &Path,
-    expressions: &ExpressionInfo,
-) -> Result<u64, String> {
-    let bytes = encode_expression_info(expressions).map_err(|error| error.to_string())?;
-    std::fs::write(path, &bytes).map_err(|error| {
-        format!(
-            "write expression metadata binary failed: {}: {error}",
-            path.display()
-        )
-    })?;
-    Ok(bytes.len() as u64)
-}
-
-fn write_regular_hint_program_for_directory(
-    path: &Path,
-    expressions: &ExpressionInfo,
-) -> Result<u64, String> {
-    let program = regular_hint_program_from_expression_info(expressions)
-        .map_err(|error| error.to_string())?;
-    let hint_file = encode_regular_hint_program(&program).map_err(|error| error.to_string())?;
-    let hint_section = parse_sectioned_file(&hint_file, *b"chps", 1)
-        .map_err(|error| error.to_string())?
-        .sections
-        .into_iter()
-        .find(|section| section.id == 3)
-        .ok_or_else(|| "encoded hint program is missing hint section".to_owned())?;
-
-    let existing = std::fs::read(path).map_err(|error| {
-        format!(
-            "read expression program for hint merge failed: {}: {error}",
-            path.display()
-        )
-    })?;
-    let mut file = parse_sectioned_file(&existing, *b"chps", 1).map_err(|error| {
-        format!(
-            "parse expression program for hint merge failed: {}: {error}",
-            path.display()
-        )
-    })?;
-    file.sections.retain(|section| section.id != 3);
-    file.sections.push(hint_section);
-    file.sections.sort_by_key(|section| section.id);
-    let bytes = encode_sectioned_file(&file).map_err(|error| error.to_string())?;
-    std::fs::write(path, &bytes).map_err(|error| {
-        format!(
-            "write expression program hint section failed: {}: {error}",
-            path.display()
-        )
-    })?;
-    Ok(bytes.len() as u64)
-}
-
-fn write_verifier_info_binary_for_directory(
-    path: &Path,
-    verifier: &VerifierInfo,
-) -> Result<u64, String> {
-    let bytes = encode_verifier_info(verifier).map_err(|error| error.to_string())?;
-    std::fs::write(path, &bytes).map_err(|error| {
-        format!(
-            "write verifier metadata binary failed: {}: {error}",
-            path.display()
-        )
-    })?;
-    Ok(bytes.len() as u64)
 }
 
 fn write_pcs_directory(setup_dir: &str, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -949,36 +674,6 @@ fn write_pcs_material_directory(
             1
         }
     }
-}
-
-fn validate_base_directory_inputs(
-    layout: &lzvm_artifacts::key_directory::KeyDirectoryLayout,
-    derive_verkey: bool,
-) -> Result<(), String> {
-    if !derive_verkey {
-        return validate_key_directory_layout(layout).map_err(|error| error.to_string());
-    }
-
-    let mut seen = BTreeSet::new();
-    for required in layout.required_paths() {
-        if matches!(
-            required.role,
-            "unit verification-key metadata" | "unit verification-key binary"
-        ) {
-            continue;
-        }
-        if !seen.insert(required.path.clone()) {
-            continue;
-        }
-        if !required.path.is_file() {
-            return Err(format!(
-                "missing key-directory {}: {}",
-                required.role,
-                required.path.display()
-            ));
-        }
-    }
-    Ok(())
 }
 
 fn write_verification_key_native(

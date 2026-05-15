@@ -1,15 +1,23 @@
+use std::collections::BTreeSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::constant_tree::{
     parse_constant_tree_bytes, read_constant_tree_file, ConstantTreeError,
 };
+use lzvm_artifacts::expression_info::{
+    encode_expression_info, read_expression_info_binary_file, ExpressionInfo, ExpressionInfoError,
+};
 use lzvm_artifacts::fixed::{
-    encode_raw_fixed_columns, read_raw_fixed_column_layout_file, write_raw_fixed_columns_file,
-    FixedColumnError, FixedColumns,
+    encode_raw_fixed_columns, read_fixed_columns_file_for_setup, read_raw_fixed_column_layout_file,
+    write_raw_fixed_columns_file, FixedColumnError, FixedColumns,
+};
+use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo, GlobalInfoError};
+use lzvm_artifacts::hint_program::{
+    encode_regular_hint_program, regular_hint_program_from_expression_info, HintProgramError,
 };
 use lzvm_artifacts::key_directory::{
-    read_key_directory_layout, KeyDirectoryError, KeyDirectoryLayout,
+    read_key_directory_layout, validate_key_directory_layout, KeyDirectoryError, KeyDirectoryLayout,
 };
 use lzvm_artifacts::pcs_material::{
     build_pcs_setup_material, encode_pcs_setup_material, PcsSetupMaterialError,
@@ -17,11 +25,16 @@ use lzvm_artifacts::pcs_material::{
 use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file, PcsPlanError,
 };
-use lzvm_artifacts::setup_info::UnitSetupInfo;
-use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, SetupInfoError};
+use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
+use lzvm_artifacts::setup_info::{
+    encode_unit_setup_info, read_unit_setup_info_binary_file, SetupInfoError, UnitSetupInfo,
+};
 use lzvm_artifacts::verification_key::{
     encode_verification_key_binary, read_verification_key_binary_file, VerificationKeyError,
     VerificationKeyRoot,
+};
+use lzvm_artifacts::verifier_info::{
+    encode_verifier_info, read_verifier_info_binary_file, VerifierInfo, VerifierInfoError,
 };
 use lzvm_field::{
     coset_extend_evaluations, poseidon2_hash_16, poseidon2_hash_8, DomainError, Felt, FieldError,
@@ -64,6 +77,14 @@ pub struct VerificationKeyWriteReport {
     pub binary_path: PathBuf,
     pub binary_bytes: u64,
     pub root: VerificationKeyRoot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BaseDirectoryWriteReport {
+    pub unit_count: usize,
+    pub fixed_bytes: u64,
+    pub tree_bytes: u64,
+    pub verkey_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,6 +171,321 @@ impl fmt::Display for SetupError {
 }
 
 impl std::error::Error for SetupError {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BaseDirectoryWriteError {
+    KeyDirectory(KeyDirectoryError),
+    GlobalInfo(GlobalInfoError),
+    SetupInfo(SetupInfoError),
+    ExpressionInfo(ExpressionInfoError),
+    VerifierInfo(VerifierInfoError),
+    FixedColumns(FixedColumnError),
+    HintProgram(HintProgramError),
+    VerificationKey(VerificationKeyError),
+    Setup(SetupError),
+    MissingUnitPath { role: &'static str },
+    Message { message: String },
+}
+
+impl BaseDirectoryWriteError {
+    fn message(message: impl Into<String>) -> Self {
+        Self::Message {
+            message: message.into(),
+        }
+    }
+}
+
+impl fmt::Display for BaseDirectoryWriteError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::KeyDirectory(error) => write!(f, "{error}"),
+            Self::GlobalInfo(error) => write!(f, "{error}"),
+            Self::SetupInfo(error) => write!(f, "{error}"),
+            Self::ExpressionInfo(error) => write!(f, "{error}"),
+            Self::VerifierInfo(error) => write!(f, "{error}"),
+            Self::FixedColumns(error) => write!(f, "{error}"),
+            Self::HintProgram(error) => write!(f, "{error}"),
+            Self::VerificationKey(error) => write!(f, "{error}"),
+            Self::Setup(error) => write!(f, "{error}"),
+            Self::MissingUnitPath { role } => write!(f, "missing unit {role}"),
+            Self::Message { message } => write!(f, "{message}"),
+        }
+    }
+}
+
+impl std::error::Error for BaseDirectoryWriteError {}
+
+impl From<KeyDirectoryError> for BaseDirectoryWriteError {
+    fn from(error: KeyDirectoryError) -> Self {
+        Self::KeyDirectory(error)
+    }
+}
+
+impl From<GlobalInfoError> for BaseDirectoryWriteError {
+    fn from(error: GlobalInfoError) -> Self {
+        Self::GlobalInfo(error)
+    }
+}
+
+impl From<SetupInfoError> for BaseDirectoryWriteError {
+    fn from(error: SetupInfoError) -> Self {
+        Self::SetupInfo(error)
+    }
+}
+
+impl From<ExpressionInfoError> for BaseDirectoryWriteError {
+    fn from(error: ExpressionInfoError) -> Self {
+        Self::ExpressionInfo(error)
+    }
+}
+
+impl From<VerifierInfoError> for BaseDirectoryWriteError {
+    fn from(error: VerifierInfoError) -> Self {
+        Self::VerifierInfo(error)
+    }
+}
+
+impl From<FixedColumnError> for BaseDirectoryWriteError {
+    fn from(error: FixedColumnError) -> Self {
+        Self::FixedColumns(error)
+    }
+}
+
+impl From<HintProgramError> for BaseDirectoryWriteError {
+    fn from(error: HintProgramError) -> Self {
+        Self::HintProgram(error)
+    }
+}
+
+impl From<VerificationKeyError> for BaseDirectoryWriteError {
+    fn from(error: VerificationKeyError) -> Self {
+        Self::VerificationKey(error)
+    }
+}
+
+impl From<SetupError> for BaseDirectoryWriteError {
+    fn from(error: SetupError) -> Self {
+        Self::Setup(error)
+    }
+}
+
+pub fn write_base_directory(
+    root: impl AsRef<Path>,
+    backend: FixedExtensionBackend,
+    derive_verkey: bool,
+) -> Result<BaseDirectoryWriteReport, BaseDirectoryWriteError> {
+    let layout = read_key_directory_layout(root).map_err(BaseDirectoryWriteError::from)?;
+    write_base_directory_from_layout(&layout, backend, derive_verkey)
+}
+
+pub fn write_base_directory_from_layout(
+    layout: &KeyDirectoryLayout,
+    backend: FixedExtensionBackend,
+    derive_verkey: bool,
+) -> Result<BaseDirectoryWriteReport, BaseDirectoryWriteError> {
+    validate_base_directory_inputs(layout, derive_verkey)?;
+    write_global_info_binary_for_directory(&layout.global_paths.info, &layout.global_info)?;
+
+    let mut fixed_bytes = 0_u64;
+    let mut tree_bytes = 0_u64;
+    let mut verkey_bytes = 0_u64;
+    for unit in &layout.units {
+        let setup_path = require_base_unit_path(unit.setup_info(), "setup metadata path")?;
+        let setup = read_unit_setup_info_binary_file(&setup_path)?;
+        if let Some(path) = unit.setup_info_binary() {
+            write_unit_setup_info_binary_for_directory(&path, &setup)?;
+        }
+
+        let expression_path =
+            require_base_unit_path(unit.expression_info(), "expression metadata path")?;
+        let expressions = read_expression_info_binary_file(&expression_path)?;
+        if let Some(path) = unit.expression_info_binary() {
+            write_expression_info_binary_for_directory(&path, &expressions)?;
+        }
+        if let Some(path) = unit.expression_program() {
+            write_regular_hint_program_for_directory(&path, &expressions)?;
+        }
+
+        let verifier_path = require_base_unit_path(unit.verifier_info(), "verifier metadata path")?;
+        let verifier = read_verifier_info_binary_file(&verifier_path)?;
+        if let Some(path) = unit.verifier_info_binary() {
+            write_verifier_info_binary_for_directory(&path, &verifier)?;
+        }
+
+        let group_name = unit.group_name.as_deref().unwrap_or("raw");
+        let unit_name = unit.unit_name.as_deref().unwrap_or("unit");
+        let columns =
+            read_fixed_columns_file_for_setup(&unit.fixed_columns, &setup, group_name, unit_name)?;
+        let expected_root = if derive_verkey {
+            None
+        } else {
+            Some(read_verification_key_binary_file(
+                unit.verification_key_binary(),
+            )?)
+        };
+        let tree = build_constant_tree_from_fixed_columns_with_backend(&columns, &setup, backend)?;
+        let fixed_report = write_base_fixed_columns(&unit.fixed_columns, &columns, &setup)?;
+        let tree_report =
+            write_base_constant_tree(&unit.constant_tree, &tree, &setup, expected_root.as_ref())?;
+
+        if derive_verkey {
+            let key_report = write_verification_key_from_constant_tree(
+                unit.verification_key_binary(),
+                &tree,
+                &setup,
+            )?;
+            verkey_bytes = verkey_bytes.saturating_add(key_report.binary_bytes);
+        }
+
+        fixed_bytes = fixed_bytes.saturating_add(fixed_report.bytes_written);
+        tree_bytes = tree_bytes.saturating_add(tree_report.bytes_written);
+    }
+
+    Ok(BaseDirectoryWriteReport {
+        unit_count: layout.units.len(),
+        fixed_bytes,
+        tree_bytes,
+        verkey_bytes: if derive_verkey {
+            Some(verkey_bytes)
+        } else {
+            None
+        },
+    })
+}
+
+fn validate_base_directory_inputs(
+    layout: &KeyDirectoryLayout,
+    derive_verkey: bool,
+) -> Result<(), BaseDirectoryWriteError> {
+    if !derive_verkey {
+        return validate_key_directory_layout(layout).map_err(BaseDirectoryWriteError::from);
+    }
+
+    let mut seen = BTreeSet::new();
+    for required in layout.required_paths() {
+        if matches!(
+            required.role,
+            "unit verification-key metadata" | "unit verification-key binary"
+        ) {
+            continue;
+        }
+        if !seen.insert(required.path.clone()) {
+            continue;
+        }
+        if !required.path.is_file() {
+            return Err(KeyDirectoryError::MissingPath {
+                role: required.role,
+                path: required.path,
+            }
+            .into());
+        }
+    }
+    Ok(())
+}
+
+fn require_base_unit_path(
+    path: Option<PathBuf>,
+    role: &'static str,
+) -> Result<PathBuf, BaseDirectoryWriteError> {
+    path.ok_or(BaseDirectoryWriteError::MissingUnitPath { role })
+}
+
+fn write_global_info_binary_for_directory(
+    path: &Path,
+    global_info: &GlobalInfo,
+) -> Result<u64, BaseDirectoryWriteError> {
+    let bytes = encode_global_info(global_info)?;
+    std::fs::write(path, &bytes).map_err(|error| {
+        BaseDirectoryWriteError::message(format!(
+            "write global-info binary failed: {}: {error}",
+            path.display()
+        ))
+    })?;
+    Ok(bytes.len() as u64)
+}
+
+fn write_unit_setup_info_binary_for_directory(
+    path: &Path,
+    setup: &UnitSetupInfo,
+) -> Result<u64, BaseDirectoryWriteError> {
+    let bytes = encode_unit_setup_info(setup)?;
+    std::fs::write(path, &bytes).map_err(|error| {
+        BaseDirectoryWriteError::message(format!(
+            "write setup metadata binary failed: {}: {error}",
+            path.display()
+        ))
+    })?;
+    Ok(bytes.len() as u64)
+}
+
+fn write_expression_info_binary_for_directory(
+    path: &Path,
+    expressions: &ExpressionInfo,
+) -> Result<u64, BaseDirectoryWriteError> {
+    let bytes = encode_expression_info(expressions)?;
+    std::fs::write(path, &bytes).map_err(|error| {
+        BaseDirectoryWriteError::message(format!(
+            "write expression metadata binary failed: {}: {error}",
+            path.display()
+        ))
+    })?;
+    Ok(bytes.len() as u64)
+}
+
+fn write_regular_hint_program_for_directory(
+    path: &Path,
+    expressions: &ExpressionInfo,
+) -> Result<u64, BaseDirectoryWriteError> {
+    let program = regular_hint_program_from_expression_info(expressions)?;
+    let hint_file = encode_regular_hint_program(&program)?;
+    let hint_section = parse_sectioned_file(&hint_file, *b"chps", 1)
+        .map_err(|error| BaseDirectoryWriteError::message(error.to_string()))?
+        .sections
+        .into_iter()
+        .find(|section| section.id == 3)
+        .ok_or_else(|| {
+            BaseDirectoryWriteError::message("encoded hint program is missing hint section")
+        })?;
+
+    let existing = std::fs::read(path).map_err(|error| {
+        BaseDirectoryWriteError::message(format!(
+            "read expression program for hint merge failed: {}: {error}",
+            path.display()
+        ))
+    })?;
+    let mut file = parse_sectioned_file(&existing, *b"chps", 1).map_err(|error| {
+        BaseDirectoryWriteError::message(format!(
+            "parse expression program for hint merge failed: {}: {error}",
+            path.display()
+        ))
+    })?;
+    file.sections.retain(|section| section.id != 3);
+    file.sections.push(hint_section);
+    file.sections.sort_by_key(|section| section.id);
+    let bytes = encode_sectioned_file(&file)
+        .map_err(|error| BaseDirectoryWriteError::message(error.to_string()))?;
+    std::fs::write(path, &bytes).map_err(|error| {
+        BaseDirectoryWriteError::message(format!(
+            "write expression program hint section failed: {}: {error}",
+            path.display()
+        ))
+    })?;
+    Ok(bytes.len() as u64)
+}
+
+fn write_verifier_info_binary_for_directory(
+    path: &Path,
+    verifier: &VerifierInfo,
+) -> Result<u64, BaseDirectoryWriteError> {
+    let bytes = encode_verifier_info(verifier)?;
+    std::fs::write(path, &bytes).map_err(|error| {
+        BaseDirectoryWriteError::message(format!(
+            "write verifier metadata binary failed: {}: {error}",
+            path.display()
+        ))
+    })?;
+    Ok(bytes.len() as u64)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcsDirectoryWriteError {
