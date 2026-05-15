@@ -13,11 +13,15 @@ use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
     read_key_directory_layout, validate_key_directory_layout, KeyDirectoryCatalog,
 };
+use lzvm_artifacts::pcs_evaluation_segment::{
+    parse_pcs_evaluation_segment, PCS_EVALUATION_SEGMENT_ID,
+};
 use lzvm_artifacts::pcs_fri_segment::{parse_pcs_fri_opening_segment, PCS_FRI_OPENING_SEGMENT_ID};
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_material};
 use lzvm_artifacts::pcs_material_segment::{
     parse_pcs_material_manifest_segment, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
+use lzvm_artifacts::pcs_nonce_segment::PCS_QUERY_NONCE_SEGMENT_ID;
 use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file,
 };
@@ -39,8 +43,12 @@ use lzvm_prover::constant_tree_opening::{
     constant_tree_merkle_level_count, verify_constant_tree_opening_root, ConstantTreeOpening,
 };
 use lzvm_prover::pcs_fri::{verify_fri_last_level_root, verify_fri_query_path};
+use lzvm_prover::pcs_transcript::PcsTranscriptSegmentInputs;
 use lzvm_prover::witness_commitment::{verify_witness_stage_opening_root, WitnessStageOpening};
-use lzvm_prover::{build_pcs_query_plan_segment, derive_prove_schedule, ProveSchedule};
+use lzvm_prover::{
+    build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_transcript_segments,
+    derive_prove_schedule, ProveSchedule,
+};
 use lzvm_setup::{
     build_constant_tree_from_fixed_columns_with_backend, write_base_constant_tree,
     write_base_fixed_columns, write_constant_tree_leaves_with_backend,
@@ -467,7 +475,7 @@ fn verify_setup_preflight(
         let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
         return 1;
     }
-    if let Err(error) = validate_pcs_query_plan(&schedule, &proof) {
+    if let Err(error) = validate_pcs_query_plan(&schedule, &proof, &public_values) {
         let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
         return 1;
     }
@@ -608,7 +616,11 @@ fn validate_witness_commitment_segments(
     }
 }
 
-fn validate_pcs_query_plan(schedule: &ProveSchedule, proof: &ProofArtifact) -> Result<(), String> {
+fn validate_pcs_query_plan(
+    schedule: &ProveSchedule,
+    proof: &ProofArtifact,
+    public_values: &lzvm_artifacts::public_values::PublicValues,
+) -> Result<(), String> {
     let material_segment = proof
         .segments
         .iter()
@@ -622,6 +634,16 @@ fn validate_pcs_query_plan(schedule: &ProveSchedule, proof: &ProofArtifact) -> R
     parse_pcs_query_plan_segment(&query_segment.data)
         .map_err(|error| format!("invalid PCS query plan segment: {error}"))?;
     let witness_segments = collect_witness_commitment_segments(schedule, proof)?;
+    if uses_transcript_query_plan_inputs(proof) {
+        return validate_transcript_pcs_query_plan(
+            schedule,
+            proof,
+            public_values,
+            material_segment,
+            query_segment,
+            &witness_segments,
+        );
+    }
     let expected_segment = build_pcs_query_plan_segment(
         schedule,
         proof.public_values_hash,
@@ -633,6 +655,123 @@ fn validate_pcs_query_plan(schedule: &ProveSchedule, proof: &ProofArtifact) -> R
         return Err("PCS query plan segment mismatch".to_owned());
     }
     Ok(())
+}
+
+fn uses_transcript_query_plan_inputs(proof: &ProofArtifact) -> bool {
+    proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == PCS_QUERY_NONCE_SEGMENT_ID)
+        || proof
+            .segments
+            .iter()
+            .any(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
+}
+
+fn validate_transcript_pcs_query_plan(
+    schedule: &ProveSchedule,
+    proof: &ProofArtifact,
+    public_values: &lzvm_artifacts::public_values::PublicValues,
+    material_segment: &ProofSegment,
+    query_segment: &ProofSegment,
+    witness_segments: &[ProofSegment],
+) -> Result<(), String> {
+    if witness_segments.len() != 1 {
+        return Err("PCS transcript query plan unit count mismatch".to_owned());
+    }
+    let nonce_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_QUERY_NONCE_SEGMENT_ID)
+        .ok_or_else(|| "missing PCS query nonce segment".to_owned())?;
+    let evaluation_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
+        .ok_or_else(|| "missing PCS evaluation segment".to_owned())?;
+    let fri_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
+        .ok_or_else(|| "missing PCS FRI opening segment".to_owned())?;
+
+    let unit_index_u32 = witness_segments[0]
+        .id
+        .checked_sub(WITNESS_COMMITMENT_SEGMENT_BASE_ID)
+        .ok_or_else(|| "PCS transcript query plan witness segment id overflow".to_owned())?;
+    let unit_index = usize::try_from(unit_index_u32)
+        .map_err(|_| "PCS transcript query plan unit index overflow".to_owned())?;
+    let unit = schedule
+        .units
+        .get(unit_index)
+        .ok_or_else(|| format!("PCS transcript query plan mismatch for unit {unit_index}"))?;
+    let material = parse_pcs_material_manifest_segment(&material_segment.data)
+        .map_err(|error| format!("invalid PCS material manifest segment: {error}"))?;
+    let material_unit = material
+        .units
+        .iter()
+        .find(|unit| unit.unit_index == unit_index_u32)
+        .ok_or_else(|| format!("PCS transcript query plan mismatch for unit {unit_index}"))?;
+    let witness = parse_witness_commitment_segment(&witness_segments[0].data).map_err(|error| {
+        format!("invalid witness commitment segment for unit {unit_index}: {error}")
+    })?;
+    let evaluations = parse_pcs_evaluation_segment(&evaluation_segment.data)
+        .map_err(|error| format!("invalid PCS evaluation segment: {error}"))?;
+    let evaluation_unit = evaluations
+        .units
+        .iter()
+        .find(|unit| unit.unit_index == unit_index_u32)
+        .ok_or_else(|| format!("PCS transcript query plan mismatch for unit {unit_index}"))?;
+    let fri = parse_pcs_fri_opening_segment(&fri_segment.data)
+        .map_err(|error| format!("invalid PCS FRI opening segment: {error}"))?;
+    let fri_unit = fri
+        .units
+        .iter()
+        .find(|unit| unit.unit_index == unit_index_u32)
+        .ok_or_else(|| format!("PCS transcript query plan mismatch for unit {unit_index}"))?;
+    let public_value_fields = transcript_public_value_fields(public_values)?;
+    let root_challenge_draws = transcript_root_challenge_draws(witness.stages.len());
+    let expected_segment = build_pcs_query_plan_segment_from_transcript_segments(
+        schedule,
+        witness_segments,
+        PcsTranscriptSegmentInputs {
+            unit_index,
+            unit,
+            material: material_unit,
+            public_values: &public_value_fields,
+            witness: &witness,
+            evaluations: evaluation_unit,
+            fri: fri_unit,
+            root_challenge_draws: &root_challenge_draws,
+            evaluation_challenge_draws: 2,
+        },
+        nonce_segment,
+    )
+    .map_err(|error| format!("derive PCS transcript query plan segment failed: {error}"))?;
+    if query_segment.data != expected_segment.data {
+        return Err("PCS query plan segment mismatch".to_owned());
+    }
+    Ok(())
+}
+
+fn transcript_public_value_fields(
+    public_values: &lzvm_artifacts::public_values::PublicValues,
+) -> Result<Vec<Felt>, String> {
+    public_values
+        .values
+        .iter()
+        .flat_map(|entry| entry.elements.iter().copied())
+        .map(Felt::from_canonical)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("invalid PCS transcript public value: {error}"))
+}
+
+fn transcript_root_challenge_draws(root_count: usize) -> Vec<usize> {
+    let mut draws = vec![1; root_count];
+    if let Some(first) = draws.first_mut() {
+        *first = 2;
+    }
+    draws
 }
 
 fn collect_witness_commitment_segments(
