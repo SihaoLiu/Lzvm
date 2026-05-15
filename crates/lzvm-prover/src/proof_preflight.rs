@@ -2,6 +2,7 @@ use std::fmt;
 
 use lzvm_artifacts::proof::ProofArtifact;
 use lzvm_artifacts::public_values::{public_values_digest, PublicValues, PublicValuesError};
+use lzvm_field::{Felt, FieldError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProofPreflightReport {
@@ -16,6 +17,11 @@ pub enum ProofPreflightError {
     PublicValuesHashMismatch,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PublicValueFieldError {
+    Field(FieldError),
+}
+
 impl fmt::Display for ProofPreflightError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -26,11 +32,27 @@ impl fmt::Display for ProofPreflightError {
     }
 }
 
+impl fmt::Display for PublicValueFieldError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Field(error) => write!(f, "invalid PCS transcript public value: {error}"),
+        }
+    }
+}
+
 impl std::error::Error for ProofPreflightError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::PublicValuesDigest(error) => Some(error),
             Self::SetupHashMismatch | Self::PublicValuesHashMismatch => None,
+        }
+    }
+}
+
+impl std::error::Error for PublicValueFieldError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Field(error) => Some(error),
         }
     }
 }
@@ -53,4 +75,16 @@ pub fn validate_proof_public_values(
         segment_count: proof.segments.len(),
         public_value_count: public_values.values.len(),
     })
+}
+
+pub fn public_values_as_fields(
+    public_values: &PublicValues,
+) -> Result<Vec<Felt>, PublicValueFieldError> {
+    public_values
+        .values
+        .iter()
+        .flat_map(|entry| entry.elements.iter().copied())
+        .map(Felt::from_canonical)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(PublicValueFieldError::Field)
 }

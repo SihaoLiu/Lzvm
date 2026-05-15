@@ -31,7 +31,6 @@ use lzvm_artifacts::verification_key::{read_verification_key_binary_file, Verifi
 use lzvm_artifacts::verifier_info::{
     encode_verifier_info, read_verifier_info_binary_file, VerifierInfo,
 };
-use lzvm_field::Felt;
 use lzvm_prover::constant_opening::validate_constant_opening_segments;
 use lzvm_prover::global_constraints::{
     validate_global_constraints_from_proof_segments, ValidateGlobalConstraintProofSegmentsRequest,
@@ -47,7 +46,7 @@ use lzvm_prover::pcs_material_manifest::validate_pcs_material_manifest_segments;
 use lzvm_prover::pcs_query_plan::{
     uses_transcript_pcs_query_plan_inputs, validate_pcs_query_plan_segments,
 };
-use lzvm_prover::proof_preflight::validate_proof_public_values;
+use lzvm_prover::proof_preflight::{public_values_as_fields, validate_proof_public_values};
 use lzvm_prover::setup_preflight::validate_setup_preflight_hashes;
 use lzvm_prover::witness_commitment::load_witness_commitment_segments;
 use lzvm_prover::witness_opening::validate_witness_opening_segments;
@@ -473,7 +472,7 @@ fn validate_pcs_query_plan(
     public_values: &lzvm_artifacts::public_values::PublicValues,
 ) -> Result<(), String> {
     let public_value_fields = if uses_transcript_pcs_query_plan_inputs(&proof.segments) {
-        transcript_public_value_fields(public_values)?
+        public_values_as_fields(public_values).map_err(|error| error.to_string())?
     } else {
         Vec::new()
     };
@@ -484,18 +483,6 @@ fn validate_pcs_query_plan(
         &proof.segments,
     )
     .map_err(|error| error.to_string())
-}
-
-fn transcript_public_value_fields(
-    public_values: &lzvm_artifacts::public_values::PublicValues,
-) -> Result<Vec<Felt>, String> {
-    public_values
-        .values
-        .iter()
-        .flat_map(|entry| entry.elements.iter().copied())
-        .map(Felt::from_canonical)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("invalid PCS transcript public value: {error}"))
 }
 
 fn validate_witness_opening_segment(
@@ -522,7 +509,7 @@ fn validate_optional_pcs_fri_opening_segment(
     public_values: &PublicValues,
 ) -> Result<(), String> {
     let public_value_fields = if uses_transcript_pcs_query_plan_inputs(&proof.segments) {
-        transcript_public_value_fields(public_values)?
+        public_values_as_fields(public_values).map_err(|error| error.to_string())?
     } else {
         Vec::new()
     };
@@ -553,7 +540,7 @@ fn validate_global_constraints(
         return Ok(());
     }
 
-    let publics = transcript_public_value_fields(public_values)?;
+    let publics = public_values_as_fields(public_values).map_err(|error| error.to_string())?;
     validate_global_constraints_from_proof_segments(ValidateGlobalConstraintProofSegmentsRequest {
         program: &catalog.global_constraints,
         global_info: &catalog.layout.global_info,
@@ -574,7 +561,8 @@ fn validate_global_hints(
         return Ok(());
     }
 
-    let public_value_fields = transcript_public_value_fields(public_values)?;
+    let public_value_fields =
+        public_values_as_fields(public_values).map_err(|error| error.to_string())?;
     resolve_global_hint_program_from_proof_segments(ResolveGlobalHintProofSegmentsRequest {
         global_info: &catalog.layout.global_info,
         program: &catalog.global_hints,
