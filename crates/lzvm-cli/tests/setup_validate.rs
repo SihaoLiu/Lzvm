@@ -16,6 +16,11 @@ use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
     read_key_directory_layout, KeyUnitPaths,
 };
+use lzvm_artifacts::pcs_fri_segment::{
+    encode_pcs_fri_opening_segment, PcsFriOpeningLayerSegment, PcsFriOpeningLevelSegment,
+    PcsFriOpeningQuerySegment, PcsFriOpeningSegment, PcsFriOpeningUnitSegment,
+    PCS_FRI_OPENING_SEGMENT_ID,
+};
 use lzvm_artifacts::pcs_material_segment::{
     parse_pcs_material_manifest_segment, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
@@ -333,6 +338,58 @@ fn sample_witness_opening_segment(
         id: WITNESS_OPENING_SEGMENT_ID,
         data: lzvm_artifacts::witness_opening_segment::encode_witness_opening_segment(&segment)
             .expect("opening segment should encode"),
+    }
+}
+
+fn sample_pcs_fri_opening_segment(
+    schedule: &lzvm_prover::ProveSchedule,
+    query_segment: &ProofSegment,
+    unit_index: usize,
+) -> ProofSegment {
+    let unit = &schedule.units[unit_index];
+    let query_plan =
+        parse_pcs_query_plan_segment(&query_segment.data).expect("query plan should parse");
+    let query_unit = query_plan
+        .units
+        .iter()
+        .find(|unit| unit.unit_index == unit_index as u32)
+        .expect("query unit should exist");
+    let layers = unit
+        .fri_layers
+        .iter()
+        .enumerate()
+        .map(|(layer_index, layer)| {
+            let output_domain = 1_u64 << layer.output_bits;
+            let value_count = layer.folding_factor as usize;
+            PcsFriOpeningLayerSegment {
+                layer_index: layer_index as u32,
+                root: [layer_index as u64 + 1, 2, 3, 4],
+                last_level: vec![
+                    [layer_index as u64 + 5, 6, 7, 8];
+                    unit.merkle_tree_arity.pow(unit.last_level_verification) as usize
+                ],
+                queries: query_unit
+                    .queries
+                    .iter()
+                    .map(|row_index| PcsFriOpeningQuerySegment {
+                        row_index: *row_index % output_domain,
+                        values: vec![[11, 12, 13]; value_count],
+                        siblings: Vec::<PcsFriOpeningLevelSegment>::new(),
+                    })
+                    .collect(),
+            }
+        })
+        .collect();
+    let segment = PcsFriOpeningSegment {
+        units: vec![PcsFriOpeningUnitSegment {
+            unit_index: unit_index as u32,
+            layers,
+            final_polynomial: vec![[21, 22, 23]; 1_usize << unit.final_layer_bits],
+        }],
+    };
+    ProofSegment {
+        id: PCS_FRI_OPENING_SEGMENT_ID,
+        data: encode_pcs_fri_opening_segment(&segment).expect("FRI segment should encode"),
     }
 }
 
@@ -1271,6 +1328,54 @@ fn runs_setup_aware_verify_preflight() {
 }
 
 #[test]
+fn validates_setup_aware_verify_preflight_with_pcs_fri_opening() {
+    let dir = temp_dir("verify-setup-preflight-fri-opening");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let mut proof = sample_proof_with_material(&public_values, &catalog);
+    let schedule = derive_prove_schedule(&catalog).expect("schedule should derive");
+    let fri_segment = sample_pcs_fri_opening_segment(&schedule, &proof.segments[1], 0);
+    proof.segments.push(fri_segment);
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.json");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_text(
+        &public_values_path,
+        &encode_public_values_json(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        "status=ok\nunits=4\nsegments=6\npublic_values=1\n"
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn rejects_setup_aware_verify_preflight_with_mismatched_pcs_material_manifest() {
     let dir = temp_dir("verify-setup-preflight-bad-material");
     let _ = fs::remove_dir_all(&dir);
@@ -1405,6 +1510,55 @@ fn rejects_setup_aware_verify_preflight_with_mismatched_constant_opening() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "verify setup-preflight failed: constant opening segment mismatch for unit 0\n"
+    );
+}
+
+#[test]
+fn rejects_setup_aware_verify_preflight_with_mismatched_pcs_fri_opening() {
+    let dir = temp_dir("verify-setup-preflight-bad-fri-opening");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let mut proof = sample_proof_with_material(&public_values, &catalog);
+    let schedule = derive_prove_schedule(&catalog).expect("schedule should derive");
+    let mut fri_segment = sample_pcs_fri_opening_segment(&schedule, &proof.segments[1], 0);
+    fri_segment.data[72] ^= 0x01;
+    proof.segments.push(fri_segment);
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.json");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_text(
+        &public_values_path,
+        &encode_public_values_json(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: PCS FRI opening segment mismatch for unit 0\n"
     );
 }
 

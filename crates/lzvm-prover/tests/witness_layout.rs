@@ -35,6 +35,7 @@ fn sample_unit_with_rows(
         query_count: 4,
         proof_of_work_bits: 20,
         merkle_tree_arity: 4,
+        last_level_verification: 0,
         transcript_arity: Some(4),
         constant_width: 5,
         stage_commit_widths,

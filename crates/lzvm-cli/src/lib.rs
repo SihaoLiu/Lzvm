@@ -13,6 +13,7 @@ use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
     read_key_directory_layout, validate_key_directory_layout, KeyDirectoryCatalog,
 };
+use lzvm_artifacts::pcs_fri_segment::{parse_pcs_fri_opening_segment, PCS_FRI_OPENING_SEGMENT_ID};
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_material};
 use lzvm_artifacts::pcs_material_segment::{
     parse_pcs_material_manifest_segment, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
@@ -477,6 +478,10 @@ fn verify_setup_preflight(
         let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
         return 1;
     }
+    if let Err(error) = validate_optional_pcs_fri_opening_segment(&schedule, &proof) {
+        let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
+        return 1;
+    }
 
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "units={}", catalog.units.len());
@@ -890,6 +895,115 @@ fn validate_constant_opening_segment(
     Ok(())
 }
 
+fn validate_optional_pcs_fri_opening_segment(
+    schedule: &ProveSchedule,
+    proof: &ProofArtifact,
+) -> Result<(), String> {
+    let Some(segment) = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
+    else {
+        return Ok(());
+    };
+    let query_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
+        .ok_or_else(|| "missing PCS query plan segment".to_owned())?;
+    let query_plan = parse_pcs_query_plan_segment(&query_segment.data)
+        .map_err(|error| format!("invalid PCS query plan segment: {error}"))?;
+    let opening = parse_pcs_fri_opening_segment(&segment.data)
+        .map_err(|error| format!("invalid PCS FRI opening segment: {error}"))?;
+    if opening.units.len() != query_plan.units.len() {
+        return Err("PCS FRI opening segment unit count mismatch".to_owned());
+    }
+
+    for query_unit in &query_plan.units {
+        let unit_index = usize::try_from(query_unit.unit_index)
+            .map_err(|_| "PCS FRI opening segment unit index overflow")?;
+        let unit = schedule
+            .units
+            .get(unit_index)
+            .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
+        let opening_unit = opening
+            .units
+            .iter()
+            .find(|unit| unit.unit_index == query_unit.unit_index)
+            .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
+        let final_len = checked_power_of_two(unit.final_layer_bits)
+            .ok_or_else(|| "PCS FRI opening segment final layer size overflow".to_owned())?;
+        if opening_unit.final_polynomial.len() != final_len
+            || opening_unit.layers.len() != unit.fri_layers.len()
+        {
+            return Err(format!(
+                "PCS FRI opening segment mismatch for unit {unit_index}"
+            ));
+        }
+        for value in &opening_unit.final_polynomial {
+            field_extension_from_words(*value)?;
+        }
+
+        let arity = usize::try_from(unit.merkle_tree_arity)
+            .map_err(|_| "PCS FRI opening segment arity overflow")?;
+        let last_level_count =
+            expected_last_level_digest_count(arity, unit.last_level_verification)?;
+        for (layer_offset, (layer, expected_layer)) in opening_unit
+            .layers
+            .iter()
+            .zip(unit.fri_layers.iter())
+            .enumerate()
+        {
+            if layer.layer_index != layer_offset as u32
+                || layer.queries.len() != query_unit.queries.len()
+                || layer.last_level.len() != last_level_count
+            {
+                return Err(format!(
+                    "PCS FRI opening segment mismatch for unit {unit_index}"
+                ));
+            }
+            field_digest_from_words(layer.root)?;
+            for digest in &layer.last_level {
+                field_digest_from_words(*digest)?;
+            }
+
+            let output_domain = checked_power_of_two(expected_layer.output_bits)
+                .ok_or_else(|| "PCS FRI opening segment layer size overflow".to_owned())?;
+            let expected_value_count = usize::try_from(expected_layer.folding_factor)
+                .map_err(|_| "PCS FRI opening segment folding width overflow")?;
+            let expected_sibling_levels = expected_fri_sibling_level_count(
+                expected_layer.output_bits,
+                arity,
+                unit.last_level_verification,
+            )?;
+            for (query, source_row) in layer.queries.iter().zip(query_unit.queries.iter()) {
+                if query.row_index != source_row % output_domain as u64
+                    || query.values.len() != expected_value_count
+                    || query.siblings.len() != expected_sibling_levels
+                {
+                    return Err(format!(
+                        "PCS FRI opening segment mismatch for unit {unit_index}"
+                    ));
+                }
+                for value in &query.values {
+                    field_extension_from_words(*value)?;
+                }
+                for sibling_level in &query.siblings {
+                    if sibling_level.siblings.len() + 1 != arity {
+                        return Err(format!(
+                            "PCS FRI opening segment mismatch for unit {unit_index}"
+                        ));
+                    }
+                    for digest in &sibling_level.siblings {
+                        field_digest_from_words(*digest)?;
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn expected_merkle_level_count(row_count: u64, arity: usize) -> Result<usize, String> {
     if row_count == 0 || arity < 2 {
         return Err("witness opening segment invalid tree shape".to_owned());
@@ -904,6 +1018,44 @@ fn expected_merkle_level_count(row_count: u64, arity: usize) -> Result<usize, St
             .ok_or_else(|| "witness opening segment level count overflow".to_owned())?;
     }
     Ok(levels)
+}
+
+fn expected_fri_sibling_level_count(
+    output_bits: u32,
+    arity: usize,
+    last_level_verification: u32,
+) -> Result<usize, String> {
+    if arity < 2 || !arity.is_power_of_two() {
+        return Err("PCS FRI opening segment invalid tree shape".to_owned());
+    }
+    let arity_bits = arity.ilog2();
+    let full_levels = output_bits.div_ceil(arity_bits);
+    Ok(full_levels.saturating_sub(last_level_verification) as usize)
+}
+
+fn expected_last_level_digest_count(
+    arity: usize,
+    last_level_verification: u32,
+) -> Result<usize, String> {
+    if last_level_verification == 0 {
+        return Ok(0);
+    }
+    arity
+        .checked_pow(last_level_verification)
+        .ok_or_else(|| "PCS FRI opening segment last-level count overflow".to_owned())
+}
+
+fn checked_power_of_two(bits: u32) -> Option<usize> {
+    1_usize.checked_shl(bits)
+}
+
+fn field_extension_from_words(words: [u64; 3]) -> Result<[Felt; 3], String> {
+    let mut out = [Felt::ZERO; 3];
+    for (target, value) in out.iter_mut().zip(words) {
+        *target = Felt::from_canonical(value)
+            .map_err(|error| format!("invalid PCS FRI opening segment value: {error}"))?;
+    }
+    Ok(out)
 }
 
 fn field_digest_from_words(words: [u64; 4]) -> Result<[Felt; 4], String> {
