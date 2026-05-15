@@ -120,6 +120,9 @@ pub enum ProvePcsFriOpeningTraceSegmentError {
         unit_index: usize,
         source: Box<ProvePcsFriPolynomialError>,
     },
+    TranscriptValues {
+        source: Box<ProvePcsFriTranscriptTraceValuesError>,
+    },
     Opening {
         source: Box<ProvePcsFriOpeningSegmentError>,
     },
@@ -244,6 +247,9 @@ impl fmt::Display for ProvePcsFriOpeningTraceSegmentError {
                 f,
                 "prove PCS FRI trace opening polynomial failed for unit {unit_index}: {source}"
             ),
+            Self::TranscriptValues { source } => {
+                write!(f, "prove PCS FRI trace opening transcript values failed: {source}")
+            }
             Self::Opening { source } => {
                 write!(f, "prove PCS FRI trace opening segment failed: {source}")
             }
@@ -366,6 +372,7 @@ impl std::error::Error for ProvePcsFriOpeningTraceSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Polynomial { source, .. } => Some(source.as_ref()),
+            Self::TranscriptValues { source } => Some(source.as_ref()),
             Self::Opening { source } => Some(source.as_ref()),
             Self::UnitIndexOutOfRange { .. } => None,
         }
@@ -743,6 +750,27 @@ pub fn build_pcs_fri_opening_segment_from_trace(
         ProvePcsFriOpeningTraceSegmentError::Opening {
             source: Box::new(source),
         }
+    })
+}
+
+pub fn build_pcs_fri_opening_segment_from_trace_segments(
+    schedule: &ProveSchedule,
+    query_segment: &ProofSegment,
+    values: &[ProvePcsFriTranscriptTraceSegmentValues<'_>],
+) -> Result<ProofSegment, ProvePcsFriOpeningTraceSegmentError> {
+    let transcript_values = build_pcs_fri_transcript_values_from_trace_segments(schedule, values)
+        .map_err(|source| {
+        ProvePcsFriOpeningTraceSegmentError::TranscriptValues {
+            source: Box::new(source),
+        }
+    })?;
+    build_pcs_fri_opening_segment_from_transcript_values(
+        schedule,
+        query_segment,
+        &transcript_values,
+    )
+    .map_err(|source| ProvePcsFriOpeningTraceSegmentError::Opening {
+        source: Box::new(source),
     })
 }
 

@@ -28,12 +28,12 @@ use lzvm_prover::pcs_fri::{verify_fri_opening_folds, PcsFriOpeningFoldRequest};
 use lzvm_prover::pcs_transcript::{derive_pcs_transcript_challenges, PcsTranscriptInputs};
 use lzvm_prover::witness_trace::parse_witness_trace;
 use lzvm_prover::{
-    build_pcs_evaluation_segment, build_pcs_fri_opening_segment_from_transcript_values,
-    build_pcs_fri_polynomial_values, build_pcs_fri_transcript_values_from_trace_segments,
-    build_pcs_material_manifest_segment, build_pcs_query_nonce_segment,
-    build_pcs_query_plan_segment_from_challenge, derive_prove_schedule,
-    ProveExecutionUnitArtifacts, ProvePcsEvaluationValues, ProvePcsFriTranscriptTraceSegmentValues,
-    ProveWitnessAuxiliaryInputs,
+    build_pcs_evaluation_segment, build_pcs_fri_opening_segment_from_trace_segments,
+    build_pcs_fri_opening_segment_from_transcript_values, build_pcs_fri_polynomial_values,
+    build_pcs_fri_transcript_values_from_trace_segments, build_pcs_material_manifest_segment,
+    build_pcs_query_nonce_segment, build_pcs_query_plan_segment_from_challenge,
+    derive_prove_schedule, ProveExecutionUnitArtifacts, ProvePcsEvaluationValues,
+    ProvePcsFriTranscriptTraceSegmentValues, ProveWitnessAuxiliaryInputs,
 };
 
 #[test]
@@ -180,6 +180,21 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
     let opening_segment =
         build_pcs_fri_opening_segment_from_transcript_values(&schedule, &query_segment, &values)
             .expect("FRI opening segment should build from transcript values");
+    let wrapped_opening_segment = build_pcs_fri_opening_segment_from_trace_segments(
+        &schedule,
+        &query_segment,
+        &[ProvePcsFriTranscriptTraceSegmentValues {
+            unit_index: 0,
+            execution_unit: &execution_unit,
+            trace: &trace,
+            publics: &[],
+            auxiliary_inputs: &auxiliary,
+            material_segment: &material_segment,
+            witness_segment: &witness_segment,
+            evaluation_segment: &evaluation_segment,
+        }],
+    )
+    .expect("FRI opening segment should build from trace segments");
     let query_plan =
         parse_pcs_query_plan_segment(&query_segment.data).expect("query segment should parse");
     let opening =
@@ -194,6 +209,7 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
     );
     assert_eq!(transcript_value.commitments.challenges, expected_challenges);
     assert_eq!(transcript_value.polynomial, expected_polynomial);
+    assert_eq!(wrapped_opening_segment, opening_segment);
     assert!(verify_fri_opening_folds(
         unit,
         PcsFriOpeningFoldRequest {
