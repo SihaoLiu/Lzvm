@@ -51,6 +51,10 @@ use lzvm_prover::pcs_fri::{
 use lzvm_prover::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptSegmentInputs,
 };
+use lzvm_prover::verifier_query::{
+    evaluate_verifier_unit_queries, verify_query_outputs_against_fri_opening,
+    VerifierFriComparisonRequest, VerifierUnitQueryEvalRequest,
+};
 use lzvm_prover::witness_commitment::{verify_witness_stage_opening_root, WitnessStageOpening};
 use lzvm_prover::{
     build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_transcript_segments,
@@ -494,7 +498,8 @@ fn verify_setup_preflight(
         let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
         return 1;
     }
-    if let Err(error) = validate_optional_pcs_fri_opening_segment(&schedule, &proof, &public_values)
+    if let Err(error) =
+        validate_optional_pcs_fri_opening_segment(&catalog, &schedule, &proof, &public_values)
     {
         let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
         return 1;
@@ -1040,6 +1045,7 @@ fn validate_constant_opening_segment(
 }
 
 fn validate_optional_pcs_fri_opening_segment(
+    catalog: &KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     proof: &ProofArtifact,
     public_values: &PublicValues,
@@ -1184,7 +1190,8 @@ fn validate_optional_pcs_fri_opening_segment(
         }
 
         if uses_transcript_query_plan_inputs(proof) {
-            validate_pcs_fri_opening_fold_chain(
+            validate_pcs_transcript_fri_opening(
+                catalog,
                 schedule,
                 proof,
                 public_values,
@@ -1196,7 +1203,8 @@ fn validate_optional_pcs_fri_opening_segment(
     Ok(())
 }
 
-fn validate_pcs_fri_opening_fold_chain(
+fn validate_pcs_transcript_fri_opening(
+    catalog: &KeyDirectoryCatalog,
     schedule: &ProveSchedule,
     proof: &ProofArtifact,
     public_values: &PublicValues,
@@ -1206,6 +1214,10 @@ fn validate_pcs_fri_opening_fold_chain(
     let unit_index = usize::try_from(query_unit.unit_index)
         .map_err(|_| "PCS FRI opening segment unit index overflow")?;
     let unit = schedule
+        .units
+        .get(unit_index)
+        .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
+    let catalog_unit = catalog
         .units
         .get(unit_index)
         .ok_or_else(|| format!("PCS FRI opening segment mismatch for unit {unit_index}"))?;
@@ -1268,10 +1280,114 @@ fn validate_pcs_fri_opening_fold_chain(
     )
     .map_err(|error| format!("invalid PCS FRI opening segment for unit {unit_index}: {error}"))?;
     if valid {
-        Ok(())
+        validate_pcs_fri_query_outputs(PcsFriQueryOutputValidation {
+            proof,
+            public_values,
+            query_unit,
+            opening_unit,
+            unit_index,
+            unit,
+            catalog_unit,
+            evaluation_unit,
+            challenges: &challenges,
+        })
     } else {
         Err(format!(
             "PCS FRI opening segment mismatch for unit {unit_index}"
+        ))
+    }
+}
+
+struct PcsFriQueryOutputValidation<'a> {
+    proof: &'a ProofArtifact,
+    public_values: &'a PublicValues,
+    query_unit: &'a PcsQueryPlanUnit,
+    opening_unit: &'a lzvm_artifacts::pcs_fri_segment::PcsFriOpeningUnitSegment,
+    unit_index: usize,
+    unit: &'a lzvm_prover::ProveUnitSchedule,
+    catalog_unit: &'a lzvm_artifacts::key_directory::KeyUnitCatalogEntry,
+    evaluation_unit: &'a lzvm_artifacts::pcs_evaluation_segment::PcsEvaluationUnitSegment,
+    challenges: &'a [Ext3],
+}
+
+fn validate_pcs_fri_query_outputs(input: PcsFriQueryOutputValidation<'_>) -> Result<(), String> {
+    let constant_segment = input
+        .proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == CONSTANT_OPENING_SEGMENT_ID)
+        .ok_or_else(|| "missing constant opening segment".to_owned())?;
+    let constant_opening = parse_constant_opening_segment(&constant_segment.data)
+        .map_err(|error| format!("invalid constant opening segment: {error}"))?;
+    let constant_unit = constant_opening
+        .units
+        .iter()
+        .find(|unit| unit.unit_index == input.query_unit.unit_index)
+        .ok_or_else(|| {
+            format!(
+                "PCS FRI opening segment mismatch for unit {}",
+                input.unit_index
+            )
+        })?;
+    let witness_segment = input
+        .proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == WITNESS_OPENING_SEGMENT_ID)
+        .ok_or_else(|| "missing witness opening segment".to_owned())?;
+    let witness_opening = parse_witness_opening_segment(&witness_segment.data)
+        .map_err(|error| format!("invalid witness opening segment: {error}"))?;
+    let witness_unit = witness_opening
+        .units
+        .iter()
+        .find(|unit| unit.unit_index == input.query_unit.unit_index)
+        .ok_or_else(|| {
+            format!(
+                "PCS FRI opening segment mismatch for unit {}",
+                input.unit_index
+            )
+        })?;
+    let public_value_fields = transcript_public_value_fields(input.public_values)?;
+    let query_outputs = evaluate_verifier_unit_queries(
+        input.unit,
+        VerifierUnitQueryEvalRequest {
+            unit_index: input.query_unit.unit_index,
+            challenges: input.challenges,
+            proof_values: &[],
+            constant_unit,
+            witness_unit,
+            evaluations: input.evaluation_unit,
+            code: &input.catalog_unit.metadata.verifier.query,
+            publics: &public_value_fields,
+        },
+    )
+    .map_err(|error| {
+        format!(
+            "invalid PCS FRI opening segment for unit {}: {error}",
+            input.unit_index
+        )
+    })?;
+    let valid = verify_query_outputs_against_fri_opening(
+        input.unit,
+        VerifierFriComparisonRequest {
+            unit_index: input.query_unit.unit_index,
+            query_rows: &input.query_unit.queries,
+            query_outputs: &query_outputs,
+            fri: input.opening_unit,
+        },
+    )
+    .map_err(|error| {
+        format!(
+            "invalid PCS FRI opening segment for unit {}: {error}",
+            input.unit_index
+        )
+    })?;
+    if valid {
+        Ok(())
+    } else {
+        Err(format!(
+            "PCS FRI opening segment mismatch for unit {}",
+            input.unit_index
         ))
     }
 }
