@@ -40,7 +40,7 @@ use lzvm_artifacts::pcs_query_segment::{
     parse_pcs_query_plan_segment, PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact, ProofSegment};
-use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file, PublicValues};
+use lzvm_artifacts::public_values::{read_public_values_file, PublicValues};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, UnitSetupInfo,
@@ -69,6 +69,7 @@ use lzvm_prover::pcs_fri::{
 use lzvm_prover::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptSegmentInputs,
 };
+use lzvm_prover::proof_preflight::validate_proof_public_values;
 use lzvm_prover::proof_values::flatten_pcs_proof_values;
 use lzvm_prover::unit_values::expected_packed_unit_value_count;
 use lzvm_prover::verifier_query::{
@@ -388,28 +389,17 @@ fn verify_preflight(
             return 1;
         }
     };
-    if proof.setup_hash != public_values.setup_hash {
-        let _ = writeln!(stderr, "verify preflight failed: setup hash mismatch");
-        return 1;
-    }
-    let digest = match public_values_digest(&public_values) {
-        Ok(digest) => digest,
+    let report = match validate_proof_public_values(&proof, &public_values) {
+        Ok(report) => report,
         Err(error) => {
             let _ = writeln!(stderr, "verify preflight failed: {error}");
             return 1;
         }
     };
-    if proof.public_values_hash != digest {
-        let _ = writeln!(
-            stderr,
-            "verify preflight failed: public-values hash mismatch"
-        );
-        return 1;
-    }
 
     let _ = writeln!(stdout, "status=ok");
-    let _ = writeln!(stdout, "segments={}", proof.segments.len());
-    let _ = writeln!(stdout, "public_values={}", public_values.values.len());
+    let _ = writeln!(stdout, "segments={}", report.segment_count);
+    let _ = writeln!(stdout, "public_values={}", report.public_value_count);
     0
 }
 
@@ -459,20 +449,13 @@ fn verify_setup_preflight(
         );
         return 1;
     }
-    let digest = match public_values_digest(&public_values) {
-        Ok(digest) => digest,
+    let public_report = match validate_proof_public_values(&proof, &public_values) {
+        Ok(report) => report,
         Err(error) => {
             let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
             return 1;
         }
     };
-    if proof.public_values_hash != digest {
-        let _ = writeln!(
-            stderr,
-            "verify setup-preflight failed: public-values hash mismatch"
-        );
-        return 1;
-    }
     if let Err(error) = validate_pcs_material_manifest(&catalog, &proof) {
         let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
         return 1;
@@ -517,8 +500,8 @@ fn verify_setup_preflight(
 
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "units={}", catalog.units.len());
-    let _ = writeln!(stdout, "segments={}", proof.segments.len());
-    let _ = writeln!(stdout, "public_values={}", public_values.values.len());
+    let _ = writeln!(stdout, "segments={}", public_report.segment_count);
+    let _ = writeln!(stdout, "public_values={}", public_report.public_value_count);
     0
 }
 
