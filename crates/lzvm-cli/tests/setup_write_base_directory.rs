@@ -9,6 +9,7 @@ use lzvm_artifacts::expression_program::{
 };
 use lzvm_artifacts::fixed::{encode_raw_fixed_columns, FixedColumn, FixedColumns};
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyUnitPaths};
+use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, read_pcs_setup_plan_file};
 use lzvm_artifacts::setup_info::{parse_unit_setup_info_json, UnitSetupInfo};
 use lzvm_artifacts::verification_key::{
     encode_verification_key_binary, read_verification_key_binary_file,
@@ -363,6 +364,59 @@ fn derives_verification_keys_for_base_directory_outputs() {
         )
     );
     assert!(stderr.is_empty());
+}
+
+#[test]
+fn writes_pcs_setup_plans_for_all_units() {
+    let (dir, _) = create_key_directory("pcs-plan");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "write-pcs-directory",
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit_count = layout.units.len();
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let expected = derive_pcs_setup_plan(&setup).expect("plan should derive");
+    let mut bytes_written = 0_u64;
+    for unit in &layout.units {
+        let path = unit.pcs_setup_plan().expect("PCS plan path should derive");
+        let plan = read_pcs_setup_plan_file(&path).expect("PCS plan should parse");
+        bytes_written += fs::metadata(path)
+            .expect("PCS plan output should exist")
+            .len();
+        assert_eq!(plan, expected);
+    }
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!("status=ok\nunits={unit_count}\nbytes_written={bytes_written}\n")
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn reports_usage_for_missing_pcs_directory_path() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(&["setup", "write-pcs-directory"], &mut stdout, &mut stderr);
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "usage: lzvm setup write-pcs-directory <setup-dir>\n"
+    );
 }
 
 #[test]

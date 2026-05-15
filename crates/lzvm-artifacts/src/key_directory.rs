@@ -290,6 +290,12 @@ impl KeyUnitPaths {
             .map(|prefix| append_suffix(prefix, ".verifierinfo.json"))
     }
 
+    pub fn pcs_setup_plan(&self) -> Option<PathBuf> {
+        self.metadata_prefix
+            .as_ref()
+            .map(|prefix| append_suffix(prefix, ".pcs-plan"))
+    }
+
     pub fn expression_program(&self) -> Option<PathBuf> {
         self.program_prefix
             .as_ref()
