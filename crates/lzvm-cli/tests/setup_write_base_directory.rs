@@ -10,7 +10,10 @@ use lzvm_artifacts::expression_program::{
 use lzvm_artifacts::fixed::{encode_raw_fixed_columns, FixedColumn, FixedColumns};
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyUnitPaths};
 use lzvm_artifacts::setup_info::{parse_unit_setup_info_json, UnitSetupInfo};
-use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
+use lzvm_artifacts::verification_key::{
+    encode_verification_key_binary, read_verification_key_binary_file,
+    read_verification_key_json_file, VerificationKeyRoot,
+};
 use lzvm_cli::run_cli;
 use lzvm_setup::build_constant_tree_from_fixed_columns;
 
@@ -259,6 +262,14 @@ fn create_key_directory(name: &str) -> (PathBuf, VerificationKeyRoot) {
     (dir, root)
 }
 
+fn remove_verification_keys(dir: &Path) {
+    let layout = read_key_directory_layout(dir).expect("layout should derive");
+    for unit in &layout.units {
+        fs::remove_file(unit.verification_key_json()).expect("json key should be removed");
+        fs::remove_file(unit.verification_key_binary()).expect("binary key should be removed");
+    }
+}
+
 #[test]
 fn writes_base_directory_constant_trees_for_all_units() {
     let (dir, root) = create_key_directory("valid");
@@ -294,6 +305,61 @@ fn writes_base_directory_constant_trees_for_all_units() {
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
             "status=ok\nunits={unit_count}\nfixed_bytes={fixed_bytes}\ntree_bytes={tree_bytes}\n"
+        )
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn derives_verification_keys_for_base_directory_outputs() {
+    let (dir, root) = create_key_directory("derive-verkey");
+    remove_verification_keys(&dir);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "write-base-directory",
+            "--derive-verkey",
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit_count = layout.units.len();
+    let mut tree_bytes = 0_u64;
+    let mut fixed_bytes = 0_u64;
+    let mut verkey_bytes = 0_u64;
+    for unit in &layout.units {
+        let tree = fs::read(&unit.constant_tree).expect("constant tree should be written");
+        let json_root =
+            read_verification_key_json_file(unit.verification_key_json()).expect("json key");
+        let binary_root =
+            read_verification_key_binary_file(unit.verification_key_binary()).expect("binary key");
+        tree_bytes += u64::try_from(tree.len()).expect("tree length should fit");
+        fixed_bytes += fs::metadata(&unit.fixed_columns)
+            .expect("fixed output should exist")
+            .len();
+        verkey_bytes += fs::metadata(unit.verification_key_json())
+            .expect("json key should exist")
+            .len();
+        verkey_bytes += fs::metadata(unit.verification_key_binary())
+            .expect("binary key should exist")
+            .len();
+        assert_eq!(root_from_tree(&tree), root);
+        assert_eq!(json_root, root);
+        assert_eq!(binary_root, root);
+    }
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nunits={unit_count}\nfixed_bytes={fixed_bytes}\ntree_bytes={tree_bytes}\nverkey_bytes={verkey_bytes}\n"
         )
     );
     assert!(stderr.is_empty());
@@ -356,6 +422,6 @@ fn reports_usage_for_missing_base_directory_path() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm setup write-base-directory [--backend cpu|cuda] <setup-dir>\n"
+        "usage: lzvm setup write-base-directory [--derive-verkey] [--backend cpu|cuda] <setup-dir>\n"
     );
 }

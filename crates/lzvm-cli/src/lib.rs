@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::Path;
 
@@ -67,16 +68,35 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             )
         }
         ["setup", "write-base-native", ..] => write_base_native_usage(stderr),
+        ["setup", "write-base-directory", "--derive-verkey", "--backend", backend, setup_dir] => {
+            let Some(backend) =
+                parse_fixed_extension_backend(backend, "setup native base directory write", stderr)
+            else {
+                return 1;
+            };
+            write_base_directory(setup_dir, backend, true, stdout, stderr)
+        }
+        ["setup", "write-base-directory", "--backend", backend, "--derive-verkey", setup_dir] => {
+            let Some(backend) =
+                parse_fixed_extension_backend(backend, "setup native base directory write", stderr)
+            else {
+                return 1;
+            };
+            write_base_directory(setup_dir, backend, true, stdout, stderr)
+        }
+        ["setup", "write-base-directory", "--derive-verkey", setup_dir] => {
+            write_base_directory(setup_dir, FixedExtensionBackend::Cpu, true, stdout, stderr)
+        }
         ["setup", "write-base-directory", "--backend", backend, setup_dir] => {
             let Some(backend) =
                 parse_fixed_extension_backend(backend, "setup native base directory write", stderr)
             else {
                 return 1;
             };
-            write_base_directory(setup_dir, backend, stdout, stderr)
+            write_base_directory(setup_dir, backend, false, stdout, stderr)
         }
         ["setup", "write-base-directory", setup_dir] => {
-            write_base_directory(setup_dir, FixedExtensionBackend::Cpu, stdout, stderr)
+            write_base_directory(setup_dir, FixedExtensionBackend::Cpu, false, stdout, stderr)
         }
         ["setup", "write-base-directory", ..] => write_base_directory_usage(stderr),
         ["setup", "write-verkey-native", setup_info_bin, consttree, out_verkey_json, out_verkey_bin] => {
@@ -389,6 +409,7 @@ fn write_base_native(
 fn write_base_directory(
     setup_dir: &str,
     backend: FixedExtensionBackend,
+    derive_verkey: bool,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
@@ -399,13 +420,14 @@ fn write_base_directory(
             return 1;
         }
     };
-    if let Err(error) = validate_key_directory_layout(&layout) {
+    if let Err(error) = validate_base_directory_inputs(&layout, derive_verkey) {
         let _ = writeln!(stderr, "setup native base directory write failed: {error}");
         return 1;
     }
 
     let mut fixed_bytes = 0_u64;
     let mut tree_bytes = 0_u64;
+    let mut verkey_bytes = 0_u64;
     for unit in &layout.units {
         let setup_path = match unit.setup_info() {
             Some(path) => path,
@@ -438,12 +460,15 @@ fn write_base_directory(
                 return 1;
             }
         };
-        let expected_root = match read_verification_key_binary_file(unit.verification_key_binary())
-        {
-            Ok(root) => root,
-            Err(error) => {
-                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
-                return 1;
+        let expected_root = if derive_verkey {
+            None
+        } else {
+            match read_verification_key_binary_file(unit.verification_key_binary()) {
+                Ok(root) => Some(root),
+                Err(error) => {
+                    let _ = writeln!(stderr, "setup native base directory write failed: {error}");
+                    return 1;
+                }
             }
         };
         let tree =
@@ -465,7 +490,7 @@ fn write_base_directory(
             &unit.constant_tree,
             &tree,
             &setup,
-            Some(&expected_root),
+            expected_root.as_ref(),
         ) {
             Ok(report) => report,
             Err(error) => {
@@ -473,6 +498,23 @@ fn write_base_directory(
                 return 1;
             }
         };
+        if derive_verkey {
+            let key_report = match write_verification_key_from_constant_tree(
+                unit.verification_key_json(),
+                unit.verification_key_binary(),
+                &tree,
+                &setup,
+            ) {
+                Ok(report) => report,
+                Err(error) => {
+                    let _ = writeln!(stderr, "setup native base directory write failed: {error}");
+                    return 1;
+                }
+            };
+            verkey_bytes = verkey_bytes
+                .saturating_add(key_report.json_bytes)
+                .saturating_add(key_report.binary_bytes);
+        }
 
         fixed_bytes = fixed_bytes.saturating_add(fixed_report.bytes_written);
         tree_bytes = tree_bytes.saturating_add(tree_report.bytes_written);
@@ -482,7 +524,40 @@ fn write_base_directory(
     let _ = writeln!(stdout, "units={}", layout.units.len());
     let _ = writeln!(stdout, "fixed_bytes={fixed_bytes}");
     let _ = writeln!(stdout, "tree_bytes={tree_bytes}");
+    if derive_verkey {
+        let _ = writeln!(stdout, "verkey_bytes={verkey_bytes}");
+    }
     0
+}
+
+fn validate_base_directory_inputs(
+    layout: &lzvm_artifacts::key_directory::KeyDirectoryLayout,
+    derive_verkey: bool,
+) -> Result<(), String> {
+    if !derive_verkey {
+        return validate_key_directory_layout(layout).map_err(|error| error.to_string());
+    }
+
+    let mut seen = BTreeSet::new();
+    for required in layout.required_paths() {
+        if matches!(
+            required.role,
+            "unit verification-key metadata" | "unit verification-key binary"
+        ) {
+            continue;
+        }
+        if !seen.insert(required.path.clone()) {
+            continue;
+        }
+        if !required.path.is_file() {
+            return Err(format!(
+                "missing key-directory {}: {}",
+                required.role,
+                required.path.display()
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn write_verification_key_native(
@@ -836,7 +911,7 @@ fn write_base_native_usage(stderr: &mut dyn Write) -> i32 {
 fn write_base_directory_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm setup write-base-directory [--backend cpu|cuda] <setup-dir>"
+        "usage: lzvm setup write-base-directory [--derive-verkey] [--backend cpu|cuda] <setup-dir>"
     );
     2
 }

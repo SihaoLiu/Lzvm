@@ -56,10 +56,10 @@ This command reads binary setup metadata plus sectioned or raw fixed-column sour
 Regenerate native base fixed-column and constant-tree artifacts for a setup directory:
 
 ```sh
-cargo run -p lzvm-cli -- setup write-base-directory [--backend cpu|cuda] <setup-dir>
+cargo run -p lzvm-cli -- setup write-base-directory [--derive-verkey] [--backend cpu|cuda] <setup-dir>
 ```
 
-This command derives units from the setup directory metadata, reads each unit's setup metadata, fixed columns, and binary verification key, then rewrites the raw fixed-column artifact and publishes a validated native constant tree for every unit. The default backend is `cpu`; `cuda` is available when the CLI is built with the `cuda` feature.
+This command derives units from the setup directory metadata, reads each unit's setup metadata and fixed columns, then rewrites the raw fixed-column artifact and publishes a validated native constant tree for every unit. By default it checks generated tree roots against existing binary verification keys. With `--derive-verkey`, it writes JSON and binary verification-key companions from the generated tree roots. The default backend is `cpu`; `cuda` is available when the CLI is built with the `cuda` feature.
 
 Generate verification-key companions from a native constant tree:
 
