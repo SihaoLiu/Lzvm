@@ -41,7 +41,6 @@ use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, UnitSetupInfo,
 };
-use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
 use lzvm_artifacts::verification_key::{read_verification_key_binary_file, VerificationKeyRoot};
 use lzvm_artifacts::verifier_info::{
     encode_verifier_info, read_verifier_info_binary_file, VerifierInfo,
@@ -71,7 +70,7 @@ use lzvm_prover::pcs_transcript::{
 };
 use lzvm_prover::proof_preflight::validate_proof_public_values;
 use lzvm_prover::proof_values::{flatten_pcs_proof_values, load_pcs_proof_values_from_segments};
-use lzvm_prover::unit_values::expected_packed_unit_value_count;
+use lzvm_prover::unit_values::load_unit_values_from_segments;
 use lzvm_prover::verifier_query::{
     evaluate_verifier_unit_queries, verify_query_outputs_against_fri_opening,
     VerifierFriComparisonRequest, VerifierUnitQueryEvalRequest,
@@ -1582,62 +1581,8 @@ fn load_unit_values(
         .units
         .get(unit_index)
         .ok_or_else(|| format!("unit values segment mismatch for unit {unit_index}"))?;
-    let expected_count = expected_packed_unit_value_count(&unit.unit_value_map)
-        .map_err(|error| format!("unit values segment metadata invalid: {error}"))?;
-    let segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == UNIT_VALUES_SEGMENT_ID);
-    let parsed = match segment {
-        Some(segment) => Some(
-            parse_unit_values_segment(&segment.data)
-                .map_err(|error| format!("invalid unit values segment: {error}"))?,
-        ),
-        None => None,
-    };
-    let unit_index_u32 =
-        u32::try_from(unit_index).map_err(|_| "unit values segment unit index overflow")?;
-    let unit_values = parsed.as_ref().and_then(|parsed| {
-        parsed
-            .units
-            .iter()
-            .find(|unit| unit.unit_index == unit_index_u32)
-    });
-
-    if expected_count == 0 {
-        if unit_values.is_some() {
-            return Err(format!(
-                "unexpected unit values segment for unit {unit_index}"
-            ));
-        }
-        return Ok(Vec::new());
-    }
-
-    let unit_values = match (segment, unit_values) {
-        (None, _) => return Err("missing unit values segment".to_owned()),
-        (Some(_), None) => {
-            return Err(format!("missing unit values segment for unit {unit_index}"));
-        }
-        (Some(_), Some(values)) => values,
-    };
-    if unit_values.values.len() != expected_count {
-        return Err(format!(
-            "unit values segment count mismatch for unit {unit_index}: expected {expected_count}, found {}",
-            unit_values.values.len()
-        ));
-    }
-
-    unit_values
-        .values
-        .iter()
-        .copied()
-        .enumerate()
-        .map(|(index, value)| {
-            Felt::from_canonical(value).map_err(|error| {
-                format!("invalid unit values segment value {index} for unit {unit_index}: {error}")
-            })
-        })
-        .collect()
+    load_unit_values_from_segments(unit_index, &unit.unit_value_map, &proof.segments)
+        .map_err(|error| error.to_string())
 }
 
 fn load_pcs_proof_values(

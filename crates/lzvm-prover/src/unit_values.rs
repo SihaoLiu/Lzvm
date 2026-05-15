@@ -3,10 +3,10 @@ use std::fmt;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::setup_info::StageValue;
 use lzvm_artifacts::unit_values_segment::{
-    encode_unit_values_segment, UnitValuesSegment, UnitValuesSegmentError, UnitValuesUnitSegment,
-    UNIT_VALUES_SEGMENT_ID,
+    encode_unit_values_segment, parse_unit_values_segment, UnitValuesSegment,
+    UnitValuesSegmentError, UnitValuesUnitSegment, UNIT_VALUES_SEGMENT_ID,
 };
-use lzvm_field::Felt;
+use lzvm_field::{Felt, FieldError};
 
 const EXTENSION_WORDS: usize = 3;
 
@@ -67,6 +67,82 @@ impl From<UnitValuesSegmentError> for ProveUnitValuesSegmentError {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadUnitValuesSegmentError {
+    UnitIndexOverflow {
+        unit_index: usize,
+    },
+    MissingSegment,
+    MissingUnit {
+        unit_index: usize,
+    },
+    UnexpectedUnit {
+        unit_index: usize,
+    },
+    ValueCountMismatch {
+        unit_index: usize,
+        expected: usize,
+        found: usize,
+    },
+    NonCanonicalValue {
+        unit_index: usize,
+        index: usize,
+        source: FieldError,
+    },
+    Segment(UnitValuesSegmentError),
+    LengthOverflow,
+}
+
+impl fmt::Display for LoadUnitValuesSegmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnitIndexOverflow { unit_index } => {
+                write!(f, "unit values segment unit index overflow: {unit_index}")
+            }
+            Self::MissingSegment => write!(f, "missing unit values segment"),
+            Self::MissingUnit { unit_index } => {
+                write!(f, "missing unit values segment for unit {unit_index}")
+            }
+            Self::UnexpectedUnit { unit_index } => {
+                write!(f, "unexpected unit values segment for unit {unit_index}")
+            }
+            Self::ValueCountMismatch {
+                unit_index,
+                expected,
+                found,
+            } => write!(
+                f,
+                "unit values segment count mismatch for unit {unit_index}: expected {expected}, found {found}"
+            ),
+            Self::NonCanonicalValue {
+                unit_index,
+                index,
+                source,
+            } => write!(
+                f,
+                "invalid unit values segment value {index} for unit {unit_index}: {source}"
+            ),
+            Self::Segment(error) => write!(f, "invalid unit values segment: {error}"),
+            Self::LengthOverflow => write!(f, "unit values segment length overflow"),
+        }
+    }
+}
+
+impl std::error::Error for LoadUnitValuesSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::NonCanonicalValue { source, .. } => Some(source),
+            Self::Segment(error) => Some(error),
+            Self::UnitIndexOverflow { .. }
+            | Self::MissingSegment
+            | Self::MissingUnit { .. }
+            | Self::UnexpectedUnit { .. }
+            | Self::ValueCountMismatch { .. }
+            | Self::LengthOverflow => None,
+        }
+    }
+}
+
 pub fn build_unit_values_segment_from_packed_values(
     unit_index: usize,
     unit_value_map: &[StageValue],
@@ -102,6 +178,69 @@ pub fn build_unit_values_segment_from_packed_values(
         id: UNIT_VALUES_SEGMENT_ID,
         data: encode_unit_values_segment(&segment)?,
     }))
+}
+
+pub fn load_unit_values_from_segments(
+    unit_index: usize,
+    unit_value_map: &[StageValue],
+    segments: &[ProofSegment],
+) -> Result<Vec<Felt>, LoadUnitValuesSegmentError> {
+    let expected_count = expected_packed_unit_value_count(unit_value_map)
+        .map_err(|_| LoadUnitValuesSegmentError::LengthOverflow)?;
+    let segment = segments
+        .iter()
+        .find(|segment| segment.id == UNIT_VALUES_SEGMENT_ID);
+    let parsed = match segment {
+        Some(segment) => Some(
+            parse_unit_values_segment(&segment.data)
+                .map_err(LoadUnitValuesSegmentError::Segment)?,
+        ),
+        None => None,
+    };
+    let unit_index_u32 = u32::try_from(unit_index)
+        .map_err(|_| LoadUnitValuesSegmentError::UnitIndexOverflow { unit_index })?;
+    let unit_values = parsed.as_ref().and_then(|parsed| {
+        parsed
+            .units
+            .iter()
+            .find(|unit| unit.unit_index == unit_index_u32)
+    });
+
+    if expected_count == 0 {
+        if unit_values.is_some() {
+            return Err(LoadUnitValuesSegmentError::UnexpectedUnit { unit_index });
+        }
+        return Ok(Vec::new());
+    }
+
+    let unit_values = match (segment, unit_values) {
+        (None, _) => return Err(LoadUnitValuesSegmentError::MissingSegment),
+        (Some(_), None) => return Err(LoadUnitValuesSegmentError::MissingUnit { unit_index }),
+        (Some(_), Some(values)) => values,
+    };
+    if unit_values.values.len() != expected_count {
+        return Err(LoadUnitValuesSegmentError::ValueCountMismatch {
+            unit_index,
+            expected: expected_count,
+            found: unit_values.values.len(),
+        });
+    }
+
+    unit_values
+        .values
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, value)| {
+            Felt::from_canonical(value).map_err(|source| {
+                LoadUnitValuesSegmentError::NonCanonicalValue {
+                    unit_index,
+                    index,
+                    source,
+                }
+            })
+        })
+        .collect()
 }
 
 pub fn expected_packed_unit_value_count(
