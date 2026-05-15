@@ -276,13 +276,18 @@ fn write_verifier_metadata(path: &Path, value: &str) {
     write_bytes(path, bytes);
 }
 
+fn write_global_metadata(path: &Path, value: &str) {
+    let info = parse_global_info_json(value).expect("global metadata should parse");
+    let bytes = encode_global_info(&info).expect("global metadata should encode");
+    write_bytes(path, bytes);
+}
+
 fn write_global_files(root: &Path) {
     fs::create_dir_all(root).expect("fixture root should be created");
-    fs::write(
-        root.join("pilout.globalInfo.json"),
+    write_global_metadata(
+        &root.join("pilout.globalInfo.bin"),
         sample_global_info_json(),
-    )
-    .expect("global metadata should be written");
+    );
     fs::write(root.join("pilout.globalConstraints.json"), "{}")
         .expect("global constraints metadata should be written");
     fs::write(root.join("pilout.globalConstraints.bin"), [])
@@ -291,11 +296,10 @@ fn write_global_files(root: &Path) {
 
 fn write_catalog_global_files(root: &Path) {
     fs::create_dir_all(root).expect("fixture root should be created");
-    fs::write(
-        root.join("pilout.globalInfo.json"),
+    write_global_metadata(
+        &root.join("pilout.globalInfo.bin"),
         sample_catalog_global_info_json(),
-    )
-    .expect("global metadata should be written");
+    );
     fs::write(root.join("pilout.globalConstraints.json"), "{}")
         .expect("global constraints metadata should be written");
     let constraints = encode_global_constraint_program(&GlobalConstraintProgram {
@@ -311,11 +315,10 @@ fn write_catalog_global_files(root: &Path) {
 
 fn write_binary_catalog_global_files(root: &Path) {
     fs::create_dir_all(root).expect("fixture root should be created");
-    let info =
-        parse_global_info_json(sample_catalog_global_info_json()).expect("global should parse");
-    let bytes = encode_global_info(&info).expect("global should encode");
-    fs::write(root.join("pilout.globalInfo.bin"), bytes)
-        .expect("global metadata should be written");
+    write_global_metadata(
+        &root.join("pilout.globalInfo.bin"),
+        sample_catalog_global_info_json(),
+    );
     fs::write(root.join("pilout.globalConstraints.json"), "{}")
         .expect("global constraints metadata should be written");
     let constraints = encode_global_constraint_program(&GlobalConstraintProgram {
@@ -523,6 +526,23 @@ fn reports_missing_required_key_directory_files() {
         }
     ));
 
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_key_directory_layout_without_binary_global_metadata() {
+    let dir = temp_dir("global-json-only");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture root should be created");
+    fs::write(
+        dir.join("pilout.globalInfo.json"),
+        sample_catalog_global_info_json(),
+    )
+    .expect("global metadata should be written");
+
+    let error = read_key_directory_layout(&dir).expect_err("layout should be rejected");
+
+    assert!(matches!(error, KeyDirectoryError::GlobalInfo(_)));
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 

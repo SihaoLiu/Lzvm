@@ -13,6 +13,7 @@ use lzvm_artifacts::expression_info::{encode_expression_info, parse_expression_i
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
+use lzvm_artifacts::global_info::{encode_global_info, parse_global_info_json};
 use lzvm_artifacts::group_values_segment::{
     encode_group_values_segment, parse_group_values_segment, GroupValuesSegment,
     GROUP_VALUES_SEGMENT_ID,
@@ -1167,6 +1168,12 @@ fn write_verifier_metadata(path: &Path, value: &str) {
     write_bytes(path, bytes);
 }
 
+fn write_global_metadata(path: &Path, value: &str) {
+    let info = parse_global_info_json(value).expect("global metadata should parse");
+    let bytes = encode_global_info(&info).expect("global metadata should encode");
+    write_bytes(path, bytes);
+}
+
 fn write_field_words(path: &Path, values: &[u64]) {
     let mut bytes = Vec::with_capacity(values.len() * 8);
     for value in values {
@@ -1231,8 +1238,7 @@ int lzvm_witness_compute(const LzvmWitnessCall *call, LzvmWitnessResult *result)
 
 fn write_global_files_with_info(root: &Path, global_info: &str) {
     fs::create_dir_all(root).expect("fixture root should be created");
-    fs::write(root.join("pilout.globalInfo.json"), global_info)
-        .expect("global metadata should be written");
+    write_global_metadata(&root.join("pilout.globalInfo.bin"), global_info);
     fs::write(root.join("pilout.globalConstraints.json"), "{}")
         .expect("global constraints metadata should be written");
     let constraints = encode_global_constraint_program(&GlobalConstraintProgram {

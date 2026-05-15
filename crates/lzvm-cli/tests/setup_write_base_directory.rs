@@ -13,7 +13,9 @@ use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
 use lzvm_artifacts::fixed::{encode_raw_fixed_columns, FixedColumn, FixedColumns};
-use lzvm_artifacts::global_info::read_global_info_binary_file;
+use lzvm_artifacts::global_info::{
+    encode_global_info, parse_global_info_json, read_global_info_binary_file,
+};
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyUnitPaths};
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, read_pcs_setup_material_file};
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, read_pcs_setup_plan_file};
@@ -251,6 +253,12 @@ fn write_verifier_metadata(path: &Path, value: &str) {
     write_bytes(path, bytes);
 }
 
+fn write_global_metadata(path: &Path, value: &str) {
+    let info = parse_global_info_json(value).expect("global metadata should parse");
+    let bytes = encode_global_info(&info).expect("global metadata should encode");
+    write_bytes(path, bytes);
+}
+
 fn root_from_tree(tree: &[u8]) -> VerificationKeyRoot {
     VerificationKeyRoot::FieldElements(
         tree[tree.len() - 32..]
@@ -262,8 +270,8 @@ fn root_from_tree(tree: &[u8]) -> VerificationKeyRoot {
 
 fn write_global_files(root: &Path) {
     fs::create_dir_all(root).expect("fixture root should be created");
-    write_text(
-        &root.join("pilout.globalInfo.json"),
+    write_global_metadata(
+        &root.join("pilout.globalInfo.bin"),
         sample_global_info_json(),
     );
     write_text(&root.join("pilout.globalConstraints.json"), "{}");
