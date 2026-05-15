@@ -541,6 +541,14 @@ fn hashes_key_directory_catalogs_deterministically() {
         digest
     );
 
+    let mut changed_commit_mode = catalog.clone();
+    changed_commit_mode.units[0].pcs_plan.hash_commits =
+        !changed_commit_mode.units[0].pcs_plan.hash_commits;
+    assert_ne!(
+        key_directory_catalog_digest(&changed_commit_mode).expect("changed digest should compute"),
+        digest
+    );
+
     let mut changed_global = catalog.clone();
     changed_global.layout.global_info.transcript_arity += 1;
     assert_ne!(

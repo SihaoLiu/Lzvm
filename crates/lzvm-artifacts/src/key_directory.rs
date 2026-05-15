@@ -907,6 +907,7 @@ fn hash_pcs_setup_plan(hasher: &mut Sha256, plan: &PcsSetupPlan) {
     hash_u32(hasher, plan.proof_of_work_bits);
     hash_u32(hasher, plan.merkle_tree_arity);
     hash_optional_u32(hasher, plan.transcript_arity);
+    hash_bool(hasher, plan.hash_commits);
     hash_u32(hasher, plan.constant_width);
     hash_u32_vec(hasher, &plan.stage_commit_widths);
     hash_i64_vec(hasher, &plan.opening_points);

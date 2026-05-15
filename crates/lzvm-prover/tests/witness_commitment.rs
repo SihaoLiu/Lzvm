@@ -38,6 +38,7 @@ fn sample_unit(rows: u64, stage_commit_widths: Vec<u32>) -> ProveUnitSchedule {
         merkle_tree_arity: 2,
         last_level_verification: 0,
         transcript_arity: Some(2),
+        hash_commits: true,
         constant_width: 1,
         stage_commit_widths,
         opening_points: vec![0],

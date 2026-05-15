@@ -73,6 +73,7 @@ fn derives_pcs_setup_plan_from_unit_setup_metadata() {
     assert_eq!(plan.proof_of_work_bits, 20);
     assert_eq!(plan.merkle_tree_arity, 4);
     assert_eq!(plan.transcript_arity, Some(4));
+    assert!(plan.hash_commits);
     assert_eq!(plan.constant_width, 5);
     assert_eq!(plan.stage_commit_widths, vec![2, 3, 1]);
     assert_eq!(plan.opening_points, vec![0, 1, -1]);
@@ -96,6 +97,42 @@ fn encodes_and_parses_pcs_setup_plans() {
 
     assert_eq!(&encoded[0..4], b"pcsp");
     assert_eq!(parsed, plan);
+}
+
+#[test]
+fn encodes_the_current_pcs_setup_plan_format_version() {
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
+
+    let encoded = encode_pcs_setup_plan(&plan).expect("plan should encode");
+
+    assert_eq!(u32::from_le_bytes(encoded[4..8].try_into().unwrap()), 2);
+}
+
+#[test]
+fn rejects_stale_pcs_setup_plan_format_headers() {
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
+    let mut encoded = encode_pcs_setup_plan(&plan).expect("plan should encode");
+    encoded[4..8].copy_from_slice(&1_u32.to_le_bytes());
+
+    assert!(parse_pcs_setup_plan(&encoded).is_err());
+}
+
+#[test]
+fn pcs_setup_plan_encoding_depends_on_commit_hash_mode() {
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let mut direct_setup = setup.clone();
+    direct_setup.stark.hash_commits = false;
+
+    let compressed_plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
+    let direct_plan = derive_pcs_setup_plan(&direct_setup).expect("plan should derive");
+
+    assert_ne!(compressed_plan, direct_plan);
+    assert_ne!(
+        encode_pcs_setup_plan(&compressed_plan).expect("plan should encode"),
+        encode_pcs_setup_plan(&direct_plan).expect("plan should encode")
+    );
 }
 
 #[test]

@@ -7,7 +7,7 @@ use crate::sectioned::{
 use crate::setup_info::{SetupInfoError, UnitSetupInfo};
 
 const PCS_PLAN_KIND: [u8; 4] = *b"pcsp";
-const PCS_PLAN_VERSION: u32 = 1;
+const PCS_PLAN_VERSION: u32 = 2;
 const PCS_PLAN_SECTION_ID: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,6 +21,7 @@ pub struct PcsSetupPlan {
     pub proof_of_work_bits: u32,
     pub merkle_tree_arity: u32,
     pub transcript_arity: Option<u32>,
+    pub hash_commits: bool,
     pub constant_width: u32,
     pub stage_commit_widths: Vec<u32>,
     pub opening_points: Vec<i64>,
@@ -179,6 +180,14 @@ pub fn read_pcs_setup_plan_file(path: impl AsRef<Path>) -> Result<PcsSetupPlan, 
 
 pub fn parse_pcs_setup_plan(bytes: &[u8]) -> Result<PcsSetupPlan, PcsPlanError> {
     let file = parse_sectioned_file(bytes, PCS_PLAN_KIND, PCS_PLAN_VERSION)?;
+    if file.version != PCS_PLAN_VERSION {
+        return Err(PcsPlanError::Sectioned(
+            SectionedError::UnsupportedVersion {
+                found: file.version,
+                max: PCS_PLAN_VERSION,
+            },
+        ));
+    }
     if file.sections.len() != 1 {
         return Err(PcsPlanError::InvalidSectionCount {
             found: u32::try_from(file.sections.len()).unwrap_or(u32::MAX),
@@ -260,6 +269,7 @@ pub fn derive_pcs_setup_plan(setup: &UnitSetupInfo) -> Result<PcsSetupPlan, PcsP
         proof_of_work_bits: setup.stark.pow_bits,
         merkle_tree_arity: setup.stark.merkle_tree_arity,
         transcript_arity: setup.stark.transcript_arity,
+        hash_commits: setup.stark.hash_commits,
         constant_width: setup.n_constants,
         stage_commit_widths: setup.stage_commit_widths()?,
         opening_points: setup.opening_points.clone(),
@@ -290,6 +300,7 @@ fn parse_pcs_setup_plan_section(bytes: &[u8]) -> Result<PcsSetupPlan, PcsPlanErr
     let proof_of_work_bits = reader.read_u32()?;
     let merkle_tree_arity = reader.read_u32()?;
     let transcript_arity = reader.read_optional_u32("transcript_arity")?;
+    let hash_commits = reader.read_bool("hash_commits")?;
     let constant_width = reader.read_u32()?;
 
     let stage_commit_width_count = reader.read_u32()?;
@@ -331,6 +342,7 @@ fn parse_pcs_setup_plan_section(bytes: &[u8]) -> Result<PcsSetupPlan, PcsPlanErr
         proof_of_work_bits,
         merkle_tree_arity,
         transcript_arity,
+        hash_commits,
         constant_width,
         stage_commit_widths,
         opening_points,
@@ -352,6 +364,7 @@ fn encode_pcs_setup_plan_section(value: &PcsSetupPlan) -> Result<Vec<u8>, PcsPla
     write_u32(&mut section, value.proof_of_work_bits);
     write_u32(&mut section, value.merkle_tree_arity);
     write_optional_u32(&mut section, value.transcript_arity);
+    write_bool(&mut section, value.hash_commits);
     write_u32(&mut section, value.constant_width);
     write_u32(&mut section, usize_to_u32(value.stage_commit_widths.len())?);
     for width in &value.stage_commit_widths {
@@ -494,6 +507,14 @@ impl<'a> Reader<'a> {
         }
     }
 
+    fn read_bool(&mut self, field: &'static str) -> Result<bool, PcsPlanError> {
+        match self.read_u8()? {
+            0 => Ok(false),
+            1 => Ok(true),
+            value => Err(PcsPlanError::InvalidFlag { field, value }),
+        }
+    }
+
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], PcsPlanError> {
         let end = self
             .offset
@@ -532,6 +553,10 @@ fn write_optional_u32(out: &mut Vec<u8>, value: Option<u32>) {
         }
         None => out.push(0),
     }
+}
+
+fn write_bool(out: &mut Vec<u8>, value: bool) {
+    out.push(u8::from(value));
 }
 
 fn usize_to_u32(value: usize) -> Result<u32, PcsPlanError> {

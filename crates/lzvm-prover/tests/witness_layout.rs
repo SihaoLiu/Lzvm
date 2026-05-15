@@ -37,6 +37,7 @@ fn sample_unit_with_rows(
         merkle_tree_arity: 4,
         last_level_verification: 0,
         transcript_arity: Some(4),
+        hash_commits: true,
         constant_width: 5,
         stage_commit_widths,
         opening_points: vec![0, 1, -1],
