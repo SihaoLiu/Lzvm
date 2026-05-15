@@ -5,6 +5,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lzvm_setup::{extend_fixed_columns_for_constant_tree, write_constant_tree_leaves, SetupError};
+#[cfg(feature = "cuda")]
+use lzvm_setup::{extend_fixed_columns_for_constant_tree_with_backend, FixedExtensionBackend};
 
 fn sample_setup_info_json() -> &'static str {
     r#"{
@@ -117,6 +119,23 @@ fn extends_fixed_columns_into_row_major_constant_tree_leaves() {
             9,
         ]
     );
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_backend_matches_cpu_fixed_column_extension() {
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let expected = extend_fixed_columns_for_constant_tree(&sample_columns(), &setup)
+        .expect("cpu extension should succeed");
+
+    let actual = extend_fixed_columns_for_constant_tree_with_backend(
+        &sample_columns(),
+        &setup,
+        FixedExtensionBackend::Cuda,
+    )
+    .expect("cuda extension should succeed");
+
+    assert_eq!(actual, expected);
 }
 
 #[test]

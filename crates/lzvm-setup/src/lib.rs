@@ -38,12 +38,20 @@ pub struct ConstantTreeLeavesWriteReport {
     pub column_count: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FixedExtensionBackend {
+    Cpu,
+    Cuda,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetupError {
     FixedColumns(FixedColumnError),
     ConstantTree(ConstantTreeError),
     Domain(DomainError),
     Field(FieldError),
+    CudaUnavailable,
+    CudaBackend(String),
     ConstantTreeRootMismatch {
         expected: VerificationKeyRoot,
         found: VerificationKeyRoot,
@@ -76,6 +84,8 @@ impl fmt::Display for SetupError {
             Self::ConstantTree(error) => write!(f, "setup constant-tree error: {error}"),
             Self::Domain(error) => write!(f, "setup field-domain error: {error}"),
             Self::Field(error) => write!(f, "setup field error: {error}"),
+            Self::CudaUnavailable => write!(f, "setup cuda backend is not enabled"),
+            Self::CudaBackend(message) => write!(f, "setup cuda backend error: {message}"),
             Self::ConstantTreeRootMismatch { expected, found } => write!(
                 f,
                 "setup constant-tree root mismatch: expected {expected:?}, found {found:?}"
@@ -133,9 +143,30 @@ pub fn extend_fixed_columns_for_constant_tree(
     value: &FixedColumns,
     setup: &UnitSetupInfo,
 ) -> Result<Vec<u8>, SetupError> {
+    extend_fixed_columns_for_constant_tree_with_backend(value, setup, FixedExtensionBackend::Cpu)
+}
+
+pub fn extend_fixed_columns_for_constant_tree_with_backend(
+    value: &FixedColumns,
+    setup: &UnitSetupInfo,
+    backend: FixedExtensionBackend,
+) -> Result<Vec<u8>, SetupError> {
+    let extended_row_count = checked_domain_len(setup.stark.n_bits_ext)?;
+    let columns = fixed_columns_for_extension(value, setup)?;
+    let extended_columns = match backend {
+        FixedExtensionBackend::Cpu => extend_columns_on_cpu(&columns, setup)?,
+        FixedExtensionBackend::Cuda => extend_columns_on_cuda(&columns, setup)?,
+    };
+
+    encode_extended_columns(&extended_columns, extended_row_count)
+}
+
+fn fixed_columns_for_extension(
+    value: &FixedColumns,
+    setup: &UnitSetupInfo,
+) -> Result<Vec<Vec<Felt>>, SetupError> {
     let raw = encode_raw_fixed_columns(value, setup)?;
     let row_count = checked_domain_len(setup.stark.n_bits)?;
-    let extended_row_count = checked_domain_len(setup.stark.n_bits_ext)?;
     let column_count =
         usize::try_from(setup.n_constants).map_err(|_| SetupError::LengthOverflow)?;
     let word_count = row_count
@@ -143,12 +174,11 @@ pub fn extend_fixed_columns_for_constant_tree(
         .ok_or(SetupError::LengthOverflow)?;
     if raw.len()
         != word_count
-            .checked_mul(8)
+            .checked_mul(WORD_BYTES)
             .ok_or(SetupError::LengthOverflow)?
     {
         return Err(SetupError::LengthOverflow);
     }
-
     let mut extended_columns = Vec::with_capacity(column_count);
     for column in 0..column_count {
         let mut values = Vec::with_capacity(row_count);
@@ -158,29 +188,89 @@ pub fn extend_fixed_columns_for_constant_tree(
                 .and_then(|offset| offset.checked_add(column))
                 .ok_or(SetupError::LengthOverflow)?;
             let byte_index = word_index
-                .checked_mul(8)
+                .checked_mul(WORD_BYTES)
                 .ok_or(SetupError::LengthOverflow)?;
             let value = u64::from_le_bytes(
-                raw[byte_index..byte_index + 8]
+                raw[byte_index..byte_index + WORD_BYTES]
                     .try_into()
                     .expect("slice length checked"),
             );
             values.push(Felt::from_canonical(value)?);
         }
-        extended_columns.push(coset_extend_evaluations(
-            &values,
-            setup.stark.n_bits as usize,
-            setup.stark.n_bits_ext as usize,
-        )?);
+        extended_columns.push(values);
     }
+    Ok(extended_columns)
+}
 
+fn extend_columns_on_cpu(
+    columns: &[Vec<Felt>],
+    setup: &UnitSetupInfo,
+) -> Result<Vec<Vec<Felt>>, SetupError> {
+    columns
+        .iter()
+        .map(|values| {
+            coset_extend_evaluations(
+                values,
+                setup.stark.n_bits as usize,
+                setup.stark.n_bits_ext as usize,
+            )
+            .map_err(Into::into)
+        })
+        .collect()
+}
+
+#[cfg(feature = "cuda")]
+fn extend_columns_on_cuda(
+    columns: &[Vec<Felt>],
+    setup: &UnitSetupInfo,
+) -> Result<Vec<Vec<Felt>>, SetupError> {
+    columns
+        .iter()
+        .map(|values| {
+            let source = values
+                .iter()
+                .map(|value| value.to_u64())
+                .collect::<Vec<_>>();
+            let extended = lzvm_accel::cuda_goldilocks_coset_extend(
+                &source,
+                setup.stark.n_bits as usize,
+                setup.stark.n_bits_ext as usize,
+            )
+            .map_err(|error| SetupError::CudaBackend(error.to_string()))?;
+            extended
+                .into_iter()
+                .map(|value| Felt::from_canonical(value).map_err(Into::into))
+                .collect()
+        })
+        .collect()
+}
+
+#[cfg(not(feature = "cuda"))]
+fn extend_columns_on_cuda(
+    _columns: &[Vec<Felt>],
+    _setup: &UnitSetupInfo,
+) -> Result<Vec<Vec<Felt>>, SetupError> {
+    Err(SetupError::CudaUnavailable)
+}
+
+fn encode_extended_columns(
+    extended_columns: &[Vec<Felt>],
+    extended_row_count: usize,
+) -> Result<Vec<u8>, SetupError> {
+    let column_count = extended_columns.len();
     let byte_count = extended_row_count
         .checked_mul(column_count)
-        .and_then(|count| count.checked_mul(8))
+        .and_then(|count| count.checked_mul(WORD_BYTES))
         .ok_or(SetupError::LengthOverflow)?;
+    for column_values in extended_columns {
+        if column_values.len() != extended_row_count {
+            return Err(SetupError::LengthOverflow);
+        }
+    }
+
     let mut out = Vec::with_capacity(byte_count);
     for row in 0..extended_row_count {
-        for column_values in &extended_columns {
+        for column_values in extended_columns {
             out.extend_from_slice(&column_values[row].to_le_bytes());
         }
     }

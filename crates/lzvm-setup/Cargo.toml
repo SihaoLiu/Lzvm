@@ -9,6 +9,11 @@ repository.workspace = true
 name = "lzvm_setup"
 path = "src/lib.rs"
 
+[features]
+default = []
+cuda = ["dep:lzvm-accel", "lzvm-accel/cuda"]
+
 [dependencies]
+lzvm-accel = { path = "../lzvm-accel", optional = true }
 lzvm-artifacts = { path = "../lzvm-artifacts" }
 lzvm-field = { path = "../lzvm-field" }

@@ -39,6 +39,7 @@ version = "0.1.0"
 name = "lzvm-setup"
 version = "0.1.0"
 dependencies = [
+ "lzvm-accel",
  "lzvm-artifacts",
  "lzvm-field",
 ]
