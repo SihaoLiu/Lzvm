@@ -16,6 +16,7 @@ pub mod constant_tree_opening;
 mod merkle_hash;
 pub mod pcs_challenge;
 pub mod pcs_fri;
+pub mod pcs_transcript;
 mod prove_witness;
 pub mod witness_commitment;
 pub mod witness_layout;
