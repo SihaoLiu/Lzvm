@@ -3,9 +3,12 @@ use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_field::{
     coset_extend_evaluations, poseidon2_hash_16, poseidon2_hash_8, DomainError, Felt,
 };
-use lzvm_prover::witness_commitment::{commit_witness_stage_leaves, WitnessStageCommitmentError};
+use lzvm_prover::witness_commitment::{
+    commit_witness_stage_leaves, commit_witness_trace_stages, WitnessStageCommitmentError,
+    WitnessTraceCommitmentError,
+};
 use lzvm_prover::witness_commitment::{extend_witness_stage_leaves, WitnessStageLeafError};
-use lzvm_prover::witness_layout::derive_witness_trace_layout;
+use lzvm_prover::witness_layout::{derive_witness_trace_layout, WitnessTraceLayoutError};
 use lzvm_prover::witness_trace::parse_witness_trace;
 use lzvm_prover::ProveUnitSchedule;
 
@@ -205,6 +208,32 @@ fn commits_wide_witness_stage_leaves_with_arity4_hashing() {
 }
 
 #[test]
+fn commits_all_witness_trace_stages_from_the_unit_schedule() {
+    let unit = sample_unit(2, vec![2, 1]);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let trace = parse_witness_trace(&encode_values(&[5, 9, 11, 1, 9, 13]), 2, 3)
+        .expect("trace should parse");
+
+    let commitments =
+        commit_witness_trace_stages(&trace, &unit).expect("trace stages should commit");
+
+    assert_eq!(commitments.stage_count(), 2);
+    assert_eq!(commitments.commitments()[0].stage_index(), 1);
+    assert_eq!(commitments.commitments()[1].stage_index(), 2);
+
+    for stage_index in 1..=2 {
+        let stage = layout
+            .stage_trace(&trace, stage_index)
+            .expect("stage should extract");
+        let leaves = extend_witness_stage_leaves(&stage, 1, 2).expect("stage leaves should extend");
+        let expected =
+            commit_witness_stage_leaves(&leaves, 2).expect("stage should commit directly");
+
+        assert_eq!(&commitments.commitments()[stage_index - 1], &expected);
+    }
+}
+
+#[test]
 fn rejects_unsupported_witness_stage_commitment_arities() {
     let unit = sample_unit(2, vec![1]);
     let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
@@ -216,6 +245,38 @@ fn rejects_unsupported_witness_stage_commitment_arities() {
     assert!(matches!(
         commit_witness_stage_leaves(&leaves, 3),
         Err(WitnessStageCommitmentError::UnsupportedArity { arity: 3 })
+    ));
+}
+
+#[test]
+fn rejects_trace_commitment_shape_mismatches() {
+    let unit = sample_unit(2, vec![2]);
+    let trace = parse_witness_trace(&encode_values(&[5, 9]), 1, 2).expect("trace should parse");
+
+    assert!(matches!(
+        commit_witness_trace_stages(&trace, &unit),
+        Err(WitnessTraceCommitmentError::Layout(
+            WitnessTraceLayoutError::TraceShapeMismatch {
+                expected_rows: 2,
+                expected_columns: 2,
+                found_rows: 1,
+                found_columns: 2
+            }
+        ))
+    ));
+}
+
+#[test]
+fn rejects_trace_commitments_with_unsupported_arities() {
+    let mut unit = sample_unit(2, vec![1]);
+    unit.merkle_tree_arity = 3;
+    let trace = parse_witness_trace(&encode_values(&[5, 1]), 2, 1).expect("trace should parse");
+
+    assert!(matches!(
+        commit_witness_trace_stages(&trace, &unit),
+        Err(WitnessTraceCommitmentError::StageCommitment(
+            WitnessStageCommitmentError::UnsupportedArity { arity: 3 }
+        ))
     ));
 }
 

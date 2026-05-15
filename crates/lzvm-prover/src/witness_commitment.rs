@@ -4,7 +4,11 @@ use lzvm_field::{
     coset_extend_evaluations, poseidon2_hash_16, poseidon2_hash_8, DomainError, Felt, FieldError,
 };
 
-use crate::witness_layout::WitnessTraceStageValues;
+use crate::witness_layout::{
+    derive_witness_trace_layout, WitnessTraceLayoutError, WitnessTraceStageValues,
+};
+use crate::witness_trace::WitnessTraceBuffer;
+use crate::ProveUnitSchedule;
 
 const HASH_WORDS: usize = 4;
 const WORD_BYTES: usize = 8;
@@ -140,6 +144,73 @@ impl From<FieldError> for WitnessStageCommitmentError {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WitnessTraceCommitments {
+    commitments: Vec<WitnessStageCommitment>,
+}
+
+impl WitnessTraceCommitments {
+    pub fn stage_count(&self) -> usize {
+        self.commitments.len()
+    }
+
+    pub fn commitments(&self) -> &[WitnessStageCommitment] {
+        &self.commitments
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WitnessTraceCommitmentError {
+    Layout(WitnessTraceLayoutError),
+    StageLeaf(WitnessStageLeafError),
+    StageCommitment(WitnessStageCommitmentError),
+    LengthOverflow,
+}
+
+impl fmt::Display for WitnessTraceCommitmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Layout(error) => write!(f, "witness trace commitment layout error: {error}"),
+            Self::StageLeaf(error) => {
+                write!(f, "witness trace commitment leaf error: {error}")
+            }
+            Self::StageCommitment(error) => {
+                write!(f, "witness trace commitment tree error: {error}")
+            }
+            Self::LengthOverflow => write!(f, "witness trace commitment length overflow"),
+        }
+    }
+}
+
+impl std::error::Error for WitnessTraceCommitmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Layout(error) => Some(error),
+            Self::StageLeaf(error) => Some(error),
+            Self::StageCommitment(error) => Some(error),
+            Self::LengthOverflow => None,
+        }
+    }
+}
+
+impl From<WitnessTraceLayoutError> for WitnessTraceCommitmentError {
+    fn from(error: WitnessTraceLayoutError) -> Self {
+        Self::Layout(error)
+    }
+}
+
+impl From<WitnessStageLeafError> for WitnessTraceCommitmentError {
+    fn from(error: WitnessStageLeafError) -> Self {
+        Self::StageLeaf(error)
+    }
+}
+
+impl From<WitnessStageCommitmentError> for WitnessTraceCommitmentError {
+    fn from(error: WitnessStageCommitmentError) -> Self {
+        Self::StageCommitment(error)
+    }
+}
+
 pub fn extend_witness_stage_leaves(
     stage: &WitnessTraceStageValues,
     source_bits: usize,
@@ -179,6 +250,29 @@ pub fn extend_witness_stage_leaves(
         columns,
         bytes,
     })
+}
+
+pub fn commit_witness_trace_stages(
+    trace: &WitnessTraceBuffer,
+    unit: &ProveUnitSchedule,
+) -> Result<WitnessTraceCommitments, WitnessTraceCommitmentError> {
+    let layout = derive_witness_trace_layout(unit)?;
+    let source_bits = usize::try_from(unit.base_domain_bits)
+        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
+    let target_bits = usize::try_from(unit.extended_domain_bits)
+        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
+    let arity = usize::try_from(unit.merkle_tree_arity)
+        .map_err(|_| WitnessTraceCommitmentError::LengthOverflow)?;
+
+    let mut commitments = Vec::with_capacity(layout.stage_count());
+    for stage_info in layout.stages() {
+        let stage = layout.stage_trace(trace, stage_info.stage_index)?;
+        let leaves = extend_witness_stage_leaves(&stage, source_bits, target_bits)?;
+        let commitment = commit_witness_stage_leaves(&leaves, arity)?;
+        commitments.push(commitment);
+    }
+
+    Ok(WitnessTraceCommitments { commitments })
 }
 
 pub fn commit_witness_stage_leaves(
