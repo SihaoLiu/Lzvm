@@ -15,7 +15,7 @@ use lzvm_artifacts::key_directory::{
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_material};
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, encode_pcs_setup_plan};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
-use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
+use lzvm_artifacts::setup_info::{encode_unit_setup_info, parse_unit_setup_info_json};
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -546,6 +546,47 @@ fn reads_key_directory_layout_from_binary_global_metadata() {
     assert_eq!(layout.global_info.name, "sample-program");
     assert_eq!(layout.global_paths.info, dir.join("pilout.globalInfo.bin"));
     assert_eq!(layout.units.len(), 4);
+}
+
+#[test]
+fn reads_key_directory_catalog_from_binary_unit_setup_metadata() {
+    let dir = temp_dir("binary-unit-setup");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup_bytes = encode_unit_setup_info(&setup).expect("setup should encode");
+    for unit in &layout.units {
+        let json_path = unit
+            .setup_info_json()
+            .expect("json setup metadata path should derive");
+        let binary_path = unit
+            .setup_info_binary()
+            .expect("binary setup metadata path should derive");
+        write_bytes(&binary_path, &setup_bytes);
+        if json_path.is_file() {
+            fs::remove_file(json_path).expect("json setup metadata should be removed");
+        }
+    }
+
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+
+    assert!(catalog
+        .units
+        .iter()
+        .all(|unit| unit.metadata.setup == setup));
+    assert!(catalog.units.iter().all(|unit| {
+        unit.paths
+            .setup_info()
+            .expect("setup metadata path should derive")
+            .to_string_lossy()
+            .ends_with(".starkinfo.bin")
+    }));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]

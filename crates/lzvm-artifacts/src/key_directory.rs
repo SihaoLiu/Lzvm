@@ -318,9 +318,24 @@ impl KeyDirectoryLayout {
 
 impl KeyUnitPaths {
     pub fn setup_info(&self) -> Option<PathBuf> {
+        let binary = self.setup_info_binary()?;
+        if binary.is_file() {
+            Some(binary)
+        } else {
+            self.setup_info_json()
+        }
+    }
+
+    pub fn setup_info_json(&self) -> Option<PathBuf> {
         self.metadata_prefix
             .as_ref()
             .map(|prefix| append_suffix(prefix, ".starkinfo.json"))
+    }
+
+    pub fn setup_info_binary(&self) -> Option<PathBuf> {
+        self.metadata_prefix
+            .as_ref()
+            .map(|prefix| append_suffix(prefix, ".starkinfo.bin"))
     }
 
     pub fn expression_info(&self) -> Option<PathBuf> {
@@ -823,7 +838,9 @@ fn derive_unit_paths(root: &Path, global_info: &GlobalInfo) -> Vec<KeyUnitPaths>
     }));
 
     let final_circuit_prefix = program_root.join("recursivef").join("recursivef");
-    if append_suffix(&final_circuit_prefix, ".starkinfo.json").is_file() {
+    if append_suffix(&final_circuit_prefix, ".starkinfo.bin").is_file()
+        || append_suffix(&final_circuit_prefix, ".starkinfo.json").is_file()
+    {
         units.push(KeyUnitPaths::from_prefix(KeyUnitPathSpec {
             kind: KeyUnitKind::FinalCircuit,
             group_id: None,

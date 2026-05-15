@@ -15,7 +15,9 @@ use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyUnitPaths};
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, read_pcs_setup_material_file};
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, read_pcs_setup_plan_file};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
-use lzvm_artifacts::setup_info::{parse_unit_setup_info_json, UnitSetupInfo};
+use lzvm_artifacts::setup_info::{
+    parse_unit_setup_info_json, read_unit_setup_info_binary_file, UnitSetupInfo,
+};
 use lzvm_artifacts::verification_key::{
     encode_verification_key_binary, read_verification_key_binary_file,
     read_verification_key_json_file, VerificationKeyRoot,
@@ -380,6 +382,38 @@ fn writes_base_directory_global_metadata_binary() {
 
     assert_eq!(code, 0);
     assert_eq!(global.name, "sample-program");
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn writes_base_directory_unit_setup_metadata_binary() {
+    let (dir, _) = create_key_directory("unit-info-bin");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "write-base-directory",
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let expected =
+        parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    for unit in &layout.units {
+        let path = unit
+            .setup_info_binary()
+            .expect("binary setup metadata path should derive");
+        let setup = read_unit_setup_info_binary_file(path).expect("binary setup should parse");
+        assert_eq!(setup, expected);
+    }
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
     assert!(stderr.is_empty());
 }
 

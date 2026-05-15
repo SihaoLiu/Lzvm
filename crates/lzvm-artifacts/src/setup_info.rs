@@ -269,6 +269,11 @@ impl UnitSetupInfo {
 }
 
 pub fn read_unit_setup_info_file(path: impl AsRef<Path>) -> Result<UnitSetupInfo, SetupInfoError> {
+    let path = path.as_ref();
+    if path.extension().and_then(|extension| extension.to_str()) == Some("bin") {
+        return read_unit_setup_info_binary_file(path);
+    }
+
     let input = std::fs::read_to_string(path).map_err(|error| SetupInfoError::Io {
         message: error.to_string(),
     })?;

@@ -37,6 +37,7 @@ use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact, ProofSegmen
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file, PublicValues};
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, read_unit_setup_info_file,
+    UnitSetupInfo,
 };
 use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
 use lzvm_artifacts::verification_key::{read_verification_key_binary_file, VerificationKeyRoot};
@@ -2217,6 +2218,12 @@ fn write_base_directory(
                 return 1;
             }
         };
+        if let Some(path) = unit.setup_info_binary() {
+            if let Err(error) = write_unit_setup_info_binary_for_directory(&path, &setup) {
+                let _ = writeln!(stderr, "setup native base directory write failed: {error}");
+                return 1;
+            }
+        }
         let group_name = unit.group_name.as_deref().unwrap_or("raw");
         let unit_name = unit.unit_name.as_deref().unwrap_or("unit");
         let columns = match read_fixed_columns_file_for_setup(
@@ -2311,6 +2318,20 @@ fn write_global_info_binary_for_directory(
         format!(
             "write global-info binary failed: {}: {error}",
             output.display()
+        )
+    })?;
+    Ok(bytes.len() as u64)
+}
+
+fn write_unit_setup_info_binary_for_directory(
+    path: &Path,
+    setup: &UnitSetupInfo,
+) -> Result<u64, String> {
+    let bytes = encode_unit_setup_info(setup).map_err(|error| error.to_string())?;
+    std::fs::write(path, &bytes).map_err(|error| {
+        format!(
+            "write setup metadata binary failed: {}: {error}",
+            path.display()
         )
     })?;
     Ok(bytes.len() as u64)
