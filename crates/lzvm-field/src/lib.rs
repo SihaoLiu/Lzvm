@@ -40,6 +40,69 @@ const ROOTS_OF_UNITY: [u64; 33] = [
     7_277_203_076_849_721_926,
 ];
 
+const POSEIDON2_WIDTH_4_DIAG: [u64; 4] = [
+    0xf0ce_126f_e8a8_3094,
+    0x60f8_7e0b_59fb_4ee6,
+    0xa810_6c22_1cd6_d882,
+    0x5529_eddc_46e3_72e7,
+];
+
+const POSEIDON2_WIDTH_4_ROUND_CONSTANTS: [u64; 53] = [
+    0x5098_165e_e28e_503e,
+    0x41b8_4edf_ee6c_0590,
+    0xdda6_bc08_1661_f7b8,
+    0xb56f_892b_5fc6_d76c,
+    0xb2b7_e92b_1f70_399f,
+    0x7075_cc44_0425_36e9,
+    0xd5aa_e31b_4968_adb1,
+    0x0713_f06e_b5e4_0337,
+    0x80dc_cd8a_419c_c2d5,
+    0x89ae_3f75_c9b5_3e2c,
+    0x8aac_5449_eff2_7e1d,
+    0xef29_b2b2_4bf5_03f9,
+    0xa1d4_f9ea_aa62_e9fc,
+    0x2f21_5d5c_5a0a_a622,
+    0x7b34_47f3_4ae2_2dd9,
+    0x4b61_4218_a8e8_1eef,
+    0xe063_3431_14e0_f434,
+    0x2cde_df7f_0717_ad4e,
+    0x4662_c297_f253_7cf5,
+    0x8fe4_8eee_5176_1f3d,
+    0x616a_ead4_ae0e_bf00,
+    0x9b40_b730_22b3_089b,
+    0xa051_e164_6094_b036,
+    0xf69b_2c13_f377_ff8e,
+    0x96f7_dec4_549a_f9be,
+    0x8583_7168_6234_c707,
+    0x8483_ec4d_5e3e_8114,
+    0x21ae_a04a_4066_e649,
+    0xbed2_1bd9_5c72_ec7e,
+    0x9486_55aa_fad4_b757,
+    0xd4b2_ed65_7358_23e2,
+    0x1930_ef5f_54c4_0462,
+    0xb3cc_1696_b1d3_811e,
+    0xafe0_3360_7720_2599,
+    0x11da_6a90_6ef6_6e3e,
+    0xd7ab_df7d_347f_b43f,
+    0x65e7_d3c9_f0e8_da86,
+    0x0b73_bdaf_ed7f_79f4,
+    0x619b_24eb_14c2_9f0f,
+    0x8590_4bd8_db9e_3cd9,
+    0x4c9c_28e6_73ab_b589,
+    0x73b2_0f64_3717_949f,
+    0x832a_b3fa_a2c0_639a,
+    0xfa1d_702b_afb6_5207,
+    0x03f5_f17b_0409_003c,
+    0x2c3f_f110_b39f_84d5,
+    0x4cdf_d3ff_34ce_6f4f,
+    0xd3ac_f580_7f20_8db4,
+    0x13d2_8634_ce48_e600,
+    0xb065_f0e6_67d7_caf9,
+    0x44f6_f3d6_b128_25ca,
+    0x243a_64c0_3f36_ea35,
+    0x470a_3b7c_2f6a_6a7a,
+];
+
 const POSEIDON2_WIDTH_8_DIAG: [u64; 8] = [
     0xa988_11a1_fed4_e3a5,
     0x1cc4_8b54_f377_e2a0,
@@ -507,6 +570,14 @@ pub fn poseidon2_hash_8(input: [Felt; 8]) -> [Felt; 8] {
     )
 }
 
+pub fn poseidon2_hash_4(input: [Felt; 4]) -> [Felt; 4] {
+    poseidon2_hash(
+        input,
+        &POSEIDON2_WIDTH_4_DIAG,
+        &POSEIDON2_WIDTH_4_ROUND_CONSTANTS,
+    )
+}
+
 pub fn poseidon2_hash_16(input: [Felt; 16]) -> [Felt; 16] {
     poseidon2_hash(
         input,
@@ -667,7 +738,7 @@ fn poseidon2_hash<const WIDTH: usize>(
     round_constants: &[u64],
 ) -> [Felt; WIDTH] {
     const HALF_ROUNDS: usize = 4;
-    const PARTIAL_ROUNDS: usize = 22;
+    let partial_rounds = round_constants.len() - (2 * HALF_ROUNDS * WIDTH);
 
     let mut state = input;
     poseidon2_matmul_external(&mut state);
@@ -679,7 +750,7 @@ fn poseidon2_hash<const WIDTH: usize>(
     }
 
     let partial_offset = HALF_ROUNDS * WIDTH;
-    for round in 0..PARTIAL_ROUNDS {
+    for round in 0..partial_rounds {
         state[0] =
             poseidon2_pow7(state[0] + Felt::from_u64(round_constants[partial_offset + round]));
         let sum = state
@@ -691,7 +762,7 @@ fn poseidon2_hash<const WIDTH: usize>(
         }
     }
 
-    let final_offset = HALF_ROUNDS * WIDTH + PARTIAL_ROUNDS;
+    let final_offset = HALF_ROUNDS * WIDTH + partial_rounds;
     for round in 0..HALF_ROUNDS {
         let offset = final_offset + round * WIDTH;
         poseidon2_pow7add(&mut state, &round_constants[offset..offset + WIDTH]);
@@ -716,6 +787,10 @@ fn poseidon2_pow7add<const WIDTH: usize>(state: &mut [Felt; WIDTH], constants: &
 fn poseidon2_matmul_external<const WIDTH: usize>(state: &mut [Felt; WIDTH]) {
     for chunk in state.chunks_exact_mut(4) {
         poseidon2_matmul_m4(chunk);
+    }
+
+    if WIDTH == 4 {
+        return;
     }
 
     let mut stored = [Felt::ZERO; 4];

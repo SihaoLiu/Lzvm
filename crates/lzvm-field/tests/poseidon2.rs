@@ -1,4 +1,33 @@
-use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt};
+use lzvm_field::{poseidon2_hash_16, poseidon2_hash_4, poseidon2_hash_8, Felt};
+
+#[test]
+fn poseidon2_width_4_matches_known_vector() {
+    let input = [
+        Felt::from_u64(0),
+        Felt::from_u64(1),
+        Felt::from_u64(2),
+        Felt::from_u64(3),
+    ];
+
+    let output = poseidon2_hash_4(input);
+
+    assert_eq!(
+        output.map(Felt::to_u64),
+        [
+            8_466_914_293_353_944_746,
+            9_589_318_970_755_021_278,
+            5_769_801_005_587_200_741,
+            17_288_820_341_814_263_849,
+        ]
+    );
+}
+
+#[test]
+fn poseidon2_width_4_is_not_identity() {
+    let input = [Felt::ZERO; 4];
+
+    assert_ne!(poseidon2_hash_4(input), input);
+}
 
 #[test]
 fn poseidon2_width_8_matches_known_vector() {
