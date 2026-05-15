@@ -116,6 +116,7 @@ dependencies = [
  "lzvm-accel",
  "lzvm-artifacts",
  "lzvm-field",
+ "serde_json",
  "sha2",
 ]
 

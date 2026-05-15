@@ -18,6 +18,7 @@ pub mod pcs_challenge;
 pub mod pcs_fri;
 pub mod pcs_transcript;
 mod prove_witness;
+pub mod verifier_eval;
 pub mod witness_commitment;
 pub mod witness_layout;
 pub mod witness_loader;
