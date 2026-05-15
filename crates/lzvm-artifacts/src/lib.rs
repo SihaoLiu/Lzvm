@@ -16,6 +16,7 @@ pub mod pcs_material;
 pub mod pcs_material_segment;
 pub mod pcs_nonce_segment;
 pub mod pcs_plan;
+pub mod pcs_proof_values_segment;
 pub mod pcs_query_segment;
 pub mod proof;
 pub mod public_values;
