@@ -9,6 +9,8 @@ use lzvm_artifacts::key_directory::{
     read_key_directory_layout, validate_key_directory_layout, KeyDirectoryError, KeyUnitKind,
     KeyUnitPaths,
 };
+use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, encode_pcs_setup_plan};
+use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -566,6 +568,38 @@ fn rejects_catalog_entries_with_wrong_fixed_column_size() {
             kind: KeyUnitKind::Basic,
             expected: 32,
             found: 31,
+            ..
+        }
+    ));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_catalog_entries_with_mismatched_pcs_setup_plan_companions() {
+    let dir = temp_dir("catalog-bad-pcs-plan");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let mut plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
+    plan.query_count += 1;
+    write_bytes(
+        &layout.units[0]
+            .pcs_setup_plan()
+            .expect("PCS plan path should derive"),
+        encode_pcs_setup_plan(&plan).expect("PCS plan should encode"),
+    );
+
+    let error = read_key_directory_catalog(&dir).expect_err("catalog should be rejected");
+
+    assert!(matches!(
+        error,
+        KeyDirectoryError::PcsPlanMismatch {
+            kind: KeyUnitKind::Basic,
             ..
         }
     ));

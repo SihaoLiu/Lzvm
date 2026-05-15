@@ -12,7 +12,9 @@ use crate::global_info::{read_global_info_file, CurveKind, GlobalInfo, GlobalInf
 use crate::metadata_bundle::{
     read_unit_metadata_bundle, MetadataBundleError, UnitMetadataBundle, UnitMetadataPaths,
 };
-use crate::pcs_plan::{derive_pcs_setup_plan, PcsPlanError, PcsSetupPlan};
+use crate::pcs_plan::{
+    derive_pcs_setup_plan, read_pcs_setup_plan_file, PcsPlanError, PcsSetupPlan,
+};
 use crate::verification_key::{
     read_verification_key_binary_file, read_verification_key_json_file, VerificationKeyError,
     VerificationKeyRoot,
@@ -128,6 +130,10 @@ pub enum KeyDirectoryError {
         expected: VerificationKeyRoot,
         found: VerificationKeyRoot,
     },
+    PcsPlanMismatch {
+        kind: KeyUnitKind,
+        path: PathBuf,
+    },
     Digest {
         message: String,
     },
@@ -191,6 +197,11 @@ impl fmt::Display for KeyDirectoryError {
             Self::ConstantTreeRootMismatch { kind, .. } => {
                 write!(f, "key-directory constant-tree root mismatch for {kind}")
             }
+            Self::PcsPlanMismatch { kind, path } => write!(
+                f,
+                "key-directory PCS setup plan mismatch for {kind} at {}",
+                path.display()
+            ),
             Self::Digest { message } => write!(f, "key-directory digest error: {message}"),
             Self::Io { role, message } => write!(f, "key-directory {role} io error: {message}"),
         }
@@ -519,6 +530,7 @@ fn read_key_unit_catalog_entry(
     );
     let metadata = read_unit_metadata_bundle(&metadata_paths)?;
     let pcs_plan = derive_pcs_setup_plan(&metadata.setup)?;
+    validate_pcs_setup_plan_companion(paths, &pcs_plan)?;
 
     let json_root = read_verification_key_json_file(paths.verification_key_json())?;
     let binary_root = read_verification_key_binary_file(paths.verification_key_binary())?;
@@ -597,6 +609,26 @@ fn read_key_unit_catalog_entry(
         constant_tree_bytes,
         constant_tree_root,
     })
+}
+
+fn validate_pcs_setup_plan_companion(
+    paths: &KeyUnitPaths,
+    expected: &PcsSetupPlan,
+) -> Result<(), KeyDirectoryError> {
+    let Some(path) = paths.pcs_setup_plan() else {
+        return Ok(());
+    };
+    if !path.is_file() {
+        return Ok(());
+    }
+    let found = read_pcs_setup_plan_file(&path)?;
+    if &found != expected {
+        return Err(KeyDirectoryError::PcsPlanMismatch {
+            kind: paths.kind,
+            path,
+        });
+    }
+    Ok(())
 }
 
 fn derive_unit_paths(root: &Path, global_info: &GlobalInfo) -> Vec<KeyUnitPaths> {
