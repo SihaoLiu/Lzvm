@@ -7,7 +7,8 @@ use lzvm_artifacts::witness_segment::{WitnessCommitmentSegment, WitnessCommitmen
 use lzvm_field::{Ext3, Felt, PoseidonTranscript, TranscriptError};
 use lzvm_prover::pcs_transcript::{
     absorb_commit_values, derive_pcs_final_query_challenge,
-    derive_pcs_final_query_challenge_from_segments, PcsTranscriptError, PcsTranscriptInputs,
+    derive_pcs_final_query_challenge_from_segments, derive_pcs_transcript_challenges,
+    derive_pcs_transcript_challenges_from_segments, PcsTranscriptError, PcsTranscriptInputs,
     PcsTranscriptSegmentInputs,
 };
 use lzvm_prover::ProveUnitSchedule;
@@ -100,6 +101,82 @@ fn derives_final_query_challenge_from_direct_transcript_events() {
     expected.put(&flatten_ext(&final_polynomial));
 
     assert_eq!(actual, expected.get_field());
+}
+
+#[test]
+fn derives_indexed_transcript_challenges_from_direct_events() {
+    let constant_root = root(1);
+    let public_values = values(&[7, 8]);
+    let witness_roots = vec![root(10), root(20), root(30)];
+    let evaluations = vec![ext(40), ext(50)];
+    let fri_roots = vec![root(60), root(70)];
+    let final_polynomial = vec![ext(80), ext(90)];
+
+    let actual = derive_pcs_transcript_challenges(PcsTranscriptInputs {
+        arity: 4,
+        hash_values: false,
+        constant_root,
+        public_values: &public_values,
+        witness_roots: &witness_roots,
+        root_challenge_draws: &[2, 1, 1],
+        evaluation_values: &evaluations,
+        evaluation_challenge_draws: 2,
+        fri_roots: &fri_roots,
+        final_polynomial: &final_polynomial,
+    })
+    .expect("challenges should derive");
+
+    let mut expected = PoseidonTranscript::new(4).expect("arity should be supported");
+    let mut expected_challenges = Vec::new();
+    expected.put(&constant_root);
+    expected.put(&public_values);
+    put_root_and_record(
+        &mut expected,
+        &witness_roots[0],
+        2,
+        &mut expected_challenges,
+    );
+    put_root_and_record(
+        &mut expected,
+        &witness_roots[1],
+        1,
+        &mut expected_challenges,
+    );
+    put_root_and_record(
+        &mut expected,
+        &witness_roots[2],
+        1,
+        &mut expected_challenges,
+    );
+    expected.put(&flatten_ext(&evaluations));
+    record(&mut expected, 2, &mut expected_challenges);
+    expected_challenges.push(Ext3::ZERO);
+    expected.put(&fri_roots[0]);
+    expected_challenges.push(expected.get_field());
+    expected.put(&fri_roots[1]);
+    expected_challenges.push(expected.get_field());
+    expected.put(&flatten_ext(&final_polynomial));
+    expected_challenges.push(expected.get_field());
+
+    assert_eq!(actual, expected_challenges);
+    assert_eq!(
+        actual.last().copied(),
+        Some(
+            derive_pcs_final_query_challenge(PcsTranscriptInputs {
+                arity: 4,
+                hash_values: false,
+                constant_root,
+                public_values: &public_values,
+                witness_roots: &witness_roots,
+                root_challenge_draws: &[2, 1, 1],
+                evaluation_values: &evaluations,
+                evaluation_challenge_draws: 2,
+                fri_roots: &fri_roots,
+                final_polynomial: &final_polynomial,
+            })
+            .expect("final challenge should derive")
+        )
+    );
 }
 
 #[test]
@@ -221,6 +298,45 @@ fn derives_final_query_challenge_from_parsed_segments() {
 }
 
 #[test]
+fn derives_indexed_transcript_challenges_from_parsed_segments() {
+    let unit = sample_unit(Some(4), false);
+    let material = sample_material(0, 1);
+    let witness = sample_witness(0, &[10, 20, 30]);
+    let evaluations = sample_evaluations(0, &[40, 50]);
+    let fri = sample_fri(0, &[60, 70], &[80, 90]);
+    let public_values = values(&[7, 8]);
+
+    let actual = derive_pcs_transcript_challenges_from_segments(PcsTranscriptSegmentInputs {
+        unit_index: 0,
+        unit: &unit,
+        material: &material,
+        public_values: &public_values,
+        witness: &witness,
+        evaluations: &evaluations,
+        fri: &fri,
+        root_challenge_draws: &[2, 1, 1],
+        evaluation_challenge_draws: 2,
+    })
+    .expect("challenges should derive from segments");
+
+    let expected = derive_pcs_transcript_challenges(PcsTranscriptInputs {
+        arity: 4,
+        hash_values: false,
+        constant_root: root(1),
+        public_values: &public_values,
+        witness_roots: &[root(10), root(20), root(30)],
+        root_challenge_draws: &[2, 1, 1],
+        evaluation_values: &[ext(40), ext(50)],
+        evaluation_challenge_draws: 2,
+        fri_roots: &[root(60), root(70)],
+        final_polynomial: &[ext(80), ext(90)],
+    })
+    .expect("generic challenges should derive");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn segment_challenge_derivation_requires_transcript_arity() {
     let unit = sample_unit(None, true);
 
@@ -297,9 +413,25 @@ fn put_root_and_draw(transcript: &mut PoseidonTranscript, root: &[Felt; 4], coun
     draw(transcript, count);
 }
 
+fn put_root_and_record(
+    transcript: &mut PoseidonTranscript,
+    root: &[Felt; 4],
+    count: usize,
+    out: &mut Vec<Ext3>,
+) {
+    transcript.put(root);
+    record(transcript, count, out);
+}
+
 fn draw(transcript: &mut PoseidonTranscript, count: usize) {
     for _ in 0..count {
         transcript.get_field();
+    }
+}
+
+fn record(transcript: &mut PoseidonTranscript, count: usize, out: &mut Vec<Ext3>) {
+    for _ in 0..count {
+        out.push(transcript.get_field());
     }
 }
 

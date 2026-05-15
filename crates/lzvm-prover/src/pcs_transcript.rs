@@ -121,6 +121,16 @@ pub fn absorb_commit_values(
 pub fn derive_pcs_final_query_challenge(
     input: PcsTranscriptInputs<'_>,
 ) -> Result<Ext3, PcsTranscriptError> {
+    let challenges = derive_pcs_transcript_challenges(input)?;
+    challenges
+        .last()
+        .copied()
+        .ok_or(PcsTranscriptError::EmptyFinalPolynomial)
+}
+
+pub fn derive_pcs_transcript_challenges(
+    input: PcsTranscriptInputs<'_>,
+) -> Result<Vec<Ext3>, PcsTranscriptError> {
     if input.witness_roots.len() != input.root_challenge_draws.len() {
         return Err(PcsTranscriptError::RootChallengeDrawMismatch {
             root_count: input.witness_roots.len(),
@@ -132,6 +142,7 @@ pub fn derive_pcs_final_query_challenge(
     }
 
     let mut transcript = PoseidonTranscript::new(input.arity)?;
+    let mut challenges = Vec::new();
     transcript.put(&input.constant_root);
 
     if !input.public_values.is_empty() {
@@ -149,23 +160,29 @@ pub fn derive_pcs_final_query_challenge(
         .zip(input.root_challenge_draws.iter())
     {
         transcript.put(root);
-        draw_fields(&mut transcript, *draw_count);
+        draw_fields(&mut transcript, *draw_count, &mut challenges);
     }
 
     if !input.evaluation_values.is_empty() {
         let values = flatten_extension_values(input.evaluation_values);
         absorb_commit_values(&mut transcript, input.arity, input.hash_values, &values)?;
     }
-    draw_fields(&mut transcript, input.evaluation_challenge_draws);
+    draw_fields(
+        &mut transcript,
+        input.evaluation_challenge_draws,
+        &mut challenges,
+    );
+
+    challenges.push(Ext3::ZERO);
 
     for (index, root) in input.fri_roots.iter().enumerate() {
         if index > 0 {
-            transcript.get_field();
+            challenges.push(transcript.get_field());
         }
         transcript.put(root);
     }
     if !input.fri_roots.is_empty() {
-        transcript.get_field();
+        challenges.push(transcript.get_field());
     }
 
     let final_values = flatten_extension_values(input.final_polynomial);
@@ -176,12 +193,23 @@ pub fn derive_pcs_final_query_challenge(
         &final_values,
     )?;
 
-    Ok(transcript.get_field())
+    challenges.push(transcript.get_field());
+    Ok(challenges)
 }
 
 pub fn derive_pcs_final_query_challenge_from_segments(
     input: PcsTranscriptSegmentInputs<'_>,
 ) -> Result<Ext3, PcsTranscriptError> {
+    let challenges = derive_pcs_transcript_challenges_from_segments(input)?;
+    challenges
+        .last()
+        .copied()
+        .ok_or(PcsTranscriptError::EmptyFinalPolynomial)
+}
+
+pub fn derive_pcs_transcript_challenges_from_segments(
+    input: PcsTranscriptSegmentInputs<'_>,
+) -> Result<Vec<Ext3>, PcsTranscriptError> {
     let expected =
         u32::try_from(input.unit_index).map_err(|_| PcsTranscriptError::UnitIndexOverflow {
             unit_index: input.unit_index,
@@ -224,7 +252,7 @@ pub fn derive_pcs_final_query_challenge_from_segments(
         .map(|value| extension_from_words(*value))
         .collect::<Result<Vec<_>, _>>()?;
 
-    derive_pcs_final_query_challenge(PcsTranscriptInputs {
+    derive_pcs_transcript_challenges(PcsTranscriptInputs {
         arity,
         hash_values: input.unit.hash_commits,
         constant_root,
@@ -245,9 +273,9 @@ fn flatten_extension_values(values: &[Ext3]) -> Vec<Felt> {
         .collect()
 }
 
-fn draw_fields(transcript: &mut PoseidonTranscript, count: usize) {
+fn draw_fields(transcript: &mut PoseidonTranscript, count: usize, out: &mut Vec<Ext3>) {
     for _ in 0..count {
-        transcript.get_field();
+        out.push(transcript.get_field());
     }
 }
 
