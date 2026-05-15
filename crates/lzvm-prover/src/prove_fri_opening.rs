@@ -12,7 +12,9 @@ use lzvm_artifacts::proof::ProofSegment;
 use lzvm_field::{Ext3, Felt};
 
 use crate::pcs_fri::{
-    build_pcs_fri_opening_unit, PcsFriOpeningBuildError, PcsFriOpeningBuildRequest,
+    build_pcs_fri_opening_unit, build_pcs_fri_transcript_commitments, PcsFriOpeningBuildError,
+    PcsFriOpeningBuildRequest, PcsFriTranscriptCommitmentError, PcsFriTranscriptCommitmentRequest,
+    PcsFriTranscriptCommitments,
 };
 use crate::prove_fri_polynomial::{build_pcs_fri_polynomial_values, ProvePcsFriPolynomialError};
 use crate::witness_trace::WitnessTraceBuffer;
@@ -34,6 +36,26 @@ pub struct ProvePcsFriOpeningTraceValues<'a> {
     pub auxiliary_inputs: &'a ProveWitnessAuxiliaryInputs,
     pub challenges: &'a [Ext3],
     pub xi_challenge: Ext3,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ProvePcsFriTranscriptTraceValues<'a> {
+    pub unit_index: usize,
+    pub execution_unit: &'a ProveExecutionUnitArtifacts,
+    pub trace: &'a WitnessTraceBuffer,
+    pub publics: &'a [Felt],
+    pub auxiliary_inputs: &'a ProveWitnessAuxiliaryInputs,
+    pub constant_root: [Felt; 4],
+    pub witness_roots: &'a [[Felt; 4]],
+    pub evaluation_values: &'a [Ext3],
+    pub xi_challenge: Ext3,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProvePcsFriTranscriptValues {
+    pub unit_index: usize,
+    pub polynomial: Vec<Ext3>,
+    pub commitments: PcsFriTranscriptCommitments,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,6 +96,25 @@ pub enum ProvePcsFriOpeningTraceSegmentError {
     },
     Opening {
         source: Box<ProvePcsFriOpeningSegmentError>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProvePcsFriTranscriptTraceValuesError {
+    UnitIndexOutOfRange {
+        unit_index: usize,
+        unit_count: usize,
+    },
+    MissingTranscriptArity {
+        unit_index: usize,
+    },
+    Polynomial {
+        unit_index: usize,
+        source: Box<ProvePcsFriPolynomialError>,
+    },
+    Transcript {
+        unit_index: usize,
+        source: Box<PcsFriTranscriptCommitmentError>,
     },
 }
 
@@ -136,6 +177,32 @@ impl fmt::Display for ProvePcsFriOpeningTraceSegmentError {
     }
 }
 
+impl fmt::Display for ProvePcsFriTranscriptTraceValuesError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnitIndexOutOfRange {
+                unit_index,
+                unit_count,
+            } => write!(
+                f,
+                "prove PCS FRI transcript unit index {unit_index} is outside unit count {unit_count}"
+            ),
+            Self::MissingTranscriptArity { unit_index } => write!(
+                f,
+                "prove PCS FRI transcript unit {unit_index} is missing transcript arity"
+            ),
+            Self::Polynomial { unit_index, source } => write!(
+                f,
+                "prove PCS FRI transcript polynomial failed for unit {unit_index}: {source}"
+            ),
+            Self::Transcript { unit_index, source } => write!(
+                f,
+                "prove PCS FRI transcript commitments failed for unit {unit_index}: {source}"
+            ),
+        }
+    }
+}
+
 impl std::error::Error for ProvePcsFriOpeningSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -157,6 +224,16 @@ impl std::error::Error for ProvePcsFriOpeningTraceSegmentError {
             Self::Polynomial { source, .. } => Some(source.as_ref()),
             Self::Opening { source } => Some(source.as_ref()),
             Self::UnitIndexOutOfRange { .. } => None,
+        }
+    }
+}
+
+impl std::error::Error for ProvePcsFriTranscriptTraceValuesError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Polynomial { source, .. } => Some(source.as_ref()),
+            Self::Transcript { source, .. } => Some(source.as_ref()),
+            Self::UnitIndexOutOfRange { .. } | Self::MissingTranscriptArity { .. } => None,
         }
     }
 }
@@ -231,6 +308,65 @@ pub fn build_pcs_fri_opening_segment(
         id: PCS_FRI_OPENING_SEGMENT_ID,
         data: encode_pcs_fri_opening_segment(&segment)?,
     })
+}
+
+pub fn build_pcs_fri_transcript_values_from_trace(
+    schedule: &ProveSchedule,
+    values: &[ProvePcsFriTranscriptTraceValues<'_>],
+) -> Result<Vec<ProvePcsFriTranscriptValues>, ProvePcsFriTranscriptTraceValuesError> {
+    let mut out = Vec::with_capacity(values.len());
+    for input in values {
+        let unit = schedule.units.get(input.unit_index).ok_or(
+            ProvePcsFriTranscriptTraceValuesError::UnitIndexOutOfRange {
+                unit_index: input.unit_index,
+                unit_count: schedule.units.len(),
+            },
+        )?;
+        let arity = unit.transcript_arity.ok_or(
+            ProvePcsFriTranscriptTraceValuesError::MissingTranscriptArity {
+                unit_index: input.unit_index,
+            },
+        )? as usize;
+        let polynomial = build_pcs_fri_polynomial_values(
+            input.unit_index,
+            unit,
+            input.execution_unit,
+            input.trace,
+            input.publics,
+            input.auxiliary_inputs,
+            input.xi_challenge,
+        )
+        .map_err(|source| ProvePcsFriTranscriptTraceValuesError::Polynomial {
+            unit_index: input.unit_index,
+            source: Box::new(source),
+        })?;
+        let commitments = build_pcs_fri_transcript_commitments(
+            unit,
+            PcsFriTranscriptCommitmentRequest {
+                arity,
+                hash_values: unit.hash_commits,
+                constant_root: input.constant_root,
+                public_values: input.publics,
+                witness_roots: input.witness_roots,
+                root_challenge_draws: &unit.transcript_root_challenge_draws,
+                unit_value_map: &unit.unit_value_map,
+                unit_values: &input.auxiliary_inputs.unit_values,
+                evaluation_values: input.evaluation_values,
+                evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
+                polynomial: &polynomial,
+            },
+        )
+        .map_err(|source| ProvePcsFriTranscriptTraceValuesError::Transcript {
+            unit_index: input.unit_index,
+            source: Box::new(source),
+        })?;
+        out.push(ProvePcsFriTranscriptValues {
+            unit_index: input.unit_index,
+            polynomial,
+            commitments,
+        });
+    }
+    Ok(out)
 }
 
 pub fn build_pcs_fri_opening_segment_from_trace(
