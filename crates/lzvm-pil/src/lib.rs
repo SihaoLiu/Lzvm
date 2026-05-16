@@ -5,8 +5,10 @@ mod source_graph;
 
 pub use lexer::{lex_source, LexError, Token, TokenKind};
 pub use parser::{
-    parse_container_declarations, parse_include_directives, ContainerDeclaration, IncludeDirective,
-    IncludeKind, IncludeVisibility, ParseError, SourceSpan, UseDirective,
+    parse_column_declarations, parse_container_declarations, parse_include_directives,
+    ColumnDeclaration, ColumnFeature, ColumnInitializer, ColumnInitializerKind, ColumnItem,
+    ColumnKind, ContainerDeclaration, IncludeDirective, IncludeKind, IncludeVisibility, ParseError,
+    SourceSpan, UseDirective,
 };
 pub use source::{SourceFile, SourceLoadError, SourceLoader, SourceLoaderConfig};
 pub use source_graph::{

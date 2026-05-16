@@ -8,7 +8,7 @@ pub struct Token {
     pub end: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind {
     Pragma,
     Col,
@@ -527,7 +527,7 @@ fn operator_at(input: &str, index: usize) -> Option<(TokenKind, usize)> {
     OPERATORS
         .iter()
         .find(|(pattern, _)| starts_with(input, index, pattern))
-        .map(|(pattern, kind)| (kind.clone(), pattern.len()))
+        .map(|(pattern, kind)| (*kind, pattern.len()))
 }
 
 #[cfg(test)]
@@ -584,10 +584,7 @@ mod tests {
         )
         .expect("lexing should work");
 
-        let kinds = tokens
-            .iter()
-            .map(|token| token.kind.clone())
-            .collect::<Vec<_>>();
+        let kinds = tokens.iter().map(|token| token.kind).collect::<Vec<_>>();
         assert_eq!(
             kinds,
             vec![
