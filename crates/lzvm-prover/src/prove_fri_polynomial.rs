@@ -12,6 +12,8 @@ use crate::fri_polynomial::{
     build_fri_domain_points, build_fri_polynomial, derive_opening_xis, FriPolynomialColumnMatrix,
     FriPolynomialError, FriPolynomialInputs, FriPolynomialStageColumns, FriPolynomialZerofierTable,
 };
+#[cfg(feature = "cuda")]
+use crate::gpu_setup::{prepare_gpu_setup, GpuSetupError};
 use crate::witness_commitment::{extend_witness_trace_stage_values, WitnessTraceCommitmentError};
 use crate::witness_trace::WitnessTraceBuffer;
 use crate::{ProveExecutionUnitArtifacts, ProveUnitSchedule, ProveWitnessAuxiliaryInputs};
@@ -63,6 +65,11 @@ pub enum ProvePcsFriPolynomialError {
     FixedExtension {
         unit_index: usize,
         source: DomainError,
+    },
+    #[cfg(feature = "cuda")]
+    FixedExtensionGpuSetup {
+        unit_index: usize,
+        source: GpuSetupError,
     },
     #[cfg(feature = "cuda")]
     FixedExtensionCuda {
@@ -167,6 +174,11 @@ impl fmt::Display for ProvePcsFriPolynomialError {
                 "prove PCS FRI polynomial fixed extension failed for unit {unit_index}: {source}"
             ),
             #[cfg(feature = "cuda")]
+            Self::FixedExtensionGpuSetup { unit_index, source } => write!(
+                f,
+                "prove PCS FRI polynomial fixed GPU setup failed for unit {unit_index}: {source}"
+            ),
+            #[cfg(feature = "cuda")]
             Self::FixedExtensionCuda { unit_index, source } => write!(
                 f,
                 "prove PCS FRI polynomial fixed cuda extension failed for unit {unit_index}: {source}"
@@ -204,6 +216,8 @@ impl std::error::Error for ProvePcsFriPolynomialError {
         match self {
             Self::FixedColumns { source, .. } => Some(source),
             Self::FixedExtension { source, .. } => Some(source),
+            #[cfg(feature = "cuda")]
+            Self::FixedExtensionGpuSetup { source, .. } => Some(source),
             #[cfg(feature = "cuda")]
             Self::FixedExtensionCuda { source, .. } => Some(source),
             #[cfg(feature = "cuda")]
@@ -403,6 +417,11 @@ fn extend_row_major_columns(
     if column_count == 0 {
         return Ok(Vec::new());
     }
+    #[cfg(feature = "cuda")]
+    prepare_gpu_setup(target_bits).map_err(|source| {
+        ProvePcsFriPolynomialError::FixedExtensionGpuSetup { unit_index, source }
+    })?;
+
     let source_rows = values
         .len()
         .checked_div(column_count)

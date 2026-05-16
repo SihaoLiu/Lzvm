@@ -3,6 +3,8 @@ use std::fmt;
 use lzvm_artifacts::witness_segment::WitnessCommitmentSegmentError;
 use lzvm_field::{DomainError, FieldError};
 
+#[cfg(feature = "cuda")]
+use crate::gpu_setup::GpuSetupError;
 use crate::merkle_hash::MerkleHashError;
 use crate::witness_layout::WitnessTraceLayoutError;
 
@@ -41,6 +43,8 @@ pub enum WitnessStageLeafError {
     Domain(DomainError),
     Field(FieldError),
     #[cfg(feature = "cuda")]
+    GpuSetup(GpuSetupError),
+    #[cfg(feature = "cuda")]
     Accel(lzvm_accel::AccelError),
     LengthOverflow,
 }
@@ -50,6 +54,8 @@ impl fmt::Display for WitnessStageLeafError {
         match self {
             Self::Domain(error) => write!(f, "witness stage leaf domain error: {error}"),
             Self::Field(error) => write!(f, "witness stage leaf field error: {error}"),
+            #[cfg(feature = "cuda")]
+            Self::GpuSetup(error) => write!(f, "witness stage leaf GPU setup error: {error}"),
             #[cfg(feature = "cuda")]
             Self::Accel(error) => write!(f, "witness stage leaf cuda error: {error}"),
             Self::LengthOverflow => write!(f, "witness stage leaf length overflow"),
@@ -62,6 +68,8 @@ impl std::error::Error for WitnessStageLeafError {
         match self {
             Self::Domain(error) => Some(error),
             Self::Field(error) => Some(error),
+            #[cfg(feature = "cuda")]
+            Self::GpuSetup(error) => Some(error),
             #[cfg(feature = "cuda")]
             Self::Accel(error) => Some(error),
             Self::LengthOverflow => None,
@@ -78,6 +86,13 @@ impl From<DomainError> for WitnessStageLeafError {
 impl From<FieldError> for WitnessStageLeafError {
     fn from(error: FieldError) -> Self {
         Self::Field(error)
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl From<GpuSetupError> for WitnessStageLeafError {
+    fn from(error: GpuSetupError) -> Self {
+        Self::GpuSetup(error)
     }
 }
 

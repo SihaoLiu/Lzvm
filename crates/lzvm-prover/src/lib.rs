@@ -27,6 +27,7 @@ pub mod constant_tree_opening;
 pub mod contribution;
 pub mod fri_polynomial;
 pub mod global_constraints;
+pub mod gpu_setup;
 pub mod group_values;
 pub mod hint_eval;
 mod merkle_hash;
@@ -56,6 +57,7 @@ pub mod witness_opening;
 pub mod witness_runner;
 pub mod witness_trace;
 
+pub use gpu_setup::{prepare_gpu_setup, GpuSetupError};
 pub use proof_artifact::{
     build_witness_proof_artifact, build_witness_proof_artifact_for_all_units,
     build_witness_proof_artifact_for_unit, build_witness_proof_artifact_with_bindings,

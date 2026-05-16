@@ -4,6 +4,8 @@ use lzvm_accel::cuda_goldilocks_coset_extend;
 use lzvm_field::coset_extend_evaluations;
 use lzvm_field::Felt;
 
+#[cfg(feature = "cuda")]
+use crate::gpu_setup::prepare_gpu_setup;
 use crate::witness_layout::WitnessTraceStageValues;
 
 use super::{WitnessStageLeafError, WitnessStageLeaves, WORD_BYTES};
@@ -13,6 +15,9 @@ pub fn extend_witness_stage_leaves(
     source_bits: usize,
     target_bits: usize,
 ) -> Result<WitnessStageLeaves, WitnessStageLeafError> {
+    #[cfg(feature = "cuda")]
+    prepare_gpu_setup(target_bits)?;
+
     let columns = stage.column_count();
     let rows = stage.row_count();
     let mut extended_columns = Vec::with_capacity(columns);
