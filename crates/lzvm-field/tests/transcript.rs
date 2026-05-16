@@ -1,4 +1,4 @@
-use lzvm_field::{Ext3, Felt, PoseidonTranscript, TranscriptError};
+use lzvm_field::{poseidon2_hash_16, Ext3, Felt, PoseidonTranscript, TranscriptError};
 
 #[test]
 fn transcript_arity_4_matches_known_challenge_vector() {
@@ -54,6 +54,19 @@ fn transcript_state_keeps_the_capacity_words() {
             Felt::from_u64(17_771_460_674_839_058_898),
         ]
     );
+}
+
+#[test]
+fn transcript_arity_4_exposes_full_hash_state() {
+    let values = (1_u64..=8).map(Felt::from_u64).collect::<Vec<_>>();
+    let mut expected_input = [Felt::ZERO; 16];
+    expected_input[..values.len()].copy_from_slice(&values);
+    let expected = poseidon2_hash_16(expected_input);
+
+    let mut transcript = PoseidonTranscript::new(4).expect("arity 4 should be supported");
+    transcript.put(&values);
+
+    assert_eq!(transcript.get_state_words(), expected.to_vec());
 }
 
 #[test]

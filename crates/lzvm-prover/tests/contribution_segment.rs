@@ -3,12 +3,13 @@ use lzvm_artifacts::contribution_segment::{
 };
 use lzvm_artifacts::global_info::{CurveKind, GlobalAir, GlobalInfo, NamedStageValue};
 use lzvm_artifacts::proof::{encode_proof_artifact, parse_proof_artifact, ProofArtifact};
-use lzvm_field::{Felt, FieldError, PoseidonTranscript};
+use lzvm_field::{poseidon2_hash_16, Felt, FieldError, PoseidonTranscript};
 use lzvm_prover::contribution::{
     aggregate_contribution_values, build_contribution_segment,
     derive_global_challenge_from_contributions, derive_global_challenge_from_proof_segments,
-    load_contribution_segment_from_segments, ContributionChallengeError,
-    LoadContributionSegmentError, ProveContributionEntry,
+    derive_worker_contribution_entry, load_contribution_segment_from_segments,
+    ContributionChallengeError, InternalContributionInput, LoadContributionSegmentError,
+    ProveContributionEntry,
 };
 
 fn sample_entries() -> Vec<ProveContributionEntry> {
@@ -56,6 +57,27 @@ fn proof_value(name: &str, stage: u64) -> NamedStageValue {
         id: None,
         lengths: vec![1],
     }
+}
+
+fn expected_internal_contribution(
+    root: [Felt; 4],
+    values: &[Felt],
+    lattice_size: usize,
+) -> Vec<Felt> {
+    let mut values_to_hash = values.to_vec();
+    values_to_hash[4..8].copy_from_slice(&root);
+
+    let mut hash_input = [Felt::ZERO; 16];
+    hash_input[..values_to_hash.len()].copy_from_slice(&values_to_hash);
+    let mut block = poseidon2_hash_16(hash_input);
+
+    let mut out = Vec::with_capacity(lattice_size);
+    while out.len() < lattice_size {
+        out.extend_from_slice(&block);
+        block = poseidon2_hash_16(block);
+    }
+    out.truncate(lattice_size);
+    out
 }
 
 #[test]
@@ -134,6 +156,84 @@ fn aggregates_lattice_contribution_values() {
             .expect("contributions should aggregate"),
         vec![Felt::from_u64(5), Felt::from_u64(7), Felt::from_u64(9)]
     );
+}
+
+#[test]
+fn derives_worker_contribution_entry_from_internal_inputs() {
+    let global_info = sample_global_info(32, Vec::new());
+    let inputs = vec![
+        InternalContributionInput {
+            root: [
+                Felt::from_u64(101),
+                Felt::from_u64(102),
+                Felt::from_u64(103),
+                Felt::from_u64(104),
+            ],
+            values: (1_u64..=8).map(Felt::from_u64).collect(),
+        },
+        InternalContributionInput {
+            root: [
+                Felt::from_u64(201),
+                Felt::from_u64(202),
+                Felt::from_u64(203),
+                Felt::from_u64(204),
+            ],
+            values: (11_u64..=18).map(Felt::from_u64).collect(),
+        },
+    ];
+    let mut expected_values = vec![Felt::ZERO; 32];
+    for input in &inputs {
+        for (index, value) in expected_internal_contribution(input.root, &input.values, 32)
+            .into_iter()
+            .enumerate()
+        {
+            expected_values[index] = expected_values[index] + value;
+        }
+    }
+
+    let entry = derive_worker_contribution_entry(&global_info, 3, 7, &inputs)
+        .expect("worker contribution should derive");
+
+    assert_eq!(
+        entry,
+        ProveContributionEntry {
+            worker_index: 3,
+            group_id: 7,
+            aggregated: false,
+            values: expected_values,
+        }
+    );
+}
+
+#[test]
+fn rejects_internal_contribution_lattice_size_not_aligned_to_hash_width() {
+    let global_info = sample_global_info(31, Vec::new());
+    let inputs = vec![InternalContributionInput {
+        root: [Felt::ZERO; 4],
+        values: (1_u64..=8).map(Felt::from_u64).collect(),
+    }];
+
+    assert!(matches!(
+        derive_worker_contribution_entry(&global_info, 0, 0, &inputs),
+        Err(ContributionChallengeError::LatticeSizeNotMultipleOfHashState { value: 31 })
+    ));
+}
+
+#[test]
+fn rejects_internal_contribution_inputs_without_root_slots() {
+    let global_info = sample_global_info(16, Vec::new());
+    let inputs = vec![InternalContributionInput {
+        root: [Felt::ZERO; 4],
+        values: vec![Felt::from_u64(1); 7],
+    }];
+
+    assert!(matches!(
+        derive_worker_contribution_entry(&global_info, 0, 0, &inputs),
+        Err(ContributionChallengeError::ContributionInputTooShort {
+            input_index: 0,
+            found: 7,
+        })
+    ));
 }
 
 #[test]

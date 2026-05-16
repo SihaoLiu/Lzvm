@@ -637,6 +637,13 @@ impl PoseidonTranscript {
         self.state
     }
 
+    pub fn get_state_words(&mut self) -> Vec<Felt> {
+        if self.pending_cursor > 0 {
+            self.update_state();
+        }
+        self.out.clone()
+    }
+
     pub fn get_field(&mut self) -> Ext3 {
         Ext3::new(self.get_scalar(), self.get_scalar(), self.get_scalar())
     }
