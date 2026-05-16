@@ -1,11 +1,14 @@
 use std::io::Write;
+use std::path::Path;
 
+use lzvm_artifacts::program_image::ProgramImageGpuMode;
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_prover::derive_prove_schedule_from_directory;
 use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
 use lzvm_prover::setup_preflight::validate_setup_preflight_from_files;
-use lzvm_setup::summarize_setup_directory;
-use lzvm_setup::FixedExtensionBackend;
+use lzvm_setup::{
+    summarize_setup_directory, FixedExtensionBackend, ProgramImageCommitmentCacheFileRequest,
+};
 
 mod prove_inputs;
 mod prove_plan;
@@ -50,6 +53,49 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             )
         }
         ["setup", "write-pcs-material", ..] => write_pcs_material_usage(stderr),
+        ["setup", "write-program-image-cache", "--backend", backend, program_bin, guest_image, constraint_digest_bin, root_bin, trace_rows, trace_columns, blowup_factor, arity, out_cache] =>
+        {
+            let Some(backend) =
+                parse_fixed_extension_backend(backend, "setup program-image cache write", stderr)
+            else {
+                return 1;
+            };
+            write_program_image_cache(
+                ProgramImageCacheCommand {
+                    program_bin,
+                    guest_image,
+                    constraint_digest_bin,
+                    root_bin,
+                    trace_rows,
+                    trace_columns,
+                    blowup_factor,
+                    arity,
+                    gpu_mode: program_image_gpu_mode_from_backend(backend),
+                    out_cache,
+                },
+                stdout,
+                stderr,
+            )
+        }
+        ["setup", "write-program-image-cache", program_bin, guest_image, constraint_digest_bin, root_bin, trace_rows, trace_columns, blowup_factor, arity, out_cache] => {
+            write_program_image_cache(
+                ProgramImageCacheCommand {
+                    program_bin,
+                    guest_image,
+                    constraint_digest_bin,
+                    root_bin,
+                    trace_rows,
+                    trace_columns,
+                    blowup_factor,
+                    arity,
+                    gpu_mode: ProgramImageGpuMode::Cpu,
+                    out_cache,
+                },
+                stdout,
+                stderr,
+            )
+        }
+        ["setup", "write-program-image-cache", ..] => write_program_image_cache_usage(stderr),
         ["setup", "write-fixed-native", setup_info_bin, columns_bin, out_const] => {
             write_fixed_columns_native(setup_info_bin, columns_bin, out_const, stdout, stderr)
         }
@@ -422,6 +468,84 @@ fn write_pcs_setup_material(
     }
 }
 
+struct ProgramImageCacheCommand<'a> {
+    program_bin: &'a str,
+    guest_image: &'a str,
+    constraint_digest_bin: &'a str,
+    root_bin: &'a str,
+    trace_rows: &'a str,
+    trace_columns: &'a str,
+    blowup_factor: &'a str,
+    arity: &'a str,
+    gpu_mode: ProgramImageGpuMode,
+    out_cache: &'a str,
+}
+
+fn write_program_image_cache(
+    command: ProgramImageCacheCommand<'_>,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let Some(trace_rows) = parse_u64_arg(
+        command.trace_rows,
+        "trace rows",
+        "setup program-image cache write",
+        stderr,
+    ) else {
+        return 1;
+    };
+    let Some(trace_columns) = parse_u32_arg(
+        command.trace_columns,
+        "trace columns",
+        "setup program-image cache write",
+        stderr,
+    ) else {
+        return 1;
+    };
+    let Some(blowup_factor) = parse_u32_arg(
+        command.blowup_factor,
+        "blowup factor",
+        "setup program-image cache write",
+        stderr,
+    ) else {
+        return 1;
+    };
+    let Some(arity) = parse_u32_arg(
+        command.arity,
+        "arity",
+        "setup program-image cache write",
+        stderr,
+    ) else {
+        return 1;
+    };
+
+    match lzvm_setup::write_program_image_commitment_cache_file(
+        ProgramImageCommitmentCacheFileRequest {
+            program_path: Path::new(command.program_bin),
+            guest_image_path: Path::new(command.guest_image),
+            constraint_digest_path: Path::new(command.constraint_digest_bin),
+            root_path: Path::new(command.root_bin),
+            trace_row_count: trace_rows,
+            trace_column_count: trace_columns,
+            blowup_factor,
+            merkle_tree_arity: arity,
+            gpu_mode: command.gpu_mode,
+            output_path: Path::new(command.out_cache),
+        },
+    ) {
+        Ok(report) => {
+            let _ = writeln!(stdout, "status=ok");
+            let _ = writeln!(stdout, "bytes_written={}", report.bytes_written);
+            let _ = writeln!(stdout, "output={}", report.path.display());
+            0
+        }
+        Err(error) => {
+            let _ = writeln!(stderr, "setup program-image cache write failed: {error}");
+            1
+        }
+    }
+}
+
 fn write_fixed_columns_native(
     setup_info_bin: &str,
     columns_bin: &str,
@@ -684,6 +808,33 @@ fn parse_fixed_extension_backend(
     }
 }
 
+fn program_image_gpu_mode_from_backend(backend: FixedExtensionBackend) -> ProgramImageGpuMode {
+    match backend {
+        FixedExtensionBackend::Cpu => ProgramImageGpuMode::Cpu,
+        FixedExtensionBackend::Cuda => ProgramImageGpuMode::Cuda,
+    }
+}
+
+fn parse_u64_arg(value: &str, name: &str, role: &str, stderr: &mut dyn Write) -> Option<u64> {
+    value.parse().map_or_else(
+        |_| {
+            let _ = writeln!(stderr, "{role} failed: invalid {name}: {value}");
+            None
+        },
+        Some,
+    )
+}
+
+fn parse_u32_arg(value: &str, name: &str, role: &str, stderr: &mut dyn Write) -> Option<u32> {
+    value.parse().map_or_else(
+        |_| {
+            let _ = writeln!(stderr, "{role} failed: invalid {name}: {value}");
+            None
+        },
+        Some,
+    )
+}
+
 fn write_validate_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(stderr, "usage: lzvm setup validate <setup-dir>");
     2
@@ -727,6 +878,14 @@ fn write_pcs_material_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
         "usage: lzvm setup write-pcs-material <setup-info-bin> <pcs-plan> <fixed-const> <consttree> <out-pcs-material>"
+    );
+    2
+}
+
+fn write_program_image_cache_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm setup write-program-image-cache [--backend cpu|cuda] <program-bin> <guest-image> <constraint-digest-bin> <root-bin> <trace-rows> <trace-columns> <blowup-factor> <arity> <out-cache>"
     );
     2
 }
