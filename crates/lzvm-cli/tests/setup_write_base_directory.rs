@@ -851,6 +851,61 @@ fn reports_usage_for_missing_key_directory_path() {
 }
 
 #[test]
+fn generates_key_directory_outputs_with_public_command() {
+    let (dir, _) = create_key_directory("generate-key");
+    remove_verification_keys(&dir);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0);
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit_count = layout.units.len();
+    for unit in &layout.units {
+        assert!(unit.verification_key_binary().is_file());
+        assert!(unit
+            .pcs_setup_plan()
+            .expect("PCS plan path should derive")
+            .is_file());
+        assert!(unit
+            .pcs_setup_material()
+            .expect("PCS material path should derive")
+            .is_file());
+    }
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout.starts_with(&format!("status=ok\nunits={unit_count}\n")));
+    assert!(stdout.contains("pcs_plan_bytes="));
+    assert!(stdout.contains("pcs_material_bytes="));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn reports_usage_for_missing_generate_key_directory_path() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(&["setup", "generate-key"], &mut stdout, &mut stderr);
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "usage: lzvm setup generate-key [--backend cpu|cuda] <setup-dir>\n"
+    );
+}
+
+#[test]
 fn reports_usage_for_missing_pcs_material_directory_path() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();

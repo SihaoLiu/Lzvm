@@ -126,6 +126,18 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             write_key_directory(setup_dir, FixedExtensionBackend::Cpu, stdout, stderr)
         }
         ["setup", "write-key-directory", ..] => write_key_directory_usage(stderr),
+        ["setup", "generate-key", "--backend", backend, setup_dir] => {
+            let Some(backend) =
+                parse_fixed_extension_backend(backend, "setup key generation", stderr)
+            else {
+                return 1;
+            };
+            write_key_directory(setup_dir, backend, stdout, stderr)
+        }
+        ["setup", "generate-key", setup_dir] => {
+            write_key_directory(setup_dir, FixedExtensionBackend::Cpu, stdout, stderr)
+        }
+        ["setup", "generate-key", ..] => write_generate_key_usage(stderr),
         ["setup", "write-pcs-directory", setup_dir] => {
             write_pcs_directory(setup_dir, stdout, stderr)
         }
@@ -754,6 +766,14 @@ fn write_key_directory_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
         "usage: lzvm setup write-key-directory [--backend cpu|cuda] <setup-dir>"
+    );
+    2
+}
+
+fn write_generate_key_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm setup generate-key [--backend cpu|cuda] <setup-dir>"
     );
     2
 }
