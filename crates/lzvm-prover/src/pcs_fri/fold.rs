@@ -2,9 +2,14 @@ use std::fmt;
 
 #[cfg(feature = "cuda")]
 use lzvm_accel::cuda_goldilocks_intt;
+use lzvm_artifacts::pcs_fri_segment::{PcsFriOpeningLayerSegment, PcsFriOpeningUnitSegment};
 #[cfg(not(feature = "cuda"))]
 use lzvm_field::intt_in_place;
 use lzvm_field::{DomainError, Ext3, Felt, FieldError, SHIFT};
+
+use super::errors::PcsFriOpeningFoldError;
+use super::requests::PcsFriOpeningFoldRequest;
+use crate::ProveUnitSchedule;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcsFriFoldError {
@@ -140,6 +145,125 @@ pub fn verify_fri_fold(
     ))
 }
 
+pub fn verify_fri_opening_folds(
+    schedule: &ProveUnitSchedule,
+    request: PcsFriOpeningFoldRequest<'_>,
+) -> Result<bool, PcsFriOpeningFoldError> {
+    if request.unit_index != request.fri.unit_index {
+        return Err(PcsFriOpeningFoldError::UnitIndexMismatch {
+            expected: request.unit_index,
+            found: request.fri.unit_index,
+        });
+    }
+
+    let query_count = usize::try_from(schedule.query_count)
+        .map_err(|_| PcsFriOpeningFoldError::LengthOverflow)?;
+    if request.query_rows.len() != query_count {
+        return Err(PcsFriOpeningFoldError::QueryRowCountMismatch {
+            expected: query_count,
+            found: request.query_rows.len(),
+        });
+    }
+    if request.fri.layers.len() != schedule.fri_layers.len() {
+        return Err(PcsFriOpeningFoldError::LayerCountMismatch {
+            expected: schedule.fri_layers.len(),
+            found: request.fri.layers.len(),
+        });
+    }
+
+    let layers = ordered_opening_layers(request.fri, schedule.fri_layers.len())?;
+    for layer in &layers {
+        if layer.queries.len() != query_count {
+            return Err(PcsFriOpeningFoldError::LayerQueryCountMismatch {
+                layer_index: layer.layer_index,
+                expected: query_count,
+                found: layer.queries.len(),
+            });
+        }
+    }
+
+    for (query_index, query_row) in request.query_rows.iter().enumerate() {
+        for (layer_index, (layer_plan, opening_layer)) in
+            schedule.fri_layers.iter().zip(layers.iter()).enumerate()
+        {
+            let output_size = domain_size(layer_plan.output_bits)?;
+            let expected_row = query_row % output_size;
+            let query = &opening_layer.queries[query_index];
+            if query.row_index != expected_row {
+                return Err(PcsFriOpeningFoldError::LayerQueryRowMismatch {
+                    layer_index: opening_layer.layer_index,
+                    query_index,
+                    expected: expected_row,
+                    found: query.row_index,
+                });
+            }
+
+            let values = query
+                .values
+                .iter()
+                .map(|value| convert_ext(*value))
+                .collect::<Result<Vec<_>, PcsFriOpeningFoldError>>()?;
+            let layer_challenge_start = request
+                .challenges
+                .len()
+                .checked_sub(schedule.fri_layers.len())
+                .and_then(|index| index.checked_sub(1))
+                .ok_or(PcsFriOpeningFoldError::LengthOverflow)?;
+            let challenge_index = layer_challenge_start
+                .checked_add(layer_index)
+                .ok_or(PcsFriOpeningFoldError::LengthOverflow)?;
+            let challenge = *request.challenges.get(challenge_index).ok_or(
+                PcsFriOpeningFoldError::MissingChallenge {
+                    index: challenge_index,
+                    len: request.challenges.len(),
+                },
+            )?;
+            let folded = verify_fri_fold(
+                schedule.extended_domain_bits,
+                layer_plan.output_bits,
+                layer_plan.input_bits,
+                challenge,
+                expected_row,
+                &values,
+            )?;
+
+            let target = if let Some(next_plan) = schedule.fri_layers.get(layer_index + 1) {
+                let next_output_size = domain_size(next_plan.output_bits)?;
+                let value_index = usize::try_from(expected_row / next_output_size)
+                    .map_err(|_| PcsFriOpeningFoldError::LengthOverflow)?;
+                let next_layer = layers[layer_index + 1];
+                let next_query = &next_layer.queries[query_index];
+                let value = next_query.values.get(value_index).ok_or(
+                    PcsFriOpeningFoldError::LayerValueIndexOutOfRange {
+                        layer_index: next_layer.layer_index,
+                        query_index,
+                        value_index,
+                        len: next_query.values.len(),
+                    },
+                )?;
+                convert_ext(*value)?
+            } else {
+                let final_index = usize::try_from(expected_row)
+                    .map_err(|_| PcsFriOpeningFoldError::LengthOverflow)?;
+                let value = request.fri.final_polynomial.get(final_index).ok_or(
+                    PcsFriOpeningFoldError::FinalIndexOutOfRange {
+                        query_index,
+                        index: final_index,
+                        len: request.fri.final_polynomial.len(),
+                    },
+                )?;
+                convert_ext(*value)?
+            };
+
+            if folded != target {
+                return Ok(false);
+            }
+        }
+    }
+
+    Ok(true)
+}
+
 fn interpolate_fold_values(values: &[Ext3], bits: usize) -> Result<Vec<Ext3>, PcsFriFoldError> {
     let mut c0 = Vec::with_capacity(values.len());
     let mut c1 = Vec::with_capacity(values.len());
@@ -198,4 +322,44 @@ fn evaluate_extension_polynomial(coefficients: &[Ext3], point: Ext3) -> Ext3 {
 
 fn scale_extension(value: Ext3, scalar: Felt) -> Ext3 {
     Ext3::new(value.c0 * scalar, value.c1 * scalar, value.c2 * scalar)
+}
+
+fn ordered_opening_layers(
+    fri: &PcsFriOpeningUnitSegment,
+    expected_count: usize,
+) -> Result<Vec<&PcsFriOpeningLayerSegment>, PcsFriOpeningFoldError> {
+    let mut layers = Vec::with_capacity(expected_count);
+    for layer_index in 0..expected_count {
+        let layer_index_u32 =
+            u32::try_from(layer_index).map_err(|_| PcsFriOpeningFoldError::LengthOverflow)?;
+        let layer = fri
+            .layers
+            .iter()
+            .find(|layer| layer.layer_index == layer_index_u32)
+            .ok_or(PcsFriOpeningFoldError::MissingLayer {
+                layer_index: layer_index_u32,
+            })?;
+        layers.push(layer);
+    }
+    Ok(layers)
+}
+
+fn domain_size(bits: u32) -> Result<u64, PcsFriOpeningFoldError> {
+    1_u64
+        .checked_shl(bits)
+        .ok_or(PcsFriOpeningFoldError::UnsupportedDomainBits { bits })
+}
+
+fn convert_ext(values: [u64; 3]) -> Result<Ext3, PcsFriOpeningFoldError> {
+    Ok(Ext3::new(
+        convert_felt(values[0])?,
+        convert_felt(values[1])?,
+        convert_felt(values[2])?,
+    ))
+}
+
+fn convert_felt(value: u64) -> Result<Felt, PcsFriOpeningFoldError> {
+    Felt::from_canonical(value).map_err(|error| match error {
+        FieldError::NonCanonical { value } => PcsFriOpeningFoldError::NonCanonicalField { value },
+    })
 }
