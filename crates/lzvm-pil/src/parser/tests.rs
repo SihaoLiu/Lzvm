@@ -310,13 +310,56 @@ fn parses_air_template_declarations_with_params_and_nested_body() {
 
     assert_eq!(declarations.len(), 1);
     assert_eq!(declarations[0].name, "Main");
+    let params = declarations[0].params.expect("params should be recorded");
     assert_eq!(
-        &source.contents[declarations[0].params.start..declarations[0].params.end],
+        &source.contents[params.start..params.end],
         "(const int N = 2**22, string label = \"main\")"
     );
+    assert_eq!(declarations[0].parameters.len(), 2);
+    assert!(declarations[0].parameters[0].is_const);
+    assert_eq!(declarations[0].parameters[0].type_name, "int");
+    assert_eq!(declarations[0].parameters[0].name, "N");
+    assert!(matches!(
+        declarations[0].parameters[0]
+            .default_expression
+            .as_ref()
+            .expect("default expression")
+            .kind,
+        ExpressionKind::Binary {
+            op: BinaryOperator::Power,
+            ..
+        }
+    ));
+    assert_eq!(declarations[0].parameters[1].type_name, "string");
+    assert_eq!(declarations[0].parameters[1].name, "label");
+    assert!(matches!(
+        declarations[0].parameters[1]
+            .default_expression
+            .as_ref()
+            .expect("default expression")
+            .kind,
+        ExpressionKind::StringLiteral(ref value) if value == "main"
+    ));
     assert_eq!(
         &source.contents[declarations[0].body.start..declarations[0].body.end],
         "{ col witness trace; if (N) { return; } }"
+    );
+}
+
+#[test]
+fn parses_parameterless_air_template_declarations() {
+    let source = source("airtemplate Empty { col witness trace; }");
+
+    let declarations =
+        parse_air_template_declarations(&source).expect("air templates should parse");
+
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(declarations[0].name, "Empty");
+    assert!(declarations[0].params.is_none());
+    assert!(declarations[0].parameters.is_empty());
+    assert_eq!(
+        &source.contents[declarations[0].body.start..declarations[0].body.end],
+        "{ col witness trace; }"
     );
 }
 

@@ -3,6 +3,7 @@ use super::expressions::{
     parse_expression_list_span_best_effort, parse_expression_range_best_effort,
     parse_expression_span_best_effort,
 };
+use super::functions::parse_function_parameters;
 use super::*;
 
 pub fn parse_column_declarations(
@@ -1134,7 +1135,17 @@ pub fn parse_air_template_declarations(
 
         let start = tokens[index].start;
         let (name, after_name) = parse_name_reference(&tokens, index + 1, source)?;
-        let (params, after_params) = parse_delimited_span(&tokens, after_name, source)?;
+        let (params, parameters, after_params) = if tokens
+            .get(after_name)
+            .is_some_and(|token| token.kind == TokenKind::LParen)
+        {
+            let (params, after_params) = parse_delimited_span(&tokens, after_name, source)?;
+            let parameters =
+                parse_function_parameters(&tokens, after_name + 1, after_params - 1, source)?;
+            (Some(params), parameters, after_params)
+        } else {
+            (None, Vec::new(), after_name)
+        };
         if !tokens
             .get(after_params)
             .is_some_and(|token| token.kind == TokenKind::LBrace)
@@ -1147,6 +1158,7 @@ pub fn parse_air_template_declarations(
         declarations.push(AirTemplateDeclaration {
             name,
             params,
+            parameters,
             body,
             source_name: source.source_name.clone(),
             start,

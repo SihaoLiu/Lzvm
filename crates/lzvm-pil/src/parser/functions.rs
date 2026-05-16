@@ -710,7 +710,7 @@ struct ParsedFunctionParameter {
     next_index: usize,
 }
 
-fn parse_function_parameters(
+pub(crate) fn parse_function_parameters(
     tokens: &[Token],
     mut cursor: usize,
     close_index: usize,

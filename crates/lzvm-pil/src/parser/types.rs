@@ -60,7 +60,8 @@ pub struct ContainerDeclaration {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AirTemplateDeclaration {
     pub name: String,
-    pub params: SourceSpan,
+    pub params: Option<SourceSpan>,
+    pub parameters: Vec<FunctionParameter>,
     pub body: SourceSpan,
     pub source_name: String,
     pub start: usize,
