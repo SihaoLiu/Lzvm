@@ -80,12 +80,14 @@ pub use prove_witness::{
     build_pcs_query_plan_segment_from_transcript_segments,
     build_pcs_query_plan_segment_with_bindings, build_witness_commitment_segment,
     build_witness_opening_segment, build_witness_opening_segment_batch,
-    run_prove_witness_commitments, run_prove_witness_commitments_with_auxiliary_inputs,
-    run_prove_witness_commitments_with_trace, run_prove_witness_commitments_with_trace_backend,
-    ProveConstantOpeningSegmentError, ProvePcsEvaluationSegmentError, ProvePcsEvaluationValues,
-    ProvePcsMaterialSegmentError, ProvePcsQueryPlanSegmentError, ProveWitnessAuxiliaryInputs,
-    ProveWitnessCommitmentError, ProveWitnessCommitments, ProveWitnessOpeningSegmentError,
-    ProveWitnessSegmentError, ProveWitnessTraceCommitments,
+    run_prove_witness_commitments, run_prove_witness_commitments_for_all_units,
+    run_prove_witness_commitments_for_all_units_with_trace_bundle,
+    run_prove_witness_commitments_with_auxiliary_inputs, run_prove_witness_commitments_with_trace,
+    run_prove_witness_commitments_with_trace_backend, ProveConstantOpeningSegmentError,
+    ProvePcsEvaluationSegmentError, ProvePcsEvaluationValues, ProvePcsMaterialSegmentError,
+    ProvePcsQueryPlanSegmentError, ProveWitnessAuxiliaryInputs, ProveWitnessCommitmentError,
+    ProveWitnessCommitments, ProveWitnessOpeningSegmentError, ProveWitnessSegmentError,
+    ProveWitnessTraceCommitments,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

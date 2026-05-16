@@ -41,6 +41,7 @@ use lzvm_artifacts::public_values::{
     encode_public_values, public_values_digest, PublicValueEntry, PublicValues,
 };
 use lzvm_artifacts::setup_info::{EvaluationMapEntry, FriStep, StarkStruct, UnitSetupInfo};
+use lzvm_artifacts::trace_bundle::{TraceBundle, TraceBundleUnit};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
 use lzvm_artifacts::witness_opening_segment::{
@@ -567,6 +568,25 @@ fn sample_request(output_dir: PathBuf, input_data: Option<PathBuf>) -> ProveRunR
     }
 }
 
+fn sample_trace_bytes(seed: u64) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(16 * 5 * 8);
+    for value in seed + 1..=seed + 80 {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes
+}
+
+fn sample_trace_bundle(unit_count: u32, seed: u64) -> TraceBundle {
+    TraceBundle {
+        units: (0..unit_count)
+            .map(|unit_index| TraceBundleUnit {
+                unit_index,
+                trace_bytes: sample_trace_bytes(seed + unit_index as u64),
+            })
+            .collect(),
+    }
+}
+
 fn witness_source() -> &'static str {
     r#"#include <stddef.h>
 typedef struct {
@@ -879,6 +899,84 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
             .collect::<Vec<_>>(),
         vec![WITNESS_COMMITMENT_SEGMENT_BASE_ID, second_witness_id]
     );
+}
+
+#[test]
+fn runs_witness_commitments_for_all_units_in_prover() {
+    let dir = temp_dir("all-units-commitments");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [11_u8]).expect("input data should be written");
+
+    let mut second_unit = sample_unit();
+    second_unit.paths.unit_id = Some(1);
+    second_unit.paths.unit_name = Some("unit-b".to_owned());
+    second_unit.paths.prefix = "unit-b".into();
+    second_unit.paths.metadata_prefix = Some("unit-b".into());
+    second_unit.paths.program_prefix = Some("unit-b".into());
+    second_unit.paths.verification_key_prefix = "unit-b".into();
+    second_unit.paths.constant_tree = dir.join("unit-b.consttree");
+    let mut first_unit = sample_unit();
+    first_unit.paths.constant_tree = dir.join("unit.consttree");
+    let first_tree_bytes = expected_constant_tree_byte_count(&first_unit.metadata.setup)
+        .expect("tree size should derive");
+    let second_tree_bytes = expected_constant_tree_byte_count(&second_unit.metadata.setup)
+        .expect("tree size should derive");
+    fs::write(
+        &first_unit.paths.constant_tree,
+        vec![0_u8; first_tree_bytes],
+    )
+    .expect("first constant tree should be written");
+    fs::write(
+        &second_unit.paths.constant_tree,
+        vec![0_u8; second_tree_bytes],
+    )
+    .expect("second constant tree should be written");
+    let catalog = sample_catalog_units(vec![first_unit, second_unit]);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let auxiliary_inputs = ProveWitnessAuxiliaryInputs::default();
+    let trace_bundle = sample_trace_bundle(2, 17);
+
+    let outputs = lzvm_prover::run_prove_witness_commitments_for_all_units_with_trace_bundle(
+        &plan,
+        &auxiliary_inputs,
+        &trace_bundle,
+    )
+    .expect("batch witness commitments should run");
+    let expected = vec![
+        run_prove_witness_commitments_with_trace_backend(
+            &plan,
+            0,
+            auxiliary_inputs.clone(),
+            &TraceBytesBackend::new(sample_trace_bytes(17)),
+        )
+        .expect("first unit should run"),
+        run_prove_witness_commitments_with_trace_backend(
+            &plan,
+            1,
+            auxiliary_inputs.clone(),
+            &TraceBytesBackend::new(sample_trace_bytes(18)),
+        )
+        .expect("second unit should run"),
+    ];
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(outputs, expected);
+    assert_eq!(outputs[0].commitments().unit_index(), 0);
+    assert_eq!(outputs[1].commitments().unit_index(), 1);
 }
 
 #[test]

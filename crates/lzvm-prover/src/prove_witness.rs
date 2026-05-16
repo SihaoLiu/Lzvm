@@ -28,6 +28,7 @@ use lzvm_artifacts::pcs_query_segment::{
 };
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValues, PublicValuesError};
+use lzvm_artifacts::trace_bundle::TraceBundle;
 use lzvm_artifacts::witness_opening_segment::{
     encode_witness_opening_segment, WitnessOpeningLevelSegment, WitnessOpeningQuerySegment,
     WitnessOpeningSegment, WitnessOpeningSegmentError, WitnessOpeningStageSegment,
@@ -64,7 +65,9 @@ use crate::witness_commitment::{
 use crate::witness_layout::{
     derive_witness_trace_layout, WitnessTraceLayout, WitnessTraceLayoutError,
 };
-use crate::witness_loader::{load_witness_library, WitnessBackend, WitnessLoadError};
+use crate::witness_loader::{
+    load_witness_library, TraceBytesBackend, WitnessBackend, WitnessLoadError,
+};
 use crate::witness_runner::{run_witness_trace, WitnessTraceRunError};
 use crate::witness_trace::WitnessTraceBuffer;
 use crate::{ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassRequest, ProveSchedule};
@@ -973,6 +976,54 @@ pub fn run_prove_witness_commitments_with_trace_backend<B: WitnessBackend + ?Siz
         publics,
         auxiliary_inputs,
     })
+}
+
+pub fn run_prove_witness_commitments_for_all_units(
+    plan: &ProveExecutionPlan,
+    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
+    backend: &(impl WitnessBackend + ?Sized),
+) -> Result<Vec<ProveWitnessTraceCommitments>, String> {
+    let mut outputs = Vec::with_capacity(plan.units.len());
+    for unit_index in 0..plan.units.len() {
+        let output = run_prove_witness_commitments_with_trace_backend(
+            plan,
+            unit_index,
+            auxiliary_inputs.clone(),
+            backend,
+        )
+        .map_err(|error| {
+            format!("run witness commitments failed for unit {unit_index}: {error}")
+        })?;
+        outputs.push(output);
+    }
+    Ok(outputs)
+}
+
+pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
+    plan: &ProveExecutionPlan,
+    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
+    bundle: &TraceBundle,
+) -> Result<Vec<ProveWitnessTraceCommitments>, String> {
+    let mut outputs = Vec::with_capacity(plan.units.len());
+    for unit_index in 0..plan.units.len() {
+        let unit_index_u32 = u32::try_from(unit_index)
+            .map_err(|_| format!("trace bundle unit index is too large: {unit_index}"))?;
+        let trace_bytes = bundle
+            .trace_bytes_for_unit(unit_index_u32)
+            .ok_or_else(|| format!("trace bundle is missing unit {unit_index}"))?;
+        let backend = TraceBytesBackend::new(trace_bytes.to_vec());
+        let output = run_prove_witness_commitments_with_trace_backend(
+            plan,
+            unit_index,
+            auxiliary_inputs.clone(),
+            &backend,
+        )
+        .map_err(|error| {
+            format!("run witness commitments failed for unit {unit_index}: {error}")
+        })?;
+        outputs.push(output);
+    }
+    Ok(outputs)
 }
 
 fn load_public_inputs(plan: &ProveExecutionPlan) -> Result<Vec<Felt>, ProveWitnessCommitmentError> {
