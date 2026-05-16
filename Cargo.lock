@@ -131,6 +131,7 @@ dependencies = [
  "lzvm-accel",
  "lzvm-artifacts",
  "lzvm-field",
+ "lzvm-pil",
 ]
 
 [[package]]

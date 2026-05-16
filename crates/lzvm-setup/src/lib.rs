@@ -39,6 +39,7 @@ use lzvm_field::{
 mod directory_manifest;
 mod pcs;
 mod program_image;
+mod source_program_archive;
 
 pub use directory_manifest::{
     summarize_setup_directory, write_setup_directory_manifest, SetupDirectoryManifestWriteReport,
@@ -53,6 +54,10 @@ pub use program_image::{
     write_program_image_commitment_cache, write_program_image_commitment_cache_file,
     ProgramImageCommitmentCacheFileRequest, ProgramImageCommitmentCacheWriteError,
     ProgramImageCommitmentCacheWriteReport,
+};
+pub use source_program_archive::{
+    write_source_program_archive, SourceProgramArchiveWriteError, SourceProgramArchiveWriteReport,
+    SourceProgramArchiveWriteRequest,
 };
 
 const WORD_BYTES: usize = 8;
