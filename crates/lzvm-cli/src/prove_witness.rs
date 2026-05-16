@@ -19,7 +19,6 @@ use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 use lzvm_artifacts::trace_bundle::{read_trace_bundle_file, TraceBundle};
 use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
-use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::group_values::{build_group_values_segment, load_group_values_from_segments};
 use lzvm_prover::proof_values::{
@@ -27,10 +26,7 @@ use lzvm_prover::proof_values::{
     load_pcs_proof_values_from_segments,
 };
 use lzvm_prover::setup_preflight::validate_setup_preflight;
-use lzvm_prover::unit_values::{
-    build_unit_values_segment_from_packed_values_batch, load_unit_values_from_segments,
-    ProveUnitValues,
-};
+use lzvm_prover::unit_values::{load_unit_values_from_segments, ProveUnitValues};
 use lzvm_prover::witness_loader::{load_witness_library, TraceBytesBackend, WitnessBackend};
 use lzvm_prover::{
     build_constant_opening_segment, build_pcs_evaluation_segment,
@@ -39,7 +35,7 @@ use lzvm_prover::{
     build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_challenge, build_pcs_query_plan_segment_with_bindings,
     build_witness_commitment_segment, build_witness_opening_segment,
-    build_witness_opening_segment_batch, derive_prove_execution_plan_with_program_image_cache,
+    derive_prove_execution_plan_with_program_image_cache,
     run_prove_witness_commitments_with_trace_backend,
     unit_values::build_unit_values_segment_from_packed_values, ProveExecutionInputArtifacts,
     ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePcsEvaluationValues,
@@ -698,23 +694,42 @@ fn finish_all_units_witness_run(
         parsed.unit_values_segment.as_deref(),
         &auxiliary_inputs.unit_values,
     )?;
-    let proof_request = WitnessAllUnitsProofRequest {
-        catalog,
-        schedule: &plan.run_plan.schedule,
-        execution_units: &plan.units,
-        gpu_streams: plan.run_plan.gpu.max_streams,
-        public_inputs: plan.inputs.public_inputs.as_deref(),
-        outputs,
-        auxiliary_inputs,
-        unit_values: &unit_values,
-        evaluation_values_segment_input: parsed.evaluation_values_segment.as_deref(),
-        verify_outputs: plan.run_plan.options.verify_outputs,
-        program_image_cache: plan
-            .program_image_cache
-            .as_ref()
-            .map(|summary| &summary.cache),
+    let public_values =
+        match plan.inputs.public_inputs.as_deref() {
+            Some(path) => Some(read_public_values_file(path).map_err(|error| {
+                format!("read public inputs failed: {}: {error}", path.display())
+            })?),
+            None => None,
+        };
+    let evaluation_values_segment = match parsed.evaluation_values_segment.as_deref() {
+        Some(path) => Some(read_evaluation_values_segment_input(path)?),
+        None => None,
     };
-    let proof_bytes = build_witness_proof_artifact_for_all_units(&proof_request)?;
+    let proof = lzvm_prover::build_witness_proof_artifact_for_all_units(
+        &lzvm_prover::WitnessAllUnitsProofRequest {
+            catalog,
+            schedule: &plan.run_plan.schedule,
+            execution_units: &plan.units,
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: public_values.as_ref(),
+            outputs,
+            auxiliary_inputs,
+            unit_values: &unit_values,
+            evaluation_values_segment: evaluation_values_segment.as_ref(),
+            verify_outputs: plan.run_plan.options.verify_outputs,
+            program_image_cache: plan
+                .program_image_cache
+                .as_ref()
+                .map(|summary| &summary.cache),
+        },
+    )?;
+    let proof_bytes = match proof {
+        Some(proof) => Some(
+            encode_proof_artifact(&proof)
+                .map_err(|error| format!("encode witness proof artifact failed: {error}"))?,
+        ),
+        None => None,
+    };
     if plan.run_plan.options.save_outputs {
         for output in outputs {
             let commitments = output.commitments();
@@ -814,277 +829,6 @@ fn append_program_image_cache_segment(
     if let Some(segment) = cache_segment {
         segments.push(segment);
     }
-}
-
-struct WitnessAllUnitsProofRequest<'a> {
-    catalog: &'a KeyDirectoryCatalog,
-    schedule: &'a ProveSchedule,
-    execution_units: &'a [ProveExecutionUnitArtifacts],
-    gpu_streams: usize,
-    public_inputs: Option<&'a Path>,
-    outputs: &'a [ProveWitnessTraceCommitments],
-    auxiliary_inputs: &'a ProveWitnessAuxiliaryInputs,
-    unit_values: &'a [ProveUnitValues],
-    evaluation_values_segment_input: Option<&'a Path>,
-    verify_outputs: bool,
-    program_image_cache: Option<&'a ProgramImageCommitmentCache>,
-}
-
-fn build_witness_proof_artifact_for_all_units(
-    request: &WitnessAllUnitsProofRequest<'_>,
-) -> Result<Option<Vec<u8>>, String> {
-    let Some(public_inputs) = request.public_inputs else {
-        return Ok(None);
-    };
-    let public_values = read_public_values_file(public_inputs)
-        .map_err(|error| format!("read public inputs failed: {error}"))?;
-    if public_values.setup_hash != request.schedule.setup_hash {
-        return Err("public inputs setup hash mismatch".to_owned());
-    }
-    let public_values_hash = public_values_digest(&public_values)
-        .map_err(|error| format!("hash public inputs failed: {error}"))?;
-    let cache_segment = build_program_image_cache_proof_segment(request.program_image_cache)?;
-    let witness_outputs = request
-        .outputs
-        .iter()
-        .map(|output| output.commitments())
-        .collect::<Vec<_>>();
-    let binding_segments: &[ProofSegment] = cache_segment.as_slice();
-    let proof = if all_units_transcript_required(
-        request.execution_units,
-        request.outputs,
-        request.auxiliary_inputs,
-        request.evaluation_values_segment_input.is_some(),
-    )? {
-        build_witness_transcript_proof_artifact_for_all_units(
-            request,
-            public_values_hash,
-            binding_segments,
-        )?
-    } else if binding_segments.is_empty() {
-        build_witness_proof_artifact(
-            request.catalog,
-            request.schedule,
-            public_values_hash,
-            &witness_outputs,
-            &request.auxiliary_inputs.proof_values,
-            &request.auxiliary_inputs.group_values,
-            request.unit_values,
-        )?
-    } else {
-        lzvm_prover::build_witness_proof_artifact_with_bindings(
-            request.catalog,
-            request.schedule,
-            public_values_hash,
-            &witness_outputs,
-            lzvm_prover::ProofArtifactInputs {
-                proof_values: &request.auxiliary_inputs.proof_values,
-                group_values: &request.auxiliary_inputs.group_values,
-                unit_values: request.unit_values,
-                binding_segments,
-            },
-        )?
-    };
-    let mut proof = proof;
-    append_program_image_cache_segment(&mut proof.segments, cache_segment);
-    if request.verify_outputs {
-        validate_setup_preflight(request.catalog, &proof, &public_values)
-            .map_err(|error| format!("verify proof output failed: {error}"))?;
-    }
-    encode_proof_artifact(&proof)
-        .map(Some)
-        .map_err(|error| format!("encode witness proof artifact failed: {error}"))
-}
-
-fn all_units_transcript_required(
-    execution_units: &[ProveExecutionUnitArtifacts],
-    outputs: &[ProveWitnessTraceCommitments],
-    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
-    has_evaluation_segment: bool,
-) -> Result<bool, String> {
-    let mut has_fri_unit = false;
-    for output in outputs {
-        let unit_index = output.commitments().unit_index();
-        let execution_unit = execution_units
-            .get(unit_index)
-            .ok_or_else(|| format!("output unit index out of range: {unit_index}"))?;
-        if execution_unit.fri_expression_id.is_some() {
-            has_fri_unit = true;
-            if auxiliary_inputs.evaluations.is_empty() && !has_evaluation_segment {
-                return Err(format!(
-                    "missing evaluation values for unit {unit_index}: expected {}",
-                    execution_unit.expected_evaluation_value_count()
-                ));
-            }
-        }
-    }
-    Ok(has_fri_unit || !auxiliary_inputs.evaluations.is_empty() || has_evaluation_segment)
-}
-
-fn build_witness_transcript_proof_artifact_for_all_units(
-    request: &WitnessAllUnitsProofRequest<'_>,
-    public_values_hash: [u8; 32],
-    binding_segments: &[ProofSegment],
-) -> Result<ProofArtifact, String> {
-    let material_segment = build_pcs_material_manifest_segment(request.schedule)
-        .map_err(|error| format!("build material manifest segment failed: {error}"))?;
-    let witness_outputs = request
-        .outputs
-        .iter()
-        .map(|output| output.commitments())
-        .collect::<Vec<_>>();
-    let mut witness_segments = Vec::with_capacity(witness_outputs.len());
-    for output in &witness_outputs {
-        witness_segments.push(
-            build_witness_commitment_segment(output)
-                .map_err(|error| format!("build witness segment failed: {error}"))?,
-        );
-    }
-    witness_segments.sort_by_key(|segment| segment.id);
-
-    let evaluation_segment = match request.evaluation_values_segment_input {
-        Some(path) => read_evaluation_values_segment_input(path)?,
-        None => {
-            let evaluation_values = request
-                .outputs
-                .iter()
-                .map(|output| ProvePcsEvaluationValues {
-                    unit_index: output.commitments().unit_index(),
-                    values: request.auxiliary_inputs.evaluations.clone(),
-                })
-                .collect::<Vec<_>>();
-            build_pcs_evaluation_segment(request.schedule, &evaluation_values)
-                .map_err(|error| format!("build evaluation segment failed: {error}"))?
-        }
-    };
-    let transcript_auxiliary_inputs = request
-        .outputs
-        .iter()
-        .map(|output| {
-            let unit_index = output.commitments().unit_index();
-            let mut inputs = output.auxiliary_inputs().clone();
-            if let Some(values) = request
-                .unit_values
-                .iter()
-                .find(|values| values.unit_index == unit_index)
-            {
-                inputs.unit_values = values.packed_values.clone();
-            }
-            inputs
-        })
-        .collect::<Vec<_>>();
-    let transcript_inputs = request
-        .outputs
-        .iter()
-        .zip(transcript_auxiliary_inputs.iter())
-        .map(|(output, auxiliary_inputs)| {
-            let commitments = output.commitments();
-            let unit_index = commitments.unit_index();
-            let execution_unit = request
-                .execution_units
-                .get(unit_index)
-                .ok_or_else(|| format!("output unit index out of range: {unit_index}"))?;
-            let unit_index_u32 = u32::try_from(unit_index).map_err(|_| {
-                format!("witness segment unit index does not fit u32: {unit_index}")
-            })?;
-            let expected_segment_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
-                .checked_add(unit_index_u32)
-                .ok_or_else(|| format!("witness segment unit index overflow: {unit_index}"))?;
-            let witness_segment = witness_segments
-                .iter()
-                .find(|segment| segment.id == expected_segment_id)
-                .ok_or_else(|| format!("missing witness segment for unit {unit_index}"))?;
-            Ok(ProvePcsFriTranscriptTraceSegmentValues {
-                unit_index,
-                execution_unit,
-                trace: output.trace(),
-                publics: output.publics(),
-                auxiliary_inputs,
-                material_segment: &material_segment,
-                witness_segment,
-                evaluation_segment: &evaluation_segment,
-                binding_segments,
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let transcript_values =
-        build_pcs_fri_transcript_values_from_trace_segments(request.schedule, &transcript_inputs)
-            .map_err(|error| format!("build FRI transcript values failed: {error}"))?;
-    let final_query_challenge = transcript_values
-        .first()
-        .ok_or_else(|| "build FRI transcript values failed: no units".to_owned())?
-        .commitments
-        .final_query_challenge;
-    let nonce_segment = build_pcs_query_nonce_segment_with_streams(
-        request.schedule,
-        final_query_challenge,
-        request.gpu_streams,
-    )
-    .map_err(|error| format!("build query nonce segment failed: {error}"))?;
-    let nonce = Felt::from_u64(
-        parse_pcs_query_nonce_segment(&nonce_segment.data)
-            .map_err(|error| format!("parse query nonce segment failed: {error}"))?
-            .nonce,
-    );
-    let query_segment = build_pcs_query_plan_segment_from_challenge(
-        request.schedule,
-        &witness_segments,
-        final_query_challenge,
-        nonce,
-    )
-    .map_err(|error| format!("build query plan segment failed: {error}"))?;
-    let constant_opening_segment =
-        build_constant_opening_segment(request.catalog, request.schedule, &query_segment)
-            .map_err(|error| format!("build constant opening segment failed: {error}"))?;
-    let opening_segment =
-        build_witness_opening_segment_batch(request.schedule, &query_segment, &witness_outputs)
-            .map_err(|error| format!("build witness opening segment failed: {error}"))?;
-    let fri_segment = build_pcs_fri_opening_segment_from_transcript_values(
-        request.schedule,
-        &query_segment,
-        &transcript_values,
-    )
-    .map_err(|error| format!("build FRI opening segment failed: {error}"))?;
-
-    let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(
-        &request.catalog.layout.global_info,
-        &request.auxiliary_inputs.proof_values,
-    )
-    .map_err(|error| format!("build proof values segment failed: {error}"))?;
-    let group_values_segment = build_group_values_segment(
-        &request.catalog.layout.global_info,
-        &request.auxiliary_inputs.group_values,
-    )
-    .map_err(|error| format!("build group values segment failed: {error}"))?;
-    let unit_values_segment =
-        build_unit_values_segment_from_packed_values_batch(request.unit_values)
-            .map_err(|error| format!("build unit values segment failed: {error}"))?;
-
-    let mut segments = vec![
-        material_segment,
-        query_segment,
-        constant_opening_segment,
-        opening_segment,
-    ];
-    segments.extend(witness_segments);
-    segments.push(evaluation_segment);
-    segments.push(fri_segment);
-    segments.push(nonce_segment);
-    if let Some(segment) = proof_values_segment {
-        segments.push(segment);
-    }
-    if let Some(segment) = group_values_segment {
-        segments.push(segment);
-    }
-    if let Some(segment) = unit_values_segment {
-        segments.push(segment);
-    }
-
-    Ok(ProofArtifact {
-        setup_hash: request.schedule.setup_hash,
-        public_values_hash,
-        segments,
-    })
 }
 
 fn read_evaluation_values_segment_input(path: &Path) -> Result<ProofSegment, String> {
