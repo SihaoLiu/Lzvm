@@ -64,7 +64,7 @@ use crate::witness_commitment::{
 use crate::witness_layout::{
     derive_witness_trace_layout, WitnessTraceLayout, WitnessTraceLayoutError,
 };
-use crate::witness_loader::{load_witness_library, WitnessLoadError};
+use crate::witness_loader::{load_witness_library, WitnessBackend, WitnessLoadError};
 use crate::witness_runner::{run_witness_trace, WitnessTraceRunError};
 use crate::witness_trace::WitnessTraceBuffer;
 use crate::{ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassRequest, ProveSchedule};
@@ -897,6 +897,16 @@ pub fn run_prove_witness_commitments_with_trace(
     unit_index: usize,
     auxiliary_inputs: ProveWitnessAuxiliaryInputs,
 ) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
+    let library = load_witness_library(&plan.inputs.witness_library)?;
+    run_prove_witness_commitments_with_trace_backend(plan, unit_index, auxiliary_inputs, &library)
+}
+
+pub(crate) fn run_prove_witness_commitments_with_trace_backend<B: WitnessBackend + ?Sized>(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    auxiliary_inputs: ProveWitnessAuxiliaryInputs,
+    backend: &B,
+) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
     let unit_count = plan.run_plan.schedule.units.len();
     let unit = plan.run_plan.schedule.units.get(unit_index).ok_or(
         ProveWitnessCommitmentError::UnitIndexOutOfRange {
@@ -907,9 +917,8 @@ pub fn run_prove_witness_commitments_with_trace(
     let publics = load_public_inputs(plan)?;
     let input = read_witness_input(&plan.run_plan.pass)?;
     let input_byte_count = input.len();
-    let library = load_witness_library(&plan.inputs.witness_library)?;
     let layout = derive_witness_trace_layout(unit)?;
-    let trace = run_witness_trace(&library, layout.request(input))?;
+    let trace = run_witness_trace(backend, layout.request(input))?;
     let execution_unit =
         plan.units
             .get(unit_index)
