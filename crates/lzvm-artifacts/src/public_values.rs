@@ -195,6 +195,7 @@ pub fn encode_public_values(value: &PublicValues) -> Result<Vec<u8>, PublicValue
     encode_sectioned_file(&file).map_err(PublicValuesError::from)
 }
 
+#[cfg(feature = "json")]
 pub fn parse_public_values_json(input: &str) -> Result<PublicValues, PublicValuesError> {
     let value: serde_json::Value =
         serde_json::from_str(input).map_err(|error| PublicValuesError::Json {
@@ -260,13 +261,7 @@ pub fn encode_public_values_json(value: &PublicValues) -> Result<String, PublicV
     out.push_str("\"schema_version\":");
     out.push_str(&value.schema_version.to_string());
     out.push_str(",\"setup_hash\":");
-    out.push_str(
-        &serde_json::to_string(&encode_hash(&value.setup_hash)).map_err(|error| {
-            PublicValuesError::Json {
-                message: error.to_string(),
-            }
-        })?,
-    );
+    push_json_string(&mut out, &encode_hash(&value.setup_hash));
     out.push_str(",\"values\":[");
     for (index, entry) in value.values.iter().enumerate() {
         if index > 0 {
@@ -274,23 +269,13 @@ pub fn encode_public_values_json(value: &PublicValues) -> Result<String, PublicV
         }
         out.push('{');
         out.push_str("\"name\":");
-        out.push_str(&serde_json::to_string(&entry.name).map_err(|error| {
-            PublicValuesError::Json {
-                message: error.to_string(),
-            }
-        })?);
+        push_json_string(&mut out, &entry.name);
         out.push_str(",\"elements\":[");
         for (element_index, element) in entry.elements.iter().enumerate() {
             if element_index > 0 {
                 out.push(',');
             }
-            out.push_str(
-                &serde_json::to_string(&element.to_string()).map_err(|error| {
-                    PublicValuesError::Json {
-                        message: error.to_string(),
-                    }
-                })?,
-            );
+            push_json_string(&mut out, &element.to_string());
         }
         out.push_str("]}");
     }
@@ -370,6 +355,7 @@ fn validate_public_values(value: &PublicValues) -> Result<(), PublicValuesError>
     Ok(())
 }
 
+#[cfg(feature = "json")]
 fn read_u32(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -381,6 +367,7 @@ fn read_u32(
     u32::try_from(value).map_err(|_| PublicValuesError::InvalidField { field })
 }
 
+#[cfg(feature = "json")]
 fn read_hash(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -402,6 +389,32 @@ fn encode_hash(value: &[u8; 32]) -> String {
     out
 }
 
+fn push_json_string(out: &mut String, value: &str) {
+    out.push('"');
+    for character in value.chars() {
+        match character {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{08}' => out.push_str("\\b"),
+            '\t' => out.push_str("\\t"),
+            '\n' => out.push_str("\\n"),
+            '\u{0c}' => out.push_str("\\f"),
+            '\r' => out.push_str("\\r"),
+            '\u{00}'..='\u{1f}' => push_json_control_escape(out, character as u8),
+            character => out.push(character),
+        }
+    }
+    out.push('"');
+}
+
+fn push_json_control_escape(out: &mut String, value: u8) {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    out.push_str("\\u00");
+    out.push(HEX[(value >> 4) as usize] as char);
+    out.push(HEX[(value & 0x0f) as usize] as char);
+}
+
+#[cfg(feature = "json")]
 fn decode_hash(value: &str) -> Option<[u8; 32]> {
     if value.len() != 64 {
         return None;
@@ -413,6 +426,7 @@ fn decode_hash(value: &str) -> Option<[u8; 32]> {
     Some(out)
 }
 
+#[cfg(feature = "json")]
 fn hex_value(value: u8) -> Option<u8> {
     match value {
         b'0'..=b'9' => Some(value - b'0'),

@@ -16,6 +16,6 @@ cuda = ["dep:lzvm-accel", "lzvm-accel/cuda"]
 [dependencies]
 libloading = "0.8"
 lzvm-accel = { path = "../lzvm-accel", optional = true }
-lzvm-artifacts = { path = "../lzvm-artifacts" }
+lzvm-artifacts = { path = "../lzvm-artifacts", default-features = false }
 lzvm-field = { path = "../lzvm-field" }
 sha2 = "0.10"

@@ -18,7 +18,10 @@ default = []
 cuda = ["lzvm-prover/cuda", "lzvm-setup/cuda"]
 
 [dependencies]
-lzvm-artifacts = { path = "../lzvm-artifacts" }
+lzvm-artifacts = { path = "../lzvm-artifacts", default-features = false }
 lzvm-field = { path = "../lzvm-field" }
 lzvm-prover = { path = "../lzvm-prover" }
 lzvm-setup = { path = "../lzvm-setup" }
+
+[dev-dependencies]
+lzvm-artifacts = { path = "../lzvm-artifacts", features = ["json"] }

@@ -281,6 +281,7 @@ pub fn encode_global_info(value: &GlobalInfo) -> Result<Vec<u8>, GlobalInfoError
     encode_sectioned_file(&file).map_err(GlobalInfoError::from)
 }
 
+#[cfg(feature = "json")]
 pub fn parse_global_info_json(input: &str) -> Result<GlobalInfo, GlobalInfoError> {
     let value: serde_json::Value =
         serde_json::from_str(input).map_err(|error| GlobalInfoError::Json {
@@ -437,6 +438,7 @@ fn encode_global_info_section(value: &GlobalInfo) -> Result<Vec<u8>, GlobalInfoE
     Ok(section)
 }
 
+#[cfg(feature = "json")]
 fn parse_airs(values: &[serde_json::Value]) -> Result<Vec<Vec<GlobalAir>>, GlobalInfoError> {
     let mut out = Vec::with_capacity(values.len());
     for (airgroup_id, group) in values.iter().enumerate() {
@@ -464,6 +466,7 @@ fn parse_airs(values: &[serde_json::Value]) -> Result<Vec<Vec<GlobalAir>>, Globa
     Ok(out)
 }
 
+#[cfg(feature = "json")]
 fn parse_aggregation_types(
     values: &[serde_json::Value],
 ) -> Result<Vec<Vec<AggregationType>>, GlobalInfoError> {
@@ -504,6 +507,7 @@ fn validate_air_group_shape(
     Ok(())
 }
 
+#[cfg(feature = "json")]
 fn parse_named_stage_values(
     values: Option<&Vec<serde_json::Value>>,
     field: &'static str,
@@ -528,6 +532,7 @@ fn parse_named_stage_values(
     Ok(out)
 }
 
+#[cfg(feature = "json")]
 fn parse_public_values(
     values: Option<&Vec<serde_json::Value>>,
 ) -> Result<Vec<PublicValue>, GlobalInfoError> {
@@ -688,6 +693,7 @@ fn validate_global_info(value: &GlobalInfo) -> Result<(), GlobalInfoError> {
     Ok(())
 }
 
+#[cfg(feature = "json")]
 fn parse_curve(curve: &str) -> Result<CurveKind, GlobalInfoError> {
     match curve {
         "None" => Ok(CurveKind::None),
@@ -719,6 +725,7 @@ fn read_curve_tag(tag: u8) -> Result<CurveKind, GlobalInfoError> {
     }
 }
 
+#[cfg(feature = "json")]
 fn as_object<'a>(
     value: &'a serde_json::Value,
     field: &'static str,
@@ -728,6 +735,7 @@ fn as_object<'a>(
         .ok_or(GlobalInfoError::InvalidField { field })
 }
 
+#[cfg(feature = "json")]
 fn required<'a>(
     object: &'a serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -737,6 +745,7 @@ fn required<'a>(
         .ok_or(GlobalInfoError::MissingField { field })
 }
 
+#[cfg(feature = "json")]
 fn required_array<'a>(
     object: &'a serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -746,6 +755,7 @@ fn required_array<'a>(
         .ok_or(GlobalInfoError::InvalidField { field })
 }
 
+#[cfg(feature = "json")]
 fn optional_array<'a>(
     object: &'a serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -760,6 +770,7 @@ fn optional_array<'a>(
         .transpose()
 }
 
+#[cfg(feature = "json")]
 fn required_string(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -770,6 +781,7 @@ fn required_string(
         .ok_or(GlobalInfoError::InvalidField { field })
 }
 
+#[cfg(feature = "json")]
 fn required_string_array(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -787,6 +799,7 @@ fn required_string_array(
     Ok(out)
 }
 
+#[cfg(feature = "json")]
 fn required_u64(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -794,6 +807,7 @@ fn required_u64(
     value_to_u64(required(object, field)?, field)
 }
 
+#[cfg(feature = "json")]
 fn optional_u64(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -804,12 +818,14 @@ fn optional_u64(
         .transpose()
 }
 
+#[cfg(feature = "json")]
 fn value_to_u64(value: &serde_json::Value, field: &'static str) -> Result<u64, GlobalInfoError> {
     value
         .as_u64()
         .ok_or(GlobalInfoError::InvalidField { field })
 }
 
+#[cfg(feature = "json")]
 fn optional_bool(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -824,6 +840,7 @@ fn optional_bool(
         .transpose()
 }
 
+#[cfg(feature = "json")]
 fn required_u64_array(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -836,6 +853,7 @@ fn required_u64_array(
     Ok(out)
 }
 
+#[cfg(feature = "json")]
 fn optional_u64_array(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,

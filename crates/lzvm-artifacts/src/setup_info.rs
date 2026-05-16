@@ -348,6 +348,7 @@ pub fn encode_unit_setup_info(value: &UnitSetupInfo) -> Result<Vec<u8>, SetupInf
     encode_sectioned_file(&file).map_err(SetupInfoError::from)
 }
 
+#[cfg(feature = "json")]
 pub fn parse_unit_setup_info_json(input: &str) -> Result<UnitSetupInfo, SetupInfoError> {
     let value: serde_json::Value =
         serde_json::from_str(input).map_err(|error| SetupInfoError::Json {
@@ -616,6 +617,7 @@ fn encode_unit_setup_info_section(value: &UnitSetupInfo) -> Result<Vec<u8>, Setu
     Ok(section)
 }
 
+#[cfg(feature = "json")]
 fn parse_constant_columns(
     values: Option<&Vec<serde_json::Value>>,
 ) -> Result<Vec<ConstantColumn>, SetupInfoError> {
@@ -638,6 +640,7 @@ fn parse_constant_columns(
     Ok(out)
 }
 
+#[cfg(feature = "json")]
 fn parse_commitment_columns(
     values: Option<&Vec<serde_json::Value>>,
 ) -> Result<Vec<CommitmentColumn>, SetupInfoError> {
@@ -662,6 +665,7 @@ fn parse_commitment_columns(
     Ok(out)
 }
 
+#[cfg(feature = "json")]
 fn parse_stage_values(
     values: Option<&Vec<serde_json::Value>>,
     field: &'static str,
@@ -682,6 +686,7 @@ fn parse_stage_values(
     Ok(out)
 }
 
+#[cfg(feature = "json")]
 fn parse_evaluation_map(
     values: &[serde_json::Value],
 ) -> Result<Vec<EvaluationMapEntry>, SetupInfoError> {
@@ -890,6 +895,7 @@ fn validate_stage_values(
     Ok(())
 }
 
+#[cfg(feature = "json")]
 fn parse_stark_struct(value: &serde_json::Value) -> Result<StarkStruct, SetupInfoError> {
     let object = as_object(value, "starkStruct")?;
     let steps = parse_fri_steps(required_array(object, "steps")?)?;
@@ -944,6 +950,7 @@ fn validate_unit_setup_info(info: &UnitSetupInfo) -> Result<(), SetupInfoError> 
     Ok(())
 }
 
+#[cfg(feature = "json")]
 fn parse_fri_steps(values: &[serde_json::Value]) -> Result<Vec<FriStep>, SetupInfoError> {
     let mut steps = Vec::with_capacity(values.len());
     for value in values {
@@ -955,6 +962,7 @@ fn parse_fri_steps(values: &[serde_json::Value]) -> Result<Vec<FriStep>, SetupIn
     Ok(steps)
 }
 
+#[cfg(feature = "json")]
 fn parse_boundaries(values: &[serde_json::Value]) -> Result<Vec<Boundary>, SetupInfoError> {
     let mut boundaries = Vec::with_capacity(values.len());
     for value in values {
@@ -968,6 +976,7 @@ fn parse_boundaries(values: &[serde_json::Value]) -> Result<Vec<Boundary>, Setup
     Ok(boundaries)
 }
 
+#[cfg(feature = "json")]
 fn parse_u32_map(
     value: &serde_json::Value,
     field: &'static str,
@@ -982,6 +991,7 @@ fn parse_u32_map(
     Ok(out)
 }
 
+#[cfg(feature = "json")]
 fn as_object<'a>(
     value: &'a serde_json::Value,
     field: &'static str,
@@ -991,6 +1001,7 @@ fn as_object<'a>(
         .ok_or(SetupInfoError::InvalidField { field })
 }
 
+#[cfg(feature = "json")]
 fn required<'a>(
     object: &'a serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1000,6 +1011,7 @@ fn required<'a>(
         .ok_or(SetupInfoError::MissingField { field })
 }
 
+#[cfg(feature = "json")]
 fn required_array<'a>(
     object: &'a serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1009,6 +1021,7 @@ fn required_array<'a>(
         .ok_or(SetupInfoError::InvalidField { field })
 }
 
+#[cfg(feature = "json")]
 fn optional_array<'a>(
     object: &'a serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1023,6 +1036,7 @@ fn optional_array<'a>(
         .transpose()
 }
 
+#[cfg(feature = "json")]
 fn required_string(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1033,6 +1047,7 @@ fn required_string(
         .ok_or(SetupInfoError::InvalidField { field })
 }
 
+#[cfg(feature = "json")]
 fn required_u32(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1040,6 +1055,7 @@ fn required_u32(
     value_to_u32(required(object, field)?, field)
 }
 
+#[cfg(feature = "json")]
 fn optional_u32(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1050,6 +1066,7 @@ fn optional_u32(
         .transpose()
 }
 
+#[cfg(feature = "json")]
 fn optional_u32_array(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1064,6 +1081,7 @@ fn optional_u32_array(
     Ok(Some(out))
 }
 
+#[cfg(feature = "json")]
 fn value_to_u32(value: &serde_json::Value, field: &'static str) -> Result<u32, SetupInfoError> {
     let Some(number) = value.as_u64() else {
         return Err(SetupInfoError::InvalidField { field });
@@ -1071,6 +1089,7 @@ fn value_to_u32(value: &serde_json::Value, field: &'static str) -> Result<u32, S
     u32::try_from(number).map_err(|_| SetupInfoError::InvalidField { field })
 }
 
+#[cfg(feature = "json")]
 fn required_bool(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1080,6 +1099,7 @@ fn required_bool(
         .ok_or(SetupInfoError::InvalidField { field })
 }
 
+#[cfg(feature = "json")]
 fn optional_bool(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1094,6 +1114,7 @@ fn optional_bool(
         .transpose()
 }
 
+#[cfg(feature = "json")]
 fn optional_i64(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1104,6 +1125,7 @@ fn optional_i64(
         .transpose()
 }
 
+#[cfg(feature = "json")]
 fn required_i64_array(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1119,6 +1141,7 @@ fn required_i64_array(
     Ok(out)
 }
 
+#[cfg(feature = "json")]
 fn optional_string(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,

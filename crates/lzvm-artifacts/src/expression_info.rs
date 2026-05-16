@@ -694,6 +694,7 @@ pub fn encode_expression_info(value: &ExpressionInfo) -> Result<Vec<u8>, Express
     encode_sectioned_file(&file).map_err(ExpressionInfoError::from)
 }
 
+#[cfg(feature = "json")]
 pub fn parse_expression_info_json(input: &str) -> Result<ExpressionInfo, ExpressionInfoError> {
     let value: serde_json::Value =
         serde_json::from_str(input).map_err(|error| ExpressionInfoError::Json {
@@ -746,6 +747,7 @@ fn validate_operations(
     Ok(())
 }
 
+#[cfg(feature = "json")]
 fn parse_hints(values: &[serde_json::Value]) -> Result<Vec<HintInfo>, ExpressionInfoError> {
     let mut hints = Vec::with_capacity(values.len());
     for value in values {
@@ -759,6 +761,7 @@ fn parse_hints(values: &[serde_json::Value]) -> Result<Vec<HintInfo>, Expression
     Ok(hints)
 }
 
+#[cfg(feature = "json")]
 fn parse_hint_fields(
     values: &[serde_json::Value],
 ) -> Result<Vec<HintFieldInfo>, ExpressionInfoError> {
@@ -774,6 +777,7 @@ fn parse_hint_fields(
     Ok(fields)
 }
 
+#[cfg(feature = "json")]
 fn parse_hint_values(
     values: &[serde_json::Value],
 ) -> Result<Vec<HintValueInfo>, ExpressionInfoError> {
@@ -788,6 +792,7 @@ fn parse_hint_values(
     Ok(out)
 }
 
+#[cfg(feature = "json")]
 fn parse_hint_payload(
     object: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<HintPayload, ExpressionInfoError> {
@@ -857,6 +862,7 @@ fn parse_hint_payload(
     }
 }
 
+#[cfg(feature = "json")]
 fn parse_expressions(
     values: &[serde_json::Value],
 ) -> Result<Vec<ExpressionCode>, ExpressionInfoError> {
@@ -885,6 +891,7 @@ fn parse_expressions(
     Ok(expressions)
 }
 
+#[cfg(feature = "json")]
 fn parse_constraints(
     values: &[serde_json::Value],
 ) -> Result<Vec<ConstraintCode>, ExpressionInfoError> {
@@ -912,6 +919,7 @@ fn parse_constraints(
     Ok(constraints)
 }
 
+#[cfg(feature = "json")]
 fn parse_operations(
     values: &[serde_json::Value],
     temporary_count: u32,
@@ -935,6 +943,7 @@ fn parse_operations(
     Ok(operations)
 }
 
+#[cfg(feature = "json")]
 fn parse_operation(op: &str) -> Result<OperationKind, ExpressionInfoError> {
     match op {
         "add" => Ok(OperationKind::Add),
@@ -945,6 +954,7 @@ fn parse_operation(op: &str) -> Result<OperationKind, ExpressionInfoError> {
     }
 }
 
+#[cfg(feature = "json")]
 fn parse_boundary(boundary: &str) -> Result<BoundaryKind, ExpressionInfoError> {
     match boundary {
         "everyRow" => Ok(BoundaryKind::EveryRow),
@@ -985,6 +995,7 @@ fn validate_operand(value: &CodeOperand, temporary_count: u32) -> Result<(), Exp
     Ok(())
 }
 
+#[cfg(feature = "json")]
 fn parse_expression_destination(
     value: &serde_json::Value,
 ) -> Result<ExpressionDestination, ExpressionInfoError> {
@@ -1000,6 +1011,7 @@ fn parse_expression_destination(
     }
 }
 
+#[cfg(feature = "json")]
 fn parse_destination(
     value: &serde_json::Value,
     temporary_count: u32,
@@ -1018,6 +1030,7 @@ fn parse_destination(
     Ok(destination)
 }
 
+#[cfg(feature = "json")]
 fn parse_operands(
     values: &[serde_json::Value],
     temporary_count: u32,
@@ -1031,6 +1044,7 @@ fn parse_operands(
     Ok(operands)
 }
 
+#[cfg(feature = "json")]
 fn parse_operand(value: &serde_json::Value) -> Result<CodeOperand, ExpressionInfoError> {
     let object = as_object(value, "reference")?;
     let kind = required_string(object, "type")?;
@@ -1103,6 +1117,7 @@ fn parse_operand(value: &serde_json::Value) -> Result<CodeOperand, ExpressionInf
     }
 }
 
+#[cfg(feature = "json")]
 fn required_number(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1122,6 +1137,7 @@ fn required_number(
         })
 }
 
+#[cfg(feature = "json")]
 fn as_object<'a>(
     value: &'a serde_json::Value,
     field: &'static str,
@@ -1131,6 +1147,7 @@ fn as_object<'a>(
         .ok_or(ExpressionInfoError::InvalidField { field })
 }
 
+#[cfg(feature = "json")]
 fn required<'a>(
     object: &'a serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1140,6 +1157,7 @@ fn required<'a>(
         .ok_or(ExpressionInfoError::MissingField { field })
 }
 
+#[cfg(feature = "json")]
 fn required_array<'a>(
     object: &'a serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1149,6 +1167,7 @@ fn required_array<'a>(
         .ok_or(ExpressionInfoError::InvalidField { field })
 }
 
+#[cfg(feature = "json")]
 fn required_string(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1159,6 +1178,7 @@ fn required_string(
         .ok_or(ExpressionInfoError::InvalidField { field })
 }
 
+#[cfg(feature = "json")]
 fn optional_string(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1174,6 +1194,7 @@ fn optional_string(
         .transpose()
 }
 
+#[cfg(feature = "json")]
 fn required_u32(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1181,6 +1202,7 @@ fn required_u32(
     value_to_u32(required(object, field)?, field)
 }
 
+#[cfg(feature = "json")]
 fn optional_u32(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1191,6 +1213,7 @@ fn optional_u32(
         .transpose()
 }
 
+#[cfg(feature = "json")]
 fn value_to_u32(
     value: &serde_json::Value,
     field: &'static str,
@@ -1201,6 +1224,7 @@ fn value_to_u32(
     u32::try_from(number).map_err(|_| ExpressionInfoError::InvalidField { field })
 }
 
+#[cfg(feature = "json")]
 fn optional_i64(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
@@ -1215,6 +1239,7 @@ fn optional_i64(
         .transpose()
 }
 
+#[cfg(feature = "json")]
 fn required_u32_array(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &'static str,
