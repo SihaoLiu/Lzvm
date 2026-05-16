@@ -1,10 +1,12 @@
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::program_image::ProgramImageGpuMode;
 use lzvm_artifacts::trace_bundle::{encode_trace_bundle, TraceBundle, TraceBundleUnit};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
-use lzvm_prover::contribution::derive_global_challenge_from_files;
+use lzvm_prover::contribution::{
+    derive_global_challenge_from_contribution_proofs, derive_global_challenge_from_files,
+};
 use lzvm_prover::derive_prove_schedule_from_directory;
 use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
 use lzvm_prover::setup_preflight::validate_setup_preflight_from_files;
@@ -50,6 +52,12 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             verify_contribution(setup_dir, proof_bin, public_values_path, stdout, stderr)
         }
         ["verify", "contribution", ..] => write_verify_contribution_usage(stderr),
+        ["verify", "contribution-set", setup_dir, public_values_path, proof_bins @ ..]
+            if !proof_bins.is_empty() =>
+        {
+            verify_contribution_set(setup_dir, public_values_path, proof_bins, stdout, stderr)
+        }
+        ["verify", "contribution-set", ..] => write_verify_contribution_set_usage(stderr),
         ["verify", "preflight", proof_bin, public_values_path] => {
             verify_preflight(proof_bin, public_values_path, stdout, stderr)
         }
@@ -513,6 +521,42 @@ fn verify_contribution(
     };
 
     let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "segments={}", report.segment_count);
+    let _ = writeln!(stdout, "public_values={}", report.public_value_count);
+    let _ = writeln!(stdout, "proof_values={}", report.proof_value_count);
+    let _ = writeln!(stdout, "contributions={}", report.contribution_count);
+    let _ = writeln!(
+        stdout,
+        "contribution_challenge={},{},{}",
+        report.challenge.c0.to_u64(),
+        report.challenge.c1.to_u64(),
+        report.challenge.c2.to_u64()
+    );
+    0
+}
+
+fn verify_contribution_set(
+    setup_dir: &str,
+    public_values_path: &str,
+    proof_bins: &[&str],
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let proof_paths = proof_bins.iter().map(PathBuf::from).collect::<Vec<_>>();
+    let report = match derive_global_challenge_from_contribution_proofs(
+        setup_dir,
+        public_values_path,
+        &proof_paths,
+    ) {
+        Ok(report) => report,
+        Err(error) => {
+            let _ = writeln!(stderr, "verify contribution-set failed: {error}");
+            return 1;
+        }
+    };
+
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "proofs={}", report.proof_count);
     let _ = writeln!(stdout, "segments={}", report.segment_count);
     let _ = writeln!(stdout, "public_values={}", report.public_value_count);
     let _ = writeln!(stdout, "proof_values={}", report.proof_value_count);
@@ -1031,6 +1075,14 @@ fn write_verify_contribution_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
         "usage: lzvm verify contribution <setup-dir> <proof-bin> <public-values>"
+    );
+    2
+}
+
+fn write_verify_contribution_set_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm verify contribution-set <setup-dir> <public-values> <proof-bin> [proof-bin ...]"
     );
     2
 }

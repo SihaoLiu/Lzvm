@@ -89,7 +89,8 @@ use lzvm_artifacts::witness_segment::{
 use lzvm_cli::{build_witness_proof_artifact, build_witness_proof_core_artifact, run_cli};
 use lzvm_field::{poseidon2_hash_16, Ext3, Felt};
 use lzvm_prover::contribution::{
-    build_contribution_segment, derive_global_challenge_from_proof_segments, ProveContributionEntry,
+    build_contribution_segment, derive_global_challenge_from_contributions,
+    derive_global_challenge_from_proof_segments, ProveContributionEntry,
 };
 use lzvm_prover::pcs_fri::{verify_fri_fold, verify_fri_opening_folds, PcsFriOpeningFoldRequest};
 use lzvm_prover::pcs_transcript::{
@@ -7101,6 +7102,93 @@ fn verifies_contribution_challenge_from_proof_artifact() {
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
             "status=ok\nsegments=1\npublic_values=1\nproof_values=0\ncontributions=2\ncontribution_challenge={},{},{}\n",
+            expected_challenge.c0.to_u64(),
+            expected_challenge.c1.to_u64(),
+            expected_challenge.c2.to_u64()
+        )
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn verifies_contribution_challenge_from_multiple_proof_artifacts() {
+    let dir = temp_dir("verify-contribution-set");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should parse");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let entries = sample_contribution_entries(
+        catalog
+            .layout
+            .global_info
+            .lattice_size
+            .expect("lattice size should exist") as usize,
+    );
+
+    let proof_a = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![build_contribution_segment(&[entries[0].clone()])
+            .expect("contribution segment should build")
+            .expect("contribution segment should exist")],
+    };
+    let proof_b = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![build_contribution_segment(&[entries[1].clone()])
+            .expect("contribution segment should build")
+            .expect("contribution segment should exist")],
+    };
+    let proof_a_path = dir.join("proof-a.bin");
+    let proof_b_path = dir.join("proof-b.bin");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &proof_a_path,
+        encode_proof_artifact(&proof_a).expect("proof should encode"),
+    );
+    write_bytes(
+        &proof_b_path,
+        encode_proof_artifact(&proof_b).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let public_fields =
+        public_values_as_fields(&public_values).expect("public values should flatten");
+    let expected_challenge = derive_global_challenge_from_contributions(
+        &catalog.layout.global_info,
+        &public_fields,
+        &[],
+        &entries,
+    )
+    .expect("challenge should derive");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "contribution-set",
+            dir.to_str().expect("setup path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+            proof_a_path.to_str().expect("proof path should be utf-8"),
+            proof_b_path.to_str().expect("proof path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nproofs=2\nsegments=2\npublic_values=1\nproof_values=0\ncontributions=2\ncontribution_challenge={},{},{}\n",
             expected_challenge.c0.to_u64(),
             expected_challenge.c1.to_u64(),
             expected_challenge.c2.to_u64()

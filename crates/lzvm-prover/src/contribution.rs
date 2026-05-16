@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::contribution_segment::{
     encode_contribution_segment, parse_contribution_segment, ContributionEntry,
@@ -33,6 +33,7 @@ pub struct ProveContributionEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContributionChallengeReport {
+    pub proof_count: usize,
     pub segment_count: usize,
     pub public_value_count: usize,
     pub proof_value_count: usize,
@@ -89,6 +90,7 @@ pub enum ContributionChallengeError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContributionChallengeFileError {
+    MissingProofs,
     Catalog(KeyDirectoryError),
     SetupDirectoryManifest(SetupDirectoryManifestError),
     Proof(ProofArtifactError),
@@ -97,6 +99,7 @@ pub enum ContributionChallengeFileError {
     PublicValueField(PublicValueFieldError),
     ProofValues(LoadPcsProofValuesSegmentError),
     ProofValuePacking(ProvePcsProofValuesSegmentError),
+    ProofValueMismatch { proof_index: usize },
     Contribution(ContributionChallengeError),
 }
 
@@ -222,6 +225,7 @@ impl From<LoadContributionSegmentError> for ContributionChallengeError {
 impl fmt::Display for ContributionChallengeFileError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::MissingProofs => write!(f, "contribution proof set has no proofs"),
             Self::Catalog(error) => write!(f, "{error}"),
             Self::SetupDirectoryManifest(error) => write!(f, "{error}"),
             Self::Proof(error) => write!(f, "{error}"),
@@ -230,6 +234,9 @@ impl fmt::Display for ContributionChallengeFileError {
             Self::PublicValueField(error) => write!(f, "{error}"),
             Self::ProofValues(error) => write!(f, "{error}"),
             Self::ProofValuePacking(error) => write!(f, "{error}"),
+            Self::ProofValueMismatch { proof_index } => {
+                write!(f, "contribution proof {proof_index} proof values mismatch")
+            }
             Self::Contribution(error) => write!(f, "{error}"),
         }
     }
@@ -247,6 +254,7 @@ impl std::error::Error for ContributionChallengeFileError {
             Self::ProofValues(error) => Some(error),
             Self::ProofValuePacking(error) => Some(error),
             Self::Contribution(error) => Some(error),
+            Self::MissingProofs | Self::ProofValueMismatch { .. } => None,
         }
     }
 }
@@ -421,9 +429,74 @@ pub fn derive_global_challenge_from_files(
     )?;
 
     Ok(ContributionChallengeReport {
+        proof_count: 1,
         segment_count: public_report.segment_count,
         public_value_count: public_report.public_value_count,
         proof_value_count: proof_values.len(),
+        contribution_count: entries.len(),
+        challenge,
+    })
+}
+
+pub fn derive_global_challenge_from_contribution_proofs(
+    setup_dir: impl AsRef<Path>,
+    public_values_path: impl AsRef<Path>,
+    proof_paths: &[PathBuf],
+) -> Result<ContributionChallengeReport, ContributionChallengeFileError> {
+    if proof_paths.is_empty() {
+        return Err(ContributionChallengeFileError::MissingProofs);
+    }
+
+    let setup_dir = setup_dir.as_ref();
+    let catalog = read_key_directory_catalog(setup_dir)?;
+    validate_setup_directory_manifest_if_present(setup_dir, &catalog)?;
+    let public_values = read_public_values_file(public_values_path)?;
+    let public_fields = public_values_as_fields(&public_values)?;
+
+    let mut segment_count = 0_usize;
+    let mut public_value_count = None;
+    let mut proof_value_count = 0_usize;
+    let mut packed_proof_values = None::<Vec<Felt>>;
+    let mut entries = Vec::new();
+
+    for (proof_index, proof_path) in proof_paths.iter().enumerate() {
+        let proof = read_proof_artifact_file(proof_path)?;
+        let public_report = validate_setup_preflight_hashes(&catalog, &proof, &public_values)?;
+        segment_count = segment_count
+            .checked_add(public_report.segment_count)
+            .ok_or(ContributionChallengeError::LengthOverflow)?;
+        public_value_count = public_value_count.or(Some(public_report.public_value_count));
+
+        let proof_values =
+            load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)?;
+        let packed = flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)?;
+        if let Some(expected) = &packed_proof_values {
+            if expected != &packed {
+                return Err(ContributionChallengeFileError::ProofValueMismatch { proof_index });
+            }
+        } else {
+            proof_value_count = proof_values.len();
+            packed_proof_values = Some(packed);
+        }
+
+        let mut proof_entries = load_contribution_segment_from_segments(&proof.segments)
+            .map_err(ContributionChallengeError::from)?;
+        entries.append(&mut proof_entries);
+    }
+
+    let packed_proof_values = packed_proof_values.unwrap_or_default();
+    let challenge = derive_global_challenge_from_contributions(
+        &catalog.layout.global_info,
+        &public_fields,
+        &packed_proof_values,
+        &entries,
+    )?;
+
+    Ok(ContributionChallengeReport {
+        proof_count: proof_paths.len(),
+        segment_count,
+        public_value_count: public_value_count.unwrap_or(0),
+        proof_value_count,
         contribution_count: entries.len(),
         challenge,
     })
