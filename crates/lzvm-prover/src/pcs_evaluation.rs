@@ -7,9 +7,77 @@ use lzvm_artifacts::pcs_evaluation_segment::{
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_field::Ext3;
 
-use crate::prove_witness::{ProvePcsEvaluationSegmentError, ProvePcsEvaluationValues};
 use crate::ProveSchedule;
 use crate::ProveUnitSchedule;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProvePcsEvaluationValues {
+    pub unit_index: usize,
+    pub values: Vec<Ext3>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProvePcsEvaluationSegmentError {
+    UnitIndexOverflow {
+        unit_index: usize,
+    },
+    UnitIndexOutOfRange {
+        unit_index: usize,
+        unit_count: usize,
+    },
+    ValueCountMismatch {
+        unit_index: usize,
+        expected: usize,
+        found: usize,
+    },
+    Segment(PcsEvaluationSegmentError),
+}
+
+impl fmt::Display for ProvePcsEvaluationSegmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnitIndexOverflow { unit_index } => write!(
+                f,
+                "prove PCS evaluation segment unit index does not fit u32: {unit_index}"
+            ),
+            Self::UnitIndexOutOfRange {
+                unit_index,
+                unit_count,
+            } => write!(
+                f,
+                "prove PCS evaluation segment unit index {unit_index} is outside unit count {unit_count}"
+            ),
+            Self::ValueCountMismatch {
+                unit_index,
+                expected,
+                found,
+            } => write!(
+                f,
+                "prove PCS evaluation segment unit {unit_index} value count mismatch: expected {expected}, found {found}"
+            ),
+            Self::Segment(error) => {
+                write!(f, "prove PCS evaluation segment encode failed: {error}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ProvePcsEvaluationSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Segment(error) => Some(error),
+            Self::UnitIndexOverflow { .. }
+            | Self::UnitIndexOutOfRange { .. }
+            | Self::ValueCountMismatch { .. } => None,
+        }
+    }
+}
+
+impl From<PcsEvaluationSegmentError> for ProvePcsEvaluationSegmentError {
+    fn from(error: PcsEvaluationSegmentError) -> Self {
+        Self::Segment(error)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadPcsEvaluationUnitError {

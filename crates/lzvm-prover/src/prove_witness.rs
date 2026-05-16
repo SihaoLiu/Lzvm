@@ -1,8 +1,12 @@
 mod types;
 
 pub use crate::constant_opening::build_constant_opening_segment;
-pub use crate::pcs_evaluation::build_pcs_evaluation_segment;
-pub use crate::pcs_material_manifest::build_pcs_material_manifest_segment;
+pub use crate::pcs_evaluation::{
+    build_pcs_evaluation_segment, ProvePcsEvaluationSegmentError, ProvePcsEvaluationValues,
+};
+pub use crate::pcs_material_manifest::{
+    build_pcs_material_manifest_segment, ProvePcsMaterialSegmentError,
+};
 pub use crate::pcs_query_plan::{
     build_pcs_query_nonce_segment, build_pcs_query_nonce_segment_from_transcript_segments,
     build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,

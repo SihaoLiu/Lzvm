@@ -2,50 +2,11 @@ use std::fmt;
 
 use lzvm_artifacts::constant_opening_segment::ConstantOpeningSegmentError;
 use lzvm_artifacts::constant_tree::ConstantTreeError;
-use lzvm_artifacts::key_directory::KeyUnitKind;
-use lzvm_artifacts::pcs_evaluation_segment::PcsEvaluationSegmentError;
-use lzvm_artifacts::pcs_material_segment::PcsMaterialManifestSegmentError;
 use lzvm_artifacts::pcs_query_segment::PcsQueryPlanSegmentError;
 use lzvm_artifacts::witness_opening_segment::WitnessOpeningSegmentError;
-use lzvm_field::Ext3;
 
 use crate::constant_tree_opening::ConstantTreeOpeningError;
 use crate::witness_commitment::WitnessStageOpeningError;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProvePcsEvaluationValues {
-    pub unit_index: usize,
-    pub values: Vec<Ext3>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProvePcsMaterialSegmentError {
-    MissingMaterial {
-        unit_index: usize,
-        kind: KeyUnitKind,
-    },
-    UnitIndexOverflow {
-        unit_index: usize,
-    },
-    Segment(PcsMaterialManifestSegmentError),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProvePcsEvaluationSegmentError {
-    UnitIndexOverflow {
-        unit_index: usize,
-    },
-    UnitIndexOutOfRange {
-        unit_index: usize,
-        unit_count: usize,
-    },
-    ValueCountMismatch {
-        unit_index: usize,
-        expected: usize,
-        found: usize,
-    },
-    Segment(PcsEvaluationSegmentError),
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProveWitnessOpeningSegmentError {
@@ -90,53 +51,6 @@ pub enum ProveConstantOpeningSegmentError {
     },
     Opening(ConstantTreeOpeningError),
     Segment(ConstantOpeningSegmentError),
-}
-
-impl fmt::Display for ProvePcsMaterialSegmentError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MissingMaterial { unit_index, kind } => write!(
-                f,
-                "prove PCS material segment is missing material for unit {unit_index} ({kind})"
-            ),
-            Self::UnitIndexOverflow { unit_index } => {
-                write!(
-                    f,
-                    "prove PCS material segment unit index does not fit u32: {unit_index}"
-                )
-            }
-            Self::Segment(error) => write!(f, "prove PCS material segment encode failed: {error}"),
-        }
-    }
-}
-
-impl fmt::Display for ProvePcsEvaluationSegmentError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnitIndexOverflow { unit_index } => write!(
-                f,
-                "prove PCS evaluation segment unit index does not fit u32: {unit_index}"
-            ),
-            Self::UnitIndexOutOfRange {
-                unit_index,
-                unit_count,
-            } => write!(
-                f,
-                "prove PCS evaluation segment unit index {unit_index} is outside unit count {unit_count}"
-            ),
-            Self::ValueCountMismatch {
-                unit_index,
-                expected,
-                found,
-            } => write!(
-                f,
-                "prove PCS evaluation segment unit {unit_index} value count mismatch: expected {expected}, found {found}"
-            ),
-            Self::Segment(error) => {
-                write!(f, "prove PCS evaluation segment encode failed: {error}")
-            }
-        }
-    }
 }
 
 impl fmt::Display for ProveWitnessOpeningSegmentError {
@@ -207,26 +121,6 @@ impl fmt::Display for ProveConstantOpeningSegmentError {
     }
 }
 
-impl std::error::Error for ProvePcsMaterialSegmentError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Segment(error) => Some(error),
-            Self::MissingMaterial { .. } | Self::UnitIndexOverflow { .. } => None,
-        }
-    }
-}
-
-impl std::error::Error for ProvePcsEvaluationSegmentError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Segment(error) => Some(error),
-            Self::UnitIndexOverflow { .. }
-            | Self::UnitIndexOutOfRange { .. }
-            | Self::ValueCountMismatch { .. } => None,
-        }
-    }
-}
-
 impl std::error::Error for ProveWitnessOpeningSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -252,18 +146,6 @@ impl std::error::Error for ProveConstantOpeningSegmentError {
             Self::Segment(error) => Some(error),
             Self::UnitIndexOutOfRange { .. } | Self::UnitIndexOverflow { .. } => None,
         }
-    }
-}
-
-impl From<PcsMaterialManifestSegmentError> for ProvePcsMaterialSegmentError {
-    fn from(error: PcsMaterialManifestSegmentError) -> Self {
-        Self::Segment(error)
-    }
-}
-
-impl From<PcsEvaluationSegmentError> for ProvePcsEvaluationSegmentError {
-    fn from(error: PcsEvaluationSegmentError) -> Self {
-        Self::Segment(error)
     }
 }
 

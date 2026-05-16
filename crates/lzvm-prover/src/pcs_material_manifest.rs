@@ -1,5 +1,6 @@
 use std::fmt;
 
+use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_material_segment::{
     encode_pcs_material_manifest_segment, parse_pcs_material_manifest_segment,
     PcsMaterialManifestSegment, PcsMaterialManifestSegmentError, PcsMaterialManifestUnit,
@@ -7,8 +8,52 @@ use lzvm_artifacts::pcs_material_segment::{
 };
 use lzvm_artifacts::proof::ProofSegment;
 
-use crate::prove_witness::ProvePcsMaterialSegmentError;
 use crate::ProveSchedule;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProvePcsMaterialSegmentError {
+    MissingMaterial {
+        unit_index: usize,
+        kind: KeyUnitKind,
+    },
+    UnitIndexOverflow {
+        unit_index: usize,
+    },
+    Segment(PcsMaterialManifestSegmentError),
+}
+
+impl fmt::Display for ProvePcsMaterialSegmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingMaterial { unit_index, kind } => write!(
+                f,
+                "prove PCS material segment is missing material for unit {unit_index} ({kind})"
+            ),
+            Self::UnitIndexOverflow { unit_index } => {
+                write!(
+                    f,
+                    "prove PCS material segment unit index does not fit u32: {unit_index}"
+                )
+            }
+            Self::Segment(error) => write!(f, "prove PCS material segment encode failed: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for ProvePcsMaterialSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Segment(error) => Some(error),
+            Self::MissingMaterial { .. } | Self::UnitIndexOverflow { .. } => None,
+        }
+    }
+}
+
+impl From<PcsMaterialManifestSegmentError> for ProvePcsMaterialSegmentError {
+    fn from(error: PcsMaterialManifestSegmentError) -> Self {
+        Self::Segment(error)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidatePcsMaterialManifestSegmentsError {
