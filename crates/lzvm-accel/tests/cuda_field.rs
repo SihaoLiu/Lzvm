@@ -2,9 +2,10 @@
 use lzvm_accel::{cuda_goldilocks_add, cuda_goldilocks_mul};
 #[cfg(feature = "cuda")]
 use lzvm_accel::{
-    cuda_goldilocks_butterfly, cuda_goldilocks_coset_extend, cuda_goldilocks_intt,
-    cuda_goldilocks_ntt, cuda_keccak256_fixed, cuda_poseidon2_width16, cuda_poseidon2_width4,
-    cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8, cuda_setup_init, CudaDeviceBuffer,
+    cuda_goldilocks_butterfly, cuda_goldilocks_coset_extend, cuda_goldilocks_coset_extend_device,
+    cuda_goldilocks_intt, cuda_goldilocks_ntt, cuda_keccak256_fixed, cuda_poseidon2_width16,
+    cuda_poseidon2_width4, cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8,
+    cuda_setup_init, CudaDeviceBuffer,
 };
 #[cfg(feature = "cuda")]
 use lzvm_crypto::keccak256;
@@ -34,6 +35,26 @@ fn sub_mod(lhs: u64, rhs: u64) -> u64 {
     } else {
         MODULUS - (rhs - lhs)
     }
+}
+
+#[cfg(feature = "cuda")]
+fn u64_words_to_bytes(words: &[u64]) -> Vec<u8> {
+    words
+        .iter()
+        .flat_map(|word| word.to_le_bytes())
+        .collect::<Vec<_>>()
+}
+
+#[cfg(feature = "cuda")]
+fn bytes_to_u64_words(bytes: &[u8]) -> Vec<u64> {
+    bytes
+        .chunks_exact(8)
+        .map(|chunk| {
+            let mut array = [0_u8; 8];
+            array.copy_from_slice(chunk);
+            u64::from_le_bytes(array)
+        })
+        .collect::<Vec<_>>()
 }
 
 #[test]
@@ -240,6 +261,40 @@ fn cuda_extends_evaluations_over_shifted_cosets() {
 
     let actual =
         cuda_goldilocks_coset_extend(&input, 2, 4).expect("cuda coset extension should run");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_extends_evaluations_from_device_memory() {
+    let input = vec![5, 1, 9, 9];
+    let source = input
+        .iter()
+        .map(|value| Felt::from_u64(*value))
+        .collect::<Vec<_>>();
+    let expected = coset_extend_evaluations(&source, 2, 4)
+        .expect("cpu coset extension should run")
+        .into_iter()
+        .map(Felt::to_u64)
+        .collect::<Vec<_>>();
+
+    let input_bytes = u64_words_to_bytes(&input);
+    let mut input_buffer =
+        CudaDeviceBuffer::new(input_bytes.len()).expect("input device buffer should allocate");
+    input_buffer
+        .copy_from(&input_bytes)
+        .expect("host bytes should copy to device");
+    let mut output_buffer =
+        CudaDeviceBuffer::new(expected.len() * 8).expect("output device buffer should allocate");
+
+    cuda_goldilocks_coset_extend_device(&input_buffer, &mut output_buffer, 2, 4)
+        .expect("cuda coset extension should run from device memory");
+
+    let actual_bytes = output_buffer
+        .to_vec()
+        .expect("device bytes should copy back to host");
+    let actual = bytes_to_u64_words(&actual_bytes);
 
     assert_eq!(actual, expected);
 }

@@ -913,6 +913,36 @@ cudaError_t run_ntt(
     return cudaSuccess;
 }
 
+int run_coset_extend_on_device(
+    uint64_t* device_values,
+    size_t source_len,
+    size_t source_bits,
+    size_t target_len,
+    size_t target_bits,
+    uint64_t source_root_inverse,
+    uint64_t target_root,
+    uint64_t shift) {
+    cudaError_t status =
+        run_ntt(device_values, source_len, source_bits, source_root_inverse, true);
+    if (status != cudaSuccess) {
+        return static_cast<int>(status);
+    }
+
+    const uint64_t inverse_len = host_pow_mod(static_cast<uint64_t>(source_len), kModulus - 2);
+    const size_t blocks = (target_len + kThreads - 1) / kThreads;
+    normalize_shift_and_pad_kernel<<<blocks, kThreads>>>(
+        device_values, source_len, target_len, inverse_len, shift);
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+
+    status = run_ntt(device_values, target_len, target_bits, target_root, false);
+    if (status != cudaSuccess) {
+        return static_cast<int>(status);
+    }
+
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
+    return 0;
+}
+
 }  // namespace
 
 extern "C" int lzvm_cuda_setup_init(
@@ -1140,27 +1170,48 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend(
 
     LZVM_CUDA_RETURN_ON_ERROR(device_values.reset(target_len));
     LZVM_CUDA_RETURN_ON_ERROR(device_values.copy_from_bytes(values, source_bytes));
-
-    cudaError_t status =
-        run_ntt(device_values.data(), source_len, source_bits, source_root_inverse, true);
-    if (status != cudaSuccess) {
-        return static_cast<int>(status);
-    }
-
-    const uint64_t inverse_len = host_pow_mod(static_cast<uint64_t>(source_len), kModulus - 2);
-    const size_t blocks = (target_len + kThreads - 1) / kThreads;
-    normalize_shift_and_pad_kernel<<<blocks, kThreads>>>(
-        device_values.data(), source_len, target_len, inverse_len, shift);
-    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
-
-    status = run_ntt(device_values.data(), target_len, target_bits, target_root, false);
-    if (status != cudaSuccess) {
-        return static_cast<int>(status);
-    }
-
-    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
+    LZVM_CUDA_RETURN_ON_ERROR(run_coset_extend_on_device(
+        device_values.data(),
+        source_len,
+        source_bits,
+        target_len,
+        target_bits,
+        source_root_inverse,
+        target_root,
+        shift));
     LZVM_CUDA_RETURN_ON_ERROR(device_values.copy_to_bytes(out, target_bytes));
     return 0;
+}
+
+extern "C" int lzvm_cuda_goldilocks_coset_extend_device(
+    const uint64_t* values,
+    uint64_t* out,
+    size_t source_len,
+    size_t source_bits,
+    size_t target_len,
+    size_t target_bits,
+    uint64_t source_root_inverse,
+    uint64_t target_root,
+    uint64_t shift) {
+    if (values == nullptr || out == nullptr) {
+        return -1;
+    }
+    if (source_len == 0 || target_len == 0 || source_len > target_len) {
+        return -2;
+    }
+
+    const size_t source_bytes = source_len * sizeof(uint64_t);
+    LZVM_CUDA_RETURN_ON_ERROR(
+        cudaMemcpy(out, values, source_bytes, cudaMemcpyDeviceToDevice));
+    return run_coset_extend_on_device(
+        out,
+        source_len,
+        source_bits,
+        target_len,
+        target_bits,
+        source_root_inverse,
+        target_root,
+        shift);
 }
 
 extern "C" int lzvm_cuda_poseidon2_width4(
