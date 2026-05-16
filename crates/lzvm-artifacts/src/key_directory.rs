@@ -1,8 +1,7 @@
 use crate::constant_tree::{read_constant_tree_file, ConstantTreeError};
 use crate::constraint_program::{
-    encode_regular_constraint_program, read_global_constraint_program_file,
-    read_regular_constraint_program_file, ConstraintProgram, ConstraintProgramError,
-    GlobalConstraintProgram,
+    read_global_constraint_program_file, read_regular_constraint_program_file, ConstraintProgram,
+    ConstraintProgramError, GlobalConstraintProgram,
 };
 use crate::expression_program::{
     encode_expression_program, read_expression_program_file, ExpressionProgram,
@@ -12,7 +11,7 @@ use crate::fixed::{expected_raw_fixed_column_byte_count, FixedColumnError};
 use crate::global_info::{read_global_info_binary_file, CurveKind, GlobalInfo, GlobalInfoError};
 use crate::global_program::{encode_global_program, GlobalProgram};
 use crate::hint_program::{
-    encode_regular_hint_program, read_global_hint_program_file, read_regular_hint_program_file,
+    read_global_hint_program_file, read_regular_hint_program_file,
     regular_hint_program_from_expression_info, HintProgram, HintProgramError,
 };
 use crate::metadata_bundle::{
@@ -24,6 +23,7 @@ use crate::pcs_material::{
 use crate::pcs_plan::{
     derive_pcs_setup_plan, read_pcs_setup_plan_file, PcsPlanError, PcsSetupPlan,
 };
+use crate::regular_program::{encode_regular_program, RegularProgram};
 use crate::verification_key::{
     read_verification_key_binary_file, VerificationKeyError, VerificationKeyRoot,
 };
@@ -526,26 +526,13 @@ pub fn key_directory_catalog_digest(
         );
         hash_bytes(
             &mut hasher,
-            &encode_expression_program(&unit.expression_program).map_err(|error| {
-                KeyDirectoryError::Digest {
-                    message: error.to_string(),
-                }
-            })?,
-        );
-        hash_bytes(
-            &mut hasher,
-            &encode_regular_constraint_program(&unit.regular_constraints).map_err(|error| {
-                KeyDirectoryError::Digest {
-                    message: error.to_string(),
-                }
-            })?,
-        );
-        hash_bytes(
-            &mut hasher,
-            &encode_regular_hint_program(&unit.regular_hints).map_err(|error| {
-                KeyDirectoryError::Digest {
-                    message: error.to_string(),
-                }
+            &encode_regular_program(&RegularProgram {
+                expressions: unit.expression_program.clone(),
+                constraints: unit.regular_constraints.clone(),
+                hints: unit.regular_hints.clone(),
+            })
+            .map_err(|error| KeyDirectoryError::Digest {
+                message: error.to_string(),
             })?,
         );
         hash_bytes(
