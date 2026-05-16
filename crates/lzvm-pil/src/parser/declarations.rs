@@ -1,5 +1,6 @@
 use super::expressions::{
-    parse_expression_list_range_best_effort, parse_expression_range_best_effort,
+    parse_call_arguments_span_best_effort, parse_expression_list_range_best_effort,
+    parse_expression_list_span_best_effort, parse_expression_range_best_effort,
     parse_expression_span_best_effort,
 };
 use super::*;
@@ -808,8 +809,13 @@ fn parse_column_feature(
         return Ok(None);
     }
     let (args, next_index) = parse_delimited_span(tokens, index + 1, source)?;
+    let args_expressions = parse_expression_list_span_best_effort(tokens, args, source);
     Ok(Some(ParsedColumnFeature {
-        feature: ColumnFeature { name, args },
+        feature: ColumnFeature {
+            name,
+            args,
+            args_expressions,
+        },
         next_index,
     }))
 }
@@ -1287,6 +1293,7 @@ fn parse_air_instance_at(
         return Ok(None);
     }
     let (args, mut cursor) = parse_delimited_span(tokens, after_name, source)?;
+    let args_expressions = parse_call_arguments_span_best_effort(tokens, args, source);
     let alias = if tokens
         .get(cursor)
         .is_some_and(|token| token.kind == TokenKind::Alias)
@@ -1322,6 +1329,7 @@ fn parse_air_instance_at(
             alias,
             virtual_instance,
             args,
+            args_expressions,
             source_name: source.source_name.clone(),
             start,
             end: terminator.end,

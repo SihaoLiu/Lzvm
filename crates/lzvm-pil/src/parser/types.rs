@@ -83,6 +83,7 @@ pub struct AirInstanceDeclaration {
     pub alias: Option<String>,
     pub virtual_instance: bool,
     pub args: SourceSpan,
+    pub args_expressions: Option<Vec<CallArgument>>,
     pub source_name: String,
     pub start: usize,
     pub end: usize,
@@ -252,6 +253,7 @@ pub enum ColumnKind {
 pub struct ColumnFeature {
     pub name: String,
     pub args: SourceSpan,
+    pub args_expressions: Option<Vec<Expression>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -41,6 +41,75 @@ pub(crate) fn parse_expression_span_best_effort(
     parse_expression_range_best_effort(tokens, start_index, end_index, source)
 }
 
+pub(crate) fn parse_expression_list_span_best_effort(
+    tokens: &[Token],
+    span: SourceSpan,
+    source: &SourceFile,
+) -> Option<Vec<Expression>> {
+    let (start_index, end_index) = token_span_bounds(tokens, &span)?;
+    if end_index <= start_index + 1 {
+        return Some(Vec::new());
+    }
+    parse_expression_list_range_best_effort(tokens, start_index + 1, end_index - 1, source)
+}
+
+pub(crate) fn parse_call_arguments_span_best_effort(
+    tokens: &[Token],
+    span: SourceSpan,
+    source: &SourceFile,
+) -> Option<Vec<CallArgument>> {
+    let (start_index, end_index) = token_span_bounds(tokens, &span)?;
+    if end_index <= start_index + 2 {
+        return Some(Vec::new());
+    }
+
+    let mut args = Vec::new();
+    let mut segment_start = start_index + 1;
+    let mut stack: Vec<TokenKind> = Vec::new();
+    let mut cursor = start_index + 1;
+
+    while cursor < end_index - 1 {
+        let token = tokens.get(cursor)?;
+        match token.kind {
+            TokenKind::LParen => stack.push(TokenKind::RParen),
+            TokenKind::LBracket => stack.push(TokenKind::RBracket),
+            TokenKind::LBrace => stack.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                let expected = stack.pop()?;
+                if token.kind != expected {
+                    return None;
+                }
+            }
+            TokenKind::Comma if stack.is_empty() => {
+                if segment_start >= cursor {
+                    return None;
+                }
+                args.push(parse_call_argument_segment(
+                    tokens,
+                    segment_start,
+                    cursor,
+                    source,
+                )?);
+                segment_start = cursor + 1;
+            }
+            _ => {}
+        }
+        cursor += 1;
+    }
+
+    if segment_start >= end_index - 1 {
+        return None;
+    }
+    args.push(parse_call_argument_segment(
+        tokens,
+        segment_start,
+        end_index - 1,
+        source,
+    )?);
+
+    Some(args)
+}
+
 pub(crate) fn parse_expression_range_best_effort(
     tokens: &[Token],
     start_index: usize,
@@ -110,6 +179,53 @@ pub(crate) fn parse_expression_list_range_best_effort(
     )?);
 
     Some(values)
+}
+
+fn parse_call_argument_segment(
+    tokens: &[Token],
+    start_index: usize,
+    end_index: usize,
+    source: &SourceFile,
+) -> Option<CallArgument> {
+    if start_index >= end_index {
+        return None;
+    }
+
+    let name = if tokens
+        .get(start_index)
+        .is_some_and(|token| token.kind == TokenKind::Identifier)
+        && tokens
+            .get(start_index + 1)
+            .is_some_and(|token| token.kind == TokenKind::Colon)
+    {
+        Some(tokens[start_index].clone())
+    } else {
+        None
+    };
+
+    let value = if let Some(name_token) = &name {
+        if start_index + 2 >= end_index
+            || tokens
+                .get(start_index + 2)
+                .is_some_and(|token| token.kind == TokenKind::Comma)
+        {
+            Expression {
+                kind: ExpressionKind::Name(name_token.lexeme.clone()),
+                source_name: source.source_name.clone(),
+                start: name_token.start,
+                end: name_token.end,
+            }
+        } else {
+            parse_expression_range_best_effort(tokens, start_index + 2, end_index, source)?
+        }
+    } else {
+        parse_expression_range_best_effort(tokens, start_index, end_index, source)?
+    };
+
+    Some(CallArgument {
+        name: name.map(|token| token.lexeme),
+        value,
+    })
 }
 
 fn token_span_bounds(tokens: &[Token], span: &SourceSpan) -> Option<(usize, usize)> {

@@ -389,14 +389,39 @@ fn parses_air_instances_from_group_bodies() {
         &source.contents[instances[0].args.start..instances[0].args.end],
         "(id: 7)"
     );
+    let args_expressions = instances[0]
+        .args_expressions
+        .as_ref()
+        .expect("air instance args should be recorded");
+    assert_eq!(args_expressions.len(), 1);
+    assert_eq!(args_expressions[0].name.as_deref(), Some("id"));
+    assert_integer_expression(&args_expressions[0].value, "7");
     assert_eq!(instances[1].template, "Dma");
     assert!(!instances[1].virtual_instance);
     assert_eq!(
         &source.contents[instances[1].args.start..instances[1].args.end],
         "()"
     );
+    assert!(instances[1]
+        .args_expressions
+        .as_ref()
+        .expect("air instance args should be recorded")
+        .is_empty());
     assert_eq!(instances[2].template, "localAir");
     assert_eq!(instances[2].alias.as_deref(), Some("Local"));
+    let args_expressions = instances[2]
+        .args_expressions
+        .as_ref()
+        .expect("air instance args should be recorded");
+    assert_eq!(args_expressions.len(), 1);
+    assert_eq!(args_expressions[0].name.as_deref(), Some("N"));
+    assert!(matches!(
+        &args_expressions[0].value.kind,
+        ExpressionKind::Binary {
+            op: BinaryOperator::Power,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -797,12 +822,41 @@ fn parses_custom_column_declarations_with_feature_spans() {
             [declarations[0].features[0].args.start..declarations[0].features[0].args.end],
         "(1 + (2))"
     );
+    let args_expressions = declarations[0].features[0]
+        .args_expressions
+        .as_ref()
+        .expect("feature args should be recorded");
+    assert_eq!(args_expressions.len(), 1);
+    let ExpressionKind::Binary {
+        op: BinaryOperator::Add,
+        left,
+        right,
+    } = &args_expressions[0].kind
+    else {
+        panic!("stage argument should be an addition");
+    };
+    assert_integer_expression(left.as_ref(), "1");
+    assert!(
+        matches!(&right.kind, ExpressionKind::Group(inner) if matches!(&inner.kind, ExpressionKind::Integer(value) if value == "2"))
+    );
     assert_eq!(declarations[0].features[1].name, "virtual");
     assert_eq!(
         &source.contents
             [declarations[0].features[1].args.start..declarations[0].features[1].args.end],
         "(foo(bar))"
     );
+    let args_expressions = declarations[0].features[1]
+        .args_expressions
+        .as_ref()
+        .expect("feature args should be recorded");
+    assert_eq!(args_expressions.len(), 1);
+    assert!(matches!(
+        &args_expressions[0].kind,
+        ExpressionKind::Call { callee, args }
+            if matches!(&callee.kind, ExpressionKind::Name(name) if name == "foo")
+                && args.len() == 1
+                && matches!(&args[0].value.kind, ExpressionKind::Name(name) if name == "bar")
+    ));
     assert_eq!(declarations[0].items.len(), 2);
     assert_eq!(declarations[0].items[0].name, "air.main");
     assert_eq!(declarations[0].items[1].name, "local");
