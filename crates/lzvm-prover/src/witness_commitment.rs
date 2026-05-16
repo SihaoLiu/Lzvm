@@ -1,26 +1,26 @@
 mod errors;
+mod extend;
+mod load;
 mod values;
 
 pub use errors::*;
+pub use extend::*;
+pub use load::*;
 pub use values::*;
 
 use std::thread;
 
-#[cfg(feature = "cuda")]
-use lzvm_accel::cuda_goldilocks_coset_extend;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
-    encode_witness_commitment_segment, parse_witness_commitment_segment, WitnessCommitmentSegment,
-    WitnessCommitmentStageSegment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+    encode_witness_commitment_segment, WitnessCommitmentSegment, WitnessCommitmentStageSegment,
+    WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
-#[cfg(not(feature = "cuda"))]
-use lzvm_field::coset_extend_evaluations;
 use lzvm_field::Felt;
 use sha2::{Digest, Sha256};
 
 use crate::merkle_hash::{linear_hash, linear_hashes, parent_hash, parent_hashes};
 use crate::witness_execution::ProveWitnessCommitments;
-use crate::witness_layout::{derive_witness_trace_layout, WitnessTraceStageValues};
+use crate::witness_layout::derive_witness_trace_layout;
 use crate::witness_trace::WitnessTraceBuffer;
 use crate::ProveUnitSchedule;
 
@@ -66,161 +66,6 @@ pub fn build_witness_commitment_segment(
         id,
         data: encode_witness_commitment_segment(&segment)?,
     })
-}
-
-pub fn load_witness_commitment_segments(
-    units: &[ProveUnitSchedule],
-    segments: &[ProofSegment],
-) -> Result<Vec<ProofSegment>, LoadWitnessCommitmentSegmentsError> {
-    let unit_count = u32::try_from(units.len())
-        .map_err(|_| LoadWitnessCommitmentSegmentsError::UnitCountOverflow)?;
-    let end_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
-        .checked_add(unit_count)
-        .ok_or(LoadWitnessCommitmentSegmentsError::SegmentIdOverflow)?;
-    let mut out = Vec::new();
-
-    for segment in segments {
-        if segment.id < WITNESS_COMMITMENT_SEGMENT_BASE_ID || segment.id >= end_id {
-            continue;
-        }
-        validate_witness_commitment_segment(units, segment)?;
-        out.push(segment.clone());
-    }
-
-    if out.is_empty() {
-        return Err(LoadWitnessCommitmentSegmentsError::MissingSegment);
-    }
-    out.sort_by_key(|segment| segment.id);
-    Ok(out)
-}
-
-fn validate_witness_commitment_segment(
-    units: &[ProveUnitSchedule],
-    segment: &ProofSegment,
-) -> Result<(), LoadWitnessCommitmentSegmentsError> {
-    let unit_index_u32 = segment
-        .id
-        .checked_sub(WITNESS_COMMITMENT_SEGMENT_BASE_ID)
-        .ok_or(LoadWitnessCommitmentSegmentsError::UnitIndexOverflow)?;
-    let unit_index = usize::try_from(unit_index_u32)
-        .map_err(|_| LoadWitnessCommitmentSegmentsError::UnitIndexOverflow)?;
-    let parsed = parse_witness_commitment_segment(&segment.data)
-        .map_err(|source| LoadWitnessCommitmentSegmentsError::Segment { unit_index, source })?;
-    if parsed.unit_index != unit_index_u32 {
-        return Err(LoadWitnessCommitmentSegmentsError::UnitMismatch { unit_index });
-    }
-    let unit = units
-        .get(unit_index)
-        .ok_or(LoadWitnessCommitmentSegmentsError::UnitIndexOverflow)?;
-    if parsed.trace_rows != unit.base_domain_size {
-        return Err(LoadWitnessCommitmentSegmentsError::RowCountMismatch { unit_index });
-    }
-    let trace_columns = unit
-        .stage_commit_widths
-        .iter()
-        .try_fold(0_u64, |acc, width| acc.checked_add(u64::from(*width)))
-        .ok_or(LoadWitnessCommitmentSegmentsError::ColumnCountOverflow)?;
-    if parsed.trace_columns != trace_columns {
-        return Err(LoadWitnessCommitmentSegmentsError::ColumnCountMismatch { unit_index });
-    }
-    if parsed.stages.len() != unit.stage_commit_widths.len() {
-        return Err(LoadWitnessCommitmentSegmentsError::StageCountMismatch { unit_index });
-    }
-    for (stage_index, stage) in parsed.stages.iter().enumerate() {
-        let expected_stage_index = u32::try_from(stage_index + 1)
-            .map_err(|_| LoadWitnessCommitmentSegmentsError::StageIndexOverflow)?;
-        if stage.stage_index != expected_stage_index {
-            return Err(LoadWitnessCommitmentSegmentsError::StageIndexMismatch { unit_index });
-        }
-        if stage.arity != unit.merkle_tree_arity {
-            return Err(LoadWitnessCommitmentSegmentsError::ArityMismatch { unit_index });
-        }
-        if stage.tree_byte_count == 0 {
-            return Err(LoadWitnessCommitmentSegmentsError::EmptyTree { unit_index });
-        }
-    }
-    Ok(())
-}
-
-pub fn extend_witness_stage_leaves(
-    stage: &WitnessTraceStageValues,
-    source_bits: usize,
-    target_bits: usize,
-) -> Result<WitnessStageLeaves, WitnessStageLeafError> {
-    let columns = stage.column_count();
-    let rows = stage.row_count();
-    let mut extended_columns = Vec::with_capacity(columns);
-    for column in 0..columns {
-        let mut source = Vec::with_capacity(rows);
-        for row in 0..rows {
-            let index = row
-                .checked_mul(columns)
-                .and_then(|offset| offset.checked_add(column))
-                .ok_or(WitnessStageLeafError::LengthOverflow)?;
-            source.push(stage.values()[index]);
-        }
-        extended_columns.push(extend_witness_stage_column_values(
-            &source,
-            source_bits,
-            target_bits,
-        )?);
-    }
-
-    let extended_rows = extended_columns.first().map_or(0, Vec::len);
-    let byte_count = extended_rows
-        .checked_mul(columns)
-        .and_then(|count| count.checked_mul(WORD_BYTES))
-        .ok_or(WitnessStageLeafError::LengthOverflow)?;
-    let mut bytes = Vec::with_capacity(byte_count);
-    for row in 0..extended_rows {
-        for column_values in &extended_columns {
-            bytes.extend_from_slice(&column_values[row].to_le_bytes());
-        }
-    }
-
-    Ok(WitnessStageLeaves::new(
-        stage.stage_index(),
-        rows,
-        extended_rows,
-        columns,
-        bytes,
-    ))
-}
-
-#[cfg(feature = "cuda")]
-pub fn extend_witness_stage_leaves_with_cuda(
-    stage: &WitnessTraceStageValues,
-    source_bits: usize,
-    target_bits: usize,
-) -> Result<WitnessStageLeaves, WitnessStageLeafError> {
-    extend_witness_stage_leaves(stage, source_bits, target_bits)
-}
-
-#[cfg(feature = "cuda")]
-fn extend_witness_stage_column_values(
-    source: &[Felt],
-    source_bits: usize,
-    target_bits: usize,
-) -> Result<Vec<Felt>, WitnessStageLeafError> {
-    let source_words = source
-        .iter()
-        .map(|value| value.to_u64())
-        .collect::<Vec<_>>();
-    let extended_words = cuda_goldilocks_coset_extend(&source_words, source_bits, target_bits)?;
-    extended_words
-        .into_iter()
-        .map(Felt::from_canonical)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(WitnessStageLeafError::from)
-}
-
-#[cfg(not(feature = "cuda"))]
-fn extend_witness_stage_column_values(
-    source: &[Felt],
-    source_bits: usize,
-    target_bits: usize,
-) -> Result<Vec<Felt>, WitnessStageLeafError> {
-    Ok(coset_extend_evaluations(source, source_bits, target_bits)?)
 }
 
 pub fn commit_witness_trace_stages(
