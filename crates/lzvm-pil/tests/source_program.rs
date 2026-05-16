@@ -32,6 +32,7 @@ fn loads_source_program_with_declarations_from_graph_sources() {
          container air.main;\n\
          airtemplate Main(int N = 2**16) { finalize(); }\n\
          airgroup Main { Main(N: 2**16); }\n\
+         function finalize(): int { return 1; }\n\
          col witness main.trace[2];\n\
          challenge stage(3) alpha;\n\
          commit stage(2) public(main.trace) main_commit;\n\
@@ -76,6 +77,8 @@ fn loads_source_program_with_declarations_from_graph_sources() {
     assert_eq!(main.air_groups.len(), 1);
     assert_eq!(main.air_instances.len(), 1);
     assert_eq!(main.air_instances[0].template, "Main");
+    assert_eq!(main.functions.len(), 1);
+    assert_eq!(main.functions[0].name, "finalize");
     assert_eq!(main.columns.len(), 1);
     assert_eq!(main.columns[0].kind, ColumnKind::Witness);
     assert_eq!(main.values.len(), 1);

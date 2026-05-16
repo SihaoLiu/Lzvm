@@ -25,7 +25,10 @@ fn summarizes_source_program_archives() {
     let archive_path = dir.join("source-program.bin");
     write_file(
         &main_path,
-        "include \"shared.pil\";\ncontainer air.main;\ncol witness main.trace;",
+        "include \"shared.pil\";\n\
+         container air.main;\n\
+         function fold(int value): int { return value; }\n\
+         col witness main.trace;",
     );
     write_file(&child_path, "col fixed shared = [1, 2];");
 
@@ -61,7 +64,7 @@ fn summarizes_source_program_archives() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nsources=2\nedges=1\nmodules=2\nincludes=1\nuses=0\ncontainers=1\ncolumns=2\nvalues=0\nair_group_values=0\ncommits=0\npublics=0\npublic_tables=0\n"
+        "status=ok\nsources=2\nedges=1\nmodules=2\nincludes=1\nuses=0\ncontainers=1\nfunctions=1\ncolumns=2\nvalues=0\nair_group_values=0\ncommits=0\npublics=0\npublic_tables=0\n"
     );
     assert!(stderr.is_empty());
 }

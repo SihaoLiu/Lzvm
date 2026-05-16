@@ -89,6 +89,24 @@ pub struct AirInstanceDeclaration {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FunctionVisibility {
+    Public,
+    Private,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionDeclaration {
+    pub name: String,
+    pub visibility: Option<FunctionVisibility>,
+    pub params: SourceSpan,
+    pub return_type: Option<SourceSpan>,
+    pub body: SourceSpan,
+    pub source_name: String,
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColumnKind {
     Witness,
     Fixed,

@@ -1,10 +1,11 @@
 use super::{
     parse_air_group_declarations, parse_air_group_value_declarations,
     parse_air_instance_declarations, parse_air_template_declarations, parse_column_declarations,
-    parse_commit_declarations, parse_container_declarations, parse_include_directives,
-    parse_pragma_directives, parse_public_declarations, parse_public_table_declarations,
-    parse_use_directives, parse_value_declarations, ColumnInitializerKind, ColumnKind, IncludeKind,
-    IncludeVisibility, ParseError, ValueDeclarationKind,
+    parse_commit_declarations, parse_container_declarations, parse_function_declarations,
+    parse_include_directives, parse_pragma_directives, parse_public_declarations,
+    parse_public_table_declarations, parse_use_directives, parse_value_declarations,
+    ColumnInitializerKind, ColumnKind, FunctionVisibility, IncludeKind, IncludeVisibility,
+    ParseError, ValueDeclarationKind,
 };
 use crate::SourceFile;
 use std::path::PathBuf;
@@ -344,6 +345,88 @@ fn parses_air_instances_from_group_bodies() {
     );
     assert_eq!(instances[2].template, "localAir");
     assert_eq!(instances[2].alias.as_deref(), Some("Local"));
+}
+
+#[test]
+fn parses_function_declarations_with_spans_and_visibility() {
+    let source = source(
+        "airtemplate Main(int N) {\n\
+           function sum(int a, int b): int {\n\
+             if (a < b) { return b; }\n\
+             return a + b;\n\
+           }\n\
+           private function map_values(expr values[]): expr[] {\n\
+             return values;\n\
+           }\n\
+         }\n\
+         public function exported(const string name): string {\n\
+           return name;\n\
+         }\n\
+         function procedure(int value) { col witness local; local === value; }",
+    );
+
+    let declarations = parse_function_declarations(&source).expect("functions should parse");
+
+    assert_eq!(declarations.len(), 4);
+    assert_eq!(declarations[0].name, "sum");
+    assert_eq!(declarations[0].visibility, None);
+    assert_eq!(
+        &source.contents[declarations[0].params.start..declarations[0].params.end],
+        "(int a, int b)"
+    );
+    assert_eq!(
+        &source.contents[declarations[0]
+            .return_type
+            .expect("return type should be recorded")
+            .start..declarations[0].return_type.unwrap().end],
+        "int"
+    );
+    assert_eq!(
+        &source.contents[declarations[0].body.start..declarations[0].body.end],
+        "{\nif (a < b) { return b; }\nreturn a + b;\n}"
+    );
+
+    assert_eq!(declarations[1].name, "map_values");
+    assert_eq!(
+        declarations[1].visibility,
+        Some(FunctionVisibility::Private)
+    );
+    assert_eq!(
+        &source.contents[declarations[1].params.start..declarations[1].params.end],
+        "(expr values[])"
+    );
+    assert_eq!(
+        &source.contents[declarations[1]
+            .return_type
+            .expect("array return type should be recorded")
+            .start..declarations[1].return_type.unwrap().end],
+        "expr[]"
+    );
+
+    assert_eq!(declarations[2].name, "exported");
+    assert_eq!(declarations[2].visibility, Some(FunctionVisibility::Public));
+    assert_eq!(
+        &source.contents[declarations[2]
+            .return_type
+            .expect("string return type should be recorded")
+            .start..declarations[2].return_type.unwrap().end],
+        "string"
+    );
+
+    assert_eq!(declarations[3].name, "procedure");
+    assert_eq!(declarations[3].return_type, None);
+}
+
+#[test]
+fn rejects_unclosed_function_body() {
+    let source = source("function sum(int a, int b): int { return a + b;");
+
+    let error = parse_function_declarations(&source).expect_err("body should close");
+
+    assert!(matches!(
+        error,
+        ParseError::ExpectedCloseBrace { source_name, .. } if source_name == "main.pil"
+    ));
 }
 
 #[test]
