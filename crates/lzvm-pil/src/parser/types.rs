@@ -49,6 +49,25 @@ pub struct ContainerDeclaration {
     pub end: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AirTemplateDeclaration {
+    pub name: String,
+    pub params: SourceSpan,
+    pub body: SourceSpan,
+    pub source_name: String,
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AirGroupDeclaration {
+    pub name: String,
+    pub body: SourceSpan,
+    pub source_name: String,
+    pub start: usize,
+    pub end: usize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColumnKind {
     Witness,

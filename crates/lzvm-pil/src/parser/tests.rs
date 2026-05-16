@@ -1,5 +1,6 @@
 use super::{
-    parse_air_group_value_declarations, parse_column_declarations, parse_commit_declarations,
+    parse_air_group_declarations, parse_air_group_value_declarations,
+    parse_air_template_declarations, parse_column_declarations, parse_commit_declarations,
     parse_container_declarations, parse_include_directives, parse_public_declarations,
     parse_public_table_declarations, parse_use_directives, parse_value_declarations,
     ColumnInitializerKind, ColumnKind, IncludeKind, IncludeVisibility, ParseError,
@@ -222,6 +223,73 @@ fn rejects_unclosed_container_body() {
     let source = source("container pkg.item { col witness x;");
 
     let error = parse_container_declarations(&source).expect_err("body should close");
+
+    assert!(matches!(
+        error,
+        ParseError::ExpectedCloseBrace { source_name, .. } if source_name == "main.pil"
+    ));
+}
+
+#[test]
+fn parses_air_template_declarations_with_params_and_nested_body() {
+    let source = source(
+        "airtemplate Main(const int N = 2**22, string label = \"main\") \
+         { col witness trace; if (N) { return; } }",
+    );
+
+    let declarations =
+        parse_air_template_declarations(&source).expect("air templates should parse");
+
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(declarations[0].name, "Main");
+    assert_eq!(
+        &source.contents[declarations[0].params.start..declarations[0].params.end],
+        "(const int N = 2**22, string label = \"main\")"
+    );
+    assert_eq!(
+        &source.contents[declarations[0].body.start..declarations[0].body.end],
+        "{ col witness trace; if (N) { return; } }"
+    );
+}
+
+#[test]
+fn parses_air_group_declarations_with_nested_body_spans() {
+    let source = source(
+        "airgroup Main { virtual Range(id: 7) alias Range7; \
+         for (int i = 0; i < 2; i++) { commit(i); } }\n\
+         airgroup Aux { Main(); }",
+    );
+
+    let declarations = parse_air_group_declarations(&source).expect("air groups should parse");
+
+    assert_eq!(declarations.len(), 2);
+    assert_eq!(declarations[0].name, "Main");
+    assert_eq!(
+        &source.contents[declarations[0].body.start..declarations[0].body.end],
+        "{ virtual Range(id: 7) alias Range7; for (int i = 0; i < 2; i++) { commit(i); } }"
+    );
+    assert_eq!(declarations[1].name, "Aux");
+    assert_eq!(
+        &source.contents[declarations[1].body.start..declarations[1].body.end],
+        "{ Main(); }"
+    );
+}
+
+#[test]
+fn skips_air_group_scope_references_when_parsing_air_group_declarations() {
+    let source = source("on final airgroup finalize();\nairgroup Main { Main(); }");
+
+    let declarations = parse_air_group_declarations(&source).expect("air groups should parse");
+
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(declarations[0].name, "Main");
+}
+
+#[test]
+fn rejects_unclosed_air_group_body() {
+    let source = source("airgroup Main { Main();");
+
+    let error = parse_air_group_declarations(&source).expect_err("body should close");
 
     assert!(matches!(
         error,

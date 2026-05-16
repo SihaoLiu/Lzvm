@@ -1064,6 +1064,95 @@ pub fn parse_container_declarations(
     Ok(declarations)
 }
 
+pub fn parse_air_template_declarations(
+    source: &SourceFile,
+) -> Result<Vec<AirTemplateDeclaration>, ParseError> {
+    let tokens = lex_source(&source.contents).map_err(|error| ParseError::Lex {
+        source_name: source.source_name.clone(),
+        error,
+    })?;
+    let mut declarations = Vec::new();
+    let mut index = 0;
+
+    while index < tokens.len() {
+        if tokens[index].kind != TokenKind::AirTemplate {
+            index += 1;
+            continue;
+        }
+
+        let start = tokens[index].start;
+        let (name, after_name) = parse_name_reference(&tokens, index + 1, source)?;
+        let (params, after_params) = parse_delimited_span(&tokens, after_name, source)?;
+        if !tokens
+            .get(after_params)
+            .is_some_and(|token| token.kind == TokenKind::LBrace)
+        {
+            index += 1;
+            continue;
+        }
+        let (body, next_index) = parse_required_braced_span(&tokens, after_params, source)?;
+
+        declarations.push(AirTemplateDeclaration {
+            name,
+            params,
+            body,
+            source_name: source.source_name.clone(),
+            start,
+            end: body.end,
+        });
+        index = next_index;
+    }
+
+    Ok(declarations)
+}
+
+pub fn parse_air_group_declarations(
+    source: &SourceFile,
+) -> Result<Vec<AirGroupDeclaration>, ParseError> {
+    let tokens = lex_source(&source.contents).map_err(|error| ParseError::Lex {
+        source_name: source.source_name.clone(),
+        error,
+    })?;
+    let mut declarations = Vec::new();
+    let mut index = 0;
+
+    while index < tokens.len() {
+        if tokens[index].kind != TokenKind::AirGroup {
+            index += 1;
+            continue;
+        }
+        if tokens
+            .get(index + 1)
+            .is_some_and(|token| token.kind == TokenKind::Dot)
+        {
+            index += 1;
+            continue;
+        }
+
+        let start = tokens[index].start;
+        let (name, after_name) = parse_name_reference(&tokens, index + 1, source)?;
+        if !tokens
+            .get(after_name)
+            .is_some_and(|token| token.kind == TokenKind::LBrace)
+        {
+            index += 1;
+            continue;
+        }
+        let (body, next_index) = parse_required_braced_span(&tokens, after_name, source)?;
+
+        declarations.push(AirGroupDeclaration {
+            name,
+            body,
+            source_name: source.source_name.clone(),
+            start,
+            end: body.end,
+        });
+        index = next_index;
+    }
+
+    Ok(declarations)
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct IncludeHeader {
     pub(crate) start_index: usize,
@@ -1189,6 +1278,26 @@ fn parse_braced_span(
     source: &SourceFile,
 ) -> Result<(SourceSpan, usize), ParseError> {
     parse_delimited_span(tokens, open_index, source)
+}
+
+fn parse_required_braced_span(
+    tokens: &[Token],
+    open_index: usize,
+    source: &SourceFile,
+) -> Result<(SourceSpan, usize), ParseError> {
+    let Some(open) = tokens.get(open_index) else {
+        return Err(ParseError::ExpectedCloseBrace {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, open_index),
+        });
+    };
+    if open.kind != TokenKind::LBrace {
+        return Err(ParseError::ExpectedCloseBrace {
+            source_name: source.source_name.clone(),
+            start: open.start,
+        });
+    }
+    parse_braced_span(tokens, open_index, source)
 }
 
 fn parse_alias_identifier(
