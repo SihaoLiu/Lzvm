@@ -108,8 +108,20 @@ pub struct ValueDeclaration {
     pub end: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AirGroupValueDeclaration {
+    pub stage: u32,
+    pub default_value: Option<SourceSpan>,
+    pub aggregate_type: Option<String>,
+    pub items: Vec<ColumnItem>,
+    pub source_name: String,
+    pub start: usize,
+    pub end: usize,
+}
+
 const DEFAULT_CHALLENGE_STAGE: u32 = 2;
 const DEFAULT_VALUE_STAGE: u32 = 1;
+const DEFAULT_AIR_GROUP_VALUE_STAGE: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
@@ -141,6 +153,11 @@ pub enum ParseError {
     ExpectedNumber {
         source_name: String,
         start: usize,
+    },
+    DuplicateProperty {
+        source_name: String,
+        start: usize,
+        name: &'static str,
     },
     ExpectedCloseBrace {
         source_name: String,
@@ -178,6 +195,11 @@ impl std::fmt::Display for ParseError {
             Self::ExpectedNumber { source_name, start } => {
                 write!(f, "{source_name}: expected number at {start}")
             }
+            Self::DuplicateProperty {
+                source_name,
+                start,
+                name,
+            } => write!(f, "{source_name}: duplicate {name} property at {start}"),
             Self::ExpectedCloseBrace { source_name, start } => {
                 write!(f, "{source_name}: expected closing brace at {start}")
             }
@@ -364,6 +386,166 @@ pub fn parse_value_declarations(source: &SourceFile) -> Result<Vec<ValueDeclarat
     Ok(declarations)
 }
 
+pub fn parse_air_group_value_declarations(
+    source: &SourceFile,
+) -> Result<Vec<AirGroupValueDeclaration>, ParseError> {
+    let tokens = lex_source(&source.contents).map_err(|error| ParseError::Lex {
+        source_name: source.source_name.clone(),
+        error,
+    })?;
+    let mut declarations = Vec::new();
+    let mut index = 0;
+
+    while index < tokens.len() {
+        if tokens[index].kind != TokenKind::AirGroupValue
+            || !tokens
+                .get(index + 1)
+                .is_some_and(|token| group_value_property_start(token.kind))
+        {
+            index += 1;
+            continue;
+        }
+
+        let properties = parse_group_value_properties(&tokens, index + 1, source)?;
+        let (items, next_index, end) =
+            parse_column_item_list(&tokens, properties.next_index, source)?;
+
+        declarations.push(AirGroupValueDeclaration {
+            stage: properties.stage,
+            default_value: properties.default_value,
+            aggregate_type: properties.aggregate_type,
+            items,
+            source_name: source.source_name.clone(),
+            start: tokens[index].start,
+            end,
+        });
+        index = next_index;
+    }
+
+    Ok(declarations)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GroupValueProperties {
+    stage: u32,
+    default_value: Option<SourceSpan>,
+    aggregate_type: Option<String>,
+    next_index: usize,
+}
+
+fn parse_group_value_properties(
+    tokens: &[Token],
+    index: usize,
+    source: &SourceFile,
+) -> Result<GroupValueProperties, ParseError> {
+    let mut stage = DEFAULT_AIR_GROUP_VALUE_STAGE;
+    let mut stage_seen = false;
+    let mut default_value = None;
+    let mut aggregate_type = None;
+    let mut cursor = index;
+
+    while let Some(token) = tokens.get(cursor) {
+        match token.kind {
+            TokenKind::Stage => {
+                if stage_seen {
+                    return Err(ParseError::DuplicateProperty {
+                        source_name: source.source_name.clone(),
+                        start: token.start,
+                        name: "stage",
+                    });
+                }
+                let (parsed_stage, next) =
+                    parse_optional_stage_definition(tokens, cursor, stage, source)?;
+                stage = parsed_stage;
+                stage_seen = true;
+                cursor = next;
+            }
+            TokenKind::Default => {
+                if default_value.is_some() {
+                    return Err(ParseError::DuplicateProperty {
+                        source_name: source.source_name.clone(),
+                        start: token.start,
+                        name: "default",
+                    });
+                }
+                let (span, next) = parse_delimited_span(tokens, cursor + 1, source)?;
+                default_value = Some(span);
+                cursor = next;
+            }
+            TokenKind::Aggregate => {
+                if aggregate_type.is_some() {
+                    return Err(ParseError::DuplicateProperty {
+                        source_name: source.source_name.clone(),
+                        start: token.start,
+                        name: "aggregate",
+                    });
+                }
+                let (parsed_type, next) = parse_aggregate_type_definition(tokens, cursor, source)?;
+                aggregate_type = Some(parsed_type);
+                cursor = next;
+            }
+            _ => break,
+        }
+    }
+
+    Ok(GroupValueProperties {
+        stage,
+        default_value,
+        aggregate_type,
+        next_index: cursor,
+    })
+}
+
+fn parse_aggregate_type_definition(
+    tokens: &[Token],
+    index: usize,
+    source: &SourceFile,
+) -> Result<(String, usize), ParseError> {
+    let open_index = index + 1;
+    let Some(open) = tokens.get(open_index) else {
+        return Err(ParseError::ExpectedCloseParen {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, open_index),
+        });
+    };
+    if open.kind != TokenKind::LParen {
+        return Err(ParseError::ExpectedCloseParen {
+            source_name: source.source_name.clone(),
+            start: open.start,
+        });
+    }
+
+    let name_index = index + 2;
+    let Some(name) = tokens.get(name_index) else {
+        return Err(ParseError::ExpectedName {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, name_index),
+        });
+    };
+    if name.kind != TokenKind::Identifier {
+        return Err(ParseError::ExpectedName {
+            source_name: source.source_name.clone(),
+            start: name.start,
+        });
+    }
+
+    let close_index = index + 3;
+    let Some(close) = tokens.get(close_index) else {
+        return Err(ParseError::ExpectedCloseParen {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, close_index),
+        });
+    };
+    if close.kind != TokenKind::RParen {
+        return Err(ParseError::ExpectedCloseParen {
+            source_name: source.source_name.clone(),
+            start: close.start,
+        });
+    }
+
+    Ok((name.lexeme.clone(), close_index + 1))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ValueHeader {
     kind: ValueDeclarationKind,
@@ -402,6 +584,13 @@ fn value_tail_start(kind: TokenKind) -> bool {
             | TokenKind::Air
             | TokenKind::AirGroup
             | TokenKind::Proof
+    )
+}
+
+fn group_value_property_start(kind: TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Stage | TokenKind::Default | TokenKind::Aggregate
     )
 }
 
@@ -1257,376 +1446,4 @@ fn missing_start(tokens: &[Token], index: usize) -> usize {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        parse_column_declarations, parse_container_declarations, parse_include_directives,
-        parse_use_directives, parse_value_declarations, ColumnInitializerKind, ColumnKind,
-        IncludeKind, IncludeVisibility, ParseError, ValueDeclarationKind,
-    };
-    use crate::SourceFile;
-    use std::path::PathBuf;
-
-    fn source(contents: &str) -> SourceFile {
-        SourceFile {
-            contents: contents.to_owned(),
-            file_dir: PathBuf::from("/case"),
-            full_path: PathBuf::from("/case/main.pil"),
-            source_name: "main.pil".to_owned(),
-        }
-    }
-
-    #[test]
-    fn parses_static_include_directives() {
-        let source =
-            source("include \"a.pil\";\nprivate require \"b.pil\";\npublic include \"c.pil\";");
-
-        let directives = parse_include_directives(&source).expect("directives should parse");
-
-        assert_eq!(directives.len(), 3);
-        assert_eq!(directives[0].kind, IncludeKind::Include);
-        assert_eq!(directives[0].visibility, IncludeVisibility::Public);
-        assert_eq!(directives[0].file, "a.pil");
-        assert_eq!(directives[1].kind, IncludeKind::Require);
-        assert_eq!(directives[1].visibility, IncludeVisibility::Private);
-        assert_eq!(directives[1].file, "b.pil");
-        assert_eq!(directives[2].kind, IncludeKind::Include);
-        assert_eq!(directives[2].visibility, IncludeVisibility::Public);
-        assert_eq!(directives[2].file, "c.pil");
-    }
-
-    #[test]
-    fn ignores_visibility_modifiers_that_do_not_start_include_directives() {
-        let source = source("public function f() { return; }\nprivate int x = 1;");
-
-        let directives = parse_include_directives(&source).expect("source should parse");
-
-        assert!(directives.is_empty());
-    }
-
-    #[test]
-    fn rejects_template_include_paths() {
-        let source = source("include `dynamic/${name}.pil`;");
-
-        let error = parse_include_directives(&source).expect_err("template path should fail");
-
-        assert!(matches!(
-            error,
-            ParseError::TemplatePath { source_name, .. } if source_name == "main.pil"
-        ));
-    }
-
-    #[test]
-    fn rejects_include_without_path_literal() {
-        let source = source("include ;");
-
-        let error = parse_include_directives(&source).expect_err("path should be required");
-
-        assert!(matches!(
-            error,
-            ParseError::ExpectedPath { source_name, .. } if source_name == "main.pil"
-        ));
-    }
-
-    #[test]
-    fn rejects_missing_statement_terminator() {
-        let source = source("include \"a.pil\" const N = 1;");
-
-        let error = parse_include_directives(&source).expect_err("semicolon should be required");
-
-        assert!(matches!(
-            error,
-            ParseError::ExpectedTerminator { source_name, .. } if source_name == "main.pil"
-        ));
-    }
-
-    #[test]
-    fn parses_use_directives_with_names_and_aliases() {
-        let source =
-            source("use air.main;\nuse proof.root.branch alias local_root;\nuse pkg.item;");
-
-        let directives = parse_use_directives(&source).expect("use directives should parse");
-
-        assert_eq!(directives.len(), 3);
-        assert_eq!(directives[0].name, "air.main");
-        assert_eq!(directives[0].alias, None);
-        assert_eq!(directives[1].name, "proof.root.branch");
-        assert_eq!(directives[1].alias.as_deref(), Some("local_root"));
-        assert_eq!(directives[2].name, "pkg.item");
-    }
-
-    #[test]
-    fn rejects_use_without_name_reference() {
-        let source = source("use ;");
-
-        let error = parse_use_directives(&source).expect_err("name should be required");
-
-        assert!(matches!(
-            error,
-            ParseError::ExpectedName { source_name, .. } if source_name == "main.pil"
-        ));
-    }
-
-    #[test]
-    fn rejects_use_alias_without_identifier() {
-        let source = source("use pkg.item alias ;");
-
-        let error = parse_use_directives(&source).expect_err("alias identifier should be required");
-
-        assert!(matches!(
-            error,
-            ParseError::ExpectedAlias { source_name, .. } if source_name == "main.pil"
-        ));
-    }
-
-    #[test]
-    fn rejects_use_without_statement_terminator() {
-        let source = source("use pkg.item include \"x.pil\";");
-
-        let error = parse_use_directives(&source).expect_err("semicolon should be required");
-
-        assert!(matches!(
-            error,
-            ParseError::ExpectedTerminator { source_name, .. } if source_name == "main.pil"
-        ));
-    }
-
-    #[test]
-    fn parses_container_declarations_with_names_and_aliases() {
-        let source = source(
-            "container air.main;\ncontainer proof.root.branch alias local_root;\ncontainer pkg.item;",
-        );
-
-        let declarations =
-            parse_container_declarations(&source).expect("container declarations should parse");
-
-        assert_eq!(declarations.len(), 3);
-        assert_eq!(declarations[0].name, "air.main");
-        assert_eq!(declarations[0].alias, None);
-        assert_eq!(declarations[0].body, None);
-        assert_eq!(declarations[1].name, "proof.root.branch");
-        assert_eq!(declarations[1].alias.as_deref(), Some("local_root"));
-        assert_eq!(declarations[1].body, None);
-        assert_eq!(declarations[2].name, "pkg.item");
-        assert_eq!(declarations[2].body, None);
-    }
-
-    #[test]
-    fn parses_closed_container_body_span() {
-        let source = source("container air.main { col witness x; }");
-
-        let declarations =
-            parse_container_declarations(&source).expect("container body should parse");
-
-        assert_eq!(declarations.len(), 1);
-        assert_eq!(declarations[0].name, "air.main");
-        let body = declarations[0].body.expect("body span should be recorded");
-        assert_eq!(&source.contents[body.start..body.end], "{ col witness x; }");
-        assert_eq!(declarations[0].end, body.end);
-    }
-
-    #[test]
-    fn parses_closed_container_alias_body_span() {
-        let source = source("container proof.root alias local_root { }");
-
-        let declarations =
-            parse_container_declarations(&source).expect("container body should parse");
-
-        assert_eq!(declarations.len(), 1);
-        assert_eq!(declarations[0].name, "proof.root");
-        assert_eq!(declarations[0].alias.as_deref(), Some("local_root"));
-        let body = declarations[0].body.expect("body span should be recorded");
-        assert_eq!(&source.contents[body.start..body.end], "{ }");
-    }
-
-    #[test]
-    fn keeps_nested_blocks_inside_closed_container_body_span() {
-        let source = source("container pkg.item { function run() { return; } }");
-
-        let declarations =
-            parse_container_declarations(&source).expect("container body should parse");
-
-        assert_eq!(declarations.len(), 1);
-        let body = declarations[0].body.expect("body span should be recorded");
-        assert_eq!(
-            &source.contents[body.start..body.end],
-            "{ function run() { return; } }"
-        );
-        assert_eq!(declarations[0].end, source.contents.len());
-    }
-
-    #[test]
-    fn rejects_container_without_name_reference() {
-        let source = source("container ;");
-
-        let error = parse_container_declarations(&source).expect_err("name should be required");
-
-        assert!(matches!(
-            error,
-            ParseError::ExpectedName { source_name, .. } if source_name == "main.pil"
-        ));
-    }
-
-    #[test]
-    fn rejects_container_alias_without_identifier() {
-        let source = source("container pkg.item alias ;");
-
-        let error =
-            parse_container_declarations(&source).expect_err("alias identifier should be required");
-
-        assert!(matches!(
-            error,
-            ParseError::ExpectedAlias { source_name, .. } if source_name == "main.pil"
-        ));
-    }
-
-    #[test]
-    fn rejects_unclosed_container_body() {
-        let source = source("container pkg.item { col witness x;");
-
-        let error = parse_container_declarations(&source).expect_err("body should close");
-
-        assert!(matches!(
-            error,
-            ParseError::ExpectedCloseBrace { source_name, .. } if source_name == "main.pil"
-        ));
-    }
-
-    #[test]
-    fn parses_witness_column_declarations_with_array_items() {
-        let source = source("col witness air.main[2], local[1][];");
-
-        let declarations = parse_column_declarations(&source).expect("columns should parse");
-
-        assert_eq!(declarations.len(), 1);
-        assert_eq!(declarations[0].kind, ColumnKind::Witness);
-        assert_eq!(declarations[0].commit, None);
-        assert!(declarations[0].features.is_empty());
-        assert_eq!(declarations[0].items.len(), 2);
-        assert_eq!(declarations[0].items[0].name, "air.main");
-        assert!(!declarations[0].items[0].template);
-        assert_eq!(
-            &source.contents[declarations[0].items[0].array_dims[0].start
-                ..declarations[0].items[0].array_dims[0].end],
-            "[2]"
-        );
-        assert_eq!(declarations[0].items[1].name, "local");
-        assert_eq!(declarations[0].items[1].array_dims.len(), 2);
-        assert_eq!(
-            &source.contents[declarations[0].items[1].array_dims[0].start
-                ..declarations[0].items[1].array_dims[0].end],
-            "[1]"
-        );
-        assert_eq!(
-            &source.contents[declarations[0].items[1].array_dims[1].start
-                ..declarations[0].items[1].array_dims[1].end],
-            "[]"
-        );
-    }
-
-    #[test]
-    fn parses_custom_column_declarations_with_feature_spans() {
-        let source = source("col local_commit stage(1 + (2)) virtual(foo(bar)) air.main, local;");
-
-        let declarations = parse_column_declarations(&source).expect("columns should parse");
-
-        assert_eq!(declarations.len(), 1);
-        assert_eq!(declarations[0].kind, ColumnKind::Custom);
-        assert_eq!(declarations[0].commit.as_deref(), Some("local_commit"));
-        assert_eq!(declarations[0].features.len(), 2);
-        assert_eq!(declarations[0].features[0].name, "stage");
-        assert_eq!(
-            &source.contents
-                [declarations[0].features[0].args.start..declarations[0].features[0].args.end],
-            "(1 + (2))"
-        );
-        assert_eq!(declarations[0].features[1].name, "virtual");
-        assert_eq!(
-            &source.contents
-                [declarations[0].features[1].args.start..declarations[0].features[1].args.end],
-            "(foo(bar))"
-        );
-        assert_eq!(declarations[0].items.len(), 2);
-        assert_eq!(declarations[0].items[0].name, "air.main");
-        assert_eq!(declarations[0].items[1].name, "local");
-    }
-
-    #[test]
-    fn parses_fixed_column_initializer_spans() {
-        let source = source("col fixed stage(3) x = foo(bar[1] + baz);");
-
-        let declarations = parse_column_declarations(&source).expect("columns should parse");
-
-        assert_eq!(declarations.len(), 1);
-        assert_eq!(declarations[0].kind, ColumnKind::Fixed);
-        assert_eq!(declarations[0].features.len(), 1);
-        assert_eq!(declarations[0].features[0].name, "stage");
-        assert_eq!(declarations[0].items.len(), 1);
-        assert_eq!(declarations[0].items[0].name, "x");
-        let initializer = declarations[0]
-            .initializer
-            .expect("initializer should be recorded");
-        assert_eq!(initializer.kind, ColumnInitializerKind::Expression);
-        assert_eq!(
-            &source.contents[initializer.span.start..initializer.span.end],
-            "foo(bar[1] + baz)"
-        );
-    }
-
-    #[test]
-    fn parses_sequence_initializer_spans() {
-        let source = source("col fixed x = [foo(bar), baz[1]];");
-
-        let declarations = parse_column_declarations(&source).expect("columns should parse");
-
-        assert_eq!(declarations.len(), 1);
-        let initializer = declarations[0]
-            .initializer
-            .expect("initializer should be recorded");
-        assert_eq!(initializer.kind, ColumnInitializerKind::Sequence);
-        assert_eq!(
-            &source.contents[initializer.span.start..initializer.span.end],
-            "[foo(bar), baz[1]]"
-        );
-    }
-
-    #[test]
-    fn skips_col_cast_expressions() {
-        let source = source("value = col(x);");
-
-        let declarations = parse_column_declarations(&source).expect("source should parse");
-
-        assert!(declarations.is_empty());
-    }
-
-    #[test]
-    fn parses_stage_value_declarations_with_defaults() {
-        let source = source(
-            "challenge stage(7) air.main[2], local;\nproofval proof.x;\nairval stage(4) unit.a;",
-        );
-
-        let declarations =
-            parse_value_declarations(&source).expect("value declarations should parse");
-
-        assert_eq!(declarations.len(), 3);
-        assert_eq!(declarations[0].kind, ValueDeclarationKind::Challenge);
-        assert_eq!(declarations[0].stage, 7);
-        assert_eq!(declarations[0].items[0].name, "air.main");
-        assert_eq!(declarations[0].items[0].array_dims.len(), 1);
-        assert_eq!(declarations[0].items[1].name, "local");
-        assert_eq!(declarations[1].kind, ValueDeclarationKind::ProofValue);
-        assert_eq!(declarations[1].stage, 1);
-        assert_eq!(declarations[1].items[0].name, "proof.x");
-        assert_eq!(declarations[2].kind, ValueDeclarationKind::AirValue);
-        assert_eq!(declarations[2].stage, 4);
-        assert_eq!(declarations[2].items[0].name, "unit.a");
-    }
-
-    #[test]
-    fn skips_cast_expressions_when_parsing_value_declarations() {
-        let source = source("result = challenge(stage(3));");
-
-        let declarations = parse_value_declarations(&source).expect("source should parse");
-
-        assert!(declarations.is_empty());
-    }
-}
+mod tests;
