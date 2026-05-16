@@ -91,6 +91,26 @@ pub struct ColumnDeclaration {
     pub end: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueDeclarationKind {
+    Challenge,
+    ProofValue,
+    AirValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValueDeclaration {
+    pub kind: ValueDeclarationKind,
+    pub stage: u32,
+    pub items: Vec<ColumnItem>,
+    pub source_name: String,
+    pub start: usize,
+    pub end: usize,
+}
+
+const DEFAULT_CHALLENGE_STAGE: u32 = 2;
+const DEFAULT_VALUE_STAGE: u32 = 1;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
     Lex {
@@ -115,6 +135,10 @@ pub enum ParseError {
         start: usize,
     },
     ExpectedAlias {
+        source_name: String,
+        start: usize,
+    },
+    ExpectedNumber {
         source_name: String,
         start: usize,
     },
@@ -150,6 +174,9 @@ impl std::fmt::Display for ParseError {
             }
             Self::ExpectedAlias { source_name, start } => {
                 write!(f, "{source_name}: expected alias at {start}")
+            }
+            Self::ExpectedNumber { source_name, start } => {
+                write!(f, "{source_name}: expected number at {start}")
             }
             Self::ExpectedCloseBrace { source_name, start } => {
                 write!(f, "{source_name}: expected closing brace at {start}")
@@ -300,6 +327,159 @@ pub fn parse_column_declarations(
     }
 
     Ok(declarations)
+}
+
+pub fn parse_value_declarations(source: &SourceFile) -> Result<Vec<ValueDeclaration>, ParseError> {
+    let tokens = lex_source(&source.contents).map_err(|error| ParseError::Lex {
+        source_name: source.source_name.clone(),
+        error,
+    })?;
+    let mut declarations = Vec::new();
+    let mut index = 0;
+
+    while index < tokens.len() {
+        let Some(header) = parse_value_header(&tokens, index) else {
+            index += 1;
+            continue;
+        };
+        let (stage, item_start) = parse_optional_stage_definition(
+            &tokens,
+            header.next_index,
+            header.default_stage,
+            source,
+        )?;
+        let (items, next_index, end) = parse_column_item_list(&tokens, item_start, source)?;
+
+        declarations.push(ValueDeclaration {
+            kind: header.kind,
+            stage,
+            items,
+            source_name: source.source_name.clone(),
+            start: header.start,
+            end,
+        });
+        index = next_index;
+    }
+
+    Ok(declarations)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ValueHeader {
+    kind: ValueDeclarationKind,
+    default_stage: u32,
+    start: usize,
+    next_index: usize,
+}
+
+fn parse_value_header(tokens: &[Token], index: usize) -> Option<ValueHeader> {
+    let (kind, default_stage) = match tokens.get(index)?.kind {
+        TokenKind::Challenge => (ValueDeclarationKind::Challenge, DEFAULT_CHALLENGE_STAGE),
+        TokenKind::ProofValue => (ValueDeclarationKind::ProofValue, DEFAULT_VALUE_STAGE),
+        TokenKind::AirValue => (ValueDeclarationKind::AirValue, DEFAULT_VALUE_STAGE),
+        _ => return None,
+    };
+    if !tokens
+        .get(index + 1)
+        .is_some_and(|token| value_tail_start(token.kind))
+    {
+        return None;
+    }
+    Some(ValueHeader {
+        kind,
+        default_stage,
+        start: tokens[index].start,
+        next_index: index + 1,
+    })
+}
+
+fn value_tail_start(kind: TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Stage
+            | TokenKind::Identifier
+            | TokenKind::TemplateLiteral
+            | TokenKind::Air
+            | TokenKind::AirGroup
+            | TokenKind::Proof
+    )
+}
+
+fn parse_optional_stage_definition(
+    tokens: &[Token],
+    index: usize,
+    default_stage: u32,
+    source: &SourceFile,
+) -> Result<(u32, usize), ParseError> {
+    if !tokens
+        .get(index)
+        .is_some_and(|token| token.kind == TokenKind::Stage)
+    {
+        return Ok((default_stage, index));
+    }
+
+    let open_index = index + 1;
+    let Some(open) = tokens.get(open_index) else {
+        return Err(ParseError::ExpectedCloseParen {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, open_index),
+        });
+    };
+    if open.kind != TokenKind::LParen {
+        return Err(ParseError::ExpectedCloseParen {
+            source_name: source.source_name.clone(),
+            start: open.start,
+        });
+    }
+
+    let number_index = index + 2;
+    let Some(number) = tokens.get(number_index) else {
+        return Err(ParseError::ExpectedNumber {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, number_index),
+        });
+    };
+    let stage = parse_u32_literal(number, source)?;
+
+    let close_index = index + 3;
+    let Some(close) = tokens.get(close_index) else {
+        return Err(ParseError::ExpectedCloseParen {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, close_index),
+        });
+    };
+    if close.kind != TokenKind::RParen {
+        return Err(ParseError::ExpectedCloseParen {
+            source_name: source.source_name.clone(),
+            start: close.start,
+        });
+    }
+
+    Ok((stage, close_index + 1))
+}
+
+fn parse_u32_literal(token: &Token, source: &SourceFile) -> Result<u32, ParseError> {
+    let parsed = match token.kind {
+        TokenKind::Integer => token.lexeme.parse::<u32>(),
+        TokenKind::HexInteger => u32::from_str_radix(
+            token
+                .lexeme
+                .strip_prefix("0x")
+                .or_else(|| token.lexeme.strip_prefix("0X"))
+                .unwrap_or(token.lexeme.as_str()),
+            16,
+        ),
+        _ => {
+            return Err(ParseError::ExpectedNumber {
+                source_name: source.source_name.clone(),
+                start: token.start,
+            });
+        }
+    };
+    parsed.map_err(|_| ParseError::ExpectedNumber {
+        source_name: source.source_name.clone(),
+        start: token.start,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1080,8 +1260,8 @@ fn missing_start(tokens: &[Token], index: usize) -> usize {
 mod tests {
     use super::{
         parse_column_declarations, parse_container_declarations, parse_include_directives,
-        parse_use_directives, ColumnInitializerKind, ColumnKind, IncludeKind, IncludeVisibility,
-        ParseError,
+        parse_use_directives, parse_value_declarations, ColumnInitializerKind, ColumnKind,
+        IncludeKind, IncludeVisibility, ParseError, ValueDeclarationKind,
     };
     use crate::SourceFile;
     use std::path::PathBuf;
@@ -1414,6 +1594,38 @@ mod tests {
         let source = source("value = col(x);");
 
         let declarations = parse_column_declarations(&source).expect("source should parse");
+
+        assert!(declarations.is_empty());
+    }
+
+    #[test]
+    fn parses_stage_value_declarations_with_defaults() {
+        let source = source(
+            "challenge stage(7) air.main[2], local;\nproofval proof.x;\nairval stage(4) unit.a;",
+        );
+
+        let declarations =
+            parse_value_declarations(&source).expect("value declarations should parse");
+
+        assert_eq!(declarations.len(), 3);
+        assert_eq!(declarations[0].kind, ValueDeclarationKind::Challenge);
+        assert_eq!(declarations[0].stage, 7);
+        assert_eq!(declarations[0].items[0].name, "air.main");
+        assert_eq!(declarations[0].items[0].array_dims.len(), 1);
+        assert_eq!(declarations[0].items[1].name, "local");
+        assert_eq!(declarations[1].kind, ValueDeclarationKind::ProofValue);
+        assert_eq!(declarations[1].stage, 1);
+        assert_eq!(declarations[1].items[0].name, "proof.x");
+        assert_eq!(declarations[2].kind, ValueDeclarationKind::AirValue);
+        assert_eq!(declarations[2].stage, 4);
+        assert_eq!(declarations[2].items[0].name, "unit.a");
+    }
+
+    #[test]
+    fn skips_cast_expressions_when_parsing_value_declarations() {
+        let source = source("result = challenge(stage(3));");
+
+        let declarations = parse_value_declarations(&source).expect("source should parse");
 
         assert!(declarations.is_empty());
     }
