@@ -86,6 +86,7 @@ impl ExpressionParser<'_> {
             TokenKind::Bang => self.parse_unary(UnaryOperator::Not),
             TokenKind::Increment => self.parse_unary(UnaryOperator::Increment),
             TokenKind::Decrement => self.parse_unary(UnaryOperator::Decrement),
+            TokenKind::Apostrophe => self.parse_prior_row_offset(),
             TokenKind::Integer => self.parse_atom(ExpressionKind::Integer(token.lexeme.clone())),
             TokenKind::HexInteger => {
                 self.parse_atom(ExpressionKind::HexInteger(token.lexeme.clone()))
@@ -204,10 +205,101 @@ impl ExpressionParser<'_> {
                 TokenKind::LBracket => {
                     expr = self.parse_index(expr)?;
                 }
+                TokenKind::Apostrophe
+                    if row_offset_offset_expression(&expr)
+                        && self.next_token_starts_prior_target() =>
+                {
+                    expr = self.parse_explicit_prior_row_offset(expr)?;
+                }
+                TokenKind::Apostrophe => {
+                    expr = self.parse_postfix_row_offset(expr)?;
+                }
                 _ => break,
             }
         }
         Ok(expr)
+    }
+
+    fn parse_prior_row_offset(&mut self) -> Result<Expression, ParseError> {
+        let marker = self.current_token()?;
+        self.cursor += 1;
+        let primary = self.parse_prefix()?;
+        let target = self.parse_postfix_chain(primary)?;
+        let offset = self.default_row_offset(&marker);
+        let end = target.end;
+
+        Ok(self.row_offset_expression(target, offset, true, marker.start, end))
+    }
+
+    fn parse_explicit_prior_row_offset(
+        &mut self,
+        offset: Expression,
+    ) -> Result<Expression, ParseError> {
+        self.cursor += 1;
+        let primary = self.parse_prefix()?;
+        let target = self.parse_postfix_chain(primary)?;
+        let start = offset.start;
+        let end = target.end;
+
+        Ok(self.row_offset_expression(target, offset, true, start, end))
+    }
+
+    fn parse_postfix_row_offset(&mut self, target: Expression) -> Result<Expression, ParseError> {
+        let marker = self.current_token()?;
+        self.cursor += 1;
+        let offset = self.parse_row_offset_suffix(&marker)?;
+        let start = target.start;
+        let end = offset.end.max(marker.end);
+
+        Ok(self.row_offset_expression(target, offset, false, start, end))
+    }
+
+    fn parse_row_offset_suffix(&mut self, marker: &Token) -> Result<Expression, ParseError> {
+        let Some(token) = self.peek() else {
+            return Ok(self.default_row_offset(marker));
+        };
+        match token.kind {
+            TokenKind::Integer
+            | TokenKind::HexInteger
+            | TokenKind::PositionalParam
+            | TokenKind::LParen => self.parse_prefix(),
+            _ => Ok(self.default_row_offset(marker)),
+        }
+    }
+
+    fn default_row_offset(&self, marker: &Token) -> Expression {
+        Expression {
+            kind: ExpressionKind::Integer("1".to_owned()),
+            source_name: self.source.source_name.clone(),
+            start: marker.start,
+            end: marker.end,
+        }
+    }
+
+    fn row_offset_expression(
+        &self,
+        target: Expression,
+        offset: Expression,
+        prior: bool,
+        start: usize,
+        end: usize,
+    ) -> Expression {
+        Expression {
+            kind: ExpressionKind::RowOffset {
+                target: Box::new(target),
+                offset: Box::new(offset),
+                prior,
+            },
+            source_name: self.source.source_name.clone(),
+            start,
+            end,
+        }
+    }
+
+    fn next_token_starts_prior_target(&self) -> bool {
+        self.tokens
+            .get(self.cursor + 1)
+            .is_some_and(|token| row_offset_target_start(token.kind))
     }
 
     fn parse_call(&mut self, callee: Expression) -> Result<Expression, ParseError> {
@@ -443,6 +535,23 @@ fn binary_operator(kind: TokenKind) -> Option<(BinaryOperator, u8, u8)> {
     }
 }
 
+fn row_offset_offset_expression(expression: &Expression) -> bool {
+    matches!(
+        &expression.kind,
+        ExpressionKind::Integer(_)
+            | ExpressionKind::HexInteger(_)
+            | ExpressionKind::PositionalParam(_)
+            | ExpressionKind::Group(_)
+    )
+}
+
+fn row_offset_target_start(kind: TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Identifier | TokenKind::Air | TokenKind::AirGroup | TokenKind::Proof
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::types::{BinaryOperator, ExpressionKind, UnaryOperator};
@@ -541,5 +650,107 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn parses_postfix_row_offsets() {
+        let expression = parse("vec[sum(2, 3)]'(row + 1)");
+
+        let ExpressionKind::RowOffset {
+            target,
+            offset,
+            prior,
+        } = expression.kind
+        else {
+            panic!("root should be row offset");
+        };
+        assert!(!prior);
+        assert!(matches!(target.kind, ExpressionKind::Index { .. }));
+        assert!(matches!(
+            offset.kind,
+            ExpressionKind::Group(inner) if matches!(
+                inner.kind,
+                ExpressionKind::Binary {
+                    op: BinaryOperator::Add,
+                    ..
+                }
+            )
+        ));
+    }
+
+    #[test]
+    fn parses_postfix_row_offset_literals() {
+        let expression = parse("lane'512 + flag'");
+
+        let ExpressionKind::Binary {
+            op: BinaryOperator::Add,
+            left,
+            right,
+        } = expression.kind
+        else {
+            panic!("root should be add");
+        };
+
+        let ExpressionKind::RowOffset {
+            target,
+            offset,
+            prior,
+        } = left.kind
+        else {
+            panic!("left should be row offset");
+        };
+        assert!(!prior);
+        assert!(matches!(target.kind, ExpressionKind::Name(ref name) if name == "lane"));
+        assert!(matches!(offset.kind, ExpressionKind::Integer(ref value) if value == "512"));
+
+        let ExpressionKind::RowOffset {
+            target,
+            offset,
+            prior,
+        } = right.kind
+        else {
+            panic!("right should be row offset");
+        };
+        assert!(!prior);
+        assert!(matches!(target.kind, ExpressionKind::Name(ref name) if name == "flag"));
+        assert!(matches!(offset.kind, ExpressionKind::Integer(ref value) if value == "1"));
+    }
+
+    #[test]
+    fn parses_prior_row_offsets() {
+        let expression = parse("2'byte_in + 'byte_out");
+
+        let ExpressionKind::Binary {
+            op: BinaryOperator::Add,
+            left,
+            right,
+        } = expression.kind
+        else {
+            panic!("root should be add");
+        };
+
+        let ExpressionKind::RowOffset {
+            target,
+            offset,
+            prior,
+        } = left.kind
+        else {
+            panic!("left should be row offset");
+        };
+        assert!(prior);
+        assert!(matches!(target.kind, ExpressionKind::Name(ref name) if name == "byte_in"));
+        assert!(matches!(offset.kind, ExpressionKind::Integer(ref value) if value == "2"));
+
+        let ExpressionKind::RowOffset {
+            target,
+            offset,
+            prior,
+        } = right.kind
+        else {
+            panic!("right should be row offset");
+        };
+        assert!(prior);
+        assert!(matches!(target.kind, ExpressionKind::Name(ref name) if name == "byte_out"));
+        assert!(matches!(offset.kind, ExpressionKind::Integer(ref value) if value == "1"));
     }
 }

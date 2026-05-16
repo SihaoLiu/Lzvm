@@ -233,6 +233,11 @@ pub enum ExpressionKind {
         target: Box<Expression>,
         index: Box<Expression>,
     },
+    RowOffset {
+        target: Box<Expression>,
+        offset: Box<Expression>,
+        prior: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

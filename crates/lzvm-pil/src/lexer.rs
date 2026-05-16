@@ -74,6 +74,7 @@ pub enum TokenKind {
     Pow,
     Increment,
     Decrement,
+    Apostrophe,
     PlusEqual,
     MinusEqual,
     StarEqual,
@@ -502,6 +503,7 @@ fn operator_at(input: &str, index: usize) -> Option<(TokenKind, usize)> {
         ("+", TokenKind::Plus),
         ("-", TokenKind::Minus),
         ("*", TokenKind::Star),
+        ("'", TokenKind::Apostrophe),
         ("%", TokenKind::Percent),
         ("\\", TokenKind::Backslash),
         ("/", TokenKind::Slash),
@@ -613,6 +615,28 @@ mod tests {
         assert_eq!(tokens[8].lexeme, "123456");
         assert_eq!(tokens[12].lexeme, "abc");
         assert_eq!(tokens[13].lexeme, "x + y");
+    }
+
+    #[test]
+    fn tokenizes_row_offset_markers() {
+        let tokens = lex_source("a' b'2 'c 2'd").expect("lexing should work");
+
+        let kinds = tokens.iter().map(|token| token.kind).collect::<Vec<_>>();
+        assert_eq!(
+            kinds,
+            vec![
+                TokenKind::Identifier,
+                TokenKind::Apostrophe,
+                TokenKind::Identifier,
+                TokenKind::Apostrophe,
+                TokenKind::Integer,
+                TokenKind::Apostrophe,
+                TokenKind::Identifier,
+                TokenKind::Integer,
+                TokenKind::Apostrophe,
+                TokenKind::Identifier,
+            ]
+        );
     }
 
     #[test]
