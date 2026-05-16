@@ -113,6 +113,10 @@ name = "lzvm-field"
 version = "0.1.0"
 
 [[package]]
+name = "lzvm-pil"
+version = "0.1.0"
+
+[[package]]
 name = "lzvm-prover"
 version = "0.1.0"
 dependencies = [

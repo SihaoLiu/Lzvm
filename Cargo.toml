@@ -5,6 +5,7 @@ members = [
     "crates/lzvm-cli",
     "crates/lzvm-crypto",
     "crates/lzvm-field",
+    "crates/lzvm-pil",
     "crates/lzvm-prover",
     "crates/lzvm-setup",
 ]
