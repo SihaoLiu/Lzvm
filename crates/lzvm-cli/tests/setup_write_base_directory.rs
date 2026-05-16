@@ -971,6 +971,73 @@ fn writes_base_directory_with_cuda_backend_option() {
 }
 
 #[test]
+#[cfg(feature = "cuda")]
+fn generates_key_directory_with_cuda_backend_option() {
+    let (cpu_dir, _) = create_key_directory("generate-cpu");
+    let (cuda_dir, _) = create_key_directory("generate-cuda");
+    remove_verification_keys(&cpu_dir);
+    remove_verification_keys(&cuda_dir);
+
+    let mut cpu_stdout = Vec::new();
+    let mut cpu_stderr = Vec::new();
+    let cpu_code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            cpu_dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut cpu_stdout,
+        &mut cpu_stderr,
+    );
+    let mut cuda_stdout = Vec::new();
+    let mut cuda_stderr = Vec::new();
+    let cuda_code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--backend",
+            "cuda",
+            cuda_dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut cuda_stdout,
+        &mut cuda_stderr,
+    );
+
+    let cpu_layout = read_key_directory_layout(&cpu_dir).expect("cpu layout should derive");
+    let cuda_layout = read_key_directory_layout(&cuda_dir).expect("cuda layout should derive");
+    for (cpu_unit, cuda_unit) in cpu_layout.units.iter().zip(&cuda_layout.units) {
+        let cpu_tree = fs::read(&cpu_unit.constant_tree).expect("cpu tree should be written");
+        let cuda_tree = fs::read(&cuda_unit.constant_tree).expect("cuda tree should be written");
+        assert_eq!(cuda_tree, cpu_tree);
+        assert_eq!(
+            read_verification_key_binary_file(cpu_unit.verification_key_binary())
+                .expect("cpu key should parse"),
+            read_verification_key_binary_file(cuda_unit.verification_key_binary())
+                .expect("cuda key should parse")
+        );
+        assert_eq!(
+            read_pcs_setup_plan_file(cpu_unit.pcs_setup_plan().expect("cpu PCS plan"))
+                .expect("cpu PCS plan should parse"),
+            read_pcs_setup_plan_file(cuda_unit.pcs_setup_plan().expect("cuda PCS plan"))
+                .expect("cuda PCS plan should parse")
+        );
+        assert_eq!(
+            read_pcs_setup_material_file(cpu_unit.pcs_setup_material().expect("cpu material"))
+                .expect("cpu material should parse"),
+            read_pcs_setup_material_file(cuda_unit.pcs_setup_material().expect("cuda material"))
+                .expect("cuda material should parse")
+        );
+    }
+    fs::remove_dir_all(&cpu_dir).expect("cpu fixture directory should be removed");
+    fs::remove_dir_all(&cuda_dir).expect("cuda fixture directory should be removed");
+
+    assert_eq!(cpu_code, 0);
+    assert_eq!(cuda_code, 0);
+    assert!(cpu_stderr.is_empty());
+    assert!(cuda_stderr.is_empty());
+}
+
+#[test]
 fn reports_usage_for_missing_base_directory_path() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
