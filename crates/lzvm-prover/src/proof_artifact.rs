@@ -12,13 +12,17 @@ use lzvm_field::{Ext3, Felt};
 use crate::group_values::build_group_values_segment;
 use crate::proof_values::build_pcs_proof_values_segment_from_packed_values;
 use crate::setup_preflight::validate_setup_preflight;
-use crate::unit_values::{build_unit_values_segment_from_packed_values_batch, ProveUnitValues};
+use crate::unit_values::{
+    build_unit_values_segment_from_packed_values,
+    build_unit_values_segment_from_packed_values_batch, ProveUnitValues,
+};
 use crate::{
     build_constant_opening_segment, build_pcs_evaluation_segment,
     build_pcs_fri_opening_segment_from_transcript_values,
     build_pcs_fri_transcript_values_from_trace_segments, build_pcs_material_manifest_segment,
-    build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment_from_challenge,
-    build_pcs_query_plan_segment_with_bindings, build_witness_commitment_segment,
+    build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
+    build_pcs_query_plan_segment_from_challenge, build_pcs_query_plan_segment_with_bindings,
+    build_witness_commitment_segment, build_witness_opening_segment,
     build_witness_opening_segment_batch, ProveExecutionUnitArtifacts, ProvePcsEvaluationValues,
     ProvePcsFriTranscriptTraceSegmentValues, ProveSchedule, ProveWitnessAuxiliaryInputs,
     ProveWitnessCommitments, ProveWitnessTraceCommitments,
@@ -152,6 +156,190 @@ pub struct ProofArtifactInputs<'a> {
     pub group_values: &'a [Ext3],
     pub unit_values: &'a [ProveUnitValues],
     pub binding_segments: &'a [ProofSegment],
+}
+
+pub struct WitnessProofRequest<'a> {
+    pub catalog: &'a KeyDirectoryCatalog,
+    pub schedule: &'a ProveSchedule,
+    pub execution_unit: &'a ProveExecutionUnitArtifacts,
+    pub gpu_streams: usize,
+    pub public_values: Option<&'a PublicValues>,
+    pub unit_values: Option<&'a [Felt]>,
+    pub output: &'a ProveWitnessTraceCommitments,
+    pub verify_outputs: bool,
+    pub program_image_cache: Option<&'a ProgramImageCommitmentCache>,
+}
+
+pub fn build_witness_proof_artifact_for_unit(
+    request: &WitnessProofRequest<'_>,
+) -> Result<Option<ProofArtifact>, String> {
+    let Some(public_values) = request.public_values else {
+        return Ok(None);
+    };
+    if public_values.setup_hash != request.schedule.setup_hash {
+        return Err("public inputs setup hash mismatch".to_owned());
+    }
+    let public_values_hash = public_values_digest(public_values)
+        .map_err(|error| format!("hash public inputs failed: {error}"))?;
+    let cache_segment = build_program_image_cache_proof_segment(request.program_image_cache)?;
+    let binding_segments: &[ProofSegment] = cache_segment.as_slice();
+    let material_segment = build_pcs_material_manifest_segment(request.schedule)
+        .map_err(|error| format!("build material manifest segment failed: {error}"))?;
+    let commitments = request.output.commitments();
+    let witness_segment = build_witness_commitment_segment(commitments)
+        .map_err(|error| format!("build witness segment failed: {error}"))?;
+    let transcript_values = if request.output.auxiliary_inputs().evaluations.is_empty() {
+        if request.execution_unit.fri_expression_id.is_some() {
+            return Err(format!(
+                "missing evaluation values for unit {}: expected {}",
+                commitments.unit_index(),
+                request.execution_unit.expected_evaluation_value_count()
+            ));
+        }
+        None
+    } else {
+        let evaluation_segment = build_pcs_evaluation_segment(
+            request.schedule,
+            &[ProvePcsEvaluationValues {
+                unit_index: commitments.unit_index(),
+                values: request.output.auxiliary_inputs().evaluations.clone(),
+            }],
+        )
+        .map_err(|error| format!("build evaluation segment failed: {error}"))?;
+        let values = build_pcs_fri_transcript_values_from_trace_segments(
+            request.schedule,
+            &[ProvePcsFriTranscriptTraceSegmentValues {
+                unit_index: commitments.unit_index(),
+                execution_unit: request.execution_unit,
+                trace: request.output.trace(),
+                publics: request.output.publics(),
+                auxiliary_inputs: request.output.auxiliary_inputs(),
+                material_segment: &material_segment,
+                witness_segment: &witness_segment,
+                evaluation_segment: &evaluation_segment,
+                binding_segments,
+            }],
+        )
+        .map_err(|error| format!("build FRI transcript values failed: {error}"))?;
+        Some((evaluation_segment, values))
+    };
+    let query_segment = match &transcript_values {
+        Some((_, values)) => {
+            let final_query_challenge = values
+                .first()
+                .ok_or_else(|| "build FRI transcript values failed: no units".to_owned())?
+                .commitments
+                .final_query_challenge;
+            let nonce_segment = build_pcs_query_nonce_segment_with_streams(
+                request.schedule,
+                final_query_challenge,
+                request.gpu_streams,
+            )
+            .map_err(|error| format!("build query nonce segment failed: {error}"))?;
+            let nonce = Felt::from_u64(
+                parse_pcs_query_nonce_segment(&nonce_segment.data)
+                    .map_err(|error| format!("parse query nonce segment failed: {error}"))?
+                    .nonce,
+            );
+            let query_segment = build_pcs_query_plan_segment_from_challenge(
+                request.schedule,
+                std::slice::from_ref(&witness_segment),
+                final_query_challenge,
+                nonce,
+            )
+            .map_err(|error| format!("build query plan segment failed: {error}"))?;
+            (query_segment, Some(nonce_segment))
+        }
+        None => {
+            let query_segment = match cache_segment.as_ref() {
+                Some(cache_segment) => build_pcs_query_plan_segment_with_bindings(
+                    request.schedule,
+                    public_values_hash,
+                    &material_segment,
+                    std::slice::from_ref(&witness_segment),
+                    std::slice::from_ref(cache_segment),
+                )
+                .map_err(|error| format!("build query plan segment failed: {error}"))?,
+                None => build_pcs_query_plan_segment(
+                    request.schedule,
+                    public_values_hash,
+                    &material_segment,
+                    std::slice::from_ref(&witness_segment),
+                )
+                .map_err(|error| format!("build query plan segment failed: {error}"))?,
+            };
+            (query_segment, None)
+        }
+    };
+    let (query_segment, nonce_segment) = query_segment;
+    let constant_opening_segment =
+        build_constant_opening_segment(request.catalog, request.schedule, &query_segment)
+            .map_err(|error| format!("build constant opening segment failed: {error}"))?;
+    let opening_segment =
+        build_witness_opening_segment(request.schedule, &query_segment, commitments)
+            .map_err(|error| format!("build witness opening segment failed: {error}"))?;
+    let unit_index = commitments.unit_index();
+    let unit = request
+        .schedule
+        .units
+        .get(unit_index)
+        .ok_or_else(|| format!("unit values segment unit index out of range: {unit_index}"))?;
+    let unit_values = request
+        .unit_values
+        .unwrap_or(&request.output.auxiliary_inputs().unit_values);
+    let unit_values_segment =
+        build_unit_values_segment_from_packed_values(unit_index, &unit.unit_value_map, unit_values)
+            .map_err(|error| format!("build unit values segment failed: {error}"))?;
+    let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(
+        &request.catalog.layout.global_info,
+        &request.output.auxiliary_inputs().proof_values,
+    )
+    .map_err(|error| format!("build proof values segment failed: {error}"))?;
+    let group_values_segment = build_group_values_segment(
+        &request.catalog.layout.global_info,
+        &request.output.auxiliary_inputs().group_values,
+    )
+    .map_err(|error| format!("build group values segment failed: {error}"))?;
+    let mut segments = vec![
+        material_segment,
+        query_segment,
+        constant_opening_segment,
+        opening_segment,
+        witness_segment,
+    ];
+    if let Some((evaluation_segment, transcript_values)) = transcript_values {
+        let fri_segment = build_pcs_fri_opening_segment_from_transcript_values(
+            request.schedule,
+            &segments[1],
+            &transcript_values,
+        )
+        .map_err(|error| format!("build FRI opening segment failed: {error}"))?;
+        segments.push(evaluation_segment);
+        segments.push(fri_segment);
+    }
+    if let Some(nonce_segment) = nonce_segment {
+        segments.push(nonce_segment);
+    }
+    if let Some(proof_values_segment) = proof_values_segment {
+        segments.push(proof_values_segment);
+    }
+    if let Some(group_values_segment) = group_values_segment {
+        segments.push(group_values_segment);
+    }
+    if let Some(unit_values_segment) = unit_values_segment {
+        segments.push(unit_values_segment);
+    }
+    append_program_image_cache_segment(&mut segments, cache_segment);
+    let proof = ProofArtifact {
+        setup_hash: request.schedule.setup_hash,
+        public_values_hash,
+        segments,
+    };
+    if request.verify_outputs {
+        validate_setup_preflight(request.catalog, &proof, public_values)
+            .map_err(|error| format!("verify proof output failed: {error}"))?;
+    }
+    Ok(Some(proof))
 }
 
 pub struct WitnessAllUnitsProofRequest<'a> {
