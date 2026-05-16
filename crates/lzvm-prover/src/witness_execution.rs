@@ -1,11 +1,12 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use lzvm_artifacts::fixed::{read_fixed_columns_file_for_setup, FixedColumnError, FixedColumns};
+use lzvm_artifacts::fixed::FixedColumns;
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValues, PublicValuesError};
 use lzvm_artifacts::trace_bundle::TraceBundle;
 use lzvm_field::{Ext3, Felt, FieldError};
 
+use crate::fixed_material::FixedColumnsMaterialError;
 use crate::hint_eval::{
     regular_hint_input_requirements, resolve_regular_hint_program_for_row, HintEvalError,
 };
@@ -122,7 +123,7 @@ pub enum ProveWitnessCommitmentError {
     FixedColumns {
         unit_index: usize,
         path: PathBuf,
-        source: FixedColumnError,
+        source: Box<FixedColumnsMaterialError>,
     },
     FixedRowCountTooLarge {
         unit_index: usize,
@@ -569,19 +570,9 @@ fn validate_witness_regular_constraints(
         return Ok(());
     }
 
-    let fixed_columns = read_fixed_columns_file_for_setup(
-        &plan_unit.fixed_columns,
-        &plan_unit.setup,
-        plan_unit.group_name.clone(),
-        plan_unit.unit_name.clone(),
-    )
-    .map_err(|source| ProveWitnessCommitmentError::FixedColumns {
-        unit_index,
-        path: plan_unit.fixed_columns.clone(),
-        source,
-    })?;
+    let material = load_witness_fixed_columns_material(unit_index, plan_unit)?;
     let fixed_values = fixed_columns_to_matrix(
-        &fixed_columns,
+        &material.fixed_columns,
         plan_unit.fixed_column_count,
         layout.row_count(),
         unit_index,
@@ -679,19 +670,9 @@ fn validate_witness_regular_hints(
     let requirements = regular_hint_input_requirements(&plan_unit.regular_hints);
 
     let fixed_values = if requirements.fixed_columns {
-        let fixed_columns = read_fixed_columns_file_for_setup(
-            &plan_unit.fixed_columns,
-            &plan_unit.setup,
-            plan_unit.group_name.clone(),
-            plan_unit.unit_name.clone(),
-        )
-        .map_err(|source| ProveWitnessCommitmentError::FixedColumns {
-            unit_index,
-            path: plan_unit.fixed_columns.clone(),
-            source,
-        })?;
+        let material = load_witness_fixed_columns_material(unit_index, plan_unit)?;
         fixed_columns_to_matrix(
-            &fixed_columns,
+            &material.fixed_columns,
             plan_unit.fixed_column_count,
             layout.row_count(),
             unit_index,
@@ -778,6 +759,23 @@ fn is_regular_hint_input_source(source: &str) -> bool {
         source,
         "public" | "unit value" | "proof value" | "unit group value" | "challenge" | "evaluation"
     )
+}
+
+fn load_witness_fixed_columns_material(
+    unit_index: usize,
+    plan_unit: &ProveExecutionUnitArtifacts,
+) -> Result<crate::FixedColumnsMaterial, ProveWitnessCommitmentError> {
+    crate::load_fixed_columns_material(
+        &plan_unit.fixed_columns,
+        &plan_unit.setup,
+        plan_unit.group_name.clone(),
+        plan_unit.unit_name.clone(),
+    )
+    .map_err(|source| ProveWitnessCommitmentError::FixedColumns {
+        unit_index,
+        path: plan_unit.fixed_columns.clone(),
+        source: Box::new(source),
+    })
 }
 
 fn fixed_columns_to_matrix(
