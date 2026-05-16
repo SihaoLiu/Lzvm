@@ -117,9 +117,6 @@ impl Default for EvaluationMapEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetupInfoError {
-    Json {
-        message: String,
-    },
     InvalidMagic,
     UnsupportedVersion {
         found: u32,
@@ -150,12 +147,6 @@ pub enum SetupInfoError {
     InvalidFlag {
         field: &'static str,
         value: u8,
-    },
-    MissingField {
-        field: &'static str,
-    },
-    InvalidField {
-        field: &'static str,
     },
     MissingSectionWidth {
         name: String,
@@ -190,7 +181,6 @@ pub enum SetupInfoError {
 impl fmt::Display for SetupInfoError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Json { message } => write!(f, "setup-info json error: {message}"),
             Self::InvalidMagic => write!(f, "invalid setup-info file magic"),
             Self::UnsupportedVersion { found, max } => {
                 write!(f, "unsupported setup-info file version {found}, max {max}")
@@ -223,8 +213,6 @@ impl fmt::Display for SetupInfoError {
             Self::InvalidFlag { field, value } => {
                 write!(f, "invalid setup-info flag for {field}: {value}")
             }
-            Self::MissingField { field } => write!(f, "missing setup-info field: {field}"),
-            Self::InvalidField { field } => write!(f, "invalid setup-info field: {field}"),
             Self::MissingSectionWidth { name } => {
                 write!(f, "missing setup-info section width: {name}")
             }
@@ -346,59 +334,6 @@ pub fn encode_unit_setup_info(value: &UnitSetupInfo) -> Result<Vec<u8>, SetupInf
         }],
     };
     encode_sectioned_file(&file).map_err(SetupInfoError::from)
-}
-
-#[cfg(feature = "json")]
-pub fn parse_unit_setup_info_json(input: &str) -> Result<UnitSetupInfo, SetupInfoError> {
-    let value: serde_json::Value =
-        serde_json::from_str(input).map_err(|error| SetupInfoError::Json {
-            message: error.to_string(),
-        })?;
-    let object = as_object(&value, "$")?;
-
-    let n_stages = required_u32(object, "nStages")?;
-    let n_constants = required_u32(object, "nConstants")?;
-    let constant_columns = parse_constant_columns(optional_array(object, "constPolsMap")?)?;
-    validate_constant_columns(n_constants, &constant_columns)?;
-    let commitment_columns = parse_commitment_columns(optional_array(object, "cmPolsMap")?)?;
-    let unit_value_map =
-        parse_stage_values(optional_array(object, "airValuesMap")?, "airValuesMap")?;
-    let group_value_map = parse_stage_values(
-        optional_array(object, "airgroupValuesMap")?,
-        "airgroupValuesMap",
-    )?;
-    let q_degree = required_u32(object, "qDeg")?;
-    let opening_points = required_i64_array(object, "openingPoints")?;
-    let challenge_count = required_array(object, "challengesMap")?.len();
-    let evaluation_map = parse_evaluation_map(required_array(object, "evMap")?)?;
-    let eval_count = evaluation_map.len();
-    let boundaries = parse_boundaries(required_array(object, "boundaries")?)?;
-    let stark = parse_stark_struct(required(object, "starkStruct")?)?;
-    validate_domains(&stark)?;
-
-    let section_widths = parse_u32_map(required(object, "mapSectionsN")?, "mapSectionsN")?;
-
-    let info = UnitSetupInfo {
-        n_stages,
-        n_constants,
-        constant_columns,
-        n_publics: optional_u32(object, "nPublics")?,
-        n_constraints: optional_u32(object, "nConstraints")?,
-        q_degree,
-        opening_points,
-        section_widths,
-        challenge_count,
-        eval_count,
-        evaluation_map,
-        boundaries,
-        commitment_columns,
-        unit_value_map,
-        group_value_map,
-        stark,
-    };
-
-    validate_unit_setup_info(&info)?;
-    Ok(info)
 }
 
 fn parse_unit_setup_info_section(
@@ -617,99 +552,6 @@ fn encode_unit_setup_info_section(value: &UnitSetupInfo) -> Result<Vec<u8>, Setu
     Ok(section)
 }
 
-#[cfg(feature = "json")]
-fn parse_constant_columns(
-    values: Option<&Vec<serde_json::Value>>,
-) -> Result<Vec<ConstantColumn>, SetupInfoError> {
-    let Some(values) = values else {
-        return Ok(Vec::new());
-    };
-
-    let mut out = Vec::with_capacity(values.len());
-    for value in values {
-        let object = as_object(value, "constPolsMap")?;
-        out.push(ConstantColumn {
-            name: required_string(object, "name")?,
-            stage: required_u32(object, "stage")?,
-            dimension: required_u32(object, "dim")?,
-            pols_map_id: required_u32(object, "polsMapId")?,
-            stage_id: required_u32(object, "stageId")?,
-            lengths: optional_u32_array(object, "lengths")?.unwrap_or_default(),
-        });
-    }
-    Ok(out)
-}
-
-#[cfg(feature = "json")]
-fn parse_commitment_columns(
-    values: Option<&Vec<serde_json::Value>>,
-) -> Result<Vec<CommitmentColumn>, SetupInfoError> {
-    let Some(values) = values else {
-        return Ok(Vec::new());
-    };
-
-    let mut out = Vec::with_capacity(values.len());
-    for value in values {
-        let object = as_object(value, "cmPolsMap")?;
-        out.push(CommitmentColumn {
-            name: required_string(object, "name")?,
-            stage: required_u32(object, "stage")?,
-            dimension: required_u32(object, "dim")?,
-            pols_map_id: required_u32(object, "polsMapId")?,
-            stage_id: required_u32(object, "stageId")?,
-            stage_position: required_u32(object, "stagePos")?,
-            intermediate: optional_bool(object, "imPol")?.unwrap_or(false),
-            lengths: optional_u32_array(object, "lengths")?.unwrap_or_default(),
-        });
-    }
-    Ok(out)
-}
-
-#[cfg(feature = "json")]
-fn parse_stage_values(
-    values: Option<&Vec<serde_json::Value>>,
-    field: &'static str,
-) -> Result<Vec<StageValue>, SetupInfoError> {
-    let Some(values) = values else {
-        return Ok(Vec::new());
-    };
-
-    let mut out = Vec::with_capacity(values.len());
-    for value in values {
-        let object = as_object(value, field)?;
-        out.push(StageValue {
-            name: required_string(object, "name")?,
-            stage: required_u32(object, "stage")?,
-            lengths: optional_u32_array(object, "lengths")?.unwrap_or_default(),
-        });
-    }
-    Ok(out)
-}
-
-#[cfg(feature = "json")]
-fn parse_evaluation_map(
-    values: &[serde_json::Value],
-) -> Result<Vec<EvaluationMapEntry>, SetupInfoError> {
-    let mut out = Vec::with_capacity(values.len());
-    for (index, value) in values.iter().enumerate() {
-        let object = as_object(value, "evMap")?;
-        let kind = match object.get("type").and_then(|value| value.as_str()) {
-            Some("cm") => EvaluationMapKind::Commitment,
-            Some("custom") => EvaluationMapKind::Custom,
-            Some("const") | None => EvaluationMapKind::Constant,
-            Some(_) => return Err(SetupInfoError::InvalidEvaluationMap { index }),
-        };
-        out.push(EvaluationMapEntry {
-            kind,
-            id: optional_u32(object, "id")?.unwrap_or(0),
-            prime: optional_i64(object, "prime")?.unwrap_or(0),
-            opening_position: optional_u32(object, "openingPos")?.unwrap_or(0),
-            commit_id: optional_u32(object, "commitId")?,
-        });
-    }
-    Ok(out)
-}
-
 fn default_evaluation_map(count: usize) -> Vec<EvaluationMapEntry> {
     vec![EvaluationMapEntry::default(); count]
 }
@@ -895,26 +737,6 @@ fn validate_stage_values(
     Ok(())
 }
 
-#[cfg(feature = "json")]
-fn parse_stark_struct(value: &serde_json::Value) -> Result<StarkStruct, SetupInfoError> {
-    let object = as_object(value, "starkStruct")?;
-    let steps = parse_fri_steps(required_array(object, "steps")?)?;
-
-    Ok(StarkStruct {
-        n_bits: required_u32(object, "nBits")?,
-        n_bits_ext: required_u32(object, "nBitsExt")?,
-        n_queries: required_u32(object, "nQueries")?,
-        steps,
-        hash_commits: required_bool(object, "hashCommits")?,
-        last_level_verification: required_u32(object, "lastLevelVerification")?,
-        pow_bits: required_u32(object, "powBits")?,
-        merkle_tree_arity: required_u32(object, "merkleTreeArity")?,
-        verification_hash_type: optional_string(object, "verificationHashType")?,
-        transcript_arity: optional_u32(object, "transcriptArity")?,
-        merkle_tree_custom: optional_bool(object, "merkleTreeCustom")?,
-    })
-}
-
 fn validate_domains(stark: &StarkStruct) -> Result<(), SetupInfoError> {
     if stark.n_bits_ext < stark.n_bits {
         return Err(SetupInfoError::InvalidDomainBits {
@@ -948,213 +770,6 @@ fn validate_unit_setup_info(info: &UnitSetupInfo) -> Result<(), SetupInfoError> 
     validate_domains(&info.stark)?;
     info.stage_commit_widths()?;
     Ok(())
-}
-
-#[cfg(feature = "json")]
-fn parse_fri_steps(values: &[serde_json::Value]) -> Result<Vec<FriStep>, SetupInfoError> {
-    let mut steps = Vec::with_capacity(values.len());
-    for value in values {
-        let object = as_object(value, "steps")?;
-        steps.push(FriStep {
-            n_bits: required_u32(object, "nBits")?,
-        });
-    }
-    Ok(steps)
-}
-
-#[cfg(feature = "json")]
-fn parse_boundaries(values: &[serde_json::Value]) -> Result<Vec<Boundary>, SetupInfoError> {
-    let mut boundaries = Vec::with_capacity(values.len());
-    for value in values {
-        let object = as_object(value, "boundaries")?;
-        boundaries.push(Boundary {
-            name: optional_string(object, "name")?,
-            offset_min: optional_i64(object, "offsetMin")?,
-            offset_max: optional_i64(object, "offsetMax")?,
-        });
-    }
-    Ok(boundaries)
-}
-
-#[cfg(feature = "json")]
-fn parse_u32_map(
-    value: &serde_json::Value,
-    field: &'static str,
-) -> Result<BTreeMap<String, u32>, SetupInfoError> {
-    let object = value
-        .as_object()
-        .ok_or(SetupInfoError::InvalidField { field })?;
-    let mut out = BTreeMap::new();
-    for (key, value) in object {
-        out.insert(key.clone(), value_to_u32(value, field)?);
-    }
-    Ok(out)
-}
-
-#[cfg(feature = "json")]
-fn as_object<'a>(
-    value: &'a serde_json::Value,
-    field: &'static str,
-) -> Result<&'a serde_json::Map<String, serde_json::Value>, SetupInfoError> {
-    value
-        .as_object()
-        .ok_or(SetupInfoError::InvalidField { field })
-}
-
-#[cfg(feature = "json")]
-fn required<'a>(
-    object: &'a serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<&'a serde_json::Value, SetupInfoError> {
-    object
-        .get(field)
-        .ok_or(SetupInfoError::MissingField { field })
-}
-
-#[cfg(feature = "json")]
-fn required_array<'a>(
-    object: &'a serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<&'a Vec<serde_json::Value>, SetupInfoError> {
-    required(object, field)?
-        .as_array()
-        .ok_or(SetupInfoError::InvalidField { field })
-}
-
-#[cfg(feature = "json")]
-fn optional_array<'a>(
-    object: &'a serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<Option<&'a Vec<serde_json::Value>>, SetupInfoError> {
-    object
-        .get(field)
-        .map(|value| {
-            value
-                .as_array()
-                .ok_or(SetupInfoError::InvalidField { field })
-        })
-        .transpose()
-}
-
-#[cfg(feature = "json")]
-fn required_string(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<String, SetupInfoError> {
-    required(object, field)?
-        .as_str()
-        .map(str::to_owned)
-        .ok_or(SetupInfoError::InvalidField { field })
-}
-
-#[cfg(feature = "json")]
-fn required_u32(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<u32, SetupInfoError> {
-    value_to_u32(required(object, field)?, field)
-}
-
-#[cfg(feature = "json")]
-fn optional_u32(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<Option<u32>, SetupInfoError> {
-    object
-        .get(field)
-        .map(|value| value_to_u32(value, field))
-        .transpose()
-}
-
-#[cfg(feature = "json")]
-fn optional_u32_array(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<Option<Vec<u32>>, SetupInfoError> {
-    let Some(values) = optional_array(object, field)? else {
-        return Ok(None);
-    };
-    let mut out = Vec::with_capacity(values.len());
-    for value in values {
-        out.push(value_to_u32(value, field)?);
-    }
-    Ok(Some(out))
-}
-
-#[cfg(feature = "json")]
-fn value_to_u32(value: &serde_json::Value, field: &'static str) -> Result<u32, SetupInfoError> {
-    let Some(number) = value.as_u64() else {
-        return Err(SetupInfoError::InvalidField { field });
-    };
-    u32::try_from(number).map_err(|_| SetupInfoError::InvalidField { field })
-}
-
-#[cfg(feature = "json")]
-fn required_bool(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<bool, SetupInfoError> {
-    required(object, field)?
-        .as_bool()
-        .ok_or(SetupInfoError::InvalidField { field })
-}
-
-#[cfg(feature = "json")]
-fn optional_bool(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<Option<bool>, SetupInfoError> {
-    object
-        .get(field)
-        .map(|value| {
-            value
-                .as_bool()
-                .ok_or(SetupInfoError::InvalidField { field })
-        })
-        .transpose()
-}
-
-#[cfg(feature = "json")]
-fn optional_i64(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<Option<i64>, SetupInfoError> {
-    object
-        .get(field)
-        .map(|value| value.as_i64().ok_or(SetupInfoError::InvalidField { field }))
-        .transpose()
-}
-
-#[cfg(feature = "json")]
-fn required_i64_array(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<Vec<i64>, SetupInfoError> {
-    let values = required_array(object, field)?;
-    let mut out = Vec::with_capacity(values.len());
-    for value in values {
-        let Some(number) = value.as_i64() else {
-            return Err(SetupInfoError::InvalidField { field });
-        };
-        out.push(number);
-    }
-    Ok(out)
-}
-
-#[cfg(feature = "json")]
-fn optional_string(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<Option<String>, SetupInfoError> {
-    object
-        .get(field)
-        .map(|value| {
-            value
-                .as_str()
-                .map(str::to_owned)
-                .ok_or(SetupInfoError::InvalidField { field })
-        })
-        .transpose()
 }
 
 fn usize_to_u32(value: usize) -> Result<u32, SetupInfoError> {

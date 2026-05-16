@@ -1,5 +1,3 @@
-#[cfg(feature = "json")]
-use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, parse_unit_setup_info, read_unit_setup_info_binary_file,
     read_unit_setup_info_file, EvaluationMapEntry, EvaluationMapKind, SetupInfoError,
@@ -64,65 +62,6 @@ fn push_optional_bool(out: &mut Vec<u8>, value: Option<bool>) {
         }
         None => push_u8(out, 0),
     }
-}
-
-#[cfg(feature = "json")]
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 2,
-        "nConstants": 5,
-        "nPublics": 3,
-        "nConstraints": 8,
-        "qDeg": 7,
-        "openingPoints": [0, 1, -1],
-        "mapSectionsN": {
-            "const": 5,
-            "cm1": 2,
-            "cm2": 3,
-            "cm3": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.a", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.b", "dim": 1, "polsMapId": 1, "stageId": 1},
-            {"stage": 0, "name": "main.c", "dim": 1, "polsMapId": 2, "stageId": 2},
-            {"stage": 0, "name": "main.d", "dim": 1, "polsMapId": 3, "stageId": 3},
-            {"stage": 0, "name": "main.e", "dim": 1, "polsMapId": 4, "stageId": 4, "lengths": [5]}
-        ],
-        "cmPolsMap": [
-            {"stage": 1, "name": "trace.a", "dim": 1, "polsMapId": 0, "stageId": 0, "stagePos": 0},
-            {"stage": 2, "name": "aux.a", "dim": 3, "polsMapId": 1, "stageId": 0, "stagePos": 0}
-        ],
-        "airValuesMap": [
-            {"stage": 1, "name": "unit.alpha", "lengths": [2]},
-            {"stage": 2, "name": "unit.beta"}
-        ],
-        "airgroupValuesMap": [
-            {"stage": 2, "name": "group.alpha"}
-        ],
-        "challengesMap": [{}, {}],
-        "evMap": [{}, {}, {}],
-        "boundaries": [
-            {"name": "first", "offsetMin": 0, "offsetMax": 3},
-            {"offsetMin": -1}
-        ],
-        "starkStruct": {
-            "nBits": 10,
-            "nBitsExt": 13,
-            "nQueries": 4,
-            "steps": [
-                {"nBits": 13},
-                {"nBits": 9},
-                {"nBits": 5}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 20,
-            "merkleTreeArity": 4,
-            "verificationHashType": "GL",
-            "transcriptArity": 4,
-            "merkleTreeCustom": true
-        }
-    }"#
 }
 
 fn sample_setup_info_binary() -> Vec<u8> {
@@ -275,48 +214,6 @@ fn temp_file_path(name: &str) -> PathBuf {
 }
 
 #[test]
-#[cfg(feature = "json")]
-fn parses_unit_setup_info_json() {
-    let info = parse_unit_setup_info_json(sample_setup_info_json()).expect("fixture should parse");
-
-    assert_eq!(info.n_stages, 2);
-    assert_eq!(info.n_constants, 5);
-    assert_eq!(info.constant_columns.len(), 5);
-    assert_eq!(info.constant_columns[4].name, "main.e");
-    assert_eq!(info.constant_columns[4].lengths, [5]);
-    assert_eq!(info.commitment_columns.len(), 2);
-    assert_eq!(info.commitment_columns[1].stage, 2);
-    assert_eq!(info.commitment_columns[1].stage_position, 0);
-    assert_eq!(info.commitment_columns[1].dimension, 3);
-    assert_eq!(info.unit_value_map.len(), 2);
-    assert_eq!(info.unit_value_map[0].name, "unit.alpha");
-    assert_eq!(info.unit_value_map[0].stage, 1);
-    assert_eq!(info.unit_value_map[0].lengths, [2]);
-    assert_eq!(info.unit_value_map[1].name, "unit.beta");
-    assert_eq!(info.unit_value_map[1].stage, 2);
-    assert_eq!(info.group_value_map.len(), 1);
-    assert_eq!(info.group_value_map[0].name, "group.alpha");
-    assert_eq!(info.group_value_map[0].stage, 2);
-    assert_eq!(info.n_publics, Some(3));
-    assert_eq!(info.n_constraints, Some(8));
-    assert_eq!(info.q_degree, 7);
-    assert_eq!(info.opening_points, vec![0, 1, -1]);
-    assert_eq!(info.challenge_count, 2);
-    assert_eq!(info.eval_count, 3);
-    assert_eq!(
-        info.stage_commit_widths().expect("widths should exist"),
-        vec![2, 3, 1]
-    );
-    assert_eq!(info.boundaries.len(), 2);
-    assert_eq!(info.boundaries[0].name.as_deref(), Some("first"));
-    assert_eq!(info.boundaries[1].offset_min, Some(-1));
-    assert_eq!(info.stark.n_bits, 10);
-    assert_eq!(info.stark.n_bits_ext, 13);
-    assert_eq!(info.stark.steps.len(), 3);
-    assert_eq!(info.stark.verification_hash_type.as_deref(), Some("GL"));
-}
-
-#[test]
 fn parses_evaluation_map_entries_from_binary() {
     let expected = vec![
         EvaluationMapEntry {
@@ -344,51 +241,6 @@ fn parses_evaluation_map_entries_from_binary() {
     let parsed = parse_unit_setup_info(&sample_setup_info_binary_with_evaluation_map())
         .expect("fixture should parse");
     assert_eq!(parsed.evaluation_map, expected);
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn rejects_missing_required_setup_fields() {
-    assert!(matches!(
-        parse_unit_setup_info_json("{}"),
-        Err(SetupInfoError::MissingField { field: "nStages" })
-    ));
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn rejects_mismatched_domain_bits() {
-    let json = sample_setup_info_json().replace("\"nBitsExt\": 13", "\"nBitsExt\": 9");
-
-    assert!(matches!(
-        parse_unit_setup_info_json(&json),
-        Err(SetupInfoError::InvalidDomainBits {
-            n_bits: 10,
-            n_bits_ext: 9
-        })
-    ));
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn rejects_fri_steps_that_do_not_start_at_extended_domain() {
-    let json = sample_setup_info_json().replace("\"nBits\": 13", "\"nBits\": 12");
-
-    assert!(matches!(
-        parse_unit_setup_info_json(&json),
-        Err(SetupInfoError::InvalidFriSteps)
-    ));
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn rejects_missing_stage_widths() {
-    let json = sample_setup_info_json().replace("\"cm3\": 1", "\"other\": 1");
-
-    assert!(matches!(
-        parse_unit_setup_info_json(&json),
-        Err(SetupInfoError::MissingSectionWidth { name }) if name == "cm3"
-    ));
 }
 
 #[test]
