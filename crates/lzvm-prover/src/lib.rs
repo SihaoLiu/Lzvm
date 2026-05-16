@@ -36,6 +36,7 @@ pub mod pcs_material_manifest;
 pub mod pcs_query_plan;
 pub mod pcs_transcript;
 pub mod pcs_transcript_segments;
+mod proof_artifact;
 pub mod proof_preflight;
 pub mod proof_values;
 mod prove_fri_opening;
@@ -53,6 +54,10 @@ pub mod witness_opening;
 pub mod witness_runner;
 pub mod witness_trace;
 
+pub use proof_artifact::{
+    build_witness_proof_artifact, build_witness_proof_artifact_with_bindings,
+    build_witness_proof_core_artifact, ProofArtifactInputs,
+};
 pub use prove_fri_opening::{
     build_pcs_fri_opening_segment, build_pcs_fri_opening_segment_from_trace,
     build_pcs_fri_opening_segment_from_trace_segments,

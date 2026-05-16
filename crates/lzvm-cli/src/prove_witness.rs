@@ -765,61 +765,12 @@ pub fn build_witness_proof_core_artifact(
     public_values_hash: [u8; 32],
     witness_outputs: &[&ProveWitnessCommitments],
 ) -> Result<ProofArtifact, String> {
-    build_witness_proof_core_artifact_with_bindings(
+    lzvm_prover::build_witness_proof_core_artifact(
         catalog,
         schedule,
         public_values_hash,
         witness_outputs,
-        &[],
     )
-}
-
-fn build_witness_proof_core_artifact_with_bindings(
-    catalog: &KeyDirectoryCatalog,
-    schedule: &ProveSchedule,
-    public_values_hash: [u8; 32],
-    witness_outputs: &[&ProveWitnessCommitments],
-    binding_segments: &[ProofSegment],
-) -> Result<ProofArtifact, String> {
-    let material_segment = build_pcs_material_manifest_segment(schedule)
-        .map_err(|error| format!("build material manifest segment failed: {error}"))?;
-    let mut witness_segments = Vec::with_capacity(witness_outputs.len());
-    for output in witness_outputs {
-        witness_segments.push(
-            build_witness_commitment_segment(output)
-                .map_err(|error| format!("build witness segment failed: {error}"))?,
-        );
-    }
-    witness_segments.sort_by_key(|segment| segment.id);
-
-    let query_segment = build_pcs_query_plan_segment_with_bindings(
-        schedule,
-        public_values_hash,
-        &material_segment,
-        &witness_segments,
-        binding_segments,
-    )
-    .map_err(|error| format!("build query plan segment failed: {error}"))?;
-    let constant_opening_segment =
-        build_constant_opening_segment(catalog, schedule, &query_segment)
-            .map_err(|error| format!("build constant opening segment failed: {error}"))?;
-    let opening_segment =
-        build_witness_opening_segment_batch(schedule, &query_segment, witness_outputs)
-            .map_err(|error| format!("build witness opening segment failed: {error}"))?;
-
-    let mut segments = vec![
-        material_segment,
-        query_segment,
-        constant_opening_segment,
-        opening_segment,
-    ];
-    segments.extend(witness_segments);
-
-    Ok(ProofArtifact {
-        setup_hash: schedule.setup_hash,
-        public_values_hash,
-        segments,
-    })
 }
 
 pub fn build_witness_proof_artifact(
@@ -831,62 +782,15 @@ pub fn build_witness_proof_artifact(
     group_values: &[Ext3],
     unit_values: &[ProveUnitValues],
 ) -> Result<ProofArtifact, String> {
-    build_witness_proof_artifact_with_bindings(
+    lzvm_prover::build_witness_proof_artifact(
         catalog,
         schedule,
         public_values_hash,
         witness_outputs,
-        ProofArtifactAuxInputs {
-            proof_values,
-            group_values,
-            unit_values,
-            binding_segments: &[],
-        },
+        proof_values,
+        group_values,
+        unit_values,
     )
-}
-
-fn build_witness_proof_artifact_with_bindings(
-    catalog: &KeyDirectoryCatalog,
-    schedule: &ProveSchedule,
-    public_values_hash: [u8; 32],
-    witness_outputs: &[&ProveWitnessCommitments],
-    contents: ProofArtifactAuxInputs<'_>,
-) -> Result<ProofArtifact, String> {
-    let mut proof = build_witness_proof_core_artifact_with_bindings(
-        catalog,
-        schedule,
-        public_values_hash,
-        witness_outputs,
-        contents.binding_segments,
-    )?;
-    let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(
-        &catalog.layout.global_info,
-        contents.proof_values,
-    )
-    .map_err(|error| format!("build proof values segment failed: {error}"))?;
-    if let Some(segment) = proof_values_segment {
-        proof.segments.push(segment);
-    }
-    let group_values_segment =
-        build_group_values_segment(&catalog.layout.global_info, contents.group_values)
-            .map_err(|error| format!("build group values segment failed: {error}"))?;
-    if let Some(segment) = group_values_segment {
-        proof.segments.push(segment);
-    }
-    let unit_values_segment =
-        build_unit_values_segment_from_packed_values_batch(contents.unit_values)
-            .map_err(|error| format!("build unit values segment failed: {error}"))?;
-    if let Some(segment) = unit_values_segment {
-        proof.segments.push(segment);
-    }
-    Ok(proof)
-}
-
-struct ProofArtifactAuxInputs<'a> {
-    proof_values: &'a [Felt],
-    group_values: &'a [Ext3],
-    unit_values: &'a [ProveUnitValues],
-    binding_segments: &'a [ProofSegment],
 }
 
 fn build_program_image_cache_proof_segment(
@@ -968,12 +872,12 @@ fn build_witness_proof_artifact_for_all_units(
             request.unit_values,
         )?
     } else {
-        build_witness_proof_artifact_with_bindings(
+        lzvm_prover::build_witness_proof_artifact_with_bindings(
             request.catalog,
             request.schedule,
             public_values_hash,
             &witness_outputs,
-            ProofArtifactAuxInputs {
+            lzvm_prover::ProofArtifactInputs {
                 proof_values: &request.auxiliary_inputs.proof_values,
                 group_values: &request.auxiliary_inputs.group_values,
                 unit_values: request.unit_values,

@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use lzvm_artifacts::constant_tree::expected_constant_tree_byte_count;
 use lzvm_artifacts::constraint_program::{
     ConstraintEntry, ConstraintProgram, GlobalConstraintProgram,
 };
@@ -35,7 +36,7 @@ use lzvm_artifacts::pcs_query_segment::{
     encode_pcs_query_plan_segment, parse_pcs_query_plan_segment, PcsQueryPlanSegment,
     PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
 };
-use lzvm_artifacts::proof::ProofSegment;
+use lzvm_artifacts::proof::{encode_proof_artifact, parse_proof_artifact, ProofSegment};
 use lzvm_artifacts::public_values::{encode_public_values, PublicValueEntry, PublicValues};
 use lzvm_artifacts::setup_info::{EvaluationMapEntry, FriStep, StarkStruct, UnitSetupInfo};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
@@ -649,6 +650,53 @@ fn runs_witness_and_commits_stages_from_execution_plan() {
     assert_eq!(output.trace_row_count(), 16);
     assert_eq!(output.trace_column_count(), 5);
     assert_eq!(output.stage_commitments(), &expected);
+}
+
+#[test]
+fn builds_witness_proof_artifact_in_prover() {
+    let dir = temp_dir("proof-artifact");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
+        .expect("constant tree should be written");
+    let catalog = sample_catalog(unit);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let witness = run_prove_witness_commitments(&plan, 0).expect("witness should run");
+    let public_values_hash = [13_u8; 32];
+
+    let proof = lzvm_prover::build_witness_proof_core_artifact(
+        &catalog,
+        &plan.run_plan.schedule,
+        public_values_hash,
+        &[&witness],
+    )
+    .expect("proof artifact should build");
+    let proof = parse_proof_artifact(&encode_proof_artifact(&proof).expect("proof should encode"))
+        .expect("proof should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(proof.setup_hash, plan.run_plan.schedule.setup_hash);
+    assert_eq!(proof.public_values_hash, public_values_hash);
+    assert!(!proof.segments.is_empty());
 }
 
 #[test]
