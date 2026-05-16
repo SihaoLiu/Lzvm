@@ -109,6 +109,9 @@ version = "0.1.0"
 [[package]]
 name = "lzvm-pil"
 version = "0.1.0"
+dependencies = [
+ "lzvm-artifacts",
+]
 
 [[package]]
 name = "lzvm-prover"

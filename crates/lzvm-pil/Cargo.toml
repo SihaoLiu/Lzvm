@@ -10,4 +10,4 @@ name = "lzvm_pil"
 path = "src/lib.rs"
 
 [dependencies]
-
+lzvm-artifacts = { path = "../lzvm-artifacts" }

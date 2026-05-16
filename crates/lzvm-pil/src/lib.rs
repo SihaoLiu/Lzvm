@@ -20,5 +20,6 @@ pub use source_graph::{
     SourceGraphLoader,
 };
 pub use source_program::{
-    SourceProgram, SourceProgramError, SourceProgramLoader, SourceProgramModule,
+    SourceProgram, SourceProgramArchiveLoadError, SourceProgramArchiveLoader, SourceProgramError,
+    SourceProgramLoader, SourceProgramModule,
 };

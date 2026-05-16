@@ -76,7 +76,7 @@ fn parse_args(args: &[&str]) -> Result<ParsedArgs, ParseError> {
     })
 }
 
-fn write_summary(stdout: &mut dyn Write, program: &SourceProgram) {
+pub(crate) fn write_summary(stdout: &mut dyn Write, program: &SourceProgram) {
     let mut includes = 0;
     let mut uses = 0;
     let mut containers = 0;
