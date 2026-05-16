@@ -1,6 +1,6 @@
 use std::fmt;
 
-pub const CHALLENGE_VALUES_SEGMENT_ID: u32 = 10_009;
+pub const CHALLENGE_VALUES_SEGMENT_ID: u32 = 10_012;
 
 const CHALLENGE_VALUES_MAGIC: [u8; 4] = *b"cvs0";
 const CHALLENGE_VALUES_VERSION: u32 = 1;
