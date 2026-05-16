@@ -51,6 +51,7 @@ use lzvm_artifacts::pcs_proof_values_segment::{
     PCS_PROOF_VALUES_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_query_segment::{parse_pcs_query_plan_segment, PCS_QUERY_PLAN_SEGMENT_ID};
+use lzvm_artifacts::program_image::ProgramImageGpuMode;
 use lzvm_artifacts::proof::{
     encode_proof_artifact, parse_proof_artifact, ProofArtifact, ProofSegment,
 };
@@ -96,7 +97,10 @@ use lzvm_prover::{
     ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest, ProveRunOptions,
     ProveRunRequest,
 };
-use lzvm_setup::summarize_setup_directory;
+use lzvm_setup::{
+    summarize_setup_directory, write_program_image_commitment_cache_file,
+    ProgramImageCommitmentCacheFileRequest,
+};
 
 fn sample_expression_program() -> ExpressionProgram {
     ExpressionProgram {
@@ -4373,6 +4377,76 @@ fn rejects_prove_witness_proof_output_with_mismatched_public_inputs() {
 }
 
 #[test]
+fn rejects_prove_witness_with_mismatched_program_image_cache_source_digest() {
+    let dir = temp_dir("prove-witness-program-image-cache-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let cache_guest_image = dir.join("cache-guest.elf");
+    let program_path = dir.join("program.bin");
+    let constraint_digest_path = dir.join("constraint.digest");
+    let root_path = dir.join("root.bin");
+    let cache_path = dir.join("program_image.cache");
+    let guest_image_bytes = sample_guest_image();
+    let mut cache_guest_image_bytes = sample_guest_image();
+    cache_guest_image_bytes[63] = 1;
+    write_bytes(&guest_image, guest_image_bytes);
+    write_bytes(&cache_guest_image, cache_guest_image_bytes);
+    write_bytes(&program_path, b"packed-program");
+    write_bytes(&constraint_digest_path, [0x44_u8; 32]);
+    write_bytes(
+        &root_path,
+        encode_verification_key_binary(&VerificationKeyRoot::FieldElements(vec![11, 12, 13, 14]))
+            .expect("root should encode"),
+    );
+    write_program_image_commitment_cache_file(ProgramImageCommitmentCacheFileRequest {
+        program_path: &program_path,
+        guest_image_path: &cache_guest_image,
+        constraint_digest_path: &constraint_digest_path,
+        root_path: &root_path,
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cpu,
+        output_path: &cache_path,
+    })
+    .expect("cache should write");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        format!(
+            "prove witness failed: program image cache guest image digest mismatch at {}\n",
+            cache_path.display()
+        )
+    );
+}
+
+#[test]
 fn rejects_prove_inputs_with_invalid_guest_image() {
     let dir = temp_dir("prove-inputs-invalid-guest");
     let _ = fs::remove_dir_all(&dir);
@@ -5716,6 +5790,20 @@ fn reports_usage_for_missing_prove_input_paths() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "usage: lzvm prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>\n"
+    );
+}
+
+#[test]
+fn reports_usage_for_missing_prove_witness_paths() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(&["prove", "witness"], &mut stdout, &mut stderr);
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>\n"
     );
 }
 

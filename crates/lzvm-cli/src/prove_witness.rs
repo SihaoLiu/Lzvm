@@ -39,6 +39,9 @@ use lzvm_prover::{
     ProveWitnessCommitments, ProveWitnessTraceCommitments,
 };
 
+use crate::program_image_cache::{
+    read_requested_program_image_cache_summary, write_program_image_cache_summary,
+};
 use crate::prove_plan::{parse_run_args, write_run_plan_summary, ParseError, ParsedRunArgs};
 
 pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -62,6 +65,16 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     let inputs = parsed_inputs(&parsed.run_args);
     let plan = match derive_prove_execution_plan(&catalog, parsed.run_args.request, inputs) {
         Ok(plan) => plan,
+        Err(error) => {
+            let _ = writeln!(stderr, "prove witness failed: {error}");
+            return 1;
+        }
+    };
+    let cache_summary = match read_requested_program_image_cache_summary(
+        parsed.run_args.program_image_cache.as_deref(),
+        plan.guest_image_info.digest,
+    ) {
+        Ok(summary) => summary,
         Err(error) => {
             let _ = writeln!(stderr, "prove witness failed: {error}");
             return 1;
@@ -183,6 +196,9 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
 
         write_run_plan_summary(stdout, &plan.run_plan);
+        if let Some(summary) = &cache_summary {
+            write_program_image_cache_summary(stdout, summary);
+        }
         for output in &outputs {
             write_witness_output_summary(stdout, output.commitments());
         }
@@ -250,6 +266,9 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     }
 
     write_run_plan_summary(stdout, &plan.run_plan);
+    if let Some(summary) = &cache_summary {
+        write_program_image_cache_summary(stdout, summary);
+    }
     write_witness_output_summary(stdout, commitments);
     0
 }
@@ -1286,7 +1305,7 @@ fn write_output_file(path: &Path, value: &[u8]) -> Result<(), String> {
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]"
+        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>"
     );
     2
 }

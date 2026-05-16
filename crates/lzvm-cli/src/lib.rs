@@ -10,6 +10,7 @@ use lzvm_setup::{
     summarize_setup_directory, FixedExtensionBackend, ProgramImageCommitmentCacheFileRequest,
 };
 
+mod program_image_cache;
 mod prove_inputs;
 mod prove_plan;
 mod prove_witness;
