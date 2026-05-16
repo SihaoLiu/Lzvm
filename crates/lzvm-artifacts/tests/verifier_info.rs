@@ -5,6 +5,8 @@ use lzvm_artifacts::verifier_info::{
 use std::fs;
 use std::path::PathBuf;
 
+mod fixtures;
+
 fn sample_verifier_info_json() -> &'static str {
     r#"{
         "qVerifier": {
@@ -108,7 +110,7 @@ fn rejects_empty_verifier_code_blocks() {
 
 #[test]
 fn reads_verifier_info_from_a_file_path() {
-    let info = parse_verifier_info_json(sample_verifier_info_json()).expect("fixture should parse");
+    let info = fixtures::sample_verifier_info_fixture();
     let bytes = encode_verifier_info(&info).expect("fixture should encode");
     let path = temp_file_path("verifier.generic.bin");
     fs::write(&path, bytes).expect("fixture should be written");
@@ -122,7 +124,7 @@ fn reads_verifier_info_from_a_file_path() {
 #[test]
 fn rejects_text_verifier_info_from_a_file_path() {
     let path = temp_file_path("verifier.json");
-    fs::write(&path, sample_verifier_info_json()).expect("fixture should be written");
+    fs::write(&path, "not a binary file").expect("fixture should be written");
 
     let error = read_verifier_info_file(&path).expect_err("text metadata should be rejected");
     fs::remove_file(&path).expect("fixture should be removed");
@@ -132,7 +134,7 @@ fn rejects_text_verifier_info_from_a_file_path() {
 
 #[test]
 fn encodes_and_parses_verifier_info_binary() {
-    let info = parse_verifier_info_json(sample_verifier_info_json()).expect("fixture should parse");
+    let info = fixtures::sample_verifier_info_fixture();
     let bytes = encode_verifier_info(&info).expect("fixture should encode");
 
     let parsed = parse_verifier_info(&bytes).expect("binary fixture should parse");
@@ -142,7 +144,7 @@ fn encodes_and_parses_verifier_info_binary() {
 
 #[test]
 fn encodes_the_current_verifier_info_format_version() {
-    let info = parse_verifier_info_json(sample_verifier_info_json()).expect("fixture should parse");
+    let info = fixtures::sample_verifier_info_fixture();
     let bytes = encode_verifier_info(&info).expect("fixture should encode");
     let version = u32::from_le_bytes(bytes[4..8].try_into().expect("slice length checked"));
 
@@ -151,7 +153,7 @@ fn encodes_the_current_verifier_info_format_version() {
 
 #[test]
 fn rejects_stale_verifier_info_format_headers() {
-    let info = parse_verifier_info_json(sample_verifier_info_json()).expect("fixture should parse");
+    let info = fixtures::sample_verifier_info_fixture();
     let mut bytes = encode_verifier_info(&info).expect("fixture should encode");
     bytes[4..8].copy_from_slice(&1_u32.to_le_bytes());
 
@@ -165,7 +167,7 @@ fn rejects_stale_verifier_info_format_headers() {
 
 #[test]
 fn reads_verifier_info_binary_from_a_file_path() {
-    let info = parse_verifier_info_json(sample_verifier_info_json()).expect("fixture should parse");
+    let info = fixtures::sample_verifier_info_fixture();
     let bytes = encode_verifier_info(&info).expect("fixture should encode");
     let path = temp_file_path("verifier.bin");
     fs::write(&path, bytes).expect("fixture should be written");

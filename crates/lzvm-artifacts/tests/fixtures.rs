@@ -3,8 +3,9 @@
 use std::collections::BTreeMap;
 
 use lzvm_artifacts::expression_info::{
-    BoundaryKind, ConstraintCode, ExpressionCode, ExpressionInfo, HintFieldInfo, HintInfo,
-    HintPayload, HintValueInfo,
+    BoundaryKind, CodeDestination, CodeOperand, CodeOperation, ConstraintCode, ExpressionCode,
+    ExpressionDestination, ExpressionInfo, HintFieldInfo, HintInfo, HintPayload, HintValueInfo,
+    OperationKind,
 };
 use lzvm_artifacts::global_info::{
     AggregationType, CurveKind, GlobalAir, GlobalInfo, NamedStageValue, PublicValue,
@@ -242,6 +243,107 @@ pub fn sample_global_info_fixture() -> GlobalInfo {
             },
         ],
         transcript_arity: 4,
+    }
+}
+
+pub fn sample_expression_info_fixture() -> ExpressionInfo {
+    ExpressionInfo {
+        hints: vec![HintInfo {
+            name: "hint-a".to_owned(),
+            fields: vec![HintFieldInfo {
+                name: "field-a".to_owned(),
+                values: vec![
+                    HintValueInfo {
+                        positions: vec![0],
+                        payload: HintPayload::number(7),
+                    },
+                    HintValueInfo {
+                        positions: Vec::new(),
+                        payload: HintPayload::string("tag"),
+                    },
+                    HintValueInfo {
+                        positions: vec![1, 2],
+                        payload: HintPayload::temporary(3, Some(1)),
+                    },
+                ],
+            }],
+        }],
+        expressions: vec![ExpressionCode {
+            expression_id: 4,
+            stage: 1,
+            line: "expr-a".to_owned(),
+            temporary_count: 2,
+            destination: Some(ExpressionDestination::commitment(8, Some(1), Some(0))),
+            operations: vec![
+                CodeOperation {
+                    op: OperationKind::Add,
+                    destination: CodeDestination::temporary(0, 1),
+                    sources: vec![CodeOperand::number(3, 1), CodeOperand::public(0, 1)],
+                },
+                CodeOperation {
+                    op: OperationKind::Copy,
+                    destination: CodeDestination::temporary(1, 1),
+                    sources: vec![CodeOperand::temporary(0, 1)],
+                },
+            ],
+        }],
+        constraints: vec![ConstraintCode {
+            stage: 2,
+            boundary: BoundaryKind::EveryFrame,
+            offset_min: Some(-1),
+            offset_max: Some(2),
+            line: "constraint-a".to_owned(),
+            intermediate: true,
+            temporary_count: 1,
+            operations: vec![CodeOperation {
+                op: OperationKind::Mul,
+                destination: CodeDestination::temporary(0, 3),
+                sources: vec![
+                    CodeOperand::challenge(0, Some(1), Some(0), 3),
+                    CodeOperand::commitment_at(2, Some(0), 3),
+                ],
+            }],
+        }],
+    }
+}
+
+pub fn sample_verifier_info_fixture() -> VerifierInfo {
+    VerifierInfo {
+        quotient: VerifierCode {
+            expression_id: None,
+            stage: None,
+            line: String::new(),
+            temporary_count: 2,
+            operations: vec![
+                VerifierOperation {
+                    op: VerifierOperationKind::Mul,
+                    destination: VerifierDestination::temporary(0, 3),
+                    sources: vec![
+                        VerifierOperand::challenge(0, Some(1), Some(0), 3),
+                        VerifierOperand::evaluation(2, 3),
+                    ],
+                },
+                VerifierOperation {
+                    op: VerifierOperationKind::Copy,
+                    destination: VerifierDestination::temporary(1, 3),
+                    sources: vec![VerifierOperand::temporary(0, 3)],
+                },
+            ],
+        },
+        query: VerifierCode {
+            expression_id: Some(9),
+            stage: Some(3),
+            line: "query-a".to_owned(),
+            temporary_count: 1,
+            operations: vec![VerifierOperation {
+                op: VerifierOperationKind::Add,
+                destination: VerifierDestination::temporary(0, 3),
+                sources: vec![
+                    VerifierOperand::boundary_zerofier(0, 1),
+                    VerifierOperand::proof_value(1, 3),
+                ],
+            }],
+        },
     }
 }
 

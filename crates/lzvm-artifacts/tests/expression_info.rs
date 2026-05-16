@@ -6,6 +6,8 @@ use lzvm_artifacts::expression_info::{
 use std::fs;
 use std::path::PathBuf;
 
+mod fixtures;
+
 fn sample_expression_info_json() -> &'static str {
     r#"{
         "hintsInfo": [
@@ -318,8 +320,7 @@ fn rejects_frame_boundaries_without_offsets() {
 
 #[test]
 fn reads_expression_info_from_a_file_path() {
-    let info =
-        parse_expression_info_json(sample_expression_info_json()).expect("fixture should parse");
+    let info = fixtures::sample_expression_info_fixture();
     let bytes = encode_expression_info(&info).expect("fixture should encode");
     let path = temp_file_path("expressions.generic.bin");
     fs::write(&path, bytes).expect("fixture should be written");
@@ -333,7 +334,7 @@ fn reads_expression_info_from_a_file_path() {
 #[test]
 fn rejects_text_expression_info_from_a_file_path() {
     let path = temp_file_path("expressions.json");
-    fs::write(&path, sample_expression_info_json()).expect("fixture should be written");
+    fs::write(&path, "not a binary file").expect("fixture should be written");
 
     let error = read_expression_info_file(&path).expect_err("text metadata should be rejected");
     fs::remove_file(&path).expect("fixture should be removed");
@@ -343,8 +344,7 @@ fn rejects_text_expression_info_from_a_file_path() {
 
 #[test]
 fn encodes_and_parses_expression_info_binary() {
-    let info =
-        parse_expression_info_json(sample_expression_info_json()).expect("fixture should parse");
+    let info = fixtures::sample_expression_info_fixture();
     let bytes = encode_expression_info(&info).expect("fixture should encode");
 
     let parsed = parse_expression_info(&bytes).expect("binary fixture should parse");
@@ -354,8 +354,7 @@ fn encodes_and_parses_expression_info_binary() {
 
 #[test]
 fn encodes_the_current_expression_info_format_version() {
-    let info =
-        parse_expression_info_json(sample_expression_info_json()).expect("fixture should parse");
+    let info = fixtures::sample_expression_info_fixture();
     let bytes = encode_expression_info(&info).expect("fixture should encode");
     let version = u32::from_le_bytes(bytes[4..8].try_into().expect("slice length checked"));
 
@@ -364,8 +363,7 @@ fn encodes_the_current_expression_info_format_version() {
 
 #[test]
 fn rejects_stale_expression_info_format_headers() {
-    let info =
-        parse_expression_info_json(sample_expression_info_json()).expect("fixture should parse");
+    let info = fixtures::sample_expression_info_fixture();
     let mut bytes = encode_expression_info(&info).expect("fixture should encode");
     bytes[4..8].copy_from_slice(&4_u32.to_le_bytes());
 
@@ -379,8 +377,7 @@ fn rejects_stale_expression_info_format_headers() {
 
 #[test]
 fn reads_expression_info_binary_from_a_file_path() {
-    let info =
-        parse_expression_info_json(sample_expression_info_json()).expect("fixture should parse");
+    let info = fixtures::sample_expression_info_fixture();
     let bytes = encode_expression_info(&info).expect("fixture should encode");
     let path = temp_file_path("expressions.bin");
     fs::write(&path, bytes).expect("fixture should be written");
