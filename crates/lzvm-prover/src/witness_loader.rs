@@ -51,6 +51,10 @@ impl WitnessTraceBuffers {
         &self.output
     }
 
+    pub fn output_mut(&mut self) -> &mut [u8] {
+        &mut self.output
+    }
+
     fn as_call(&mut self) -> WitnessCall {
         WitnessCall {
             input_ptr: self.input.as_ptr(),
@@ -64,6 +68,13 @@ impl WitnessTraceBuffers {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WitnessTraceOutput {
     pub produced_len: usize,
+}
+
+pub trait WitnessBackend {
+    fn compute(
+        &self,
+        buffers: &mut WitnessTraceBuffers,
+    ) -> Result<WitnessTraceOutput, WitnessCallError>;
 }
 
 pub struct LoadedWitnessLibrary {
@@ -110,6 +121,15 @@ impl LoadedWitnessLibrary {
         result: &mut WitnessResult,
     ) -> c_int {
         (self.compute)(call as *const WitnessCall, result as *mut WitnessResult)
+    }
+}
+
+impl WitnessBackend for LoadedWitnessLibrary {
+    fn compute(
+        &self,
+        buffers: &mut WitnessTraceBuffers,
+    ) -> Result<WitnessTraceOutput, WitnessCallError> {
+        LoadedWitnessLibrary::compute(self, buffers)
     }
 }
 

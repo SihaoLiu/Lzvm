@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use lzvm_field::{Felt, MODULUS};
-use lzvm_prover::witness_loader::load_witness_library;
+use lzvm_prover::witness_loader::{
+    load_witness_library, WitnessBackend, WitnessCallError, WitnessTraceBuffers, WitnessTraceOutput,
+};
 use lzvm_prover::witness_runner::{run_witness_trace, WitnessTraceRequest, WitnessTraceRunError};
 use lzvm_prover::witness_trace::WitnessTraceError;
 
@@ -26,6 +28,25 @@ fn build_shared_library(dir: &Path, name: &str, source: &str) -> PathBuf {
         .expect("cc should run");
     assert!(status.success(), "cc should build the fixture library");
     library_path
+}
+
+struct NativeBackend;
+
+impl WitnessBackend for NativeBackend {
+    fn compute(
+        &self,
+        buffers: &mut WitnessTraceBuffers,
+    ) -> Result<WitnessTraceOutput, WitnessCallError> {
+        if buffers.input().len() < 2 || buffers.output().len() < 16 {
+            return Err(WitnessCallError::NativeReturn { code: -1 });
+        }
+        let first = buffers.input()[0];
+        let second = buffers.input()[1];
+        let output = buffers.output_mut();
+        output[0..8].copy_from_slice(&(u64::from(first) + 1).to_le_bytes());
+        output[8..16].copy_from_slice(&(u64::from(second) + 1).to_le_bytes());
+        Ok(WitnessTraceOutput { produced_len: 16 })
+    }
 }
 
 #[test]
@@ -76,6 +97,30 @@ int lzvm_witness_compute(const LzvmWitnessCall *call, LzvmWitnessResult *result)
     )
     .expect("witness trace should run and parse");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 1);
+    assert_eq!(trace.column_count(), 2);
+    assert_eq!(
+        trace.value(0, 0),
+        Some(Felt::from_canonical(7).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(0, 1),
+        Some(Felt::from_canonical(9).expect("canonical"))
+    );
+}
+
+#[test]
+fn runs_witness_trace_with_native_backend() {
+    let trace = run_witness_trace(
+        &NativeBackend,
+        WitnessTraceRequest {
+            input: vec![6, 8],
+            rows: 1,
+            columns: 2,
+        },
+    )
+    .expect("witness trace should run and parse");
 
     assert_eq!(trace.row_count(), 1);
     assert_eq!(trace.column_count(), 2);
