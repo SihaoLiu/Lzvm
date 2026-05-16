@@ -50,6 +50,13 @@ pub(crate) struct ParsedRunArgs {
     pub program_image_cache: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PassSelection {
+    Full,
+    Contributions,
+    Internal { contribution_count: usize },
+}
+
 pub(crate) fn read_checked_setup_catalog(path: &Path) -> Result<KeyDirectoryCatalog, String> {
     let catalog = read_key_directory_catalog(path).map_err(|error| error.to_string())?;
     validate_setup_directory_manifest_if_present(path, &catalog)
@@ -85,6 +92,8 @@ pub(crate) fn parse_run_args(
     let mut gpu = GpuRunOptions::default();
     let mut input_data = None;
     let mut program_image_cache = None;
+    let mut pass_selection = None;
+    let mut partition_option_used = false;
     let mut partition_count = 1_usize;
     let mut partition_ids = vec![0_u32];
     let mut worker_index = 0_usize;
@@ -101,6 +110,17 @@ pub(crate) fn parse_run_args(
             "--minimal-memory" => minimal_memory = true,
             "--gpu-preallocate" => gpu.preallocate = true,
             "--no-pack-trace" => gpu.pack_trace = false,
+            "--contributions" => {
+                set_pass_selection(&mut pass_selection, PassSelection::Contributions)?;
+            }
+            "--internal-contributions" => {
+                index += 1;
+                let contribution_count = parse_usize(args.get(index), "--internal-contributions")?;
+                set_pass_selection(
+                    &mut pass_selection,
+                    PassSelection::Internal { contribution_count },
+                )?;
+            }
             "--gpu-streams" => {
                 index += 1;
                 gpu.max_streams = parse_usize(args.get(index), "--gpu-streams")?;
@@ -115,18 +135,22 @@ pub(crate) fn parse_run_args(
             }
             "--partitions" => {
                 index += 1;
+                partition_option_used = true;
                 partition_count = parse_usize(args.get(index), "--partitions")?;
             }
             "--partition-ids" => {
                 index += 1;
+                partition_option_used = true;
                 partition_ids = parse_partition_ids(args.get(index))?;
             }
             "--worker" => {
                 index += 1;
+                partition_option_used = true;
                 worker_index = parse_usize(args.get(index), "--worker")?;
             }
             "--input-data" => {
                 index += 1;
+                partition_option_used = true;
                 input_data = Some(PathBuf::from(
                     args.get(index)
                         .ok_or(ParseError::Invalid("missing --input-data value".to_owned()))?,
@@ -164,18 +188,46 @@ pub(crate) fn parse_run_args(
         minimal_memory,
         output_dir,
     };
-    let pass = ProvePassRequest::Full(ProvePartitionPlan {
-        input_data,
-        partition_count,
-        partition_ids,
-        worker_index,
-    });
+    let pass = match pass_selection.unwrap_or(PassSelection::Full) {
+        PassSelection::Full => ProvePassRequest::Full(ProvePartitionPlan {
+            input_data,
+            partition_count,
+            partition_ids,
+            worker_index,
+        }),
+        PassSelection::Contributions => ProvePassRequest::Contributions(ProvePartitionPlan {
+            input_data,
+            partition_count,
+            partition_ids,
+            worker_index,
+        }),
+        PassSelection::Internal { contribution_count } => {
+            if partition_option_used {
+                return Err(ParseError::Invalid(
+                    "partition options require a partitioned prove pass".to_owned(),
+                ));
+            }
+            ProvePassRequest::Internal { contribution_count }
+        }
+    };
 
     Ok(ParsedRunArgs {
         positionals,
         request: ProveRunRequest { pass, options, gpu },
         program_image_cache,
     })
+}
+
+fn set_pass_selection(
+    current: &mut Option<PassSelection>,
+    selected: PassSelection,
+) -> Result<(), ParseError> {
+    if current.replace(selected).is_some() {
+        return Err(ParseError::Invalid(
+            "multiple prove pass options are not supported".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 fn parse_usize(value: Option<&&str>, option: &str) -> Result<usize, ParseError> {
@@ -259,6 +311,8 @@ pub(crate) fn write_run_plan_summary(stdout: &mut dyn Write, plan: &ProveRunPlan
                 .map(|path| path.display().to_string())
                 .unwrap_or_else(|| "none".to_owned())
         );
+    } else if let ProvePassRequest::Internal { contribution_count } = &plan.pass {
+        let _ = writeln!(stdout, "contribution_count={contribution_count}");
     }
     let _ = writeln!(stdout, "aggregate={}", plan.options.aggregate);
     let _ = writeln!(
@@ -300,7 +354,7 @@ pub(crate) fn format_hash(hash: &[u8; 32]) -> String {
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm prove plan [options] <setup-dir> <output-dir>"
+        "usage: lzvm prove plan [options] <setup-dir> <output-dir>\n  --contributions\n  --internal-contributions <count>"
     );
     2
 }
@@ -308,6 +362,7 @@ fn write_usage(stderr: &mut dyn Write) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lzvm_prover::ProveSchedule;
 
     #[test]
     fn parses_program_image_cache_option_for_run_args() {
@@ -339,5 +394,126 @@ mod tests {
             Err(ParseError::Invalid(message))
                 if message == "missing --program-image-cache value"
         ));
+    }
+
+    #[test]
+    fn parses_contribution_pass_for_run_args() {
+        let parsed = parse_run_args(
+            &[
+                "--contributions",
+                "--partitions",
+                "4",
+                "--partition-ids",
+                "1,3",
+                "--worker",
+                "2",
+                "--input-data",
+                "input.bin",
+                "setup-dir",
+                "out-dir",
+            ],
+            2,
+            2,
+        )
+        .expect("run args should parse");
+
+        match parsed.request.pass {
+            ProvePassRequest::Contributions(partitions) => {
+                assert_eq!(partitions.input_data, Some(PathBuf::from("input.bin")));
+                assert_eq!(partitions.partition_count, 4);
+                assert_eq!(partitions.partition_ids, vec![1, 3]);
+                assert_eq!(partitions.worker_index, 2);
+            }
+            _ => panic!("expected contributions pass"),
+        }
+    }
+
+    #[test]
+    fn parses_internal_pass_for_run_args() {
+        let parsed = parse_run_args(
+            &["--internal-contributions", "3", "setup-dir", "out-dir"],
+            2,
+            2,
+        )
+        .expect("run args should parse");
+
+        assert!(matches!(
+            parsed.request.pass,
+            ProvePassRequest::Internal {
+                contribution_count: 3
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_partition_options_for_internal_pass() {
+        let result = parse_run_args(
+            &[
+                "--internal-contributions",
+                "3",
+                "--input-data",
+                "input.bin",
+                "setup-dir",
+                "out-dir",
+            ],
+            2,
+            2,
+        );
+
+        assert!(matches!(
+            result,
+            Err(ParseError::Invalid(message))
+                if message == "partition options require a partitioned prove pass"
+        ));
+    }
+
+    #[test]
+    fn rejects_multiple_pass_options() {
+        let result = parse_run_args(
+            &[
+                "--contributions",
+                "--internal-contributions",
+                "3",
+                "setup-dir",
+                "out-dir",
+            ],
+            2,
+            2,
+        );
+
+        assert!(matches!(
+            result,
+            Err(ParseError::Invalid(message))
+                if message == "multiple prove pass options are not supported"
+        ));
+    }
+
+    #[test]
+    fn writes_internal_run_plan_summary() {
+        let plan = ProveRunPlan {
+            schedule: ProveSchedule {
+                setup_hash: [7; 32],
+                unit_count: 2,
+                total_fixed_bytes: 16,
+                total_pcs_material_bytes: 32,
+                pcs_material_unit_count: 2,
+                total_query_count: 9,
+                max_extended_domain_bits: 12,
+                units: Vec::new(),
+            },
+            pass: ProvePassRequest::Internal {
+                contribution_count: 3,
+            },
+            options: ProveRunOptions::default_for_output(PathBuf::from("out-dir")),
+            gpu: GpuRunOptions::default(),
+        };
+        let mut stdout = Vec::new();
+
+        write_run_plan_summary(&mut stdout, &plan);
+        let text = String::from_utf8(stdout).expect("summary should be utf-8");
+
+        assert!(text.contains("pass=internal\n"));
+        assert!(text.contains("contribution_count=3\n"));
+        assert!(!text.contains("partitions="));
     }
 }

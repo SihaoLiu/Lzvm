@@ -7060,7 +7060,7 @@ fn reports_usage_for_missing_prove_plan_paths() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm prove plan [options] <setup-dir> <output-dir>\n"
+        "usage: lzvm prove plan [options] <setup-dir> <output-dir>\n  --contributions\n  --internal-contributions <count>\n"
     );
 }
 
