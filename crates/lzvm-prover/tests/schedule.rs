@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::constraint_program::{ConstraintProgram, GlobalConstraintProgram};
 use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::ExpressionProgram;
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
-use lzvm_artifacts::guest_image::GuestImageError;
+use lzvm_artifacts::guest_image::{read_guest_image_file, GuestImageError};
 use lzvm_artifacts::hint_program::HintProgram;
 use lzvm_artifacts::key_directory::{
     KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry, KeyUnitKind, KeyUnitPaths,
@@ -14,6 +14,9 @@ use lzvm_artifacts::key_directory::{
 use lzvm_artifacts::metadata_bundle::UnitMetadataBundle;
 use lzvm_artifacts::pcs_material::PcsSetupMaterial;
 use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
+use lzvm_artifacts::program_image::{
+    encode_program_image_commitment_cache, ProgramImageCommitmentCache, ProgramImageGpuMode,
+};
 use lzvm_artifacts::setup_info::{
     CommitmentColumn, EvaluationMapEntry, FriStep, StageValue, StarkStruct, UnitSetupInfo,
 };
@@ -21,9 +24,10 @@ use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
 use lzvm_artifacts::witness_library::WitnessLibraryError;
 use lzvm_prover::{
-    derive_prove_execution_plan, derive_prove_run_plan, derive_prove_schedule, GpuRunOptions,
-    ProveExecutionInputArtifacts, ProveExecutionPlanError, ProvePartitionPlan, ProvePassKind,
-    ProvePassRequest, ProveRunOptions, ProveRunPlanError, ProveRunRequest, ProveScheduleError,
+    derive_prove_execution_plan, derive_prove_execution_plan_with_program_image_cache,
+    derive_prove_run_plan, derive_prove_schedule, GpuRunOptions, ProveExecutionInputArtifacts,
+    ProveExecutionPlanError, ProvePartitionPlan, ProvePassKind, ProvePassRequest, ProveRunOptions,
+    ProveRunPlanError, ProveRunRequest, ProveScheduleError,
 };
 
 fn sample_setup(n_bits: u32, n_bits_ext: u32, query_count: u32) -> UnitSetupInfo {
@@ -261,6 +265,25 @@ fn sample_witness_library() -> Vec<u8> {
     bytes[32..40].copy_from_slice(&64_u64.to_le_bytes());
     bytes[52..54].copy_from_slice(&64_u16.to_le_bytes());
     bytes
+}
+
+fn write_program_image_cache(path: &Path, source_image_digest: [u8; 32]) {
+    let cache = ProgramImageCommitmentCache {
+        program_digest: [0x11; 32],
+        source_image_digest,
+        constraint_system_digest: [0x22; 32],
+        tree_root: [3, 4, 5, 6],
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cuda,
+    };
+    fs::write(
+        path,
+        encode_program_image_commitment_cache(&cache).expect("cache should encode"),
+    )
+    .expect("cache should be written");
 }
 
 fn sample_pcs_material(seed: u8) -> PcsSetupMaterial {
@@ -536,6 +559,112 @@ fn derives_prove_execution_plan_with_input_artifacts() {
         expected_expression_program
     );
     assert_eq!(plan.units[0].fri_expression_id, Some(42));
+}
+
+#[test]
+fn derives_prove_execution_plan_with_program_image_cache() {
+    let dir = temp_dir("execution-plan-program-image-cache");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let public_inputs = dir.join("public.bin");
+    let cache_path = dir.join("program-image-cache.bin");
+    fs::write(&witness_library, sample_witness_library())
+        .expect("witness library should be written");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&public_inputs, [3_u8]).expect("public inputs should be written");
+    let guest_digest = read_guest_image_file(&guest_image)
+        .expect("guest image should parse")
+        .digest;
+    write_program_image_cache(&cache_path, guest_digest);
+
+    let catalog = sample_catalog(vec![sample_unit_with_pcs_material(
+        KeyUnitKind::Basic,
+        0,
+        64,
+    )]);
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
+        options: ProveRunOptions::default_for_output(dir.join("out")),
+        gpu: GpuRunOptions::default(),
+    };
+    let inputs = ProveExecutionInputArtifacts {
+        witness_library,
+        guest_image,
+        public_inputs: Some(public_inputs),
+    };
+
+    let plan = derive_prove_execution_plan_with_program_image_cache(
+        &catalog,
+        request,
+        inputs,
+        Some(cache_path.clone()),
+    )
+    .expect("execution plan should derive");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let cache = plan
+        .program_image_cache
+        .as_ref()
+        .expect("program image cache should be present");
+    assert_eq!(cache.path, cache_path);
+    assert_eq!(cache.cache.source_image_digest, guest_digest);
+    assert_eq!(cache.cache.trace_row_count, 1024);
+    assert_eq!(cache.cache.trace_column_count, 17);
+    assert_eq!(cache.cache.blowup_factor, 8);
+    assert_eq!(cache.cache.merkle_tree_arity, 4);
+    assert_eq!(cache.cache.gpu_mode, ProgramImageGpuMode::Cuda);
+}
+
+#[test]
+fn rejects_prove_execution_plan_with_program_image_cache_guest_digest_mismatch() {
+    let dir = temp_dir("execution-plan-program-image-cache-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let public_inputs = dir.join("public.bin");
+    let cache_path = dir.join("program-image-cache.bin");
+    fs::write(&witness_library, sample_witness_library())
+        .expect("witness library should be written");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&public_inputs, [3_u8]).expect("public inputs should be written");
+    let mut guest_digest = read_guest_image_file(&guest_image)
+        .expect("guest image should parse")
+        .digest;
+    guest_digest[0] ^= 0xff;
+    write_program_image_cache(&cache_path, guest_digest);
+
+    let catalog = sample_catalog(vec![sample_unit_with_pcs_material(
+        KeyUnitKind::Basic,
+        0,
+        64,
+    )]);
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
+        options: ProveRunOptions::default_for_output(dir.join("out")),
+        gpu: GpuRunOptions::default(),
+    };
+    let inputs = ProveExecutionInputArtifacts {
+        witness_library,
+        guest_image,
+        public_inputs: Some(public_inputs),
+    };
+
+    let result = derive_prove_execution_plan_with_program_image_cache(
+        &catalog,
+        request,
+        inputs,
+        Some(cache_path.clone()),
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        result,
+        Err(ProveExecutionPlanError::ProgramImageCacheGuestImageDigestMismatch { path })
+            if path == cache_path
+    ));
 }
 
 #[test]

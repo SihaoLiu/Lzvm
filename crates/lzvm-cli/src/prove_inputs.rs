@@ -1,11 +1,11 @@
 use std::io::Write;
 
 use lzvm_artifacts::key_directory::read_key_directory_catalog;
-use lzvm_prover::{derive_prove_execution_plan, ProveExecutionInputArtifacts};
-
-use crate::program_image_cache::{
-    read_requested_program_image_cache_summary, write_program_image_cache_summary,
+use lzvm_prover::{
+    derive_prove_execution_plan_with_program_image_cache, ProveExecutionInputArtifacts,
 };
+
+use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{
     format_hash, parse_run_args, write_run_plan_summary, ParseError, ParsedRunArgs,
 };
@@ -29,19 +29,13 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     };
 
     let inputs = parsed_inputs(&parsed);
-    let plan = match derive_prove_execution_plan(&catalog, parsed.request, inputs) {
-        Ok(plan) => plan,
-        Err(error) => {
-            let _ = writeln!(stderr, "prove inputs failed: {error}");
-            return 1;
-        }
-    };
-
-    let cache_summary = match read_requested_program_image_cache_summary(
-        parsed.program_image_cache.as_deref(),
-        plan.guest_image_info.digest,
+    let plan = match derive_prove_execution_plan_with_program_image_cache(
+        &catalog,
+        parsed.request,
+        inputs,
+        parsed.program_image_cache.clone(),
     ) {
-        Ok(summary) => summary,
+        Ok(plan) => plan,
         Err(error) => {
             let _ = writeln!(stderr, "prove inputs failed: {error}");
             return 1;
@@ -95,7 +89,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "none".to_owned())
     );
-    if let Some(summary) = &cache_summary {
+    if let Some(summary) = &plan.program_image_cache {
         write_program_image_cache_summary(stdout, summary);
     }
     0

@@ -11,6 +11,10 @@ use lzvm_artifacts::key_directory::{
     KeyDirectoryError, KeyUnitKind,
 };
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
+use lzvm_artifacts::program_image::{
+    read_program_image_commitment_cache_file, ProgramImageCommitmentCache,
+    ProgramImageCommitmentCacheError,
+};
 use lzvm_artifacts::setup_info::{CommitmentColumn, EvaluationMapEntry, StageValue, UnitSetupInfo};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::witness_library::{
@@ -345,11 +349,18 @@ pub struct ProveExecutionInputArtifacts {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProveProgramImageCache {
+    pub path: PathBuf,
+    pub cache: ProgramImageCommitmentCache,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProveExecutionPlan {
     pub run_plan: ProveRunPlan,
     pub inputs: ProveExecutionInputArtifacts,
     pub witness_library_info: WitnessLibraryInfo,
     pub guest_image_info: GuestImageInfo,
+    pub program_image_cache: Option<ProveProgramImageCache>,
     pub units: Vec<ProveExecutionUnitArtifacts>,
 }
 
@@ -404,6 +415,19 @@ pub enum ProveExecutionPlanError {
     InvalidGuestImage {
         path: PathBuf,
         source: GuestImageError,
+    },
+    MissingProgramImageCache {
+        path: PathBuf,
+    },
+    ProgramImageCacheIsNotFile {
+        path: PathBuf,
+    },
+    InvalidProgramImageCache {
+        path: PathBuf,
+        source: ProgramImageCommitmentCacheError,
+    },
+    ProgramImageCacheGuestImageDigestMismatch {
+        path: PathBuf,
     },
     MissingPublicInputs {
         path: PathBuf,
@@ -463,6 +487,20 @@ impl fmt::Display for ProveExecutionPlanError {
                 "prove execution plan guest image is invalid: {}: {source}",
                 path.display()
             ),
+            Self::MissingProgramImageCache { path } => {
+                write!(f, "program image cache is missing: {}", path.display())
+            }
+            Self::ProgramImageCacheIsNotFile { path } => {
+                write!(f, "program image cache is not a file: {}", path.display())
+            }
+            Self::InvalidProgramImageCache { path, source } => {
+                write!(f, "program image cache failed at {}: {source}", path.display())
+            }
+            Self::ProgramImageCacheGuestImageDigestMismatch { path } => write!(
+                f,
+                "program image cache guest image digest mismatch at {}",
+                path.display()
+            ),
             Self::MissingPublicInputs { path } => {
                 write!(
                     f,
@@ -498,8 +536,12 @@ impl std::error::Error for ProveExecutionPlanError {
         match self {
             Self::InvalidWitnessLibrary { source, .. } => Some(source),
             Self::InvalidGuestImage { source, .. } => Some(source),
+            Self::InvalidProgramImageCache { source, .. } => Some(source),
             Self::RunPlan(error) => Some(error),
             Self::MissingPcsMaterial { .. }
+            | Self::MissingProgramImageCache { .. }
+            | Self::ProgramImageCacheIsNotFile { .. }
+            | Self::ProgramImageCacheGuestImageDigestMismatch { .. }
             | Self::FixedColumnCountTooLarge { .. }
             | Self::StageCountTooLarge { .. } => None,
             _ => None,
@@ -624,6 +666,15 @@ pub fn derive_prove_execution_plan(
     request: ProveRunRequest,
     inputs: ProveExecutionInputArtifacts,
 ) -> Result<ProveExecutionPlan, ProveExecutionPlanError> {
+    derive_prove_execution_plan_with_program_image_cache(catalog, request, inputs, None)
+}
+
+pub fn derive_prove_execution_plan_with_program_image_cache(
+    catalog: &KeyDirectoryCatalog,
+    request: ProveRunRequest,
+    inputs: ProveExecutionInputArtifacts,
+    program_image_cache: Option<PathBuf>,
+) -> Result<ProveExecutionPlan, ProveExecutionPlanError> {
     let run_plan = derive_prove_run_plan(catalog, request)?;
     validate_execution_pcs_material(&run_plan.schedule)?;
     validate_regular_file(
@@ -656,6 +707,10 @@ pub fn derive_prove_execution_plan(
             |path| ProveExecutionPlanError::PublicInputsIsNotFile { path },
         )?;
     }
+    let program_image_cache = match program_image_cache {
+        Some(path) => Some(load_program_image_cache(&path, &guest_image_info)?),
+        None => None,
+    };
 
     let units = derive_prove_execution_units(catalog)?;
 
@@ -664,7 +719,36 @@ pub fn derive_prove_execution_plan(
         inputs,
         witness_library_info,
         guest_image_info,
+        program_image_cache,
         units,
+    })
+}
+
+fn load_program_image_cache(
+    path: &Path,
+    guest_image_info: &GuestImageInfo,
+) -> Result<ProveProgramImageCache, ProveExecutionPlanError> {
+    validate_regular_file(
+        path,
+        |path| ProveExecutionPlanError::MissingProgramImageCache { path },
+        |path| ProveExecutionPlanError::ProgramImageCacheIsNotFile { path },
+    )?;
+    let cache = read_program_image_commitment_cache_file(path).map_err(|source| {
+        ProveExecutionPlanError::InvalidProgramImageCache {
+            path: path.to_path_buf(),
+            source,
+        }
+    })?;
+    if cache.source_image_digest != guest_image_info.digest {
+        return Err(
+            ProveExecutionPlanError::ProgramImageCacheGuestImageDigestMismatch {
+                path: path.to_path_buf(),
+            },
+        );
+    }
+    Ok(ProveProgramImageCache {
+        path: path.to_path_buf(),
+        cache,
     })
 }
 

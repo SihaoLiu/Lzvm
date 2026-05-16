@@ -32,16 +32,14 @@ use lzvm_prover::{
     build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_challenge, build_witness_commitment_segment,
     build_witness_opening_segment, build_witness_opening_segment_batch,
-    derive_prove_execution_plan, run_prove_witness_commitments_with_trace,
+    derive_prove_execution_plan_with_program_image_cache, run_prove_witness_commitments_with_trace,
     unit_values::build_unit_values_segment_from_packed_values, ProveExecutionInputArtifacts,
     ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePcsEvaluationValues,
     ProvePcsFriTranscriptTraceSegmentValues, ProveSchedule, ProveWitnessAuxiliaryInputs,
     ProveWitnessCommitments, ProveWitnessTraceCommitments,
 };
 
-use crate::program_image_cache::{
-    read_requested_program_image_cache_summary, write_program_image_cache_summary,
-};
+use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{parse_run_args, write_run_plan_summary, ParseError, ParsedRunArgs};
 
 pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -63,18 +61,13 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     };
 
     let inputs = parsed_inputs(&parsed.run_args);
-    let plan = match derive_prove_execution_plan(&catalog, parsed.run_args.request, inputs) {
-        Ok(plan) => plan,
-        Err(error) => {
-            let _ = writeln!(stderr, "prove witness failed: {error}");
-            return 1;
-        }
-    };
-    let cache_summary = match read_requested_program_image_cache_summary(
-        parsed.run_args.program_image_cache.as_deref(),
-        plan.guest_image_info.digest,
+    let plan = match derive_prove_execution_plan_with_program_image_cache(
+        &catalog,
+        parsed.run_args.request,
+        inputs,
+        parsed.run_args.program_image_cache.clone(),
     ) {
-        Ok(summary) => summary,
+        Ok(plan) => plan,
         Err(error) => {
             let _ = writeln!(stderr, "prove witness failed: {error}");
             return 1;
@@ -196,7 +189,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
 
         write_run_plan_summary(stdout, &plan.run_plan);
-        if let Some(summary) = &cache_summary {
+        if let Some(summary) = &plan.program_image_cache {
             write_program_image_cache_summary(stdout, summary);
         }
         for output in &outputs {
@@ -266,7 +259,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     }
 
     write_run_plan_summary(stdout, &plan.run_plan);
-    if let Some(summary) = &cache_summary {
+    if let Some(summary) = &plan.program_image_cache {
         write_program_image_cache_summary(stdout, summary);
     }
     write_witness_output_summary(stdout, commitments);
