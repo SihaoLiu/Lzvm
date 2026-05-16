@@ -9,6 +9,9 @@ use lzvm_artifacts::public_values::{public_values_digest, PublicValues};
 use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 use lzvm_field::{Ext3, Felt};
 
+use crate::contribution::{
+    build_contribution_segment, build_witness_contribution_input, derive_worker_contribution_entry,
+};
 use crate::group_values::build_group_values_segment;
 use crate::proof_values::build_pcs_proof_values_segment_from_packed_values;
 use crate::setup_preflight::validate_setup_preflight;
@@ -329,6 +332,17 @@ pub fn build_witness_proof_artifact_for_unit(
     if let Some(unit_values_segment) = unit_values_segment {
         segments.push(unit_values_segment);
     }
+    let contribution_source = WitnessContributionSource {
+        output: request.output,
+        packed_unit_values: unit_values,
+    };
+    if let Some(contribution_segment) = build_witness_contribution_segment(
+        request.catalog,
+        request.schedule,
+        std::slice::from_ref(&contribution_source),
+    )? {
+        segments.push(contribution_segment);
+    }
     append_program_image_cache_segment(&mut segments, cache_segment);
     let proof = ProofArtifact {
         setup_hash: request.schedule.setup_hash,
@@ -411,6 +425,30 @@ pub fn build_witness_proof_artifact_for_all_units(
         )?
     };
     let mut proof = proof;
+    let contribution_sources = request
+        .outputs
+        .iter()
+        .map(|output| {
+            let unit_index = output.commitments().unit_index();
+            let packed_unit_values = request
+                .unit_values
+                .iter()
+                .find(|values| values.unit_index == unit_index)
+                .map(|values| values.packed_values.as_slice())
+                .unwrap_or_else(|| output.auxiliary_inputs().unit_values.as_slice());
+            WitnessContributionSource {
+                output,
+                packed_unit_values,
+            }
+        })
+        .collect::<Vec<_>>();
+    if let Some(contribution_segment) = build_witness_contribution_segment(
+        request.catalog,
+        request.schedule,
+        &contribution_sources,
+    )? {
+        proof.segments.push(contribution_segment);
+    }
     append_program_image_cache_segment(&mut proof.segments, cache_segment);
     if request.verify_outputs {
         validate_setup_preflight(request.catalog, &proof, public_values)
@@ -440,6 +478,65 @@ fn append_program_image_cache_segment(
     if let Some(segment) = cache_segment {
         segments.push(segment);
     }
+}
+
+struct WitnessContributionSource<'a> {
+    output: &'a ProveWitnessTraceCommitments,
+    packed_unit_values: &'a [Felt],
+}
+
+fn build_witness_contribution_segment(
+    catalog: &KeyDirectoryCatalog,
+    schedule: &ProveSchedule,
+    sources: &[WitnessContributionSource<'_>],
+) -> Result<Option<ProofSegment>, String> {
+    if sources.is_empty() || catalog.layout.global_info.lattice_size.is_none() {
+        return Ok(None);
+    }
+
+    let mut entries = Vec::with_capacity(sources.len());
+    for source in sources {
+        let output = source.output;
+        let unit_index = output.commitments().unit_index();
+        let unit = schedule
+            .units
+            .get(unit_index)
+            .ok_or_else(|| format!("witness contribution unit index out of range: {unit_index}"))?;
+        if source.packed_unit_values.is_empty() && !unit.unit_value_map.is_empty() {
+            continue;
+        }
+        let catalog_unit = catalog.units.get(unit_index).ok_or_else(|| {
+            format!("witness contribution catalog unit index out of range: {unit_index}")
+        })?;
+        let input = build_witness_contribution_input(
+            &catalog_unit.verification_key,
+            unit,
+            output,
+            source.packed_unit_values,
+        )
+        .map_err(|error| {
+            format!("build witness contribution input failed for unit {unit_index}: {error}")
+        })?;
+        let worker_index = u32::try_from(unit_index).map_err(|_| {
+            format!("witness contribution unit index does not fit u32: {unit_index}")
+        })?;
+        let group_id = unit.group_id.unwrap_or(0);
+        let group_id = u32::try_from(group_id)
+            .map_err(|_| format!("witness contribution group id does not fit u32: {group_id}"))?;
+        let entry = derive_worker_contribution_entry(
+            &catalog.layout.global_info,
+            worker_index,
+            group_id,
+            &[input],
+        )
+        .map_err(|error| {
+            format!("build witness contribution entry failed for unit {unit_index}: {error}")
+        })?;
+        entries.push(entry);
+    }
+
+    build_contribution_segment(&entries)
+        .map_err(|error| format!("build contribution segment failed: {error}"))
 }
 
 fn all_units_transcript_required(

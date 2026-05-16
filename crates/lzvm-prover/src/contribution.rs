@@ -450,6 +450,7 @@ pub fn build_witness_contribution_input(
     verification_key: &VerificationKeyRoot,
     unit: &ProveUnitSchedule,
     output: &ProveWitnessTraceCommitments,
+    packed_unit_values: &[Felt],
 ) -> Result<InternalContributionInput, ContributionChallengeError> {
     let unit_index = output.commitments().unit_index();
     let root = output
@@ -464,7 +465,7 @@ pub fn build_witness_contribution_input(
         root,
         verification_key,
         &unit.unit_value_map,
-        &output.auxiliary_inputs().unit_values,
+        packed_unit_values,
     )
 }
 

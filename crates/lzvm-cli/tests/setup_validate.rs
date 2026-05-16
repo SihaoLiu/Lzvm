@@ -14,6 +14,7 @@ use lzvm_artifacts::constraint_program::{
     encode_global_constraint_program, encode_regular_constraint_program, ConstraintEntry,
     ConstraintProgram, GlobalConstraintEntry, GlobalConstraintProgram,
 };
+use lzvm_artifacts::contribution_segment::CONTRIBUTION_SEGMENT_ID;
 use lzvm_artifacts::expression_info::{encode_expression_info, ExpressionInfo};
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
@@ -338,6 +339,13 @@ fn sample_proof(public_values: &PublicValues) -> ProofArtifact {
             data: vec![1, 2, 3, 4],
         }],
     }
+}
+
+fn assert_has_contribution_segment(proof: &ProofArtifact) {
+    assert!(proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == CONTRIBUTION_SEGMENT_ID));
 }
 
 fn sample_proof_with_material(
@@ -3141,7 +3149,8 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
         proof.public_values_hash,
         public_values_digest(&public_values).expect("digest should compute")
     );
-    assert_eq!(proof.segments.len(), 5);
+    assert_eq!(proof.segments.len(), 6);
+    assert_has_contribution_segment(&proof);
     assert_eq!(proof.segments[0].id, PCS_MATERIAL_MANIFEST_SEGMENT_ID);
     let manifest = parse_pcs_material_manifest_segment(&proof.segments[0].data)
         .expect("material manifest should parse");
@@ -3319,7 +3328,8 @@ fn writes_prove_witness_proof_without_save_outputs() {
     );
     assert!(stderr.is_empty());
     assert_eq!(proof.setup_hash, setup_hash);
-    assert_eq!(proof.segments.len(), 5);
+    assert_eq!(proof.segments.len(), 6);
+    assert_has_contribution_segment(&proof);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
@@ -4252,7 +4262,8 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     let proof_path = output_dir.join("proof.bin");
     let proof_bytes = fs::read(&proof_path).expect("proof output should read");
     let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
-    assert_eq!(proof.segments.len(), 11);
+    assert_eq!(proof.segments.len(), 12);
+    assert_has_contribution_segment(&proof);
     assert!(proof
         .segments
         .iter()
@@ -4334,7 +4345,7 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=11\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=12\npublic_values=1\n"
     );
     assert!(verify_stderr.is_empty());
 
@@ -4361,7 +4372,7 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     );
     assert_eq!(
         String::from_utf8(proof_verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=11\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=12\npublic_values=1\n"
     );
     assert!(proof_verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -4446,7 +4457,8 @@ fn runs_prove_witness_for_aggregate_with_evaluation_values_segment() {
     let proof_path = output_dir.join("proof.bin");
     let proof_bytes = fs::read(&proof_path).expect("proof output should read");
     let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
-    assert_eq!(proof.segments.len(), 11);
+    assert_eq!(proof.segments.len(), 12);
+    assert_has_contribution_segment(&proof);
 
     let evaluation_segment = proof
         .segments
@@ -4488,7 +4500,7 @@ fn runs_prove_witness_for_aggregate_with_evaluation_values_segment() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=11\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=12\npublic_values=1\n"
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -4602,7 +4614,8 @@ fn runs_prove_witness_for_aggregate_fri_with_unit_values_segment() {
     let proof_path = output_dir.join("proof.bin");
     let proof_bytes = fs::read(&proof_path).expect("proof output should read");
     let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
-    assert_eq!(proof.segments.len(), 12);
+    assert_eq!(proof.segments.len(), 13);
+    assert_has_contribution_segment(&proof);
 
     let unit_values_segment = proof
         .segments
@@ -4645,7 +4658,7 @@ fn runs_prove_witness_for_aggregate_fri_with_unit_values_segment() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=12\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=13\npublic_values=1\n"
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -4705,7 +4718,8 @@ fn saves_prove_witness_transcript_fri_outputs_when_requested() {
     let proof_path = output_dir.join("proof.bin");
     let proof_bytes = fs::read(&proof_path).expect("proof output should read");
     let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
-    assert_eq!(proof.segments.len(), 8);
+    assert_eq!(proof.segments.len(), 9);
+    assert_has_contribution_segment(&proof);
     assert!(proof
         .segments
         .iter()
@@ -4847,7 +4861,7 @@ fn saves_prove_witness_transcript_fri_outputs_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=8\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=9\npublic_values=1\n"
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -5061,7 +5075,7 @@ fn saves_prove_witness_proof_values_segment_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=6\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=7\npublic_values=1\n"
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -5174,7 +5188,7 @@ fn saves_prove_witness_group_values_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=6\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=7\npublic_values=1\n"
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -5343,7 +5357,7 @@ fn saves_prove_witness_unit_values_segment_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=6\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=7\npublic_values=1\n"
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");

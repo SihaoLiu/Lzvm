@@ -7,6 +7,7 @@ use lzvm_artifacts::constant_tree::expected_constant_tree_byte_count;
 use lzvm_artifacts::constraint_program::{
     ConstraintEntry, ConstraintProgram, GlobalConstraintProgram,
 };
+use lzvm_artifacts::contribution_segment::CONTRIBUTION_SEGMENT_ID;
 use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::{ExpressionEntry, ExpressionProgram};
 use lzvm_artifacts::fixed::{write_raw_fixed_columns_file, FixedColumn, FixedColumns};
@@ -54,7 +55,10 @@ use lzvm_artifacts::witness_segment::{
     WitnessCommitmentStageSegment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 use lzvm_field::{coset_extend_evaluations, Ext3, Felt};
-use lzvm_prover::contribution::build_witness_contribution_input;
+use lzvm_prover::contribution::{
+    build_witness_contribution_input, derive_worker_contribution_entry,
+    load_contribution_segment_from_segments,
+};
 use lzvm_prover::pcs_challenge::{derive_fri_queries, verify_query_nonce};
 use lzvm_prover::pcs_fri::{verify_fri_opening_folds, PcsFriOpeningFoldRequest};
 use lzvm_prover::pcs_transcript::{
@@ -702,7 +706,8 @@ fn builds_witness_contribution_input_from_stage_one_root() {
         stage_value("local_b", 2),
         stage_value("local_c", 1),
     ];
-    let catalog = sample_catalog(unit);
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.lattice_size = Some(32);
     let plan = derive_prove_execution_plan(
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),
@@ -740,6 +745,7 @@ fn builds_witness_contribution_input_from_stage_one_root() {
         &catalog.units[0].verification_key,
         &plan.run_plan.schedule.units[0],
         &output,
+        &output.auxiliary_inputs().unit_values,
     )
     .expect("witness contribution input should build");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -779,7 +785,8 @@ fn builds_witness_proof_artifact_in_prover() {
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
     fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
         .expect("constant tree should be written");
-    let catalog = sample_catalog(unit);
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.lattice_size = Some(32);
     let plan = derive_prove_execution_plan(
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),
@@ -821,12 +828,18 @@ fn builds_witness_proof_artifact_for_unit_in_prover() {
     fs::write(&input_data, [5_u8]).expect("input data should be written");
 
     let mut unit = sample_unit();
+    unit.metadata.setup.unit_value_map = vec![
+        stage_value("local_a", 1),
+        stage_value("local_b", 2),
+        stage_value("local_c", 1),
+    ];
     unit.paths.constant_tree = dir.join("unit.consttree");
     let constant_tree_bytes =
         expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
     fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
         .expect("constant tree should be written");
-    let catalog = sample_catalog(unit);
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.lattice_size = Some(32);
     let plan = derive_prove_execution_plan(
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),
@@ -837,9 +850,18 @@ fn builds_witness_proof_artifact_for_unit_in_prover() {
         },
     )
     .expect("execution plan should derive");
-    let output =
-        run_prove_witness_commitments_with_trace(&plan, 0, ProveWitnessAuxiliaryInputs::default())
-            .expect("witness commitments should run");
+    let auxiliary_inputs = ProveWitnessAuxiliaryInputs {
+        unit_values: vec![
+            Felt::from_u64(701),
+            Felt::from_u64(801),
+            Felt::from_u64(802),
+            Felt::from_u64(803),
+            Felt::from_u64(702),
+        ],
+        ..ProveWitnessAuxiliaryInputs::default()
+    };
+    let output = run_prove_witness_commitments_with_trace(&plan, 0, auxiliary_inputs)
+        .expect("witness commitments should run");
     let public_values = PublicValues {
         schema_version: 1,
         setup_hash: plan.run_plan.schedule.setup_hash,
@@ -876,6 +898,29 @@ fn builds_witness_proof_artifact_for_unit_in_prover() {
         .segments
         .iter()
         .any(|segment| { segment.id == WITNESS_COMMITMENT_SEGMENT_BASE_ID }));
+    assert!(proof
+        .segments
+        .iter()
+        .any(|segment| { segment.id == CONTRIBUTION_SEGMENT_ID }));
+    let expected_input = build_witness_contribution_input(
+        &catalog.units[0].verification_key,
+        &plan.run_plan.schedule.units[0],
+        &output,
+        &output.auxiliary_inputs().unit_values,
+    )
+    .expect("expected contribution input should build");
+    let expected_entry = derive_worker_contribution_entry(
+        &catalog.layout.global_info,
+        0,
+        plan.run_plan.schedule.units[0].group_id.unwrap_or(0) as u32,
+        &[expected_input],
+    )
+    .expect("expected contribution entry should build");
+    assert_eq!(
+        load_contribution_segment_from_segments(&proof.segments)
+            .expect("contribution segment should load"),
+        vec![expected_entry]
+    );
 }
 
 #[test]
@@ -890,6 +935,11 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
     fs::write(&input_data, [11_u8]).expect("input data should be written");
 
     let mut second_unit = sample_unit();
+    second_unit.metadata.setup.unit_value_map = vec![
+        stage_value("local_a", 1),
+        stage_value("local_b", 2),
+        stage_value("local_c", 1),
+    ];
     second_unit.paths.unit_id = Some(1);
     second_unit.paths.unit_name = Some("unit-b".to_owned());
     second_unit.paths.prefix = "unit-b".into();
@@ -898,6 +948,11 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
     second_unit.paths.verification_key_prefix = "unit-b".into();
     second_unit.paths.constant_tree = dir.join("unit-b.consttree");
     let mut first_unit = sample_unit();
+    first_unit.metadata.setup.unit_value_map = vec![
+        stage_value("local_a", 1),
+        stage_value("local_b", 2),
+        stage_value("local_c", 1),
+    ];
     first_unit.paths.constant_tree = dir.join("unit.consttree");
     let first_tree_bytes = expected_constant_tree_byte_count(&first_unit.metadata.setup)
         .expect("tree size should derive");
@@ -913,7 +968,8 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
         vec![0_u8; second_tree_bytes],
     )
     .expect("second constant tree should be written");
-    let catalog = sample_catalog_units(vec![first_unit, second_unit]);
+    let mut catalog = sample_catalog_units(vec![first_unit, second_unit]);
+    catalog.layout.global_info.lattice_size = Some(32);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values_path = dir.join("public.bin");
     let public_values = PublicValues {
@@ -939,13 +995,22 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
         },
     )
     .expect("execution plan should derive");
+    let auxiliary_inputs = ProveWitnessAuxiliaryInputs {
+        unit_values: vec![
+            Felt::from_u64(901),
+            Felt::from_u64(1001),
+            Felt::from_u64(1002),
+            Felt::from_u64(1003),
+            Felt::from_u64(902),
+        ],
+        ..ProveWitnessAuxiliaryInputs::default()
+    };
     let outputs = vec![
-        run_prove_witness_commitments_with_trace(&plan, 0, ProveWitnessAuxiliaryInputs::default())
+        run_prove_witness_commitments_with_trace(&plan, 0, auxiliary_inputs.clone())
             .expect("first unit should run"),
-        run_prove_witness_commitments_with_trace(&plan, 1, ProveWitnessAuxiliaryInputs::default())
+        run_prove_witness_commitments_with_trace(&plan, 1, auxiliary_inputs.clone())
             .expect("second unit should run"),
     ];
-    let auxiliary_inputs = ProveWitnessAuxiliaryInputs::default();
 
     let proof = lzvm_prover::build_witness_proof_artifact_for_all_units(
         &lzvm_prover::WitnessAllUnitsProofRequest {
@@ -986,6 +1051,37 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
             .map(|segment| segment.id)
             .collect::<Vec<_>>(),
         vec![WITNESS_COMMITMENT_SEGMENT_BASE_ID, second_witness_id]
+    );
+    assert!(proof
+        .segments
+        .iter()
+        .any(|segment| { segment.id == CONTRIBUTION_SEGMENT_ID }));
+    let expected_entries = outputs
+        .iter()
+        .map(|output| {
+            let unit_index = output.commitments().unit_index();
+            let expected_input = build_witness_contribution_input(
+                &catalog.units[unit_index].verification_key,
+                &plan.run_plan.schedule.units[unit_index],
+                output,
+                &output.auxiliary_inputs().unit_values,
+            )
+            .expect("expected contribution input should build");
+            derive_worker_contribution_entry(
+                &catalog.layout.global_info,
+                unit_index as u32,
+                plan.run_plan.schedule.units[unit_index]
+                    .group_id
+                    .unwrap_or(0) as u32,
+                &[expected_input],
+            )
+            .expect("expected contribution entry should build")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        load_contribution_segment_from_segments(&proof.segments)
+            .expect("contribution segment should load"),
+        expected_entries
     );
 }
 
