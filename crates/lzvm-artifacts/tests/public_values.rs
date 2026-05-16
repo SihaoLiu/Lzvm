@@ -87,9 +87,7 @@ fn reads_public_values_from_a_file_path() {
 #[test]
 fn rejects_text_public_values_from_a_file_path() {
     let path = temp_file_path("values.json");
-    let encoded =
-        encode_public_values_json(&sample_public_values()).expect("fixture should encode");
-    fs::write(&path, encoded).expect("fixture should be written");
+    fs::write(&path, "not a binary file").expect("fixture should be written");
 
     let error = read_public_values_file(&path).expect_err("text fixture should be rejected");
     fs::remove_file(&path).expect("fixture should be removed");
