@@ -2806,6 +2806,64 @@ fn writes_prove_witness_proof_without_save_outputs() {
 }
 
 #[test]
+fn runs_direct_prove_for_setup_directory() {
+    let dir = temp_dir("direct-prove");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&sample_public_values(setup_hash))
+            .expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let proof_path = output_dir.join("proof.bin");
+    let proof = fs::read(&proof_path)
+        .ok()
+        .and_then(|bytes| parse_proof_artifact(&bytes).ok());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .starts_with("status=ok\npass=full\n"));
+    assert_eq!(
+        proof.expect("proof output should parse").setup_hash,
+        setup_hash
+    );
+}
+
+#[test]
 fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
     let dir = temp_dir("prove-witness-program-image-cache-segment");
     let _ = fs::remove_dir_all(&dir);
