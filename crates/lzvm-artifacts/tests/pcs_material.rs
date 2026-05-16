@@ -7,47 +7,9 @@ use lzvm_artifacts::pcs_material::{
     read_pcs_setup_material_file,
 };
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, encode_pcs_setup_plan};
-use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
 use sha2::{Digest, Sha256};
 
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 1,
-        "nConstants": 2,
-        "nPublics": 0,
-        "nConstraints": 0,
-        "qDeg": 3,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 2,
-            "cm1": 1,
-            "cm2": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.left", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.right", "dim": 1, "polsMapId": 1, "stageId": 1}
-        ],
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 1,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 0,
-            "merkleTreeArity": 4,
-            "verificationHashType": "GL",
-            "transcriptArity": 4,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
+mod fixtures;
 
 fn sample_tree_bytes() -> Vec<u8> {
     let mut bytes = vec![7_u8; 224];
@@ -64,7 +26,7 @@ fn temp_file_path(name: &str) -> PathBuf {
 
 #[test]
 fn builds_pcs_setup_material_from_plan_and_static_artifacts() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_pcs_material_setup_info();
     let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
     let fixed = [1_u8; 32];
     let tree = parse_constant_tree_bytes(sample_tree_bytes(), &setup).expect("tree should parse");
@@ -87,7 +49,7 @@ fn builds_pcs_setup_material_from_plan_and_static_artifacts() {
 
 #[test]
 fn encodes_and_parses_pcs_setup_material() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_pcs_material_setup_info();
     let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
     let fixed = [1_u8; 32];
     let tree = parse_constant_tree_bytes(sample_tree_bytes(), &setup).expect("tree should parse");
@@ -102,7 +64,7 @@ fn encodes_and_parses_pcs_setup_material() {
 
 #[test]
 fn reads_pcs_setup_material_from_a_file_path() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_pcs_material_setup_info();
     let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
     let tree = parse_constant_tree_bytes(sample_tree_bytes(), &setup).expect("tree should parse");
     let material =

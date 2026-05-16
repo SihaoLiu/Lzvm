@@ -5,54 +5,8 @@ use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, parse_pcs_setup_plan, read_pcs_setup_plan_file,
     PcsPlanError,
 };
-use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
 
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 2,
-        "nConstants": 5,
-        "nPublics": 3,
-        "nConstraints": 8,
-        "qDeg": 7,
-        "openingPoints": [0, 1, -1],
-        "mapSectionsN": {
-            "const": 5,
-            "cm1": 2,
-            "cm2": 3,
-            "cm3": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.a", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.b", "dim": 1, "polsMapId": 1, "stageId": 1},
-            {"stage": 0, "name": "main.c", "dim": 1, "polsMapId": 2, "stageId": 2},
-            {"stage": 0, "name": "main.d", "dim": 1, "polsMapId": 3, "stageId": 3},
-            {"stage": 0, "name": "main.e", "dim": 1, "polsMapId": 4, "stageId": 4, "lengths": [5]}
-        ],
-        "challengesMap": [{}, {}],
-        "evMap": [{}, {}, {}],
-        "boundaries": [
-            {"name": "first", "offsetMin": 0, "offsetMax": 3},
-            {"offsetMin": -1}
-        ],
-        "starkStruct": {
-            "nBits": 10,
-            "nBitsExt": 13,
-            "nQueries": 4,
-            "steps": [
-                {"nBits": 13},
-                {"nBits": 9},
-                {"nBits": 5}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 20,
-            "merkleTreeArity": 4,
-            "verificationHashType": "GL",
-            "transcriptArity": 4,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
+mod fixtures;
 
 fn temp_file_path(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("lzvm-pcs-plan-{}-{name}", std::process::id()))
@@ -60,7 +14,7 @@ fn temp_file_path(name: &str) -> PathBuf {
 
 #[test]
 fn derives_pcs_setup_plan_from_unit_setup_metadata() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_pcs_plan_setup_info();
 
     let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
 
@@ -89,7 +43,7 @@ fn derives_pcs_setup_plan_from_unit_setup_metadata() {
 
 #[test]
 fn encodes_and_parses_pcs_setup_plans() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_pcs_plan_setup_info();
     let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
 
     let encoded = encode_pcs_setup_plan(&plan).expect("plan should encode");
@@ -101,7 +55,7 @@ fn encodes_and_parses_pcs_setup_plans() {
 
 #[test]
 fn encodes_the_current_pcs_setup_plan_format_version() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_pcs_plan_setup_info();
     let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
 
     let encoded = encode_pcs_setup_plan(&plan).expect("plan should encode");
@@ -111,7 +65,7 @@ fn encodes_the_current_pcs_setup_plan_format_version() {
 
 #[test]
 fn rejects_stale_pcs_setup_plan_format_headers() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_pcs_plan_setup_info();
     let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
     let mut encoded = encode_pcs_setup_plan(&plan).expect("plan should encode");
     encoded[4..8].copy_from_slice(&1_u32.to_le_bytes());
@@ -121,7 +75,7 @@ fn rejects_stale_pcs_setup_plan_format_headers() {
 
 #[test]
 fn pcs_setup_plan_encoding_depends_on_commit_hash_mode() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_pcs_plan_setup_info();
     let mut direct_setup = setup.clone();
     direct_setup.stark.hash_commits = false;
 
@@ -137,7 +91,7 @@ fn pcs_setup_plan_encoding_depends_on_commit_hash_mode() {
 
 #[test]
 fn reads_pcs_setup_plans_from_a_file_path() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_pcs_plan_setup_info();
     let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
     let path = temp_file_path("plan.bin");
     fs::write(
@@ -154,8 +108,7 @@ fn reads_pcs_setup_plans_from_a_file_path() {
 
 #[test]
 fn rejects_invalid_pcs_folding_schedule() {
-    let mut setup =
-        parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let mut setup = fixtures::sample_pcs_plan_setup_info();
     setup.stark.steps[1].n_bits = 13;
 
     assert!(matches!(
@@ -169,8 +122,7 @@ fn rejects_invalid_pcs_folding_schedule() {
 
 #[test]
 fn rejects_pcs_domains_that_do_not_fit_u64() {
-    let mut setup =
-        parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let mut setup = fixtures::sample_pcs_plan_setup_info();
     setup.stark.n_bits_ext = 64;
     setup.stark.steps[0].n_bits = 64;
 
@@ -182,8 +134,7 @@ fn rejects_pcs_domains_that_do_not_fit_u64() {
 
 #[test]
 fn rejects_pcs_domains_that_shrink_before_extension() {
-    let mut setup =
-        parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let mut setup = fixtures::sample_pcs_plan_setup_info();
     setup.stark.n_bits_ext = 9;
     setup.stark.steps[0].n_bits = 9;
 

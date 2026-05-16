@@ -2,46 +2,11 @@ use lzvm_artifacts::constant_tree::{
     expected_constant_tree_byte_count, expected_constant_tree_word_count, read_constant_tree_file,
     ConstantTreeError, ConstantTreeHashKind,
 };
-use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use std::fs;
 use std::path::PathBuf;
 
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 2,
-        "nConstants": 1,
-        "nPublics": 0,
-        "nConstraints": 0,
-        "qDeg": 7,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 1,
-            "cm1": 1,
-            "cm2": 1,
-            "cm3": 1
-        },
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 1,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 1,
-            "powBits": 1,
-            "merkleTreeArity": 2,
-            "verificationHashType": "GL",
-            "transcriptArity": 2,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
+mod fixtures;
 
 fn temp_file_path(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("lzvm-constant-tree-{}-{name}", std::process::id()))
@@ -49,7 +14,7 @@ fn temp_file_path(name: &str) -> PathBuf {
 
 #[test]
 fn computes_gl_constant_tree_sizes() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_constant_tree_setup_info();
 
     assert_eq!(expected_constant_tree_word_count(&setup).unwrap(), 32);
     assert_eq!(expected_constant_tree_byte_count(&setup).unwrap(), 256);
@@ -57,7 +22,7 @@ fn computes_gl_constant_tree_sizes() {
 
 #[test]
 fn reads_constant_tree_files_with_expected_size() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_constant_tree_setup_info();
     let path = temp_file_path("tree.bin");
     let bytes = vec![7_u8; expected_constant_tree_byte_count(&setup).unwrap()];
     fs::write(&path, &bytes).expect("fixture should be written");
@@ -75,7 +40,7 @@ fn reads_constant_tree_files_with_expected_size() {
 
 #[test]
 fn extracts_roots_from_raw_tree_tails() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_constant_tree_setup_info();
     let path = temp_file_path("rooted-tree.bin");
     let mut bytes = vec![7_u8; expected_constant_tree_byte_count(&setup).unwrap()];
     let root_values = [1_u64, 2, 3, 4];
@@ -96,7 +61,7 @@ fn extracts_roots_from_raw_tree_tails() {
 
 #[test]
 fn rejects_constant_tree_files_with_wrong_size() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_constant_tree_setup_info();
     let path = temp_file_path("bad-tree.bin");
     fs::write(&path, vec![0_u8; 31]).expect("fixture should be written");
 
@@ -114,8 +79,8 @@ fn rejects_constant_tree_files_with_wrong_size() {
 
 #[test]
 fn rejects_invalid_merkle_arities() {
-    let json = sample_setup_info_json().replace("\"merkleTreeArity\": 2", "\"merkleTreeArity\": 1");
-    let setup = parse_unit_setup_info_json(&json).expect("setup should parse");
+    let mut setup = fixtures::sample_constant_tree_setup_info();
+    setup.stark.merkle_tree_arity = 1;
 
     assert!(matches!(
         expected_constant_tree_word_count(&setup),

@@ -8,7 +8,7 @@ use lzvm_artifacts::fixed::{
     read_raw_fixed_column_layout_file, read_raw_fixed_row_file, write_raw_fixed_columns_file,
     FixedColumn, FixedColumnError, FixedColumns,
 };
-use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
+mod fixtures;
 
 fn push_u32(out: &mut Vec<u8>, value: u32) {
     out.extend_from_slice(&value.to_le_bytes());
@@ -52,80 +52,6 @@ fn sample_file() -> Vec<u8> {
     push_u64(&mut file, section.len() as u64);
     file.extend_from_slice(&section);
     file
-}
-
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 1,
-        "nConstants": 2,
-        "qDeg": 3,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 2,
-            "cm1": 1,
-            "cm2": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.left", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.right", "dim": 1, "polsMapId": 1, "stageId": 1, "lengths": [2]}
-        ],
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 2,
-            "nBitsExt": 3,
-            "nQueries": 2,
-            "steps": [
-                {"nBits": 3},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 0,
-            "merkleTreeArity": 4,
-            "verificationHashType": "GL",
-            "transcriptArity": 4,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
-
-fn duplicate_name_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 1,
-        "nConstants": 2,
-        "qDeg": 3,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 2,
-            "cm1": 1,
-            "cm2": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.value", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.value", "dim": 1, "polsMapId": 1, "stageId": 1}
-        ],
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 2,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 0,
-            "merkleTreeArity": 2,
-            "verificationHashType": "GL",
-            "transcriptArity": 2,
-            "merkleTreeCustom": true
-        }
-    }"#
 }
 
 fn sample_raw_file() -> Vec<u8> {
@@ -233,7 +159,7 @@ fn encodes_fixed_columns_to_the_canonical_binary_form() {
 
 #[test]
 fn parses_raw_fixed_columns_using_setup_column_map() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_fixed_columns_setup_info();
     let parsed = parse_raw_fixed_columns(&sample_raw_file(), &setup, "group-a", "unit-a")
         .expect("fixture should parse");
 
@@ -251,7 +177,7 @@ fn parses_raw_fixed_columns_using_setup_column_map() {
 
 #[test]
 fn encodes_raw_fixed_columns_using_setup_column_map() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_fixed_columns_setup_info();
     let encoded =
         encode_raw_fixed_columns(&sample_raw_columns(), &setup).expect("fixture should encode");
 
@@ -264,8 +190,7 @@ fn encodes_raw_fixed_columns_using_setup_column_map() {
 
 #[test]
 fn disambiguates_duplicate_raw_fixed_column_names_by_physical_index() {
-    let setup =
-        parse_unit_setup_info_json(duplicate_name_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_duplicate_fixed_columns_setup_info();
 
     let parsed = parse_raw_fixed_columns(&duplicate_name_raw_file(), &setup, "group-a", "unit-a")
         .expect("raw columns should parse");
@@ -281,7 +206,7 @@ fn disambiguates_duplicate_raw_fixed_column_names_by_physical_index() {
 
 #[test]
 fn writes_raw_fixed_columns_to_a_file_path() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_fixed_columns_setup_info();
     let path = temp_file_path("raw-fixed-columns-write.bin");
     write_raw_fixed_columns_file(&path, &sample_raw_columns(), &setup)
         .expect("fixture should write");
@@ -295,7 +220,7 @@ fn writes_raw_fixed_columns_to_a_file_path() {
 
 #[test]
 fn rejects_raw_fixed_encoding_when_a_setup_column_is_missing() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_fixed_columns_setup_info();
     let mut columns = sample_raw_columns();
     columns.columns.retain(|column| column.name != "main.right");
 
@@ -308,7 +233,7 @@ fn rejects_raw_fixed_encoding_when_a_setup_column_is_missing() {
 
 #[test]
 fn rejects_raw_fixed_encoding_when_dimensions_do_not_match_setup() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_fixed_columns_setup_info();
     let mut columns = sample_raw_columns();
     columns.columns[0].dimensions = vec![3];
 
@@ -324,7 +249,7 @@ fn rejects_raw_fixed_encoding_when_dimensions_do_not_match_setup() {
 
 #[test]
 fn derives_raw_fixed_column_layout_from_setup() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_fixed_columns_setup_info();
     let layout =
         raw_fixed_column_layout(&setup, "group-a", "unit-a").expect("layout should derive");
 
@@ -344,7 +269,7 @@ fn derives_raw_fixed_column_layout_from_setup() {
 
 #[test]
 fn reads_raw_fixed_rows_without_full_parse() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_fixed_columns_setup_info();
     let path = temp_file_path("raw-fixed-row.bin");
     fs::write(&path, sample_raw_file()).expect("fixture should be written");
 
@@ -369,7 +294,7 @@ fn reads_raw_fixed_rows_without_full_parse() {
 
 #[test]
 fn reads_raw_fixed_columns_without_full_parse() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_fixed_columns_setup_info();
     let path = temp_file_path("raw-fixed-column.bin");
     fs::write(&path, sample_raw_file()).expect("fixture should be written");
 
@@ -391,7 +316,7 @@ fn reads_raw_fixed_columns_without_full_parse() {
 
 #[test]
 fn rejects_raw_fixed_columns_with_wrong_size() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_fixed_columns_setup_info();
     let mut bytes = sample_raw_file();
     bytes.pop();
 
@@ -406,7 +331,7 @@ fn rejects_raw_fixed_columns_with_wrong_size() {
 
 #[test]
 fn reads_raw_fixed_columns_from_a_file_path_with_setup() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_fixed_columns_setup_info();
     let path = temp_file_path("raw-fixed-columns.bin");
     fs::write(&path, sample_raw_file()).expect("fixture should be written");
 
