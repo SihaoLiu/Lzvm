@@ -8,7 +8,7 @@ use crate::merkle_hash::{
     MerkleHashError, HASH_WORDS,
 };
 
-use super::types::PcsFriOpeningBuildError;
+use super::errors::PcsFriOpeningBuildError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcsFriMerkleError {

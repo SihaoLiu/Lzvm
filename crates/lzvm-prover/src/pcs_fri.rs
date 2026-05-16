@@ -1,10 +1,12 @@
+mod errors;
 mod fold;
 mod merkle;
-mod types;
+mod requests;
 
+pub use errors::*;
 pub use fold::{verify_fri_fold, PcsFriFoldError};
 pub use merkle::{verify_fri_last_level_root, verify_fri_query_path, PcsFriMerkleError};
-pub use types::*;
+pub use requests::*;
 
 use crate::pcs_query_plan::{
     load_pcs_query_plan_from_segments, uses_transcript_pcs_query_plan_inputs,
