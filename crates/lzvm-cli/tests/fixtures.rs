@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 
 use lzvm_artifacts::expression_info::{
-    ExpressionCode, ExpressionInfo, HintFieldInfo, HintInfo, HintPayload, HintValueInfo,
+    CodeDestination, CodeOperand, CodeOperation, ExpressionCode, ExpressionInfo, HintFieldInfo,
+    HintInfo, HintPayload, HintValueInfo, OperationKind,
 };
 use lzvm_artifacts::global_info::{
     AggregationType, CurveKind, GlobalAir, GlobalInfo, NamedStageValue, PublicValue,
@@ -194,14 +195,7 @@ fn sample_setup_info_with_unit_values(unit_values: bool) -> UnitSetupInfo {
 pub fn sample_expression_info() -> ExpressionInfo {
     ExpressionInfo {
         hints: Vec::new(),
-        expressions: vec![ExpressionCode {
-            expression_id: 7,
-            stage: 2,
-            line: "query-expression".to_owned(),
-            temporary_count: 0,
-            destination: None,
-            operations: Vec::new(),
-        }],
+        expressions: vec![sample_expression_code()],
         constraints: Vec::new(),
     }
 }
@@ -227,15 +221,42 @@ pub fn sample_expression_info_with_hint() -> ExpressionInfo {
                 }],
             }],
         }],
+        expressions: vec![sample_expression_code()],
+        constraints: Vec::new(),
+    }
+}
+
+pub fn sample_fri_quotient_expression_info() -> ExpressionInfo {
+    ExpressionInfo {
+        hints: Vec::new(),
         expressions: vec![ExpressionCode {
             expression_id: 7,
             stage: 2,
-            line: "query-expression".to_owned(),
-            temporary_count: 0,
+            line: "constant quotient expression".to_owned(),
+            temporary_count: 1,
             destination: None,
-            operations: Vec::new(),
+            operations: vec![CodeOperation {
+                op: OperationKind::Add,
+                destination: CodeDestination::temporary(0, 3),
+                sources: vec![CodeOperand::number(10, 3), CodeOperand::number(0, 3)],
+            }],
         }],
         constraints: Vec::new(),
+    }
+}
+
+fn sample_expression_code() -> ExpressionCode {
+    ExpressionCode {
+        expression_id: 7,
+        stage: 2,
+        line: "query-expression".to_owned(),
+        temporary_count: 1,
+        destination: None,
+        operations: vec![CodeOperation {
+            op: OperationKind::Add,
+            destination: CodeDestination::temporary(0, 1),
+            sources: vec![CodeOperand::constant(0, 1), CodeOperand::number(0, 1)],
+        }],
     }
 }
 

@@ -180,7 +180,7 @@ fn verifies_fri_opening_fold_chain_to_final_polynomial() {
     };
     let first_challenge = Ext3::from_u64s([7, 8, 9]);
     let second_challenge = Ext3::from_u64s([11, 12, 13]);
-    let mut challenges = vec![Ext3::ZERO; 9];
+    let mut challenges = vec![Ext3::ZERO; 10];
     challenges[7] = first_challenge;
     challenges[8] = second_challenge;
 
@@ -319,7 +319,7 @@ fn builds_fri_opening_unit_from_polynomial_values() {
     let polynomial = (0_u64..8)
         .map(|index| Ext3::from_u64s([index + 1, index + 11, index + 21]))
         .collect::<Vec<_>>();
-    let mut challenges = vec![Ext3::ZERO; 9];
+    let mut challenges = vec![Ext3::ZERO; 10];
     challenges[7] = Ext3::from_u64s([31, 32, 33]);
     challenges[8] = Ext3::from_u64s([41, 42, 43]);
 

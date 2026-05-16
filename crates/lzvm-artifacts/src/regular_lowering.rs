@@ -430,21 +430,25 @@ fn lower_source(
             }),
             dimension => Err(RegularProgramLoweringError::UnsupportedDimension { dimension }),
         },
-        CodeOperand::Number { value, dimension } => {
-            if *dimension != 1 {
-                return Err(RegularProgramLoweringError::UnsupportedDimension {
-                    dimension: *dimension,
-                });
-            }
-            Ok(SourceArg {
+        CodeOperand::Number { value, dimension } => match *dimension {
+            1 => Ok(SourceArg {
                 dimension: 1,
                 fields: [
                     u32_to_u16(add_u32(base_buffer, 3)?)?,
                     u32_to_u16(intern_number(numbers, *value)?)?,
                     0,
                 ],
-            })
-        }
+            }),
+            3 => Ok(SourceArg {
+                dimension: 3,
+                fields: [
+                    u32_to_u16(add_u32(base_buffer, 3)?)?,
+                    u32_to_u16(push_extension_number(numbers, *value)?)?,
+                    0,
+                ],
+            }),
+            dimension => Err(RegularProgramLoweringError::UnsupportedDimension { dimension }),
+        },
         CodeOperand::Evaluation { id, dimension } => Ok(SourceArg {
             dimension: *dimension,
             fields: [
@@ -694,6 +698,16 @@ fn intern_number(numbers: &mut Vec<u64>, value: u64) -> Result<u32, RegularProgr
     let index = numbers.len();
     numbers.push(value);
     usize_to_u32(index)
+}
+
+fn push_extension_number(
+    numbers: &mut Vec<u64>,
+    value: u64,
+) -> Result<u32, RegularProgramLoweringError> {
+    let index = usize_to_u32(numbers.len())?;
+    numbers.push(value);
+    numbers.extend([0, 0]);
+    Ok(index)
 }
 
 fn opening_point_index(

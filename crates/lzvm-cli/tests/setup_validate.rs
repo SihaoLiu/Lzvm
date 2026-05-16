@@ -1157,7 +1157,7 @@ fn write_unit_files_with_fri_quotient(unit: &KeyUnitPaths) {
         write_unit_setup_metadata(&path, &fixtures::sample_setup_info());
     }
     if let Some(path) = unit.expression_info_binary() {
-        write_expression_metadata(&path, &fixtures::sample_expression_info());
+        write_expression_metadata(&path, &fixtures::sample_fri_quotient_expression_info());
     }
     if let Some(path) = unit.verifier_info_binary() {
         write_verifier_metadata(&path, &fixtures::sample_fri_quotient_verifier_info());
@@ -1189,7 +1189,7 @@ fn write_unit_files_with_fri_quotient_and_unit_value(unit: &KeyUnitPaths) {
         write_unit_setup_metadata(&path, &fixtures::sample_setup_info_with_unit_value());
     }
     if let Some(path) = unit.expression_info_binary() {
-        write_expression_metadata(&path, &fixtures::sample_expression_info());
+        write_expression_metadata(&path, &fixtures::sample_fri_quotient_expression_info());
     }
     if let Some(path) = unit.verifier_info_binary() {
         write_verifier_metadata(&path, &fixtures::sample_fri_quotient_verifier_info());

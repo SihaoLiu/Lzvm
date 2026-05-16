@@ -24,6 +24,9 @@ use lzvm_artifacts::hint_program::{
     regular_hint_program_from_expression_info, HintProgram,
 };
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyUnitPaths};
+use lzvm_artifacts::regular_program::{
+    parse_regular_program, regular_program_from_expression_info,
+};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, UnitSetupInfo,
@@ -272,6 +275,19 @@ fn writes_base_directory_artifacts_and_derives_keys() {
             regular_hint_program_from_expression_info(&expressions)
                 .expect("regular hints should derive")
         );
+        let regular_program = parse_regular_program(
+            &fs::read(
+                unit.expression_program()
+                    .expect("expression program path should derive"),
+            )
+            .expect("expression program output should read"),
+        )
+        .expect("regular program should parse");
+        assert_eq!(
+            regular_program,
+            regular_program_from_expression_info(&expressions, &setup)
+                .expect("regular program should derive")
+        );
 
         let group_name = unit.group_name.as_deref().unwrap_or("raw");
         let unit_name = unit.unit_name.as_deref().unwrap_or("unit");
@@ -315,6 +331,48 @@ fn writes_base_directory_artifacts_and_derives_keys() {
             verkey_bytes: Some(verkey_bytes)
         }
     );
+}
+
+#[test]
+fn writes_regular_program_without_existing_program_file() {
+    let dir = create_base_directory_fixture("missing-program");
+    let setup = sample_base_setup_info();
+    let expressions = sample_expression_info();
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+
+    let mut removed_program_files = 0_usize;
+    for unit in &layout.units {
+        let path = unit
+            .expression_program()
+            .expect("expression program path should derive");
+        if path.is_file() {
+            fs::remove_file(path).expect("fixture expression program should be removed");
+            removed_program_files += 1;
+        }
+    }
+    assert!(removed_program_files > 0);
+
+    let report = write_base_directory(&dir, FixedExtensionBackend::Cpu, true)
+        .expect("base directory should write");
+
+    for unit in &layout.units {
+        let regular_program = parse_regular_program(
+            &fs::read(
+                unit.expression_program()
+                    .expect("expression program path should derive"),
+            )
+            .expect("expression program output should read"),
+        )
+        .expect("regular program should parse");
+        assert_eq!(
+            regular_program,
+            regular_program_from_expression_info(&expressions, &setup)
+                .expect("regular program should derive")
+        );
+    }
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert_eq!(report.unit_count, layout.units.len());
 }
 
 fn read_constant_tree_file_for_bytes(bytes: Vec<u8>, setup: &UnitSetupInfo) -> VerificationKeyRoot {

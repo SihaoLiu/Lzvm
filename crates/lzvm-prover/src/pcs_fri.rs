@@ -1313,10 +1313,14 @@ pub fn build_pcs_fri_opening_unit(
             queries,
         });
 
-        let challenge_index = schedule
-            .challenge_count
+        let layer_challenge_start = request
+            .challenges
+            .len()
+            .checked_sub(schedule.fri_layers.len())
+            .and_then(|index| index.checked_sub(1))
+            .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
+        let challenge_index = layer_challenge_start
             .checked_add(layer_index)
-            .and_then(|index| index.checked_add(1))
             .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
         let challenge = *request.challenges.get(challenge_index).ok_or(
             PcsFriOpeningBuildError::MissingChallenge {
@@ -1411,10 +1415,14 @@ pub fn verify_fri_opening_folds(
                 .iter()
                 .map(|value| convert_ext(*value))
                 .collect::<Result<Vec<_>, PcsFriOpeningFoldError>>()?;
-            let challenge_index = schedule
-                .challenge_count
+            let layer_challenge_start = request
+                .challenges
+                .len()
+                .checked_sub(schedule.fri_layers.len())
+                .and_then(|index| index.checked_sub(1))
+                .ok_or(PcsFriOpeningFoldError::LengthOverflow)?;
+            let challenge_index = layer_challenge_start
                 .checked_add(layer_index)
-                .and_then(|index| index.checked_add(1))
                 .ok_or(PcsFriOpeningFoldError::LengthOverflow)?;
             let challenge = *request.challenges.get(challenge_index).ok_or(
                 PcsFriOpeningFoldError::MissingChallenge {

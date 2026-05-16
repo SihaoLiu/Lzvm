@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 
 use lzvm_artifacts::expression_info::{
-    ExpressionCode, ExpressionInfo, HintFieldInfo, HintInfo, HintPayload, HintValueInfo,
+    CodeDestination, CodeOperand, CodeOperation, ExpressionCode, ExpressionInfo, HintFieldInfo,
+    HintInfo, HintPayload, HintValueInfo, OperationKind,
 };
 use lzvm_artifacts::global_info::{
     AggregationType, CurveKind, GlobalAir, GlobalInfo, NamedStageValue, PublicValue,
@@ -63,9 +64,13 @@ pub fn sample_expression_info() -> ExpressionInfo {
             expression_id: 7,
             stage: 2,
             line: "query-expression".to_owned(),
-            temporary_count: 0,
+            temporary_count: 1,
             destination: None,
-            operations: Vec::new(),
+            operations: vec![CodeOperation {
+                op: OperationKind::Add,
+                destination: CodeDestination::temporary(0, 1),
+                sources: vec![CodeOperand::constant(0, 1), CodeOperand::number(0, 1)],
+            }],
         }],
         constraints: Vec::new(),
     }

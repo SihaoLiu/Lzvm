@@ -14,13 +14,14 @@ use lzvm_artifacts::fixed::{
     FixedColumns,
 };
 use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo, GlobalInfoError};
-use lzvm_artifacts::hint_program::{
-    encode_regular_hint_program, regular_hint_program_from_expression_info, HintProgramError,
-};
+use lzvm_artifacts::hint_program::HintProgramError;
 use lzvm_artifacts::key_directory::{
-    read_key_directory_layout, validate_key_directory_layout, KeyDirectoryError, KeyDirectoryLayout,
+    read_key_directory_layout, KeyDirectoryError, KeyDirectoryLayout,
 };
-use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
+use lzvm_artifacts::regular_program::{
+    encode_regular_program, regular_program_from_expression_info, RegularProgramError,
+    RegularProgramLoweringError,
+};
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, SetupInfoError, UnitSetupInfo,
 };
@@ -342,6 +343,8 @@ pub enum BaseDirectoryWriteError {
     VerifierInfo(VerifierInfoError),
     FixedColumns(FixedColumnError),
     HintProgram(HintProgramError),
+    RegularProgram(RegularProgramError),
+    RegularProgramLowering(RegularProgramLoweringError),
     VerificationKey(VerificationKeyError),
     Setup(SetupError),
     MissingUnitPath { role: &'static str },
@@ -366,6 +369,8 @@ impl fmt::Display for BaseDirectoryWriteError {
             Self::VerifierInfo(error) => write!(f, "{error}"),
             Self::FixedColumns(error) => write!(f, "{error}"),
             Self::HintProgram(error) => write!(f, "{error}"),
+            Self::RegularProgram(error) => write!(f, "{error}"),
+            Self::RegularProgramLowering(error) => write!(f, "{error}"),
             Self::VerificationKey(error) => write!(f, "{error}"),
             Self::Setup(error) => write!(f, "{error}"),
             Self::MissingUnitPath { role } => write!(f, "missing unit {role}"),
@@ -418,6 +423,18 @@ impl From<HintProgramError> for BaseDirectoryWriteError {
     }
 }
 
+impl From<RegularProgramError> for BaseDirectoryWriteError {
+    fn from(error: RegularProgramError) -> Self {
+        Self::RegularProgram(error)
+    }
+}
+
+impl From<RegularProgramLoweringError> for BaseDirectoryWriteError {
+    fn from(error: RegularProgramLoweringError) -> Self {
+        Self::RegularProgramLowering(error)
+    }
+}
+
 impl From<VerificationKeyError> for BaseDirectoryWriteError {
     fn from(error: VerificationKeyError) -> Self {
         Self::VerificationKey(error)
@@ -464,7 +481,7 @@ pub fn write_base_directory_from_layout(
             write_expression_info_binary_for_directory(&path, &expressions)?;
         }
         if let Some(path) = unit.expression_program() {
-            write_regular_hint_program_for_directory(&path, &expressions)?;
+            write_regular_program_for_directory(&path, &expressions, &setup)?;
         }
 
         let verifier_path = require_base_unit_path(unit.verifier_info(), "verifier metadata path")?;
@@ -579,16 +596,16 @@ fn validate_base_directory_inputs(
     layout: &KeyDirectoryLayout,
     derive_verkey: bool,
 ) -> Result<(), BaseDirectoryWriteError> {
-    if !derive_verkey {
-        return validate_key_directory_layout(layout).map_err(BaseDirectoryWriteError::from);
-    }
-
     let mut seen = BTreeSet::new();
     for required in layout.required_paths() {
+        if required.role == "unit expression program" {
+            continue;
+        }
         if matches!(
             required.role,
             "unit verification-key metadata" | "unit verification-key binary"
-        ) {
+        ) && derive_verkey
+        {
             continue;
         }
         if !seen.insert(required.path.clone()) {
@@ -654,41 +671,16 @@ fn write_expression_info_binary_for_directory(
     Ok(bytes.len() as u64)
 }
 
-fn write_regular_hint_program_for_directory(
+fn write_regular_program_for_directory(
     path: &Path,
     expressions: &ExpressionInfo,
+    setup: &UnitSetupInfo,
 ) -> Result<u64, BaseDirectoryWriteError> {
-    let program = regular_hint_program_from_expression_info(expressions)?;
-    let hint_file = encode_regular_hint_program(&program)?;
-    let hint_section = parse_sectioned_file(&hint_file, *b"chps", 1)
-        .map_err(|error| BaseDirectoryWriteError::message(error.to_string()))?
-        .sections
-        .into_iter()
-        .find(|section| section.id == 3)
-        .ok_or_else(|| {
-            BaseDirectoryWriteError::message("encoded hint program is missing hint section")
-        })?;
-
-    let existing = std::fs::read(path).map_err(|error| {
-        BaseDirectoryWriteError::message(format!(
-            "read expression program for hint merge failed: {}: {error}",
-            path.display()
-        ))
-    })?;
-    let mut file = parse_sectioned_file(&existing, *b"chps", 1).map_err(|error| {
-        BaseDirectoryWriteError::message(format!(
-            "parse expression program for hint merge failed: {}: {error}",
-            path.display()
-        ))
-    })?;
-    file.sections.retain(|section| section.id != 3);
-    file.sections.push(hint_section);
-    file.sections.sort_by_key(|section| section.id);
-    let bytes = encode_sectioned_file(&file)
-        .map_err(|error| BaseDirectoryWriteError::message(error.to_string()))?;
+    let program = regular_program_from_expression_info(expressions, setup)?;
+    let bytes = encode_regular_program(&program)?;
     std::fs::write(path, &bytes).map_err(|error| {
         BaseDirectoryWriteError::message(format!(
-            "write expression program hint section failed: {}: {error}",
+            "write regular program failed: {}: {error}",
             path.display()
         ))
     })?;

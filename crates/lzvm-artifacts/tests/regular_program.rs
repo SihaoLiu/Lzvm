@@ -339,6 +339,37 @@ fn lowers_regular_expression_helper_operands() {
 }
 
 #[test]
+fn lowers_extension_number_operands() {
+    let info = ExpressionInfo {
+        hints: Vec::new(),
+        expressions: vec![ExpressionCode {
+            expression_id: 7,
+            stage: 2,
+            line: "constant quotient expression".to_owned(),
+            temporary_count: 1,
+            destination: None,
+            operations: vec![CodeOperation {
+                op: OperationKind::Add,
+                destination: CodeDestination::temporary(0, 3),
+                sources: vec![CodeOperand::number(10, 3), CodeOperand::number(0, 3)],
+            }],
+        }],
+        constraints: Vec::new(),
+    };
+
+    let program =
+        regular_program_from_expression_info(&info, &minimal_setup_info()).expect("program lowers");
+
+    assert_eq!(program.expressions.ops, vec![2]);
+    assert_eq!(program.expressions.args, vec![0, 0, 8, 0, 0, 8, 3, 0]);
+    assert_eq!(program.expressions.numbers, vec![10, 0, 0, 0, 0, 0]);
+    assert_eq!(program.expressions.max_tmp3, 1);
+    assert_eq!(program.expressions.max_args, 8);
+    assert_eq!(program.expressions.entries[0].destination_dimension, 3);
+    assert_eq!(program.expressions.entries[0].temp3_count, 1);
+}
+
+#[test]
 fn lowers_unit_and_group_value_sources() {
     let info = ExpressionInfo {
         hints: Vec::new(),
