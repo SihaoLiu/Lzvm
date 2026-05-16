@@ -29,6 +29,7 @@ cargo run -p lzvm-cli -- setup validate <setup-dir>
 ```
 
 The command loads the discovered setup catalog, validates companion metadata and binary artifacts, and prints a stable summary.
+When key material companions are present, the summary includes the material unit count and byte total.
 
 Fingerprint an existing setup directory catalog:
 
@@ -37,6 +38,14 @@ cargo run -p lzvm-cli -- setup fingerprint <setup-dir>
 ```
 
 This command loads the same setup catalog as validation, hashes the parsed global metadata, global constraint program, unit metadata, expression programs, verification-key roots, fixed-column byte counts, and constant-tree companion roots, then prints a deterministic catalog fingerprint. It is a catalog preflight identifier, not a full proof verifier or a byte-for-byte setup archive hash.
+
+Generate native setup key material for a setup directory:
+
+```sh
+cargo run -p lzvm-cli -- setup generate-key [--backend cpu|cuda] <setup-dir>
+```
+
+This is the public directory-level setup generation entry point. It reads repository-owned binary setup metadata, fixed-column inputs, expression programs, verifier programs, and global programs, then writes raw fixed-column artifacts, native constant trees, binary verification keys, PCS setup plans, and PCS setup-material companions for every discovered unit. The default backend is `cpu`; `cuda` is available when the CLI is built with the `cuda` feature.
 
 Check proof and public-value artifact consistency:
 
@@ -92,7 +101,7 @@ Generate native PCS setup-plan artifacts for every unit in a setup directory:
 cargo run -p lzvm-cli -- setup write-pcs-directory <setup-dir>
 ```
 
-This command derives each unit from setup-directory metadata, reads the unit setup metadata, and writes a canonical `.pcs-plan` companion next to that unit metadata prefix. It is a directory-level bridge from native setup metadata into later PCS setup generation.
+This lower-level command derives each unit from setup-directory metadata, reads the unit setup metadata, and writes a canonical `.pcs-plan` companion next to that unit metadata prefix. Use `setup generate-key` for the normal full directory flow.
 
 Generate a native PCS setup-material artifact from binary setup inputs:
 
@@ -108,7 +117,7 @@ Generate native PCS setup-material artifacts for every unit in a setup directory
 cargo run -p lzvm-cli -- setup write-pcs-material-directory <setup-dir>
 ```
 
-This command requires each unit's `.pcs-plan`, raw fixed-column artifact, and native constant tree to be present, then writes `.pcs-material` companions for the directory-level setup pipeline.
+This lower-level command requires each unit's `.pcs-plan`, raw fixed-column artifact, and native constant tree to be present, then writes `.pcs-material` companions for the directory-level setup pipeline. Use `setup generate-key` for the normal full directory flow.
 
 Generate a raw fixed-column artifact from native binary setup metadata and a native binary fixed-column source:
 
@@ -178,5 +187,6 @@ CUDA parity tests require the local CUDA toolchain and a matching architecture t
 ```sh
 source /etc/profile.d/modules.sh && module load intel/compiler cuda openmpi
 cargo test -p lzvm-accel --features cuda --test cuda_field
-cargo test -p lzvm-setup --features cuda --test constant_tree_native
+cargo test -p lzvm-setup --features cuda
+cargo test -p lzvm-cli --features cuda --test setup_write_base_directory
 ```
