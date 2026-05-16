@@ -40,7 +40,9 @@ use lzvm_artifacts::proof::{encode_proof_artifact, parse_proof_artifact, ProofSe
 use lzvm_artifacts::public_values::{
     encode_public_values, public_values_digest, PublicValueEntry, PublicValues,
 };
-use lzvm_artifacts::setup_info::{EvaluationMapEntry, FriStep, StarkStruct, UnitSetupInfo};
+use lzvm_artifacts::setup_info::{
+    EvaluationMapEntry, FriStep, StageValue, StarkStruct, UnitSetupInfo,
+};
 use lzvm_artifacts::trace_bundle::{TraceBundle, TraceBundleUnit};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
@@ -52,6 +54,7 @@ use lzvm_artifacts::witness_segment::{
     WitnessCommitmentStageSegment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 use lzvm_field::{coset_extend_evaluations, Ext3, Felt};
+use lzvm_prover::contribution::build_witness_contribution_input;
 use lzvm_prover::pcs_challenge::{derive_fri_queries, verify_query_nonce};
 use lzvm_prover::pcs_fri::{verify_fri_opening_folds, PcsFriOpeningFoldRequest};
 use lzvm_prover::pcs_transcript::{
@@ -162,6 +165,14 @@ fn sample_setup() -> UnitSetupInfo {
             transcript_arity: Some(4),
             merkle_tree_custom: Some(true),
         },
+    }
+}
+
+fn stage_value(name: &str, stage: u32) -> StageValue {
+    StageValue {
+        name: name.to_owned(),
+        stage,
+        lengths: vec![1],
     }
 }
 
@@ -672,6 +683,83 @@ fn runs_witness_and_commits_stages_from_execution_plan() {
     assert_eq!(output.trace_row_count(), 16);
     assert_eq!(output.trace_column_count(), 5);
     assert_eq!(output.stage_commitments(), &expected);
+}
+
+#[test]
+fn builds_witness_contribution_input_from_stage_one_root() {
+    let dir = temp_dir("contribution-input");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [9_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.metadata.setup.unit_value_map = vec![
+        stage_value("local_a", 1),
+        stage_value("local_b", 2),
+        stage_value("local_c", 1),
+    ];
+    let catalog = sample_catalog(unit);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library.clone()),
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let library = load_witness_library(&witness_library).expect("witness library should load");
+    let auxiliary_inputs = ProveWitnessAuxiliaryInputs {
+        unit_values: vec![
+            Felt::from_u64(701),
+            Felt::from_u64(801),
+            Felt::from_u64(802),
+            Felt::from_u64(803),
+            Felt::from_u64(702),
+        ],
+        ..ProveWitnessAuxiliaryInputs::default()
+    };
+    let output =
+        run_prove_witness_commitments_with_trace_backend(&plan, 0, auxiliary_inputs, &library)
+            .expect("witness commitments should run");
+    let stage_one_root = output
+        .commitments()
+        .stage_commitments()
+        .commitments()
+        .iter()
+        .find(|commitment| commitment.stage_index() == 1)
+        .expect("stage-one commitment should exist")
+        .root();
+
+    let input = build_witness_contribution_input(
+        &catalog.units[0].verification_key,
+        &plan.run_plan.schedule.units[0],
+        &output,
+    )
+    .expect("witness contribution input should build");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(input.root, stage_one_root);
+    assert_eq!(
+        input.values,
+        vec![
+            Felt::from_u64(1),
+            Felt::from_u64(2),
+            Felt::from_u64(3),
+            Felt::from_u64(4),
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::from_u64(701),
+            Felt::from_u64(702),
+        ]
+    );
 }
 
 #[test]

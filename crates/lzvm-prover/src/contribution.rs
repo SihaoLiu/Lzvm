@@ -24,6 +24,7 @@ use crate::setup_preflight::{
     validate_setup_directory_manifest_if_present, validate_setup_preflight_hashes,
     SetupPreflightError,
 };
+use crate::{ProveUnitSchedule, ProveWitnessTraceCommitments};
 
 const CONTRIBUTION_ROOT_SLOT_START: usize = 4;
 const CONTRIBUTION_ROOT_SLOT_END: usize = 8;
@@ -105,6 +106,9 @@ pub enum ContributionChallengeError {
     UnitValueCountMismatch {
         expected: usize,
         found: usize,
+    },
+    MissingStageOneContributionRoot {
+        unit_index: usize,
     },
     VerificationKeyValueCountMismatch {
         expected: usize,
@@ -228,6 +232,10 @@ impl fmt::Display for ContributionChallengeError {
                 f,
                 "contribution unit value count mismatch: expected {expected}, found {found}"
             ),
+            Self::MissingStageOneContributionRoot { unit_index } => write!(
+                f,
+                "contribution witness output unit {unit_index} is missing stage-one root"
+            ),
             Self::VerificationKeyValueCountMismatch { expected, found } => write!(
                 f,
                 "contribution verification-key value count mismatch: expected {expected}, found {found}"
@@ -260,6 +268,7 @@ impl std::error::Error for ContributionChallengeError {
             | Self::ValueCountMismatch { .. }
             | Self::ProofValueCountMismatch { .. }
             | Self::UnitValueCountMismatch { .. }
+            | Self::MissingStageOneContributionRoot { .. }
             | Self::VerificationKeyValueCountMismatch { .. }
             | Self::LengthOverflow => None,
         }
@@ -435,6 +444,28 @@ pub fn build_internal_contribution_input(
     let values =
         build_internal_contribution_values(verification_key, unit_value_map, packed_unit_values)?;
     Ok(InternalContributionInput { root, values })
+}
+
+pub fn build_witness_contribution_input(
+    verification_key: &VerificationKeyRoot,
+    unit: &ProveUnitSchedule,
+    output: &ProveWitnessTraceCommitments,
+) -> Result<InternalContributionInput, ContributionChallengeError> {
+    let unit_index = output.commitments().unit_index();
+    let root = output
+        .commitments()
+        .stage_commitments()
+        .commitments()
+        .iter()
+        .find(|commitment| commitment.stage_index() == 1)
+        .ok_or(ContributionChallengeError::MissingStageOneContributionRoot { unit_index })?
+        .root();
+    build_internal_contribution_input(
+        root,
+        verification_key,
+        &unit.unit_value_map,
+        &output.auxiliary_inputs().unit_values,
+    )
 }
 
 pub fn derive_worker_contribution_entry(
