@@ -1,6 +1,6 @@
 use super::declarations::{expected_close_error, missing_start, parse_name_reference};
 use super::types::{
-    BinaryOperator, CallArgument, Expression, ExpressionKind, ParseError, UnaryOperator,
+    BinaryOperator, CallArgument, Expression, ExpressionKind, ParseError, SourceSpan, UnaryOperator,
 };
 use crate::{lex_source, SourceFile, Token, TokenKind};
 
@@ -30,6 +30,38 @@ pub(crate) fn parse_expression_tokens(
     };
     let expression = parser.parse_expression(0)?;
     Ok((expression, parser.cursor))
+}
+
+pub(crate) fn parse_expression_span_best_effort(
+    tokens: &[Token],
+    span: SourceSpan,
+    source: &SourceFile,
+) -> Option<Expression> {
+    let (start_index, end_index) = token_span_bounds(tokens, &span)?;
+    parse_expression_range_best_effort(tokens, start_index, end_index, source)
+}
+
+pub(crate) fn parse_expression_range_best_effort(
+    tokens: &[Token],
+    start_index: usize,
+    end_index: usize,
+    source: &SourceFile,
+) -> Option<Expression> {
+    if start_index >= end_index {
+        return None;
+    }
+    let (expression, next_index) =
+        parse_expression_tokens(tokens, start_index, end_index, source).ok()?;
+    (next_index == end_index).then_some(expression)
+}
+
+fn token_span_bounds(tokens: &[Token], span: &SourceSpan) -> Option<(usize, usize)> {
+    let start_index = tokens.iter().position(|token| token.start == span.start)?;
+    let end_index = tokens
+        .iter()
+        .position(|token| token.end == span.end)?
+        .checked_add(1)?;
+    Some((start_index, end_index))
 }
 
 struct ExpressionParser<'a> {

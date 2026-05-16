@@ -116,6 +116,7 @@ pub struct FunctionParameter {
     pub name: String,
     pub array_dims: Vec<SourceSpan>,
     pub default_value: Option<SourceSpan>,
+    pub default_expression: Option<Expression>,
     pub source_name: String,
     pub start: usize,
     pub end: usize,
@@ -266,10 +267,11 @@ pub enum ColumnInitializerKind {
     Sequence,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ColumnInitializer {
     pub kind: ColumnInitializerKind,
     pub span: SourceSpan,
+    pub expression: Option<Expression>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -305,6 +307,7 @@ pub struct ValueDeclaration {
 pub struct AirGroupValueDeclaration {
     pub stage: u32,
     pub default_value: Option<SourceSpan>,
+    pub default_expression: Option<Expression>,
     pub aggregate_type: Option<String>,
     pub items: Vec<ColumnItem>,
     pub source_name: String,
@@ -326,6 +329,7 @@ pub struct CommitDeclaration {
 pub struct PublicDeclaration {
     pub items: Vec<ColumnItem>,
     pub initializer: Option<SourceSpan>,
+    pub initializer_expression: Option<Expression>,
     pub source_name: String,
     pub start: usize,
     pub end: usize,

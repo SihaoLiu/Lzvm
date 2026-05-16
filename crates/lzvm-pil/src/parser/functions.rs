@@ -2,7 +2,7 @@ use super::declarations::{
     expected_close_error, missing_start, parse_delimited_span, parse_name_reference,
     parse_required_braced_span,
 };
-use super::expressions::parse_expression_tokens;
+use super::expressions::{parse_expression_span_best_effort, parse_expression_tokens};
 use super::types::{
     Expression, FunctionDeclaration, FunctionParameter, FunctionStatement, FunctionStatementKind,
     FunctionVisibility, ParseError, SourceSpan,
@@ -816,12 +816,14 @@ fn parse_function_parameter(
         cursor = next_index;
     }
 
+    let mut default_expression = None;
     let default_value = if tokens
         .get(cursor)
         .is_some_and(|token| token.kind == TokenKind::Assign)
     {
         let (span, next_index) =
             parse_function_parameter_default_value(tokens, cursor + 1, source)?;
+        default_expression = parse_expression_span_best_effort(tokens, span, source);
         cursor = next_index;
         Some(span)
     } else {
@@ -840,6 +842,7 @@ fn parse_function_parameter(
             name,
             array_dims,
             default_value,
+            default_expression,
             source_name: source.source_name.clone(),
             start: token.start,
             end,

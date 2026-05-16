@@ -1,3 +1,4 @@
+use super::expressions::{parse_expression_range_best_effort, parse_expression_span_best_effort};
 use super::*;
 
 pub fn parse_column_declarations(
@@ -105,6 +106,7 @@ pub fn parse_air_group_value_declarations(
         declarations.push(AirGroupValueDeclaration {
             stage: properties.stage,
             default_value: properties.default_value,
+            default_expression: properties.default_expression,
             aggregate_type: properties.aggregate_type,
             items,
             source_name: source.source_name.clone(),
@@ -188,12 +190,13 @@ pub fn parse_public_declarations(
         }
 
         let (first_item, cursor) = parse_column_item(&tokens, index + 1, source)?;
-        let (items, initializer, next_index, end) = if tokens
+        let (items, initializer, initializer_expression, next_index, end) = if tokens
             .get(cursor)
             .is_some_and(|token| token.kind == TokenKind::Assign)
         {
             let (span, next_index) =
                 parse_expression_span_until_terminator(&tokens, cursor + 1, source)?;
+            let expression = parse_expression_span_best_effort(&tokens, span, source);
             let terminator =
                 tokens
                     .get(next_index)
@@ -207,7 +210,13 @@ pub fn parse_public_declarations(
                     start: terminator.start,
                 });
             }
-            (vec![first_item], Some(span), next_index + 1, terminator.end)
+            (
+                vec![first_item],
+                Some(span),
+                expression,
+                next_index + 1,
+                terminator.end,
+            )
         } else {
             let mut items = vec![first_item];
             let mut cursor = cursor;
@@ -231,12 +240,13 @@ pub fn parse_public_declarations(
                     start: terminator.start,
                 });
             }
-            (items, None, cursor + 1, terminator.end)
+            (items, None, None, cursor + 1, terminator.end)
         };
 
         declarations.push(PublicDeclaration {
             items,
             initializer,
+            initializer_expression,
             source_name: source.source_name.clone(),
             start: tokens[index].start,
             end,
@@ -384,6 +394,7 @@ pub fn parse_public_table_declarations(
 struct GroupValueProperties {
     stage: u32,
     default_value: Option<SourceSpan>,
+    default_expression: Option<Expression>,
     aggregate_type: Option<String>,
     next_index: usize,
 }
@@ -396,6 +407,7 @@ fn parse_group_value_properties(
     let mut stage = DEFAULT_AIR_GROUP_VALUE_STAGE;
     let mut stage_seen = false;
     let mut default_value = None;
+    let mut default_expression = None;
     let mut aggregate_type = None;
     let mut cursor = index;
 
@@ -423,7 +435,11 @@ fn parse_group_value_properties(
                         name: "default",
                     });
                 }
-                let (span, next) = parse_delimited_span(tokens, cursor + 1, source)?;
+                let open_index = cursor + 1;
+                let (span, next) = parse_delimited_span(tokens, open_index, source)?;
+                let close_index = next.saturating_sub(1);
+                default_expression =
+                    parse_expression_range_best_effort(tokens, open_index + 1, close_index, source);
                 default_value = Some(span);
                 cursor = next;
             }
@@ -446,6 +462,7 @@ fn parse_group_value_properties(
     Ok(GroupValueProperties {
         stage,
         default_value,
+        default_expression,
         aggregate_type,
         next_index: cursor,
     })
@@ -917,6 +934,7 @@ fn parse_column_initializer(
             ColumnInitializer {
                 kind: ColumnInitializerKind::Sequence,
                 span,
+                expression: None,
             },
             next_index + 1,
             terminator.end,
@@ -924,6 +942,7 @@ fn parse_column_initializer(
     }
 
     let (span, next_index) = parse_expression_span_until_terminator(tokens, index, source)?;
+    let expression = parse_expression_span_best_effort(tokens, span, source);
     let terminator = tokens
         .get(next_index)
         .ok_or_else(|| ParseError::ExpectedTerminator {
@@ -941,6 +960,7 @@ fn parse_column_initializer(
         ColumnInitializer {
             kind: ColumnInitializerKind::Expression,
             span,
+            expression,
         },
         next_index + 1,
         terminator.end,

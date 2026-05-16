@@ -4,8 +4,9 @@ use super::{
     parse_commit_declarations, parse_container_declarations, parse_function_declarations,
     parse_include_directives, parse_pragma_directives, parse_public_declarations,
     parse_public_table_declarations, parse_use_directives, parse_value_declarations,
-    BinaryOperator, ColumnInitializerKind, ColumnKind, ExpressionKind, FunctionStatementKind,
-    FunctionVisibility, IncludeKind, IncludeVisibility, ParseError, ValueDeclarationKind,
+    BinaryOperator, ColumnInitializerKind, ColumnKind, Expression, ExpressionKind,
+    FunctionStatementKind, FunctionVisibility, IncludeKind, IncludeVisibility, ParseError,
+    UnaryOperator, ValueDeclarationKind,
 };
 use crate::SourceFile;
 use std::path::PathBuf;
@@ -17,6 +18,31 @@ fn source(contents: &str) -> SourceFile {
         full_path: PathBuf::from("/case/main.pil"),
         source_name: "main.pil".to_owned(),
     }
+}
+
+fn assert_row_offset_add_one(expression: &Expression, name: &str, offset_value: &str) {
+    let ExpressionKind::Binary {
+        op: BinaryOperator::Add,
+        left,
+        right,
+    } = &expression.kind
+    else {
+        panic!("expression should be an addition");
+    };
+    assert!(matches!(
+        &left.kind,
+        ExpressionKind::RowOffset {
+            target,
+            offset,
+            prior,
+        } if !prior
+            && matches!(&target.kind, ExpressionKind::Name(target_name) if target_name == name)
+            && matches!(&offset.kind, ExpressionKind::Integer(value) if value == offset_value)
+    ));
+    assert!(matches!(
+        &right.kind,
+        ExpressionKind::Integer(value) if value == "1"
+    ));
 }
 
 #[test]
@@ -489,6 +515,22 @@ fn parses_function_parameters_with_defaults_and_references() {
             ..declarations[1].parameters[1].default_value.unwrap().end],
         "0"
     );
+    assert!(matches!(
+        &declarations[1].parameters[0]
+            .default_expression
+            .as_ref()
+            .expect("default expression should be recorded")
+            .kind,
+        ExpressionKind::Integer(value) if value == "0"
+    ));
+    assert!(matches!(
+        &declarations[1].parameters[1]
+            .default_expression
+            .as_ref()
+            .expect("default expression should be recorded")
+            .kind,
+        ExpressionKind::Integer(value) if value == "0"
+    ));
 
     assert_eq!(declarations[2].parameters.len(), 2);
     assert_eq!(declarations[2].parameters[0].type_name, "expr");
@@ -503,6 +545,17 @@ fn parses_function_parameters_with_defaults_and_references() {
             ..declarations[2].parameters[1].default_value.unwrap().end],
         "-1"
     );
+    assert!(matches!(
+        &declarations[2].parameters[1]
+            .default_expression
+            .as_ref()
+            .expect("default expression should be recorded")
+            .kind,
+        ExpressionKind::Unary {
+            op: UnaryOperator::Minus,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -718,7 +771,7 @@ fn parses_custom_column_declarations_with_feature_spans() {
 
 #[test]
 fn parses_fixed_column_initializer_spans() {
-    let source = source("col fixed stage(3) x = foo(bar[1] + baz);");
+    let source = source("col fixed stage(3) x = bar' + 1;");
 
     let declarations = parse_column_declarations(&source).expect("columns should parse");
 
@@ -730,11 +783,20 @@ fn parses_fixed_column_initializer_spans() {
     assert_eq!(declarations[0].items[0].name, "x");
     let initializer = declarations[0]
         .initializer
+        .as_ref()
         .expect("initializer should be recorded");
     assert_eq!(initializer.kind, ColumnInitializerKind::Expression);
     assert_eq!(
         &source.contents[initializer.span.start..initializer.span.end],
-        "foo(bar[1] + baz)"
+        "bar' + 1"
+    );
+    assert_row_offset_add_one(
+        initializer
+            .expression
+            .as_ref()
+            .expect("initializer expression should be recorded"),
+        "bar",
+        "1",
     );
 }
 
@@ -747,12 +809,14 @@ fn parses_sequence_initializer_spans() {
     assert_eq!(declarations.len(), 1);
     let initializer = declarations[0]
         .initializer
+        .as_ref()
         .expect("initializer should be recorded");
     assert_eq!(initializer.kind, ColumnInitializerKind::Sequence);
     assert_eq!(
         &source.contents[initializer.span.start..initializer.span.end],
         "[foo(bar), baz[1]]"
     );
+    assert_eq!(initializer.expression, None);
 }
 
 #[test]
@@ -797,8 +861,7 @@ fn skips_cast_expressions_when_parsing_value_declarations() {
 
 #[test]
 fn parses_group_value_declarations_with_properties() {
-    let source =
-        source("airgroupval stage(5) default(foo(bar + 1)) aggregate(sum) group.a[2], local;");
+    let source = source("airgroupval stage(5) default(bar' + 1) aggregate(sum) group.a[2], local;");
 
     let declarations =
         parse_air_group_value_declarations(&source).expect("group values should parse");
@@ -808,7 +871,15 @@ fn parses_group_value_declarations_with_properties() {
     assert_eq!(
         &source.contents[declarations[0].default_value.expect("default").start
             ..declarations[0].default_value.expect("default").end],
-        "(foo(bar + 1))"
+        "(bar' + 1)"
+    );
+    assert_row_offset_add_one(
+        declarations[0]
+            .default_expression
+            .as_ref()
+            .expect("default expression should be recorded"),
+        "bar",
+        "1",
     );
     assert_eq!(declarations[0].aggregate_type.as_deref(), Some("sum"));
     assert_eq!(declarations[0].items.len(), 2);
@@ -831,6 +902,7 @@ fn parses_group_value_declarations_with_default_stage() {
     assert_eq!(declarations.len(), 1);
     assert_eq!(declarations[0].stage, 2);
     assert_eq!(declarations[0].default_value, None);
+    assert_eq!(declarations[0].default_expression, None);
     assert_eq!(declarations[0].aggregate_type.as_deref(), Some("prod"));
     assert_eq!(declarations[0].items[0].name, "local");
 }
@@ -867,7 +939,7 @@ fn parses_commit_declarations_with_public_references() {
 
 #[test]
 fn parses_public_declarations_with_lists_and_initializers() {
-    let source = source("public air.main[2], local;\npublic scalar = foo(bar[1] + baz);");
+    let source = source("public air.main[2], local;\npublic scalar = lane'512 + 1;");
 
     let declarations =
         parse_public_declarations(&source).expect("public declarations should parse");
@@ -882,12 +954,21 @@ fn parses_public_declarations_with_lists_and_initializers() {
     );
     assert_eq!(declarations[0].items[1].name, "local");
     assert_eq!(declarations[0].initializer, None);
+    assert_eq!(declarations[0].initializer_expression, None);
     assert_eq!(declarations[1].items.len(), 1);
     assert_eq!(declarations[1].items[0].name, "scalar");
     let initializer = declarations[1].initializer.expect("initializer");
     assert_eq!(
         &source.contents[initializer.start..initializer.end],
-        "foo(bar[1] + baz)"
+        "lane'512 + 1"
+    );
+    assert_row_offset_add_one(
+        declarations[1]
+            .initializer_expression
+            .as_ref()
+            .expect("initializer expression should be recorded"),
+        "lane",
+        "512",
     );
 }
 
