@@ -24,6 +24,7 @@ use lzvm_artifacts::witness_library::{
 
 pub mod constant_opening;
 pub mod constant_tree_opening;
+pub mod contribution;
 pub mod fri_polynomial;
 pub mod global_constraints;
 pub mod group_values;
