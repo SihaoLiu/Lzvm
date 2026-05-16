@@ -18,7 +18,7 @@ use lzvm_artifacts::program_image_segment::{
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 use lzvm_artifacts::trace_bundle::{read_trace_bundle_file, TraceBundle};
-use lzvm_artifacts::unit_values_segment::parse_unit_values_segment;
+use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
 use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::group_values::{build_group_values_segment, load_group_values_from_segments};
@@ -28,7 +28,8 @@ use lzvm_prover::proof_values::{
 };
 use lzvm_prover::setup_preflight::validate_setup_preflight;
 use lzvm_prover::unit_values::{
-    build_unit_values_segment_from_packed_values_batch, ProveUnitValues,
+    build_unit_values_segment_from_packed_values_batch, load_unit_values_from_segments,
+    ProveUnitValues,
 };
 use lzvm_prover::witness_loader::{load_witness_library, TraceBytesBackend, WitnessBackend};
 use lzvm_prover::{
@@ -275,6 +276,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         gpu_streams: plan.run_plan.gpu.max_streams,
         public_inputs: plan.inputs.public_inputs.as_deref(),
         unit_values_input: parsed.unit_values.as_deref(),
+        unit_values_segment_input: parsed.unit_values_segment.as_deref(),
         proof_values_input: parsed.proof_values.as_deref(),
         program_image_cache: plan
             .program_image_cache
@@ -488,6 +490,11 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             "cannot combine --evaluation-values and --evaluation-values-segment".to_owned(),
         ));
     }
+    if unit_values.is_some() && unit_values_segment.is_some() {
+        return Err(ParseError::Invalid(
+            "cannot combine --unit-values and --unit-values-segment".to_owned(),
+        ));
+    }
     if proof_values.is_some() && proof_values_segment.is_some() {
         return Err(ParseError::Invalid(
             "cannot combine --proof-values and --proof-values-segment".to_owned(),
@@ -605,6 +612,7 @@ struct WitnessOutputSaveRequest<'a> {
     gpu_streams: usize,
     public_inputs: Option<&'a Path>,
     unit_values_input: Option<&'a Path>,
+    unit_values_segment_input: Option<&'a Path>,
     proof_values_input: Option<&'a Path>,
     program_image_cache: Option<&'a ProgramImageCommitmentCache>,
     output: &'a ProveWitnessTraceCommitments,
@@ -723,6 +731,7 @@ fn finish_all_units_witness_run(
                 gpu_streams: plan.run_plan.gpu.max_streams,
                 public_inputs: plan.inputs.public_inputs.as_deref(),
                 unit_values_input: parsed.unit_values.as_deref(),
+                unit_values_segment_input: parsed.unit_values_segment.as_deref(),
                 proof_values_input: parsed.proof_values.as_deref(),
                 program_image_cache: plan
                     .program_image_cache
@@ -1478,16 +1487,19 @@ fn build_proof_bytes(
     let opening_segment =
         build_witness_opening_segment(request.schedule, &query_segment, commitments)
             .map_err(|error| format!("build witness opening segment failed: {error}"))?;
-    let packed_unit_values = match request.unit_values_input {
-        Some(path) => read_packed_values(path, "unit values")?,
-        None => Vec::new(),
-    };
     let unit_index = commitments.unit_index();
     let unit = request
         .schedule
         .units
         .get(unit_index)
         .ok_or_else(|| format!("unit values segment unit index out of range: {unit_index}"))?;
+    let packed_unit_values = match request.unit_values_segment_input {
+        Some(path) => read_packed_unit_values_segment_for_unit(request.schedule, unit_index, path)?,
+        None => match request.unit_values_input {
+            Some(path) => read_packed_values(path, "unit values")?,
+            None => Vec::new(),
+        },
+    };
     let unit_values_segment = build_unit_values_segment_from_packed_values(
         unit_index,
         &unit.unit_value_map,
@@ -1550,6 +1562,33 @@ fn build_proof_bytes(
     encode_proof_artifact(&proof)
         .map(Some)
         .map_err(|error| format!("encode witness proof artifact failed: {error}"))
+}
+
+fn read_packed_unit_values_segment_for_unit(
+    schedule: &ProveSchedule,
+    unit_index: usize,
+    path: &Path,
+) -> Result<Vec<Felt>, String> {
+    let bytes = fs::read(path).map_err(|error| {
+        format!(
+            "read unit values segment failed: {}: {error}",
+            path.display()
+        )
+    })?;
+    let unit = schedule
+        .units
+        .get(unit_index)
+        .ok_or_else(|| format!("unit values segment unit index out of range: {unit_index}"))?;
+    let segment = ProofSegment {
+        id: UNIT_VALUES_SEGMENT_ID,
+        data: bytes,
+    };
+    load_unit_values_from_segments(
+        unit_index,
+        &unit.unit_value_map,
+        std::slice::from_ref(&segment),
+    )
+    .map_err(|error| format!("load unit values segment failed: {error}"))
 }
 
 fn write_proof_output(output_dir: &Path, proof_bytes: &[u8]) -> Result<(), String> {

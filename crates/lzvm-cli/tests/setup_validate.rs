@@ -5096,6 +5096,138 @@ fn saves_prove_witness_unit_values_when_requested() {
 }
 
 #[test]
+fn saves_prove_witness_unit_values_segment_when_requested() {
+    let dir = temp_dir("prove-witness-save-unit-values-segment");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_unit_value(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let unit_values_segment_path = dir.join("unit_values_segment.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [13_u8]);
+    write_bytes(
+        &unit_values_segment_path,
+        encode_unit_values_segment(&UnitValuesSegment {
+            units: vec![UnitValuesUnitSegment {
+                unit_index: 0,
+                values: vec![101, 201, 202, 203],
+            }],
+        })
+        .expect("unit values segment should encode"),
+    );
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--save-outputs",
+            "--unit-values-segment",
+            unit_values_segment_path
+                .to_str()
+                .expect("unit values segment path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let proof_path = output_dir.join("proof.bin");
+    let proof_bytes = fs::read(&proof_path).expect("proof output should read");
+    let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
+    let unit_values_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == UNIT_VALUES_SEGMENT_ID)
+        .expect("unit values segment should exist");
+    let unit_values =
+        parse_unit_values_segment(&unit_values_segment.data).expect("unit values should parse");
+    assert_eq!(unit_values.units.len(), 1);
+    assert_eq!(unit_values.units[0].unit_index, 0);
+    assert_eq!(unit_values.units[0].values, vec![101, 201, 202, 203]);
+
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert_eq!(
+        String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
+        "status=ok\nunits=4\nsegments=6\npublic_values=1\n"
+    );
+    assert!(verify_stderr.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_combined_unit_values_inputs() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--unit-values",
+            "unit-values.bin",
+            "--unit-values-segment",
+            "unit-values-segment.bin",
+            "setup",
+            "out",
+            "witness.so",
+            "guest.elf",
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove witness failed: cannot combine --unit-values and --unit-values-segment\n"
+    );
+}
+
+#[test]
 fn passes_proof_values_to_witness_regular_constraints() {
     let dir = temp_dir("prove-witness-proof-value-constraint");
     let _ = fs::remove_dir_all(&dir);
