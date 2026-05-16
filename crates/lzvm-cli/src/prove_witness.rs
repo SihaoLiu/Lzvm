@@ -785,38 +785,41 @@ fn build_witness_proof_artifact_for_all_units(
         .iter()
         .map(|output| output.commitments())
         .collect::<Vec<_>>();
+    let binding_segments: &[ProofSegment] = cache_segment.as_slice();
     let proof = if all_units_transcript_required(
         request.execution_units,
         request.outputs,
         request.auxiliary_inputs,
         request.evaluation_values_segment_input.is_some(),
     )? {
-        build_witness_transcript_proof_artifact_for_all_units(request, public_values_hash)?
+        build_witness_transcript_proof_artifact_for_all_units(
+            request,
+            public_values_hash,
+            binding_segments,
+        )?
+    } else if binding_segments.is_empty() {
+        build_witness_proof_artifact(
+            request.catalog,
+            request.schedule,
+            public_values_hash,
+            &witness_outputs,
+            &request.auxiliary_inputs.proof_values,
+            &request.auxiliary_inputs.group_values,
+            request.unit_values,
+        )?
     } else {
-        let binding_segments = cache_segment.as_ref().map(std::slice::from_ref);
-        match binding_segments {
-            Some(binding_segments) => build_witness_proof_artifact_with_bindings(
-                request.catalog,
-                request.schedule,
-                public_values_hash,
-                &witness_outputs,
-                ProofArtifactAuxInputs {
-                    proof_values: &request.auxiliary_inputs.proof_values,
-                    group_values: &request.auxiliary_inputs.group_values,
-                    unit_values: request.unit_values,
-                    binding_segments,
-                },
-            )?,
-            None => build_witness_proof_artifact(
-                request.catalog,
-                request.schedule,
-                public_values_hash,
-                &witness_outputs,
-                &request.auxiliary_inputs.proof_values,
-                &request.auxiliary_inputs.group_values,
-                request.unit_values,
-            )?,
-        }
+        build_witness_proof_artifact_with_bindings(
+            request.catalog,
+            request.schedule,
+            public_values_hash,
+            &witness_outputs,
+            ProofArtifactAuxInputs {
+                proof_values: &request.auxiliary_inputs.proof_values,
+                group_values: &request.auxiliary_inputs.group_values,
+                unit_values: request.unit_values,
+                binding_segments,
+            },
+        )?
     };
     let mut proof = proof;
     append_program_image_cache_segment(&mut proof.segments, cache_segment);
@@ -857,6 +860,7 @@ fn all_units_transcript_required(
 fn build_witness_transcript_proof_artifact_for_all_units(
     request: &WitnessAllUnitsProofRequest<'_>,
     public_values_hash: [u8; 32],
+    binding_segments: &[ProofSegment],
 ) -> Result<ProofArtifact, String> {
     let material_segment = build_pcs_material_manifest_segment(request.schedule)
         .map_err(|error| format!("build material manifest segment failed: {error}"))?;
@@ -935,6 +939,7 @@ fn build_witness_transcript_proof_artifact_for_all_units(
                 material_segment: &material_segment,
                 witness_segment,
                 evaluation_segment: &evaluation_segment,
+                binding_segments,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -1199,6 +1204,7 @@ fn build_proof_bytes(
     let public_values_hash = public_values_digest(&public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
     let cache_segment = build_program_image_cache_proof_segment(request.program_image_cache)?;
+    let binding_segments: &[ProofSegment] = cache_segment.as_slice();
     let material_segment = build_pcs_material_manifest_segment(request.schedule)
         .map_err(|error| format!("build material manifest segment failed: {error}"))?;
     let commitments = request.output.commitments();
@@ -1231,6 +1237,7 @@ fn build_proof_bytes(
                 material_segment: &material_segment,
                 witness_segment: segment,
                 evaluation_segment: &evaluation_segment,
+                binding_segments,
             }],
         )
         .map_err(|error| format!("build FRI transcript values failed: {error}"))?;

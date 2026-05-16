@@ -3,6 +3,7 @@ use lzvm_artifacts::pcs_evaluation_segment::PcsEvaluationUnitSegment;
 use lzvm_artifacts::pcs_fri_segment::{PcsFriOpeningLayerSegment, PcsFriOpeningUnitSegment};
 use lzvm_artifacts::pcs_material_segment::PcsMaterialManifestUnit;
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
+use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::setup_info::StageValue;
 use lzvm_artifacts::witness_segment::{WitnessCommitmentSegment, WitnessCommitmentStageSegment};
 use lzvm_field::{Ext3, Felt, PoseidonTranscript, TranscriptError};
@@ -86,6 +87,7 @@ fn derives_final_query_challenge_from_direct_transcript_events() {
         evaluation_challenge_draws: 2,
         fri_roots: &fri_roots,
         final_polynomial: &final_polynomial,
+        binding_segments: &[],
     })
     .expect("challenge should derive");
 
@@ -128,6 +130,7 @@ fn derives_indexed_transcript_challenges_from_direct_events() {
         evaluation_challenge_draws: 2,
         fri_roots: &fri_roots,
         final_polynomial: &final_polynomial,
+        binding_segments: &[],
     })
     .expect("challenges should derive");
 
@@ -180,6 +183,7 @@ fn derives_indexed_transcript_challenges_from_direct_events() {
                 evaluation_challenge_draws: 2,
                 fri_roots: &fri_roots,
                 final_polynomial: &final_polynomial,
+                binding_segments: &[],
             })
             .expect("final challenge should derive")
         )
@@ -211,6 +215,7 @@ fn prefix_challenges_do_not_depend_on_evaluation_values() {
         unit_values: &unit_values,
         evaluation_values: &first_evaluations,
         evaluation_challenge_draws: 2,
+        binding_segments: &[],
     })
     .expect("prefix challenges should derive");
     let second = derive_pcs_transcript_prefix_challenges(PcsTranscriptPrefixInputs {
@@ -224,6 +229,7 @@ fn prefix_challenges_do_not_depend_on_evaluation_values() {
         unit_values: &unit_values,
         evaluation_values: &second_evaluations,
         evaluation_challenge_draws: 2,
+        binding_segments: &[],
     })
     .expect("prefix challenges should derive");
 
@@ -262,6 +268,7 @@ fn absorbs_unit_values_after_matching_stage_roots() {
         evaluation_challenge_draws: 0,
         fri_roots: &[],
         final_polynomial: &final_polynomial,
+        binding_segments: &[],
     })
     .expect("challenges should derive");
 
@@ -311,6 +318,7 @@ fn derives_final_query_challenge_from_hashed_transcript_events() {
         evaluation_challenge_draws: 2,
         fri_roots: &[],
         final_polynomial: &final_polynomial,
+        binding_segments: &[],
     })
     .expect("challenge should derive");
 
@@ -346,6 +354,7 @@ fn rejects_root_challenge_draw_mismatches() {
             evaluation_challenge_draws: 0,
             fri_roots: &[],
             final_polynomial: &[ext(20)],
+            binding_segments: &[],
         }),
         Err(PcsTranscriptError::RootChallengeDrawMismatch {
             root_count: 1,
@@ -370,6 +379,7 @@ fn rejects_empty_final_polynomials() {
             evaluation_challenge_draws: 0,
             fri_roots: &[],
             final_polynomial: &[],
+            binding_segments: &[],
         }),
         Err(PcsTranscriptError::EmptyFinalPolynomial)
     );
@@ -395,6 +405,7 @@ fn derives_final_query_challenge_from_parsed_segments() {
         fri: &fri,
         root_challenge_draws: &[2, 1, 1],
         evaluation_challenge_draws: 2,
+        binding_segments: &[],
     })
     .expect("challenge should derive from segments");
 
@@ -411,10 +422,61 @@ fn derives_final_query_challenge_from_parsed_segments() {
         evaluation_challenge_draws: 2,
         fri_roots: &[root(60), root(70)],
         final_polynomial: &[ext(80), ext(90)],
+        binding_segments: &[],
     })
     .expect("generic challenge should derive");
 
     assert_eq!(actual, expected);
+}
+
+#[test]
+fn binding_segments_affect_final_query_challenge_from_parsed_segments() {
+    let unit = sample_unit(Some(4), true);
+    let material = sample_material(0, 1);
+    let witness = sample_witness(0, &[10, 20, 30]);
+    let evaluations = sample_evaluations(0, &[40, 50]);
+    let fri = sample_fri(0, &[60, 70], &[80, 90]);
+    let public_values = values(&[7, 8]);
+    let first_binding = ProofSegment {
+        id: 77,
+        data: vec![1, 2, 3, 4],
+    };
+    let second_binding = ProofSegment {
+        id: 77,
+        data: vec![5, 6, 7, 8],
+    };
+
+    let first = derive_pcs_final_query_challenge_from_segments(PcsTranscriptSegmentInputs {
+        unit_index: 0,
+        unit: &unit,
+        material: &material,
+        public_values: &public_values,
+        unit_values: &[],
+        witness: &witness,
+        evaluations: &evaluations,
+        fri: &fri,
+        root_challenge_draws: &[2, 1, 1],
+        evaluation_challenge_draws: 2,
+        binding_segments: std::slice::from_ref(&first_binding),
+    })
+    .expect("challenge should derive from segments");
+
+    let second = derive_pcs_final_query_challenge_from_segments(PcsTranscriptSegmentInputs {
+        unit_index: 0,
+        unit: &unit,
+        material: &material,
+        public_values: &public_values,
+        unit_values: &[],
+        witness: &witness,
+        evaluations: &evaluations,
+        fri: &fri,
+        root_challenge_draws: &[2, 1, 1],
+        evaluation_challenge_draws: 2,
+        binding_segments: std::slice::from_ref(&second_binding),
+    })
+    .expect("challenge should derive from segments");
+
+    assert_ne!(first, second);
 }
 
 #[test]
@@ -437,6 +499,7 @@ fn derives_indexed_transcript_challenges_from_parsed_segments() {
         fri: &fri,
         root_challenge_draws: &[2, 1, 1],
         evaluation_challenge_draws: 2,
+        binding_segments: &[],
     })
     .expect("challenges should derive from segments");
 
@@ -453,6 +516,7 @@ fn derives_indexed_transcript_challenges_from_parsed_segments() {
         evaluation_challenge_draws: 2,
         fri_roots: &[root(60), root(70)],
         final_polynomial: &[ext(80), ext(90)],
+        binding_segments: &[],
     })
     .expect("generic challenges should derive");
 
@@ -475,6 +539,7 @@ fn segment_challenge_derivation_requires_transcript_arity() {
             fri: &sample_fri(0, &[], &[30]),
             root_challenge_draws: &[1],
             evaluation_challenge_draws: 1,
+            binding_segments: &[],
         }),
         Err(PcsTranscriptError::MissingTranscriptArity { unit_index: 0 })
     );
@@ -496,6 +561,7 @@ fn segment_challenge_derivation_rejects_unit_mismatches() {
             fri: &sample_fri(0, &[], &[30]),
             root_challenge_draws: &[1],
             evaluation_challenge_draws: 1,
+            binding_segments: &[],
         }),
         Err(PcsTranscriptError::SegmentUnitIndexMismatch {
             segment: "material",

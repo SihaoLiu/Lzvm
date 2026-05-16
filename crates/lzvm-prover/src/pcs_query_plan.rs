@@ -186,7 +186,7 @@ pub fn validate_seeded_pcs_query_plan_segments(
         ))?;
     let witness_segments = load_witness_commitment_segments(&schedule.units, segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::Witness)?;
-    let binding_segments = seeded_query_binding_segments(segments);
+    let binding_segments = proof_binding_segments(segments);
     let expected_segment = build_pcs_query_plan_segment_with_bindings(
         schedule,
         public_values_hash,
@@ -201,7 +201,7 @@ pub fn validate_seeded_pcs_query_plan_segments(
     Ok(())
 }
 
-fn seeded_query_binding_segments(segments: &[ProofSegment]) -> Vec<ProofSegment> {
+pub(crate) fn proof_binding_segments(segments: &[ProofSegment]) -> Vec<ProofSegment> {
     segments
         .iter()
         .filter(|segment| segment.id == PROGRAM_IMAGE_CACHE_SEGMENT_ID)
@@ -266,6 +266,7 @@ pub fn validate_transcript_pcs_query_plan_segments(
         .map_err(ValidatePcsQueryPlanSegmentsError::Fri)?;
     let unit_values = load_unit_values_from_segments(unit_index, &unit.unit_value_map, segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
+    let binding_segments = proof_binding_segments(segments);
     let expected_segment = build_pcs_query_plan_segment_from_transcript_segments(
         schedule,
         &witness_segments,
@@ -280,6 +281,7 @@ pub fn validate_transcript_pcs_query_plan_segments(
             fri: &fri_unit,
             root_challenge_draws: &unit.transcript_root_challenge_draws,
             evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
+            binding_segments: &binding_segments,
         },
         nonce_segment,
     )

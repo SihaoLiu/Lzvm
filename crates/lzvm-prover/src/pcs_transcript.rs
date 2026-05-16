@@ -3,9 +3,11 @@ use std::fmt;
 use lzvm_artifacts::pcs_evaluation_segment::PcsEvaluationUnitSegment;
 use lzvm_artifacts::pcs_fri_segment::PcsFriOpeningUnitSegment;
 use lzvm_artifacts::pcs_material_segment::PcsMaterialManifestUnit;
+use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::setup_info::StageValue;
 use lzvm_artifacts::witness_segment::WitnessCommitmentSegment;
 use lzvm_field::{Ext3, Felt, FieldError, PoseidonTranscript, TranscriptError};
+use sha2::{Digest, Sha256};
 
 use crate::ProveUnitSchedule;
 
@@ -23,6 +25,7 @@ pub struct PcsTranscriptInputs<'a> {
     pub evaluation_challenge_draws: usize,
     pub fri_roots: &'a [[Felt; 4]],
     pub final_polynomial: &'a [Ext3],
+    pub binding_segments: &'a [ProofSegment],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -37,6 +40,7 @@ pub struct PcsTranscriptPrefixInputs<'a> {
     pub unit_values: &'a [Felt],
     pub evaluation_values: &'a [Ext3],
     pub evaluation_challenge_draws: usize,
+    pub binding_segments: &'a [ProofSegment],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -51,6 +55,7 @@ pub struct PcsTranscriptSegmentInputs<'a> {
     pub fri: &'a PcsFriOpeningUnitSegment,
     pub root_challenge_draws: &'a [usize],
     pub evaluation_challenge_draws: usize,
+    pub binding_segments: &'a [ProofSegment],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,6 +187,7 @@ pub fn derive_pcs_transcript_challenges(
             unit_values: input.unit_values,
             evaluation_values: input.evaluation_values,
             evaluation_challenge_draws: input.evaluation_challenge_draws,
+            binding_segments: input.binding_segments,
         })?;
 
     challenges.push(Ext3::ZERO);
@@ -266,6 +272,8 @@ fn build_pcs_transcript_prefix(
         absorb_commit_values(&mut transcript, input.arity, input.hash_values, &values)?;
     }
 
+    absorb_binding_segments(&mut transcript, input.binding_segments)?;
+
     Ok((transcript, challenges))
 }
 
@@ -335,6 +343,7 @@ pub fn derive_pcs_transcript_challenges_from_segments(
         unit_values: input.unit_values,
         evaluation_values: &evaluation_values,
         evaluation_challenge_draws: input.evaluation_challenge_draws,
+        binding_segments: input.binding_segments,
         fri_roots: &fri_roots,
         final_polynomial: &final_polynomial,
     })
@@ -381,6 +390,28 @@ fn draw_fields(transcript: &mut PoseidonTranscript, count: usize, out: &mut Vec<
     }
 }
 
+pub(crate) fn absorb_binding_segments(
+    transcript: &mut PoseidonTranscript,
+    binding_segments: &[ProofSegment],
+) -> Result<(), PcsTranscriptError> {
+    if binding_segments.is_empty() {
+        return Ok(());
+    }
+
+    let count =
+        u64::try_from(binding_segments.len()).map_err(|_| PcsTranscriptError::LengthOverflow)?;
+    let mut header = Sha256::new();
+    header.update(b"lzvm-pcs-transcript-binding-v1");
+    transcript.put(&digest_words(&header.finalize().into()));
+    transcript.put(&[Felt::from_u64(count)]);
+
+    for segment in binding_segments {
+        transcript.put(&digest_words(&hash_bound_segment(segment)?));
+    }
+
+    Ok(())
+}
+
 fn check_unit_index(
     segment: &'static str,
     expected: u32,
@@ -412,4 +443,25 @@ fn extension_from_words(words: [u64; 3]) -> Result<Ext3, PcsTranscriptError> {
         Felt::from_canonical(words[1])?,
         Felt::from_canonical(words[2])?,
     ))
+}
+
+fn hash_bound_segment(segment: &ProofSegment) -> Result<[u8; 32], PcsTranscriptError> {
+    let mut hasher = Sha256::new();
+    hasher.update(segment.id.to_le_bytes());
+    let byte_count =
+        u64::try_from(segment.data.len()).map_err(|_| PcsTranscriptError::LengthOverflow)?;
+    hasher.update(byte_count.to_le_bytes());
+    hasher.update(Sha256::digest(&segment.data));
+    Ok(hasher.finalize().into())
+}
+
+fn digest_words(digest: &[u8; 32]) -> [Felt; 4] {
+    let mut words = [Felt::ZERO; 4];
+    for (index, word) in words.iter_mut().enumerate() {
+        let start = index * 8;
+        let mut bytes = [0_u8; 8];
+        bytes.copy_from_slice(&digest[start..start + 8]);
+        *word = Felt::from_le_bytes(bytes);
+    }
+    words
 }

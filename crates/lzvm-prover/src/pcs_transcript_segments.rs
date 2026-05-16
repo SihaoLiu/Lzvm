@@ -13,6 +13,7 @@ use lzvm_field::{Ext3, Felt};
 
 use crate::pcs_evaluation::{load_pcs_evaluation_unit_from_segments, LoadPcsEvaluationUnitError};
 use crate::pcs_fri::{load_pcs_fri_opening_segment_from_segments, LoadPcsFriOpeningSegmentError};
+use crate::pcs_query_plan::proof_binding_segments;
 use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
 use crate::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptError, PcsTranscriptSegmentInputs,
@@ -127,6 +128,7 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
         .map_err(PcsTranscriptProofSegmentsError::Fri)?;
     let witness_segments = load_witness_commitment_segments(&schedule.units, segments)
         .map_err(PcsTranscriptProofSegmentsError::Witness)?;
+    let binding_segments = proof_binding_segments(segments);
     let mut units = Vec::new();
 
     for query_unit in &query_plan.units {
@@ -174,6 +176,7 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
                 fri: fri_unit,
                 root_challenge_draws: &unit.transcript_root_challenge_draws,
                 evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
+                binding_segments: &binding_segments,
             })
             .map_err(PcsTranscriptProofSegmentsError::Transcript)?;
         unit_challenges.shrink_to_fit();

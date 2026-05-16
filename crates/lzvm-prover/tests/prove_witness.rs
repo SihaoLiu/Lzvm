@@ -416,6 +416,7 @@ impl TranscriptQueryFixture {
             root_challenge_draws: &self.schedule.units[0].transcript_root_challenge_draws,
             evaluation_challenge_draws: self.schedule.units[0]
                 .transcript_evaluation_challenge_draws,
+            binding_segments: &[],
         }
     }
 }
@@ -1482,6 +1483,7 @@ fn builds_pcs_fri_transcript_values_from_execution_material() {
             witness_roots: &witness_roots,
             evaluation_values: &evaluations,
             xi_challenge: Ext3::from_u64s([3, 0, 0]),
+            binding_segments: &[],
         }],
     )
     .expect("FRI transcript values should build");
@@ -1532,6 +1534,7 @@ fn builds_pcs_fri_transcript_values_from_execution_material() {
         evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
         fri_roots: &transcript_value.commitments.layer_roots,
         final_polynomial: &transcript_value.commitments.final_polynomial,
+        binding_segments: &[],
     })
     .expect("transcript challenges should derive");
 

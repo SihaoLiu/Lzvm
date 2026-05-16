@@ -668,6 +668,7 @@ fn derives_fri_transcript_commitments_from_polynomial_values() {
             evaluation_values: &evaluations,
             evaluation_challenge_draws: 2,
             polynomial: &polynomial,
+            binding_segments: &[],
         },
     )
     .expect("FRI transcript commitments should build");
@@ -685,6 +686,7 @@ fn derives_fri_transcript_commitments_from_polynomial_values() {
         evaluation_challenge_draws: 2,
         fri_roots: &commitments.layer_roots,
         final_polynomial: &commitments.final_polynomial,
+        binding_segments: &[],
     })
     .expect("transcript challenges should derive");
     let opening = build_pcs_fri_opening_unit(

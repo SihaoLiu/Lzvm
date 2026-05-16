@@ -63,6 +63,7 @@ pub struct ProvePcsFriTranscriptTraceValues<'a> {
     pub witness_roots: &'a [[Felt; 4]],
     pub evaluation_values: &'a [Ext3],
     pub xi_challenge: Ext3,
+    pub binding_segments: &'a [ProofSegment],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -75,6 +76,7 @@ pub struct ProvePcsFriTranscriptTraceSegmentValues<'a> {
     pub material_segment: &'a ProofSegment,
     pub witness_segment: &'a ProofSegment,
     pub evaluation_segment: &'a ProofSegment,
+    pub binding_segments: &'a [ProofSegment],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -520,6 +522,7 @@ pub fn build_pcs_fri_transcript_values_from_trace(
                 evaluation_values: input.evaluation_values,
                 evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
                 polynomial: &polynomial,
+                binding_segments: input.binding_segments,
             },
         )
         .map_err(|source| ProvePcsFriTranscriptTraceValuesError::Transcript {
@@ -657,6 +660,7 @@ pub fn build_pcs_fri_transcript_values_from_trace_segments(
                 unit_values: &input.auxiliary_inputs.unit_values,
                 evaluation_values: &evaluation_values,
                 evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
+                binding_segments: input.binding_segments,
             })
             .map_err(|source| {
                 ProvePcsFriTranscriptTraceValuesError::PrefixTranscript {
@@ -690,6 +694,7 @@ pub fn build_pcs_fri_transcript_values_from_trace_segments(
                 witness_roots: &witness_roots,
                 evaluation_values: &evaluation_values,
                 xi_challenge,
+                binding_segments: input.binding_segments,
             }],
         )?;
         out.append(&mut built);

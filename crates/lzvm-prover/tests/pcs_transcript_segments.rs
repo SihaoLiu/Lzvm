@@ -50,6 +50,7 @@ fn derives_transcript_challenges_from_proof_segments() {
         evaluation_challenge_draws: 1,
         fri_roots: &[],
         final_polynomial: &[ext(40)],
+        binding_segments: &[],
     })
     .expect("expected challenges should derive");
 
@@ -81,6 +82,7 @@ fn derives_unit_transcript_challenges_from_proof_segments() {
         evaluation_challenge_draws: 1,
         fri_roots: &[],
         final_polynomial: &[ext(40)],
+        binding_segments: &[],
     })
     .expect("expected challenges should derive");
 

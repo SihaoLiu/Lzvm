@@ -210,6 +210,134 @@ fn rejects_transcript_pcs_query_plan_mismatches() {
     assert_eq!(error, ValidatePcsQueryPlanSegmentsError::QueryPlanMismatch);
 }
 
+#[test]
+fn rejects_transcript_pcs_query_plan_mismatches_with_program_image_cache_segment() {
+    let mut schedule = sample_schedule();
+    schedule.units[0].evaluation_value_count = 1;
+    schedule.units[0].transcript_evaluation_challenge_draws = 1;
+    schedule.units[0].query_count = 8;
+    schedule.units[0].extended_domain_size = 1024;
+    schedule.total_query_count = 8;
+    schedule.max_extended_domain_bits = 10;
+    let material = material_unit(0);
+    let witness = witness_commitment(0);
+    let witness_segment = witness_segment(0);
+    let evaluations = PcsEvaluationUnitSegment {
+        unit_index: 0,
+        values: vec![[9, 10, 11]],
+    };
+    let fri = PcsFriOpeningUnitSegment {
+        unit_index: 0,
+        layers: Vec::new(),
+        final_polynomial: vec![[12, 13, 14]],
+    };
+    let good_cache_segment = ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: encode_program_image_cache_segment(&sample_program_image_cache())
+            .expect("cache should encode"),
+    };
+    let bad_cache_segment = ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: encode_program_image_cache_segment(&sample_program_image_cache_variant())
+            .expect("cache should encode"),
+    };
+    let transcript_input = PcsTranscriptSegmentInputs {
+        unit_index: 0,
+        unit: &schedule.units[0],
+        material: &material,
+        public_values: &[],
+        unit_values: &[],
+        witness: &witness,
+        evaluations: &evaluations,
+        fri: &fri,
+        root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
+        evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: std::slice::from_ref(&good_cache_segment),
+    };
+    let nonce_segment =
+        build_pcs_query_nonce_segment_from_transcript_segments(&schedule, transcript_input)
+            .expect("query nonce should build");
+    let transcript_input = PcsTranscriptSegmentInputs {
+        unit_index: 0,
+        unit: &schedule.units[0],
+        material: &material,
+        public_values: &[],
+        unit_values: &[],
+        witness: &witness,
+        evaluations: &evaluations,
+        fri: &fri,
+        root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
+        evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: std::slice::from_ref(&good_cache_segment),
+    };
+    let query = build_pcs_query_plan_segment_from_transcript_segments(
+        &schedule,
+        std::slice::from_ref(&witness_segment),
+        transcript_input,
+        &nonce_segment,
+    )
+    .expect("query plan should build");
+    let transcript_input = PcsTranscriptSegmentInputs {
+        unit_index: 0,
+        unit: &schedule.units[0],
+        material: &material,
+        public_values: &[],
+        unit_values: &[],
+        witness: &witness,
+        evaluations: &evaluations,
+        fri: &fri,
+        root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
+        evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: std::slice::from_ref(&bad_cache_segment),
+    };
+    let expected_bad_query = build_pcs_query_plan_segment_from_transcript_segments(
+        &schedule,
+        std::slice::from_ref(&witness_segment),
+        transcript_input,
+        &nonce_segment,
+    )
+    .expect("query plan should build");
+    let segments = vec![
+        ProofSegment {
+            id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+            data: encode_pcs_material_manifest_segment(&PcsMaterialManifestSegment {
+                units: vec![material],
+            })
+            .expect("material segment should encode"),
+        },
+        witness_segment,
+        bad_cache_segment,
+        ProofSegment {
+            id: PCS_EVALUATION_SEGMENT_ID,
+            data: encode_pcs_evaluation_segment(&PcsEvaluationSegment {
+                units: vec![evaluations],
+            })
+            .expect("evaluation segment should encode"),
+        },
+        ProofSegment {
+            id: PCS_FRI_OPENING_SEGMENT_ID,
+            data: encode_pcs_fri_opening_segment(&PcsFriOpeningSegment { units: vec![fri] })
+                .expect("FRI opening segment should encode"),
+        },
+        nonce_segment,
+        query,
+    ];
+
+    assert_ne!(
+        expected_bad_query.data,
+        segments
+            .iter()
+            .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
+            .expect("query plan should exist")
+            .data
+    );
+
+    let error = validate_transcript_pcs_query_plan_segments(&schedule, &[], &segments)
+        .expect_err("query plan mismatch should be rejected");
+
+    assert_eq!(error, ValidatePcsQueryPlanSegmentsError::QueryPlanMismatch);
+}
+
 fn pcs_query_plan_proof_segment(units: Vec<PcsQueryPlanUnit>) -> ProofSegment {
     ProofSegment {
         id: PCS_QUERY_PLAN_SEGMENT_ID,
@@ -244,6 +372,7 @@ fn transcript_query_plan_segments() -> (ProveSchedule, Vec<ProofSegment>) {
         fri: &fri,
         root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
         evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: &[],
     };
     let witness_segment = witness_segment(0);
     let nonce_segment = build_pcs_query_nonce_segment_from_transcript_segments(&schedule, input)
@@ -259,6 +388,7 @@ fn transcript_query_plan_segments() -> (ProveSchedule, Vec<ProofSegment>) {
         fri: &fri,
         root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
         evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: &[],
     };
     let query_segment = build_pcs_query_plan_segment_from_transcript_segments(
         &schedule,
@@ -348,6 +478,20 @@ fn witness_commitment(unit_index: u32) -> WitnessCommitmentSegment {
 fn sample_program_image_cache() -> ProgramImageCommitmentCache {
     ProgramImageCommitmentCache {
         program_digest: [0x11; 32],
+        source_image_digest: [0x22; 32],
+        constraint_system_digest: [0x33; 32],
+        tree_root: [10, 11, 12, 13],
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cuda,
+    }
+}
+
+fn sample_program_image_cache_variant() -> ProgramImageCommitmentCache {
+    ProgramImageCommitmentCache {
+        program_digest: [0x12; 32],
         source_image_digest: [0x22; 32],
         constraint_system_digest: [0x33; 32],
         tree_root: [10, 11, 12, 13],

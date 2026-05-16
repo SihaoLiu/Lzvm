@@ -23,7 +23,7 @@ use crate::pcs_query_plan::{
     load_pcs_query_plan_from_segments, uses_transcript_pcs_query_plan_inputs,
     LoadPcsQueryPlanSegmentError,
 };
-use crate::pcs_transcript::{absorb_commit_values, PcsTranscriptError};
+use crate::pcs_transcript::{absorb_binding_segments, absorb_commit_values, PcsTranscriptError};
 use crate::pcs_transcript_segments::{
     derive_pcs_transcript_unit_challenges_from_proof_segments, PcsTranscriptProofSegmentsError,
     PcsTranscriptUnitChallenges,
@@ -63,6 +63,7 @@ pub struct PcsFriTranscriptCommitmentRequest<'a> {
     pub evaluation_values: &'a [Ext3],
     pub evaluation_challenge_draws: usize,
     pub polynomial: &'a [Ext3],
+    pub binding_segments: &'a [ProofSegment],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1577,6 +1578,8 @@ fn build_fri_transcript_prefix(
         let values = flatten_extension_values_for_transcript(request.evaluation_values);
         absorb_commit_values(&mut transcript, request.arity, request.hash_values, &values)?;
     }
+
+    absorb_binding_segments(&mut transcript, request.binding_segments)?;
 
     Ok((transcript, challenges))
 }

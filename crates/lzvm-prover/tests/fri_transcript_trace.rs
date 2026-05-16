@@ -118,6 +118,7 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
             material_segment: &material_segment,
             witness_segment: &witness_segment,
             evaluation_segment: &evaluation_segment,
+            binding_segments: &[],
         }],
     )
     .expect("FRI transcript values should build from proof segments");
@@ -145,6 +146,7 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
         evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
         fri_roots: &transcript_value.commitments.layer_roots,
         final_polynomial: &transcript_value.commitments.final_polynomial,
+        binding_segments: &[],
     })
     .expect("transcript challenges should derive");
     let xi_challenge = expected_challenges[unit.challenge_count - 3];
@@ -192,6 +194,7 @@ fn derives_fri_transcript_values_from_trace_and_proof_segments() {
             material_segment: &material_segment,
             witness_segment: &witness_segment,
             evaluation_segment: &evaluation_segment,
+            binding_segments: &[],
         }],
     )
     .expect("FRI opening segment should build from trace segments");
@@ -352,6 +355,7 @@ fn derives_fri_transcript_values_and_openings_for_multiple_units() {
             material_segment: &material_segment,
             witness_segment: &witness_segment0,
             evaluation_segment: &evaluation_segment,
+            binding_segments: &[],
         },
         ProvePcsFriTranscriptTraceSegmentValues {
             unit_index: 1,
@@ -362,6 +366,7 @@ fn derives_fri_transcript_values_and_openings_for_multiple_units() {
             material_segment: &material_segment,
             witness_segment: &witness_segment1,
             evaluation_segment: &evaluation_segment,
+            binding_segments: &[],
         },
     ];
     let values = build_pcs_fri_transcript_values_from_trace_segments(&schedule, &transcript_inputs)

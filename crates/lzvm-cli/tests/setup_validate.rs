@@ -737,6 +737,7 @@ fn sample_folded_pcs_fri_opening_template_with_values_and_unit_values(
         fri: &template,
         root_challenge_draws: &unit.transcript_root_challenge_draws,
         evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
+        binding_segments: &[],
     })
     .expect("transcript challenges should derive");
     let fold_values = values
@@ -1424,6 +1425,7 @@ fn write_proof_value_query_preflight_fixture(
         fri: &fri_unit,
         root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
         evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: &[],
     };
     let nonce_segment =
         build_pcs_query_nonce_segment_from_transcript_segments(&schedule, transcript_inputs)
@@ -1628,6 +1630,7 @@ fn write_unit_value_query_preflight_fixture(
         fri: &fri_unit,
         root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
         evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: &[],
     };
     let nonce_segment =
         build_pcs_query_nonce_segment_from_transcript_segments(&schedule, transcript_inputs)
@@ -1720,6 +1723,7 @@ fn write_challenge_global_constraint_preflight_fixture(root: &Path) -> (PathBuf,
         fri: &fri_unit,
         root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
         evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: &[],
     };
     let challenges = derive_pcs_transcript_challenges_from_segments(transcript_inputs)
         .expect("transcript challenges should derive");
@@ -3813,6 +3817,7 @@ fn saves_prove_witness_transcript_fri_outputs_when_requested() {
         fri: &fri.units[0],
         root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
         evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: &[],
     })
     .expect("transcript challenges should derive");
     assert!(verify_fri_opening_folds(
@@ -4747,6 +4752,7 @@ fn validates_setup_aware_verify_preflight_with_transcript_query_plan() {
         fri: &fri_unit,
         root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
         evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: &[],
     };
     let nonce_segment =
         build_pcs_query_nonce_segment_from_transcript_segments(&schedule, transcript_inputs)
@@ -5209,6 +5215,7 @@ fn rejects_setup_aware_verify_preflight_with_bad_fri_fold_chain() {
         fri: &fri_unit,
         root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
         evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: &[],
     };
     let nonce_segment =
         build_pcs_query_nonce_segment_from_transcript_segments(&schedule, transcript_inputs)
@@ -5323,6 +5330,7 @@ fn rejects_setup_aware_verify_preflight_with_bad_query_output() {
         fri: &fri_unit,
         root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
         evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: &[],
     };
     let nonce_segment =
         build_pcs_query_nonce_segment_from_transcript_segments(&schedule, transcript_inputs)
@@ -5435,6 +5443,7 @@ fn rejects_setup_aware_verify_preflight_with_wrong_evaluation_value_count() {
         fri: &fri_unit,
         root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
         evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: &[],
     };
     let nonce_segment =
         build_pcs_query_nonce_segment_from_transcript_segments(&schedule, transcript_inputs)
