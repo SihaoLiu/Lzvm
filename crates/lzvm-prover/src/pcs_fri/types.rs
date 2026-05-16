@@ -8,7 +8,7 @@ use lzvm_artifacts::verifier_info::VerifierCode;
 use lzvm_field::{Ext3, Felt, FieldError};
 
 use super::fold::PcsFriFoldError;
-use crate::merkle_hash::MerkleHashError;
+use super::merkle::PcsFriMerkleError;
 use crate::pcs_query_plan::LoadPcsQueryPlanSegmentError;
 use crate::pcs_transcript::PcsTranscriptError;
 use crate::pcs_transcript_segments::PcsTranscriptProofSegmentsError;
@@ -449,51 +449,6 @@ impl From<PcsTranscriptError> for PcsFriTranscriptCommitmentError {
 impl From<PcsFriOpeningBuildError> for PcsFriTranscriptCommitmentError {
     fn from(error: PcsFriOpeningBuildError) -> Self {
         Self::Opening(error)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PcsFriMerkleError {
-    UnsupportedArity { arity: usize },
-    EmptyValues,
-    EmptyLastLevel,
-    InvalidSiblingCount { expected: usize, found: usize },
-    LastLevelIndexOutOfRange { index: u64, node_count: usize },
-    LengthOverflow,
-}
-
-impl fmt::Display for PcsFriMerkleError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnsupportedArity { arity } => {
-                write!(f, "PCS FRI Merkle arity is unsupported: {arity}")
-            }
-            Self::EmptyValues => write!(f, "PCS FRI Merkle query has no values"),
-            Self::EmptyLastLevel => write!(f, "PCS FRI Merkle last level is empty"),
-            Self::InvalidSiblingCount { expected, found } => write!(
-                f,
-                "PCS FRI Merkle sibling count mismatch: expected {expected}, found {found}"
-            ),
-            Self::LastLevelIndexOutOfRange { index, node_count } => write!(
-                f,
-                "PCS FRI Merkle last-level index {index} is outside node count {node_count}"
-            ),
-            Self::LengthOverflow => write!(f, "PCS FRI Merkle length overflow"),
-        }
-    }
-}
-
-impl std::error::Error for PcsFriMerkleError {}
-
-impl From<MerkleHashError> for PcsFriMerkleError {
-    fn from(error: MerkleHashError) -> Self {
-        match error {
-            MerkleHashError::UnsupportedArity { arity } => Self::UnsupportedArity { arity },
-            MerkleHashError::InvalidChildCount { expected, found } => {
-                Self::InvalidSiblingCount { expected, found }
-            }
-            MerkleHashError::LengthOverflow => Self::LengthOverflow,
-        }
     }
 }
 

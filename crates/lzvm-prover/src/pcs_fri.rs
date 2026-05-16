@@ -1,22 +1,11 @@
 mod fold;
+mod merkle;
 mod types;
 
 pub use fold::{verify_fri_fold, PcsFriFoldError};
+pub use merkle::{verify_fri_last_level_root, verify_fri_query_path, PcsFriMerkleError};
 pub use types::*;
 
-use lzvm_artifacts::pcs_fri_segment::{
-    parse_pcs_fri_opening_segment, PcsFriOpeningLayerSegment, PcsFriOpeningLevelSegment,
-    PcsFriOpeningQuerySegment, PcsFriOpeningSegment, PcsFriOpeningUnitSegment,
-    PCS_FRI_OPENING_SEGMENT_ID,
-};
-use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
-use lzvm_artifacts::proof::ProofSegment;
-use lzvm_artifacts::setup_info::StageValue;
-use lzvm_field::{Ext3, Felt, FieldError, PoseidonTranscript};
-
-use crate::merkle_hash::{
-    linear_hash, linear_hashes, parent_hash, parent_hashes, root_from_digest_level, HASH_WORDS,
-};
 use crate::pcs_query_plan::{
     load_pcs_query_plan_from_segments, uses_transcript_pcs_query_plan_inputs,
 };
@@ -28,6 +17,14 @@ use crate::verifier_query::{
     validate_verifier_query_outputs_from_segments, VerifierFriQueryOutputSegmentsRequest,
 };
 use crate::ProveUnitSchedule;
+use lzvm_artifacts::pcs_fri_segment::{
+    parse_pcs_fri_opening_segment, PcsFriOpeningLayerSegment, PcsFriOpeningQuerySegment,
+    PcsFriOpeningSegment, PcsFriOpeningUnitSegment, PCS_FRI_OPENING_SEGMENT_ID,
+};
+use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
+use lzvm_artifacts::proof::ProofSegment;
+use lzvm_artifacts::setup_info::StageValue;
+use lzvm_field::{Ext3, Felt, FieldError, PoseidonTranscript};
 
 pub fn load_pcs_fri_opening_segment_from_segments(
     segments: &[ProofSegment],
@@ -268,74 +265,6 @@ pub fn validate_optional_pcs_fri_opening_proof_segments(
     .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::VerifierQuery)
 }
 
-pub fn verify_fri_query_path(
-    root: [Felt; HASH_WORDS],
-    last_level: &[[Felt; HASH_WORDS]],
-    arity: usize,
-    row_index: u64,
-    values: &[Ext3],
-    siblings: &[Vec<[Felt; HASH_WORDS]>],
-) -> Result<bool, PcsFriMerkleError> {
-    if values.is_empty() {
-        return Err(PcsFriMerkleError::EmptyValues);
-    }
-    let flattened_values = flatten_extension_values(values)?;
-    let mut digest = linear_hash(&flattened_values, arity)?;
-    let mut path_index = row_index;
-    let arity_u64 = u64::try_from(arity).map_err(|_| PcsFriMerkleError::LengthOverflow)?;
-    let expected_siblings = arity
-        .checked_sub(1)
-        .ok_or(PcsFriMerkleError::LengthOverflow)?;
-
-    for level in siblings {
-        if level.len() != expected_siblings {
-            return Err(PcsFriMerkleError::InvalidSiblingCount {
-                expected: expected_siblings,
-                found: level.len(),
-            });
-        }
-
-        let child_slot = usize::try_from(path_index % arity_u64)
-            .map_err(|_| PcsFriMerkleError::LengthOverflow)?;
-        let mut children = vec![[Felt::ZERO; HASH_WORDS]; arity];
-        let mut sibling_index = 0;
-        for (slot, child) in children.iter_mut().enumerate() {
-            if slot == child_slot {
-                *child = digest;
-            } else {
-                *child = level[sibling_index];
-                sibling_index += 1;
-            }
-        }
-        digest = parent_hash(&children, arity)?;
-        path_index /= arity_u64;
-    }
-
-    if last_level.is_empty() {
-        Ok(digest == root)
-    } else {
-        let index = usize::try_from(path_index).map_err(|_| PcsFriMerkleError::LengthOverflow)?;
-        let target = last_level
-            .get(index)
-            .ok_or(PcsFriMerkleError::LastLevelIndexOutOfRange {
-                index: path_index,
-                node_count: last_level.len(),
-            })?;
-        Ok(digest == *target)
-    }
-}
-
-pub fn verify_fri_last_level_root(
-    root: [Felt; HASH_WORDS],
-    arity: usize,
-    last_level: &[[Felt; HASH_WORDS]],
-) -> Result<bool, PcsFriMerkleError> {
-    if last_level.is_empty() {
-        return Err(PcsFriMerkleError::EmptyLastLevel);
-    }
-    Ok(root_from_digest_level(last_level, arity)? == root)
-}
-
 pub fn build_pcs_fri_transcript_commitments(
     schedule: &ProveUnitSchedule,
     request: PcsFriTranscriptCommitmentRequest<'_>,
@@ -395,7 +324,8 @@ pub fn build_pcs_fri_transcript_commitments(
 
         let grouped_values =
             group_fri_layer_values(layer_index, &current, output_size, folding_factor)?;
-        let tree = build_fri_layer_tree(&grouped_values, arity, schedule.last_level_verification)?;
+        let tree =
+            merkle::build_fri_layer_tree(&grouped_values, arity, schedule.last_level_verification)?;
         layer_roots.push(tree.root);
         transcript.put(&tree.root);
         let challenge = transcript.get_field();
@@ -507,7 +437,8 @@ pub fn build_pcs_fri_opening_unit(
 
         let grouped_values =
             group_fri_layer_values(layer_index, &current, output_size, folding_factor)?;
-        let tree = build_fri_layer_tree(&grouped_values, arity, schedule.last_level_verification)?;
+        let tree =
+            merkle::build_fri_layer_tree(&grouped_values, arity, schedule.last_level_verification)?;
         let layer_index_u32 =
             u32::try_from(layer_index).map_err(|_| PcsFriOpeningBuildError::LengthOverflow)?;
         let output_size_u64 =
@@ -534,12 +465,12 @@ pub fn build_pcs_fri_opening_unit(
 
         layers.push(PcsFriOpeningLayerSegment {
             layer_index: layer_index_u32,
-            root: digest_to_u64s(tree.root),
+            root: merkle::digest_to_u64s(tree.root),
             last_level: tree
                 .last_level
                 .iter()
                 .copied()
-                .map(digest_to_u64s)
+                .map(merkle::digest_to_u64s)
                 .collect(),
             queries,
         });
@@ -804,20 +735,6 @@ fn flatten_extension_values_for_transcript(values: &[Ext3]) -> Vec<Felt> {
         .collect()
 }
 
-fn flatten_extension_values(values: &[Ext3]) -> Result<Vec<Felt>, PcsFriMerkleError> {
-    let len = values
-        .len()
-        .checked_mul(3)
-        .ok_or(PcsFriMerkleError::LengthOverflow)?;
-    let mut out = Vec::with_capacity(len);
-    for value in values {
-        out.push(value.c0);
-        out.push(value.c1);
-        out.push(value.c2);
-    }
-    Ok(out)
-}
-
 fn ordered_opening_layers(
     fri: &PcsFriOpeningUnitSegment,
     expected_count: usize,
@@ -858,68 +775,6 @@ fn convert_felt(value: u64) -> Result<Felt, PcsFriOpeningFoldError> {
     })
 }
 
-struct FriLayerTree {
-    root: [Felt; HASH_WORDS],
-    levels: Vec<Vec<[Felt; HASH_WORDS]>>,
-    unpadded_counts: Vec<usize>,
-    last_level: Vec<[Felt; HASH_WORDS]>,
-    last_level_verification: u32,
-    arity: usize,
-}
-
-impl FriLayerTree {
-    fn query_siblings(
-        &self,
-        row_index: usize,
-    ) -> Result<Vec<PcsFriOpeningLevelSegment>, PcsFriOpeningBuildError> {
-        let mut siblings = Vec::new();
-        let mut query_index = row_index;
-        let mut level_index = 0;
-        while !self.should_stop_at_level(level_index)? {
-            let level = self
-                .levels
-                .get(level_index)
-                .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
-            let child_slot = query_index % self.arity;
-            let group_start = (query_index / self.arity)
-                .checked_mul(self.arity)
-                .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
-            let mut level_siblings = Vec::with_capacity(self.arity - 1);
-            for slot in 0..self.arity {
-                if slot == child_slot {
-                    continue;
-                }
-                let sibling_index = group_start
-                    .checked_add(slot)
-                    .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
-                let digest = level
-                    .get(sibling_index)
-                    .copied()
-                    .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
-                level_siblings.push(digest_to_u64s(digest));
-            }
-            siblings.push(PcsFriOpeningLevelSegment {
-                siblings: level_siblings,
-            });
-            query_index /= self.arity;
-            level_index += 1;
-        }
-        Ok(siblings)
-    }
-
-    fn should_stop_at_level(&self, level_index: usize) -> Result<bool, PcsFriOpeningBuildError> {
-        let count = *self
-            .unpadded_counts
-            .get(level_index)
-            .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
-        if self.last_level_verification == 0 {
-            Ok(count == 1)
-        } else {
-            Ok(count <= checked_pow(self.arity, self.last_level_verification)?)
-        }
-    }
-}
-
 fn group_fri_layer_values(
     layer_index: usize,
     polynomial: &[Ext3],
@@ -950,73 +805,6 @@ fn group_fri_layer_values(
         grouped.push(values);
     }
     Ok(grouped)
-}
-
-fn build_fri_layer_tree(
-    rows: &[Vec<Ext3>],
-    arity: usize,
-    last_level_verification: u32,
-) -> Result<FriLayerTree, PcsFriOpeningBuildError> {
-    if rows.is_empty() {
-        return Err(PcsFriOpeningBuildError::PolynomialLengthMismatch {
-            layer_index: 0,
-            expected: 1,
-            found: 0,
-        });
-    }
-
-    let flattened_rows = rows
-        .iter()
-        .map(|row| flatten_extension_values(row))
-        .collect::<Result<Vec<_>, PcsFriMerkleError>>()?;
-    let mut current = linear_hashes(&flattened_rows, arity).map_err(PcsFriMerkleError::from)?;
-    let mut levels = Vec::new();
-    let mut unpadded_counts = Vec::new();
-    loop {
-        unpadded_counts.push(current.len());
-        let mut padded = current.clone();
-        if padded.len() > 1 {
-            let extra_zeros = (arity - (padded.len() % arity)) % arity;
-            padded.resize(
-                padded
-                    .len()
-                    .checked_add(extra_zeros)
-                    .ok_or(PcsFriOpeningBuildError::LengthOverflow)?,
-                [Felt::ZERO; HASH_WORDS],
-            );
-        }
-        levels.push(padded.clone());
-        if current.len() == 1 {
-            break;
-        }
-
-        current = parent_hashes(&padded, arity).map_err(PcsFriMerkleError::from)?;
-    }
-
-    let root = *levels
-        .last()
-        .and_then(|level| level.first())
-        .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
-    let last_level = if last_level_verification == 0 {
-        Vec::new()
-    } else {
-        let target_count = checked_pow(arity, last_level_verification)?;
-        let level_index = unpadded_counts
-            .iter()
-            .position(|count| *count <= target_count)
-            .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
-        let count = unpadded_counts[level_index];
-        levels[level_index][..count].to_vec()
-    };
-
-    Ok(FriLayerTree {
-        root,
-        levels,
-        unpadded_counts,
-        last_level,
-        last_level_verification,
-        arity,
-    })
 }
 
 fn build_domain_size(bits: u32) -> Result<usize, PcsFriOpeningBuildError> {
@@ -1081,20 +869,6 @@ fn checked_pow_validation(base: usize, power: u32) -> Option<usize> {
         out = out.checked_mul(base)?;
     }
     Some(out)
-}
-
-fn checked_pow(base: usize, power: u32) -> Result<usize, PcsFriOpeningBuildError> {
-    let mut out = 1_usize;
-    for _ in 0..power {
-        out = out
-            .checked_mul(base)
-            .ok_or(PcsFriOpeningBuildError::LengthOverflow)?;
-    }
-    Ok(out)
-}
-
-fn digest_to_u64s(digest: [Felt; HASH_WORDS]) -> [u64; HASH_WORDS] {
-    digest.map(Felt::to_u64)
 }
 
 fn field_extension_from_words(words: [u64; 3]) -> Result<Ext3, ValidatePcsFriOpeningSegmentsError> {
