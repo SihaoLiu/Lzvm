@@ -25,6 +25,7 @@ use lzvm_artifacts::witness_library::{
 pub mod constant_opening;
 pub mod constant_tree_opening;
 pub mod contribution;
+mod fixed_material;
 pub mod fri_polynomial;
 pub mod global_constraints;
 pub mod gpu_setup;
@@ -57,6 +58,9 @@ pub mod witness_opening;
 pub mod witness_runner;
 pub mod witness_trace;
 
+pub use fixed_material::{
+    load_fixed_columns_material, FixedColumnsMaterial, FixedColumnsMaterialError,
+};
 pub use gpu_setup::{prepare_gpu_setup, GpuSetupError};
 pub use proof_artifact::{
     build_witness_proof_artifact, build_witness_proof_artifact_for_all_units,

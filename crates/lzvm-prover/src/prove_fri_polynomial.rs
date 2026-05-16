@@ -3,11 +3,12 @@ use std::path::{Path, PathBuf};
 
 #[cfg(feature = "cuda")]
 use lzvm_accel::cuda_goldilocks_coset_extend;
-use lzvm_artifacts::fixed::{read_fixed_columns_file_for_setup, FixedColumnError, FixedColumns};
+use lzvm_artifacts::fixed::FixedColumns;
 #[cfg(not(feature = "cuda"))]
 use lzvm_field::coset_extend_evaluations;
 use lzvm_field::{DomainError, Ext3, Felt, FieldError};
 
+use crate::fixed_material::{load_fixed_columns_material, FixedColumnsMaterialError};
 use crate::fri_polynomial::{
     build_fri_domain_points, build_fri_polynomial, derive_opening_xis, FriPolynomialColumnMatrix,
     FriPolynomialError, FriPolynomialInputs, FriPolynomialStageColumns, FriPolynomialZerofierTable,
@@ -26,7 +27,7 @@ pub enum ProvePcsFriPolynomialError {
     FixedColumns {
         unit_index: usize,
         path: PathBuf,
-        source: FixedColumnError,
+        source: Box<FixedColumnsMaterialError>,
     },
     FixedRowCountTooLarge {
         unit_index: usize,
@@ -111,7 +112,7 @@ impl fmt::Display for ProvePcsFriPolynomialError {
                 source,
             } => write!(
                 f,
-                "prove PCS FRI polynomial fixed input read failed for unit {unit_index} at {}: {source}",
+                "prove PCS FRI polynomial fixed input load failed for unit {unit_index} at {}: {source}",
                 path.display()
             ),
             Self::FixedRowCountTooLarge {
@@ -311,7 +312,7 @@ fn read_extended_fixed_columns(
     unit: &ProveUnitSchedule,
     plan_unit: &ProveExecutionUnitArtifacts,
 ) -> Result<Vec<Felt>, ProvePcsFriPolynomialError> {
-    let fixed_columns = read_fixed_columns_file_for_setup(
+    let material = load_fixed_columns_material(
         &plan_unit.fixed_columns,
         &plan_unit.setup,
         plan_unit.group_name.clone(),
@@ -320,12 +321,12 @@ fn read_extended_fixed_columns(
     .map_err(|source| ProvePcsFriPolynomialError::FixedColumns {
         unit_index,
         path: plan_unit.fixed_columns.clone(),
-        source,
+        source: Box::new(source),
     })?;
     let source_rows = usize::try_from(unit.base_domain_size)
         .map_err(|_| ProvePcsFriPolynomialError::LengthOverflow { unit_index })?;
     let base_values = fixed_columns_to_matrix(
-        &fixed_columns,
+        &material.fixed_columns,
         plan_unit.fixed_column_count,
         source_rows,
         unit_index,
