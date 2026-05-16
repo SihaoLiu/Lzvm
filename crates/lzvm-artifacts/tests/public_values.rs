@@ -6,8 +6,6 @@ use lzvm_artifacts::public_values::{
     read_public_values_binary_file, read_public_values_file, PublicValueEntry, PublicValues,
     PublicValuesError,
 };
-#[cfg(feature = "json")]
-use lzvm_artifacts::public_values::{encode_public_values_json, parse_public_values_json};
 
 fn sample_hash(byte: u8) -> [u8; 32] {
     [byte; 32]
@@ -35,35 +33,6 @@ fn sample_public_values() -> PublicValues {
 }
 
 #[test]
-#[cfg(feature = "json")]
-fn parses_public_values_json() {
-    let input = r#"{
-        "schema_version": 1,
-        "setup_hash": "1111111111111111111111111111111111111111111111111111111111111111",
-        "values": [
-            {"name": "block_number", "elements": ["12345"]},
-            {"name": "state_root_words", "elements": ["1", "2", "3", "4"]}
-        ]
-    }"#;
-
-    let parsed = parse_public_values_json(input).expect("fixture should parse");
-
-    assert_eq!(parsed, sample_public_values());
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn encodes_public_values_json_canonically() {
-    let encoded =
-        encode_public_values_json(&sample_public_values()).expect("fixture should encode");
-
-    assert_eq!(
-        encoded,
-        r#"{"schema_version":1,"setup_hash":"1111111111111111111111111111111111111111111111111111111111111111","values":[{"name":"block_number","elements":["12345"]},{"name":"state_root_words","elements":["1","2","3","4"]}]}"#
-    );
-}
-
-#[test]
 fn encodes_and_parses_public_values_binary() {
     let encoded = encode_public_values(&sample_public_values()).expect("fixture should encode");
 
@@ -73,6 +42,18 @@ fn encodes_and_parses_public_values_binary() {
     assert_eq!(
         public_values_digest(&parsed).expect("parsed fixture should digest"),
         public_values_digest(&sample_public_values()).expect("sample fixture should digest")
+    );
+}
+
+#[test]
+fn hashes_public_values_deterministically() {
+    assert_eq!(
+        public_values_digest(&sample_public_values()).expect("fixture should digest"),
+        [
+            0x60, 0xc9, 0xc6, 0x21, 0x03, 0x25, 0xca, 0xec, 0xe4, 0x9f, 0x23, 0x3d, 0xf3, 0xaf,
+            0x82, 0x9a, 0x81, 0x04, 0x7c, 0xf4, 0x04, 0xca, 0x04, 0xd3, 0xf8, 0x29, 0x5d, 0x89,
+            0xe8, 0x42, 0x43, 0x88,
+        ]
     );
 }
 
@@ -124,37 +105,5 @@ fn rejects_public_values_with_duplicate_names() {
     assert!(matches!(
         encode_public_values(&value),
         Err(PublicValuesError::DuplicateName { .. })
-    ));
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn rejects_invalid_setup_hashes() {
-    let input = r#"{
-        "schema_version": 1,
-        "setup_hash": "abcd",
-        "values": []
-    }"#;
-
-    assert!(matches!(
-        parse_public_values_json(input),
-        Err(PublicValuesError::InvalidHash { .. })
-    ));
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn rejects_empty_public_value_entries() {
-    let input = r#"{
-        "schema_version": 1,
-        "setup_hash": "1111111111111111111111111111111111111111111111111111111111111111",
-        "values": [
-            {"name": "empty", "elements": []}
-        ]
-    }"#;
-
-    assert!(matches!(
-        parse_public_values_json(input),
-        Err(PublicValuesError::EmptyValue { .. })
     ));
 }

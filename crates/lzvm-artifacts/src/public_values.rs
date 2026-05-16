@@ -27,9 +27,6 @@ pub struct PublicValueEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PublicValuesError {
-    Json {
-        message: String,
-    },
     InvalidMagic,
     UnsupportedVersion {
         found: u32,
@@ -51,15 +48,6 @@ pub enum PublicValuesError {
     },
     LengthOverflow,
     InvalidUtf8,
-    MissingField {
-        field: &'static str,
-    },
-    InvalidField {
-        field: &'static str,
-    },
-    InvalidHash {
-        field: &'static str,
-    },
     EmptyName {
         index: usize,
     },
@@ -67,9 +55,6 @@ pub enum PublicValuesError {
         name: String,
     },
     EmptyValue {
-        name: String,
-    },
-    InvalidElement {
         name: String,
     },
     Io {
@@ -80,7 +65,6 @@ pub enum PublicValuesError {
 impl fmt::Display for PublicValuesError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Json { message } => write!(f, "public-values json error: {message}"),
             Self::InvalidMagic => write!(f, "invalid public-values file magic"),
             Self::UnsupportedVersion { found, max } => {
                 write!(f, "unsupported public-values file version {found}, max {max}")
@@ -104,9 +88,6 @@ impl fmt::Display for PublicValuesError {
             ),
             Self::LengthOverflow => write!(f, "public-values length overflow"),
             Self::InvalidUtf8 => write!(f, "public-values string is not valid utf-8"),
-            Self::MissingField { field } => write!(f, "missing public-values field: {field}"),
-            Self::InvalidField { field } => write!(f, "invalid public-values field: {field}"),
-            Self::InvalidHash { field } => write!(f, "invalid public-values hash: {field}"),
             Self::EmptyName { index } => {
                 write!(f, "empty public-values name at index {index}")
             }
@@ -114,9 +95,6 @@ impl fmt::Display for PublicValuesError {
                 write!(f, "duplicate public-values name: {name}")
             }
             Self::EmptyValue { name } => write!(f, "empty public-values entry: {name}"),
-            Self::InvalidElement { name } => {
-                write!(f, "invalid public-values element for {name}")
-            }
             Self::Io { message } => write!(f, "public-values io error: {message}"),
         }
     }
@@ -195,65 +173,7 @@ pub fn encode_public_values(value: &PublicValues) -> Result<Vec<u8>, PublicValue
     encode_sectioned_file(&file).map_err(PublicValuesError::from)
 }
 
-#[cfg(feature = "json")]
-pub fn parse_public_values_json(input: &str) -> Result<PublicValues, PublicValuesError> {
-    let value: serde_json::Value =
-        serde_json::from_str(input).map_err(|error| PublicValuesError::Json {
-            message: error.to_string(),
-        })?;
-    let object = value
-        .as_object()
-        .ok_or(PublicValuesError::InvalidField { field: "root" })?;
-    let schema_version = read_u32(object, "schema_version")?;
-    let setup_hash = read_hash(object, "setup_hash")?;
-    let values = object
-        .get("values")
-        .and_then(serde_json::Value::as_array)
-        .ok_or(PublicValuesError::MissingField { field: "values" })?;
-
-    let mut entries = Vec::with_capacity(values.len());
-    for (index, value) in values.iter().enumerate() {
-        let object = value
-            .as_object()
-            .ok_or(PublicValuesError::InvalidField { field: "values" })?;
-        let name = object
-            .get("name")
-            .and_then(serde_json::Value::as_str)
-            .ok_or(PublicValuesError::MissingField { field: "name" })?
-            .to_owned();
-        if name.is_empty() {
-            return Err(PublicValuesError::EmptyName { index });
-        }
-        let element_values = object
-            .get("elements")
-            .and_then(serde_json::Value::as_array)
-            .ok_or(PublicValuesError::MissingField { field: "elements" })?;
-        if element_values.is_empty() {
-            return Err(PublicValuesError::EmptyValue { name });
-        }
-        let mut elements = Vec::with_capacity(element_values.len());
-        for element in element_values {
-            let Some(text) = element.as_str() else {
-                return Err(PublicValuesError::InvalidElement { name });
-            };
-            elements.push(
-                text.parse::<u64>()
-                    .map_err(|_| PublicValuesError::InvalidElement { name: name.clone() })?,
-            );
-        }
-        entries.push(PublicValueEntry { name, elements });
-    }
-
-    let out = PublicValues {
-        schema_version,
-        setup_hash,
-        values: entries,
-    };
-    validate_public_values(&out)?;
-    Ok(out)
-}
-
-pub fn encode_public_values_json(value: &PublicValues) -> Result<String, PublicValuesError> {
+fn encode_public_values_digest_payload(value: &PublicValues) -> Result<String, PublicValuesError> {
     validate_public_values(value)?;
 
     let mut out = String::new();
@@ -261,7 +181,7 @@ pub fn encode_public_values_json(value: &PublicValues) -> Result<String, PublicV
     out.push_str("\"schema_version\":");
     out.push_str(&value.schema_version.to_string());
     out.push_str(",\"setup_hash\":");
-    push_json_string(&mut out, &encode_hash(&value.setup_hash));
+    push_digest_string(&mut out, &encode_hash(&value.setup_hash));
     out.push_str(",\"values\":[");
     for (index, entry) in value.values.iter().enumerate() {
         if index > 0 {
@@ -269,13 +189,13 @@ pub fn encode_public_values_json(value: &PublicValues) -> Result<String, PublicV
         }
         out.push('{');
         out.push_str("\"name\":");
-        push_json_string(&mut out, &entry.name);
+        push_digest_string(&mut out, &entry.name);
         out.push_str(",\"elements\":[");
         for (element_index, element) in entry.elements.iter().enumerate() {
             if element_index > 0 {
                 out.push(',');
             }
-            push_json_string(&mut out, &element.to_string());
+            push_digest_string(&mut out, &element.to_string());
         }
         out.push_str("]}");
     }
@@ -284,7 +204,7 @@ pub fn encode_public_values_json(value: &PublicValues) -> Result<String, PublicV
 }
 
 pub fn public_values_digest(value: &PublicValues) -> Result<[u8; 32], PublicValuesError> {
-    let encoded = encode_public_values_json(value)?;
+    let encoded = encode_public_values_digest_payload(value)?;
     let digest = Sha256::digest(encoded.as_bytes());
     Ok(digest.into())
 }
@@ -355,30 +275,6 @@ fn validate_public_values(value: &PublicValues) -> Result<(), PublicValuesError>
     Ok(())
 }
 
-#[cfg(feature = "json")]
-fn read_u32(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<u32, PublicValuesError> {
-    let value = object
-        .get(field)
-        .and_then(serde_json::Value::as_u64)
-        .ok_or(PublicValuesError::MissingField { field })?;
-    u32::try_from(value).map_err(|_| PublicValuesError::InvalidField { field })
-}
-
-#[cfg(feature = "json")]
-fn read_hash(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<[u8; 32], PublicValuesError> {
-    let text = object
-        .get(field)
-        .and_then(serde_json::Value::as_str)
-        .ok_or(PublicValuesError::MissingField { field })?;
-    decode_hash(text).ok_or(PublicValuesError::InvalidHash { field })
-}
-
 fn encode_hash(value: &[u8; 32]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(64);
@@ -389,7 +285,7 @@ fn encode_hash(value: &[u8; 32]) -> String {
     out
 }
 
-fn push_json_string(out: &mut String, value: &str) {
+fn push_digest_string(out: &mut String, value: &str) {
     out.push('"');
     for character in value.chars() {
         match character {
@@ -400,40 +296,18 @@ fn push_json_string(out: &mut String, value: &str) {
             '\n' => out.push_str("\\n"),
             '\u{0c}' => out.push_str("\\f"),
             '\r' => out.push_str("\\r"),
-            '\u{00}'..='\u{1f}' => push_json_control_escape(out, character as u8),
+            '\u{00}'..='\u{1f}' => push_digest_control_escape(out, character as u8),
             character => out.push(character),
         }
     }
     out.push('"');
 }
 
-fn push_json_control_escape(out: &mut String, value: u8) {
+fn push_digest_control_escape(out: &mut String, value: u8) {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     out.push_str("\\u00");
     out.push(HEX[(value >> 4) as usize] as char);
     out.push(HEX[(value & 0x0f) as usize] as char);
-}
-
-#[cfg(feature = "json")]
-fn decode_hash(value: &str) -> Option<[u8; 32]> {
-    if value.len() != 64 {
-        return None;
-    }
-    let mut out = [0_u8; 32];
-    for (index, chunk) in value.as_bytes().chunks_exact(2).enumerate() {
-        out[index] = (hex_value(chunk[0])? << 4) | hex_value(chunk[1])?;
-    }
-    Some(out)
-}
-
-#[cfg(feature = "json")]
-fn hex_value(value: u8) -> Option<u8> {
-    match value {
-        b'0'..=b'9' => Some(value - b'0'),
-        b'a'..=b'f' => Some(value - b'a' + 10),
-        b'A'..=b'F' => Some(value - b'A' + 10),
-        _ => None,
-    }
 }
 
 fn write_string(out: &mut Vec<u8>, value: &str) -> Result<(), PublicValuesError> {
