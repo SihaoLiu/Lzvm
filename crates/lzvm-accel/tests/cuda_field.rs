@@ -37,26 +37,6 @@ fn sub_mod(lhs: u64, rhs: u64) -> u64 {
     }
 }
 
-#[cfg(feature = "cuda")]
-fn u64_words_to_bytes(words: &[u64]) -> Vec<u8> {
-    words
-        .iter()
-        .flat_map(|word| word.to_le_bytes())
-        .collect::<Vec<_>>()
-}
-
-#[cfg(feature = "cuda")]
-fn bytes_to_u64_words(bytes: &[u8]) -> Vec<u64> {
-    bytes
-        .chunks_exact(8)
-        .map(|chunk| {
-            let mut array = [0_u8; 8];
-            array.copy_from_slice(chunk);
-            u64::from_le_bytes(array)
-        })
-        .collect::<Vec<_>>()
-}
-
 #[test]
 #[cfg(feature = "cuda")]
 fn cuda_adds_goldilocks_vectors() {
@@ -197,6 +177,21 @@ fn cuda_device_buffer_round_trips_bytes() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_device_buffer_round_trips_u64_words() {
+    let input = vec![0, 1, MODULUS - 1, 0xffff_ffff, MODULUS / 2, 123_456_789];
+    let buffer = CudaDeviceBuffer::from_u64_words(&input).expect("word buffer should allocate");
+
+    assert_eq!(buffer.len(), input.len() * 8);
+
+    let output = buffer
+        .to_u64_words()
+        .expect("device words should copy back to host");
+
+    assert_eq!(output, input);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_computes_forward_ntt() {
     let input = vec![3, 5, 7, 11, 13, 17, 19, 23];
     let mut expected = input
@@ -279,22 +274,17 @@ fn cuda_extends_evaluations_from_device_memory() {
         .map(Felt::to_u64)
         .collect::<Vec<_>>();
 
-    let input_bytes = u64_words_to_bytes(&input);
-    let mut input_buffer =
-        CudaDeviceBuffer::new(input_bytes.len()).expect("input device buffer should allocate");
-    input_buffer
-        .copy_from(&input_bytes)
-        .expect("host bytes should copy to device");
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&input).expect("input device buffer should allocate");
     let mut output_buffer =
         CudaDeviceBuffer::new(expected.len() * 8).expect("output device buffer should allocate");
 
     cuda_goldilocks_coset_extend_device(&input_buffer, &mut output_buffer, 2, 4)
         .expect("cuda coset extension should run from device memory");
 
-    let actual_bytes = output_buffer
-        .to_vec()
-        .expect("device bytes should copy back to host");
-    let actual = bytes_to_u64_words(&actual_bytes);
+    let actual = output_buffer
+        .to_u64_words()
+        .expect("device words should copy back to host");
 
     assert_eq!(actual, expected);
 }

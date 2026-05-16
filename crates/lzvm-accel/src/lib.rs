@@ -204,6 +204,34 @@ fn cuda_status(code: i32) -> Result<(), AccelError> {
 }
 
 #[cfg(feature = "cuda")]
+fn u64_words_to_bytes(words: &[u64]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(words.len().saturating_mul(8));
+    for word in words {
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    bytes
+}
+
+#[cfg(feature = "cuda")]
+fn bytes_to_u64_words(bytes: &[u8]) -> Result<Vec<u64>, AccelError> {
+    if !bytes.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: bytes.len(),
+            rhs: bytes.len() / 8 * 8,
+        });
+    }
+
+    Ok(bytes
+        .chunks_exact(8)
+        .map(|chunk| {
+            let mut word = [0_u8; 8];
+            word.copy_from_slice(chunk);
+            u64::from_le_bytes(word)
+        })
+        .collect::<Vec<_>>())
+}
+
+#[cfg(feature = "cuda")]
 fn coset_extend_domain(
     len: usize,
     source_bits: usize,
@@ -279,6 +307,18 @@ impl CudaDeviceBuffer {
 
     pub fn as_raw_ptr(&self) -> *mut c_void {
         self.ptr
+    }
+
+    pub fn from_u64_words(words: &[u64]) -> Result<Self, AccelError> {
+        let mut buffer = Self::new(words.len().saturating_mul(8))?;
+        let bytes = u64_words_to_bytes(words);
+        buffer.copy_from(&bytes)?;
+        Ok(buffer)
+    }
+
+    pub fn to_u64_words(&self) -> Result<Vec<u64>, AccelError> {
+        let bytes = self.to_vec()?;
+        bytes_to_u64_words(&bytes)
     }
 
     pub fn copy_from(&mut self, input: &[u8]) -> Result<(), AccelError> {

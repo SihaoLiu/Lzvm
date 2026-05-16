@@ -444,10 +444,6 @@ fn extend_row_major_column_values(
         .iter()
         .map(|value| value.to_u64())
         .collect::<Vec<_>>();
-    let source_byte_count = source_words
-        .len()
-        .checked_mul(8)
-        .ok_or(ProvePcsFriPolynomialError::LengthOverflow { unit_index })?;
     let target_words = 1_usize
         .checked_shl(
             u32::try_from(target_bits)
@@ -458,17 +454,9 @@ fn extend_row_major_column_values(
         .checked_mul(8)
         .ok_or(ProvePcsFriPolynomialError::LengthOverflow { unit_index })?;
 
-    let mut source_buffer = CudaDeviceBuffer::new(source_byte_count)
+    let source_buffer = CudaDeviceBuffer::from_u64_words(&source_words)
         .map_err(|source| ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source })?;
     let mut target_buffer = CudaDeviceBuffer::new(target_byte_count)
-        .map_err(|source| ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source })?;
-
-    let source_bytes = source_words
-        .iter()
-        .flat_map(|word| word.to_le_bytes())
-        .collect::<Vec<_>>();
-    source_buffer
-        .copy_from(&source_bytes)
         .map_err(|source| ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source })?;
     cuda_goldilocks_coset_extend_device(
         &source_buffer,
@@ -479,15 +467,11 @@ fn extend_row_major_column_values(
     .map_err(|source| ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source })?;
 
     let extended_words = target_buffer
-        .to_vec()
+        .to_u64_words()
         .map_err(|source| ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source })?;
     extended_words
-        .chunks_exact(8)
-        .map(|chunk| {
-            let mut bytes = [0_u8; 8];
-            bytes.copy_from_slice(chunk);
-            Felt::from_canonical(u64::from_le_bytes(bytes))
-        })
+        .into_iter()
+        .map(Felt::from_canonical)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|source| ProvePcsFriPolynomialError::FixedExtensionValue { unit_index, source })
 }
