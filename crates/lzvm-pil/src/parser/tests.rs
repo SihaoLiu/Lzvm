@@ -1,8 +1,8 @@
 use super::{
     parse_air_group_value_declarations, parse_column_declarations, parse_commit_declarations,
-    parse_container_declarations, parse_include_directives, parse_use_directives,
-    parse_value_declarations, ColumnInitializerKind, ColumnKind, IncludeKind, IncludeVisibility,
-    ParseError, ValueDeclarationKind,
+    parse_container_declarations, parse_include_directives, parse_public_declarations,
+    parse_use_directives, parse_value_declarations, ColumnInitializerKind, ColumnKind, IncludeKind,
+    IncludeVisibility, ParseError, ValueDeclarationKind,
 };
 use crate::SourceFile;
 use std::path::PathBuf;
@@ -434,4 +434,39 @@ fn parses_commit_declarations_with_public_references() {
     assert_eq!(declarations[1].stage, 2);
     assert!(declarations[1].publics.is_empty());
     assert_eq!(declarations[1].name, "local");
+}
+
+#[test]
+fn parses_public_declarations_with_lists_and_initializers() {
+    let source = source("public air.main[2], local;\npublic scalar = foo(bar[1] + baz);");
+
+    let declarations =
+        parse_public_declarations(&source).expect("public declarations should parse");
+
+    assert_eq!(declarations.len(), 2);
+    assert_eq!(declarations[0].items.len(), 2);
+    assert_eq!(declarations[0].items[0].name, "air.main");
+    assert_eq!(
+        &source.contents[declarations[0].items[0].array_dims[0].start
+            ..declarations[0].items[0].array_dims[0].end],
+        "[2]"
+    );
+    assert_eq!(declarations[0].items[1].name, "local");
+    assert_eq!(declarations[0].initializer, None);
+    assert_eq!(declarations[1].items.len(), 1);
+    assert_eq!(declarations[1].items[0].name, "scalar");
+    let initializer = declarations[1].initializer.expect("initializer");
+    assert_eq!(
+        &source.contents[initializer.start..initializer.end],
+        "foo(bar[1] + baz)"
+    );
+}
+
+#[test]
+fn skips_public_modifiers_and_references_when_parsing_public_declarations() {
+    let source = source("public include \"a.pil\";\ncommit stage(1) public(local) out;");
+
+    let declarations = parse_public_declarations(&source).expect("source should parse");
+
+    assert!(declarations.is_empty());
 }

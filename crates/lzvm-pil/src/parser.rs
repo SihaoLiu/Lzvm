@@ -129,6 +129,15 @@ pub struct CommitDeclaration {
     pub end: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublicDeclaration {
+    pub items: Vec<ColumnItem>,
+    pub initializer: Option<SourceSpan>,
+    pub source_name: String,
+    pub start: usize,
+    pub end: usize,
+}
+
 const DEFAULT_CHALLENGE_STAGE: u32 = 2;
 const DEFAULT_VALUE_STAGE: u32 = 1;
 const DEFAULT_AIR_GROUP_VALUE_STAGE: u32 = 2;
@@ -485,6 +494,86 @@ pub fn parse_commit_declarations(
     Ok(declarations)
 }
 
+pub fn parse_public_declarations(
+    source: &SourceFile,
+) -> Result<Vec<PublicDeclaration>, ParseError> {
+    let tokens = lex_source(&source.contents).map_err(|error| ParseError::Lex {
+        source_name: source.source_name.clone(),
+        error,
+    })?;
+    let mut declarations = Vec::new();
+    let mut index = 0;
+
+    while index < tokens.len() {
+        if tokens[index].kind != TokenKind::Public
+            || !tokens
+                .get(index + 1)
+                .is_some_and(|token| public_declaration_start(token.kind))
+        {
+            index += 1;
+            continue;
+        }
+
+        let (first_item, cursor) = parse_column_item(&tokens, index + 1, source)?;
+        let (items, initializer, next_index, end) = if tokens
+            .get(cursor)
+            .is_some_and(|token| token.kind == TokenKind::Assign)
+        {
+            let (span, next_index) =
+                parse_expression_span_until_terminator(&tokens, cursor + 1, source)?;
+            let terminator =
+                tokens
+                    .get(next_index)
+                    .ok_or_else(|| ParseError::ExpectedTerminator {
+                        source_name: source.source_name.clone(),
+                        start: missing_start(&tokens, next_index),
+                    })?;
+            if terminator.kind != TokenKind::Semicolon {
+                return Err(ParseError::ExpectedTerminator {
+                    source_name: source.source_name.clone(),
+                    start: terminator.start,
+                });
+            }
+            (vec![first_item], Some(span), next_index + 1, terminator.end)
+        } else {
+            let mut items = vec![first_item];
+            let mut cursor = cursor;
+            while tokens
+                .get(cursor)
+                .is_some_and(|token| token.kind == TokenKind::Comma)
+            {
+                let (item, next) = parse_column_item(&tokens, cursor + 1, source)?;
+                items.push(item);
+                cursor = next;
+            }
+            let terminator = tokens
+                .get(cursor)
+                .ok_or_else(|| ParseError::ExpectedTerminator {
+                    source_name: source.source_name.clone(),
+                    start: missing_start(&tokens, cursor),
+                })?;
+            if terminator.kind != TokenKind::Semicolon {
+                return Err(ParseError::ExpectedTerminator {
+                    source_name: source.source_name.clone(),
+                    start: terminator.start,
+                });
+            }
+            (items, None, cursor + 1, terminator.end)
+        };
+
+        declarations.push(PublicDeclaration {
+            items,
+            initializer,
+            source_name: source.source_name.clone(),
+            start: tokens[index].start,
+            end,
+        });
+        index = next_index;
+    }
+
+    Ok(declarations)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct GroupValueProperties {
     stage: u32,
@@ -668,6 +757,17 @@ fn parse_commit_public_name(
     source: &SourceFile,
 ) -> Result<(String, usize), ParseError> {
     parse_name_reference(tokens, index, source)
+}
+
+fn public_declaration_start(kind: TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Identifier
+            | TokenKind::TemplateLiteral
+            | TokenKind::Air
+            | TokenKind::AirGroup
+            | TokenKind::Proof
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
