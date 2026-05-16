@@ -17,7 +17,8 @@ use lzvm_field::intt_in_place;
 use lzvm_field::{DomainError, Ext3, Felt, FieldError, PoseidonTranscript, SHIFT};
 
 use crate::merkle_hash::{
-    linear_hash, parent_hash, parent_hashes, root_from_digest_level, MerkleHashError, HASH_WORDS,
+    linear_hash, linear_hashes, parent_hash, parent_hashes, root_from_digest_level,
+    MerkleHashError, HASH_WORDS,
 };
 use crate::pcs_query_plan::{
     load_pcs_query_plan_from_segments, uses_transcript_pcs_query_plan_inputs,
@@ -1794,13 +1795,11 @@ fn build_fri_layer_tree(
         });
     }
 
-    let mut current = rows
+    let flattened_rows = rows
         .iter()
-        .map(|row| {
-            let flattened = flatten_extension_values(row)?;
-            linear_hash(&flattened, arity).map_err(PcsFriMerkleError::from)
-        })
+        .map(|row| flatten_extension_values(row))
         .collect::<Result<Vec<_>, PcsFriMerkleError>>()?;
+    let mut current = linear_hashes(&flattened_rows, arity).map_err(PcsFriMerkleError::from)?;
     let mut levels = Vec::new();
     let mut unpadded_counts = Vec::new();
     loop {

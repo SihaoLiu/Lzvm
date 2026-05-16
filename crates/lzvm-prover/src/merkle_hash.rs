@@ -41,6 +41,25 @@ pub(crate) fn linear_hash(
     }
 }
 
+pub(crate) fn linear_hashes(
+    rows: &[Vec<Felt>],
+    arity: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    validate_arity(arity)?;
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    #[cfg(feature = "cuda")]
+    {
+        if rows.iter().all(|row| row.len() == rows[0].len()) {
+            return cuda_linear_hashes(rows, arity);
+        }
+    }
+
+    rows.iter().map(|row| linear_hash(row, arity)).collect()
+}
+
 pub(crate) fn parent_hash(
     children: &[[Felt; HASH_WORDS]],
     arity: usize,
@@ -126,9 +145,7 @@ fn validate_arity(arity: usize) -> Result<(), MerkleHashError> {
 
 fn linear_hash_arity2(values: &[Felt]) -> [Felt; HASH_WORDS] {
     if values.len() <= HASH_WORDS {
-        let mut digest = [Felt::ZERO; HASH_WORDS];
-        digest[..values.len()].copy_from_slice(values);
-        return digest;
+        return padded_digest(values);
     }
 
     let mut state = [Felt::ZERO; 8];
@@ -151,9 +168,7 @@ fn linear_hash_arity4(values: &[Felt]) -> [Felt; HASH_WORDS] {
     const RATE: usize = 12;
 
     if values.len() <= HASH_WORDS {
-        let mut digest = [Felt::ZERO; HASH_WORDS];
-        digest[..values.len()].copy_from_slice(values);
-        return digest;
+        return padded_digest(values);
     }
 
     let mut state = [Felt::ZERO; 16];
@@ -170,6 +185,113 @@ fn linear_hash_arity4(values: &[Felt]) -> [Felt; HASH_WORDS] {
     }
 
     [state[0], state[1], state[2], state[3]]
+}
+
+fn padded_digest(values: &[Felt]) -> [Felt; HASH_WORDS] {
+    let mut digest = [Felt::ZERO; HASH_WORDS];
+    digest[..values.len()].copy_from_slice(values);
+    digest
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_linear_hashes(
+    rows: &[Vec<Felt>],
+    arity: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    match arity {
+        2 => cuda_linear_hashes_arity2(rows),
+        4 => cuda_linear_hashes_arity4(rows),
+        _ => Err(MerkleHashError::UnsupportedArity { arity }),
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_linear_hashes_arity2(
+    rows: &[Vec<Felt>],
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    const WIDTH: usize = 8;
+
+    let value_count = rows.first().map_or(0, Vec::len);
+    if value_count <= HASH_WORDS {
+        return Ok(rows.iter().map(|row| padded_digest(row)).collect());
+    }
+
+    let mut states = vec![[Felt::ZERO; WIDTH]; rows.len()];
+    let mut offset = 0;
+    while offset < value_count {
+        let chunk_len = (value_count - offset).min(HASH_WORDS);
+        let mut input = Vec::with_capacity(rows.len() * WIDTH);
+        for (state, row) in states.iter().zip(rows) {
+            let capacity = [state[0], state[1], state[2], state[3]];
+            let mut next = [Felt::ZERO; WIDTH];
+            next[..chunk_len].copy_from_slice(&row[offset..offset + chunk_len]);
+            next[HASH_WORDS..].copy_from_slice(&capacity);
+            push_felt_words(&mut input, &next);
+        }
+
+        let output = cuda_poseidon2_width8(&input).map_err(|_| MerkleHashError::LengthOverflow)?;
+        for (state, chunk) in states.iter_mut().zip(output.chunks_exact(WIDTH)) {
+            *state = felt_array_from_words(chunk)?;
+        }
+        offset += chunk_len;
+    }
+
+    Ok(states
+        .into_iter()
+        .map(|state| [state[0], state[1], state[2], state[3]])
+        .collect())
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_linear_hashes_arity4(
+    rows: &[Vec<Felt>],
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    const RATE: usize = 12;
+    const WIDTH: usize = 16;
+
+    let value_count = rows.first().map_or(0, Vec::len);
+    if value_count <= HASH_WORDS {
+        return Ok(rows.iter().map(|row| padded_digest(row)).collect());
+    }
+
+    let mut states = vec![[Felt::ZERO; WIDTH]; rows.len()];
+    let mut offset = 0;
+    while offset < value_count {
+        let chunk_len = (value_count - offset).min(RATE);
+        let mut input = Vec::with_capacity(rows.len() * WIDTH);
+        for (state, row) in states.iter().zip(rows) {
+            let capacity = [state[0], state[1], state[2], state[3]];
+            let mut next = [Felt::ZERO; WIDTH];
+            next[..chunk_len].copy_from_slice(&row[offset..offset + chunk_len]);
+            next[RATE..].copy_from_slice(&capacity);
+            push_felt_words(&mut input, &next);
+        }
+
+        let output = cuda_poseidon2_width16(&input).map_err(|_| MerkleHashError::LengthOverflow)?;
+        for (state, chunk) in states.iter_mut().zip(output.chunks_exact(WIDTH)) {
+            *state = felt_array_from_words(chunk)?;
+        }
+        offset += chunk_len;
+    }
+
+    Ok(states
+        .into_iter()
+        .map(|state| [state[0], state[1], state[2], state[3]])
+        .collect())
+}
+
+#[cfg(feature = "cuda")]
+fn push_felt_words(out: &mut Vec<u64>, values: &[Felt]) {
+    out.extend(values.iter().map(|value| value.to_u64()));
+}
+
+#[cfg(feature = "cuda")]
+fn felt_array_from_words<const N: usize>(words: &[u64]) -> Result<[Felt; N], MerkleHashError> {
+    let mut out = [Felt::ZERO; N];
+    for (slot, word) in out.iter_mut().zip(words.iter()) {
+        *slot = Felt::from_canonical(*word).map_err(|_| MerkleHashError::LengthOverflow)?;
+    }
+    Ok(out)
 }
 
 fn parent_hash_arity2(left: [Felt; HASH_WORDS], right: [Felt; HASH_WORDS]) -> [Felt; HASH_WORDS] {
@@ -244,8 +366,31 @@ fn digests_from_hashed_states(
 
 #[cfg(all(test, feature = "cuda"))]
 mod tests {
-    use super::{parent_hash, parent_hashes};
+    use super::{linear_hash, linear_hashes, parent_hash, parent_hashes};
     use lzvm_field::Felt;
+
+    #[test]
+    fn cuda_linear_hashes_match_cpu_reference() {
+        let rows = vec![
+            values(&[1, 2, 3, 4, 5, 6]),
+            values(&[7, 8, 9, 10, 11, 12]),
+            values(&[13, 14, 15, 16, 17, 18]),
+        ];
+
+        let actual_arity2 = linear_hashes(&rows, 2).expect("cuda arity-2 leaf hashes should run");
+        let expected_arity2 = rows
+            .iter()
+            .map(|row| linear_hash(row, 2).expect("cpu arity-2 leaf should hash"))
+            .collect::<Vec<_>>();
+        assert_eq!(actual_arity2, expected_arity2);
+
+        let actual_arity4 = linear_hashes(&rows, 4).expect("cuda arity-4 leaf hashes should run");
+        let expected_arity4 = rows
+            .iter()
+            .map(|row| linear_hash(row, 4).expect("cpu arity-4 leaf should hash"))
+            .collect::<Vec<_>>();
+        assert_eq!(actual_arity4, expected_arity4);
+    }
 
     #[test]
     fn cuda_parent_hashes_match_cpu_reference() {
@@ -267,5 +412,9 @@ mod tests {
 
     fn digest(values: [u64; 4]) -> [Felt; 4] {
         values.map(Felt::from_u64)
+    }
+
+    fn values(values: &[u64]) -> Vec<Felt> {
+        values.iter().copied().map(Felt::from_u64).collect()
     }
 }
