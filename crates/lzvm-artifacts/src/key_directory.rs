@@ -1,8 +1,8 @@
 use crate::constant_tree::{read_constant_tree_file, ConstantTreeError};
 use crate::constraint_program::{
-    encode_global_constraint_program, encode_regular_constraint_program,
-    read_global_constraint_program_file, read_regular_constraint_program_file, ConstraintProgram,
-    ConstraintProgramError, GlobalConstraintProgram,
+    encode_regular_constraint_program, read_global_constraint_program_file,
+    read_regular_constraint_program_file, ConstraintProgram, ConstraintProgramError,
+    GlobalConstraintProgram,
 };
 use crate::expression_program::{
     encode_expression_program, read_expression_program_file, ExpressionProgram,
@@ -10,10 +10,10 @@ use crate::expression_program::{
 };
 use crate::fixed::{expected_raw_fixed_column_byte_count, FixedColumnError};
 use crate::global_info::{read_global_info_binary_file, CurveKind, GlobalInfo, GlobalInfoError};
+use crate::global_program::{encode_global_program, GlobalProgram};
 use crate::hint_program::{
-    encode_global_hint_program, encode_regular_hint_program, read_global_hint_program_file,
-    read_regular_hint_program_file, regular_hint_program_from_expression_info, HintProgram,
-    HintProgramError,
+    encode_regular_hint_program, read_global_hint_program_file, read_regular_hint_program_file,
+    regular_hint_program_from_expression_info, HintProgram, HintProgramError,
 };
 use crate::metadata_bundle::{
     read_unit_metadata_bundle, MetadataBundleError, UnitMetadataBundle, UnitMetadataPaths,
@@ -500,18 +500,12 @@ pub fn key_directory_catalog_digest(
     hash_global_info(&mut hasher, &catalog.layout.global_info);
     hash_bytes(
         &mut hasher,
-        &encode_global_constraint_program(&catalog.global_constraints).map_err(|error| {
-            KeyDirectoryError::Digest {
-                message: error.to_string(),
-            }
-        })?,
-    );
-    hash_bytes(
-        &mut hasher,
-        &encode_global_hint_program(&catalog.global_hints).map_err(|error| {
-            KeyDirectoryError::Digest {
-                message: error.to_string(),
-            }
+        &encode_global_program(&GlobalProgram {
+            constraints: catalog.global_constraints.clone(),
+            hints: catalog.global_hints.clone(),
+        })
+        .map_err(|error| KeyDirectoryError::Digest {
+            message: error.to_string(),
         })?,
     );
     hash_u64(&mut hasher, catalog.units.len() as u64);

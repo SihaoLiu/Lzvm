@@ -6,6 +6,7 @@ pub mod expression_info;
 pub mod expression_program;
 pub mod fixed;
 pub mod global_info;
+pub mod global_program;
 pub mod group_values_segment;
 pub mod guest_image;
 pub mod hint_program;
