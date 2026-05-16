@@ -210,6 +210,9 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             write_pcs_material_directory(setup_dir, stdout, stderr)
         }
         ["setup", "write-pcs-material-directory", ..] => write_pcs_material_directory_usage(stderr),
+        ["setup", "write-source-program-archive", rest @ ..] => {
+            pil_archive::run(rest, stdout, stderr)
+        }
         ["setup", "write-verkey-native", setup_info_bin, consttree, out_verkey_bin] => {
             write_verification_key_native(setup_info_bin, consttree, out_verkey_bin, stdout, stderr)
         }
