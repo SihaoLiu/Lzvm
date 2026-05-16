@@ -5,8 +5,9 @@ use lzvm_artifacts::pcs_fri_segment::{PcsFriOpeningSegmentError, PcsFriOpeningUn
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::setup_info::StageValue;
 use lzvm_artifacts::verifier_info::VerifierCode;
-use lzvm_field::{DomainError, Ext3, Felt, FieldError};
+use lzvm_field::{Ext3, Felt, FieldError};
 
+use super::fold::PcsFriFoldError;
 use crate::merkle_hash::MerkleHashError;
 use crate::pcs_query_plan::LoadPcsQueryPlanSegmentError;
 use crate::pcs_transcript::PcsTranscriptError;
@@ -121,82 +122,6 @@ pub enum ValidateOptionalPcsFriOpeningProofSegmentsError {
     Transcript(PcsTranscriptProofSegmentsError),
     Fold(ValidatePcsFriOpeningFoldUnitsError),
     VerifierQuery(VerifierFriQueryOutputSegmentsError),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PcsFriFoldError {
-    InvalidLayerBits {
-        current_bits: u32,
-        prev_bits: u32,
-    },
-    InvalidExtensionBits {
-        n_bits_ext: u32,
-        prev_bits: u32,
-    },
-    ValueLengthMismatch {
-        expected: usize,
-        found: usize,
-    },
-    UnsupportedRoot {
-        bits: u32,
-    },
-    ZeroEvaluationPoint,
-    Domain(DomainError),
-    Field(FieldError),
-    #[cfg(feature = "cuda")]
-    Accel(lzvm_accel::AccelError),
-    LengthOverflow,
-}
-
-impl fmt::Display for PcsFriFoldError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidLayerBits {
-                current_bits,
-                prev_bits,
-            } => write!(
-                f,
-                "PCS FRI fold layer bits are invalid: current {current_bits}, previous {prev_bits}"
-            ),
-            Self::InvalidExtensionBits {
-                n_bits_ext,
-                prev_bits,
-            } => write!(
-                f,
-                "PCS FRI fold extension bits are invalid: extended {n_bits_ext}, previous {prev_bits}"
-            ),
-            Self::ValueLengthMismatch { expected, found } => write!(
-                f,
-                "PCS FRI fold value length mismatch: expected {expected}, found {found}"
-            ),
-            Self::UnsupportedRoot { bits } => {
-                write!(f, "PCS FRI fold root is unsupported for bits {bits}")
-            }
-            Self::ZeroEvaluationPoint => write!(f, "PCS FRI fold evaluation point is zero"),
-            Self::Domain(error) => write!(f, "PCS FRI fold domain error: {error}"),
-            Self::Field(error) => write!(f, "PCS FRI fold field error: {error}"),
-            #[cfg(feature = "cuda")]
-            Self::Accel(error) => write!(f, "PCS FRI fold cuda error: {error}"),
-            Self::LengthOverflow => write!(f, "PCS FRI fold length overflow"),
-        }
-    }
-}
-
-impl std::error::Error for PcsFriFoldError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Domain(error) => Some(error),
-            Self::Field(error) => Some(error),
-            #[cfg(feature = "cuda")]
-            Self::Accel(error) => Some(error),
-            Self::InvalidLayerBits { .. }
-            | Self::InvalidExtensionBits { .. }
-            | Self::ValueLengthMismatch { .. }
-            | Self::UnsupportedRoot { .. }
-            | Self::ZeroEvaluationPoint
-            | Self::LengthOverflow => None,
-        }
-    }
 }
 
 impl fmt::Display for LoadPcsFriOpeningSegmentError {
@@ -353,18 +278,6 @@ impl std::error::Error for ValidateOptionalPcsFriOpeningProofSegmentsError {
             Self::Fold(error) => Some(error),
             Self::VerifierQuery(error) => Some(error),
         }
-    }
-}
-
-impl From<DomainError> for PcsFriFoldError {
-    fn from(error: DomainError) -> Self {
-        Self::Domain(error)
-    }
-}
-
-impl From<FieldError> for PcsFriFoldError {
-    fn from(error: FieldError) -> Self {
-        Self::Field(error)
     }
 }
 
