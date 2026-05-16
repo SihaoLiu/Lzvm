@@ -1,6 +1,7 @@
 use std::fmt;
 
 mod build;
+mod errors;
 
 pub use build::{
     build_pcs_query_nonce_segment, build_pcs_query_nonce_segment_from_transcript_segments,
@@ -9,6 +10,7 @@ pub use build::{
     build_pcs_query_plan_segment_from_transcript_segments,
     build_pcs_query_plan_segment_with_bindings,
 };
+pub use errors::ProvePcsQueryPlanSegmentError;
 
 use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
 use lzvm_artifacts::pcs_material_segment::{
@@ -31,7 +33,6 @@ use lzvm_field::Felt;
 use crate::pcs_evaluation::{load_pcs_evaluation_unit_from_segments, LoadPcsEvaluationUnitError};
 use crate::pcs_fri::{load_pcs_fri_opening_unit_from_segments, LoadPcsFriOpeningUnitError};
 use crate::pcs_transcript::PcsTranscriptSegmentInputs;
-use crate::prove_witness::ProvePcsQueryPlanSegmentError;
 use crate::unit_values::{load_unit_values_from_segments, LoadUnitValuesSegmentError};
 use crate::witness_commitment::{
     load_witness_commitment_segments, LoadWitnessCommitmentSegmentsError,

@@ -8,7 +8,7 @@ pub use crate::pcs_query_plan::{
     build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_challenge,
     build_pcs_query_plan_segment_from_transcript_segments,
-    build_pcs_query_plan_segment_with_bindings,
+    build_pcs_query_plan_segment_with_bindings, ProvePcsQueryPlanSegmentError,
 };
 pub use crate::witness_commitment::{build_witness_commitment_segment, ProveWitnessSegmentError};
 pub use crate::witness_opening::{

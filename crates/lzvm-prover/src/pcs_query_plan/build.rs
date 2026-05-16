@@ -25,7 +25,7 @@ use crate::pcs_transcript::{
 };
 use crate::ProveSchedule;
 
-use crate::prove_witness::ProvePcsQueryPlanSegmentError;
+use crate::pcs_query_plan::ProvePcsQueryPlanSegmentError;
 
 pub fn build_pcs_query_plan_segment(
     schedule: &ProveSchedule,
