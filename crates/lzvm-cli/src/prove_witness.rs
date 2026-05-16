@@ -278,6 +278,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         unit_values_input: parsed.unit_values.as_deref(),
         unit_values_segment_input: parsed.unit_values_segment.as_deref(),
         proof_values_input: parsed.proof_values.as_deref(),
+        proof_values_segment_input: parsed.proof_values_segment.as_deref(),
         program_image_cache: plan
             .program_image_cache
             .as_ref()
@@ -614,6 +615,7 @@ struct WitnessOutputSaveRequest<'a> {
     unit_values_input: Option<&'a Path>,
     unit_values_segment_input: Option<&'a Path>,
     proof_values_input: Option<&'a Path>,
+    proof_values_segment_input: Option<&'a Path>,
     program_image_cache: Option<&'a ProgramImageCommitmentCache>,
     output: &'a ProveWitnessTraceCommitments,
 }
@@ -733,6 +735,7 @@ fn finish_all_units_witness_run(
                 unit_values_input: parsed.unit_values.as_deref(),
                 unit_values_segment_input: parsed.unit_values_segment.as_deref(),
                 proof_values_input: parsed.proof_values.as_deref(),
+                proof_values_segment_input: parsed.proof_values_segment.as_deref(),
                 program_image_cache: plan
                     .program_image_cache
                     .as_ref()
@@ -1506,9 +1509,12 @@ fn build_proof_bytes(
         &packed_unit_values,
     )
     .map_err(|error| format!("build unit values segment failed: {error}"))?;
-    let packed_proof_values = match request.proof_values_input {
-        Some(path) => read_packed_values(path, "proof values")?,
-        None => Vec::new(),
+    let packed_proof_values = match request.proof_values_segment_input {
+        Some(path) => read_packed_proof_values_segment(&request.catalog.layout.global_info, path)?,
+        None => match request.proof_values_input {
+            Some(path) => read_packed_values(path, "proof values")?,
+            None => Vec::new(),
+        },
     };
     let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(
         &request.catalog.layout.global_info,
