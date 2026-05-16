@@ -1553,76 +1553,54 @@ fn run_setup_command(args: &[&str]) {
     );
 }
 
+fn run_generate_key_command(root: &Path) {
+    let root = root.to_str().expect("path should be utf-8");
+    run_setup_command(&["setup", "generate-key", root]);
+}
+
 fn write_execution_ready_setup_directory(root: &Path) {
     write_setup_directory(root);
-    let root = root.to_str().expect("path should be utf-8");
-    run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
-    run_setup_command(&["setup", "write-pcs-directory", root]);
-    run_setup_command(&["setup", "write-pcs-material-directory", root]);
+    run_generate_key_command(root);
 }
 
 fn write_execution_ready_setup_directory_with_fri_quotient(root: &Path) {
     write_setup_directory_with_fri_quotient(root);
-    let root = root.to_str().expect("path should be utf-8");
-    run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
-    run_setup_command(&["setup", "write-pcs-directory", root]);
-    run_setup_command(&["setup", "write-pcs-material-directory", root]);
+    run_generate_key_command(root);
 }
 
 fn write_execution_ready_setup_directory_with_fri_quotient_and_unit_value(root: &Path) {
     write_setup_directory_with_fri_quotient_and_unit_value(root);
-    let root = root.to_str().expect("path should be utf-8");
-    run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
-    run_setup_command(&["setup", "write-pcs-directory", root]);
-    run_setup_command(&["setup", "write-pcs-material-directory", root]);
+    run_generate_key_command(root);
 }
 
 fn write_execution_ready_setup_directory_with_proof_value(root: &Path) {
     write_setup_directory_with_proof_value(root);
-    let root = root.to_str().expect("path should be utf-8");
-    run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
-    run_setup_command(&["setup", "write-pcs-directory", root]);
-    run_setup_command(&["setup", "write-pcs-material-directory", root]);
+    run_generate_key_command(root);
 }
 
 fn write_execution_ready_setup_directory_with_proof_value_constraint(root: &Path) {
     write_setup_directory_with_proof_value_constraint(root);
-    let root = root.to_str().expect("path should be utf-8");
-    run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
-    run_setup_command(&["setup", "write-pcs-directory", root]);
-    run_setup_command(&["setup", "write-pcs-material-directory", root]);
+    run_generate_key_command(root);
 }
 
 fn write_execution_ready_setup_directory_with_unit_value(root: &Path) {
     write_setup_directory_with_unit_value(root);
-    let root = root.to_str().expect("path should be utf-8");
-    run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
-    run_setup_command(&["setup", "write-pcs-directory", root]);
-    run_setup_command(&["setup", "write-pcs-material-directory", root]);
+    run_generate_key_command(root);
 }
 
 fn write_execution_ready_setup_directory_with_unit_value_constraint(root: &Path) {
     write_setup_directory_with_unit_value_constraint(root);
-    let root = root.to_str().expect("path should be utf-8");
-    run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
-    run_setup_command(&["setup", "write-pcs-directory", root]);
-    run_setup_command(&["setup", "write-pcs-material-directory", root]);
+    run_generate_key_command(root);
 }
 
 fn write_execution_ready_setup_directory_with_challenge_constraint(root: &Path) {
     write_setup_directory_with_challenge_constraint(root);
-    let root = root.to_str().expect("path should be utf-8");
-    run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
-    run_setup_command(&["setup", "write-pcs-directory", root]);
-    run_setup_command(&["setup", "write-pcs-material-directory", root]);
+    run_generate_key_command(root);
 }
 
 fn write_execution_ready_setup_directory_with_group_value(root: &Path) {
     write_setup_directory_with_group_value(root);
-    let root = root.to_str().expect("path should be utf-8");
-    run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
-    run_setup_command(&["setup", "write-pcs-directory", root]);
-    run_setup_command(&["setup", "write-pcs-material-directory", root]);
+    run_generate_key_command(root);
 }
 
 fn write_setup_directory_with_proof_group_and_unit_value(root: &Path) {
@@ -1640,10 +1618,7 @@ fn write_setup_directory_with_proof_group_and_unit_value(root: &Path) {
 
 fn write_execution_ready_setup_directory_with_proof_group_and_unit_value(root: &Path) {
     write_setup_directory_with_proof_group_and_unit_value(root);
-    let root = root.to_str().expect("path should be utf-8");
-    run_setup_command(&["setup", "write-base-directory", "--derive-verkey", root]);
-    run_setup_command(&["setup", "write-pcs-directory", root]);
-    run_setup_command(&["setup", "write-pcs-material-directory", root]);
+    run_generate_key_command(root);
 }
 
 fn write_proof_value_query_preflight_fixture(
