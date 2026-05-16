@@ -42,11 +42,14 @@ struct ParsedProvePlan {
     request: ProveRunRequest,
 }
 
+#[derive(Debug)]
 pub(crate) struct ParsedRunArgs {
     pub positionals: Vec<PathBuf>,
     pub request: ProveRunRequest,
+    pub program_image_cache: Option<PathBuf>,
 }
 
+#[derive(Debug)]
 pub(crate) enum ParseError {
     Usage,
     Invalid(String),
@@ -73,6 +76,7 @@ pub(crate) fn parse_run_args(
     let mut minimal_memory = false;
     let mut gpu = GpuRunOptions::default();
     let mut input_data = None;
+    let mut program_image_cache = None;
     let mut partition_count = 1_usize;
     let mut partition_ids = vec![0_u32];
     let mut worker_index = 0_usize;
@@ -120,6 +124,12 @@ pub(crate) fn parse_run_args(
                         .ok_or(ParseError::Invalid("missing --input-data value".to_owned()))?,
                 ));
             }
+            "--program-image-cache" => {
+                index += 1;
+                program_image_cache = Some(PathBuf::from(args.get(index).ok_or(
+                    ParseError::Invalid("missing --program-image-cache value".to_owned()),
+                )?));
+            }
             value if value.starts_with("--") => {
                 return Err(ParseError::Invalid(format!("unknown option {value}")));
             }
@@ -156,6 +166,7 @@ pub(crate) fn parse_run_args(
     Ok(ParsedRunArgs {
         positionals,
         request: ProveRunRequest { pass, options, gpu },
+        program_image_cache,
     })
 }
 
@@ -284,4 +295,41 @@ fn write_usage(stderr: &mut dyn Write) -> i32 {
         "usage: lzvm prove plan [options] <setup-dir> <output-dir>"
     );
     2
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_program_image_cache_option_for_run_args() {
+        let parsed = parse_run_args(
+            &[
+                "--program-image-cache",
+                "cache.bin",
+                "setup-dir",
+                "out-dir",
+                "witness.so",
+                "guest.elf",
+            ],
+            4,
+            5,
+        )
+        .expect("run args should parse");
+
+        assert_eq!(parsed.program_image_cache, Some(PathBuf::from("cache.bin")));
+        assert_eq!(parsed.positionals[0], PathBuf::from("setup-dir"));
+        assert_eq!(parsed.positionals[3], PathBuf::from("guest.elf"));
+    }
+
+    #[test]
+    fn rejects_missing_program_image_cache_option_value() {
+        let result = parse_run_args(&["--program-image-cache"], 4, 5);
+
+        assert!(matches!(
+            result,
+            Err(ParseError::Invalid(message))
+                if message == "missing --program-image-cache value"
+        ));
+    }
 }
