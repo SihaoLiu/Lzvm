@@ -1,6 +1,12 @@
 use crate::{lex_source, LexError, SourceFile, Token, TokenKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SourceSpan {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IncludeKind {
     Include,
     Require,
@@ -35,6 +41,7 @@ pub struct UseDirective {
 pub struct ContainerDeclaration {
     pub name: String,
     pub alias: Option<String>,
+    pub body: Option<SourceSpan>,
     pub source_name: String,
     pub start: usize,
     pub end: usize,
@@ -67,6 +74,10 @@ pub enum ParseError {
         source_name: String,
         start: usize,
     },
+    ExpectedCloseBrace {
+        source_name: String,
+        start: usize,
+    },
 }
 
 impl std::fmt::Display for ParseError {
@@ -87,6 +98,9 @@ impl std::fmt::Display for ParseError {
             }
             Self::ExpectedAlias { source_name, start } => {
                 write!(f, "{source_name}: expected alias at {start}")
+            }
+            Self::ExpectedCloseBrace { source_name, start } => {
+                write!(f, "{source_name}: expected closing brace at {start}")
             }
         }
     }
@@ -203,15 +217,37 @@ pub fn parse_container_declarations(
             continue;
         }
 
-        let statement = parse_named_statement(&tokens, index, source)?;
+        let header = parse_named_header(&tokens, index, source)?;
+        let next_token =
+            tokens
+                .get(header.next_index)
+                .ok_or_else(|| ParseError::ExpectedTerminator {
+                    source_name: source.source_name.clone(),
+                    start: missing_start(&tokens, header.next_index),
+                })?;
+        let (body, end, next_index) = match next_token.kind {
+            TokenKind::Semicolon => (None, next_token.end, header.next_index + 1),
+            TokenKind::LBrace => {
+                let (span, next_index) = parse_braced_span(&tokens, header.next_index, source)?;
+                (Some(span), span.end, next_index)
+            }
+            _ => {
+                return Err(ParseError::ExpectedTerminator {
+                    source_name: source.source_name.clone(),
+                    start: next_token.start,
+                });
+            }
+        };
+
         declarations.push(ContainerDeclaration {
-            name: statement.name,
-            alias: statement.alias,
+            name: header.name,
+            alias: header.alias,
+            body,
             source_name: source.source_name.clone(),
-            start: statement.start,
-            end: statement.end,
+            start: header.start,
+            end,
         });
-        index = statement.next_index;
+        index = next_index;
     }
 
     Ok(declarations)
@@ -273,11 +309,49 @@ struct NamedStatement {
     next_index: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NamedHeader {
+    name: String,
+    alias: Option<String>,
+    start: usize,
+    next_index: usize,
+}
+
 fn parse_named_statement(
     tokens: &[Token],
     keyword_index: usize,
     source: &SourceFile,
 ) -> Result<NamedStatement, ParseError> {
+    let header = parse_named_header(tokens, keyword_index, source)?;
+
+    let terminator =
+        tokens
+            .get(header.next_index)
+            .ok_or_else(|| ParseError::ExpectedTerminator {
+                source_name: source.source_name.clone(),
+                start: missing_start(tokens, header.next_index),
+            })?;
+    if terminator.kind != TokenKind::Semicolon {
+        return Err(ParseError::ExpectedTerminator {
+            source_name: source.source_name.clone(),
+            start: terminator.start,
+        });
+    }
+
+    Ok(NamedStatement {
+        name: header.name,
+        alias: header.alias,
+        start: header.start,
+        end: terminator.end,
+        next_index: header.next_index + 1,
+    })
+}
+
+fn parse_named_header(
+    tokens: &[Token],
+    keyword_index: usize,
+    source: &SourceFile,
+) -> Result<NamedHeader, ParseError> {
     let start = tokens[keyword_index].start;
     let (name, mut cursor) = parse_name_reference(tokens, keyword_index + 1, source)?;
     let mut alias = None;
@@ -290,25 +364,45 @@ fn parse_named_statement(
         cursor = next;
     }
 
-    let terminator = tokens
-        .get(cursor)
-        .ok_or_else(|| ParseError::ExpectedTerminator {
-            source_name: source.source_name.clone(),
-            start: missing_start(tokens, cursor),
-        })?;
-    if terminator.kind != TokenKind::Semicolon {
-        return Err(ParseError::ExpectedTerminator {
-            source_name: source.source_name.clone(),
-            start: terminator.start,
-        });
-    }
-
-    Ok(NamedStatement {
+    Ok(NamedHeader {
         name,
         alias,
         start,
-        end: terminator.end,
-        next_index: cursor + 1,
+        next_index: cursor,
+    })
+}
+
+fn parse_braced_span(
+    tokens: &[Token],
+    open_index: usize,
+    source: &SourceFile,
+) -> Result<(SourceSpan, usize), ParseError> {
+    let open = &tokens[open_index];
+    debug_assert_eq!(open.kind, TokenKind::LBrace);
+
+    let mut depth = 0_usize;
+    for (index, token) in tokens.iter().enumerate().skip(open_index) {
+        match token.kind {
+            TokenKind::LBrace => depth += 1,
+            TokenKind::RBrace => {
+                depth -= 1;
+                if depth == 0 {
+                    return Ok((
+                        SourceSpan {
+                            start: open.start,
+                            end: token.end,
+                        },
+                        index + 1,
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Err(ParseError::ExpectedCloseBrace {
+        source_name: source.source_name.clone(),
+        start: open.start,
     })
 }
 
@@ -571,9 +665,56 @@ mod tests {
         assert_eq!(declarations.len(), 3);
         assert_eq!(declarations[0].name, "air.main");
         assert_eq!(declarations[0].alias, None);
+        assert_eq!(declarations[0].body, None);
         assert_eq!(declarations[1].name, "proof.root.branch");
         assert_eq!(declarations[1].alias.as_deref(), Some("local_root"));
+        assert_eq!(declarations[1].body, None);
         assert_eq!(declarations[2].name, "pkg.item");
+        assert_eq!(declarations[2].body, None);
+    }
+
+    #[test]
+    fn parses_closed_container_body_span() {
+        let source = source("container air.main { col witness x; }");
+
+        let declarations =
+            parse_container_declarations(&source).expect("container body should parse");
+
+        assert_eq!(declarations.len(), 1);
+        assert_eq!(declarations[0].name, "air.main");
+        let body = declarations[0].body.expect("body span should be recorded");
+        assert_eq!(&source.contents[body.start..body.end], "{ col witness x; }");
+        assert_eq!(declarations[0].end, body.end);
+    }
+
+    #[test]
+    fn parses_closed_container_alias_body_span() {
+        let source = source("container proof.root alias local_root { }");
+
+        let declarations =
+            parse_container_declarations(&source).expect("container body should parse");
+
+        assert_eq!(declarations.len(), 1);
+        assert_eq!(declarations[0].name, "proof.root");
+        assert_eq!(declarations[0].alias.as_deref(), Some("local_root"));
+        let body = declarations[0].body.expect("body span should be recorded");
+        assert_eq!(&source.contents[body.start..body.end], "{ }");
+    }
+
+    #[test]
+    fn keeps_nested_blocks_inside_closed_container_body_span() {
+        let source = source("container pkg.item { function run() { return; } }");
+
+        let declarations =
+            parse_container_declarations(&source).expect("container body should parse");
+
+        assert_eq!(declarations.len(), 1);
+        let body = declarations[0].body.expect("body span should be recorded");
+        assert_eq!(
+            &source.contents[body.start..body.end],
+            "{ function run() { return; } }"
+        );
+        assert_eq!(declarations[0].end, source.contents.len());
     }
 
     #[test]
@@ -602,15 +743,14 @@ mod tests {
     }
 
     #[test]
-    fn rejects_container_body_without_declare_block_parser() {
-        let source = source("container pkg.item { col witness x; }");
+    fn rejects_unclosed_container_body() {
+        let source = source("container pkg.item { col witness x;");
 
-        let error =
-            parse_container_declarations(&source).expect_err("body should require body parser");
+        let error = parse_container_declarations(&source).expect_err("body should close");
 
         assert!(matches!(
             error,
-            ParseError::ExpectedTerminator { source_name, .. } if source_name == "main.pil"
+            ParseError::ExpectedCloseBrace { source_name, .. } if source_name == "main.pil"
         ));
     }
 }

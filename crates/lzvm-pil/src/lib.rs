@@ -6,7 +6,7 @@ mod source_graph;
 pub use lexer::{lex_source, LexError, Token, TokenKind};
 pub use parser::{
     parse_container_declarations, parse_include_directives, ContainerDeclaration, IncludeDirective,
-    IncludeKind, IncludeVisibility, ParseError, UseDirective,
+    IncludeKind, IncludeVisibility, ParseError, SourceSpan, UseDirective,
 };
 pub use source::{SourceFile, SourceLoadError, SourceLoader, SourceLoaderConfig};
 pub use source_graph::{
