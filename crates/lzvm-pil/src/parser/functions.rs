@@ -2,8 +2,9 @@ use super::declarations::{
     expected_close_error, missing_start, parse_delimited_span, parse_name_reference,
     parse_required_braced_span,
 };
+use super::expressions::parse_expression_tokens;
 use super::types::{
-    FunctionDeclaration, FunctionParameter, FunctionStatement, FunctionStatementKind,
+    Expression, FunctionDeclaration, FunctionParameter, FunctionStatement, FunctionStatementKind,
     FunctionVisibility, ParseError, SourceSpan,
 };
 use crate::{lex_source, SourceFile, Token, TokenKind};
@@ -273,8 +274,10 @@ fn parse_function_statement(
         }
     };
     let header = function_statement_header_span(tokens, index, next_index, kind, source)?;
+    let header_expression = function_statement_expression(tokens, header.as_ref(), kind, source)?;
     let body = function_statement_body_span(tokens, index, next_index, kind, span, source)?;
     let value = function_statement_value_span(tokens, index, next_index, kind);
+    let value_expression = function_statement_expression(tokens, value.as_ref(), kind, source)?;
 
     Ok(ParsedFunctionStatement {
         statement: FunctionStatement {
@@ -282,6 +285,8 @@ fn parse_function_statement(
             header,
             body,
             value,
+            header_expression,
+            value_expression,
             source_name: source.source_name.clone(),
             start: span.start,
             end: span.end,
@@ -574,6 +579,83 @@ fn function_statement_value_span(
     Some(SourceSpan {
         start: tokens.get(value_start_index)?.start,
         end: tokens.get(semicolon_index.checked_sub(1)?)?.end,
+    })
+}
+
+fn function_statement_expression(
+    tokens: &[Token],
+    span: Option<&SourceSpan>,
+    kind: FunctionStatementKind,
+    source: &SourceFile,
+) -> Result<Option<Expression>, ParseError> {
+    let Some(span) = span else {
+        return Ok(None);
+    };
+    if !function_statement_expression_kind(kind) {
+        return Ok(None);
+    }
+
+    let Some((start_index, end_index)) = token_span_bounds(tokens, span) else {
+        return Ok(None);
+    };
+    if !function_statement_expression_supported(tokens, start_index, end_index) {
+        return Ok(None);
+    }
+
+    let (expression, next_index) = parse_expression_tokens(tokens, start_index, end_index, source)?;
+    if next_index != end_index {
+        return Ok(None);
+    }
+
+    Ok(Some(expression))
+}
+
+fn function_statement_expression_kind(kind: FunctionStatementKind) -> bool {
+    matches!(
+        kind,
+        FunctionStatementKind::If
+            | FunctionStatementKind::ElseIf
+            | FunctionStatementKind::While
+            | FunctionStatementKind::Switch
+            | FunctionStatementKind::Return
+            | FunctionStatementKind::Expression
+    )
+}
+
+fn token_span_bounds(tokens: &[Token], span: &SourceSpan) -> Option<(usize, usize)> {
+    let start_index = tokens.iter().position(|token| token.start == span.start)?;
+    let end_index = tokens
+        .iter()
+        .position(|token| token.end == span.end)?
+        .checked_add(1)?;
+    Some((start_index, end_index))
+}
+
+fn function_statement_expression_supported(
+    tokens: &[Token],
+    start_index: usize,
+    end_index: usize,
+) -> bool {
+    let Some(start_token) = tokens.get(start_index) else {
+        return false;
+    };
+    if matches!(
+        start_token.kind,
+        TokenKind::LBracket
+            | TokenKind::Int
+            | TokenKind::Fe
+            | TokenKind::Expr
+            | TokenKind::String
+            | TokenKind::Col
+    ) {
+        return false;
+    }
+
+    !tokens[start_index..end_index].iter().any(|token| {
+        matches!(
+            token.kind,
+            TokenKind::Question | TokenKind::In | TokenKind::Is
+        )
     })
 }
 

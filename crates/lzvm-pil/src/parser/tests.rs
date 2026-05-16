@@ -4,8 +4,8 @@ use super::{
     parse_commit_declarations, parse_container_declarations, parse_function_declarations,
     parse_include_directives, parse_pragma_directives, parse_public_declarations,
     parse_public_table_declarations, parse_use_directives, parse_value_declarations,
-    ColumnInitializerKind, ColumnKind, FunctionStatementKind, FunctionVisibility, IncludeKind,
-    IncludeVisibility, ParseError, ValueDeclarationKind,
+    BinaryOperator, ColumnInitializerKind, ColumnKind, ExpressionKind, FunctionStatementKind,
+    FunctionVisibility, IncludeKind, IncludeVisibility, ParseError, ValueDeclarationKind,
 };
 use crate::SourceFile;
 use std::path::PathBuf;
@@ -585,6 +585,64 @@ fn parses_function_body_statement_spans() {
             .start..declarations[1].statements[2].value.unwrap().end],
         "total"
     );
+}
+
+#[test]
+fn parses_function_statement_expression_trees() {
+    let source = source(
+        "function calc(int value): int {\n\
+           if (value == 0) { return value + 1; }\n\
+           value = value * (value + 1);\n\
+           return value + 2;\n\
+         }",
+    );
+
+    let declarations = parse_function_declarations(&source).expect("functions should parse");
+
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(declarations[0].statements.len(), 3);
+
+    let if_stmt = &declarations[0].statements[0];
+    let header = if_stmt
+        .header_expression
+        .as_ref()
+        .expect("if header should be parsed");
+    assert!(matches!(
+        &header.kind,
+        ExpressionKind::Group(inner) if matches!(
+            &inner.kind,
+            ExpressionKind::Binary {
+                op: BinaryOperator::EqualEqual,
+                ..
+            }
+        )
+    ));
+
+    let assign_stmt = &declarations[0].statements[1];
+    assert!(matches!(
+        &assign_stmt
+            .value_expression
+            .as_ref()
+            .expect("assignment should be parsed")
+            .kind,
+        ExpressionKind::Binary {
+            op: BinaryOperator::Assign,
+            ..
+        }
+    ));
+
+    let final_return = &declarations[0].statements[2];
+    assert!(matches!(
+        &final_return
+            .value_expression
+            .as_ref()
+            .expect("return should be parsed")
+            .kind,
+        ExpressionKind::Binary {
+            op: BinaryOperator::Add,
+            ..
+        }
+    ));
 }
 
 #[test]

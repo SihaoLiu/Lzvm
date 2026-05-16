@@ -144,6 +144,8 @@ pub struct FunctionStatement {
     pub header: Option<SourceSpan>,
     pub body: Option<SourceSpan>,
     pub value: Option<SourceSpan>,
+    pub header_expression: Option<Expression>,
+    pub value_expression: Option<Expression>,
     pub source_name: String,
     pub start: usize,
     pub end: usize,
