@@ -1,13 +1,18 @@
 use lzvm_artifacts::expression_info::{
-    encode_expression_info, parse_expression_info, parse_expression_info_json,
-    read_expression_info_binary_file, read_expression_info_file, BoundaryKind, CodeDestination,
-    CodeOperand, ExpressionDestination, ExpressionInfoError, HintPayload,
+    encode_expression_info, parse_expression_info, read_expression_info_binary_file,
+    read_expression_info_file, ExpressionInfoError,
+};
+#[cfg(feature = "json")]
+use lzvm_artifacts::expression_info::{
+    parse_expression_info_json, BoundaryKind, CodeDestination, CodeOperand, ExpressionDestination,
+    HintPayload,
 };
 use std::fs;
 use std::path::PathBuf;
 
 mod fixtures;
 
+#[cfg(feature = "json")]
 fn sample_expression_info_json() -> &'static str {
     r#"{
         "hintsInfo": [
@@ -81,6 +86,7 @@ fn temp_file_path(name: &str) -> PathBuf {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn parses_expression_info_json() {
     let info =
         parse_expression_info_json(sample_expression_info_json()).expect("fixture should parse");
@@ -131,6 +137,7 @@ fn parses_expression_info_json() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn parses_native_expression_hint_payloads() {
     let json = r#"{
         "hintsInfo": [
@@ -214,6 +221,7 @@ fn parses_native_expression_hint_payloads() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn parses_non_temporary_expression_operation_references() {
     let json = r#"{
         "hintsInfo": [],
@@ -259,6 +267,7 @@ fn parses_non_temporary_expression_operation_references() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_missing_expression_info_arrays() {
     assert!(matches!(
         parse_expression_info_json("{}"),
@@ -267,6 +276,7 @@ fn rejects_missing_expression_info_arrays() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_duplicate_expression_ids() {
     let json = r#"{
         "hintsInfo": [],
@@ -284,6 +294,7 @@ fn rejects_duplicate_expression_ids() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_unknown_operations() {
     let json = sample_expression_info_json().replace("\"op\": \"add\"", "\"op\": \"unknown\"");
 
@@ -294,6 +305,7 @@ fn rejects_unknown_operations() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_temporary_references_outside_the_declared_count() {
     let json =
         sample_expression_info_json().replace("\"id\": 1, \"dim\": 1", "\"id\": 2, \"dim\": 1");
@@ -308,6 +320,7 @@ fn rejects_temporary_references_outside_the_declared_count() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_frame_boundaries_without_offsets() {
     let json = sample_expression_info_json()
         .replace("\"offsetMin\": -1,\n                \"offsetMax\": 2,", "");

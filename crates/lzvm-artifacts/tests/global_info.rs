@@ -1,12 +1,15 @@
 use lzvm_artifacts::global_info::{
-    encode_global_info, parse_global_info, parse_global_info_json, read_global_info_binary_file,
-    read_global_info_file, CurveKind, GlobalInfoError,
+    encode_global_info, parse_global_info, read_global_info_binary_file, read_global_info_file,
+    GlobalInfoError,
 };
+#[cfg(feature = "json")]
+use lzvm_artifacts::global_info::{parse_global_info_json, CurveKind};
 use std::fs;
 use std::path::PathBuf;
 
 mod fixtures;
 
+#[cfg(feature = "json")]
 fn sample_global_info_json() -> &'static str {
     r#"{
         "name": "sample-program",
@@ -46,6 +49,7 @@ fn temp_file_path(name: &str) -> PathBuf {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn parses_global_info_json() {
     let info = parse_global_info_json(sample_global_info_json()).expect("fixture should parse");
 
@@ -82,6 +86,7 @@ fn encodes_and_parses_global_info_binary() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_missing_global_info_fields() {
     assert!(matches!(
         parse_global_info_json("{}"),
@@ -90,6 +95,7 @@ fn rejects_missing_global_info_fields() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_mismatched_air_group_counts() {
     let json = sample_global_info_json().replace(
         "\"air_groups\": [\"group-a\", \"group-b\"]",
@@ -107,6 +113,7 @@ fn rejects_mismatched_air_group_counts() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_empty_air_groups() {
     let json = r#"{
         "name": "sample-program",
@@ -129,6 +136,7 @@ fn rejects_empty_air_groups() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_public_count_mismatches() {
     let json = sample_global_info_json().replace("\"nPublics\": 2", "\"nPublics\": 3");
 
@@ -142,6 +150,7 @@ fn rejects_public_count_mismatches() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_invalid_transcript_arity() {
     let json =
         sample_global_info_json().replace("\"transcriptArity\": 4", "\"transcriptArity\": 0");

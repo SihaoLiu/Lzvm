@@ -10,7 +10,7 @@ name = "lzvm_artifacts"
 path = "src/lib.rs"
 
 [features]
-default = ["json"]
+default = []
 json = ["dep:serde_json"]
 
 [dependencies]

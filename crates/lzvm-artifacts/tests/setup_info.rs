@@ -1,7 +1,8 @@
+#[cfg(feature = "json")]
+use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
 use lzvm_artifacts::setup_info::{
-    encode_unit_setup_info, parse_unit_setup_info, parse_unit_setup_info_json,
-    read_unit_setup_info_binary_file, read_unit_setup_info_file, EvaluationMapEntry,
-    EvaluationMapKind, SetupInfoError,
+    encode_unit_setup_info, parse_unit_setup_info, read_unit_setup_info_binary_file,
+    read_unit_setup_info_file, EvaluationMapEntry, EvaluationMapKind, SetupInfoError,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -65,6 +66,7 @@ fn push_optional_bool(out: &mut Vec<u8>, value: Option<bool>) {
     }
 }
 
+#[cfg(feature = "json")]
 fn sample_setup_info_json() -> &'static str {
     r#"{
         "nStages": 2,
@@ -99,68 +101,6 @@ fn sample_setup_info_json() -> &'static str {
         ],
         "challengesMap": [{}, {}],
         "evMap": [{}, {}, {}],
-        "boundaries": [
-            {"name": "first", "offsetMin": 0, "offsetMax": 3},
-            {"offsetMin": -1}
-        ],
-        "starkStruct": {
-            "nBits": 10,
-            "nBitsExt": 13,
-            "nQueries": 4,
-            "steps": [
-                {"nBits": 13},
-                {"nBits": 9},
-                {"nBits": 5}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 20,
-            "merkleTreeArity": 4,
-            "verificationHashType": "GL",
-            "transcriptArity": 4,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
-
-fn sample_setup_info_json_with_evaluation_map() -> &'static str {
-    r#"{
-        "nStages": 2,
-        "nConstants": 5,
-        "nPublics": 3,
-        "nConstraints": 8,
-        "qDeg": 7,
-        "openingPoints": [0, 1, -1],
-        "mapSectionsN": {
-            "const": 5,
-            "cm1": 2,
-            "cm2": 3,
-            "cm3": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.a", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.b", "dim": 1, "polsMapId": 1, "stageId": 1},
-            {"stage": 0, "name": "main.c", "dim": 1, "polsMapId": 2, "stageId": 2},
-            {"stage": 0, "name": "main.d", "dim": 1, "polsMapId": 3, "stageId": 3},
-            {"stage": 0, "name": "main.e", "dim": 1, "polsMapId": 4, "stageId": 4, "lengths": [5]}
-        ],
-        "cmPolsMap": [
-            {"stage": 1, "name": "trace.a", "dim": 1, "polsMapId": 0, "stageId": 0, "stagePos": 0},
-            {"stage": 2, "name": "aux.a", "dim": 3, "polsMapId": 1, "stageId": 0, "stagePos": 0}
-        ],
-        "airValuesMap": [
-            {"stage": 1, "name": "unit.alpha", "lengths": [2]},
-            {"stage": 2, "name": "unit.beta"}
-        ],
-        "airgroupValuesMap": [
-            {"stage": 2, "name": "group.alpha"}
-        ],
-        "challengesMap": [{}, {}],
-        "evMap": [
-            {"type": "const", "id": 2, "prime": 0, "openingPos": 0},
-            {"type": "cm", "id": 1, "prime": 1, "openingPos": 1},
-            {"type": "custom", "id": 7, "commitId": 3, "prime": -1, "openingPos": 2}
-        ],
         "boundaries": [
             {"name": "first", "offsetMin": 0, "offsetMax": 3},
             {"offsetMin": -1}
@@ -335,6 +275,7 @@ fn temp_file_path(name: &str) -> PathBuf {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn parses_unit_setup_info_json() {
     let info = parse_unit_setup_info_json(sample_setup_info_json()).expect("fixture should parse");
 
@@ -376,44 +317,37 @@ fn parses_unit_setup_info_json() {
 }
 
 #[test]
-fn parses_evaluation_map_entries_from_json_and_binary() {
-    let info = parse_unit_setup_info_json(sample_setup_info_json_with_evaluation_map())
-        .expect("fixture should parse");
-
-    assert_eq!(
-        info.evaluation_map,
-        vec![
-            EvaluationMapEntry {
-                kind: EvaluationMapKind::Constant,
-                id: 2,
-                prime: 0,
-                opening_position: 0,
-                commit_id: None,
-            },
-            EvaluationMapEntry {
-                kind: EvaluationMapKind::Commitment,
-                id: 1,
-                prime: 1,
-                opening_position: 1,
-                commit_id: None,
-            },
-            EvaluationMapEntry {
-                kind: EvaluationMapKind::Custom,
-                id: 7,
-                prime: -1,
-                opening_position: 2,
-                commit_id: Some(3),
-            },
-        ]
-    );
-
+fn parses_evaluation_map_entries_from_binary() {
+    let expected = vec![
+        EvaluationMapEntry {
+            kind: EvaluationMapKind::Constant,
+            id: 2,
+            prime: 0,
+            opening_position: 0,
+            commit_id: None,
+        },
+        EvaluationMapEntry {
+            kind: EvaluationMapKind::Commitment,
+            id: 1,
+            prime: 1,
+            opening_position: 1,
+            commit_id: None,
+        },
+        EvaluationMapEntry {
+            kind: EvaluationMapKind::Custom,
+            id: 7,
+            prime: -1,
+            opening_position: 2,
+            commit_id: Some(3),
+        },
+    ];
     let parsed = parse_unit_setup_info(&sample_setup_info_binary_with_evaluation_map())
         .expect("fixture should parse");
-
-    assert_eq!(parsed.evaluation_map, info.evaluation_map);
+    assert_eq!(parsed.evaluation_map, expected);
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_missing_required_setup_fields() {
     assert!(matches!(
         parse_unit_setup_info_json("{}"),
@@ -422,6 +356,7 @@ fn rejects_missing_required_setup_fields() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_mismatched_domain_bits() {
     let json = sample_setup_info_json().replace("\"nBitsExt\": 13", "\"nBitsExt\": 9");
 
@@ -435,6 +370,7 @@ fn rejects_mismatched_domain_bits() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_fri_steps_that_do_not_start_at_extended_domain() {
     let json = sample_setup_info_json().replace("\"nBits\": 13", "\"nBits\": 12");
 
@@ -445,6 +381,7 @@ fn rejects_fri_steps_that_do_not_start_at_extended_domain() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_missing_stage_widths() {
     let json = sample_setup_info_json().replace("\"cm3\": 1", "\"other\": 1");
 

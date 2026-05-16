@@ -2,10 +2,12 @@ use std::fs;
 use std::path::PathBuf;
 
 use lzvm_artifacts::public_values::{
-    encode_public_values, encode_public_values_json, parse_public_values, parse_public_values_json,
-    public_values_digest, read_public_values_binary_file, read_public_values_file,
-    PublicValueEntry, PublicValues, PublicValuesError,
+    encode_public_values, parse_public_values, public_values_digest,
+    read_public_values_binary_file, read_public_values_file, PublicValueEntry, PublicValues,
+    PublicValuesError,
 };
+#[cfg(feature = "json")]
+use lzvm_artifacts::public_values::{encode_public_values_json, parse_public_values_json};
 
 fn sample_hash(byte: u8) -> [u8; 32] {
     [byte; 32]
@@ -33,6 +35,7 @@ fn sample_public_values() -> PublicValues {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn parses_public_values_json() {
     let input = r#"{
         "schema_version": 1,
@@ -49,6 +52,7 @@ fn parses_public_values_json() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn encodes_public_values_json_canonically() {
     let encoded =
         encode_public_values_json(&sample_public_values()).expect("fixture should encode");
@@ -118,12 +122,13 @@ fn rejects_public_values_with_duplicate_names() {
     });
 
     assert!(matches!(
-        encode_public_values_json(&value),
+        encode_public_values(&value),
         Err(PublicValuesError::DuplicateName { .. })
     ));
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_invalid_setup_hashes() {
     let input = r#"{
         "schema_version": 1,
@@ -138,6 +143,7 @@ fn rejects_invalid_setup_hashes() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_empty_public_value_entries() {
     let input = r#"{
         "schema_version": 1,

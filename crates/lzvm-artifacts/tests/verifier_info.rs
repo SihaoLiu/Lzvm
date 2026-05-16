@@ -1,12 +1,15 @@
+#[cfg(feature = "json")]
+use lzvm_artifacts::verifier_info::parse_verifier_info_json;
 use lzvm_artifacts::verifier_info::{
-    encode_verifier_info, parse_verifier_info, parse_verifier_info_json,
-    read_verifier_info_binary_file, read_verifier_info_file, VerifierInfoError,
+    encode_verifier_info, parse_verifier_info, read_verifier_info_binary_file,
+    read_verifier_info_file, VerifierInfoError,
 };
 use std::fs;
 use std::path::PathBuf;
 
 mod fixtures;
 
+#[cfg(feature = "json")]
 fn sample_verifier_info_json() -> &'static str {
     r#"{
         "qVerifier": {
@@ -52,6 +55,7 @@ fn temp_file_path(name: &str) -> PathBuf {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn parses_verifier_info_json() {
     let info = parse_verifier_info_json(sample_verifier_info_json()).expect("fixture should parse");
 
@@ -64,6 +68,7 @@ fn parses_verifier_info_json() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_missing_verifier_blocks() {
     assert!(matches!(
         parse_verifier_info_json("{}"),
@@ -72,6 +77,7 @@ fn rejects_missing_verifier_blocks() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_unknown_verifier_operations() {
     let json = sample_verifier_info_json().replace("\"op\": \"mul\"", "\"op\": \"unknown\"");
 
@@ -82,6 +88,7 @@ fn rejects_unknown_verifier_operations() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_temporary_references_outside_declared_count() {
     let json =
         sample_verifier_info_json().replace("\"id\": 1, \"dim\": 3", "\"id\": 2, \"dim\": 3");
@@ -96,6 +103,7 @@ fn rejects_temporary_references_outside_declared_count() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn rejects_empty_verifier_code_blocks() {
     let json = r#"{
         "qVerifier": {"tmpUsed": 0, "code": []},
