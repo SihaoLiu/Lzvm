@@ -1,30 +1,9 @@
 use crate::{
-    lex_source, LexError, SourceFile, SourceLoadError, SourceLoader, SourceLoaderConfig, TokenKind,
+    parse_include_directives, IncludeDirective, IncludeKind, IncludeVisibility, ParseError,
+    SourceFile, SourceLoadError, SourceLoader, SourceLoaderConfig,
 };
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IncludeKind {
-    Include,
-    Require,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IncludeVisibility {
-    Public,
-    Private,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IncludeDirective {
-    pub kind: IncludeKind,
-    pub visibility: IncludeVisibility,
-    pub file: String,
-    pub source_name: String,
-    pub start: usize,
-    pub end: usize,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceGraphEdge {
@@ -44,32 +23,14 @@ pub struct SourceGraph {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceGraphError {
     Load(SourceLoadError),
-    Lex {
-        source_name: String,
-        error: LexError,
-    },
-    ExpectedPath {
-        source_name: String,
-        start: usize,
-    },
-    TemplatePath {
-        source_name: String,
-        start: usize,
-        end: usize,
-    },
+    Parse(ParseError),
 }
 
 impl std::fmt::Display for SourceGraphError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Load(error) => write!(f, "{error}"),
-            Self::Lex { source_name, error } => write!(f, "{source_name}: {error}"),
-            Self::ExpectedPath { source_name, start } => {
-                write!(f, "{source_name}: expected include path at {start}")
-            }
-            Self::TemplatePath {
-                source_name, start, ..
-            } => write!(f, "{source_name}: template include path at {start}"),
+            Self::Parse(error) => write!(f, "{error}"),
         }
     }
 }
@@ -157,94 +118,13 @@ impl SourceGraphLoader {
 pub fn collect_static_include_directives(
     source: &SourceFile,
 ) -> Result<Vec<IncludeDirective>, SourceGraphError> {
-    let tokens = lex_source(&source.contents).map_err(|error| SourceGraphError::Lex {
-        source_name: source.source_name.clone(),
-        error,
-    })?;
-    let mut directives = Vec::new();
-    let mut index = 0;
-
-    while index < tokens.len() {
-        let mut visibility = IncludeVisibility::Public;
-        let mut directive_index = index;
-        match tokens[index].kind {
-            TokenKind::Private => {
-                if tokens.get(index + 1).is_some_and(|token| {
-                    matches!(token.kind, TokenKind::Include | TokenKind::Require)
-                }) {
-                    visibility = IncludeVisibility::Private;
-                    directive_index = index + 1;
-                } else {
-                    index += 1;
-                    continue;
-                }
-            }
-            TokenKind::Public => {
-                if tokens.get(index + 1).is_some_and(|token| {
-                    matches!(token.kind, TokenKind::Include | TokenKind::Require)
-                }) {
-                    directive_index = index + 1;
-                } else {
-                    index += 1;
-                    continue;
-                }
-            }
-            TokenKind::Include | TokenKind::Require => {}
-            _ => {
-                index += 1;
-                continue;
-            }
-        }
-
-        let kind = match tokens[directive_index].kind {
-            TokenKind::Include => IncludeKind::Include,
-            TokenKind::Require => IncludeKind::Require,
-            _ => unreachable!("directive index is checked above"),
-        };
-        let Some(path_token) = tokens.get(directive_index + 1) else {
-            return Err(SourceGraphError::ExpectedPath {
-                source_name: source.source_name.clone(),
-                start: tokens[directive_index].end,
-            });
-        };
-        let file = match path_token.kind {
-            TokenKind::StringLiteral => path_token.lexeme.clone(),
-            TokenKind::TemplateLiteral => {
-                return Err(SourceGraphError::TemplatePath {
-                    source_name: source.source_name.clone(),
-                    start: path_token.start,
-                    end: path_token.end,
-                });
-            }
-            _ => {
-                return Err(SourceGraphError::ExpectedPath {
-                    source_name: source.source_name.clone(),
-                    start: path_token.start,
-                });
-            }
-        };
-
-        directives.push(IncludeDirective {
-            kind,
-            visibility,
-            file,
-            source_name: source.source_name.clone(),
-            start: tokens[index].start,
-            end: path_token.end,
-        });
-        index = directive_index + 2;
-    }
-
-    Ok(directives)
+    parse_include_directives(source).map_err(SourceGraphError::Parse)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        collect_static_include_directives, IncludeKind, IncludeVisibility, SourceGraphError,
-        SourceGraphLoader,
-    };
-    use crate::{SourceFile, SourceLoaderConfig};
+    use super::{collect_static_include_directives, SourceGraphError, SourceGraphLoader};
+    use crate::{IncludeKind, IncludeVisibility, ParseError, SourceFile, SourceLoaderConfig};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -308,7 +188,8 @@ mod tests {
 
         assert!(matches!(
             error,
-            SourceGraphError::TemplatePath { source_name, .. } if source_name == "main.pil"
+            SourceGraphError::Parse(ParseError::TemplatePath { source_name, .. })
+                if source_name == "main.pil"
         ));
     }
 
