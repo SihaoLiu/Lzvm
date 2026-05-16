@@ -45,6 +45,25 @@ fn assert_row_offset_add_one(expression: &Expression, name: &str, offset_value: 
     ));
 }
 
+fn assert_binary_add_name_plus_one(expression: &Expression, name: &str) {
+    let ExpressionKind::Binary {
+        op: BinaryOperator::Add,
+        left,
+        right,
+    } = &expression.kind
+    else {
+        panic!("expression should be an addition");
+    };
+    assert!(matches!(
+        &left.kind,
+        ExpressionKind::Name(value) if value == name
+    ));
+    assert!(matches!(
+        &right.kind,
+        ExpressionKind::Integer(value) if value == "1"
+    ));
+}
+
 #[test]
 fn parses_static_include_directives() {
     let source =
@@ -816,7 +835,7 @@ fn parses_sequence_initializer_spans() {
         &source.contents[initializer.span.start..initializer.span.end],
         "[foo(bar), baz[1]]"
     );
-    assert_eq!(initializer.expression, None);
+    assert!(initializer.expression.is_none());
 }
 
 #[test]
@@ -902,7 +921,7 @@ fn parses_group_value_declarations_with_default_stage() {
     assert_eq!(declarations.len(), 1);
     assert_eq!(declarations[0].stage, 2);
     assert_eq!(declarations[0].default_value, None);
-    assert_eq!(declarations[0].default_expression, None);
+    assert!(declarations[0].default_expression.is_none());
     assert_eq!(declarations[0].aggregate_type.as_deref(), Some("prod"));
     assert_eq!(declarations[0].items[0].name, "local");
 }
@@ -954,7 +973,7 @@ fn parses_public_declarations_with_lists_and_initializers() {
     );
     assert_eq!(declarations[0].items[1].name, "local");
     assert_eq!(declarations[0].initializer, None);
-    assert_eq!(declarations[0].initializer_expression, None);
+    assert!(declarations[0].initializer_expression.is_none());
     assert_eq!(declarations[1].items.len(), 1);
     assert_eq!(declarations[1].items[0].name, "scalar");
     let initializer = declarations[1].initializer.expect("initializer");
@@ -984,8 +1003,8 @@ fn skips_public_modifiers_and_references_when_parsing_public_declarations() {
 #[test]
 fn parses_public_table_declarations_with_and_without_args() {
     let source = source(
-        "publictable aggregate(sum, fold, foo(bar + 1), baz[2]) table[cols + 1][rows];\n\
-         publictable aggregate(sum, fold) other[rows][cols + 1];",
+        "publictable aggregate(sum, fold, bar' + 1, baz[2]) table[cols + 1][rows];\n\
+         publictable aggregate(sum, fold) other[rows' + 1][cols + 1];",
     );
 
     let declarations =
@@ -996,28 +1015,67 @@ fn parses_public_table_declarations_with_and_without_args() {
     assert_eq!(declarations[0].aggregate_function, "fold");
     assert_eq!(declarations[0].name, "table");
     let args = declarations[0].args.expect("args");
-    assert_eq!(
-        &source.contents[args.start..args.end],
-        "foo(bar + 1), baz[2]"
-    );
+    assert_eq!(&source.contents[args.start..args.end], "bar' + 1, baz[2]");
+    let args_expressions = declarations[0]
+        .args_expressions
+        .as_ref()
+        .expect("args expressions");
+    assert_eq!(args_expressions.len(), 2);
+    assert_row_offset_add_one(&args_expressions[0], "bar", "1");
+    assert!(matches!(
+        &args_expressions[1].kind,
+        ExpressionKind::Index { target, index } if matches!(&target.kind, ExpressionKind::Name(name) if name == "baz")
+            && matches!(&index.kind, ExpressionKind::Integer(value) if value == "2")
+    ));
     assert_eq!(
         &source.contents[declarations[0].cols.start..declarations[0].cols.end],
         "[cols + 1]"
+    );
+    assert_binary_add_name_plus_one(
+        declarations[0]
+            .cols_expression
+            .as_ref()
+            .expect("cols expression"),
+        "cols",
     );
     assert_eq!(
         &source.contents[declarations[0].rows.start..declarations[0].rows.end],
         "[rows]"
     );
+    assert!(matches!(
+        declarations[0]
+            .rows_expression
+            .as_ref()
+            .expect("rows expression")
+            .kind,
+        ExpressionKind::Name(ref name) if name == "rows"
+    ));
     assert_eq!(declarations[1].aggregate_type, "sum");
     assert_eq!(declarations[1].aggregate_function, "fold");
     assert_eq!(declarations[1].name, "other");
     assert_eq!(declarations[1].args, None);
+    assert!(declarations[1].args_expressions.is_none());
     assert_eq!(
         &source.contents[declarations[1].cols.start..declarations[1].cols.end],
-        "[rows]"
+        "[rows' + 1]"
+    );
+    assert_row_offset_add_one(
+        declarations[1]
+            .cols_expression
+            .as_ref()
+            .expect("cols expression"),
+        "rows",
+        "1",
     );
     assert_eq!(
         &source.contents[declarations[1].rows.start..declarations[1].rows.end],
         "[cols + 1]"
+    );
+    assert_binary_add_name_plus_one(
+        declarations[1]
+            .rows_expression
+            .as_ref()
+            .expect("rows expression"),
+        "cols",
     );
 }

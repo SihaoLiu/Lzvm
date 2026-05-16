@@ -1,4 +1,7 @@
-use super::expressions::{parse_expression_range_best_effort, parse_expression_span_best_effort};
+use super::expressions::{
+    parse_expression_list_range_best_effort, parse_expression_range_best_effort,
+    parse_expression_span_best_effort,
+};
 use super::*;
 
 pub fn parse_column_declarations(
@@ -324,7 +327,7 @@ pub fn parse_public_table_declarations(
         }
 
         let mut cursor = index + 6;
-        let args = if tokens
+        let (args, args_expressions) = if tokens
             .get(cursor)
             .is_some_and(|token| token.kind == TokenKind::Comma)
         {
@@ -349,10 +352,18 @@ pub fn parse_public_table_declarations(
                 });
             }
             cursor = after_aggregate;
-            Some(SourceSpan {
-                start: args_start.start,
-                end: tokens[close_index].start,
-            })
+            (
+                Some(SourceSpan {
+                    start: args_start.start,
+                    end: tokens[close_index].start,
+                }),
+                parse_expression_list_range_best_effort(
+                    &tokens,
+                    args_start_index,
+                    close_index,
+                    source,
+                ),
+            )
         } else {
             if tokens
                 .get(cursor)
@@ -366,20 +377,27 @@ pub fn parse_public_table_declarations(
                 });
             }
             cursor = after_aggregate;
-            None
+            (None, None)
         };
 
         let (name, after_name) = parse_alias_identifier(&tokens, cursor, source)?;
         let (cols, after_cols) = parse_delimited_span(&tokens, after_name, source)?;
         let (rows, after_rows) = parse_delimited_span(&tokens, after_cols, source)?;
+        let cols_expression =
+            parse_expression_range_best_effort(&tokens, after_name + 1, after_cols - 1, source);
+        let rows_expression =
+            parse_expression_range_best_effort(&tokens, after_cols + 1, after_rows - 1, source);
 
         declarations.push(PublicTableDeclaration {
             aggregate_type: aggregate_type_token.lexeme.clone(),
             aggregate_function: aggregate_function_token.lexeme.clone(),
             name,
             args,
+            args_expressions,
             cols,
+            cols_expression,
             rows,
+            rows_expression,
             source_name: source.source_name.clone(),
             start: tokens[index].start,
             end: rows.end,
