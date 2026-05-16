@@ -1,8 +1,8 @@
 use super::{
-    parse_air_group_value_declarations, parse_column_declarations, parse_container_declarations,
-    parse_include_directives, parse_use_directives, parse_value_declarations,
-    ColumnInitializerKind, ColumnKind, IncludeKind, IncludeVisibility, ParseError,
-    ValueDeclarationKind,
+    parse_air_group_value_declarations, parse_column_declarations, parse_commit_declarations,
+    parse_container_declarations, parse_include_directives, parse_use_directives,
+    parse_value_declarations, ColumnInitializerKind, ColumnKind, IncludeKind, IncludeVisibility,
+    ParseError, ValueDeclarationKind,
 };
 use crate::SourceFile;
 use std::path::PathBuf;
@@ -417,4 +417,21 @@ fn rejects_duplicate_group_value_properties() {
         ParseError::DuplicateProperty { source_name, name, .. }
             if source_name == "main.pil" && name == "stage"
     ));
+}
+
+#[test]
+fn parses_commit_declarations_with_public_references() {
+    let source =
+        source("commit stage(3) public(air.main, proof.root) entry;\ncommit stage(2) local;");
+
+    let declarations =
+        parse_commit_declarations(&source).expect("commit declarations should parse");
+
+    assert_eq!(declarations.len(), 2);
+    assert_eq!(declarations[0].stage, 3);
+    assert_eq!(declarations[0].publics, vec!["air.main", "proof.root"]);
+    assert_eq!(declarations[0].name, "entry");
+    assert_eq!(declarations[1].stage, 2);
+    assert!(declarations[1].publics.is_empty());
+    assert_eq!(declarations[1].name, "local");
 }

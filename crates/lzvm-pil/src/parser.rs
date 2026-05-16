@@ -119,6 +119,16 @@ pub struct AirGroupValueDeclaration {
     pub end: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitDeclaration {
+    pub stage: u32,
+    pub publics: Vec<String>,
+    pub name: String,
+    pub source_name: String,
+    pub start: usize,
+    pub end: usize,
+}
+
 const DEFAULT_CHALLENGE_STAGE: u32 = 2;
 const DEFAULT_VALUE_STAGE: u32 = 1;
 const DEFAULT_AIR_GROUP_VALUE_STAGE: u32 = 2;
@@ -425,6 +435,56 @@ pub fn parse_air_group_value_declarations(
     Ok(declarations)
 }
 
+pub fn parse_commit_declarations(
+    source: &SourceFile,
+) -> Result<Vec<CommitDeclaration>, ParseError> {
+    let tokens = lex_source(&source.contents).map_err(|error| ParseError::Lex {
+        source_name: source.source_name.clone(),
+        error,
+    })?;
+    let mut declarations = Vec::new();
+    let mut index = 0;
+
+    while index < tokens.len() {
+        if tokens[index].kind != TokenKind::Commit
+            || !tokens
+                .get(index + 1)
+                .is_some_and(|token| token.kind == TokenKind::Stage)
+        {
+            index += 1;
+            continue;
+        }
+
+        let (stage, after_stage) = parse_optional_stage_definition(&tokens, index + 1, 0, source)?;
+        let (publics, after_publics) = parse_commit_public_reference(&tokens, after_stage, source)?;
+        let (name, next_index) = parse_alias_identifier(&tokens, after_publics, source)?;
+        let terminator = tokens
+            .get(next_index)
+            .ok_or_else(|| ParseError::ExpectedTerminator {
+                source_name: source.source_name.clone(),
+                start: missing_start(&tokens, next_index),
+            })?;
+        if terminator.kind != TokenKind::Semicolon {
+            return Err(ParseError::ExpectedTerminator {
+                source_name: source.source_name.clone(),
+                start: terminator.start,
+            });
+        }
+
+        declarations.push(CommitDeclaration {
+            stage,
+            publics,
+            name,
+            source_name: source.source_name.clone(),
+            start: tokens[index].start,
+            end: terminator.end,
+        });
+        index = next_index + 1;
+    }
+
+    Ok(declarations)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct GroupValueProperties {
     stage: u32,
@@ -544,6 +604,70 @@ fn parse_aggregate_type_definition(
     }
 
     Ok((name.lexeme.clone(), close_index + 1))
+}
+
+fn parse_commit_public_reference(
+    tokens: &[Token],
+    index: usize,
+    source: &SourceFile,
+) -> Result<(Vec<String>, usize), ParseError> {
+    let Some(token) = tokens.get(index) else {
+        return Ok((Vec::new(), index));
+    };
+    if token.kind != TokenKind::Public {
+        return Ok((Vec::new(), index));
+    }
+
+    let open_index = index + 1;
+    let Some(open) = tokens.get(open_index) else {
+        return Err(ParseError::ExpectedCloseParen {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, open_index),
+        });
+    };
+    if open.kind != TokenKind::LParen {
+        return Err(ParseError::ExpectedCloseParen {
+            source_name: source.source_name.clone(),
+            start: open.start,
+        });
+    }
+
+    let mut cursor = open_index + 1;
+    let (first_name, next_index) = parse_commit_public_name(tokens, cursor, source)?;
+    let mut names = vec![first_name];
+    cursor = next_index;
+
+    while tokens
+        .get(cursor)
+        .is_some_and(|token| token.kind == TokenKind::Comma)
+    {
+        let (name, next) = parse_commit_public_name(tokens, cursor + 1, source)?;
+        names.push(name);
+        cursor = next;
+    }
+
+    let close = tokens
+        .get(cursor)
+        .ok_or_else(|| ParseError::ExpectedCloseParen {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, cursor),
+        })?;
+    if close.kind != TokenKind::RParen {
+        return Err(ParseError::ExpectedCloseParen {
+            source_name: source.source_name.clone(),
+            start: close.start,
+        });
+    }
+
+    Ok((names, cursor + 1))
+}
+
+fn parse_commit_public_name(
+    tokens: &[Token],
+    index: usize,
+    source: &SourceFile,
+) -> Result<(String, usize), ParseError> {
+    parse_name_reference(tokens, index, source)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
