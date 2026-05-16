@@ -5262,6 +5262,39 @@ fn validates_setup_aware_verify_preflight_with_proof_values() {
 }
 
 #[test]
+fn validates_setup_aware_verify_proof_with_proof_values() {
+    let dir = temp_dir("verify-proof-with-proof-values");
+    let _ = fs::remove_dir_all(&dir);
+    let (proof_path, public_values_path, segment_count) =
+        write_proof_value_query_preflight_fixture(&dir, Some(vec![[51, 52, 53]]));
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "proof",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\n")
+    );
+    assert!(stderr.is_empty());
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn validates_setup_aware_verify_preflight_with_unit_values() {
     let dir = temp_dir("verify-setup-preflight-unit-values");
     let _ = fs::remove_dir_all(&dir);
@@ -6321,6 +6354,20 @@ fn reports_usage_for_missing_setup_preflight_inputs() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "usage: lzvm verify setup-preflight <setup-dir> <proof-bin> <public-values>\n"
+    );
+}
+
+#[test]
+fn reports_usage_for_missing_verify_proof_inputs() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(&["verify", "proof"], &mut stdout, &mut stderr);
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "usage: lzvm verify proof <setup-dir> <proof-bin> <public-values>\n"
     );
 }
 

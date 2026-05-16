@@ -61,7 +61,15 @@ Check proof, public-value, and setup catalog consistency:
 cargo run -p lzvm-cli -- verify setup-preflight <setup-dir> <proof-bin> <public-values>
 ```
 
-This command runs the proof/public-values preflight and also checks that the proof setup hash matches the deterministic setup catalog fingerprint for the supplied setup directory. It is a setup-aware artifact preflight check, not a full proof verifier.
+This compatibility command runs the setup-aware artifact validation path. Prefer `verify proof` for direct proof verification.
+
+Verify a proof artifact against a setup directory:
+
+```sh
+cargo run -p lzvm-cli -- verify proof <setup-dir> <proof-bin> <public-values>
+```
+
+This command reads the setup catalog, proof artifact, and public-values artifact, then validates catalog fingerprint binding, setup-directory manifest binding, proof/public-values binding, PCS material manifests, witness commitments, query plans, constant openings, witness openings, global constraints, global hints, and optional FRI openings.
 
 Inspect the proof schedule derived from a setup directory:
 

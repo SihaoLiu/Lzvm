@@ -29,6 +29,10 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             verify_setup_preflight(setup_dir, proof_bin, public_values_path, stdout, stderr)
         }
         ["verify", "setup-preflight", ..] => write_verify_setup_preflight_usage(stderr),
+        ["verify", "proof", setup_dir, proof_bin, public_values_path] => {
+            verify_proof(setup_dir, proof_bin, public_values_path, stdout, stderr)
+        }
+        ["verify", "proof", ..] => write_verify_proof_usage(stderr),
         ["verify", "preflight", proof_bin, public_values_path] => {
             verify_preflight(proof_bin, public_values_path, stdout, stderr)
         }
@@ -375,11 +379,46 @@ fn verify_setup_preflight(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
+    verify_setup_validation(
+        "verify setup-preflight",
+        setup_dir,
+        proof_bin,
+        public_values_path,
+        stdout,
+        stderr,
+    )
+}
+
+fn verify_proof(
+    setup_dir: &str,
+    proof_bin: &str,
+    public_values_path: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    verify_setup_validation(
+        "verify proof",
+        setup_dir,
+        proof_bin,
+        public_values_path,
+        stdout,
+        stderr,
+    )
+}
+
+fn verify_setup_validation(
+    role: &str,
+    setup_dir: &str,
+    proof_bin: &str,
+    public_values_path: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
     let public_report =
         match validate_setup_preflight_from_files(setup_dir, proof_bin, public_values_path) {
             Ok(report) => report,
             Err(error) => {
-                let _ = writeln!(stderr, "verify setup-preflight failed: {error}");
+                let _ = writeln!(stderr, "{role} failed: {error}");
                 return 1;
             }
         };
@@ -855,6 +894,14 @@ fn write_verify_setup_preflight_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
         "usage: lzvm verify setup-preflight <setup-dir> <proof-bin> <public-values>"
+    );
+    2
+}
+
+fn write_verify_proof_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm verify proof <setup-dir> <proof-bin> <public-values>"
     );
     2
 }
