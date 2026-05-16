@@ -138,6 +138,19 @@ pub struct PublicDeclaration {
     pub end: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublicTableDeclaration {
+    pub aggregate_type: String,
+    pub aggregate_function: String,
+    pub name: String,
+    pub args: Option<SourceSpan>,
+    pub cols: SourceSpan,
+    pub rows: SourceSpan,
+    pub source_name: String,
+    pub start: usize,
+    pub end: usize,
+}
+
 const DEFAULT_CHALLENGE_STAGE: u32 = 2;
 const DEFAULT_VALUE_STAGE: u32 = 1;
 const DEFAULT_AIR_GROUP_VALUE_STAGE: u32 = 2;
@@ -569,6 +582,139 @@ pub fn parse_public_declarations(
             end,
         });
         index = next_index;
+    }
+
+    Ok(declarations)
+}
+
+pub fn parse_public_table_declarations(
+    source: &SourceFile,
+) -> Result<Vec<PublicTableDeclaration>, ParseError> {
+    let tokens = lex_source(&source.contents).map_err(|error| ParseError::Lex {
+        source_name: source.source_name.clone(),
+        error,
+    })?;
+    let mut declarations = Vec::new();
+    let mut index = 0;
+
+    while index < tokens.len() {
+        if tokens[index].kind != TokenKind::PublicTable
+            || !tokens
+                .get(index + 1)
+                .is_some_and(|token| token.kind == TokenKind::Aggregate)
+        {
+            index += 1;
+            continue;
+        }
+
+        let aggregate_open = index + 2;
+        let (_aggregate_span, after_aggregate) =
+            parse_delimited_span(&tokens, aggregate_open, source)?;
+
+        let aggregate_type_index = index + 3;
+        let Some(aggregate_type_token) = tokens.get(aggregate_type_index) else {
+            return Err(ParseError::ExpectedName {
+                source_name: source.source_name.clone(),
+                start: missing_start(&tokens, aggregate_type_index),
+            });
+        };
+        if aggregate_type_token.kind != TokenKind::Identifier {
+            return Err(ParseError::ExpectedName {
+                source_name: source.source_name.clone(),
+                start: aggregate_type_token.start,
+            });
+        }
+
+        let aggregate_comma =
+            tokens
+                .get(index + 4)
+                .ok_or_else(|| ParseError::ExpectedTerminator {
+                    source_name: source.source_name.clone(),
+                    start: missing_start(&tokens, index + 4),
+                })?;
+        if aggregate_comma.kind != TokenKind::Comma {
+            return Err(ParseError::ExpectedTerminator {
+                source_name: source.source_name.clone(),
+                start: aggregate_comma.start,
+            });
+        }
+
+        let aggregate_function_index = index + 5;
+        let Some(aggregate_function_token) = tokens.get(aggregate_function_index) else {
+            return Err(ParseError::ExpectedName {
+                source_name: source.source_name.clone(),
+                start: missing_start(&tokens, aggregate_function_index),
+            });
+        };
+        if aggregate_function_token.kind != TokenKind::Identifier {
+            return Err(ParseError::ExpectedName {
+                source_name: source.source_name.clone(),
+                start: aggregate_function_token.start,
+            });
+        }
+
+        let mut cursor = index + 6;
+        let args = if tokens
+            .get(cursor)
+            .is_some_and(|token| token.kind == TokenKind::Comma)
+        {
+            let args_start_index = cursor + 1;
+            let close_index =
+                after_aggregate
+                    .checked_sub(1)
+                    .ok_or_else(|| ParseError::ExpectedCloseParen {
+                        source_name: source.source_name.clone(),
+                        start: aggregate_function_token.end,
+                    })?;
+            let Some(args_start) = tokens.get(args_start_index) else {
+                return Err(ParseError::ExpectedName {
+                    source_name: source.source_name.clone(),
+                    start: missing_start(&tokens, args_start_index),
+                });
+            };
+            if args_start.kind == TokenKind::RParen {
+                return Err(ParseError::ExpectedName {
+                    source_name: source.source_name.clone(),
+                    start: args_start.start,
+                });
+            }
+            cursor = after_aggregate;
+            Some(SourceSpan {
+                start: args_start.start,
+                end: tokens[close_index].start,
+            })
+        } else {
+            if tokens
+                .get(cursor)
+                .is_none_or(|token| token.kind != TokenKind::RParen)
+            {
+                return Err(ParseError::ExpectedCloseParen {
+                    source_name: source.source_name.clone(),
+                    start: tokens
+                        .get(cursor)
+                        .map_or_else(|| missing_start(&tokens, cursor), |token| token.start),
+                });
+            }
+            cursor = after_aggregate;
+            None
+        };
+
+        let (name, after_name) = parse_alias_identifier(&tokens, cursor, source)?;
+        let (cols, after_cols) = parse_delimited_span(&tokens, after_name, source)?;
+        let (rows, after_rows) = parse_delimited_span(&tokens, after_cols, source)?;
+
+        declarations.push(PublicTableDeclaration {
+            aggregate_type: aggregate_type_token.lexeme.clone(),
+            aggregate_function: aggregate_function_token.lexeme.clone(),
+            name,
+            args,
+            cols,
+            rows,
+            source_name: source.source_name.clone(),
+            start: tokens[index].start,
+            end: rows.end,
+        });
+        index = after_rows;
     }
 
     Ok(declarations)

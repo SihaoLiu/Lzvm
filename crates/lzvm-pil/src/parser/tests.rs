@@ -1,8 +1,9 @@
 use super::{
     parse_air_group_value_declarations, parse_column_declarations, parse_commit_declarations,
     parse_container_declarations, parse_include_directives, parse_public_declarations,
-    parse_use_directives, parse_value_declarations, ColumnInitializerKind, ColumnKind, IncludeKind,
-    IncludeVisibility, ParseError, ValueDeclarationKind,
+    parse_public_table_declarations, parse_use_directives, parse_value_declarations,
+    ColumnInitializerKind, ColumnKind, IncludeKind, IncludeVisibility, ParseError,
+    ValueDeclarationKind,
 };
 use crate::SourceFile;
 use std::path::PathBuf;
@@ -469,4 +470,45 @@ fn skips_public_modifiers_and_references_when_parsing_public_declarations() {
     let declarations = parse_public_declarations(&source).expect("source should parse");
 
     assert!(declarations.is_empty());
+}
+
+#[test]
+fn parses_public_table_declarations_with_and_without_args() {
+    let source = source(
+        "publictable aggregate(sum, fold, foo(bar + 1), baz[2]) table[cols + 1][rows];\n\
+         publictable aggregate(sum, fold) other[rows][cols + 1];",
+    );
+
+    let declarations =
+        parse_public_table_declarations(&source).expect("public table declarations should parse");
+
+    assert_eq!(declarations.len(), 2);
+    assert_eq!(declarations[0].aggregate_type, "sum");
+    assert_eq!(declarations[0].aggregate_function, "fold");
+    assert_eq!(declarations[0].name, "table");
+    let args = declarations[0].args.expect("args");
+    assert_eq!(
+        &source.contents[args.start..args.end],
+        "foo(bar + 1), baz[2]"
+    );
+    assert_eq!(
+        &source.contents[declarations[0].cols.start..declarations[0].cols.end],
+        "[cols + 1]"
+    );
+    assert_eq!(
+        &source.contents[declarations[0].rows.start..declarations[0].rows.end],
+        "[rows]"
+    );
+    assert_eq!(declarations[1].aggregate_type, "sum");
+    assert_eq!(declarations[1].aggregate_function, "fold");
+    assert_eq!(declarations[1].name, "other");
+    assert_eq!(declarations[1].args, None);
+    assert_eq!(
+        &source.contents[declarations[1].cols.start..declarations[1].cols.end],
+        "[rows]"
+    );
+    assert_eq!(
+        &source.contents[declarations[1].rows.start..declarations[1].rows.end],
+        "[cols + 1]"
+    );
 }
