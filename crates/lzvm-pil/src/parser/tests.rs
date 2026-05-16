@@ -4,8 +4,8 @@ use super::{
     parse_commit_declarations, parse_container_declarations, parse_function_declarations,
     parse_include_directives, parse_pragma_directives, parse_public_declarations,
     parse_public_table_declarations, parse_use_directives, parse_value_declarations,
-    ColumnInitializerKind, ColumnKind, FunctionVisibility, IncludeKind, IncludeVisibility,
-    ParseError, ValueDeclarationKind,
+    ColumnInitializerKind, ColumnKind, FunctionStatementKind, FunctionVisibility, IncludeKind,
+    IncludeVisibility, ParseError, ValueDeclarationKind,
 };
 use crate::SourceFile;
 use std::path::PathBuf;
@@ -391,6 +391,14 @@ fn parses_function_declarations_with_spans_and_visibility() {
         &source.contents[declarations[0].body.start..declarations[0].body.end],
         "{\nif (a < b) { return b; }\nreturn a + b;\n}"
     );
+    assert_eq!(
+        declarations[0]
+            .statements
+            .iter()
+            .map(|statement| statement.kind)
+            .collect::<Vec<_>>(),
+        vec![FunctionStatementKind::If, FunctionStatementKind::Return]
+    );
 
     assert_eq!(declarations[1].name, "map_values");
     assert_eq!(
@@ -412,6 +420,11 @@ fn parses_function_declarations_with_spans_and_visibility() {
             .start..declarations[1].return_type.unwrap().end],
         "expr[]"
     );
+    assert_eq!(declarations[1].statements.len(), 1);
+    assert_eq!(
+        declarations[1].statements[0].kind,
+        FunctionStatementKind::Return
+    );
 
     assert_eq!(declarations[2].name, "exported");
     assert_eq!(declarations[2].visibility, Some(FunctionVisibility::Public));
@@ -428,6 +441,17 @@ fn parses_function_declarations_with_spans_and_visibility() {
 
     assert_eq!(declarations[3].name, "procedure");
     assert_eq!(declarations[3].return_type, None);
+    assert_eq!(
+        declarations[3]
+            .statements
+            .iter()
+            .map(|statement| statement.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            FunctionStatementKind::Declaration,
+            FunctionStatementKind::Expression
+        ]
+    );
 }
 
 #[test]
@@ -478,6 +502,46 @@ fn parses_function_parameters_with_defaults_and_references() {
             .start
             ..declarations[2].parameters[1].default_value.unwrap().end],
         "-1"
+    );
+}
+
+#[test]
+fn parses_function_body_statement_spans() {
+    let source = source(
+        "function choose(int value): int {\n\
+           if (value == 0) { return 1; } else if (value == 1) { return 2; } else { return 3; }\n\
+         }\n\
+         function loop_sum(expr values[]): int {\n\
+           int total = 0;\n\
+           for (int i = 0; i < length(values); ++i) { total += values[i]; }\n\
+           return total;\n\
+         }",
+    );
+
+    let declarations = parse_function_declarations(&source).expect("functions should parse");
+
+    assert_eq!(declarations.len(), 2);
+    assert_eq!(declarations[0].statements.len(), 1);
+    assert_eq!(
+        declarations[0].statements[0].kind,
+        FunctionStatementKind::If
+    );
+    assert_eq!(
+        &source.contents[declarations[0].statements[0].start..declarations[0].statements[0].end],
+        "if (value == 0) { return 1; } else if (value == 1) { return 2; } else { return 3; }"
+    );
+
+    assert_eq!(
+        declarations[1]
+            .statements
+            .iter()
+            .map(|statement| statement.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            FunctionStatementKind::Declaration,
+            FunctionStatementKind::For,
+            FunctionStatementKind::Return
+        ]
     );
 }
 

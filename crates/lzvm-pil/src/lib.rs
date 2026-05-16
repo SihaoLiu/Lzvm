@@ -14,9 +14,9 @@ pub use parser::{
     AirGroupDeclaration, AirGroupValueDeclaration, AirInstanceDeclaration, AirTemplateDeclaration,
     ColumnDeclaration, ColumnFeature, ColumnInitializer, ColumnInitializerKind, ColumnItem,
     ColumnKind, CommitDeclaration, ContainerDeclaration, FunctionDeclaration, FunctionParameter,
-    FunctionVisibility, IncludeDirective, IncludeKind, IncludeVisibility, ParseError,
-    PragmaDirective, PublicDeclaration, PublicTableDeclaration, SourceSpan, UseDirective,
-    ValueDeclaration, ValueDeclarationKind,
+    FunctionStatement, FunctionStatementKind, FunctionVisibility, IncludeDirective, IncludeKind,
+    IncludeVisibility, ParseError, PragmaDirective, PublicDeclaration, PublicTableDeclaration,
+    SourceSpan, UseDirective, ValueDeclaration, ValueDeclarationKind,
 };
 pub use source::{SourceFile, SourceLoadError, SourceLoader, SourceLoaderConfig};
 pub use source_graph::{

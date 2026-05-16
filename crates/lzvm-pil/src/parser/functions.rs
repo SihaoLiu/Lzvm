@@ -3,7 +3,8 @@ use super::declarations::{
     parse_required_braced_span,
 };
 use super::types::{
-    FunctionDeclaration, FunctionParameter, FunctionVisibility, ParseError, SourceSpan,
+    FunctionDeclaration, FunctionParameter, FunctionStatement, FunctionStatementKind,
+    FunctionVisibility, ParseError, SourceSpan,
 };
 use crate::{lex_source, SourceFile, Token, TokenKind};
 
@@ -67,6 +68,7 @@ fn parse_function_at(
     let parameters = parse_function_parameters(tokens, after_name + 1, after_params - 1, source)?;
     let (return_type, body_index) = parse_function_return_type(tokens, after_params, source)?;
     let (body, next_index) = parse_required_braced_span(tokens, body_index, source)?;
+    let statements = parse_function_body_statements(tokens, body, source)?;
 
     Ok(Some(ParsedFunction {
         declaration: FunctionDeclaration {
@@ -76,6 +78,7 @@ fn parse_function_at(
             parameters,
             return_type,
             body,
+            statements,
             source_name: source.source_name.clone(),
             start,
             end: body.end,
@@ -154,6 +157,340 @@ fn parse_function_return_type(
         source_name: source.source_name.clone(),
         start: missing_start(tokens, cursor),
     })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedFunctionStatement {
+    statement: FunctionStatement,
+    next_index: usize,
+}
+
+fn parse_function_body_statements(
+    tokens: &[Token],
+    body: SourceSpan,
+    source: &SourceFile,
+) -> Result<Vec<FunctionStatement>, ParseError> {
+    let open_index = tokens
+        .iter()
+        .position(|token| token.kind == TokenKind::LBrace && token.start == body.start)
+        .ok_or_else(|| ParseError::ExpectedCloseBrace {
+            source_name: source.source_name.clone(),
+            start: body.start,
+        })?;
+    let close_index = tokens
+        .iter()
+        .rposition(|token| token.kind == TokenKind::RBrace && token.end == body.end)
+        .ok_or_else(|| ParseError::ExpectedCloseBrace {
+            source_name: source.source_name.clone(),
+            start: body.start,
+        })?;
+
+    let mut statements = Vec::new();
+    let mut cursor = open_index + 1;
+    while cursor < close_index {
+        let parsed = parse_function_statement(tokens, cursor, close_index, source)?;
+        cursor = parsed.next_index;
+        statements.push(parsed.statement);
+    }
+    Ok(statements)
+}
+
+fn parse_function_statement(
+    tokens: &[Token],
+    index: usize,
+    limit_index: usize,
+    source: &SourceFile,
+) -> Result<ParsedFunctionStatement, ParseError> {
+    let token = tokens
+        .get(index)
+        .ok_or_else(|| ParseError::ExpectedTerminator {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, index),
+        })?;
+
+    let (kind, span, next_index) = match token.kind {
+        TokenKind::LBrace => {
+            let (span, next_index) = parse_delimited_span(tokens, index, source)?;
+            (FunctionStatementKind::Block, span, next_index)
+        }
+        TokenKind::If => {
+            let (span, next_index) = parse_if_statement_span(tokens, index, limit_index, source)?;
+            (FunctionStatementKind::If, span, next_index)
+        }
+        TokenKind::ElseIf => {
+            let (span, next_index) =
+                parse_control_statement_span(tokens, index, limit_index, source)?;
+            (FunctionStatementKind::ElseIf, span, next_index)
+        }
+        TokenKind::Else => {
+            let (span, next_index) = parse_else_tail_span(tokens, index, limit_index, source)?;
+            (FunctionStatementKind::Else, span, next_index)
+        }
+        TokenKind::For => {
+            let (span, next_index) =
+                parse_control_statement_span(tokens, index, limit_index, source)?;
+            (FunctionStatementKind::For, span, next_index)
+        }
+        TokenKind::While => {
+            let (span, next_index) =
+                parse_control_statement_span(tokens, index, limit_index, source)?;
+            (FunctionStatementKind::While, span, next_index)
+        }
+        TokenKind::Do => {
+            let (span, next_index) =
+                parse_control_statement_span(tokens, index, limit_index, source)?;
+            (FunctionStatementKind::Do, span, next_index)
+        }
+        TokenKind::Switch => {
+            let (span, next_index) =
+                parse_control_statement_span(tokens, index, limit_index, source)?;
+            (FunctionStatementKind::Switch, span, next_index)
+        }
+        TokenKind::Return => {
+            let (span, next_index) =
+                parse_semicolon_statement_span(tokens, index, limit_index, source)?;
+            (FunctionStatementKind::Return, span, next_index)
+        }
+        TokenKind::Break => {
+            let (span, next_index) =
+                parse_semicolon_statement_span(tokens, index, limit_index, source)?;
+            (FunctionStatementKind::Break, span, next_index)
+        }
+        TokenKind::Continue => {
+            let (span, next_index) =
+                parse_semicolon_statement_span(tokens, index, limit_index, source)?;
+            (FunctionStatementKind::Continue, span, next_index)
+        }
+        kind if function_statement_declaration_start(kind) => {
+            let (span, next_index) =
+                parse_semicolon_statement_span(tokens, index, limit_index, source)?;
+            (FunctionStatementKind::Declaration, span, next_index)
+        }
+        _ => {
+            let (span, next_index) =
+                parse_semicolon_statement_span(tokens, index, limit_index, source)?;
+            (FunctionStatementKind::Expression, span, next_index)
+        }
+    };
+
+    Ok(ParsedFunctionStatement {
+        statement: FunctionStatement {
+            kind,
+            source_name: source.source_name.clone(),
+            start: span.start,
+            end: span.end,
+        },
+        next_index,
+    })
+}
+
+fn parse_if_statement_span(
+    tokens: &[Token],
+    index: usize,
+    limit_index: usize,
+    source: &SourceFile,
+) -> Result<(SourceSpan, usize), ParseError> {
+    let (mut span, mut cursor) = parse_control_statement_span(tokens, index, limit_index, source)?;
+    while cursor < limit_index {
+        let Some(token) = tokens.get(cursor) else {
+            break;
+        };
+        match token.kind {
+            TokenKind::ElseIf => {
+                let (tail, next_index) =
+                    parse_control_statement_span(tokens, cursor, limit_index, source)?;
+                span.end = tail.end;
+                cursor = next_index;
+            }
+            TokenKind::Else => {
+                let (tail, next_index) = parse_else_tail_span(tokens, cursor, limit_index, source)?;
+                span.end = tail.end;
+                cursor = next_index;
+            }
+            _ => break,
+        }
+    }
+    Ok((span, cursor))
+}
+
+fn parse_else_tail_span(
+    tokens: &[Token],
+    index: usize,
+    limit_index: usize,
+    source: &SourceFile,
+) -> Result<(SourceSpan, usize), ParseError> {
+    let else_token = tokens
+        .get(index)
+        .ok_or_else(|| ParseError::ExpectedTerminator {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, index),
+        })?;
+    let next_index = index + 1;
+    let next = tokens
+        .get(next_index)
+        .ok_or_else(|| ParseError::ExpectedTerminator {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, next_index),
+        })?;
+
+    if next.kind == TokenKind::If {
+        let (if_span, cursor) = parse_if_statement_span(tokens, next_index, limit_index, source)?;
+        return Ok((
+            SourceSpan {
+                start: else_token.start,
+                end: if_span.end,
+            },
+            cursor,
+        ));
+    }
+    if next.kind == TokenKind::LBrace {
+        let (body, cursor) = parse_delimited_span(tokens, next_index, source)?;
+        return Ok((
+            SourceSpan {
+                start: else_token.start,
+                end: body.end,
+            },
+            cursor,
+        ));
+    }
+
+    let (statement, cursor) =
+        parse_semicolon_statement_span(tokens, next_index, limit_index, source)?;
+    Ok((
+        SourceSpan {
+            start: else_token.start,
+            end: statement.end,
+        },
+        cursor,
+    ))
+}
+
+fn parse_control_statement_span(
+    tokens: &[Token],
+    index: usize,
+    limit_index: usize,
+    source: &SourceFile,
+) -> Result<(SourceSpan, usize), ParseError> {
+    let start = tokens
+        .get(index)
+        .ok_or_else(|| ParseError::ExpectedTerminator {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, index),
+        })?
+        .start;
+    let mut stack: Vec<TokenKind> = Vec::new();
+    let mut cursor = index;
+
+    while cursor < limit_index {
+        let token = &tokens[cursor];
+        if stack.is_empty() && token.kind == TokenKind::LBrace {
+            let (body, next_index) = parse_delimited_span(tokens, cursor, source)?;
+            return Ok((
+                SourceSpan {
+                    start,
+                    end: body.end,
+                },
+                next_index,
+            ));
+        }
+        if stack.is_empty() && token.kind == TokenKind::Semicolon {
+            return Ok((
+                SourceSpan {
+                    start,
+                    end: token.end,
+                },
+                cursor + 1,
+            ));
+        }
+
+        match token.kind {
+            TokenKind::LParen => stack.push(TokenKind::RParen),
+            TokenKind::LBracket => stack.push(TokenKind::RBracket),
+            TokenKind::LBrace => stack.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                let Some(expected) = stack.pop() else {
+                    return Err(expected_close_error(token.kind, source, token.start));
+                };
+                if token.kind != expected {
+                    return Err(expected_close_error(expected, source, token.start));
+                }
+            }
+            _ => {}
+        }
+        cursor += 1;
+    }
+
+    Err(ParseError::ExpectedTerminator {
+        source_name: source.source_name.clone(),
+        start: tokens
+            .get(limit_index)
+            .map_or_else(|| missing_start(tokens, limit_index), |token| token.start),
+    })
+}
+
+fn parse_semicolon_statement_span(
+    tokens: &[Token],
+    index: usize,
+    limit_index: usize,
+    source: &SourceFile,
+) -> Result<(SourceSpan, usize), ParseError> {
+    let start = tokens
+        .get(index)
+        .ok_or_else(|| ParseError::ExpectedTerminator {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, index),
+        })?
+        .start;
+    let mut stack: Vec<TokenKind> = Vec::new();
+    let mut cursor = index;
+
+    while cursor < limit_index {
+        let token = &tokens[cursor];
+        if stack.is_empty() && token.kind == TokenKind::Semicolon {
+            return Ok((
+                SourceSpan {
+                    start,
+                    end: token.end,
+                },
+                cursor + 1,
+            ));
+        }
+
+        match token.kind {
+            TokenKind::LParen => stack.push(TokenKind::RParen),
+            TokenKind::LBracket => stack.push(TokenKind::RBracket),
+            TokenKind::LBrace => stack.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                let Some(expected) = stack.pop() else {
+                    return Err(expected_close_error(token.kind, source, token.start));
+                };
+                if token.kind != expected {
+                    return Err(expected_close_error(expected, source, token.start));
+                }
+            }
+            _ => {}
+        }
+        cursor += 1;
+    }
+
+    Err(ParseError::ExpectedTerminator {
+        source_name: source.source_name.clone(),
+        start: tokens
+            .get(limit_index)
+            .map_or_else(|| missing_start(tokens, limit_index), |token| token.start),
+    })
+}
+
+fn function_statement_declaration_start(kind: TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Const
+            | TokenKind::Int
+            | TokenKind::Fe
+            | TokenKind::Expr
+            | TokenKind::String
+            | TokenKind::Col
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

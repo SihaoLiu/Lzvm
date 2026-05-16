@@ -102,6 +102,7 @@ pub struct FunctionDeclaration {
     pub parameters: Vec<FunctionParameter>,
     pub return_type: Option<SourceSpan>,
     pub body: SourceSpan,
+    pub statements: Vec<FunctionStatement>,
     pub source_name: String,
     pub start: usize,
     pub end: usize,
@@ -115,6 +116,31 @@ pub struct FunctionParameter {
     pub name: String,
     pub array_dims: Vec<SourceSpan>,
     pub default_value: Option<SourceSpan>,
+    pub source_name: String,
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FunctionStatementKind {
+    Return,
+    If,
+    ElseIf,
+    Else,
+    For,
+    While,
+    Do,
+    Switch,
+    Break,
+    Continue,
+    Declaration,
+    Block,
+    Expression,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionStatement {
+    pub kind: FunctionStatementKind,
     pub source_name: String,
     pub start: usize,
     pub end: usize,
