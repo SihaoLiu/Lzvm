@@ -17,12 +17,18 @@ use lzvm_artifacts::global_info::{encode_global_info, read_global_info_binary_fi
 use lzvm_artifacts::hint_program::{
     encode_global_hint_program, read_regular_hint_program_file, HintOperand, HintProgram,
 };
-use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyUnitPaths};
+use lzvm_artifacts::key_directory::{
+    key_directory_catalog_digest, read_key_directory_catalog, read_key_directory_layout,
+    KeyUnitPaths,
+};
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, read_pcs_setup_material_file};
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, read_pcs_setup_plan_file};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, UnitSetupInfo,
+};
+use lzvm_artifacts::setup_manifest::{
+    read_setup_directory_manifest_file, SETUP_DIRECTORY_MANIFEST_FILE,
 };
 use lzvm_artifacts::verification_key::{
     encode_verification_key_binary, read_verification_key_binary_file, VerificationKeyRoot,
@@ -705,12 +711,28 @@ fn writes_key_directory_outputs_with_one_command() {
         assert_eq!(plan, expected_plan);
         assert_eq!(material, expected_material);
     }
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let manifest_path = dir.join(SETUP_DIRECTORY_MANIFEST_FILE);
+    let manifest =
+        read_setup_directory_manifest_file(&manifest_path).expect("manifest should parse");
+    let manifest_bytes = fs::metadata(&manifest_path)
+        .expect("manifest output should exist")
+        .len();
+    assert_eq!(manifest.unit_count, unit_count as u64);
+    assert_eq!(manifest.global_constraint_count, 0);
+    assert_eq!(manifest.fixed_byte_count, fixed_bytes);
+    assert_eq!(manifest.pcs_material_unit_count, unit_count as u64);
+    assert_eq!(manifest.pcs_material_byte_count, pcs_material_bytes);
+    assert_eq!(
+        manifest.catalog_digest,
+        key_directory_catalog_digest(&catalog).expect("digest should compute")
+    );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nunits={unit_count}\nfixed_bytes={fixed_bytes}\ntree_bytes={tree_bytes}\nverkey_bytes={verkey_bytes}\npcs_plan_bytes={pcs_plan_bytes}\npcs_material_bytes={pcs_material_bytes}\n"
+            "status=ok\nunits={unit_count}\nfixed_bytes={fixed_bytes}\ntree_bytes={tree_bytes}\nverkey_bytes={verkey_bytes}\npcs_plan_bytes={pcs_plan_bytes}\npcs_material_bytes={pcs_material_bytes}\nmanifest_bytes={manifest_bytes}\n"
         )
     );
     assert!(stderr.is_empty());
@@ -762,12 +784,14 @@ fn generates_key_directory_outputs_with_public_command() {
             .expect("PCS material path should derive")
             .is_file());
     }
+    assert!(dir.join(SETUP_DIRECTORY_MANIFEST_FILE).is_file());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
     assert!(stdout.starts_with(&format!("status=ok\nunits={unit_count}\n")));
     assert!(stdout.contains("pcs_plan_bytes="));
     assert!(stdout.contains("pcs_material_bytes="));
+    assert!(stdout.contains("manifest_bytes="));
     assert!(stderr.is_empty());
 }
 

@@ -18,8 +18,7 @@ use lzvm_artifacts::hint_program::{
     encode_regular_hint_program, regular_hint_program_from_expression_info, HintProgramError,
 };
 use lzvm_artifacts::key_directory::{
-    key_directory_catalog_digest_hex, read_key_directory_catalog, read_key_directory_layout,
-    validate_key_directory_layout, KeyDirectoryError, KeyDirectoryLayout,
+    read_key_directory_layout, validate_key_directory_layout, KeyDirectoryError, KeyDirectoryLayout,
 };
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
 use lzvm_artifacts::setup_info::{
@@ -36,9 +35,14 @@ use lzvm_field::{
     coset_extend_evaluations, poseidon2_hash_16, poseidon2_hash_8, DomainError, Felt, FieldError,
 };
 
+mod directory_manifest;
 mod pcs;
 mod program_image;
 
+pub use directory_manifest::{
+    summarize_setup_directory, write_setup_directory_manifest, SetupDirectoryManifestWriteReport,
+    SetupDirectorySummaryError,
+};
 pub use pcs::{
     write_pcs_directory, write_pcs_directory_from_layout, write_pcs_material_directory,
     write_pcs_material_directory_from_layout, write_pcs_setup_material_file,
@@ -108,6 +112,7 @@ pub struct KeyDirectoryWriteReport {
     pub base: BaseDirectoryWriteReport,
     pub pcs_plan: PcsDirectoryWriteReport,
     pub pcs_material: PcsDirectoryWriteReport,
+    pub manifest: SetupDirectoryManifestWriteReport,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -513,6 +518,7 @@ pub fn write_base_directory_from_layout(
 pub enum KeyDirectoryWriteError {
     Base(BaseDirectoryWriteError),
     Pcs(PcsDirectoryWriteError),
+    Manifest(SetupDirectorySummaryError),
 }
 
 impl fmt::Display for KeyDirectoryWriteError {
@@ -520,6 +526,7 @@ impl fmt::Display for KeyDirectoryWriteError {
         match self {
             Self::Base(error) => write!(f, "{error}"),
             Self::Pcs(error) => write!(f, "{error}"),
+            Self::Manifest(error) => write!(f, "{error}"),
         }
     }
 }
@@ -538,6 +545,12 @@ impl From<PcsDirectoryWriteError> for KeyDirectoryWriteError {
     }
 }
 
+impl From<SetupDirectorySummaryError> for KeyDirectoryWriteError {
+    fn from(error: SetupDirectorySummaryError) -> Self {
+        Self::Manifest(error)
+    }
+}
+
 pub fn write_key_directory(
     root: impl AsRef<Path>,
     backend: FixedExtensionBackend,
@@ -553,38 +566,12 @@ pub fn write_key_directory_from_layout(
     let base = write_base_directory_from_layout(layout, backend, true)?;
     let pcs_plan = write_pcs_directory_from_layout(layout)?;
     let pcs_material = write_pcs_material_directory_from_layout(layout)?;
+    let manifest = directory_manifest::write_setup_directory_manifest_for_layout(layout)?;
     Ok(KeyDirectoryWriteReport {
         base,
         pcs_plan,
         pcs_material,
-    })
-}
-
-pub fn summarize_setup_directory(
-    root: impl AsRef<Path>,
-) -> Result<SetupDirectorySummaryReport, KeyDirectoryError> {
-    let catalog = read_key_directory_catalog(root)?;
-    let pcs_material_unit_count = catalog
-        .units
-        .iter()
-        .filter(|unit| unit.pcs_material_present)
-        .count();
-    let pcs_material_bytes = catalog
-        .units
-        .iter()
-        .filter_map(|unit| unit.pcs_material_bytes)
-        .sum();
-    Ok(SetupDirectorySummaryReport {
-        unit_count: catalog.units.len(),
-        global_constraint_count: catalog.global_constraints.entries.len(),
-        fixed_bytes: catalog
-            .units
-            .iter()
-            .map(|unit| unit.actual_fixed_bytes)
-            .sum(),
-        pcs_material_unit_count,
-        pcs_material_bytes,
-        fingerprint: key_directory_catalog_digest_hex(&catalog)?,
+        manifest,
     })
 }
 

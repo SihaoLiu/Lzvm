@@ -1,0 +1,262 @@
+use std::fmt;
+use std::path::Path;
+
+use crate::key_directory::{key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryError};
+use crate::sectioned::{
+    encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
+};
+
+pub const SETUP_DIRECTORY_MANIFEST_FILE: &str = "lzvm.setup-manifest";
+
+const SETUP_DIRECTORY_MANIFEST_KIND: [u8; 4] = *b"sdmf";
+const SETUP_DIRECTORY_MANIFEST_VERSION: u32 = 1;
+const SETUP_DIRECTORY_MANIFEST_SECTION_ID: u32 = 1;
+const DIGEST_BYTES: usize = 32;
+const PAYLOAD_BYTES: usize = 5 * 8 + DIGEST_BYTES;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SetupDirectoryManifest {
+    pub unit_count: u64,
+    pub global_constraint_count: u64,
+    pub fixed_byte_count: u64,
+    pub pcs_material_unit_count: u64,
+    pub pcs_material_byte_count: u64,
+    pub catalog_digest: [u8; 32],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SetupDirectoryManifestError {
+    Sectioned(SectionedError),
+    Catalog(KeyDirectoryError),
+    InvalidSectionCount {
+        found: u32,
+    },
+    InvalidSectionId {
+        found: u32,
+    },
+    InvalidPayloadLength {
+        expected: usize,
+        found: usize,
+    },
+    EmptyUnits,
+    InvalidMaterialUnitCount {
+        unit_count: u64,
+        pcs_material_unit_count: u64,
+    },
+    LengthOverflow,
+    Io {
+        message: String,
+    },
+}
+
+impl fmt::Display for SetupDirectoryManifestError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Sectioned(error) => write!(f, "setup directory manifest container error: {error}"),
+            Self::Catalog(error) => write!(f, "{error}"),
+            Self::InvalidSectionCount { found } => {
+                write!(f, "invalid setup directory manifest section count {found}")
+            }
+            Self::InvalidSectionId { found } => {
+                write!(f, "invalid setup directory manifest section id {found}")
+            }
+            Self::InvalidPayloadLength { expected, found } => write!(
+                f,
+                "invalid setup directory manifest payload length: expected {expected}, found {found}"
+            ),
+            Self::EmptyUnits => write!(f, "setup directory manifest has no units"),
+            Self::InvalidMaterialUnitCount {
+                unit_count,
+                pcs_material_unit_count,
+            } => write!(
+                f,
+                "setup directory manifest material unit count {pcs_material_unit_count} exceeds unit count {unit_count}"
+            ),
+            Self::LengthOverflow => write!(f, "setup directory manifest length overflow"),
+            Self::Io { message } => write!(f, "setup directory manifest io error: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for SetupDirectoryManifestError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Sectioned(error) => Some(error),
+            Self::Catalog(error) => Some(error),
+            Self::InvalidSectionCount { .. }
+            | Self::InvalidSectionId { .. }
+            | Self::InvalidPayloadLength { .. }
+            | Self::EmptyUnits
+            | Self::InvalidMaterialUnitCount { .. }
+            | Self::LengthOverflow
+            | Self::Io { .. } => None,
+        }
+    }
+}
+
+impl From<SectionedError> for SetupDirectoryManifestError {
+    fn from(error: SectionedError) -> Self {
+        Self::Sectioned(error)
+    }
+}
+
+impl From<KeyDirectoryError> for SetupDirectoryManifestError {
+    fn from(error: KeyDirectoryError) -> Self {
+        Self::Catalog(error)
+    }
+}
+
+pub fn build_setup_directory_manifest(
+    catalog: &KeyDirectoryCatalog,
+) -> Result<SetupDirectoryManifest, SetupDirectoryManifestError> {
+    let unit_count = u64::try_from(catalog.units.len())
+        .map_err(|_| SetupDirectoryManifestError::LengthOverflow)?;
+    let global_constraint_count = u64::try_from(catalog.global_constraints.entries.len())
+        .map_err(|_| SetupDirectoryManifestError::LengthOverflow)?;
+    let fixed_byte_count = catalog.units.iter().try_fold(0_u64, |total, unit| {
+        total
+            .checked_add(unit.actual_fixed_bytes)
+            .ok_or(SetupDirectoryManifestError::LengthOverflow)
+    })?;
+    let pcs_material_unit_count = u64::try_from(
+        catalog
+            .units
+            .iter()
+            .filter(|unit| unit.pcs_material_present)
+            .count(),
+    )
+    .map_err(|_| SetupDirectoryManifestError::LengthOverflow)?;
+    let pcs_material_byte_count = catalog
+        .units
+        .iter()
+        .filter_map(|unit| unit.pcs_material_bytes)
+        .try_fold(0_u64, |total, bytes| {
+            total
+                .checked_add(bytes)
+                .ok_or(SetupDirectoryManifestError::LengthOverflow)
+        })?;
+
+    let out = SetupDirectoryManifest {
+        unit_count,
+        global_constraint_count,
+        fixed_byte_count,
+        pcs_material_unit_count,
+        pcs_material_byte_count,
+        catalog_digest: key_directory_catalog_digest(catalog)?,
+    };
+    validate_setup_directory_manifest(&out)?;
+    Ok(out)
+}
+
+pub fn read_setup_directory_manifest_file(
+    path: impl AsRef<Path>,
+) -> Result<SetupDirectoryManifest, SetupDirectoryManifestError> {
+    let bytes = std::fs::read(path).map_err(|error| SetupDirectoryManifestError::Io {
+        message: error.to_string(),
+    })?;
+    parse_setup_directory_manifest(&bytes)
+}
+
+pub fn parse_setup_directory_manifest(
+    bytes: &[u8],
+) -> Result<SetupDirectoryManifest, SetupDirectoryManifestError> {
+    let file = parse_sectioned_file(
+        bytes,
+        SETUP_DIRECTORY_MANIFEST_KIND,
+        SETUP_DIRECTORY_MANIFEST_VERSION,
+    )?;
+    if file.sections.len() != 1 {
+        return Err(SetupDirectoryManifestError::InvalidSectionCount {
+            found: u32::try_from(file.sections.len()).unwrap_or(u32::MAX),
+        });
+    }
+    let section = &file.sections[0];
+    if section.id != SETUP_DIRECTORY_MANIFEST_SECTION_ID {
+        return Err(SetupDirectoryManifestError::InvalidSectionId { found: section.id });
+    }
+    let out = parse_setup_directory_manifest_payload(&section.data)?;
+    validate_setup_directory_manifest(&out)?;
+    Ok(out)
+}
+
+pub fn encode_setup_directory_manifest(
+    value: &SetupDirectoryManifest,
+) -> Result<Vec<u8>, SetupDirectoryManifestError> {
+    validate_setup_directory_manifest(value)?;
+    let file = SectionedFile {
+        kind: SETUP_DIRECTORY_MANIFEST_KIND,
+        version: SETUP_DIRECTORY_MANIFEST_VERSION,
+        sections: vec![SectionedSection {
+            id: SETUP_DIRECTORY_MANIFEST_SECTION_ID,
+            data: encode_setup_directory_manifest_payload(value),
+        }],
+    };
+    encode_sectioned_file(&file).map_err(SetupDirectoryManifestError::Sectioned)
+}
+
+fn validate_setup_directory_manifest(
+    value: &SetupDirectoryManifest,
+) -> Result<(), SetupDirectoryManifestError> {
+    if value.unit_count == 0 {
+        return Err(SetupDirectoryManifestError::EmptyUnits);
+    }
+    if value.pcs_material_unit_count > value.unit_count {
+        return Err(SetupDirectoryManifestError::InvalidMaterialUnitCount {
+            unit_count: value.unit_count,
+            pcs_material_unit_count: value.pcs_material_unit_count,
+        });
+    }
+    Ok(())
+}
+
+fn parse_setup_directory_manifest_payload(
+    bytes: &[u8],
+) -> Result<SetupDirectoryManifest, SetupDirectoryManifestError> {
+    if bytes.len() != PAYLOAD_BYTES {
+        return Err(SetupDirectoryManifestError::InvalidPayloadLength {
+            expected: PAYLOAD_BYTES,
+            found: bytes.len(),
+        });
+    }
+
+    let mut offset = 0;
+    Ok(SetupDirectoryManifest {
+        unit_count: read_u64(bytes, &mut offset),
+        global_constraint_count: read_u64(bytes, &mut offset),
+        fixed_byte_count: read_u64(bytes, &mut offset),
+        pcs_material_unit_count: read_u64(bytes, &mut offset),
+        pcs_material_byte_count: read_u64(bytes, &mut offset),
+        catalog_digest: read_digest(bytes, &mut offset),
+    })
+}
+
+fn encode_setup_directory_manifest_payload(value: &SetupDirectoryManifest) -> Vec<u8> {
+    let mut out = Vec::with_capacity(PAYLOAD_BYTES);
+    out.extend_from_slice(&value.unit_count.to_le_bytes());
+    out.extend_from_slice(&value.global_constraint_count.to_le_bytes());
+    out.extend_from_slice(&value.fixed_byte_count.to_le_bytes());
+    out.extend_from_slice(&value.pcs_material_unit_count.to_le_bytes());
+    out.extend_from_slice(&value.pcs_material_byte_count.to_le_bytes());
+    out.extend_from_slice(&value.catalog_digest);
+    out
+}
+
+fn read_digest(bytes: &[u8], offset: &mut usize) -> [u8; 32] {
+    let end = *offset + DIGEST_BYTES;
+    let out = bytes[*offset..end]
+        .try_into()
+        .expect("payload length checked");
+    *offset = end;
+    out
+}
+
+fn read_u64(bytes: &[u8], offset: &mut usize) -> u64 {
+    let end = *offset + 8;
+    let out = u64::from_le_bytes(
+        bytes[*offset..end]
+            .try_into()
+            .expect("payload length checked"),
+    );
+    *offset = end;
+    out
+}

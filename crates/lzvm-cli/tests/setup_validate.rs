@@ -65,6 +65,10 @@ use lzvm_artifacts::public_values::{
 };
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
 use lzvm_artifacts::setup_info::{encode_unit_setup_info, UnitSetupInfo};
+use lzvm_artifacts::setup_manifest::{
+    encode_setup_directory_manifest, read_setup_directory_manifest_file,
+    SETUP_DIRECTORY_MANIFEST_FILE,
+};
 use lzvm_artifacts::unit_values_segment::{
     encode_unit_values_segment, parse_unit_values_segment, UnitValuesSegment,
     UnitValuesUnitSegment, UNIT_VALUES_SEGMENT_ID,
@@ -1958,6 +1962,40 @@ fn validates_generated_key_directory_materials() {
     assert_eq!(report.pcs_material_bytes, material_bytes);
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_stale_setup_directory_manifest() {
+    let dir = temp_dir("stale-manifest");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let root = dir.to_str().expect("path should be utf-8");
+    run_setup_command(&["setup", "generate-key", root]);
+    let manifest_path = dir.join(SETUP_DIRECTORY_MANIFEST_FILE);
+    let mut manifest =
+        read_setup_directory_manifest_file(&manifest_path).expect("manifest should parse");
+    manifest.catalog_digest = [0xaa; 32];
+    fs::write(
+        &manifest_path,
+        encode_setup_directory_manifest(&manifest).expect("manifest should encode"),
+    )
+    .expect("stale manifest should be written");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(&["setup", "validate", root], &mut stdout, &mut stderr);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        format!(
+            "setup validation failed: setup directory manifest mismatch at {}\n",
+            manifest_path.display()
+        )
+    );
 }
 
 #[test]

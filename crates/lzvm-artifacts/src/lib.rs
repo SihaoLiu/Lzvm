@@ -26,6 +26,7 @@ pub mod proof;
 pub mod public_values;
 pub mod sectioned;
 pub mod setup_info;
+pub mod setup_manifest;
 pub mod unit_values_segment;
 pub mod verification_key;
 pub mod verifier_info;

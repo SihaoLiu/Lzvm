@@ -680,6 +680,7 @@ fn write_key_directory(
                 "pcs_material_bytes={}",
                 report.pcs_material.bytes_written
             );
+            let _ = writeln!(stdout, "manifest_bytes={}", report.manifest.bytes_written);
             0
         }
         Err(error) => {
