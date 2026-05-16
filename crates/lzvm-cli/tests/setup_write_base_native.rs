@@ -4,47 +4,12 @@ use std::path::PathBuf;
 use lzvm_artifacts::fixed::{
     encode_fixed_columns, encode_raw_fixed_columns, FixedColumn, FixedColumns,
 };
-use lzvm_artifacts::setup_info::{encode_unit_setup_info, parse_unit_setup_info_json};
+use lzvm_artifacts::setup_info::encode_unit_setup_info;
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_cli::run_cli;
 use lzvm_setup::build_constant_tree_from_fixed_columns;
 
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 1,
-        "nConstants": 2,
-        "qDeg": 3,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 2,
-            "cm1": 1,
-            "cm2": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.left", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.right", "dim": 1, "polsMapId": 1, "stageId": 1}
-        ],
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 2,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 0,
-            "merkleTreeArity": 2,
-            "verificationHashType": "GL",
-            "transcriptArity": 2,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
+mod fixtures;
 
 fn sample_columns() -> FixedColumns {
     FixedColumns {
@@ -101,7 +66,7 @@ fn writes_base_fixed_columns_and_constant_tree_from_native_inputs() {
     let columns_path = dir.join("unit.fixed.bin");
     let out_const = dir.join("unit.const");
     let out_consttree = dir.join("unit.consttree");
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_setup_info_with_query_two();
     let columns = sample_columns();
     let expected_const =
         encode_raw_fixed_columns(&columns, &setup).expect("raw fixed should encode");
@@ -166,7 +131,7 @@ fn writes_base_outputs_from_raw_fixed_columns() {
     let columns_path = dir.join("unit.raw.const");
     let out_const = dir.join("unit.const");
     let out_consttree = dir.join("unit.consttree");
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_setup_info_with_query_two();
     let columns = sample_columns();
     let raw_fixed = encode_raw_fixed_columns(&columns, &setup).expect("raw fixed should encode");
     let expected_tree =
@@ -219,7 +184,7 @@ fn writes_base_outputs_with_cuda_backend_option() {
     let cpu_tree = dir.join("unit.cpu.consttree");
     let cuda_const = dir.join("unit.cuda.const");
     let cuda_tree = dir.join("unit.cuda.consttree");
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_setup_info_with_query_two();
     fs::write(
         &setup_path,
         encode_unit_setup_info(&setup).expect("setup should encode"),

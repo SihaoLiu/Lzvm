@@ -2,45 +2,10 @@ use std::fs;
 use std::path::PathBuf;
 
 use lzvm_artifacts::fixed::{encode_fixed_columns, FixedColumn, FixedColumns};
-use lzvm_artifacts::setup_info::{encode_unit_setup_info, parse_unit_setup_info_json};
+use lzvm_artifacts::setup_info::encode_unit_setup_info;
 use lzvm_cli::run_cli;
 
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 1,
-        "nConstants": 2,
-        "qDeg": 3,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 2,
-            "cm1": 1,
-            "cm2": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.left", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.right", "dim": 1, "polsMapId": 1, "stageId": 1}
-        ],
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 2,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 0,
-            "merkleTreeArity": 2,
-            "verificationHashType": "GL",
-            "transcriptArity": 2,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
+mod fixtures;
 
 fn sample_columns() -> FixedColumns {
     FixedColumns {
@@ -77,7 +42,7 @@ fn writes_extended_leaves_from_binary_setup_and_columns() {
     let setup_path = dir.join("unit.setup.bin");
     let columns_path = dir.join("unit.fixed.bin");
     let out_path = dir.join("unit.constleaves");
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_setup_info_with_query_two();
     fs::write(
         &setup_path,
         encode_unit_setup_info(&setup).expect("setup should encode"),
@@ -128,7 +93,7 @@ fn writes_extended_leaves_with_cuda_backend_option() {
     let columns_path = dir.join("unit.fixed.bin");
     let cpu_out = dir.join("unit.cpu.constleaves");
     let cuda_out = dir.join("unit.cuda.constleaves");
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_setup_info_with_query_two();
     fs::write(
         &setup_path,
         encode_unit_setup_info(&setup).expect("setup should encode"),

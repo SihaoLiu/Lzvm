@@ -24,4 +24,3 @@ lzvm-prover = { path = "../lzvm-prover" }
 lzvm-setup = { path = "../lzvm-setup" }
 
 [dev-dependencies]
-lzvm-artifacts = { path = "../lzvm-artifacts", features = ["json"] }

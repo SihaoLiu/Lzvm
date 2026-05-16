@@ -2,45 +2,11 @@ use std::fs;
 use std::path::PathBuf;
 
 use lzvm_artifacts::constant_tree::read_constant_tree_file;
-use lzvm_artifacts::setup_info::{encode_unit_setup_info, parse_unit_setup_info_json};
+use lzvm_artifacts::setup_info::encode_unit_setup_info;
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use lzvm_cli::run_cli;
 
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 2,
-        "nConstants": 1,
-        "nPublics": 0,
-        "nConstraints": 0,
-        "qDeg": 7,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 1,
-            "cm1": 1,
-            "cm2": 1,
-            "cm3": 1
-        },
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 1,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 1,
-            "powBits": 1,
-            "merkleTreeArity": 2,
-            "verificationHashType": "GL",
-            "transcriptArity": 2,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
+mod fixtures;
 
 fn sample_root() -> VerificationKeyRoot {
     VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4])
@@ -71,7 +37,7 @@ fn writes_constant_tree_from_binary_setup_and_root() {
     let tree_path = dir.join("unit.consttree.raw");
     let root_path = dir.join("unit.consttree.root");
     let out_path = dir.join("unit.consttree");
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_verification_key_setup_info();
     let expected_root = sample_root();
     fs::write(
         &setup_path,

@@ -2,6 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod fixtures;
+
 use lzvm_artifacts::challenge_values_segment::{
     encode_challenge_values_segment, ChallengeValuesSegment,
 };
@@ -12,11 +14,11 @@ use lzvm_artifacts::constraint_program::{
     encode_global_constraint_program, encode_regular_constraint_program, ConstraintEntry,
     ConstraintProgram, GlobalConstraintEntry, GlobalConstraintProgram,
 };
-use lzvm_artifacts::expression_info::{encode_expression_info, parse_expression_info_json};
+use lzvm_artifacts::expression_info::{encode_expression_info, ExpressionInfo};
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
-use lzvm_artifacts::global_info::{encode_global_info, parse_global_info_json};
+use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo};
 use lzvm_artifacts::group_values_segment::{
     encode_group_values_segment, parse_group_values_segment, GroupValuesSegment,
     GROUP_VALUES_SEGMENT_ID,
@@ -56,13 +58,13 @@ use lzvm_artifacts::public_values::{
     encode_public_values, public_values_digest, PublicValueEntry, PublicValues,
 };
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
-use lzvm_artifacts::setup_info::{encode_unit_setup_info, parse_unit_setup_info_json};
+use lzvm_artifacts::setup_info::{encode_unit_setup_info, UnitSetupInfo};
 use lzvm_artifacts::unit_values_segment::{
     encode_unit_values_segment, parse_unit_values_segment, UnitValuesSegment,
     UnitValuesUnitSegment, UNIT_VALUES_SEGMENT_ID,
 };
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
-use lzvm_artifacts::verifier_info::{encode_verifier_info, parse_verifier_info_json};
+use lzvm_artifacts::verifier_info::{encode_verifier_info, VerifierInfo};
 use lzvm_artifacts::witness_library::parse_witness_library;
 use lzvm_artifacts::witness_opening_segment::{
     parse_witness_opening_segment, WitnessOpeningLevelSegment, WitnessOpeningQuerySegment,
@@ -95,261 +97,6 @@ use lzvm_prover::{
     ProveRunRequest,
 };
 use lzvm_setup::summarize_setup_directory;
-
-fn sample_global_info_json() -> &'static str {
-    r#"{
-        "name": "sample-program",
-        "air_groups": ["group-a"],
-        "airs": [[{"name": "unit-a", "num_rows": 2}]],
-        "curve": "None",
-        "latticeSize": 368,
-        "aggTypes": [[]],
-        "nPublics": 0,
-        "numChallenges": [1],
-        "numProofValues": [],
-        "publicsMap": [],
-        "transcriptArity": 4
-    }"#
-}
-
-fn sample_global_info_json_with_proof_value() -> &'static str {
-    r#"{
-        "name": "sample-program",
-        "air_groups": ["group-a"],
-        "airs": [[{"name": "unit-a", "num_rows": 2}]],
-        "curve": "None",
-        "latticeSize": 368,
-        "aggTypes": [[]],
-        "nPublics": 0,
-        "numChallenges": [1],
-        "numProofValues": [1],
-        "proofValuesMap": [
-            {"name": "proof-a", "stage": 2}
-        ],
-        "publicsMap": [],
-        "transcriptArity": 4
-    }"#
-}
-
-fn sample_global_info_json_with_group_value() -> &'static str {
-    r#"{
-        "name": "sample-program",
-        "air_groups": ["group-a"],
-        "airs": [[{"name": "unit-a", "num_rows": 2}]],
-        "curve": "None",
-        "latticeSize": 368,
-        "aggTypes": [[{"aggType": 0}]],
-        "nPublics": 0,
-        "numChallenges": [1],
-        "numProofValues": [],
-        "publicsMap": [],
-        "transcriptArity": 4
-    }"#
-}
-
-fn sample_global_info_json_with_proof_group_value() -> &'static str {
-    r#"{
-        "name": "sample-program",
-        "air_groups": ["group-a"],
-        "airs": [[{"name": "unit-a", "num_rows": 2}]],
-        "curve": "None",
-        "latticeSize": 368,
-        "aggTypes": [[{"aggType": 0}]],
-        "nPublics": 0,
-        "numChallenges": [1],
-        "numProofValues": [1],
-        "proofValuesMap": [
-            {"name": "proof-a", "stage": 2}
-        ],
-        "publicsMap": [],
-        "transcriptArity": 4
-    }"#
-}
-
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 1,
-        "nConstants": 2,
-        "nPublics": 0,
-        "nConstraints": 0,
-        "qDeg": 3,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 2,
-            "cm1": 1,
-            "cm2": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.left", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.right", "dim": 1, "polsMapId": 1, "stageId": 1}
-        ],
-        "challengesMap": [{}, {}, {}],
-        "evMap": [{}, {}],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 1,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 0,
-            "merkleTreeArity": 4,
-            "verificationHashType": "GL",
-            "transcriptArity": 4,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
-
-fn sample_setup_info_json_with_unit_value() -> &'static str {
-    r#"{
-        "nStages": 1,
-        "nConstants": 2,
-        "nPublics": 0,
-        "nConstraints": 0,
-        "qDeg": 3,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 2,
-            "cm1": 1,
-            "cm2": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.left", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.right", "dim": 1, "polsMapId": 1, "stageId": 1}
-        ],
-        "airValuesMap": [
-            {"name": "unit.alpha", "stage": 1},
-            {"name": "unit.beta", "stage": 2}
-        ],
-        "challengesMap": [{}, {}, {}],
-        "evMap": [{}, {}],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 1,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 0,
-            "merkleTreeArity": 4,
-            "verificationHashType": "GL",
-            "transcriptArity": 4,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
-
-fn sample_verifier_info_json_with_proof_value() -> &'static str {
-    r#"{
-        "qVerifier": {
-            "tmpUsed": 1,
-            "code": [
-                {
-                    "op": "copy",
-                    "dest": {"type": "tmp", "id": 0, "dim": 3},
-                    "src": [{"type": "number", "value": "1", "dim": 1}]
-                }
-            ]
-        },
-        "queryVerifier": {
-            "expId": 7,
-            "stage": 2,
-            "tmpUsed": 1,
-            "line": "query-expression",
-            "code": [
-                {
-                    "op": "copy",
-                    "dest": {"type": "tmp", "id": 0, "dim": 3},
-                    "src": [{"type": "proofvalue", "id": 0, "dim": 3}]
-                }
-            ]
-        }
-    }"#
-}
-
-fn sample_expression_info_json() -> &'static str {
-    r#"{
-        "hintsInfo": [],
-        "expressionsCode": [
-            {
-                "expId": 7,
-                "stage": 2,
-                "line": "query-expression",
-                "tmpUsed": 0,
-                "code": []
-            }
-        ],
-        "constraints": []
-    }"#
-}
-
-fn sample_verifier_info_json() -> &'static str {
-    r#"{
-        "qVerifier": {
-            "tmpUsed": 1,
-            "code": [
-                {
-                    "op": "copy",
-                    "dest": {"type": "tmp", "id": 0, "dim": 3},
-                    "src": [{"type": "number", "value": "1", "dim": 1}]
-                }
-            ]
-        },
-        "queryVerifier": {
-            "expId": 7,
-            "stage": 2,
-            "tmpUsed": 1,
-            "line": "query-expression",
-            "code": [
-                {
-                    "op": "copy",
-                    "dest": {"type": "tmp", "id": 0, "dim": 3},
-                    "src": [{"type": "eval", "id": 0, "dim": 3}]
-                }
-            ]
-        }
-    }"#
-}
-
-fn sample_fri_quotient_verifier_info_json() -> &'static str {
-    r#"{
-        "qVerifier": {
-            "expId": 7,
-            "stage": 2,
-            "tmpUsed": 1,
-            "line": "quotient-expression",
-            "code": [
-                {
-                    "op": "copy",
-                    "dest": {"type": "tmp", "id": 0, "dim": 3},
-                    "src": [{"type": "number", "value": "10", "dim": 1}]
-                }
-            ]
-        },
-        "queryVerifier": {
-            "expId": 7,
-            "stage": 2,
-            "tmpUsed": 1,
-            "line": "query-expression",
-            "code": [
-                {
-                    "op": "copy",
-                    "dest": {"type": "tmp", "id": 0, "dim": 3},
-                    "src": [{"type": "number", "value": "10", "dim": 1}]
-                }
-            ]
-        }
-    }"#
-}
 
 fn sample_expression_program() -> ExpressionProgram {
     ExpressionProgram {
@@ -508,8 +255,7 @@ fn sample_program_file_with_expression_and_regular_constraints(
         encode_expression_program(&expression_program).expect("expression program should encode");
     let regular =
         encode_regular_constraint_program(&program).expect("regular constraints should encode");
-    let expression_info = parse_expression_info_json(sample_expression_info_json())
-        .expect("expression metadata should parse");
+    let expression_info = fixtures::sample_expression_info();
     let regular_hints =
         regular_hint_program_from_expression_info(&expression_info).expect("hints should derive");
     let hints = encode_regular_hint_program(&regular_hints).expect("hints should encode");
@@ -1206,27 +952,23 @@ fn write_bytes(path: &Path, value: impl AsRef<[u8]>) {
     fs::write(path, value).expect("fixture file should be written");
 }
 
-fn write_unit_setup_metadata(path: &Path, value: &str) {
-    let setup = parse_unit_setup_info_json(value).expect("setup metadata should parse");
-    let bytes = encode_unit_setup_info(&setup).expect("setup metadata should encode");
+fn write_unit_setup_metadata(path: &Path, setup: &UnitSetupInfo) {
+    let bytes = encode_unit_setup_info(setup).expect("setup metadata should encode");
     write_bytes(path, bytes);
 }
 
-fn write_expression_metadata(path: &Path, value: &str) {
-    let expressions = parse_expression_info_json(value).expect("expression metadata should parse");
-    let bytes = encode_expression_info(&expressions).expect("expression metadata should encode");
+fn write_expression_metadata(path: &Path, expressions: &ExpressionInfo) {
+    let bytes = encode_expression_info(expressions).expect("expression metadata should encode");
     write_bytes(path, bytes);
 }
 
-fn write_verifier_metadata(path: &Path, value: &str) {
-    let verifier = parse_verifier_info_json(value).expect("verifier metadata should parse");
-    let bytes = encode_verifier_info(&verifier).expect("verifier metadata should encode");
+fn write_verifier_metadata(path: &Path, verifier: &VerifierInfo) {
+    let bytes = encode_verifier_info(verifier).expect("verifier metadata should encode");
     write_bytes(path, bytes);
 }
 
-fn write_global_metadata(path: &Path, value: &str) {
-    let info = parse_global_info_json(value).expect("global metadata should parse");
-    let bytes = encode_global_info(&info).expect("global metadata should encode");
+fn write_global_metadata(path: &Path, info: &GlobalInfo) {
+    let bytes = encode_global_info(info).expect("global metadata should encode");
     write_bytes(path, bytes);
 }
 
@@ -1292,7 +1034,7 @@ int lzvm_witness_compute(const LzvmWitnessCall *call, LzvmWitnessResult *result)
 "#
 }
 
-fn write_global_files_with_info(root: &Path, global_info: &str) {
+fn write_global_files_with_info(root: &Path, global_info: &GlobalInfo) {
     fs::create_dir_all(root).expect("fixture root should be created");
     write_global_metadata(&root.join("pilout.globalInfo.bin"), global_info);
     fs::write(
@@ -1324,20 +1066,20 @@ fn write_global_program(root: &Path, program: GlobalConstraintProgram, hints: Hi
 }
 
 fn write_global_files(root: &Path) {
-    write_global_files_with_info(root, sample_global_info_json());
+    write_global_files_with_info(root, &fixtures::sample_global_info());
 }
 
 fn write_unit_files_with_setup_info_verifier_and_regular_constraints(
     unit: &KeyUnitPaths,
-    setup_info: &str,
-    verifier_info: &str,
+    setup_info: &UnitSetupInfo,
+    verifier_info: &VerifierInfo,
     regular_constraints: ConstraintProgram,
 ) {
     if let Some(path) = unit.setup_info_binary() {
         write_unit_setup_metadata(&path, setup_info);
     }
     if let Some(path) = unit.expression_info_binary() {
-        write_expression_metadata(&path, sample_expression_info_json());
+        write_expression_metadata(&path, &fixtures::sample_expression_info());
     }
     if let Some(path) = unit.verifier_info_binary() {
         write_verifier_metadata(&path, verifier_info);
@@ -1363,12 +1105,12 @@ fn write_unit_files_with_setup_info_verifier_and_regular_constraints(
 
 fn write_unit_files_with_verifier_info_and_regular_constraints(
     unit: &KeyUnitPaths,
-    verifier_info: &str,
+    verifier_info: &VerifierInfo,
     regular_constraints: ConstraintProgram,
 ) {
     write_unit_files_with_setup_info_verifier_and_regular_constraints(
         unit,
-        sample_setup_info_json(),
+        &fixtures::sample_setup_info(),
         verifier_info,
         regular_constraints,
     );
@@ -1376,13 +1118,13 @@ fn write_unit_files_with_verifier_info_and_regular_constraints(
 
 fn write_unit_files_with_fri_quotient(unit: &KeyUnitPaths) {
     if let Some(path) = unit.setup_info_binary() {
-        write_unit_setup_metadata(&path, sample_setup_info_json());
+        write_unit_setup_metadata(&path, &fixtures::sample_setup_info());
     }
     if let Some(path) = unit.expression_info_binary() {
-        write_expression_metadata(&path, sample_expression_info_json());
+        write_expression_metadata(&path, &fixtures::sample_expression_info());
     }
     if let Some(path) = unit.verifier_info_binary() {
-        write_verifier_metadata(&path, sample_fri_quotient_verifier_info_json());
+        write_verifier_metadata(&path, &fixtures::sample_fri_quotient_verifier_info());
     }
 
     let program = sample_program_file_with_expression_and_regular_constraints(
@@ -1408,13 +1150,13 @@ fn write_unit_files_with_fri_quotient(unit: &KeyUnitPaths) {
 
 fn write_unit_files_with_fri_quotient_and_unit_value(unit: &KeyUnitPaths) {
     if let Some(path) = unit.setup_info_binary() {
-        write_unit_setup_metadata(&path, sample_setup_info_json_with_unit_value());
+        write_unit_setup_metadata(&path, &fixtures::sample_setup_info_with_unit_value());
     }
     if let Some(path) = unit.expression_info_binary() {
-        write_expression_metadata(&path, sample_expression_info_json());
+        write_expression_metadata(&path, &fixtures::sample_expression_info());
     }
     if let Some(path) = unit.verifier_info_binary() {
-        write_verifier_metadata(&path, sample_fri_quotient_verifier_info_json());
+        write_verifier_metadata(&path, &fixtures::sample_fri_quotient_verifier_info());
     }
 
     let program = sample_program_file_with_expression_and_regular_constraints(
@@ -1438,7 +1180,7 @@ fn write_unit_files_with_fri_quotient_and_unit_value(unit: &KeyUnitPaths) {
     write_bytes(&unit.fixed_columns, sample_raw_fixed_columns());
 }
 
-fn write_unit_files_with_verifier_info(unit: &KeyUnitPaths, verifier_info: &str) {
+fn write_unit_files_with_verifier_info(unit: &KeyUnitPaths, verifier_info: &VerifierInfo) {
     write_unit_files_with_verifier_info_and_regular_constraints(
         unit,
         verifier_info,
@@ -1447,7 +1189,7 @@ fn write_unit_files_with_verifier_info(unit: &KeyUnitPaths, verifier_info: &str)
 }
 
 fn write_unit_files(unit: &KeyUnitPaths) {
-    write_unit_files_with_verifier_info(unit, sample_verifier_info_json());
+    write_unit_files_with_verifier_info(unit, &fixtures::sample_verifier_info());
 }
 
 fn write_setup_directory(root: &Path) {
@@ -1475,20 +1217,23 @@ fn write_setup_directory_with_fri_quotient_and_unit_value(root: &Path) {
 }
 
 fn write_setup_directory_with_proof_value(root: &Path) {
-    write_global_files_with_info(root, sample_global_info_json_with_proof_value());
+    write_global_files_with_info(root, &fixtures::sample_global_info_with_proof_value());
     let layout = read_key_directory_layout(root).expect("layout should parse");
     for unit in &layout.units {
-        write_unit_files_with_verifier_info(unit, sample_verifier_info_json_with_proof_value());
+        write_unit_files_with_verifier_info(
+            unit,
+            &fixtures::sample_verifier_info_with_proof_value(),
+        );
     }
 }
 
 fn write_setup_directory_with_proof_value_constraint(root: &Path) {
-    write_global_files_with_info(root, sample_global_info_json_with_proof_value());
+    write_global_files_with_info(root, &fixtures::sample_global_info_with_proof_value());
     let layout = read_key_directory_layout(root).expect("layout should parse");
     for unit in &layout.units {
         write_unit_files_with_verifier_info_and_regular_constraints(
             unit,
-            sample_verifier_info_json_with_proof_value(),
+            &fixtures::sample_verifier_info_with_proof_value(),
             sample_proof_value_regular_constraint_program(),
         );
     }
@@ -1500,8 +1245,8 @@ fn write_setup_directory_with_unit_value(root: &Path) {
     for unit in &layout.units {
         write_unit_files_with_setup_info_verifier_and_regular_constraints(
             unit,
-            sample_setup_info_json_with_unit_value(),
-            sample_verifier_info_json(),
+            &fixtures::sample_setup_info_with_unit_value(),
+            &fixtures::sample_verifier_info(),
             sample_regular_constraint_program(),
         );
     }
@@ -1513,8 +1258,8 @@ fn write_setup_directory_with_unit_value_constraint(root: &Path) {
     for unit in &layout.units {
         write_unit_files_with_setup_info_verifier_and_regular_constraints(
             unit,
-            sample_setup_info_json_with_unit_value(),
-            sample_verifier_info_json(),
+            &fixtures::sample_setup_info_with_unit_value(),
+            &fixtures::sample_verifier_info(),
             sample_unit_value_regular_constraint_program(),
         );
     }
@@ -1526,14 +1271,14 @@ fn write_setup_directory_with_challenge_constraint(root: &Path) {
     for unit in &layout.units {
         write_unit_files_with_verifier_info_and_regular_constraints(
             unit,
-            sample_verifier_info_json(),
+            &fixtures::sample_verifier_info(),
             sample_challenge_regular_constraint_program(),
         );
     }
 }
 
 fn write_setup_directory_with_group_value(root: &Path) {
-    write_global_files_with_info(root, sample_global_info_json_with_group_value());
+    write_global_files_with_info(root, &fixtures::sample_global_info_with_group_value());
     let layout = read_key_directory_layout(root).expect("layout should parse");
     for unit in &layout.units {
         write_unit_files(unit);
@@ -1604,13 +1349,13 @@ fn write_execution_ready_setup_directory_with_group_value(root: &Path) {
 }
 
 fn write_setup_directory_with_proof_group_and_unit_value(root: &Path) {
-    write_global_files_with_info(root, sample_global_info_json_with_proof_group_value());
+    write_global_files_with_info(root, &fixtures::sample_global_info_with_proof_group_value());
     let layout = read_key_directory_layout(root).expect("layout should parse");
     for unit in &layout.units {
         write_unit_files_with_setup_info_verifier_and_regular_constraints(
             unit,
-            sample_setup_info_json_with_unit_value(),
-            sample_verifier_info_json(),
+            &fixtures::sample_setup_info_with_unit_value(),
+            &fixtures::sample_verifier_info(),
             sample_regular_constraint_program(),
         );
     }

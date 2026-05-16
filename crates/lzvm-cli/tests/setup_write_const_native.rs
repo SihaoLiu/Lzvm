@@ -5,47 +5,12 @@ use lzvm_artifacts::constant_tree::read_constant_tree_file;
 use lzvm_artifacts::fixed::{
     encode_fixed_columns, encode_raw_fixed_columns, FixedColumn, FixedColumns,
 };
-use lzvm_artifacts::setup_info::{encode_unit_setup_info, parse_unit_setup_info_json};
+use lzvm_artifacts::setup_info::encode_unit_setup_info;
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use lzvm_cli::run_cli;
 use lzvm_setup::build_constant_tree_from_fixed_columns;
 
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 1,
-        "nConstants": 2,
-        "qDeg": 3,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 2,
-            "cm1": 1,
-            "cm2": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.left", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.right", "dim": 1, "polsMapId": 1, "stageId": 1}
-        ],
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 2,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 0,
-            "merkleTreeArity": 2,
-            "verificationHashType": "GL",
-            "transcriptArity": 2,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
+mod fixtures;
 
 fn sample_columns() -> FixedColumns {
     FixedColumns {
@@ -82,7 +47,7 @@ fn writes_native_constant_tree_from_binary_setup_and_columns() {
     let setup_path = dir.join("unit.setup.bin");
     let columns_path = dir.join("unit.fixed.bin");
     let out_path = dir.join("unit.consttree");
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_setup_info_with_query_two();
     fs::write(
         &setup_path,
         encode_unit_setup_info(&setup).expect("setup should encode"),
@@ -140,10 +105,9 @@ fn writes_native_constant_tree_from_raw_columns_with_expected_root() {
     let columns_path = dir.join("unit.raw.bin");
     let root_path = dir.join("unit.root.bin");
     let out_path = dir.join("unit.consttree");
-    let setup_json = sample_setup_info_json()
-        .replace("\"merkleTreeArity\": 2", "\"merkleTreeArity\": 4")
-        .replace("\"transcriptArity\": 2", "\"transcriptArity\": 4");
-    let setup = parse_unit_setup_info_json(&setup_json).expect("setup should parse");
+    let mut setup = fixtures::sample_setup_info_with_query_two();
+    setup.stark.merkle_tree_arity = 4;
+    setup.stark.transcript_arity = Some(4);
     let columns = sample_columns();
     let expected_tree =
         build_constant_tree_from_fixed_columns(&columns, &setup).expect("tree should build");
@@ -216,7 +180,7 @@ fn writes_native_constant_tree_with_cuda_backend_option() {
     let columns_path = dir.join("unit.fixed.bin");
     let cpu_out = dir.join("unit.cpu.consttree");
     let cuda_out = dir.join("unit.cuda.consttree");
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_setup_info_with_query_two();
     fs::write(
         &setup_path,
         encode_unit_setup_info(&setup).expect("setup should encode"),

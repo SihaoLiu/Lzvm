@@ -5,48 +5,11 @@ use lzvm_artifacts::constant_tree::parse_constant_tree_bytes;
 use lzvm_artifacts::fixed::{encode_raw_fixed_columns, FixedColumn, FixedColumns};
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, read_pcs_setup_material_file};
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, encode_pcs_setup_plan};
-use lzvm_artifacts::setup_info::{encode_unit_setup_info, parse_unit_setup_info_json};
+use lzvm_artifacts::setup_info::encode_unit_setup_info;
 use lzvm_cli::run_cli;
 use lzvm_setup::build_constant_tree_from_fixed_columns;
 
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 1,
-        "nConstants": 2,
-        "nPublics": 0,
-        "nConstraints": 0,
-        "qDeg": 3,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 2,
-            "cm1": 1,
-            "cm2": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.left", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.right", "dim": 1, "polsMapId": 1, "stageId": 1}
-        ],
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 1,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 0,
-            "merkleTreeArity": 4,
-            "verificationHashType": "GL",
-            "transcriptArity": 4,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
+mod fixtures;
 
 fn sample_columns() -> FixedColumns {
     FixedColumns {
@@ -86,7 +49,7 @@ fn writes_pcs_setup_material_from_native_artifacts() {
     let tree_path = dir.join("unit.consttree");
     let material_path = dir.join("unit.pcs-material");
 
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_setup_info();
     let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
     let columns = sample_columns();
     let fixed = encode_raw_fixed_columns(&columns, &setup).expect("fixed columns should encode");
@@ -181,7 +144,7 @@ fn rejects_pcs_setup_material_with_mismatched_plan() {
     let tree_path = dir.join("unit.consttree");
     let material_path = dir.join("unit.pcs-material");
 
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_setup_info();
     let mut plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
     plan.query_count += 1;
     let columns = sample_columns();
