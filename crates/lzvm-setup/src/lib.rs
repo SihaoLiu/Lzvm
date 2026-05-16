@@ -107,6 +107,8 @@ pub struct SetupDirectorySummaryReport {
     pub unit_count: usize,
     pub global_constraint_count: usize,
     pub fixed_bytes: u64,
+    pub pcs_material_unit_count: usize,
+    pub pcs_material_bytes: u64,
     pub fingerprint: String,
 }
 
@@ -566,6 +568,16 @@ pub fn summarize_setup_directory(
     root: impl AsRef<Path>,
 ) -> Result<SetupDirectorySummaryReport, KeyDirectoryError> {
     let catalog = read_key_directory_catalog(root)?;
+    let pcs_material_unit_count = catalog
+        .units
+        .iter()
+        .filter(|unit| unit.pcs_material_present)
+        .count();
+    let pcs_material_bytes = catalog
+        .units
+        .iter()
+        .filter_map(|unit| unit.pcs_material_bytes)
+        .sum();
     Ok(SetupDirectorySummaryReport {
         unit_count: catalog.units.len(),
         global_constraint_count: catalog.global_constraints.entries.len(),
@@ -574,6 +586,8 @@ pub fn summarize_setup_directory(
             .iter()
             .map(|unit| unit.actual_fixed_bytes)
             .sum(),
+        pcs_material_unit_count,
+        pcs_material_bytes,
         fingerprint: key_directory_catalog_digest_hex(&catalog)?,
     })
 }

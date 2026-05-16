@@ -2173,7 +2173,7 @@ fn validates_a_complete_setup_directory() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\n"
+        "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\n"
     );
     assert!(stderr.is_empty());
 
@@ -2181,6 +2181,8 @@ fn validates_a_complete_setup_directory() {
     assert_eq!(report.unit_count, 4);
     assert_eq!(report.global_constraint_count, 0);
     assert_eq!(report.fixed_bytes, 128);
+    assert_eq!(report.pcs_material_unit_count, 0);
+    assert_eq!(report.pcs_material_bytes, 0);
     assert_eq!(
         report.fingerprint,
         key_directory_catalog_digest_hex(
@@ -2188,6 +2190,39 @@ fn validates_a_complete_setup_directory() {
         )
         .expect("digest should encode")
     );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn validates_generated_key_directory_materials() {
+    let dir = temp_dir("generated-key-validate");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let root = dir.to_str().expect("path should be utf-8");
+    run_setup_command(&["setup", "generate-key", root]);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let material_bytes = pcs_material_byte_count(&catalog);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(&["setup", "validate", root], &mut stdout, &mut stderr);
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\n"
+        )
+    );
+    assert!(stderr.is_empty());
+
+    let report = summarize_setup_directory(&dir).expect("directory summary should load");
+    assert_eq!(report.unit_count, 4);
+    assert_eq!(report.global_constraint_count, 0);
+    assert_eq!(report.fixed_bytes, 128);
+    assert_eq!(report.pcs_material_unit_count, 4);
+    assert_eq!(report.pcs_material_bytes, material_bytes);
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }

@@ -358,6 +358,12 @@ fn validate_setup_directory(
                 report.global_constraint_count
             );
             let _ = writeln!(stdout, "fixed_bytes={}", report.fixed_bytes);
+            let _ = writeln!(
+                stdout,
+                "pcs_material_units={}",
+                report.pcs_material_unit_count
+            );
+            let _ = writeln!(stdout, "pcs_material_bytes={}", report.pcs_material_bytes);
             0
         }
         Err(error) => {
