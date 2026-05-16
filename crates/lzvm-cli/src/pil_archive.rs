@@ -1,13 +1,8 @@
-use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::PathBuf;
 
-use lzvm_artifacts::source_program::{
-    encode_source_program_archive, SourceProgramArchive, SourceProgramArchiveEdge,
-    SourceProgramArchiveIncludeKind, SourceProgramArchiveIncludeVisibility,
-    SourceProgramArchiveSource,
-};
-use lzvm_pil::{IncludeKind, IncludeVisibility, SourceLoaderConfig, SourceProgramLoader};
+use lzvm_artifacts::source_program::encode_source_program_archive;
+use lzvm_pil::{build_source_program_archive, SourceLoaderConfig, SourceProgramLoader};
 
 pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     let parsed = match parse_args(args) {
@@ -32,10 +27,10 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
 
-    let archive = match build_archive(&program) {
+    let archive = match build_source_program_archive(&program) {
         Ok(archive) => archive,
-        Err(message) => {
-            let _ = writeln!(stderr, "pil archive failed: {message}");
+        Err(error) => {
+            let _ = writeln!(stderr, "pil archive failed: {error}");
             return 1;
         }
     };
@@ -106,51 +101,6 @@ fn parse_args(args: &[&str]) -> Result<ParsedArgs, ParseError> {
         include_paths,
         include_path_first,
     })
-}
-
-fn build_archive(program: &lzvm_pil::SourceProgram) -> Result<SourceProgramArchive, String> {
-    let sources = program
-        .graph
-        .sources
-        .iter()
-        .map(|source| SourceProgramArchiveSource {
-            source_name: source.source_name.clone(),
-            contents: source.contents.clone(),
-        })
-        .collect::<Vec<_>>();
-    let mut source_indexes = BTreeMap::new();
-    for (index, source) in program.graph.sources.iter().enumerate() {
-        let index = u32::try_from(index)
-            .map_err(|_| "source program has too many sources to archive".to_owned())?;
-        source_indexes.insert(source.source_name.clone(), index);
-    }
-
-    let mut edges = Vec::with_capacity(program.graph.edges.len());
-    for edge in &program.graph.edges {
-        let from_index = source_indexes
-            .get(&edge.from)
-            .copied()
-            .ok_or_else(|| format!("missing source index for {}", edge.from))?;
-        let to_index = source_indexes
-            .get(&edge.to)
-            .copied()
-            .ok_or_else(|| format!("missing source index for {}", edge.to))?;
-        edges.push(SourceProgramArchiveEdge {
-            from_index,
-            to_index,
-            request: edge.request.clone(),
-            kind: match edge.kind {
-                IncludeKind::Include => SourceProgramArchiveIncludeKind::Include,
-                IncludeKind::Require => SourceProgramArchiveIncludeKind::Require,
-            },
-            visibility: match edge.visibility {
-                IncludeVisibility::Public => SourceProgramArchiveIncludeVisibility::Public,
-                IncludeVisibility::Private => SourceProgramArchiveIncludeVisibility::Private,
-            },
-        });
-    }
-
-    Ok(SourceProgramArchive { sources, edges })
 }
 
 fn write_output(path: &PathBuf, bytes: &[u8]) -> Result<(), String> {

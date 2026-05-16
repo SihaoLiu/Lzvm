@@ -8,9 +8,11 @@ use crate::{
     SourceLoaderConfig, UseDirective, ValueDeclaration,
 };
 use lzvm_artifacts::source_program::{
-    read_source_program_archive_file, SourceProgramArchive, SourceProgramArchiveError,
-    SourceProgramArchiveIncludeKind, SourceProgramArchiveIncludeVisibility,
+    read_source_program_archive_file, SourceProgramArchive, SourceProgramArchiveEdge,
+    SourceProgramArchiveError, SourceProgramArchiveIncludeKind,
+    SourceProgramArchiveIncludeVisibility, SourceProgramArchiveSource,
 };
+use std::collections::BTreeMap;
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,6 +77,30 @@ impl std::fmt::Display for SourceProgramArchiveLoadError {
 
 impl std::error::Error for SourceProgramArchiveLoadError {}
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SourceProgramArchiveBuildError {
+    SourceCountOverflow,
+    MissingSourceIndex { source_name: String },
+}
+
+impl std::fmt::Display for SourceProgramArchiveBuildError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SourceCountOverflow => {
+                write!(f, "source program has too many sources to archive")
+            }
+            Self::MissingSourceIndex { source_name } => {
+                write!(
+                    f,
+                    "source program archive edge references missing source {source_name}"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for SourceProgramArchiveBuildError {}
+
 pub struct SourceProgramLoader {
     graph_loader: SourceGraphLoader,
 }
@@ -113,6 +139,49 @@ impl SourceProgramArchiveLoader {
             .map_err(SourceProgramArchiveLoadError::Archive)?;
         build_source_program_from_archive(&archive)
     }
+}
+
+pub fn build_source_program_archive(
+    program: &SourceProgram,
+) -> Result<SourceProgramArchive, SourceProgramArchiveBuildError> {
+    let sources = program
+        .graph
+        .sources
+        .iter()
+        .map(|source| SourceProgramArchiveSource {
+            source_name: source.source_name.clone(),
+            contents: source.contents.clone(),
+        })
+        .collect::<Vec<_>>();
+    let mut source_indexes = BTreeMap::new();
+    for (index, source) in program.graph.sources.iter().enumerate() {
+        let index = u32::try_from(index)
+            .map_err(|_| SourceProgramArchiveBuildError::SourceCountOverflow)?;
+        source_indexes.insert(source.source_name.clone(), index);
+    }
+
+    let mut edges = Vec::with_capacity(program.graph.edges.len());
+    for edge in &program.graph.edges {
+        let from_index = source_indexes.get(&edge.from).copied().ok_or_else(|| {
+            SourceProgramArchiveBuildError::MissingSourceIndex {
+                source_name: edge.from.clone(),
+            }
+        })?;
+        let to_index = source_indexes.get(&edge.to).copied().ok_or_else(|| {
+            SourceProgramArchiveBuildError::MissingSourceIndex {
+                source_name: edge.to.clone(),
+            }
+        })?;
+        edges.push(SourceProgramArchiveEdge {
+            from_index,
+            to_index,
+            request: edge.request.clone(),
+            kind: source_program_archive_include_kind(edge.kind),
+            visibility: source_program_archive_include_visibility(edge.visibility),
+        });
+    }
+
+    Ok(SourceProgramArchive { sources, edges })
 }
 
 fn parse_source_module(source: &SourceFile) -> Result<SourceProgramModule, ParseError> {
@@ -198,5 +267,21 @@ fn archive_include_visibility(
     match visibility {
         SourceProgramArchiveIncludeVisibility::Public => IncludeVisibility::Public,
         SourceProgramArchiveIncludeVisibility::Private => IncludeVisibility::Private,
+    }
+}
+
+fn source_program_archive_include_kind(kind: IncludeKind) -> SourceProgramArchiveIncludeKind {
+    match kind {
+        IncludeKind::Include => SourceProgramArchiveIncludeKind::Include,
+        IncludeKind::Require => SourceProgramArchiveIncludeKind::Require,
+    }
+}
+
+fn source_program_archive_include_visibility(
+    visibility: IncludeVisibility,
+) -> SourceProgramArchiveIncludeVisibility {
+    match visibility {
+        IncludeVisibility::Public => SourceProgramArchiveIncludeVisibility::Public,
+        IncludeVisibility::Private => SourceProgramArchiveIncludeVisibility::Private,
     }
 }
