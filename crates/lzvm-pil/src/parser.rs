@@ -1,7 +1,9 @@
 mod declarations;
+mod functions;
 mod types;
 
 pub use declarations::*;
+pub use functions::*;
 pub use types::*;
 
 use crate::{lex_source, SourceFile, Token, TokenKind};

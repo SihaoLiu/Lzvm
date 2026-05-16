@@ -370,6 +370,12 @@ fn parses_function_declarations_with_spans_and_visibility() {
     assert_eq!(declarations.len(), 4);
     assert_eq!(declarations[0].name, "sum");
     assert_eq!(declarations[0].visibility, None);
+    assert_eq!(declarations[0].parameters.len(), 2);
+    assert!(!declarations[0].parameters[0].is_const);
+    assert!(!declarations[0].parameters[0].by_reference);
+    assert_eq!(declarations[0].parameters[0].type_name, "int");
+    assert_eq!(declarations[0].parameters[0].name, "a");
+    assert!(declarations[0].parameters[0].array_dims.is_empty());
     assert_eq!(
         &source.contents[declarations[0].params.start..declarations[0].params.end],
         "(int a, int b)"
@@ -391,6 +397,10 @@ fn parses_function_declarations_with_spans_and_visibility() {
         declarations[1].visibility,
         Some(FunctionVisibility::Private)
     );
+    assert_eq!(declarations[1].parameters.len(), 1);
+    assert_eq!(declarations[1].parameters[0].type_name, "expr");
+    assert_eq!(declarations[1].parameters[0].name, "values");
+    assert_eq!(declarations[1].parameters[0].array_dims.len(), 1);
     assert_eq!(
         &source.contents[declarations[1].params.start..declarations[1].params.end],
         "(expr values[])"
@@ -405,6 +415,9 @@ fn parses_function_declarations_with_spans_and_visibility() {
 
     assert_eq!(declarations[2].name, "exported");
     assert_eq!(declarations[2].visibility, Some(FunctionVisibility::Public));
+    assert!(declarations[2].parameters[0].is_const);
+    assert_eq!(declarations[2].parameters[0].type_name, "string");
+    assert_eq!(declarations[2].parameters[0].name, "name");
     assert_eq!(
         &source.contents[declarations[2]
             .return_type
@@ -415,6 +428,57 @@ fn parses_function_declarations_with_spans_and_visibility() {
 
     assert_eq!(declarations[3].name, "procedure");
     assert_eq!(declarations[3].return_type, None);
+}
+
+#[test]
+fn parses_function_parameters_with_defaults_and_references() {
+    let source = source(
+        "function inc (int &k) { return; }\n\
+         function sum_1 (const int a = 0, const int b = 0):int { return a + b; }\n\
+         function array_prime(expr expressions[], int row_offset = -1): expr[] { return expressions; }",
+    );
+
+    let declarations = parse_function_declarations(&source).expect("functions should parse");
+
+    assert_eq!(declarations.len(), 3);
+    assert_eq!(declarations[0].parameters.len(), 1);
+    assert!(declarations[0].parameters[0].by_reference);
+    assert_eq!(declarations[0].parameters[0].type_name, "int");
+    assert_eq!(declarations[0].parameters[0].name, "k");
+
+    assert_eq!(declarations[1].parameters.len(), 2);
+    assert!(declarations[1].parameters[0].is_const);
+    assert_eq!(
+        &source.contents[declarations[1].parameters[0]
+            .default_value
+            .expect("default should be recorded")
+            .start
+            ..declarations[1].parameters[0].default_value.unwrap().end],
+        "0"
+    );
+    assert!(declarations[1].parameters[1].is_const);
+    assert_eq!(
+        &source.contents[declarations[1].parameters[1]
+            .default_value
+            .expect("default should be recorded")
+            .start
+            ..declarations[1].parameters[1].default_value.unwrap().end],
+        "0"
+    );
+
+    assert_eq!(declarations[2].parameters.len(), 2);
+    assert_eq!(declarations[2].parameters[0].type_name, "expr");
+    assert_eq!(declarations[2].parameters[0].array_dims.len(), 1);
+    assert_eq!(declarations[2].parameters[1].type_name, "int");
+    assert_eq!(declarations[2].parameters[1].name, "row_offset");
+    assert_eq!(
+        &source.contents[declarations[2].parameters[1]
+            .default_value
+            .expect("default should be recorded")
+            .start
+            ..declarations[2].parameters[1].default_value.unwrap().end],
+        "-1"
+    );
 }
 
 #[test]

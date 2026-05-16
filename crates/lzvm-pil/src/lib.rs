@@ -13,10 +13,10 @@ pub use parser::{
     parse_public_table_declarations, parse_use_directives, parse_value_declarations,
     AirGroupDeclaration, AirGroupValueDeclaration, AirInstanceDeclaration, AirTemplateDeclaration,
     ColumnDeclaration, ColumnFeature, ColumnInitializer, ColumnInitializerKind, ColumnItem,
-    ColumnKind, CommitDeclaration, ContainerDeclaration, FunctionDeclaration, FunctionVisibility,
-    IncludeDirective, IncludeKind, IncludeVisibility, ParseError, PragmaDirective,
-    PublicDeclaration, PublicTableDeclaration, SourceSpan, UseDirective, ValueDeclaration,
-    ValueDeclarationKind,
+    ColumnKind, CommitDeclaration, ContainerDeclaration, FunctionDeclaration, FunctionParameter,
+    FunctionVisibility, IncludeDirective, IncludeKind, IncludeVisibility, ParseError,
+    PragmaDirective, PublicDeclaration, PublicTableDeclaration, SourceSpan, UseDirective,
+    ValueDeclaration, ValueDeclarationKind,
 };
 pub use source::{SourceFile, SourceLoadError, SourceLoader, SourceLoaderConfig};
 pub use source_graph::{

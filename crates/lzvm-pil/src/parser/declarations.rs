@@ -1203,153 +1203,6 @@ pub fn parse_air_instance_declarations(
     Ok(declarations)
 }
 
-pub fn parse_function_declarations(
-    source: &SourceFile,
-) -> Result<Vec<FunctionDeclaration>, ParseError> {
-    let tokens = lex_source(&source.contents).map_err(|error| ParseError::Lex {
-        source_name: source.source_name.clone(),
-        error,
-    })?;
-    let mut declarations = Vec::new();
-    let mut index = 0;
-
-    while index < tokens.len() {
-        if let Some(parsed) = parse_function_at(&tokens, index, source)? {
-            index = parsed.next_index;
-            declarations.push(parsed.declaration);
-        } else {
-            index += 1;
-        }
-    }
-
-    Ok(declarations)
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ParsedFunction {
-    declaration: FunctionDeclaration,
-    next_index: usize,
-}
-
-fn parse_function_at(
-    tokens: &[Token],
-    index: usize,
-    source: &SourceFile,
-) -> Result<Option<ParsedFunction>, ParseError> {
-    let Some(token) = tokens.get(index) else {
-        return Ok(None);
-    };
-    let (visibility, function_index, start) = match token.kind {
-        TokenKind::Function => (None, index, token.start),
-        TokenKind::Public
-            if tokens
-                .get(index + 1)
-                .is_some_and(|token| token.kind == TokenKind::Function) =>
-        {
-            (Some(FunctionVisibility::Public), index + 1, token.start)
-        }
-        TokenKind::Private
-            if tokens
-                .get(index + 1)
-                .is_some_and(|token| token.kind == TokenKind::Function) =>
-        {
-            (Some(FunctionVisibility::Private), index + 1, token.start)
-        }
-        _ => return Ok(None),
-    };
-
-    let (name, after_name) = parse_name_reference(tokens, function_index + 1, source)?;
-    let (params, after_params) = parse_delimited_span(tokens, after_name, source)?;
-    let (return_type, body_index) = parse_function_return_type(tokens, after_params, source)?;
-    let (body, next_index) = parse_required_braced_span(tokens, body_index, source)?;
-
-    Ok(Some(ParsedFunction {
-        declaration: FunctionDeclaration {
-            name,
-            visibility,
-            params,
-            return_type,
-            body,
-            source_name: source.source_name.clone(),
-            start,
-            end: body.end,
-        },
-        next_index,
-    }))
-}
-
-fn parse_function_return_type(
-    tokens: &[Token],
-    index: usize,
-    source: &SourceFile,
-) -> Result<(Option<SourceSpan>, usize), ParseError> {
-    let Some(token) = tokens.get(index) else {
-        return Err(ParseError::ExpectedCloseBrace {
-            source_name: source.source_name.clone(),
-            start: missing_start(tokens, index),
-        });
-    };
-    if token.kind == TokenKind::LBrace {
-        return Ok((None, index));
-    }
-    if token.kind != TokenKind::Colon {
-        return Err(ParseError::ExpectedCloseBrace {
-            source_name: source.source_name.clone(),
-            start: token.start,
-        });
-    }
-
-    let start_token = tokens
-        .get(index + 1)
-        .ok_or_else(|| ParseError::ExpectedName {
-            source_name: source.source_name.clone(),
-            start: missing_start(tokens, index + 1),
-        })?;
-    if start_token.kind == TokenKind::LBrace {
-        return Err(ParseError::ExpectedName {
-            source_name: source.source_name.clone(),
-            start: start_token.start,
-        });
-    }
-
-    let mut stack: Vec<TokenKind> = Vec::new();
-    let mut cursor = index + 1;
-    while let Some(token) = tokens.get(cursor) {
-        if stack.is_empty() && token.kind == TokenKind::LBrace {
-            let return_end = tokens
-                .get(cursor.saturating_sub(1))
-                .map_or(start_token.end, |token| token.end);
-            return Ok((
-                Some(SourceSpan {
-                    start: start_token.start,
-                    end: return_end,
-                }),
-                cursor,
-            ));
-        }
-
-        match token.kind {
-            TokenKind::LParen => stack.push(TokenKind::RParen),
-            TokenKind::LBracket => stack.push(TokenKind::RBracket),
-            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
-                let Some(expected) = stack.pop() else {
-                    return Err(expected_close_error(token.kind, source, token.start));
-                };
-                if token.kind != expected {
-                    return Err(expected_close_error(expected, source, token.start));
-                }
-            }
-            _ => {}
-        }
-        cursor += 1;
-    }
-
-    Err(ParseError::ExpectedCloseBrace {
-        source_name: source.source_name.clone(),
-        start: missing_start(tokens, cursor),
-    })
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ParsedAirInstance {
     declaration: AirInstanceDeclaration,
@@ -1577,7 +1430,7 @@ fn parse_braced_span(
     parse_delimited_span(tokens, open_index, source)
 }
 
-fn parse_required_braced_span(
+pub(crate) fn parse_required_braced_span(
     tokens: &[Token],
     open_index: usize,
     source: &SourceFile,
@@ -1617,7 +1470,7 @@ fn parse_alias_identifier(
     Ok((alias_token.lexeme.clone(), index + 1))
 }
 
-fn parse_name_reference(
+pub(crate) fn parse_name_reference(
     tokens: &[Token],
     index: usize,
     source: &SourceFile,
@@ -1747,7 +1600,7 @@ fn parse_name_tail_detail(
     Ok((segments.join("."), template, cursor))
 }
 
-fn parse_delimited_span(
+pub(crate) fn parse_delimited_span(
     tokens: &[Token],
     open_index: usize,
     source: &SourceFile,
@@ -1853,7 +1706,11 @@ fn parse_expression_span_until_terminator(
     })
 }
 
-fn expected_close_error(kind: TokenKind, source: &SourceFile, start: usize) -> ParseError {
+pub(crate) fn expected_close_error(
+    kind: TokenKind,
+    source: &SourceFile,
+    start: usize,
+) -> ParseError {
     match kind {
         TokenKind::RParen => ParseError::ExpectedCloseParen {
             source_name: source.source_name.clone(),
@@ -1874,7 +1731,7 @@ fn expected_close_error(kind: TokenKind, source: &SourceFile, start: usize) -> P
     }
 }
 
-fn missing_start(tokens: &[Token], index: usize) -> usize {
+pub(crate) fn missing_start(tokens: &[Token], index: usize) -> usize {
     tokens.get(index).map_or_else(
         || tokens.last().map_or(0, |token| token.end),
         |token| token.start,

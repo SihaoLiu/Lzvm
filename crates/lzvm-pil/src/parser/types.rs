@@ -99,8 +99,22 @@ pub struct FunctionDeclaration {
     pub name: String,
     pub visibility: Option<FunctionVisibility>,
     pub params: SourceSpan,
+    pub parameters: Vec<FunctionParameter>,
     pub return_type: Option<SourceSpan>,
     pub body: SourceSpan,
+    pub source_name: String,
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionParameter {
+    pub is_const: bool,
+    pub by_reference: bool,
+    pub type_name: String,
+    pub name: String,
+    pub array_dims: Vec<SourceSpan>,
+    pub default_value: Option<SourceSpan>,
     pub source_name: String,
     pub start: usize,
     pub end: usize,
