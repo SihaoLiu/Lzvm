@@ -16,7 +16,7 @@ use lzvm_artifacts::{
         BoundaryKind, CodeDestination, CodeOperand, CodeOperation, ConstraintCode, ExpressionCode,
         ExpressionInfo, OperationKind,
     },
-    setup_info::{CommitmentColumn, FriStep, StarkStruct, UnitSetupInfo},
+    setup_info::{CommitmentColumn, FriStep, StageValue, StarkStruct, UnitSetupInfo},
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -296,6 +296,79 @@ fn clamps_negative_frame_lower_bounds_to_first_row() {
     assert_eq!(program.constraints.entries[0].last_row, 2);
 }
 
+#[test]
+fn lowers_regular_expression_helper_operands() {
+    let info = ExpressionInfo {
+        hints: Vec::new(),
+        expressions: vec![ExpressionCode {
+            expression_id: 13,
+            stage: 1,
+            line: "helper expression".to_owned(),
+            temporary_count: 2,
+            destination: None,
+            operations: vec![
+                CodeOperation {
+                    op: OperationKind::Add,
+                    destination: CodeDestination::temporary(0, 3),
+                    sources: vec![CodeOperand::evaluation(0, 3), CodeOperand::constant(0, 1)],
+                },
+                CodeOperation {
+                    op: OperationKind::Mul,
+                    destination: CodeDestination::temporary(1, 3),
+                    sources: vec![
+                        CodeOperand::opening_denominator(0, Some(0), 3),
+                        CodeOperand::boundary_zerofier(0, 1),
+                    ],
+                },
+            ],
+        }],
+        constraints: Vec::new(),
+    };
+
+    let program =
+        regular_program_from_expression_info(&info, &minimal_setup_info()).expect("program lowers");
+
+    assert_eq!(program.expressions.ops, vec![1, 1]);
+    assert_eq!(
+        program.expressions.args,
+        vec![0, 0, 13, 0, 0, 0, 0, 0, 2, 0, 4, 0, 0, 3, 1, 0]
+    );
+    assert_eq!(program.expressions.max_tmp3, 1);
+    assert_eq!(program.expressions.entries[0].destination_dimension, 3);
+    assert_eq!(program.expressions.entries[0].destination_id, 0);
+}
+
+#[test]
+fn lowers_unit_and_group_value_sources() {
+    let info = ExpressionInfo {
+        hints: Vec::new(),
+        expressions: Vec::new(),
+        constraints: vec![ConstraintCode {
+            stage: 2,
+            boundary: BoundaryKind::EveryRow,
+            offset_min: None,
+            offset_max: None,
+            line: "value constraint".to_owned(),
+            intermediate: false,
+            temporary_count: 1,
+            operations: vec![CodeOperation {
+                op: OperationKind::Add,
+                destination: CodeDestination::temporary(0, 3),
+                sources: vec![
+                    CodeOperand::air_group_value(0, Some(2), Some(0), 3),
+                    CodeOperand::air_value(0, Some(1), Some(0), 1),
+                ],
+            }],
+        }],
+    };
+
+    let program = regular_program_from_expression_info(&info, &setup_info_with_values())
+        .expect("program lowers");
+
+    assert_eq!(program.constraints.ops, vec![1]);
+    assert_eq!(program.constraints.args, vec![0, 0, 11, 0, 0, 9, 0, 0]);
+}
+
 fn minimal_setup_info() -> UnitSetupInfo {
     UnitSetupInfo {
         n_stages: 1,
@@ -339,6 +412,21 @@ fn setup_info_with_commitment() -> UnitSetupInfo {
         stage_id: 0,
         stage_position: 0,
         intermediate: false,
+        lengths: Vec::new(),
+    }];
+    setup
+}
+
+fn setup_info_with_values() -> UnitSetupInfo {
+    let mut setup = minimal_setup_info();
+    setup.unit_value_map = vec![StageValue {
+        name: "unit.alpha".to_owned(),
+        stage: 1,
+        lengths: Vec::new(),
+    }];
+    setup.group_value_map = vec![StageValue {
+        name: "group.alpha".to_owned(),
+        stage: 2,
         lengths: Vec::new(),
     }];
     setup

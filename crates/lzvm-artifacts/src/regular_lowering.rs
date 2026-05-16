@@ -9,7 +9,7 @@ use crate::expression_info::{
 use crate::expression_program::{ExpressionEntry, ExpressionProgram};
 use crate::hint_program::{regular_hint_program_from_expression_info, HintProgramError};
 use crate::regular_program::RegularProgram;
-use crate::setup_info::UnitSetupInfo;
+use crate::setup_info::{StageValue, UnitSetupInfo};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegularProgramLoweringError {
@@ -55,6 +55,10 @@ pub enum RegularProgramLoweringError {
     },
     MissingOpeningPoint {
         value: i64,
+    },
+    MissingStageValue {
+        source: &'static str,
+        id: u32,
     },
     ValueOutOfRange {
         value: u32,
@@ -117,6 +121,9 @@ impl fmt::Display for RegularProgramLoweringError {
             }
             Self::MissingOpeningPoint { value } => {
                 write!(f, "missing opening point {value}")
+            }
+            Self::MissingStageValue { source, id } => {
+                write!(f, "missing {source} stage value {id}")
             }
             Self::ValueOutOfRange { value } => {
                 write!(f, "regular program value does not fit in u16: {value}")
@@ -411,7 +418,7 @@ fn lower_source(
             3 => Ok(SourceArg {
                 dimension: 3,
                 fields: [
-                    u32_to_u16(base_buffer + 1)?,
+                    u32_to_u16(add_u32(base_buffer, 1)?)?,
                     u32_to_u16(
                         temporaries
                             .compact_id(*id, 3)?
@@ -432,15 +439,31 @@ fn lower_source(
             Ok(SourceArg {
                 dimension: 1,
                 fields: [
-                    u32_to_u16(base_buffer + 3)?,
+                    u32_to_u16(add_u32(base_buffer, 3)?)?,
                     u32_to_u16(intern_number(numbers, *value)?)?,
                     0,
                 ],
             })
         }
+        CodeOperand::Evaluation { id, dimension } => Ok(SourceArg {
+            dimension: *dimension,
+            fields: [
+                u32_to_u16(add_u32(base_buffer, 8)?)?,
+                u32_to_u16(mul_u32(*id, 3)?)?,
+                0,
+            ],
+        }),
         CodeOperand::Public { id, dimension } => Ok(SourceArg {
             dimension: *dimension,
             fields: [u32_to_u16(add_u32(base_buffer, 2)?)?, u32_to_u16(*id)?, 0],
+        }),
+        CodeOperand::Constant { id, dimension } => Ok(SourceArg {
+            dimension: *dimension,
+            fields: [
+                0,
+                u32_to_u16(*id)?,
+                u32_to_u16(opening_point_index(setup, 0)?)?,
+            ],
         }),
         CodeOperand::Commitment {
             id,
@@ -468,6 +491,50 @@ fn lower_source(
             fields: [
                 u32_to_u16(add_u32(base_buffer, 7)?)?,
                 u32_to_u16(mul_u32(*id, 3)?)?,
+                0,
+            ],
+        }),
+        CodeOperand::BoundaryZerofier { id, dimension } => Ok(SourceArg {
+            dimension: *dimension,
+            fields: [
+                u32_to_u16(add_u32(setup.n_stages, 2)?)?,
+                u32_to_u16(add_u32(*id, 1)?)?,
+                0,
+            ],
+        }),
+        CodeOperand::OpeningDenominator {
+            id,
+            opening,
+            dimension,
+        } => Ok(SourceArg {
+            dimension: *dimension,
+            fields: [
+                u32_to_u16(add_u32(setup.n_stages, 3)?)?,
+                u32_to_u16(opening.unwrap_or(*id))?,
+                0,
+            ],
+        }),
+        CodeOperand::AirValue { id, dimension, .. } => Ok(SourceArg {
+            dimension: *dimension,
+            fields: [
+                u32_to_u16(add_u32(base_buffer, 4)?)?,
+                u32_to_u16(stage_value_offset(
+                    "unit value",
+                    &setup.unit_value_map,
+                    *id,
+                )?)?,
+                0,
+            ],
+        }),
+        CodeOperand::AirGroupValue { id, dimension, .. } => Ok(SourceArg {
+            dimension: *dimension,
+            fields: [
+                u32_to_u16(add_u32(base_buffer, 6)?)?,
+                u32_to_u16(stage_value_offset(
+                    "group value",
+                    &setup.group_value_map,
+                    *id,
+                )?)?,
                 0,
             ],
         }),
@@ -640,6 +707,27 @@ fn opening_point_index(
         .map(usize_to_u32)
         .transpose()?
         .ok_or(RegularProgramLoweringError::MissingOpeningPoint { value })
+}
+
+fn stage_value_offset(
+    source: &'static str,
+    values: &[StageValue],
+    id: u32,
+) -> Result<u32, RegularProgramLoweringError> {
+    let id_usize = usize::try_from(id).map_err(|_| RegularProgramLoweringError::LengthOverflow)?;
+    if id_usize >= values.len() {
+        return Err(RegularProgramLoweringError::MissingStageValue { source, id });
+    }
+
+    let mut offset = 0_u32;
+    for (index, value) in values.iter().enumerate() {
+        if index == id_usize {
+            return Ok(offset);
+        }
+        offset = add_u32(offset, if value.stage == 1 { 1 } else { 3 })?;
+    }
+
+    Err(RegularProgramLoweringError::MissingStageValue { source, id })
 }
 
 fn add_u32(left: u32, right: u32) -> Result<u32, RegularProgramLoweringError> {
