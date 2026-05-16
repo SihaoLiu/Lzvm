@@ -149,6 +149,90 @@ pub struct FunctionStatement {
     pub end: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Expression {
+    pub kind: ExpressionKind,
+    pub source_name: String,
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallArgument {
+    pub name: Option<String>,
+    pub value: Expression,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnaryOperator {
+    Plus,
+    Minus,
+    Not,
+    Increment,
+    Decrement,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinaryOperator {
+    Power,
+    Multiply,
+    Divide,
+    Modulo,
+    Backslash,
+    Add,
+    Subtract,
+    ShiftLeft,
+    ShiftRight,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    EqualEqual,
+    NotEqual,
+    TripleEqual,
+    ConstrainedAssign,
+    BitAnd,
+    BitXor,
+    BitOr,
+    LogicalAnd,
+    LogicalOr,
+    Assign,
+    PlusAssign,
+    MinusAssign,
+    StarAssign,
+    Range,
+    RangeFill,
+    RangeMulFill,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExpressionKind {
+    Integer(String),
+    HexInteger(String),
+    StringLiteral(String),
+    TemplateLiteral(String),
+    Name(String),
+    PositionalParam(String),
+    Group(Box<Expression>),
+    Unary {
+        op: UnaryOperator,
+        expr: Box<Expression>,
+    },
+    Binary {
+        op: BinaryOperator,
+        left: Box<Expression>,
+        right: Box<Expression>,
+    },
+    Call {
+        callee: Box<Expression>,
+        args: Vec<CallArgument>,
+    },
+    Index {
+        target: Box<Expression>,
+        index: Box<Expression>,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColumnKind {
     Witness,

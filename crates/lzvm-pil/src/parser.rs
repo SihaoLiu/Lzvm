@@ -1,8 +1,10 @@
 mod declarations;
+mod expressions;
 mod functions;
 mod types;
 
 pub use declarations::*;
+pub use expressions::*;
 pub use functions::*;
 pub use types::*;
 
