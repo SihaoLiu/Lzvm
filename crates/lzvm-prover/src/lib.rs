@@ -16,6 +16,7 @@ use lzvm_artifacts::program_image::{
     ProgramImageCommitmentCacheError,
 };
 use lzvm_artifacts::setup_info::{CommitmentColumn, EvaluationMapEntry, StageValue, UnitSetupInfo};
+use lzvm_artifacts::setup_manifest::SetupDirectoryManifestError;
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::witness_library::{
     read_witness_library_file, WitnessLibraryError, WitnessLibraryInfo,
@@ -151,6 +152,7 @@ pub enum ProveScheduleError {
     EmptyCatalog,
     LengthOverflow,
     KeyDirectory(KeyDirectoryError),
+    SetupDirectoryManifest(SetupDirectoryManifestError),
 }
 
 impl fmt::Display for ProveScheduleError {
@@ -159,6 +161,7 @@ impl fmt::Display for ProveScheduleError {
             Self::EmptyCatalog => write!(f, "prove schedule catalog is empty"),
             Self::LengthOverflow => write!(f, "prove schedule length overflow"),
             Self::KeyDirectory(error) => write!(f, "prove schedule catalog error: {error}"),
+            Self::SetupDirectoryManifest(error) => write!(f, "{error}"),
         }
     }
 }
@@ -168,6 +171,12 @@ impl std::error::Error for ProveScheduleError {}
 impl From<KeyDirectoryError> for ProveScheduleError {
     fn from(error: KeyDirectoryError) -> Self {
         Self::KeyDirectory(error)
+    }
+}
+
+impl From<SetupDirectoryManifestError> for ProveScheduleError {
+    fn from(error: SetupDirectoryManifestError) -> Self {
+        Self::SetupDirectoryManifest(error)
     }
 }
 
@@ -650,7 +659,10 @@ pub fn derive_prove_schedule(
 pub fn derive_prove_schedule_from_directory(
     root: impl AsRef<Path>,
 ) -> Result<ProveSchedule, ProveScheduleError> {
+    let root = root.as_ref();
     let catalog = read_key_directory_catalog(root).map_err(ProveScheduleError::from)?;
+    crate::setup_preflight::validate_setup_directory_manifest_if_present(root, &catalog)
+        .map_err(ProveScheduleError::from)?;
     derive_prove_schedule(&catalog)
 }
 

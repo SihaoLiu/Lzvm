@@ -1,5 +1,5 @@
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::key_directory::{key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryError};
 use crate::sectioned::{
@@ -43,6 +43,9 @@ pub enum SetupDirectoryManifestError {
         unit_count: u64,
         pcs_material_unit_count: u64,
     },
+    Mismatch {
+        path: PathBuf,
+    },
     LengthOverflow,
     Io {
         message: String,
@@ -72,6 +75,9 @@ impl fmt::Display for SetupDirectoryManifestError {
                 f,
                 "setup directory manifest material unit count {pcs_material_unit_count} exceeds unit count {unit_count}"
             ),
+            Self::Mismatch { path } => {
+                write!(f, "setup directory manifest mismatch at {}", path.display())
+            }
             Self::LengthOverflow => write!(f, "setup directory manifest length overflow"),
             Self::Io { message } => write!(f, "setup directory manifest io error: {message}"),
         }
@@ -88,6 +94,7 @@ impl std::error::Error for SetupDirectoryManifestError {
             | Self::InvalidPayloadLength { .. }
             | Self::EmptyUnits
             | Self::InvalidMaterialUnitCount { .. }
+            | Self::Mismatch { .. }
             | Self::LengthOverflow
             | Self::Io { .. } => None,
         }
@@ -155,6 +162,23 @@ pub fn read_setup_directory_manifest_file(
         message: error.to_string(),
     })?;
     parse_setup_directory_manifest(&bytes)
+}
+
+pub fn validate_setup_directory_manifest_file(
+    path: impl AsRef<Path>,
+    expected: &SetupDirectoryManifest,
+) -> Result<(), SetupDirectoryManifestError> {
+    let path = path.as_ref();
+    if !path.is_file() {
+        return Ok(());
+    }
+    let found = read_setup_directory_manifest_file(path)?;
+    if &found != expected {
+        return Err(SetupDirectoryManifestError::Mismatch {
+            path: path.to_path_buf(),
+        });
+    }
+    Ok(())
 }
 
 pub fn parse_setup_directory_manifest(

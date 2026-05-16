@@ -7,6 +7,10 @@ use lzvm_artifacts::key_directory::{
 };
 use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact, ProofArtifactError};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValues, PublicValuesError};
+use lzvm_artifacts::setup_manifest::{
+    build_setup_directory_manifest, validate_setup_directory_manifest_file,
+    SetupDirectoryManifestError, SETUP_DIRECTORY_MANIFEST_FILE,
+};
 
 use crate::constant_opening::{
     validate_constant_opening_segments, ValidateConstantOpeningSegmentsError,
@@ -55,6 +59,7 @@ pub enum SetupPreflightError {
     Catalog(KeyDirectoryError),
     Proof(ProofPreflightError),
     CatalogHashMismatch,
+    SetupDirectoryManifest(SetupDirectoryManifestError),
     Schedule(ProveScheduleError),
     PublicValues(PublicValueFieldError),
     PcsMaterial(ValidatePcsMaterialManifestSegmentsError),
@@ -81,6 +86,7 @@ impl fmt::Display for SetupPreflightError {
             Self::Catalog(error) => write!(f, "{error}"),
             Self::Proof(error) => write!(f, "{error}"),
             Self::CatalogHashMismatch => write!(f, "setup catalog fingerprint mismatch"),
+            Self::SetupDirectoryManifest(error) => write!(f, "{error}"),
             Self::Schedule(error) => write!(f, "{error}"),
             Self::PublicValues(error) => write!(f, "{error}"),
             Self::PcsMaterial(error) => write!(f, "{error}"),
@@ -111,6 +117,7 @@ impl std::error::Error for SetupPreflightError {
         match self {
             Self::Catalog(error) => Some(error),
             Self::Proof(error) => Some(error),
+            Self::SetupDirectoryManifest(error) => Some(error),
             Self::Schedule(error) => Some(error),
             Self::PublicValues(error) => Some(error),
             Self::PcsMaterial(error) => Some(error),
@@ -159,6 +166,15 @@ impl From<SetupPreflightError> for SetupPreflightFileError {
     fn from(error: SetupPreflightError) -> Self {
         Self::SetupPreflight(error)
     }
+}
+
+pub(crate) fn validate_setup_directory_manifest_if_present(
+    root: &Path,
+    catalog: &KeyDirectoryCatalog,
+) -> Result<(), SetupDirectoryManifestError> {
+    let expected = build_setup_directory_manifest(catalog)?;
+    let path = root.join(SETUP_DIRECTORY_MANIFEST_FILE);
+    validate_setup_directory_manifest_file(&path, &expected)
 }
 
 pub fn validate_setup_preflight_hashes(
@@ -278,7 +294,10 @@ pub fn validate_setup_preflight_from_files(
     proof_path: impl AsRef<Path>,
     public_values_path: impl AsRef<Path>,
 ) -> Result<SetupPreflightReport, SetupPreflightFileError> {
+    let setup_dir = setup_dir.as_ref();
     let catalog = read_key_directory_catalog(setup_dir)?;
+    validate_setup_directory_manifest_if_present(setup_dir, &catalog)
+        .map_err(SetupPreflightError::SetupDirectoryManifest)?;
     let proof = read_proof_artifact_file(proof_path)?;
     let public_values = read_public_values_file(public_values_path)?;
     validate_setup_preflight(&catalog, &proof, &public_values).map_err(Into::into)

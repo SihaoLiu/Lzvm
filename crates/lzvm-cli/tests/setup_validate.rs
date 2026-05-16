@@ -1357,11 +1357,6 @@ fn write_execution_ready_setup_directory_with_challenge_constraint(root: &Path) 
     run_generate_key_command(root);
 }
 
-fn write_execution_ready_setup_directory_with_group_value(root: &Path) {
-    write_setup_directory_with_group_value(root);
-    run_generate_key_command(root);
-}
-
 fn write_setup_directory_with_proof_group_and_unit_value(root: &Path) {
     write_global_files_with_info(root, &fixtures::sample_global_info_with_proof_group_value());
     let layout = read_key_directory_layout(root).expect("layout should parse");
@@ -1488,7 +1483,7 @@ fn write_global_constraint_preflight_fixture(
     root: &Path,
     proof_value: [u64; 3],
 ) -> (PathBuf, PathBuf, usize) {
-    write_execution_ready_setup_directory_with_proof_value(root);
+    write_setup_directory_with_proof_value(root);
     write_global_constraint_program(
         root,
         GlobalConstraintProgram {
@@ -1508,6 +1503,7 @@ fn write_global_constraint_preflight_fixture(
             numbers: vec![51],
         },
     );
+    run_generate_key_command(root);
     let catalog = read_key_directory_catalog(root).expect("catalog should load");
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = sample_public_values(setup_hash);
@@ -1533,7 +1529,7 @@ fn write_global_hint_preflight_fixture(
     root: &Path,
     proof_values: Option<Vec<[u64; 3]>>,
 ) -> (PathBuf, PathBuf, usize) {
-    write_execution_ready_setup_directory_with_proof_value(root);
+    write_setup_directory_with_proof_value(root);
     write_global_program(
         root,
         GlobalConstraintProgram {
@@ -1555,6 +1551,7 @@ fn write_global_hint_preflight_fixture(
             }],
         },
     );
+    run_generate_key_command(root);
     let catalog = read_key_directory_catalog(root).expect("catalog should load");
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = sample_public_values(setup_hash);
@@ -1765,6 +1762,7 @@ fn write_challenge_global_constraint_preflight_fixture(root: &Path) -> (PathBuf,
             numbers: challenges[0].to_u64s().to_vec(),
         },
     );
+    run_generate_key_command(root);
     let catalog = read_key_directory_catalog(root).expect("catalog should load after rewrite");
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = sample_public_values(setup_hash);
@@ -1801,7 +1799,7 @@ fn write_group_value_global_constraint_preflight_fixture(
     root: &Path,
     group_value: [u64; 3],
 ) -> (PathBuf, PathBuf, usize) {
-    write_execution_ready_setup_directory_with_group_value(root);
+    write_setup_directory_with_group_value(root);
     write_global_constraint_program(
         root,
         GlobalConstraintProgram {
@@ -1821,6 +1819,7 @@ fn write_group_value_global_constraint_preflight_fixture(
             numbers: group_value.to_vec(),
         },
     );
+    run_generate_key_command(root);
     let catalog = read_key_directory_catalog(root).expect("catalog should load");
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = sample_public_values(setup_hash);
@@ -1887,6 +1886,19 @@ fn write_proof_pair_with_material(
         encode_public_values(&public_values).expect("public values should encode"),
     );
     (proof_path, public_values_path)
+}
+
+fn write_stale_setup_manifest(root: &Path, value: u8) -> PathBuf {
+    let manifest_path = root.join(SETUP_DIRECTORY_MANIFEST_FILE);
+    let mut manifest =
+        read_setup_directory_manifest_file(&manifest_path).expect("manifest should parse");
+    manifest.catalog_digest = [value; 32];
+    fs::write(
+        &manifest_path,
+        encode_setup_directory_manifest(&manifest).expect("manifest should encode"),
+    )
+    .expect("stale manifest should be written");
+    manifest_path
 }
 
 #[test]
@@ -1971,15 +1983,7 @@ fn rejects_stale_setup_directory_manifest() {
     write_setup_directory(&dir);
     let root = dir.to_str().expect("path should be utf-8");
     run_setup_command(&["setup", "generate-key", root]);
-    let manifest_path = dir.join(SETUP_DIRECTORY_MANIFEST_FILE);
-    let mut manifest =
-        read_setup_directory_manifest_file(&manifest_path).expect("manifest should parse");
-    manifest.catalog_digest = [0xaa; 32];
-    fs::write(
-        &manifest_path,
-        encode_setup_directory_manifest(&manifest).expect("manifest should encode"),
-    )
-    .expect("stale manifest should be written");
+    let manifest_path = write_stale_setup_manifest(&dir, 0xaa);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -1993,6 +1997,73 @@ fn rejects_stale_setup_directory_manifest() {
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         format!(
             "setup validation failed: setup directory manifest mismatch at {}\n",
+            manifest_path.display()
+        )
+    );
+}
+
+#[test]
+fn rejects_prove_schedule_with_stale_setup_directory_manifest() {
+    let dir = temp_dir("stale-manifest-schedule");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let root = dir.to_str().expect("path should be utf-8");
+    run_setup_command(&["setup", "generate-key", root]);
+    let manifest_path = write_stale_setup_manifest(&dir, 0xbb);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(&["prove", "schedule", root], &mut stdout, &mut stderr);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        format!(
+            "prove schedule failed: setup directory manifest mismatch at {}\n",
+            manifest_path.display()
+        )
+    );
+}
+
+#[test]
+fn rejects_setup_preflight_with_stale_setup_directory_manifest() {
+    let dir = temp_dir("stale-manifest-preflight");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let root = dir.to_str().expect("path should be utf-8");
+    run_setup_command(&["setup", "generate-key", root]);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let (proof_path, public_values_path) = write_proof_pair(&dir, setup_hash);
+    let manifest_path = write_stale_setup_manifest(&dir, 0xcc);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            root,
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        format!(
+            "verify setup-preflight failed: setup directory manifest mismatch at {}\n",
             manifest_path.display()
         )
     );
@@ -4064,7 +4135,7 @@ fn saves_prove_witness_proof_values_when_requested() {
 fn saves_prove_witness_group_values_when_requested() {
     let dir = temp_dir("prove-witness-save-group-values");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory_with_group_value(&dir);
+    write_setup_directory_with_group_value(&dir);
     let group_value = [61, 62, 63];
     write_global_constraint_program(
         &dir,
@@ -4085,6 +4156,7 @@ fn saves_prove_witness_group_values_when_requested() {
             numbers: group_value.to_vec(),
         },
     );
+    run_generate_key_command(&dir);
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
     let output_dir = dir.join("proof-out");
     let witness_library = build_shared_library(&dir, "witness", sample_witness_source());

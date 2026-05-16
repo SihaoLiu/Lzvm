@@ -7,8 +7,8 @@ use lzvm_artifacts::key_directory::{
 };
 use lzvm_artifacts::setup_manifest::{
     build_setup_directory_manifest, encode_setup_directory_manifest,
-    read_setup_directory_manifest_file, SetupDirectoryManifest, SetupDirectoryManifestError,
-    SETUP_DIRECTORY_MANIFEST_FILE,
+    read_setup_directory_manifest_file, validate_setup_directory_manifest_file,
+    SetupDirectoryManifest, SetupDirectoryManifestError, SETUP_DIRECTORY_MANIFEST_FILE,
 };
 
 use crate::{publish_staging_bytes, write_staging_bytes, SetupDirectorySummaryReport, SetupError};
@@ -136,14 +136,8 @@ fn validate_manifest_file_if_present(
     expected: &SetupDirectoryManifest,
 ) -> Result<(), SetupDirectorySummaryError> {
     let path = root.join(SETUP_DIRECTORY_MANIFEST_FILE);
-    if !path.is_file() {
-        return Ok(());
-    }
-    let found = read_setup_directory_manifest_file(&path)?;
-    if &found != expected {
-        return Err(SetupDirectorySummaryError::ManifestMismatch { path });
-    }
-    Ok(())
+    validate_setup_directory_manifest_file(&path, expected)
+        .map_err(SetupDirectorySummaryError::from)
 }
 
 fn encode_digest_hex(value: &[u8; 32]) -> String {
