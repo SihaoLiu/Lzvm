@@ -23,6 +23,15 @@ pub struct IncludeDirective {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UseDirective {
+    pub name: String,
+    pub alias: Option<String>,
+    pub source_name: String,
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
     Lex {
         source_name: String,
@@ -41,6 +50,14 @@ pub enum ParseError {
         source_name: String,
         start: usize,
     },
+    ExpectedName {
+        source_name: String,
+        start: usize,
+    },
+    ExpectedAlias {
+        source_name: String,
+        start: usize,
+    },
 }
 
 impl std::fmt::Display for ParseError {
@@ -55,6 +72,12 @@ impl std::fmt::Display for ParseError {
             } => write!(f, "{source_name}: template include path at {start}"),
             Self::ExpectedTerminator { source_name, start } => {
                 write!(f, "{source_name}: expected statement terminator at {start}")
+            }
+            Self::ExpectedName { source_name, start } => {
+                write!(f, "{source_name}: expected name at {start}")
+            }
+            Self::ExpectedAlias { source_name, start } => {
+                write!(f, "{source_name}: expected alias at {start}")
             }
         }
     }
@@ -127,6 +150,70 @@ pub fn parse_include_directives(source: &SourceFile) -> Result<Vec<IncludeDirect
     Ok(directives)
 }
 
+pub fn parse_use_directives(source: &SourceFile) -> Result<Vec<UseDirective>, ParseError> {
+    let tokens = lex_source(&source.contents).map_err(|error| ParseError::Lex {
+        source_name: source.source_name.clone(),
+        error,
+    })?;
+    let mut directives = Vec::new();
+    let mut index = 0;
+
+    while index < tokens.len() {
+        if tokens[index].kind != TokenKind::Use {
+            index += 1;
+            continue;
+        }
+
+        let start = tokens[index].start;
+        let (name, mut cursor) = parse_name_reference(&tokens, index + 1, source)?;
+        let mut alias = None;
+        if tokens
+            .get(cursor)
+            .is_some_and(|token| token.kind == TokenKind::Alias)
+        {
+            let alias_index = cursor + 1;
+            let Some(alias_token) = tokens.get(alias_index) else {
+                return Err(ParseError::ExpectedAlias {
+                    source_name: source.source_name.clone(),
+                    start: missing_start(&tokens, alias_index),
+                });
+            };
+            if alias_token.kind != TokenKind::Identifier {
+                return Err(ParseError::ExpectedAlias {
+                    source_name: source.source_name.clone(),
+                    start: alias_token.start,
+                });
+            }
+            alias = Some(alias_token.lexeme.clone());
+            cursor = alias_index + 1;
+        }
+
+        let terminator = tokens
+            .get(cursor)
+            .ok_or_else(|| ParseError::ExpectedTerminator {
+                source_name: source.source_name.clone(),
+                start: missing_start(&tokens, cursor),
+            })?;
+        if terminator.kind != TokenKind::Semicolon {
+            return Err(ParseError::ExpectedTerminator {
+                source_name: source.source_name.clone(),
+                start: terminator.start,
+            });
+        }
+
+        directives.push(UseDirective {
+            name,
+            alias,
+            source_name: source.source_name.clone(),
+            start,
+            end: terminator.end,
+        });
+        index = cursor + 1;
+    }
+
+    Ok(directives)
+}
+
 #[derive(Debug, Clone, Copy)]
 struct IncludeHeader {
     start_index: usize,
@@ -174,9 +261,105 @@ fn directive_after_visibility(
     })
 }
 
+fn parse_name_reference(
+    tokens: &[Token],
+    index: usize,
+    source: &SourceFile,
+) -> Result<(String, usize), ParseError> {
+    let token = tokens.get(index).ok_or_else(|| ParseError::ExpectedName {
+        source_name: source.source_name.clone(),
+        start: missing_start(tokens, index),
+    })?;
+
+    match token.kind {
+        TokenKind::Air | TokenKind::AirGroup | TokenKind::Proof => {
+            let dot_index = index + 1;
+            let dot = tokens
+                .get(dot_index)
+                .ok_or_else(|| ParseError::ExpectedName {
+                    source_name: source.source_name.clone(),
+                    start: missing_start(tokens, dot_index),
+                })?;
+            if dot.kind != TokenKind::Dot {
+                return Err(ParseError::ExpectedName {
+                    source_name: source.source_name.clone(),
+                    start: dot.start,
+                });
+            }
+            let (tail, next) = parse_name_tail(tokens, dot_index + 1, source)?;
+            Ok((format!("{}.{}", token.lexeme, tail), next))
+        }
+        TokenKind::Identifier => {
+            let mut name = token.lexeme.clone();
+            let mut next = index + 1;
+            if tokens
+                .get(next)
+                .is_some_and(|token| token.kind == TokenKind::Dot)
+            {
+                let (tail, cursor) = parse_name_tail(tokens, next + 1, source)?;
+                name.push('.');
+                name.push_str(&tail);
+                next = cursor;
+            }
+            Ok((name, next))
+        }
+        _ => Err(ParseError::ExpectedName {
+            source_name: source.source_name.clone(),
+            start: token.start,
+        }),
+    }
+}
+
+fn parse_name_tail(
+    tokens: &[Token],
+    index: usize,
+    source: &SourceFile,
+) -> Result<(String, usize), ParseError> {
+    let mut cursor = index;
+    let mut segments = Vec::new();
+
+    loop {
+        let token = tokens.get(cursor).ok_or_else(|| ParseError::ExpectedName {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, cursor),
+        })?;
+        match token.kind {
+            TokenKind::Identifier | TokenKind::TemplateLiteral => {
+                segments.push(token.lexeme.clone());
+            }
+            _ => {
+                return Err(ParseError::ExpectedName {
+                    source_name: source.source_name.clone(),
+                    start: token.start,
+                });
+            }
+        }
+        cursor += 1;
+        if tokens
+            .get(cursor)
+            .is_some_and(|token| token.kind == TokenKind::Dot)
+        {
+            cursor += 1;
+            continue;
+        }
+        break;
+    }
+
+    Ok((segments.join("."), cursor))
+}
+
+fn missing_start(tokens: &[Token], index: usize) -> usize {
+    tokens.get(index).map_or_else(
+        || tokens.last().map_or(0, |token| token.end),
+        |token| token.start,
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{parse_include_directives, IncludeKind, IncludeVisibility, ParseError};
+    use super::{
+        parse_include_directives, parse_use_directives, IncludeKind, IncludeVisibility, ParseError,
+    };
     use crate::SourceFile;
     use std::path::PathBuf;
 
@@ -246,6 +429,57 @@ mod tests {
         let source = source("include \"a.pil\" const N = 1;");
 
         let error = parse_include_directives(&source).expect_err("semicolon should be required");
+
+        assert!(matches!(
+            error,
+            ParseError::ExpectedTerminator { source_name, .. } if source_name == "main.pil"
+        ));
+    }
+
+    #[test]
+    fn parses_use_directives_with_names_and_aliases() {
+        let source =
+            source("use air.main;\nuse proof.root.branch alias local_root;\nuse pkg.item;");
+
+        let directives = parse_use_directives(&source).expect("use directives should parse");
+
+        assert_eq!(directives.len(), 3);
+        assert_eq!(directives[0].name, "air.main");
+        assert_eq!(directives[0].alias, None);
+        assert_eq!(directives[1].name, "proof.root.branch");
+        assert_eq!(directives[1].alias.as_deref(), Some("local_root"));
+        assert_eq!(directives[2].name, "pkg.item");
+    }
+
+    #[test]
+    fn rejects_use_without_name_reference() {
+        let source = source("use ;");
+
+        let error = parse_use_directives(&source).expect_err("name should be required");
+
+        assert!(matches!(
+            error,
+            ParseError::ExpectedName { source_name, .. } if source_name == "main.pil"
+        ));
+    }
+
+    #[test]
+    fn rejects_use_alias_without_identifier() {
+        let source = source("use pkg.item alias ;");
+
+        let error = parse_use_directives(&source).expect_err("alias identifier should be required");
+
+        assert!(matches!(
+            error,
+            ParseError::ExpectedAlias { source_name, .. } if source_name == "main.pil"
+        ));
+    }
+
+    #[test]
+    fn rejects_use_without_statement_terminator() {
+        let source = source("use pkg.item include \"x.pil\";");
+
+        let error = parse_use_directives(&source).expect_err("semicolon should be required");
 
         assert!(matches!(
             error,
