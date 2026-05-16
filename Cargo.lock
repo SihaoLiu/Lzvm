@@ -82,6 +82,7 @@ dependencies = [
 name = "lzvm-accel"
 version = "0.1.0"
 dependencies = [
+ "lzvm-crypto",
  "lzvm-field",
 ]
 

@@ -16,4 +16,5 @@ cuda = []
 [dependencies]
 
 [dev-dependencies]
+lzvm-crypto = { path = "../lzvm-crypto" }
 lzvm-field = { path = "../lzvm-field" }

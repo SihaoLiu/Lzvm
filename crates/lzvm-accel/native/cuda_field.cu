@@ -11,6 +11,10 @@ constexpr size_t kPoseidon2Width16 = 16;
 constexpr size_t kPoseidon2HalfRounds = 4;
 constexpr size_t kPoseidon2Width4PartialRounds = 21;
 constexpr size_t kPoseidon2PartialRounds = 22;
+constexpr size_t kKeccakRateBytes = 136;
+constexpr size_t kKeccakStateLanes = 25;
+constexpr size_t kKeccakRateLanes = 17;
+constexpr size_t kKeccakOutputBytes = 32;
 
 __device__ __constant__ uint64_t kPoseidon2Width4Diag[kPoseidon2Width4] = {
     0xf0ce126fe8a83094ULL,
@@ -345,6 +349,38 @@ __device__ __constant__ uint64_t kPoseidon2Width16RoundConstants[150] = {
     0x15a26e89fad946c9ULL,
     0xf3cb87db8a67cf49ULL,
     0x400d2bf56aa2a577ULL,
+};
+
+__device__ __constant__ uint64_t kKeccakRoundConstants[24] = {
+    0x0000000000000001ULL,
+    0x0000000000008082ULL,
+    0x800000000000808aULL,
+    0x8000000080008000ULL,
+    0x000000000000808bULL,
+    0x0000000080000001ULL,
+    0x8000000080008081ULL,
+    0x8000000000008009ULL,
+    0x000000000000008aULL,
+    0x0000000000000088ULL,
+    0x0000000080008009ULL,
+    0x000000008000000aULL,
+    0x000000008000808bULL,
+    0x800000000000008bULL,
+    0x8000000000008089ULL,
+    0x8000000000008003ULL,
+    0x8000000000008002ULL,
+    0x8000000000000080ULL,
+    0x000000000000800aULL,
+    0x800000008000000aULL,
+    0x8000000080008081ULL,
+    0x8000000000008080ULL,
+    0x0000000080000001ULL,
+    0x8000000080008008ULL,
+};
+
+__device__ __constant__ unsigned int kKeccakRotationOffsets[25] = {
+    0U, 1U, 62U, 28U, 27U, 36U, 44U, 6U, 55U, 20U, 3U, 10U, 43U, 25U, 39U, 41U, 45U, 15U, 21U,
+    8U, 18U, 2U, 61U, 56U, 14U,
 };
 
 __device__ uint64_t add_mod(uint64_t lhs, uint64_t rhs) {
@@ -715,6 +751,118 @@ __global__ void poseidon2_width16_kernel(const uint64_t* values, uint64_t* out, 
     }
 }
 
+__device__ __forceinline__ size_t keccak_lane_index(size_t x, size_t y) {
+    return x + 5 * y;
+}
+
+__device__ __forceinline__ uint64_t keccak_rotate_left(uint64_t value, unsigned int shift) {
+    return shift == 0U ? value : ((value << shift) | (value >> (64U - shift)));
+}
+
+__device__ __forceinline__ uint64_t keccak_load64_le(const uint8_t* bytes) {
+    uint64_t value = 0;
+    for (size_t index = 0; index < 8; ++index) {
+        value |= static_cast<uint64_t>(bytes[index]) << (index * 8);
+    }
+    return value;
+}
+
+__device__ __forceinline__ void keccak_store64_le(uint8_t* bytes, uint64_t value) {
+    for (size_t index = 0; index < 8; ++index) {
+        bytes[index] = static_cast<uint8_t>((value >> (index * 8)) & 0xffU);
+    }
+}
+
+__device__ __forceinline__ void keccak_absorb_rate_block(uint64_t* state, const uint8_t* block) {
+    for (size_t lane = 0; lane < kKeccakRateLanes; ++lane) {
+        state[lane] ^= keccak_load64_le(block + lane * 8);
+    }
+}
+
+__device__ void keccak_f1600(uint64_t* state) {
+    uint64_t c[5];
+    uint64_t d[5];
+    uint64_t b[kKeccakStateLanes];
+
+    for (size_t round = 0; round < 24; ++round) {
+        for (size_t x = 0; x < 5; ++x) {
+            c[x] = state[keccak_lane_index(x, 0)] ^ state[keccak_lane_index(x, 1)] ^
+                state[keccak_lane_index(x, 2)] ^ state[keccak_lane_index(x, 3)] ^
+                state[keccak_lane_index(x, 4)];
+        }
+
+        for (size_t x = 0; x < 5; ++x) {
+            d[x] = c[(x + 4) % 5] ^ keccak_rotate_left(c[(x + 1) % 5], 1U);
+        }
+
+        for (size_t x = 0; x < 5; ++x) {
+            for (size_t y = 0; y < 5; ++y) {
+                state[keccak_lane_index(x, y)] ^= d[x];
+            }
+        }
+
+        for (size_t x = 0; x < 5; ++x) {
+            for (size_t y = 0; y < 5; ++y) {
+                const size_t source = keccak_lane_index(x, y);
+                const size_t dest = keccak_lane_index(y, (2 * x + 3 * y) % 5);
+                b[dest] = keccak_rotate_left(state[source], kKeccakRotationOffsets[source]);
+            }
+        }
+
+        for (size_t x = 0; x < 5; ++x) {
+            for (size_t y = 0; y < 5; ++y) {
+                const size_t index = keccak_lane_index(x, y);
+                const size_t next = keccak_lane_index((x + 1) % 5, y);
+                const size_t next_next = keccak_lane_index((x + 2) % 5, y);
+                state[index] = b[index] ^ ((~b[next]) & b[next_next]);
+            }
+        }
+
+        state[0] ^= kKeccakRoundConstants[round];
+    }
+}
+
+__global__ void keccak256_fixed_kernel(
+    const uint8_t* input,
+    uint8_t* out,
+    size_t message_len,
+    size_t message_count) {
+    const size_t message_index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (message_index < message_count) {
+        const uint8_t* message = input + message_index * message_len;
+        uint64_t state[kKeccakStateLanes];
+        for (size_t lane = 0; lane < kKeccakStateLanes; ++lane) {
+            state[lane] = 0;
+        }
+
+        size_t offset = 0;
+        while (offset + kKeccakRateBytes <= message_len) {
+            keccak_absorb_rate_block(state, message + offset);
+            keccak_f1600(state);
+            offset += kKeccakRateBytes;
+        }
+
+        uint8_t block[kKeccakRateBytes];
+        for (size_t index = 0; index < kKeccakRateBytes; ++index) {
+            block[index] = 0;
+        }
+        const size_t remaining = message_len - offset;
+        for (size_t index = 0; index < remaining; ++index) {
+            block[index] = message[offset + index];
+        }
+        block[remaining] = 0x01;
+        block[kKeccakRateBytes - 1] |= 0x80;
+
+        keccak_absorb_rate_block(state, block);
+        keccak_f1600(state);
+
+        uint8_t* digest = out + message_index * kKeccakOutputBytes;
+        for (size_t lane = 0; lane < 4; ++lane) {
+            keccak_store64_le(digest + lane * 8, state[lane]);
+        }
+    }
+}
+
 cudaError_t run_ntt(uint64_t* device_values, size_t len, size_t bits, uint64_t root) {
     const size_t blocks = (len + kThreads - 1) / kThreads;
     bit_reverse_kernel<<<blocks, kThreads>>>(device_values, len, bits);
@@ -770,6 +918,12 @@ int free_nonce_after_error(
     cudaFree(challenge);
     cudaFree(out);
     cudaFree(found);
+    return static_cast<int>(status);
+}
+
+int free_keccak_after_error(cudaError_t status, uint8_t* input, uint8_t* out) {
+    cudaFree(input);
+    cudaFree(out);
     return static_cast<int>(status);
 }
 
@@ -1361,6 +1515,60 @@ extern "C" int lzvm_cuda_poseidon2_width16(
     }
 
     cudaFree(device_values);
+    cudaFree(device_out);
+    return 0;
+}
+
+extern "C" int lzvm_cuda_keccak256_fixed(
+    const uint8_t* input,
+    size_t message_len,
+    uint8_t* out,
+    size_t message_count) {
+    if (message_count == 0) {
+        return 0;
+    }
+    if (message_len == 0) {
+        return -2;
+    }
+    if (input == nullptr || out == nullptr) {
+        return -1;
+    }
+
+    uint8_t* device_input = nullptr;
+    uint8_t* device_out = nullptr;
+    const size_t input_bytes = message_count * message_len;
+    const size_t output_bytes = message_count * kKeccakOutputBytes;
+
+    cudaError_t status = cudaMalloc(&device_input, input_bytes);
+    if (status != cudaSuccess) {
+        return static_cast<int>(status);
+    }
+    status = cudaMalloc(&device_out, output_bytes);
+    if (status != cudaSuccess) {
+        return free_keccak_after_error(status, device_input, device_out);
+    }
+
+    status = cudaMemcpy(device_input, input, input_bytes, cudaMemcpyHostToDevice);
+    if (status != cudaSuccess) {
+        return free_keccak_after_error(status, device_input, device_out);
+    }
+
+    const size_t blocks = (message_count + kThreads - 1) / kThreads;
+    keccak256_fixed_kernel<<<blocks, kThreads>>>(device_input, device_out, message_len, message_count);
+    status = cudaGetLastError();
+    if (status != cudaSuccess) {
+        return free_keccak_after_error(status, device_input, device_out);
+    }
+    status = cudaDeviceSynchronize();
+    if (status != cudaSuccess) {
+        return free_keccak_after_error(status, device_input, device_out);
+    }
+    status = cudaMemcpy(out, device_out, output_bytes, cudaMemcpyDeviceToHost);
+    if (status != cudaSuccess) {
+        return free_keccak_after_error(status, device_input, device_out);
+    }
+
+    cudaFree(device_input);
     cudaFree(device_out);
     return 0;
 }

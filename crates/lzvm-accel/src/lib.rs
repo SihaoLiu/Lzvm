@@ -76,6 +76,12 @@ unsafe extern "C" {
     ) -> i32;
     fn lzvm_cuda_poseidon2_width8(values: *const u64, out: *mut u64, state_count: usize) -> i32;
     fn lzvm_cuda_poseidon2_width16(values: *const u64, out: *mut u64, state_count: usize) -> i32;
+    fn lzvm_cuda_keccak256_fixed(
+        input: *const u8,
+        message_len: usize,
+        out: *mut u8,
+        message_count: usize,
+    ) -> i32;
 }
 
 #[cfg(feature = "cuda")]
@@ -473,6 +479,44 @@ pub fn cuda_poseidon2_width16(values: &[u64]) -> Result<Vec<u64>, AccelError> {
     }
 }
 
+#[cfg(feature = "cuda")]
+pub fn cuda_keccak256_fixed(input: &[u8], message_len: usize) -> Result<Vec<[u8; 32]>, AccelError> {
+    if message_len == 0 || !input.len().is_multiple_of(message_len) {
+        return Err(AccelError::InvalidDomain {
+            bits: 0,
+            len: input.len(),
+        });
+    }
+
+    let message_count = input.len() / message_len;
+    let output_len = message_count
+        .checked_mul(32)
+        .ok_or(AccelError::InvalidDomain {
+            bits: 0,
+            len: input.len(),
+        })?;
+    let mut out = vec![0_u8; output_len];
+    let code = if message_count == 0 {
+        0
+    } else {
+        unsafe {
+            lzvm_cuda_keccak256_fixed(input.as_ptr(), message_len, out.as_mut_ptr(), message_count)
+        }
+    };
+    if code == 0 {
+        Ok(out
+            .chunks_exact(32)
+            .map(|chunk| {
+                let mut digest = [0_u8; 32];
+                digest.copy_from_slice(chunk);
+                digest
+            })
+            .collect())
+    } else {
+        Err(AccelError::Cuda { code })
+    }
+}
+
 #[cfg(not(feature = "cuda"))]
 pub fn cuda_goldilocks_add(_lhs: &[u64], _rhs: &[u64]) -> Result<Vec<u64>, AccelError> {
     Err(AccelError::CudaUnavailable)
@@ -533,5 +577,13 @@ pub fn cuda_poseidon2_width8(_values: &[u64]) -> Result<Vec<u64>, AccelError> {
 
 #[cfg(not(feature = "cuda"))]
 pub fn cuda_poseidon2_width16(_values: &[u64]) -> Result<Vec<u64>, AccelError> {
+    Err(AccelError::CudaUnavailable)
+}
+
+#[cfg(not(feature = "cuda"))]
+pub fn cuda_keccak256_fixed(
+    _input: &[u8],
+    _message_len: usize,
+) -> Result<Vec<[u8; 32]>, AccelError> {
     Err(AccelError::CudaUnavailable)
 }
