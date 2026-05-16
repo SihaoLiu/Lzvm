@@ -38,6 +38,21 @@ fn encodes_and_parses_trace_bundles() {
 }
 
 #[test]
+fn encodes_trace_bundle_units_in_index_order() {
+    let ordered = sample_bundle();
+    let reversed = TraceBundle {
+        units: ordered.units.iter().cloned().rev().collect(),
+    };
+
+    let ordered_bytes = encode_trace_bundle(&ordered).expect("ordered bundle should encode");
+    let reversed_bytes = encode_trace_bundle(&reversed).expect("reversed bundle should encode");
+    let parsed_reversed = parse_trace_bundle(&reversed_bytes).expect("bundle should parse");
+
+    assert_eq!(reversed_bytes, ordered_bytes);
+    assert_eq!(parsed_reversed, ordered);
+}
+
+#[test]
 fn reads_trace_bundle_files() {
     let dir = temp_dir("read-file");
     let _ = fs::remove_dir_all(&dir);

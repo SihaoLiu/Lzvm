@@ -89,8 +89,10 @@ pub fn encode_trace_bundle(value: &TraceBundle) -> Result<Vec<u8>, TraceBundleEr
     }
 
     let mut seen = BTreeSet::new();
+    let mut units = value.units.iter().collect::<Vec<_>>();
+    units.sort_by_key(|unit| unit.unit_index);
     let mut sections = Vec::with_capacity(value.units.len());
-    for unit in &value.units {
+    for unit in units {
         if unit.trace_bytes.is_empty() {
             return Err(TraceBundleError::EmptyTraceBytes {
                 unit_index: unit.unit_index,
@@ -139,6 +141,7 @@ pub fn parse_trace_bundle(bytes: &[u8]) -> Result<TraceBundle, TraceBundleError>
             trace_bytes: section.data,
         });
     }
+    units.sort_by_key(|unit| unit.unit_index);
 
     Ok(TraceBundle { units })
 }
