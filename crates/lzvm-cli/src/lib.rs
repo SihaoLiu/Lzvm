@@ -2,6 +2,7 @@ use std::io::Write;
 use std::path::Path;
 
 use lzvm_artifacts::program_image::ProgramImageGpuMode;
+use lzvm_artifacts::trace_bundle::{encode_trace_bundle, TraceBundle, TraceBundleUnit};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_prover::derive_prove_schedule_from_directory;
 use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
@@ -23,6 +24,9 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
         ["prove", "plan", rest @ ..] => prove_plan::run(rest, stdout, stderr),
         ["prove", "schedule", setup_dir] => prove_schedule(setup_dir, stdout, stderr),
         ["prove", "schedule", ..] => write_prove_schedule_usage(stderr),
+        ["prove", "write-trace-bundle", out_bundle, unit_args @ ..] => {
+            write_trace_bundle(out_bundle, unit_args, stdout, stderr)
+        }
         ["prove", "witness", rest @ ..] => prove_witness::run(rest, stdout, stderr),
         ["prove", rest @ ..] => prove_witness::run(rest, stdout, stderr),
         ["verify", "setup-preflight", setup_dir, proof_bin, public_values_path] => {
@@ -330,6 +334,76 @@ fn prove_schedule(setup_dir: &str, stdout: &mut dyn Write, stderr: &mut dyn Writ
         schedule.max_extended_domain_bits
     );
     let _ = writeln!(stdout, "setup_hash={}", format_hash(&schedule.setup_hash));
+    0
+}
+
+fn write_trace_bundle(
+    out_bundle: &str,
+    unit_args: &[&str],
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    if unit_args.is_empty() || !unit_args.len().is_multiple_of(2) {
+        return write_trace_bundle_usage(stderr);
+    }
+
+    let mut units = Vec::with_capacity(unit_args.len() / 2);
+    for pair in unit_args.chunks_exact(2) {
+        let Some(unit_index) =
+            parse_u32_arg(pair[0], "unit index", "prove trace bundle write", stderr)
+        else {
+            return 1;
+        };
+        let trace_bytes = match std::fs::read(pair[1]) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let _ = writeln!(
+                    stderr,
+                    "prove trace bundle write failed: read trace bytes failed: {}: {error}",
+                    pair[1]
+                );
+                return 1;
+            }
+        };
+        units.push(TraceBundleUnit {
+            unit_index,
+            trace_bytes,
+        });
+    }
+
+    let bytes = match encode_trace_bundle(&TraceBundle { units }) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = writeln!(stderr, "prove trace bundle write failed: {error}");
+            return 1;
+        }
+    };
+    let output_path = Path::new(out_bundle);
+    if let Some(parent) = output_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            if let Err(error) = std::fs::create_dir_all(parent) {
+                let _ = writeln!(
+                    stderr,
+                    "prove trace bundle write failed: create output directory failed: {}: {error}",
+                    parent.display()
+                );
+                return 1;
+            }
+        }
+    }
+    if let Err(error) = std::fs::write(output_path, &bytes) {
+        let _ = writeln!(
+            stderr,
+            "prove trace bundle write failed: write output failed: {}: {error}",
+            output_path.display()
+        );
+        return 1;
+    }
+
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "units={}", unit_args.len() / 2);
+    let _ = writeln!(stdout, "bytes_written={}", bytes.len());
+    let _ = writeln!(stdout, "output={}", output_path.display());
     0
 }
 
@@ -908,6 +982,14 @@ fn write_verify_proof_usage(stderr: &mut dyn Write) -> i32 {
 
 fn write_prove_schedule_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(stderr, "usage: lzvm prove schedule <setup-dir>");
+    2
+}
+
+fn write_trace_bundle_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm prove write-trace-bundle <out-bundle> <unit-index> <trace-bin>..."
+    );
     2
 }
 
