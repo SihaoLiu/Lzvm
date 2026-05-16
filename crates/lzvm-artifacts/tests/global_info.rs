@@ -5,6 +5,8 @@ use lzvm_artifacts::global_info::{
 use std::fs;
 use std::path::PathBuf;
 
+mod fixtures;
+
 fn sample_global_info_json() -> &'static str {
     r#"{
         "name": "sample-program",
@@ -65,7 +67,7 @@ fn parses_global_info_json() {
 
 #[test]
 fn encodes_and_parses_global_info_binary() {
-    let info = parse_global_info_json(sample_global_info_json()).expect("fixture should parse");
+    let info = fixtures::sample_global_info_fixture();
     let bytes = encode_global_info(&info).expect("fixture should encode");
 
     let parsed = parse_global_info(&bytes).expect("binary fixture should parse");
@@ -152,7 +154,7 @@ fn rejects_invalid_transcript_arity() {
 
 #[test]
 fn reads_global_info_from_a_file_path() {
-    let info = parse_global_info_json(sample_global_info_json()).expect("fixture should parse");
+    let info = fixtures::sample_global_info_fixture();
     let bytes = encode_global_info(&info).expect("fixture should encode");
     let path = temp_file_path("global.bin");
     fs::write(&path, bytes).expect("fixture should be written");
@@ -166,7 +168,7 @@ fn reads_global_info_from_a_file_path() {
 #[test]
 fn rejects_text_global_info_from_a_file_path() {
     let path = temp_file_path("global.json");
-    fs::write(&path, sample_global_info_json()).expect("fixture should be written");
+    fs::write(&path, "not a binary file").expect("fixture should be written");
 
     let error = read_global_info_file(&path).expect_err("text metadata should be rejected");
     fs::remove_file(&path).expect("fixture should be removed");

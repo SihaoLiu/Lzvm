@@ -6,6 +6,8 @@ use lzvm_artifacts::setup_info::{
 use std::fs;
 use std::path::PathBuf;
 
+mod fixtures;
+
 fn push_u8(out: &mut Vec<u8>, value: u8) {
     out.push(value);
 }
@@ -469,7 +471,7 @@ fn reads_unit_setup_info_from_a_file_path() {
 #[test]
 fn rejects_text_unit_setup_info_from_a_file_path() {
     let path = temp_file_path("unit.json");
-    fs::write(&path, sample_setup_info_json()).expect("fixture should be written");
+    fs::write(&path, "not a binary file").expect("fixture should be written");
 
     let error = read_unit_setup_info_file(&path).expect_err("text metadata should be rejected");
     fs::remove_file(&path).expect("fixture should be removed");
@@ -528,8 +530,7 @@ fn parses_unit_setup_info_binary_without_commitment_columns() {
 
 #[test]
 fn encodes_unit_setup_info_to_the_canonical_binary_form() {
-    let info = parse_unit_setup_info_json(sample_setup_info_json_with_evaluation_map())
-        .expect("fixture should parse");
+    let info = fixtures::sample_setup_info_fixture_with_evaluation_map();
     let encoded = encode_unit_setup_info(&info).expect("fixture should encode");
 
     assert_eq!(encoded, sample_setup_info_binary_with_evaluation_map());

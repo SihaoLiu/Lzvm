@@ -10,12 +10,240 @@ use lzvm_artifacts::global_info::{
     AggregationType, CurveKind, GlobalAir, GlobalInfo, NamedStageValue, PublicValue,
 };
 use lzvm_artifacts::setup_info::{
-    Boundary, ConstantColumn, EvaluationMapEntry, FriStep, StarkStruct, UnitSetupInfo,
+    Boundary, CommitmentColumn, ConstantColumn, EvaluationMapEntry, EvaluationMapKind, FriStep,
+    StageValue, StarkStruct, UnitSetupInfo,
 };
 use lzvm_artifacts::verifier_info::{
     VerifierCode, VerifierDestination, VerifierInfo, VerifierOperand, VerifierOperation,
     VerifierOperationKind,
 };
+
+pub fn sample_setup_info_fixture() -> UnitSetupInfo {
+    UnitSetupInfo {
+        n_stages: 2,
+        n_constants: 5,
+        constant_columns: vec![
+            ConstantColumn {
+                name: "main.a".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 0,
+                stage_id: 0,
+                lengths: Vec::new(),
+            },
+            ConstantColumn {
+                name: "main.b".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 1,
+                stage_id: 1,
+                lengths: Vec::new(),
+            },
+            ConstantColumn {
+                name: "main.c".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 2,
+                stage_id: 2,
+                lengths: Vec::new(),
+            },
+            ConstantColumn {
+                name: "main.d".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 3,
+                stage_id: 3,
+                lengths: Vec::new(),
+            },
+            ConstantColumn {
+                name: "main.e".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 4,
+                stage_id: 4,
+                lengths: vec![5],
+            },
+        ],
+        n_publics: Some(3),
+        n_constraints: Some(8),
+        q_degree: 7,
+        opening_points: vec![0, 1, -1],
+        section_widths: BTreeMap::from([
+            ("const".to_owned(), 5),
+            ("cm1".to_owned(), 2),
+            ("cm2".to_owned(), 3),
+            ("cm3".to_owned(), 1),
+        ]),
+        challenge_count: 2,
+        eval_count: 3,
+        evaluation_map: vec![EvaluationMapEntry::default(); 3],
+        boundaries: vec![
+            Boundary {
+                name: Some("first".to_owned()),
+                offset_min: Some(0),
+                offset_max: Some(3),
+            },
+            Boundary {
+                name: None,
+                offset_min: Some(-1),
+                offset_max: None,
+            },
+        ],
+        commitment_columns: vec![
+            CommitmentColumn {
+                name: "trace.a".to_owned(),
+                stage: 1,
+                dimension: 1,
+                pols_map_id: 0,
+                stage_id: 0,
+                stage_position: 0,
+                intermediate: false,
+                lengths: Vec::new(),
+            },
+            CommitmentColumn {
+                name: "aux.a".to_owned(),
+                stage: 2,
+                dimension: 3,
+                pols_map_id: 1,
+                stage_id: 0,
+                stage_position: 0,
+                intermediate: false,
+                lengths: Vec::new(),
+            },
+        ],
+        unit_value_map: vec![
+            StageValue {
+                name: "unit.alpha".to_owned(),
+                stage: 1,
+                lengths: vec![2],
+            },
+            StageValue {
+                name: "unit.beta".to_owned(),
+                stage: 2,
+                lengths: Vec::new(),
+            },
+        ],
+        group_value_map: vec![StageValue {
+            name: "group.alpha".to_owned(),
+            stage: 2,
+            lengths: Vec::new(),
+        }],
+        stark: StarkStruct {
+            n_bits: 10,
+            n_bits_ext: 13,
+            n_queries: 4,
+            steps: vec![
+                FriStep { n_bits: 13 },
+                FriStep { n_bits: 9 },
+                FriStep { n_bits: 5 },
+            ],
+            hash_commits: true,
+            last_level_verification: 2,
+            pow_bits: 20,
+            merkle_tree_arity: 4,
+            verification_hash_type: Some("GL".to_owned()),
+            transcript_arity: Some(4),
+            merkle_tree_custom: Some(true),
+        },
+    }
+}
+
+pub fn sample_setup_info_fixture_with_evaluation_map() -> UnitSetupInfo {
+    let mut setup = sample_setup_info_fixture();
+    setup.evaluation_map = vec![
+        EvaluationMapEntry {
+            kind: EvaluationMapKind::Constant,
+            id: 2,
+            prime: 0,
+            opening_position: 0,
+            commit_id: None,
+        },
+        EvaluationMapEntry {
+            kind: EvaluationMapKind::Commitment,
+            id: 1,
+            prime: 1,
+            opening_position: 1,
+            commit_id: None,
+        },
+        EvaluationMapEntry {
+            kind: EvaluationMapKind::Custom,
+            id: 7,
+            prime: -1,
+            opening_position: 2,
+            commit_id: Some(3),
+        },
+    ];
+    setup
+}
+
+pub fn sample_global_info_fixture() -> GlobalInfo {
+    GlobalInfo {
+        name: "sample-program".to_owned(),
+        air_groups: vec!["group-a".to_owned(), "group-b".to_owned()],
+        airs: vec![
+            vec![
+                GlobalAir {
+                    name: "unit-a".to_owned(),
+                    num_rows: 1024,
+                    has_compressor: false,
+                },
+                GlobalAir {
+                    name: "unit-b".to_owned(),
+                    num_rows: 2048,
+                    has_compressor: true,
+                },
+            ],
+            vec![GlobalAir {
+                name: "unit-c".to_owned(),
+                num_rows: 4096,
+                has_compressor: false,
+            }],
+        ],
+        curve: CurveKind::None,
+        lattice_size: Some(368),
+        aggregation_types: vec![
+            vec![
+                AggregationType {
+                    aggregation_type: 0,
+                },
+                AggregationType {
+                    aggregation_type: 2,
+                },
+            ],
+            Vec::new(),
+        ],
+        n_publics: 2,
+        num_challenges: vec![1, 2, 3],
+        num_proof_values: vec![1, 1],
+        proof_values_map: vec![
+            NamedStageValue {
+                name: "proof-a".to_owned(),
+                stage: 1,
+                id: None,
+                lengths: Vec::new(),
+            },
+            NamedStageValue {
+                name: "proof-b".to_owned(),
+                stage: 2,
+                id: None,
+                lengths: Vec::new(),
+            },
+        ],
+        publics_map: vec![
+            PublicValue {
+                name: "public-a".to_owned(),
+                stage: 1,
+                lengths: Vec::new(),
+            },
+            PublicValue {
+                name: "public-b".to_owned(),
+                stage: 1,
+                lengths: vec![2, 3],
+            },
+        ],
+        transcript_arity: 4,
+    }
+}
 
 pub fn sample_constant_tree_setup_info() -> UnitSetupInfo {
     UnitSetupInfo {
