@@ -5,48 +5,14 @@ use lzvm_artifacts::constant_tree::{parse_constant_tree_bytes, read_constant_tre
 use lzvm_artifacts::fixed::{
     encode_fixed_columns, read_raw_fixed_column_file, FixedColumn, FixedColumns,
 };
-use lzvm_artifacts::setup_info::{encode_unit_setup_info, parse_unit_setup_info_json};
+use lzvm_artifacts::setup_info::encode_unit_setup_info;
+mod fixtures;
+
+use fixtures::sample_two_column_setup_info;
 use lzvm_setup::{
     build_constant_tree_from_fixed_columns, write_base_native_files,
     write_fixed_columns_native_file, BaseNativeWriteReport, FixedExtensionBackend,
 };
-
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 1,
-        "nConstants": 2,
-        "qDeg": 3,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 2,
-            "cm1": 1,
-            "cm2": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.left", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.right", "dim": 1, "polsMapId": 1, "stageId": 1}
-        ],
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 2,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 0,
-            "merkleTreeArity": 4,
-            "verificationHashType": "GL",
-            "transcriptArity": 4,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
 
 fn sample_columns() -> FixedColumns {
     FixedColumns {
@@ -91,7 +57,7 @@ fn writes_fixed_and_base_native_files() {
     let base_fixed_path = dir.join("base.const");
     let tree_path = dir.join("base.consttree");
 
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = sample_two_column_setup_info(1, 2, 2, 4);
     let columns = sample_columns();
     write_bytes(
         &setup_path,

@@ -1,49 +1,14 @@
 use lzvm_artifacts::fixed::{FixedColumn, FixedColumns};
-use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
 use lzvm_field::{Felt, FieldError, MODULUS, SHIFT};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod fixtures;
+
+use fixtures::sample_two_column_setup_info;
 use lzvm_setup::{extend_fixed_columns_for_constant_tree, write_constant_tree_leaves, SetupError};
 #[cfg(feature = "cuda")]
 use lzvm_setup::{extend_fixed_columns_for_constant_tree_with_backend, FixedExtensionBackend};
-
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 1,
-        "nConstants": 2,
-        "qDeg": 3,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 2,
-            "cm1": 1,
-            "cm2": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.left", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.right", "dim": 1, "polsMapId": 1, "stageId": 1}
-        ],
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 2,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 0,
-            "merkleTreeArity": 2,
-            "verificationHashType": "GL",
-            "transcriptArity": 2,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
 
 fn sample_columns() -> FixedColumns {
     FixedColumns {
@@ -90,7 +55,7 @@ fn staging_entries(parent: &Path) -> Vec<PathBuf> {
 
 #[test]
 fn extends_fixed_columns_into_row_major_constant_tree_leaves() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = sample_two_column_setup_info(1, 2, 2, 2);
     let root = Felt::root_of_unity(2).expect("root should exist");
     let two = Felt::from_u64(2);
     let three = Felt::from_u64(3);
@@ -124,7 +89,7 @@ fn extends_fixed_columns_into_row_major_constant_tree_leaves() {
 #[test]
 #[cfg(feature = "cuda")]
 fn cuda_backend_matches_cpu_fixed_column_extension() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = sample_two_column_setup_info(1, 2, 2, 2);
     let expected = extend_fixed_columns_for_constant_tree(&sample_columns(), &setup)
         .expect("cpu extension should succeed");
 
@@ -140,7 +105,7 @@ fn cuda_backend_matches_cpu_fixed_column_extension() {
 
 #[test]
 fn rejects_non_canonical_fixed_values_before_extension() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = sample_two_column_setup_info(1, 2, 2, 2);
     let mut columns = sample_columns();
     columns.columns[0].values[0] = MODULUS;
 
@@ -155,7 +120,7 @@ fn writes_extended_leaves_through_validated_staging() {
     let dir = temp_dir("write-leaves");
     let _ = fs::remove_dir_all(&dir);
     let path = dir.join("base").join("unit-a.constleaves");
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = sample_two_column_setup_info(1, 2, 2, 2);
 
     let report =
         write_constant_tree_leaves(&path, &sample_columns(), &setup).expect("write should succeed");
@@ -183,7 +148,7 @@ fn preserves_existing_extended_leaves_when_generation_fails() {
     fs::create_dir_all(path.parent().expect("path should have a parent"))
         .expect("fixture directory should be created");
     fs::write(&path, b"stable-output").expect("stable fixture should be written");
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = sample_two_column_setup_info(1, 2, 2, 2);
     let mut columns = sample_columns();
     columns.columns[0].values[0] = MODULUS;
 

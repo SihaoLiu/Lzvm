@@ -17,6 +17,3 @@ cuda = ["dep:lzvm-accel", "lzvm-accel/cuda"]
 lzvm-accel = { path = "../lzvm-accel", optional = true }
 lzvm-artifacts = { path = "../lzvm-artifacts", default-features = false }
 lzvm-field = { path = "../lzvm-field" }
-
-[dev-dependencies]
-lzvm-artifacts = { path = "../lzvm-artifacts", features = ["json"] }

@@ -3,53 +3,19 @@ use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::constant_tree::{parse_constant_tree_bytes, read_constant_tree_file};
 use lzvm_artifacts::fixed::{encode_fixed_columns, FixedColumn, FixedColumns};
-use lzvm_artifacts::setup_info::{encode_unit_setup_info, parse_unit_setup_info_json};
+use lzvm_artifacts::setup_info::encode_unit_setup_info;
 use lzvm_artifacts::verification_key::{
     encode_verification_key_binary, read_verification_key_binary_file,
 };
+mod fixtures;
+
+use fixtures::sample_two_column_setup_info;
 use lzvm_setup::{
     build_constant_tree_from_fixed_columns, write_constant_tree_file,
     write_constant_tree_leaves_file, write_constant_tree_native_file,
     write_verification_key_native_file, ConstantTreeLeavesWriteReport, ConstantTreeWriteReport,
     FixedExtensionBackend, VerificationKeyWriteReport,
 };
-
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 1,
-        "nConstants": 2,
-        "qDeg": 3,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 2,
-            "cm1": 1,
-            "cm2": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.left", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.right", "dim": 1, "polsMapId": 1, "stageId": 1}
-        ],
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 2,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 0,
-            "merkleTreeArity": 2,
-            "verificationHashType": "GL",
-            "transcriptArity": 2,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
 
 fn sample_columns() -> FixedColumns {
     FixedColumns {
@@ -97,7 +63,7 @@ fn writes_constant_tree_files_and_verification_key_from_paths() {
     let checked_tree_path = dir.join("unit.checked.consttree");
     let key_path = dir.join("unit.verkey.bin");
 
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = sample_two_column_setup_info(1, 2, 2, 2);
     let columns = sample_columns();
     let expected_tree =
         build_constant_tree_from_fixed_columns(&columns, &setup).expect("tree should build");

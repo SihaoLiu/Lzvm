@@ -1,9 +1,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod fixtures;
+
+use fixtures::sample_two_column_setup_info;
+#[cfg(feature = "cuda")]
+use fixtures::sample_wide_setup_info;
 use lzvm_artifacts::constant_tree::read_constant_tree_file;
 use lzvm_artifacts::fixed::{FixedColumn, FixedColumns};
-use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt};
 use lzvm_setup::{
@@ -15,43 +19,6 @@ use lzvm_setup::{
     build_constant_tree_from_leaves, build_constant_tree_from_leaves_with_backend,
     FixedExtensionBackend,
 };
-
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 1,
-        "nConstants": 2,
-        "qDeg": 3,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 2,
-            "cm1": 1,
-            "cm2": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.left", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.right", "dim": 1, "polsMapId": 1, "stageId": 1}
-        ],
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 2,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 0,
-            "merkleTreeArity": 2,
-            "verificationHashType": "GL",
-            "transcriptArity": 2,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
 
 fn sample_columns() -> FixedColumns {
     FixedColumns {
@@ -71,47 +38,6 @@ fn sample_columns() -> FixedColumns {
             },
         ],
     }
-}
-
-#[cfg(feature = "cuda")]
-fn sample_wide_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 1,
-        "nConstants": 5,
-        "qDeg": 3,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 5,
-            "cm1": 1,
-            "cm2": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.c0", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.c1", "dim": 1, "polsMapId": 1, "stageId": 1},
-            {"stage": 0, "name": "main.c2", "dim": 1, "polsMapId": 2, "stageId": 2},
-            {"stage": 0, "name": "main.c3", "dim": 1, "polsMapId": 3, "stageId": 3},
-            {"stage": 0, "name": "main.c4", "dim": 1, "polsMapId": 4, "stageId": 4}
-        ],
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 2,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 0,
-            "merkleTreeArity": 2,
-            "verificationHashType": "GL",
-            "transcriptArity": 2,
-            "merkleTreeCustom": true
-        }
-    }"#
 }
 
 #[cfg(feature = "cuda")]
@@ -241,7 +167,7 @@ fn manual_expected_tree_words_arity4(leaves: &[u8]) -> Vec<u64> {
 
 #[test]
 fn builds_native_constant_tree_from_fixed_columns() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = sample_two_column_setup_info(1, 2, 2, 2);
     let leaves = extend_fixed_columns_for_constant_tree(&sample_columns(), &setup)
         .expect("leaves should extend");
 
@@ -263,7 +189,7 @@ fn writes_native_constant_tree_through_validated_staging() {
     let dir = temp_dir("write-tree");
     let _ = fs::remove_dir_all(&dir);
     let path = dir.join("base").join("unit-a.consttree");
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = sample_two_column_setup_info(1, 2, 2, 2);
 
     let report = write_constant_tree_from_fixed_columns(&path, &sample_columns(), &setup)
         .expect("tree write should succeed");
@@ -287,10 +213,7 @@ fn writes_native_constant_tree_through_validated_staging() {
 
 #[test]
 fn builds_native_arity_4_constant_tree_from_fixed_columns() {
-    let setup_json = sample_setup_info_json()
-        .replace("\"merkleTreeArity\": 2", "\"merkleTreeArity\": 4")
-        .replace("\"transcriptArity\": 2", "\"transcriptArity\": 4");
-    let setup = parse_unit_setup_info_json(&setup_json).expect("setup should parse");
+    let setup = sample_two_column_setup_info(1, 2, 2, 4);
     let leaves = extend_fixed_columns_for_constant_tree(&sample_columns(), &setup)
         .expect("leaves should extend");
 
@@ -310,7 +233,7 @@ fn builds_native_arity_4_constant_tree_from_fixed_columns() {
 #[test]
 #[cfg(feature = "cuda")]
 fn builds_native_constant_tree_from_leaves_with_cuda_backend() {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = sample_two_column_setup_info(1, 2, 2, 2);
     let leaves = extend_fixed_columns_for_constant_tree(&sample_columns(), &setup)
         .expect("leaves should extend");
     let expected = build_constant_tree_from_leaves(&leaves, &setup).expect("cpu tree should build");
@@ -325,10 +248,7 @@ fn builds_native_constant_tree_from_leaves_with_cuda_backend() {
 #[test]
 #[cfg(feature = "cuda")]
 fn builds_native_arity_4_constant_tree_from_leaves_with_cuda_backend() {
-    let setup_json = sample_setup_info_json()
-        .replace("\"merkleTreeArity\": 2", "\"merkleTreeArity\": 4")
-        .replace("\"transcriptArity\": 2", "\"transcriptArity\": 4");
-    let setup = parse_unit_setup_info_json(&setup_json).expect("setup should parse");
+    let setup = sample_two_column_setup_info(1, 2, 2, 4);
     let leaves = extend_fixed_columns_for_constant_tree(&sample_columns(), &setup)
         .expect("leaves should extend");
     let expected = build_constant_tree_from_leaves(&leaves, &setup).expect("cpu tree should build");
@@ -343,8 +263,7 @@ fn builds_native_arity_4_constant_tree_from_leaves_with_cuda_backend() {
 #[test]
 #[cfg(feature = "cuda")]
 fn builds_wide_native_constant_tree_from_leaves_with_cuda_backend() {
-    let setup =
-        parse_unit_setup_info_json(sample_wide_setup_info_json()).expect("setup should parse");
+    let setup = sample_wide_setup_info(2);
     let leaves = extend_fixed_columns_for_constant_tree(&sample_wide_columns(), &setup)
         .expect("leaves should extend");
     let expected = build_constant_tree_from_leaves(&leaves, &setup).expect("cpu tree should build");
@@ -359,10 +278,7 @@ fn builds_wide_native_constant_tree_from_leaves_with_cuda_backend() {
 #[test]
 #[cfg(feature = "cuda")]
 fn builds_wide_native_arity_4_constant_tree_from_leaves_with_cuda_backend() {
-    let setup_json = sample_wide_setup_info_json()
-        .replace("\"merkleTreeArity\": 2", "\"merkleTreeArity\": 4")
-        .replace("\"transcriptArity\": 2", "\"transcriptArity\": 4");
-    let setup = parse_unit_setup_info_json(&setup_json).expect("setup should parse");
+    let setup = sample_wide_setup_info(4);
     let leaves = extend_fixed_columns_for_constant_tree(&sample_wide_columns(), &setup)
         .expect("leaves should extend");
     let expected = build_constant_tree_from_leaves(&leaves, &setup).expect("cpu tree should build");

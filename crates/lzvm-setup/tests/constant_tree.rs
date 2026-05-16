@@ -1,46 +1,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod fixtures;
+
+use fixtures::sample_constant_tree_setup_info;
 use lzvm_artifacts::constant_tree::read_constant_tree_file;
-use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_setup::{write_base_constant_tree, SetupError};
-
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 2,
-        "nConstants": 1,
-        "nPublics": 0,
-        "nConstraints": 0,
-        "qDeg": 7,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 1,
-            "cm1": 1,
-            "cm2": 1,
-            "cm3": 1
-        },
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 1,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 1,
-            "powBits": 1,
-            "merkleTreeArity": 2,
-            "verificationHashType": "GL",
-            "transcriptArity": 2,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
 
 fn sample_root() -> VerificationKeyRoot {
     VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4])
@@ -76,7 +42,7 @@ fn writes_base_constant_tree_through_validated_staging() {
     let dir = temp_dir("write-tree");
     let _ = fs::remove_dir_all(&dir);
     let path = dir.join("base").join("unit-a.consttree");
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = sample_constant_tree_setup_info();
     let expected_root = sample_root();
 
     let report =
@@ -101,7 +67,7 @@ fn preserves_existing_constant_tree_when_root_validation_fails() {
     fs::create_dir_all(path.parent().expect("path should have a parent"))
         .expect("fixture directory should be created");
     fs::write(&path, b"stable-output").expect("stable fixture should be written");
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = sample_constant_tree_setup_info();
     let expected_root = VerificationKeyRoot::FieldElements(vec![9, 9, 9, 9]);
 
     let result =

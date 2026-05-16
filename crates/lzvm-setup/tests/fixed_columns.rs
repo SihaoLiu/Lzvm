@@ -2,45 +2,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::fixed::{read_raw_fixed_column_file, FixedColumn, FixedColumns};
-use lzvm_artifacts::setup_info::parse_unit_setup_info_json;
-use lzvm_setup::write_base_fixed_columns;
+mod fixtures;
 
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 1,
-        "nConstants": 2,
-        "qDeg": 3,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 2,
-            "cm1": 1,
-            "cm2": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.left", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.right", "dim": 1, "polsMapId": 1, "stageId": 1}
-        ],
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 2,
-            "nBitsExt": 3,
-            "nQueries": 2,
-            "steps": [
-                {"nBits": 3},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 0,
-            "merkleTreeArity": 4,
-            "verificationHashType": "GL",
-            "transcriptArity": 4,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
+use fixtures::sample_two_column_setup_info;
+use lzvm_setup::write_base_fixed_columns;
 
 fn sample_columns() -> FixedColumns {
     FixedColumns {
@@ -83,7 +48,7 @@ fn writes_base_fixed_columns_through_validated_staging() {
     let dir = temp_dir("write-fixed");
     let _ = fs::remove_dir_all(&dir);
     let path = dir.join("base").join("unit-a.const");
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = sample_two_column_setup_info(2, 3, 2, 4);
 
     let report =
         write_base_fixed_columns(&path, &sample_columns(), &setup).expect("write should succeed");
@@ -109,7 +74,7 @@ fn preserves_existing_output_when_generation_fails() {
     fs::create_dir_all(path.parent().expect("path should have a parent"))
         .expect("fixture directory should be created");
     fs::write(&path, b"stable-output").expect("stable fixture should be written");
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = sample_two_column_setup_info(2, 3, 2, 4);
     let mut columns = sample_columns();
     columns.columns.pop();
 

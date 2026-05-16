@@ -1,77 +1,22 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod fixtures;
+
+use fixtures::{sample_base_setup_info, sample_global_info};
 use lzvm_artifacts::constant_tree::parse_constant_tree_bytes;
 use lzvm_artifacts::fixed::{encode_raw_fixed_columns, FixedColumn, FixedColumns};
-use lzvm_artifacts::global_info::parse_global_info_json;
 use lzvm_artifacts::key_directory::{
     GlobalKeyPaths, KeyDirectoryLayout, KeyUnitKind, KeyUnitPaths,
 };
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, read_pcs_setup_material_file};
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, read_pcs_setup_plan_file};
-use lzvm_artifacts::setup_info::{
-    encode_unit_setup_info, parse_unit_setup_info_json, UnitSetupInfo,
-};
+use lzvm_artifacts::setup_info::{encode_unit_setup_info, UnitSetupInfo};
 use lzvm_setup::{
     build_constant_tree_from_fixed_columns, write_pcs_directory_from_layout,
     write_pcs_material_directory_from_layout, write_pcs_setup_material_file,
     write_pcs_setup_plan_file, PcsDirectoryWriteReport, PcsFileWriteReport,
 };
-
-fn sample_global_info_json() -> &'static str {
-    r#"{
-        "name": "sample-program",
-        "air_groups": ["group-a"],
-        "airs": [[{"name": "unit-a", "num_rows": 2}]],
-        "curve": "None",
-        "latticeSize": 368,
-        "aggTypes": [[]],
-        "nPublics": 0,
-        "numChallenges": [1],
-        "numProofValues": [],
-        "publicsMap": [],
-        "transcriptArity": 4
-    }"#
-}
-
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 1,
-        "nConstants": 2,
-        "nPublics": 0,
-        "nConstraints": 0,
-        "qDeg": 3,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 2,
-            "cm1": 1,
-            "cm2": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.left", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.right", "dim": 1, "polsMapId": 1, "stageId": 1}
-        ],
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 1,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 0,
-            "merkleTreeArity": 4,
-            "verificationHashType": "GL",
-            "transcriptArity": 4,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
 
 fn sample_columns() -> FixedColumns {
     FixedColumns {
@@ -104,8 +49,7 @@ fn one_unit_layout(root: &Path) -> KeyDirectoryLayout {
     let prefix = root.join("unit");
     KeyDirectoryLayout {
         root: root.to_path_buf(),
-        global_info: parse_global_info_json(sample_global_info_json())
-            .expect("global metadata should parse"),
+        global_info: sample_global_info(),
         global_paths: GlobalKeyPaths {
             info: root.join("pilout.globalInfo.bin"),
             constraints_program: root.join("pilout.globalConstraints.bin"),
@@ -146,7 +90,7 @@ fn writes_pcs_plan_and_material_from_layout() {
     let _ = fs::remove_dir_all(&dir);
     let layout = one_unit_layout(&dir);
     let unit = &layout.units[0];
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = sample_base_setup_info();
     let columns = sample_columns();
     let fixed = encode_raw_fixed_columns(&columns, &setup).expect("fixed columns should encode");
     let tree_bytes =
@@ -203,7 +147,7 @@ fn writes_pcs_plan_and_material_from_files() {
     let _ = fs::remove_dir_all(&dir);
     let layout = one_unit_layout(&dir);
     let unit = &layout.units[0];
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = sample_base_setup_info();
     let columns = sample_columns();
     let fixed = encode_raw_fixed_columns(&columns, &setup).expect("fixed columns should encode");
     let tree_bytes =
