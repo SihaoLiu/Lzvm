@@ -10,7 +10,7 @@ pub use crate::pcs_query_plan::{
     build_pcs_query_plan_segment_from_transcript_segments,
     build_pcs_query_plan_segment_with_bindings,
 };
-pub use crate::witness_commitment::build_witness_commitment_segment;
+pub use crate::witness_commitment::{build_witness_commitment_segment, ProveWitnessSegmentError};
 pub use crate::witness_opening::{
     build_witness_opening_segment, build_witness_opening_segment_batch,
 };

@@ -14,7 +14,6 @@ use lzvm_field::{DomainError, Felt, FieldError};
 use sha2::{Digest, Sha256};
 
 use crate::merkle_hash::{linear_hash, linear_hashes, parent_hash, parent_hashes, MerkleHashError};
-use crate::prove_witness::ProveWitnessSegmentError;
 use crate::witness_execution::ProveWitnessCommitments;
 use crate::witness_layout::{
     derive_witness_trace_layout, WitnessTraceLayoutError, WitnessTraceStageValues,
@@ -24,6 +23,36 @@ use crate::ProveUnitSchedule;
 
 const HASH_WORDS: usize = 4;
 const WORD_BYTES: usize = 8;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProveWitnessSegmentError {
+    LengthOverflow,
+    Segment(WitnessCommitmentSegmentError),
+}
+
+impl fmt::Display for ProveWitnessSegmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LengthOverflow => write!(f, "prove witness segment length overflow"),
+            Self::Segment(error) => write!(f, "prove witness segment encode failed: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for ProveWitnessSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Segment(error) => Some(error),
+            Self::LengthOverflow => None,
+        }
+    }
+}
+
+impl From<WitnessCommitmentSegmentError> for ProveWitnessSegmentError {
+    fn from(error: WitnessCommitmentSegmentError) -> Self {
+        Self::Segment(error)
+    }
+}
 
 pub fn build_witness_commitment_segment(
     output: &ProveWitnessCommitments,

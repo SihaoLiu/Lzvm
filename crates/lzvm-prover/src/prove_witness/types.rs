@@ -23,12 +23,6 @@ pub struct ProvePcsEvaluationValues {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProveWitnessSegmentError {
-    LengthOverflow,
-    Segment(WitnessCommitmentSegmentError),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProvePcsMaterialSegmentError {
     MissingMaterial {
         unit_index: usize,
@@ -137,15 +131,6 @@ pub enum ProveConstantOpeningSegmentError {
     },
     Opening(ConstantTreeOpeningError),
     Segment(ConstantOpeningSegmentError),
-}
-
-impl fmt::Display for ProveWitnessSegmentError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::LengthOverflow => write!(f, "prove witness segment length overflow"),
-            Self::Segment(error) => write!(f, "prove witness segment encode failed: {error}"),
-        }
-    }
 }
 
 impl fmt::Display for ProvePcsMaterialSegmentError {
@@ -318,15 +303,6 @@ impl fmt::Display for ProveConstantOpeningSegmentError {
     }
 }
 
-impl std::error::Error for ProveWitnessSegmentError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Segment(error) => Some(error),
-            Self::LengthOverflow => None,
-        }
-    }
-}
-
 impl std::error::Error for ProvePcsMaterialSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -392,12 +368,6 @@ impl std::error::Error for ProveConstantOpeningSegmentError {
             Self::Segment(error) => Some(error),
             Self::UnitIndexOutOfRange { .. } | Self::UnitIndexOverflow { .. } => None,
         }
-    }
-}
-
-impl From<WitnessCommitmentSegmentError> for ProveWitnessSegmentError {
-    fn from(error: WitnessCommitmentSegmentError) -> Self {
-        Self::Segment(error)
     }
 }
 
