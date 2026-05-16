@@ -64,6 +64,13 @@ fn assert_binary_add_name_plus_one(expression: &Expression, name: &str) {
     ));
 }
 
+fn assert_integer_expression(expression: &Expression, expected: &str) {
+    assert!(matches!(
+        &expression.kind,
+        ExpressionKind::Integer(value) if value == expected
+    ));
+}
+
 #[test]
 fn parses_static_include_directives() {
     let source =
@@ -747,6 +754,12 @@ fn parses_witness_column_declarations_with_array_items() {
             ..declarations[0].items[0].array_dims[0].end],
         "[2]"
     );
+    assert_integer_expression(
+        declarations[0].items[0].array_dim_expressions[0]
+            .as_ref()
+            .expect("array dimension expression should be recorded"),
+        "2",
+    );
     assert_eq!(declarations[0].items[1].name, "local");
     assert_eq!(declarations[0].items[1].array_dims.len(), 2);
     assert_eq!(
@@ -754,11 +767,18 @@ fn parses_witness_column_declarations_with_array_items() {
             ..declarations[0].items[1].array_dims[0].end],
         "[1]"
     );
+    assert_integer_expression(
+        declarations[0].items[1].array_dim_expressions[0]
+            .as_ref()
+            .expect("array dimension expression should be recorded"),
+        "1",
+    );
     assert_eq!(
         &source.contents[declarations[0].items[1].array_dims[1].start
             ..declarations[0].items[1].array_dims[1].end],
         "[]"
     );
+    assert!(declarations[0].items[1].array_dim_expressions[1].is_none());
 }
 
 #[test]

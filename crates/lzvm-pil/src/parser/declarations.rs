@@ -902,6 +902,7 @@ fn parse_column_item(
 ) -> Result<(ColumnItem, usize), ParseError> {
     let parsed = parse_column_name_reference(tokens, index, source)?;
     let mut array_dims = Vec::new();
+    let mut array_dim_expressions = Vec::new();
     let mut cursor = parsed.next_index;
 
     while tokens
@@ -909,7 +910,13 @@ fn parse_column_item(
         .is_some_and(|token| token.kind == TokenKind::LBracket)
     {
         let (span, next) = parse_delimited_span(tokens, cursor, source)?;
+        let expression = if cursor + 1 < next.saturating_sub(1) {
+            parse_expression_range_best_effort(tokens, cursor + 1, next - 1, source)
+        } else {
+            None
+        };
         array_dims.push(span);
+        array_dim_expressions.push(expression);
         cursor = next;
     }
 
@@ -918,6 +925,7 @@ fn parse_column_item(
             name: parsed.name,
             template: parsed.template,
             array_dims,
+            array_dim_expressions,
         },
         cursor,
     ))

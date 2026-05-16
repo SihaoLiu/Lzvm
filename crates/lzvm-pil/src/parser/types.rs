@@ -259,6 +259,7 @@ pub struct ColumnItem {
     pub name: String,
     pub template: bool,
     pub array_dims: Vec<SourceSpan>,
+    pub array_dim_expressions: Vec<Option<Expression>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
