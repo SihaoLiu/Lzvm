@@ -1,58 +1,31 @@
-use std::{fmt, thread};
+mod errors;
+mod values;
+
+pub use errors::*;
+pub use values::*;
+
+use std::thread;
 
 #[cfg(feature = "cuda")]
 use lzvm_accel::cuda_goldilocks_coset_extend;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
     encode_witness_commitment_segment, parse_witness_commitment_segment, WitnessCommitmentSegment,
-    WitnessCommitmentSegmentError, WitnessCommitmentStageSegment,
-    WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+    WitnessCommitmentStageSegment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 #[cfg(not(feature = "cuda"))]
 use lzvm_field::coset_extend_evaluations;
-use lzvm_field::{DomainError, Felt, FieldError};
+use lzvm_field::Felt;
 use sha2::{Digest, Sha256};
 
-use crate::merkle_hash::{linear_hash, linear_hashes, parent_hash, parent_hashes, MerkleHashError};
+use crate::merkle_hash::{linear_hash, linear_hashes, parent_hash, parent_hashes};
 use crate::witness_execution::ProveWitnessCommitments;
-use crate::witness_layout::{
-    derive_witness_trace_layout, WitnessTraceLayoutError, WitnessTraceStageValues,
-};
+use crate::witness_layout::{derive_witness_trace_layout, WitnessTraceStageValues};
 use crate::witness_trace::WitnessTraceBuffer;
 use crate::ProveUnitSchedule;
 
 const HASH_WORDS: usize = 4;
 const WORD_BYTES: usize = 8;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProveWitnessSegmentError {
-    LengthOverflow,
-    Segment(WitnessCommitmentSegmentError),
-}
-
-impl fmt::Display for ProveWitnessSegmentError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::LengthOverflow => write!(f, "prove witness segment length overflow"),
-            Self::Segment(error) => write!(f, "prove witness segment encode failed: {error}"),
-        }
-    }
-}
-
-impl std::error::Error for ProveWitnessSegmentError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Segment(error) => Some(error),
-            Self::LengthOverflow => None,
-        }
-    }
-}
-
-impl From<WitnessCommitmentSegmentError> for ProveWitnessSegmentError {
-    fn from(error: WitnessCommitmentSegmentError) -> Self {
-        Self::Segment(error)
-    }
-}
 
 pub fn build_witness_commitment_segment(
     output: &ProveWitnessCommitments,
@@ -93,497 +66,6 @@ pub fn build_witness_commitment_segment(
         id,
         data: encode_witness_commitment_segment(&segment)?,
     })
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WitnessStageLeaves {
-    stage_index: usize,
-    source_rows: usize,
-    extended_rows: usize,
-    columns: usize,
-    bytes: Vec<u8>,
-}
-
-impl WitnessStageLeaves {
-    pub fn stage_index(&self) -> usize {
-        self.stage_index
-    }
-
-    pub fn source_row_count(&self) -> usize {
-        self.source_rows
-    }
-
-    pub fn extended_row_count(&self) -> usize {
-        self.extended_rows
-    }
-
-    pub fn column_count(&self) -> usize {
-        self.columns
-    }
-
-    pub fn bytes(&self) -> &[u8] {
-        &self.bytes
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WitnessStageLeafError {
-    Domain(DomainError),
-    Field(FieldError),
-    #[cfg(feature = "cuda")]
-    Accel(lzvm_accel::AccelError),
-    LengthOverflow,
-}
-
-impl fmt::Display for WitnessStageLeafError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Domain(error) => write!(f, "witness stage leaf domain error: {error}"),
-            Self::Field(error) => write!(f, "witness stage leaf field error: {error}"),
-            #[cfg(feature = "cuda")]
-            Self::Accel(error) => write!(f, "witness stage leaf cuda error: {error}"),
-            Self::LengthOverflow => write!(f, "witness stage leaf length overflow"),
-        }
-    }
-}
-
-impl std::error::Error for WitnessStageLeafError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Domain(error) => Some(error),
-            Self::Field(error) => Some(error),
-            #[cfg(feature = "cuda")]
-            Self::Accel(error) => Some(error),
-            Self::LengthOverflow => None,
-        }
-    }
-}
-
-impl From<DomainError> for WitnessStageLeafError {
-    fn from(error: DomainError) -> Self {
-        Self::Domain(error)
-    }
-}
-
-impl From<FieldError> for WitnessStageLeafError {
-    fn from(error: FieldError) -> Self {
-        Self::Field(error)
-    }
-}
-
-#[cfg(feature = "cuda")]
-impl From<lzvm_accel::AccelError> for WitnessStageLeafError {
-    fn from(error: lzvm_accel::AccelError) -> Self {
-        Self::Accel(error)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WitnessStageCommitment {
-    stage_index: usize,
-    arity: usize,
-    root: [Felt; HASH_WORDS],
-    tree_bytes: Vec<u8>,
-}
-
-impl WitnessStageCommitment {
-    pub fn stage_index(&self) -> usize {
-        self.stage_index
-    }
-
-    pub fn arity(&self) -> usize {
-        self.arity
-    }
-
-    pub fn root(&self) -> [Felt; HASH_WORDS] {
-        self.root
-    }
-
-    pub fn tree_bytes(&self) -> &[u8] {
-        &self.tree_bytes
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WitnessStageOpening {
-    row_index: u64,
-    values: Vec<Felt>,
-    siblings: Vec<Vec<[Felt; HASH_WORDS]>>,
-}
-
-impl WitnessStageOpening {
-    pub fn new(
-        row_index: u64,
-        values: Vec<Felt>,
-        siblings: Vec<Vec<[Felt; HASH_WORDS]>>,
-    ) -> Result<Self, WitnessStageOpeningError> {
-        if values.is_empty() {
-            return Err(WitnessStageOpeningError::EmptyValues);
-        }
-        Ok(Self {
-            row_index,
-            values,
-            siblings,
-        })
-    }
-
-    pub fn row_index(&self) -> u64 {
-        self.row_index
-    }
-
-    pub fn values(&self) -> &[Felt] {
-        &self.values
-    }
-
-    pub fn siblings(&self) -> &[Vec<[Felt; HASH_WORDS]>] {
-        &self.siblings
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WitnessStageCommitmentError {
-    Field(FieldError),
-    InvalidLeafByteLength { expected: usize, found: usize },
-    UnsupportedArity { arity: usize },
-    EmptyStage,
-    LengthOverflow,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WitnessStageOpeningError {
-    Field(FieldError),
-    Commitment(WitnessStageCommitmentError),
-    RowOutOfRange { row_index: u64, row_count: u64 },
-    ZeroRows,
-    ZeroColumns,
-    EmptyValues,
-    InvalidTreeByteLength { expected: usize, found: usize },
-    InvalidSiblingCount { expected: usize, found: usize },
-    LengthOverflow,
-}
-
-impl fmt::Display for WitnessStageCommitmentError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Field(error) => write!(f, "witness stage commitment field error: {error}"),
-            Self::InvalidLeafByteLength { expected, found } => write!(
-                f,
-                "invalid witness stage leaf byte length: expected {expected}, found {found}"
-            ),
-            Self::UnsupportedArity { arity } => {
-                write!(f, "unsupported witness stage commitment arity: {arity}")
-            }
-            Self::EmptyStage => write!(f, "witness stage commitment has no rows"),
-            Self::LengthOverflow => write!(f, "witness stage commitment length overflow"),
-        }
-    }
-}
-
-impl fmt::Display for WitnessStageOpeningError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Field(error) => write!(f, "witness stage opening field error: {error}"),
-            Self::Commitment(error) => write!(f, "witness stage opening commitment error: {error}"),
-            Self::RowOutOfRange {
-                row_index,
-                row_count,
-            } => write!(
-                f,
-                "witness stage opening row index {row_index} is outside row count {row_count}"
-            ),
-            Self::ZeroRows => write!(f, "witness stage opening has no rows"),
-            Self::ZeroColumns => write!(f, "witness stage opening has no columns"),
-            Self::EmptyValues => write!(f, "witness stage opening has no values"),
-            Self::InvalidTreeByteLength { expected, found } => write!(
-                f,
-                "invalid witness stage opening tree byte length: expected {expected}, found {found}"
-            ),
-            Self::InvalidSiblingCount { expected, found } => write!(
-                f,
-                "invalid witness stage opening sibling count: expected {expected}, found {found}"
-            ),
-            Self::LengthOverflow => write!(f, "witness stage opening length overflow"),
-        }
-    }
-}
-
-impl std::error::Error for WitnessStageCommitmentError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Field(error) => Some(error),
-            Self::InvalidLeafByteLength { .. }
-            | Self::UnsupportedArity { .. }
-            | Self::EmptyStage
-            | Self::LengthOverflow => None,
-        }
-    }
-}
-
-impl std::error::Error for WitnessStageOpeningError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Field(error) => Some(error),
-            Self::Commitment(error) => Some(error),
-            Self::RowOutOfRange { .. }
-            | Self::ZeroRows
-            | Self::ZeroColumns
-            | Self::EmptyValues
-            | Self::InvalidTreeByteLength { .. }
-            | Self::InvalidSiblingCount { .. }
-            | Self::LengthOverflow => None,
-        }
-    }
-}
-
-impl From<FieldError> for WitnessStageCommitmentError {
-    fn from(error: FieldError) -> Self {
-        Self::Field(error)
-    }
-}
-
-impl From<MerkleHashError> for WitnessStageCommitmentError {
-    fn from(error: MerkleHashError) -> Self {
-        match error {
-            MerkleHashError::UnsupportedArity { arity } => Self::UnsupportedArity { arity },
-            MerkleHashError::InvalidChildCount { .. } => Self::LengthOverflow,
-            MerkleHashError::LengthOverflow => Self::LengthOverflow,
-        }
-    }
-}
-
-impl From<FieldError> for WitnessStageOpeningError {
-    fn from(error: FieldError) -> Self {
-        Self::Field(error)
-    }
-}
-
-impl From<MerkleHashError> for WitnessStageOpeningError {
-    fn from(error: MerkleHashError) -> Self {
-        match error {
-            MerkleHashError::UnsupportedArity { arity } => {
-                Self::Commitment(WitnessStageCommitmentError::UnsupportedArity { arity })
-            }
-            MerkleHashError::InvalidChildCount { expected, found } => {
-                Self::InvalidSiblingCount { expected, found }
-            }
-            MerkleHashError::LengthOverflow => Self::LengthOverflow,
-        }
-    }
-}
-
-impl From<WitnessStageCommitmentError> for WitnessStageOpeningError {
-    fn from(error: WitnessStageCommitmentError) -> Self {
-        Self::Commitment(error)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LoadWitnessCommitmentSegmentsError {
-    UnitCountOverflow,
-    SegmentIdOverflow,
-    UnitIndexOverflow,
-    MissingSegment,
-    Segment {
-        unit_index: usize,
-        source: WitnessCommitmentSegmentError,
-    },
-    UnitMismatch {
-        unit_index: usize,
-    },
-    RowCountMismatch {
-        unit_index: usize,
-    },
-    ColumnCountOverflow,
-    ColumnCountMismatch {
-        unit_index: usize,
-    },
-    StageCountMismatch {
-        unit_index: usize,
-    },
-    StageIndexOverflow,
-    StageIndexMismatch {
-        unit_index: usize,
-    },
-    ArityMismatch {
-        unit_index: usize,
-    },
-    EmptyTree {
-        unit_index: usize,
-    },
-}
-
-impl fmt::Display for LoadWitnessCommitmentSegmentsError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnitCountOverflow => write!(f, "witness commitment segment unit count overflow"),
-            Self::SegmentIdOverflow => write!(f, "witness commitment segment id overflow"),
-            Self::UnitIndexOverflow => write!(f, "witness commitment segment unit index overflow"),
-            Self::MissingSegment => write!(f, "missing witness commitment segment"),
-            Self::Segment { unit_index, source } => write!(
-                f,
-                "invalid witness commitment segment for unit {unit_index}: {source}"
-            ),
-            Self::UnitMismatch { unit_index } => {
-                write!(
-                    f,
-                    "witness commitment segment unit mismatch for unit {unit_index}"
-                )
-            }
-            Self::RowCountMismatch { unit_index } => write!(
-                f,
-                "witness commitment segment row count mismatch for unit {unit_index}"
-            ),
-            Self::ColumnCountOverflow => {
-                write!(f, "witness commitment segment column count overflow")
-            }
-            Self::ColumnCountMismatch { unit_index } => write!(
-                f,
-                "witness commitment segment column count mismatch for unit {unit_index}"
-            ),
-            Self::StageCountMismatch { unit_index } => write!(
-                f,
-                "witness commitment segment stage count mismatch for unit {unit_index}"
-            ),
-            Self::StageIndexOverflow => {
-                write!(f, "witness commitment segment stage index overflow")
-            }
-            Self::StageIndexMismatch { unit_index } => write!(
-                f,
-                "witness commitment segment stage index mismatch for unit {unit_index}"
-            ),
-            Self::ArityMismatch { unit_index } => write!(
-                f,
-                "witness commitment segment arity mismatch for unit {unit_index}"
-            ),
-            Self::EmptyTree { unit_index } => {
-                write!(
-                    f,
-                    "witness commitment segment empty tree for unit {unit_index}"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for LoadWitnessCommitmentSegmentsError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Segment { source, .. } => Some(source),
-            Self::UnitCountOverflow
-            | Self::SegmentIdOverflow
-            | Self::UnitIndexOverflow
-            | Self::MissingSegment
-            | Self::UnitMismatch { .. }
-            | Self::RowCountMismatch { .. }
-            | Self::ColumnCountOverflow
-            | Self::ColumnCountMismatch { .. }
-            | Self::StageCountMismatch { .. }
-            | Self::StageIndexOverflow
-            | Self::StageIndexMismatch { .. }
-            | Self::ArityMismatch { .. }
-            | Self::EmptyTree { .. } => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WitnessTraceCommitments {
-    commitments: Vec<WitnessStageCommitment>,
-}
-
-impl WitnessTraceCommitments {
-    pub fn stage_count(&self) -> usize {
-        self.commitments.len()
-    }
-
-    pub fn commitments(&self) -> &[WitnessStageCommitment] {
-        &self.commitments
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WitnessStageExtendedValues {
-    stage_index: usize,
-    source_rows: usize,
-    extended_rows: usize,
-    columns: usize,
-    values: Vec<Felt>,
-}
-
-impl WitnessStageExtendedValues {
-    pub fn stage_index(&self) -> usize {
-        self.stage_index
-    }
-
-    pub fn source_row_count(&self) -> usize {
-        self.source_rows
-    }
-
-    pub fn extended_row_count(&self) -> usize {
-        self.extended_rows
-    }
-
-    pub fn column_count(&self) -> usize {
-        self.columns
-    }
-
-    pub fn values(&self) -> &[Felt] {
-        &self.values
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WitnessTraceCommitmentError {
-    Layout(WitnessTraceLayoutError),
-    StageLeaf(WitnessStageLeafError),
-    StageCommitment(WitnessStageCommitmentError),
-    WorkerPanic,
-    LengthOverflow,
-}
-
-impl fmt::Display for WitnessTraceCommitmentError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Layout(error) => write!(f, "witness trace commitment layout error: {error}"),
-            Self::StageLeaf(error) => {
-                write!(f, "witness trace commitment leaf error: {error}")
-            }
-            Self::StageCommitment(error) => {
-                write!(f, "witness trace commitment tree error: {error}")
-            }
-            Self::WorkerPanic => write!(f, "witness trace commitment worker panicked"),
-            Self::LengthOverflow => write!(f, "witness trace commitment length overflow"),
-        }
-    }
-}
-
-impl std::error::Error for WitnessTraceCommitmentError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Layout(error) => Some(error),
-            Self::StageLeaf(error) => Some(error),
-            Self::StageCommitment(error) => Some(error),
-            Self::WorkerPanic | Self::LengthOverflow => None,
-        }
-    }
-}
-
-impl From<WitnessTraceLayoutError> for WitnessTraceCommitmentError {
-    fn from(error: WitnessTraceLayoutError) -> Self {
-        Self::Layout(error)
-    }
-}
-
-impl From<WitnessStageLeafError> for WitnessTraceCommitmentError {
-    fn from(error: WitnessStageLeafError) -> Self {
-        Self::StageLeaf(error)
-    }
-}
-
-impl From<WitnessStageCommitmentError> for WitnessTraceCommitmentError {
-    fn from(error: WitnessStageCommitmentError) -> Self {
-        Self::StageCommitment(error)
-    }
 }
 
 pub fn load_witness_commitment_segments(
@@ -696,13 +178,13 @@ pub fn extend_witness_stage_leaves(
         }
     }
 
-    Ok(WitnessStageLeaves {
-        stage_index: stage.stage_index(),
-        source_rows: rows,
+    Ok(WitnessStageLeaves::new(
+        stage.stage_index(),
+        rows,
         extended_rows,
         columns,
         bytes,
-    })
+    ))
 }
 
 #[cfg(feature = "cuda")]
@@ -761,7 +243,7 @@ pub fn commit_witness_trace_stages(
         commitments.push(commitment);
     }
 
-    Ok(WitnessTraceCommitments { commitments })
+    Ok(WitnessTraceCommitments::new(commitments))
 }
 
 pub fn commit_witness_trace_stages_with_workers(
@@ -817,12 +299,12 @@ pub fn commit_witness_trace_stages_with_workers(
     })?;
 
     commitments.sort_by_key(|(stage_index, _)| *stage_index);
-    Ok(WitnessTraceCommitments {
-        commitments: commitments
+    Ok(WitnessTraceCommitments::new(
+        commitments
             .into_iter()
             .map(|(_, commitment)| commitment)
             .collect(),
-    })
+    ))
 }
 
 pub fn extend_witness_trace_stage_values(
@@ -840,13 +322,13 @@ pub fn extend_witness_trace_stage_values(
         let stage = layout.stage_trace(trace, stage_info.stage_index)?;
         let leaves = extend_witness_stage_leaves(&stage, source_bits, target_bits)?;
         let values = decode_witness_stage_leaf_values(&leaves)?;
-        stages.push(WitnessStageExtendedValues {
-            stage_index: leaves.stage_index(),
-            source_rows: leaves.source_row_count(),
-            extended_rows: leaves.extended_row_count(),
-            columns: leaves.column_count(),
+        stages.push(WitnessStageExtendedValues::new(
+            leaves.stage_index(),
+            leaves.source_row_count(),
+            leaves.extended_row_count(),
+            leaves.column_count(),
             values,
-        });
+        ));
     }
 
     Ok(stages)
@@ -885,12 +367,12 @@ pub fn commit_witness_stage_leaves(
         level = next;
     }
 
-    Ok(WitnessStageCommitment {
-        stage_index: leaves.stage_index(),
+    Ok(WitnessStageCommitment::new(
+        leaves.stage_index(),
         arity,
-        root: level[0],
-        tree_bytes: out,
-    })
+        level[0],
+        out,
+    ))
 }
 
 pub fn open_witness_stage_commitment(
@@ -976,11 +458,7 @@ pub fn open_witness_stage_commitment(
         level_query /= commitment.arity();
     }
 
-    Ok(WitnessStageOpening {
-        row_index,
-        values,
-        siblings,
-    })
+    WitnessStageOpening::new(row_index, values, siblings)
 }
 
 pub fn decode_witness_stage_leaf_values(
