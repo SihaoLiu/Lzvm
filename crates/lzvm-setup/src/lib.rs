@@ -20,14 +20,17 @@ use lzvm_artifacts::verifier_info::{
     encode_verifier_info, read_verifier_info_binary_file, VerifierInfo,
 };
 
+mod backend;
 mod constant_tree;
 mod directory_manifest;
+mod errors;
 mod pcs;
 mod program_image;
+mod reports;
 mod source_program_archive;
 mod staging;
-mod types;
 
+pub use backend::*;
 pub use constant_tree::{
     build_constant_tree_from_fixed_columns, build_constant_tree_from_fixed_columns_with_backend,
     build_constant_tree_from_leaves, build_constant_tree_from_leaves_with_backend,
@@ -40,6 +43,7 @@ pub use directory_manifest::{
     summarize_setup_directory, write_setup_directory_manifest, SetupDirectoryManifestWriteReport,
     SetupDirectorySummaryError,
 };
+pub use errors::*;
 pub use pcs::{
     write_pcs_directory, write_pcs_directory_from_layout, write_pcs_material_directory,
     write_pcs_material_directory_from_layout, write_pcs_setup_material_file,
@@ -50,12 +54,12 @@ pub use program_image::{
     ProgramImageCommitmentCacheFileRequest, ProgramImageCommitmentCacheWriteError,
     ProgramImageCommitmentCacheWriteReport,
 };
+pub use reports::*;
 pub use source_program_archive::{
     write_source_program_archive, SourceProgramArchiveWriteError, SourceProgramArchiveWriteReport,
     SourceProgramArchiveWriteRequest,
 };
 pub(crate) use staging::{publish_staging_bytes, staging_path_for, write_staging_bytes};
-pub use types::*;
 
 pub fn write_fixed_columns_native_file(
     setup_info_path: impl AsRef<Path>,
