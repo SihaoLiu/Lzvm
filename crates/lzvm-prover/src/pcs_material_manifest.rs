@@ -1,11 +1,13 @@
 use std::fmt;
 
 use lzvm_artifacts::pcs_material_segment::{
-    parse_pcs_material_manifest_segment, PcsMaterialManifestSegmentError, PcsMaterialManifestUnit,
+    encode_pcs_material_manifest_segment, parse_pcs_material_manifest_segment,
+    PcsMaterialManifestSegment, PcsMaterialManifestSegmentError, PcsMaterialManifestUnit,
     PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::ProofSegment;
 
+use crate::prove_witness::ProvePcsMaterialSegmentError;
 use crate::ProveSchedule;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +80,72 @@ pub fn validate_pcs_material_manifest_segments(
         validate_manifest_unit(index, manifest_unit, schedule_unit)?;
     }
     Ok(())
+}
+
+pub fn build_pcs_material_manifest_segment(
+    schedule: &ProveSchedule,
+) -> Result<ProofSegment, ProvePcsMaterialSegmentError> {
+    let mut units = Vec::with_capacity(schedule.units.len());
+    for (unit_index, unit) in schedule.units.iter().enumerate() {
+        let unit_index_u32 = u32::try_from(unit_index)
+            .map_err(|_| ProvePcsMaterialSegmentError::UnitIndexOverflow { unit_index })?;
+        units.push(PcsMaterialManifestUnit {
+            unit_index: unit_index_u32,
+            plan_digest: unit.pcs_material_plan_digest.ok_or(
+                ProvePcsMaterialSegmentError::MissingMaterial {
+                    unit_index,
+                    kind: unit.kind,
+                },
+            )?,
+            fixed_column_digest: unit.pcs_material_fixed_column_digest.ok_or(
+                ProvePcsMaterialSegmentError::MissingMaterial {
+                    unit_index,
+                    kind: unit.kind,
+                },
+            )?,
+            constant_tree_digest: unit.pcs_material_constant_tree_digest.ok_or(
+                ProvePcsMaterialSegmentError::MissingMaterial {
+                    unit_index,
+                    kind: unit.kind,
+                },
+            )?,
+            constant_tree_root: unit.pcs_material_constant_tree_root.ok_or(
+                ProvePcsMaterialSegmentError::MissingMaterial {
+                    unit_index,
+                    kind: unit.kind,
+                },
+            )?,
+            fixed_byte_count: unit.pcs_material_fixed_byte_count.ok_or(
+                ProvePcsMaterialSegmentError::MissingMaterial {
+                    unit_index,
+                    kind: unit.kind,
+                },
+            )?,
+            constant_tree_byte_count: unit.pcs_material_constant_tree_byte_count.ok_or(
+                ProvePcsMaterialSegmentError::MissingMaterial {
+                    unit_index,
+                    kind: unit.kind,
+                },
+            )?,
+            leaf_byte_count: unit.pcs_material_leaf_byte_count.ok_or(
+                ProvePcsMaterialSegmentError::MissingMaterial {
+                    unit_index,
+                    kind: unit.kind,
+                },
+            )?,
+            node_byte_count: unit.pcs_material_node_byte_count.ok_or(
+                ProvePcsMaterialSegmentError::MissingMaterial {
+                    unit_index,
+                    kind: unit.kind,
+                },
+            )?,
+        });
+    }
+    let manifest = PcsMaterialManifestSegment { units };
+    Ok(ProofSegment {
+        id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+        data: encode_pcs_material_manifest_segment(&manifest)?,
+    })
 }
 
 fn validate_manifest_unit(

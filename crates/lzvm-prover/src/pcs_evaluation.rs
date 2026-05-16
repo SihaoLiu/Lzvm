@@ -1,11 +1,14 @@
 use std::fmt;
 
 use lzvm_artifacts::pcs_evaluation_segment::{
-    parse_pcs_evaluation_segment, PcsEvaluationSegmentError, PcsEvaluationUnitSegment,
-    PCS_EVALUATION_SEGMENT_ID,
+    encode_pcs_evaluation_segment, parse_pcs_evaluation_segment, PcsEvaluationSegment,
+    PcsEvaluationSegmentError, PcsEvaluationUnitSegment, PCS_EVALUATION_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::ProofSegment;
+use lzvm_field::Ext3;
 
+use crate::prove_witness::{ProvePcsEvaluationSegmentError, ProvePcsEvaluationValues};
+use crate::ProveSchedule;
 use crate::ProveUnitSchedule;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,4 +83,42 @@ pub fn load_pcs_evaluation_unit_from_segments(
         });
     }
     Ok(evaluation_unit)
+}
+
+pub fn build_pcs_evaluation_segment(
+    schedule: &ProveSchedule,
+    values: &[ProvePcsEvaluationValues],
+) -> Result<ProofSegment, ProvePcsEvaluationSegmentError> {
+    let mut units = Vec::with_capacity(values.len());
+    for input in values {
+        let unit = schedule.units.get(input.unit_index).ok_or(
+            ProvePcsEvaluationSegmentError::UnitIndexOutOfRange {
+                unit_index: input.unit_index,
+                unit_count: schedule.units.len(),
+            },
+        )?;
+        let expected_value_count = unit.expected_evaluation_value_count();
+        if input.values.len() != expected_value_count {
+            return Err(ProvePcsEvaluationSegmentError::ValueCountMismatch {
+                unit_index: input.unit_index,
+                expected: expected_value_count,
+                found: input.values.len(),
+            });
+        }
+        units.push(PcsEvaluationUnitSegment {
+            unit_index: u32::try_from(input.unit_index).map_err(|_| {
+                ProvePcsEvaluationSegmentError::UnitIndexOverflow {
+                    unit_index: input.unit_index,
+                }
+            })?,
+            values: input.values.iter().copied().map(Ext3::to_u64s).collect(),
+        });
+    }
+    units.sort_by_key(|unit| unit.unit_index);
+
+    let segment = PcsEvaluationSegment { units };
+    Ok(ProofSegment {
+        id: PCS_EVALUATION_SEGMENT_ID,
+        data: encode_pcs_evaluation_segment(&segment)?,
+    })
 }
