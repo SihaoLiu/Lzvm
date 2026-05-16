@@ -56,7 +56,7 @@ use lzvm_prover::pcs_transcript::{
 };
 use lzvm_prover::witness_commitment::commit_witness_trace_stages;
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
-use lzvm_prover::witness_loader::load_witness_library;
+use lzvm_prover::witness_loader::{load_witness_library, TraceBytesBackend};
 use lzvm_prover::witness_runner::run_witness_trace;
 use lzvm_prover::{
     build_pcs_evaluation_segment, build_pcs_fri_opening_segment,
@@ -108,6 +108,18 @@ fn sample_guest_image() -> Vec<u8> {
     bytes[20..24].copy_from_slice(&1_u32.to_le_bytes());
     bytes[24..32].copy_from_slice(&0x8000_0000_u64.to_le_bytes());
     bytes[32..40].copy_from_slice(&64_u64.to_le_bytes());
+    bytes[52..54].copy_from_slice(&64_u16.to_le_bytes());
+    bytes
+}
+
+fn sample_witness_library() -> Vec<u8> {
+    let mut bytes = vec![0_u8; 64];
+    bytes[0..4].copy_from_slice(b"\x7fELF");
+    bytes[4] = 2;
+    bytes[5] = 1;
+    bytes[6] = 1;
+    bytes[16..18].copy_from_slice(&3_u16.to_le_bytes());
+    bytes[18..20].copy_from_slice(&62_u16.to_le_bytes());
     bytes[52..54].copy_from_slice(&64_u16.to_le_bytes());
     bytes
 }
@@ -697,6 +709,52 @@ fn preserves_trace_inputs_and_commitments_for_pcs_openings() {
     assert_eq!(output.trace().value(0, 0), Some(Felt::from_u64(8)));
     assert_eq!(output.publics(), &[Felt::from_u64(8)]);
     assert_eq!(output.auxiliary_inputs(), &auxiliary_inputs);
+}
+
+#[test]
+fn runs_witness_commitments_with_native_trace_backend() {
+    let dir = temp_dir("native-trace-backend");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = dir.join("witness.elf");
+    fs::write(&witness_library, sample_witness_library())
+        .expect("witness library should be written");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let catalog = sample_catalog(sample_unit());
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+
+    let mut trace_bytes = Vec::with_capacity(16 * 5 * 8);
+    for value in 1_u64..=80 {
+        trace_bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    let backend = TraceBytesBackend::new(trace_bytes);
+
+    let output = run_prove_witness_commitments_with_trace_backend(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        &backend,
+    )
+    .expect("witness commitments should run");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(output.trace().row_count(), 16);
+    assert_eq!(output.trace().column_count(), 5);
+    assert_eq!(output.trace().value(0, 0), Some(Felt::from_u64(1)));
+    assert_eq!(output.trace().value(15, 4), Some(Felt::from_u64(80)));
 }
 
 #[test]

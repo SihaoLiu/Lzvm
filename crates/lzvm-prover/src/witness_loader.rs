@@ -77,6 +77,39 @@ pub trait WitnessBackend {
     ) -> Result<WitnessTraceOutput, WitnessCallError>;
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TraceBytesBackend {
+    trace_bytes: Vec<u8>,
+}
+
+impl TraceBytesBackend {
+    pub fn new(trace_bytes: Vec<u8>) -> Self {
+        Self { trace_bytes }
+    }
+
+    pub fn trace_bytes(&self) -> &[u8] {
+        &self.trace_bytes
+    }
+}
+
+impl WitnessBackend for TraceBytesBackend {
+    fn compute(
+        &self,
+        buffers: &mut WitnessTraceBuffers,
+    ) -> Result<WitnessTraceOutput, WitnessCallError> {
+        let produced_len = self.trace_bytes.len();
+        let output_len = buffers.output().len();
+        if produced_len > output_len {
+            return Err(WitnessCallError::OutputOverflow {
+                produced_len,
+                output_len,
+            });
+        }
+        buffers.output_mut()[..produced_len].copy_from_slice(&self.trace_bytes);
+        Ok(WitnessTraceOutput { produced_len })
+    }
+}
+
 pub struct LoadedWitnessLibrary {
     pub path: PathBuf,
     pub abi_version: u32,
