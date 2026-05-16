@@ -1,5 +1,5 @@
 #[cfg(feature = "cuda")]
-use lzvm_accel::cuda_goldilocks_coset_extend;
+use lzvm_accel::{cuda_goldilocks_coset_extend_device, CudaDeviceBuffer};
 #[cfg(not(feature = "cuda"))]
 use lzvm_field::coset_extend_evaluations;
 use lzvm_field::Felt;
@@ -77,8 +77,42 @@ fn extend_witness_stage_column_values(
         .iter()
         .map(|value| value.to_u64())
         .collect::<Vec<_>>();
-    let extended_words = cuda_goldilocks_coset_extend(&source_words, source_bits, target_bits)?;
-    extended_words
+    if target_bits < source_bits {
+        return Err(WitnessStageLeafError::Accel(
+            lzvm_accel::AccelError::InvalidDomain {
+                bits: target_bits,
+                len: source_words.len(),
+            },
+        ));
+    }
+    let source_word_count = 1_usize
+        .checked_shl(u32::try_from(source_bits).map_err(|_| WitnessStageLeafError::LengthOverflow)?)
+        .ok_or(WitnessStageLeafError::LengthOverflow)?;
+    if source_words.len() != source_word_count {
+        return Err(WitnessStageLeafError::Accel(
+            lzvm_accel::AccelError::InvalidDomain {
+                bits: source_bits,
+                len: source_words.len(),
+            },
+        ));
+    }
+    let target_words = 1_usize
+        .checked_shl(u32::try_from(target_bits).map_err(|_| WitnessStageLeafError::LengthOverflow)?)
+        .ok_or(WitnessStageLeafError::LengthOverflow)?;
+    let source_buffer = CudaDeviceBuffer::from_u64_words(&source_words)?;
+    let mut target_buffer = CudaDeviceBuffer::new(
+        target_words
+            .checked_mul(8)
+            .ok_or(WitnessStageLeafError::LengthOverflow)?,
+    )?;
+    cuda_goldilocks_coset_extend_device(
+        &source_buffer,
+        &mut target_buffer,
+        source_bits,
+        target_bits,
+    )?;
+    target_buffer
+        .to_u64_words()?
         .into_iter()
         .map(Felt::from_canonical)
         .collect::<Result<Vec<_>, _>>()
