@@ -104,6 +104,13 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         );
         return 1;
     }
+    if parsed.trace_bytes.is_some() && (parsed.all_units || plan.run_plan.options.aggregate) {
+        let _ = writeln!(
+            stderr,
+            "prove witness failed: --trace-bytes requires a single-unit witness run"
+        );
+        return 1;
+    }
     let auxiliary_request = WitnessAuxiliaryInputRequest {
         global_info: &catalog.layout.global_info,
         unit_values_input: parsed.unit_values.as_deref(),

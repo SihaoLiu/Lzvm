@@ -2606,6 +2606,46 @@ fn runs_prove_witness_commitments_from_trace_bytes() {
 }
 
 #[test]
+fn rejects_trace_bytes_for_all_unit_witness_runs() {
+    let dir = temp_dir("prove-witness-trace-bytes-all-units");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let trace_path = dir.join("trace.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--trace-bytes",
+            trace_path.to_str().expect("trace path should be utf-8"),
+            "--all-units",
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove witness failed: --trace-bytes requires a single-unit witness run\n"
+    );
+}
+
+#[test]
 fn saves_prove_witness_commitment_outputs_when_requested() {
     let dir = temp_dir("prove-witness-save");
     let _ = fs::remove_dir_all(&dir);
