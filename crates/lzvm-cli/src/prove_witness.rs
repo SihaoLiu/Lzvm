@@ -80,6 +80,20 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
+    if plan.run_plan.options.remote_aggregation {
+        let _ = writeln!(
+            stderr,
+            "prove witness failed: remote aggregation is unsupported by prove witness"
+        );
+        return 1;
+    }
+    if plan.run_plan.options.final_wrap {
+        let _ = writeln!(
+            stderr,
+            "prove witness failed: final wrap is unsupported by prove witness"
+        );
+        return 1;
+    }
     if parsed.evaluation_values_segment.is_some()
         && !(parsed.all_units || plan.run_plan.options.aggregate)
     {

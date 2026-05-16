@@ -3296,6 +3296,106 @@ fn runs_prove_witness_for_aggregate_when_requested() {
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
+fn run_prove_witness_with_aggregate_modifier(
+    dir_name: &str,
+    modifier: &str,
+) -> (i32, String, String) {
+    let dir = temp_dir(dir_name);
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_proof_group_and_unit_value(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let unit_values_path = dir.join("unit_values.bin");
+    let proof_values_path = dir.join("proof_values.bin");
+    let group_values_path = dir.join("group_values.bin");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [17_u8]);
+    write_field_words(&unit_values_path, &[101, 201, 202, 203]);
+    write_field_words(&proof_values_path, &[51, 52, 53]);
+    write_field_words(&group_values_path, &[61, 62, 63]);
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&sample_public_values(setup_hash))
+            .expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--aggregate",
+            modifier,
+            "--save-outputs",
+            "--unit-values",
+            unit_values_path
+                .to_str()
+                .expect("unit values path should be utf-8"),
+            "--proof-values",
+            proof_values_path
+                .to_str()
+                .expect("proof values path should be utf-8"),
+            "--group-values",
+            group_values_path
+                .to_str()
+                .expect("group values path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    (
+        code,
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+    )
+}
+
+#[test]
+fn rejects_prove_witness_with_remote_aggregation() {
+    let (code, stdout, stderr) = run_prove_witness_with_aggregate_modifier(
+        "prove-witness-remote-aggregation",
+        "--remote-aggregation",
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        stderr,
+        "prove witness failed: remote aggregation is unsupported by prove witness\n"
+    );
+}
+
+#[test]
+fn rejects_prove_witness_with_final_wrap() {
+    let (code, stdout, stderr) =
+        run_prove_witness_with_aggregate_modifier("prove-witness-final-wrap", "--final-wrap");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        stderr,
+        "prove witness failed: final wrap is unsupported by prove witness\n"
+    );
+}
+
 #[test]
 fn runs_prove_witness_for_aggregate_with_unit_values_segment() {
     let dir = temp_dir("prove-witness-aggregate-unit-values-segment");
