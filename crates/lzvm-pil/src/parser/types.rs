@@ -76,6 +76,18 @@ pub struct AirGroupDeclaration {
     pub end: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AirInstanceDeclaration {
+    pub air_group: String,
+    pub template: String,
+    pub alias: Option<String>,
+    pub virtual_instance: bool,
+    pub args: SourceSpan,
+    pub source_name: String,
+    pub start: usize,
+    pub end: usize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColumnKind {
     Witness,

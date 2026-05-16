@@ -1,10 +1,10 @@
 use super::{
     parse_air_group_declarations, parse_air_group_value_declarations,
-    parse_air_template_declarations, parse_column_declarations, parse_commit_declarations,
-    parse_container_declarations, parse_include_directives, parse_pragma_directives,
-    parse_public_declarations, parse_public_table_declarations, parse_use_directives,
-    parse_value_declarations, ColumnInitializerKind, ColumnKind, IncludeKind, IncludeVisibility,
-    ParseError, ValueDeclarationKind,
+    parse_air_instance_declarations, parse_air_template_declarations, parse_column_declarations,
+    parse_commit_declarations, parse_container_declarations, parse_include_directives,
+    parse_pragma_directives, parse_public_declarations, parse_public_table_declarations,
+    parse_use_directives, parse_value_declarations, ColumnInitializerKind, ColumnKind, IncludeKind,
+    IncludeVisibility, ParseError, ValueDeclarationKind,
 };
 use crate::SourceFile;
 use std::path::PathBuf;
@@ -310,6 +310,40 @@ fn rejects_unclosed_air_group_body() {
         error,
         ParseError::ExpectedCloseBrace { source_name, .. } if source_name == "main.pil"
     ));
+}
+
+#[test]
+fn parses_air_instances_from_group_bodies() {
+    let source = source(
+        "airtemplate localAir(int N) { }\n\
+         airgroup Main {\n\
+           set_max_rows(20);\n\
+           virtual Range(id: 7) alias Range7;\n\
+           Dma();\n\
+           localAir(N: 2**16) alias Local;\n\
+           for (int i = 0; i < 2; i++) { Helper(); }\n\
+         }",
+    );
+
+    let instances = parse_air_instance_declarations(&source).expect("air instances should parse");
+
+    assert_eq!(instances.len(), 3);
+    assert_eq!(instances[0].air_group, "Main");
+    assert!(instances[0].virtual_instance);
+    assert_eq!(instances[0].template, "Range");
+    assert_eq!(instances[0].alias.as_deref(), Some("Range7"));
+    assert_eq!(
+        &source.contents[instances[0].args.start..instances[0].args.end],
+        "(id: 7)"
+    );
+    assert_eq!(instances[1].template, "Dma");
+    assert!(!instances[1].virtual_instance);
+    assert_eq!(
+        &source.contents[instances[1].args.start..instances[1].args.end],
+        "()"
+    );
+    assert_eq!(instances[2].template, "localAir");
+    assert_eq!(instances[2].alias.as_deref(), Some("Local"));
 }
 
 #[test]

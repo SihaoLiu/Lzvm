@@ -1153,6 +1153,156 @@ pub fn parse_air_group_declarations(
     Ok(declarations)
 }
 
+pub fn parse_air_instance_declarations(
+    source: &SourceFile,
+) -> Result<Vec<AirInstanceDeclaration>, ParseError> {
+    let tokens = lex_source(&source.contents).map_err(|error| ParseError::Lex {
+        source_name: source.source_name.clone(),
+        error,
+    })?;
+    let local_templates = parse_air_template_declarations(source)?
+        .into_iter()
+        .map(|declaration| declaration.name)
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut declarations = Vec::new();
+
+    for group in parse_air_group_declarations(source)? {
+        let open_index = tokens
+            .iter()
+            .position(|token| token.kind == TokenKind::LBrace && token.start == group.body.start)
+            .ok_or_else(|| ParseError::ExpectedCloseBrace {
+                source_name: source.source_name.clone(),
+                start: group.body.start,
+            })?;
+        let close_index = tokens
+            .iter()
+            .rposition(|token| token.kind == TokenKind::RBrace && token.end == group.body.end)
+            .ok_or_else(|| ParseError::ExpectedCloseBrace {
+                source_name: source.source_name.clone(),
+                start: group.body.start,
+            })?;
+
+        let mut cursor = open_index + 1;
+        while cursor < close_index {
+            if tokens[cursor].kind == TokenKind::LBrace {
+                let (_, next_index) = parse_braced_span(&tokens, cursor, source)?;
+                cursor = next_index;
+                continue;
+            }
+            if let Some(parsed) =
+                parse_air_instance_at(&tokens, cursor, source, &group, &local_templates)?
+            {
+                cursor = parsed.next_index;
+                declarations.push(parsed.declaration);
+            } else {
+                cursor += 1;
+            }
+        }
+    }
+
+    Ok(declarations)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedAirInstance {
+    declaration: AirInstanceDeclaration,
+    next_index: usize,
+}
+
+fn parse_air_instance_at(
+    tokens: &[Token],
+    index: usize,
+    source: &SourceFile,
+    group: &AirGroupDeclaration,
+    local_templates: &std::collections::BTreeSet<String>,
+) -> Result<Option<ParsedAirInstance>, ParseError> {
+    let Some(token) = tokens.get(index) else {
+        return Ok(None);
+    };
+    let (virtual_instance, name_index, start) = if token.kind == TokenKind::Virtual {
+        (true, index + 1, token.start)
+    } else if air_instance_name_start(token.kind) {
+        (false, index, token.start)
+    } else {
+        return Ok(None);
+    };
+
+    let Some(name_token) = tokens.get(name_index) else {
+        return Ok(None);
+    };
+    if !air_instance_name_start(name_token.kind) {
+        return Ok(None);
+    }
+    let (template, after_name) = parse_name_reference(tokens, name_index, source)?;
+    if !tokens
+        .get(after_name)
+        .is_some_and(|token| token.kind == TokenKind::LParen)
+    {
+        return Ok(None);
+    }
+    let (args, mut cursor) = parse_delimited_span(tokens, after_name, source)?;
+    let alias = if tokens
+        .get(cursor)
+        .is_some_and(|token| token.kind == TokenKind::Alias)
+    {
+        let (alias, next) = parse_alias_identifier(tokens, cursor + 1, source)?;
+        cursor = next;
+        Some(alias)
+    } else {
+        None
+    };
+
+    if !air_instance_candidate(&template, virtual_instance, alias.as_ref(), local_templates) {
+        return Ok(None);
+    }
+
+    let terminator = tokens
+        .get(cursor)
+        .ok_or_else(|| ParseError::ExpectedTerminator {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, cursor),
+        })?;
+    if terminator.kind != TokenKind::Semicolon {
+        return Err(ParseError::ExpectedTerminator {
+            source_name: source.source_name.clone(),
+            start: terminator.start,
+        });
+    }
+
+    Ok(Some(ParsedAirInstance {
+        declaration: AirInstanceDeclaration {
+            air_group: group.name.clone(),
+            template,
+            alias,
+            virtual_instance,
+            args,
+            source_name: source.source_name.clone(),
+            start,
+            end: terminator.end,
+        },
+        next_index: cursor + 1,
+    }))
+}
+
+fn air_instance_name_start(kind: TokenKind) -> bool {
+    matches!(kind, TokenKind::Identifier | TokenKind::TemplateLiteral)
+}
+
+fn air_instance_candidate(
+    template: &str,
+    virtual_instance: bool,
+    alias: Option<&String>,
+    local_templates: &std::collections::BTreeSet<String>,
+) -> bool {
+    virtual_instance
+        || alias.is_some()
+        || local_templates.contains(template)
+        || template
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_uppercase())
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct IncludeHeader {
     pub(crate) start_index: usize,
