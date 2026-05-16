@@ -5,7 +5,7 @@ use std::path::Path;
 use lzvm_artifacts::challenge_values_segment::parse_challenge_values_segment;
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::group_values_segment::GROUP_VALUES_SEGMENT_ID;
-use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryCatalog};
+use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
 use lzvm_artifacts::pcs_evaluation_segment::{
     parse_pcs_evaluation_segment, PCS_EVALUATION_SEGMENT_ID,
 };
@@ -45,7 +45,9 @@ use lzvm_prover::{
 };
 
 use crate::program_image_cache::write_program_image_cache_summary;
-use crate::prove_plan::{parse_run_args, write_run_plan_summary, ParseError, ParsedRunArgs};
+use crate::prove_plan::{
+    parse_run_args, read_checked_setup_catalog, write_run_plan_summary, ParseError, ParsedRunArgs,
+};
 
 pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     let parsed = match parse_witness_args(args) {
@@ -57,10 +59,10 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
 
-    let catalog = match read_key_directory_catalog(&parsed.run_args.positionals[0]) {
+    let catalog = match read_checked_setup_catalog(&parsed.run_args.positionals[0]) {
         Ok(catalog) => catalog,
-        Err(error) => {
-            let _ = writeln!(stderr, "prove witness failed: {error}");
+        Err(message) => {
+            let _ = writeln!(stderr, "prove witness failed: {message}");
             return 1;
         }
     };

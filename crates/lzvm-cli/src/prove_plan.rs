@@ -1,7 +1,8 @@
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use lzvm_artifacts::key_directory::read_key_directory_catalog;
+use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryCatalog};
+use lzvm_prover::setup_preflight::validate_setup_directory_manifest_if_present;
 use lzvm_prover::{
     derive_prove_run_plan, GpuRunOptions, ProvePartitionPlan, ProvePassKind, ProvePassRequest,
     ProveRunOptions, ProveRunPlan, ProveRunRequest,
@@ -17,10 +18,10 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
 
-    let catalog = match read_key_directory_catalog(&parsed.setup_dir) {
+    let catalog = match read_checked_setup_catalog(&parsed.setup_dir) {
         Ok(catalog) => catalog,
-        Err(error) => {
-            let _ = writeln!(stderr, "prove plan failed: {error}");
+        Err(message) => {
+            let _ = writeln!(stderr, "prove plan failed: {message}");
             return 1;
         }
     };
@@ -47,6 +48,13 @@ pub(crate) struct ParsedRunArgs {
     pub positionals: Vec<PathBuf>,
     pub request: ProveRunRequest,
     pub program_image_cache: Option<PathBuf>,
+}
+
+pub(crate) fn read_checked_setup_catalog(path: &Path) -> Result<KeyDirectoryCatalog, String> {
+    let catalog = read_key_directory_catalog(path).map_err(|error| error.to_string())?;
+    validate_setup_directory_manifest_if_present(path, &catalog)
+        .map_err(|error| error.to_string())?;
+    Ok(catalog)
 }
 
 #[derive(Debug)]

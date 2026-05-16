@@ -168,7 +168,7 @@ impl From<SetupPreflightError> for SetupPreflightFileError {
     }
 }
 
-pub(crate) fn validate_setup_directory_manifest_if_present(
+pub fn validate_setup_directory_manifest_if_present(
     root: &Path,
     catalog: &KeyDirectoryCatalog,
 ) -> Result<(), SetupDirectoryManifestError> {

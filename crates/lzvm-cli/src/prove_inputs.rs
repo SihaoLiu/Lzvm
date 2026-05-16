@@ -1,13 +1,13 @@
 use std::io::Write;
 
-use lzvm_artifacts::key_directory::read_key_directory_catalog;
 use lzvm_prover::{
     derive_prove_execution_plan_with_program_image_cache, ProveExecutionInputArtifacts,
 };
 
 use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{
-    format_hash, parse_run_args, write_run_plan_summary, ParseError, ParsedRunArgs,
+    format_hash, parse_run_args, read_checked_setup_catalog, write_run_plan_summary, ParseError,
+    ParsedRunArgs,
 };
 
 pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -20,10 +20,10 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
 
-    let catalog = match read_key_directory_catalog(&parsed.positionals[0]) {
+    let catalog = match read_checked_setup_catalog(&parsed.positionals[0]) {
         Ok(catalog) => catalog,
-        Err(error) => {
-            let _ = writeln!(stderr, "prove inputs failed: {error}");
+        Err(message) => {
+            let _ = writeln!(stderr, "prove inputs failed: {message}");
             return 1;
         }
     };
