@@ -97,14 +97,15 @@ use lzvm_prover::verifier_query::{
     evaluate_verifier_unit_queries, verify_query_outputs_against_fri_opening,
     VerifierFriComparisonRequest, VerifierUnitQueryEvalRequest,
 };
+use lzvm_prover::witness_loader::TraceBytesBackend;
 use lzvm_prover::{
     build_constant_opening_segment, build_pcs_material_manifest_segment,
     build_pcs_query_nonce_segment_from_transcript_segments, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_transcript_segments, build_witness_commitment_segment,
     build_witness_opening_segment, derive_prove_execution_plan, derive_prove_schedule,
-    derive_prove_schedule_from_directory, run_prove_witness_commitments, GpuRunOptions,
-    ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest, ProveRunOptions,
-    ProveRunRequest,
+    derive_prove_schedule_from_directory, run_prove_witness_commitments,
+    run_prove_witness_commitments_with_trace_backend, GpuRunOptions, ProveExecutionInputArtifacts,
+    ProvePartitionPlan, ProvePassRequest, ProveRunOptions, ProveRunRequest,
 };
 use lzvm_setup::{
     summarize_setup_directory, write_program_image_commitment_cache_file,
@@ -2491,6 +2492,99 @@ fn runs_prove_witness_commitments_for_setup_directory() {
             witness_library
                 .to_str()
                 .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data={}\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash}\nunit_index=0\ninput_bytes=1\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
+            input_data.display(),
+            output_dir.display(),
+            expected_stages
+        )
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn runs_prove_witness_commitments_from_trace_bytes() {
+    let dir = temp_dir("prove-witness-trace-bytes");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let material_bytes = pcs_material_byte_count(&catalog);
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let trace_path = dir.join("trace.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+
+    let mut trace_bytes = Vec::with_capacity(4 * 8);
+    for value in 8_u64..=11 {
+        trace_bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    write_bytes(&trace_path, &trace_bytes);
+
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan {
+            input_data: Some(input_data.clone()),
+            partition_count: 1,
+            partition_ids: vec![0],
+            worker_index: 0,
+        }),
+        options: ProveRunOptions::default_for_output(output_dir.clone()),
+        gpu: GpuRunOptions::default(),
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        request,
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image: guest_image.clone(),
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let backend = TraceBytesBackend::new(trace_bytes);
+    let output =
+        run_prove_witness_commitments_with_trace_backend(&plan, 0, Default::default(), &backend)
+            .expect("witness commitments should run");
+    let mut expected_stages = String::new();
+    for commitment in output.commitments().stage_commitments().commitments() {
+        let root = commitment
+            .root()
+            .iter()
+            .map(|value| value.to_u64().to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        expected_stages.push_str(&format!(
+            "stage_{}_root={root}\nstage_{}_tree_bytes={}\n",
+            commitment.stage_index(),
+            commitment.stage_index(),
+            commitment.tree_bytes().len()
+        ));
+    }
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--trace-bytes",
+            trace_path.to_str().expect("trace path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
             guest_image.to_str().expect("guest path should be utf-8"),
         ],
         &mut stdout,
@@ -6339,7 +6433,7 @@ fn reports_usage_for_missing_prove_witness_paths() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>\n"
+        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n"
     );
 }
 

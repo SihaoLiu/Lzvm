@@ -29,7 +29,7 @@ use lzvm_prover::setup_preflight::validate_setup_preflight;
 use lzvm_prover::unit_values::{
     build_unit_values_segment_from_packed_values_batch, ProveUnitValues,
 };
-use lzvm_prover::witness_loader::{load_witness_library, WitnessBackend};
+use lzvm_prover::witness_loader::{load_witness_library, TraceBytesBackend, WitnessBackend};
 use lzvm_prover::{
     build_constant_opening_segment, build_pcs_evaluation_segment,
     build_pcs_fri_opening_segment_from_transcript_values,
@@ -68,7 +68,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
 
-    let inputs = parsed_inputs(&parsed.run_args);
+    let inputs = parsed_inputs(&parsed);
     let plan = match derive_prove_execution_plan_with_program_image_cache(
         &catalog,
         parsed.run_args.request,
@@ -122,27 +122,39 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
-    let witness_backend = match &plan.inputs.witness_library {
-        Some(path) => match load_witness_library(path) {
-            Ok(backend) => backend,
-            Err(error) => {
-                let _ = writeln!(stderr, "prove witness failed: {error}");
+    let witness_backend: Box<dyn WitnessBackend> =
+        match (&plan.inputs.witness_library, &parsed.trace_bytes) {
+            (Some(path), _) => match load_witness_library(path) {
+                Ok(backend) => Box::new(backend),
+                Err(error) => {
+                    let _ = writeln!(stderr, "prove witness failed: {error}");
+                    return 1;
+                }
+            },
+            (None, Some(path)) => match fs::read(path) {
+                Ok(trace_bytes) => Box::new(TraceBytesBackend::new(trace_bytes)),
+                Err(error) => {
+                    let _ = writeln!(
+                        stderr,
+                        "prove witness failed: read trace bytes failed: {}: {error}",
+                        path.display()
+                    );
+                    return 1;
+                }
+            },
+            (None, None) => {
+                let _ = writeln!(
+                    stderr,
+                    "prove witness failed: witness library or trace bytes are required"
+                );
                 return 1;
             }
-        },
-        None => {
-            let _ = writeln!(
-                stderr,
-                "prove witness failed: witness library is required by the CLI"
-            );
-            return 1;
-        }
-    };
+        };
     if parsed.all_units || plan.run_plan.options.aggregate {
         let outputs = match run_prove_witness_commitments_for_all_units(
             &plan,
             &auxiliary_inputs,
-            &witness_backend,
+            witness_backend.as_ref(),
         ) {
             Ok(outputs) => outputs,
             Err(error) => {
@@ -251,7 +263,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         &plan,
         0,
         auxiliary_inputs,
-        &witness_backend,
+        witness_backend.as_ref(),
     ) {
         Ok(output) => output,
         Err(error) => {
@@ -328,6 +340,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
 struct ParsedWitnessArgs {
     run_args: ParsedRunArgs,
     all_units: bool,
+    trace_bytes: Option<std::path::PathBuf>,
     unit_values: Option<std::path::PathBuf>,
     unit_values_segment: Option<std::path::PathBuf>,
     proof_values: Option<std::path::PathBuf>,
@@ -342,6 +355,7 @@ struct ParsedWitnessArgs {
 
 fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
     let mut all_units = false;
+    let mut trace_bytes = None;
     let mut unit_values = None;
     let mut unit_values_segment = None;
     let mut proof_values = None;
@@ -357,6 +371,17 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
     while index < args.len() {
         match args[index] {
             "--all-units" => all_units = true,
+            "--trace-bytes" => {
+                index += 1;
+                let value = args
+                    .get(index)
+                    .ok_or_else(|| ParseError::Invalid("missing --trace-bytes value".to_owned()))?;
+                if trace_bytes.replace((*value).into()).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --trace-bytes option".to_owned(),
+                    ));
+                }
+            }
             "--unit-values" => {
                 index += 1;
                 let value = args
@@ -491,9 +516,12 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             "cannot combine --challenge-values and --challenge-values-segment".to_owned(),
         ));
     }
+    let min_positionals = if trace_bytes.is_some() { 3 } else { 4 };
+    let max_positionals = if trace_bytes.is_some() { 4 } else { 5 };
     Ok(ParsedWitnessArgs {
-        run_args: parse_run_args(&filtered, 4, 5)?,
+        run_args: parse_run_args(&filtered, min_positionals, max_positionals)?,
         all_units,
+        trace_bytes,
         unit_values,
         unit_values_segment,
         proof_values,
@@ -507,11 +535,22 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
     })
 }
 
-fn parsed_inputs(parsed: &ParsedRunArgs) -> ProveExecutionInputArtifacts {
+fn parsed_inputs(parsed: &ParsedWitnessArgs) -> ProveExecutionInputArtifacts {
+    let witness_library = if parsed.trace_bytes.is_some() {
+        None
+    } else {
+        Some(parsed.run_args.positionals[2].clone())
+    };
+    let guest_image_index = if parsed.trace_bytes.is_some() { 2 } else { 3 };
+    let public_inputs_index = if parsed.trace_bytes.is_some() { 3 } else { 4 };
     ProveExecutionInputArtifacts {
-        witness_library: Some(parsed.positionals[2].clone()),
-        guest_image: parsed.positionals[3].clone(),
-        public_inputs: parsed.positionals.get(4).cloned(),
+        witness_library,
+        guest_image: parsed.run_args.positionals[guest_image_index].clone(),
+        public_inputs: parsed
+            .run_args
+            .positionals
+            .get(public_inputs_index)
+            .cloned(),
     }
 }
 
@@ -1475,7 +1514,7 @@ fn write_output_file(path: &Path, value: &[u8]) -> Result<(), String> {
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>"
+        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>"
     );
     2
 }
