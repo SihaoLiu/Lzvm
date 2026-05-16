@@ -571,7 +571,7 @@ fn validate_witness_regular_constraints(
     }
 
     let material = load_witness_fixed_columns_material(unit_index, plan_unit)?;
-    let fixed_values = fixed_columns_to_matrix(
+    validate_fixed_columns_shape(
         &material.fixed_columns,
         plan_unit.fixed_column_count,
         layout.row_count(),
@@ -606,7 +606,7 @@ fn validate_witness_regular_constraints(
             stage_count: plan_unit.stage_count,
             fixed_columns: RegularColumnMatrix {
                 column_count: plan_unit.fixed_column_count,
-                values: &fixed_values,
+                values: &material.row_major_values,
             },
             stage_columns: &stage_columns,
             custom_fixed_columns: &[],
@@ -669,17 +669,18 @@ fn validate_witness_regular_hints(
 
     let requirements = regular_hint_input_requirements(&plan_unit.regular_hints);
 
-    let fixed_values = if requirements.fixed_columns {
+    let fixed_material = if requirements.fixed_columns {
         let material = load_witness_fixed_columns_material(unit_index, plan_unit)?;
-        fixed_columns_to_matrix(
+        validate_fixed_columns_shape(
             &material.fixed_columns,
             plan_unit.fixed_column_count,
             layout.row_count(),
             unit_index,
             &plan_unit.fixed_columns,
-        )?
+        )?;
+        Some(material)
     } else {
-        Vec::new()
+        None
     };
 
     let stage_traces = if requirements.stage_columns {
@@ -706,14 +707,15 @@ fn validate_witness_regular_hints(
         });
     }
 
-    let fixed_columns = if fixed_values.is_empty() {
-        RegularColumnMatrix::default()
-    } else {
-        RegularColumnMatrix {
-            column_count: plan_unit.fixed_column_count,
-            values: &fixed_values,
-        }
-    };
+    let fixed_columns =
+        fixed_material
+            .as_ref()
+            .map_or_else(RegularColumnMatrix::default, |material| {
+                RegularColumnMatrix {
+                    column_count: plan_unit.fixed_column_count,
+                    values: &material.row_major_values,
+                }
+            });
 
     for row in 0..layout.row_count() {
         resolve_regular_hint_program_for_row(
@@ -778,13 +780,13 @@ fn load_witness_fixed_columns_material(
     })
 }
 
-fn fixed_columns_to_matrix(
+fn validate_fixed_columns_shape(
     fixed_columns: &FixedColumns,
     fixed_column_count: usize,
     row_count: usize,
     unit_index: usize,
     path: &Path,
-) -> Result<Vec<Felt>, ProveWitnessCommitmentError> {
+) -> Result<(), ProveWitnessCommitmentError> {
     let found_rows = usize::try_from(fixed_columns.row_count).map_err(|_| {
         ProveWitnessCommitmentError::FixedRowCountTooLarge {
             unit_index,
@@ -808,39 +810,7 @@ fn fixed_columns_to_matrix(
             found: fixed_columns.columns.len(),
         });
     }
-
-    let value_count = row_count.checked_mul(fixed_column_count).ok_or(
-        ProveWitnessCommitmentError::FixedColumnValueCountOverflow {
-            unit_index,
-            path: path.to_path_buf(),
-        },
-    )?;
-    let mut values = vec![Felt::ZERO; value_count];
-    for (column_index, column) in fixed_columns.columns.iter().enumerate() {
-        if column.values.len() != row_count {
-            return Err(ProveWitnessCommitmentError::FixedColumnValueCountMismatch {
-                unit_index,
-                path: path.to_path_buf(),
-                column: column.name.clone(),
-                expected: row_count,
-                found: column.values.len(),
-            });
-        }
-        for (row, raw) in column.values.iter().copied().enumerate() {
-            let index = row * fixed_column_count + column_index;
-            values[index] = Felt::from_canonical(raw).map_err(|error| match error {
-                FieldError::NonCanonical { value } => {
-                    ProveWitnessCommitmentError::FixedColumnNonCanonical {
-                        unit_index,
-                        path: path.to_path_buf(),
-                        index,
-                        value,
-                    }
-                }
-            })?;
-        }
-    }
-    Ok(values)
+    Ok(())
 }
 
 fn read_witness_input(pass: &ProvePassRequest) -> Result<Vec<u8>, ProveWitnessCommitmentError> {

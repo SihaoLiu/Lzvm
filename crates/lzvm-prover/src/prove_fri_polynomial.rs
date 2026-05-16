@@ -6,7 +6,9 @@ use lzvm_accel::cuda_goldilocks_coset_extend;
 use lzvm_artifacts::fixed::FixedColumns;
 #[cfg(not(feature = "cuda"))]
 use lzvm_field::coset_extend_evaluations;
-use lzvm_field::{DomainError, Ext3, Felt, FieldError};
+#[cfg(feature = "cuda")]
+use lzvm_field::FieldError;
+use lzvm_field::{DomainError, Ext3, Felt};
 
 use crate::fixed_material::{load_fixed_columns_material, FixedColumnsMaterialError};
 use crate::fri_polynomial::{
@@ -325,7 +327,7 @@ fn read_extended_fixed_columns(
     })?;
     let source_rows = usize::try_from(unit.base_domain_size)
         .map_err(|_| ProvePcsFriPolynomialError::LengthOverflow { unit_index })?;
-    let base_values = fixed_columns_to_matrix(
+    validate_fixed_columns_shape(
         &material.fixed_columns,
         plan_unit.fixed_column_count,
         source_rows,
@@ -333,7 +335,7 @@ fn read_extended_fixed_columns(
         &plan_unit.fixed_columns,
     )?;
     extend_row_major_columns(
-        &base_values,
+        &material.row_major_values,
         plan_unit.fixed_column_count,
         usize::try_from(unit.base_domain_bits)
             .map_err(|_| ProvePcsFriPolynomialError::LengthOverflow { unit_index })?,
@@ -343,13 +345,13 @@ fn read_extended_fixed_columns(
     )
 }
 
-fn fixed_columns_to_matrix(
+fn validate_fixed_columns_shape(
     fixed_columns: &FixedColumns,
     fixed_column_count: usize,
     row_count: usize,
     unit_index: usize,
     path: &Path,
-) -> Result<Vec<Felt>, ProvePcsFriPolynomialError> {
+) -> Result<(), ProvePcsFriPolynomialError> {
     let found_rows = usize::try_from(fixed_columns.row_count).map_err(|_| {
         ProvePcsFriPolynomialError::FixedRowCountTooLarge {
             unit_index,
@@ -373,39 +375,7 @@ fn fixed_columns_to_matrix(
             found: fixed_columns.columns.len(),
         });
     }
-
-    let value_count = row_count.checked_mul(fixed_column_count).ok_or(
-        ProvePcsFriPolynomialError::FixedColumnValueCountOverflow {
-            unit_index,
-            path: path.to_path_buf(),
-        },
-    )?;
-    let mut values = vec![Felt::ZERO; value_count];
-    for (column_index, column) in fixed_columns.columns.iter().enumerate() {
-        if column.values.len() != row_count {
-            return Err(ProvePcsFriPolynomialError::FixedColumnValueCountMismatch {
-                unit_index,
-                path: path.to_path_buf(),
-                column: column.name.clone(),
-                expected: row_count,
-                found: column.values.len(),
-            });
-        }
-        for (row, value) in column.values.iter().copied().enumerate() {
-            let index = row * fixed_column_count + column_index;
-            values[index] = Felt::from_canonical(value).map_err(|error| match error {
-                FieldError::NonCanonical { value } => {
-                    ProvePcsFriPolynomialError::FixedColumnNonCanonical {
-                        unit_index,
-                        path: path.to_path_buf(),
-                        index,
-                        value,
-                    }
-                }
-            })?;
-        }
-    }
-    Ok(values)
+    Ok(())
 }
 
 fn extend_row_major_columns(

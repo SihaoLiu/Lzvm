@@ -26,6 +26,19 @@ fn loads_raw_fixed_columns_material_and_stages_device_bytes() {
 
     assert_eq!(material.fixed_columns, columns);
     assert_eq!(
+        material.row_major_values,
+        vec![
+            lzvm_field::Felt::from_u64(11),
+            lzvm_field::Felt::from_u64(21),
+            lzvm_field::Felt::from_u64(12),
+            lzvm_field::Felt::from_u64(22),
+            lzvm_field::Felt::from_u64(13),
+            lzvm_field::Felt::from_u64(23),
+            lzvm_field::Felt::from_u64(14),
+            lzvm_field::Felt::from_u64(24),
+        ]
+    );
+    assert_eq!(
         material.raw_bytes,
         fs::read(&path).expect("fixed file should read")
     );
