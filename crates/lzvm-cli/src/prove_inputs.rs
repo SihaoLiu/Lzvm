@@ -43,26 +43,21 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     };
 
     write_run_plan_summary(stdout, &plan.run_plan);
-    let _ = writeln!(
-        stdout,
-        "witness_library={}",
-        plan.inputs.witness_library.display()
-    );
-    let _ = writeln!(
-        stdout,
-        "witness_library_bytes={}",
-        plan.witness_library_info.byte_len
-    );
-    let _ = writeln!(
-        stdout,
-        "witness_library_machine={}",
-        plan.witness_library_info.machine
-    );
-    let _ = writeln!(
-        stdout,
-        "witness_library_digest={}",
-        format_hash(&plan.witness_library_info.digest)
-    );
+    match (&plan.inputs.witness_library, &plan.witness_library_info) {
+        (Some(path), Some(info)) => {
+            let _ = writeln!(stdout, "witness_library={}", path.display());
+            let _ = writeln!(stdout, "witness_library_bytes={}", info.byte_len);
+            let _ = writeln!(stdout, "witness_library_machine={}", info.machine);
+            let _ = writeln!(
+                stdout,
+                "witness_library_digest={}",
+                format_hash(&info.digest)
+            );
+        }
+        _ => {
+            let _ = writeln!(stdout, "witness_library=none");
+        }
+    }
     let _ = writeln!(stdout, "guest_image={}", plan.inputs.guest_image.display());
     let _ = writeln!(
         stdout,
@@ -97,7 +92,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
 
 fn parsed_inputs(parsed: &ParsedRunArgs) -> ProveExecutionInputArtifacts {
     ProveExecutionInputArtifacts {
-        witness_library: parsed.positionals[2].clone(),
+        witness_library: Some(parsed.positionals[2].clone()),
         guest_image: parsed.positionals[3].clone(),
         public_inputs: parsed.positionals.get(4).cloned(),
     }

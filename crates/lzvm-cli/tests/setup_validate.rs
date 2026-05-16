@@ -2455,7 +2455,7 @@ fn runs_prove_witness_commitments_for_setup_directory() {
         &catalog,
         request,
         ProveExecutionInputArtifacts {
-            witness_library: witness_library.clone(),
+            witness_library: Some(witness_library.clone()),
             guest_image: guest_image.clone(),
             public_inputs: None,
         },
@@ -2548,7 +2548,7 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
         &catalog,
         request,
         ProveExecutionInputArtifacts {
-            witness_library: witness_library.clone(),
+            witness_library: Some(witness_library.clone()),
             guest_image: guest_image.clone(),
             public_inputs: Some(public_values_path.clone()),
         },
@@ -2739,7 +2739,7 @@ fn writes_prove_witness_proof_without_save_outputs() {
         &catalog,
         request,
         ProveExecutionInputArtifacts {
-            witness_library: witness_library.clone(),
+            witness_library: Some(witness_library.clone()),
             guest_image: guest_image.clone(),
             public_inputs: Some(public_values_path.clone()),
         },
@@ -2985,7 +2985,7 @@ fn builds_witness_proof_core_for_multiple_units() {
         &catalog,
         request,
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: Some(public_values_path),
         },
@@ -3094,7 +3094,7 @@ fn builds_witness_proof_artifact_for_multiple_units_with_unit_values() {
         &catalog,
         request,
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: Some(public_values_path),
         },
@@ -3188,7 +3188,7 @@ fn builds_witness_proof_artifact_for_multiple_units_with_tail_segments() {
         &catalog,
         request,
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: Some(public_values_path),
         },

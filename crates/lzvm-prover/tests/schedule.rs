@@ -536,7 +536,7 @@ fn derives_prove_execution_plan_with_input_artifacts() {
         gpu: GpuRunOptions::default(),
     };
     let inputs = ProveExecutionInputArtifacts {
-        witness_library: witness_library.clone(),
+        witness_library: Some(witness_library.clone()),
         guest_image: guest_image.clone(),
         public_inputs: Some(public_inputs.clone()),
     };
@@ -546,9 +546,13 @@ fn derives_prove_execution_plan_with_input_artifacts() {
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(plan.run_plan.schedule.unit_count, 1);
-    assert_eq!(plan.inputs.witness_library, witness_library);
-    assert_eq!(plan.witness_library_info.byte_len, 64);
-    assert_eq!(plan.witness_library_info.machine, 62);
+    assert_eq!(plan.inputs.witness_library, Some(witness_library));
+    let witness_library_info = plan
+        .witness_library_info
+        .as_ref()
+        .expect("witness library info should be present");
+    assert_eq!(witness_library_info.byte_len, 64);
+    assert_eq!(witness_library_info.machine, 62);
     assert_eq!(plan.inputs.guest_image, guest_image);
     assert_eq!(plan.inputs.public_inputs, Some(public_inputs));
     assert_eq!(plan.guest_image_info.byte_len, 64);
@@ -559,6 +563,38 @@ fn derives_prove_execution_plan_with_input_artifacts() {
         expected_expression_program
     );
     assert_eq!(plan.units[0].fri_expression_id, Some(42));
+}
+
+#[test]
+fn derives_prove_execution_plan_without_witness_library() {
+    let dir = temp_dir("execution-plan-native");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+
+    let catalog = sample_catalog(vec![sample_unit_with_pcs_material(
+        KeyUnitKind::Basic,
+        0,
+        64,
+    )]);
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
+        options: ProveRunOptions::default_for_output(dir.join("out")),
+        gpu: GpuRunOptions::default(),
+    };
+    let inputs = ProveExecutionInputArtifacts {
+        witness_library: None,
+        guest_image: guest_image.clone(),
+        public_inputs: None,
+    };
+
+    let plan = derive_prove_execution_plan(&catalog, request, inputs)
+        .expect("execution plan should derive without a witness library");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(plan.witness_library_info.is_none());
+    assert_eq!(plan.inputs.guest_image, guest_image);
 }
 
 #[test]
@@ -590,7 +626,7 @@ fn derives_prove_execution_plan_with_program_image_cache() {
         gpu: GpuRunOptions::default(),
     };
     let inputs = ProveExecutionInputArtifacts {
-        witness_library,
+        witness_library: Some(witness_library),
         guest_image,
         public_inputs: Some(public_inputs),
     };
@@ -647,7 +683,7 @@ fn rejects_prove_execution_plan_with_program_image_cache_guest_digest_mismatch()
         gpu: GpuRunOptions::default(),
     };
     let inputs = ProveExecutionInputArtifacts {
-        witness_library,
+        witness_library: Some(witness_library),
         guest_image,
         public_inputs: Some(public_inputs),
     };
@@ -685,7 +721,7 @@ fn rejects_prove_execution_plan_without_pcs_material() {
         gpu: GpuRunOptions::default(),
     };
     let inputs = ProveExecutionInputArtifacts {
-        witness_library,
+        witness_library: Some(witness_library),
         guest_image,
         public_inputs: None,
     };
@@ -722,7 +758,7 @@ fn rejects_prove_execution_plan_with_missing_witness_library() {
         gpu: GpuRunOptions::default(),
     };
     let inputs = ProveExecutionInputArtifacts {
-        witness_library: witness_library.clone(),
+        witness_library: Some(witness_library.clone()),
         guest_image,
         public_inputs: None,
     };
@@ -758,7 +794,7 @@ fn rejects_prove_execution_plan_with_invalid_guest_image() {
         gpu: GpuRunOptions::default(),
     };
     let inputs = ProveExecutionInputArtifacts {
-        witness_library,
+        witness_library: Some(witness_library),
         guest_image: guest_image.clone(),
         public_inputs: None,
     };
@@ -794,7 +830,7 @@ fn rejects_prove_execution_plan_with_invalid_witness_library() {
         gpu: GpuRunOptions::default(),
     };
     let inputs = ProveExecutionInputArtifacts {
-        witness_library: witness_library.clone(),
+        witness_library: Some(witness_library.clone()),
         guest_image,
         public_inputs: None,
     };

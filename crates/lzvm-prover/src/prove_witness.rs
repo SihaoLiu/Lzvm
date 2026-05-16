@@ -155,6 +155,7 @@ pub enum ProveWitnessCommitmentError {
         path: PathBuf,
         message: String,
     },
+    MissingWitnessLibrary,
     PublicInputs {
         path: PathBuf,
         source: PublicValuesError,
@@ -364,6 +365,9 @@ impl fmt::Display for ProveWitnessCommitmentError {
                 "prove witness commitment input-data read failed: {}: {message}",
                 path.display()
             ),
+            Self::MissingWitnessLibrary => {
+                write!(f, "prove witness commitment missing witness library")
+            }
             Self::PublicInputs { path, source } => {
                 write!(f, "read public inputs failed: {}: {source}", path.display())
             }
@@ -492,6 +496,7 @@ impl std::error::Error for ProveWitnessCommitmentError {
             Self::Commit(error) => Some(error),
             Self::UnitIndexOutOfRange { .. }
             | Self::InputData { .. }
+            | Self::MissingWitnessLibrary
             | Self::PublicInputsSetupHashMismatch
             | Self::PublicInputNonCanonical { .. }
             | Self::FixedRowCountTooLarge { .. }
@@ -897,7 +902,10 @@ pub fn run_prove_witness_commitments_with_trace(
     unit_index: usize,
     auxiliary_inputs: ProveWitnessAuxiliaryInputs,
 ) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
-    let library = load_witness_library(&plan.inputs.witness_library)?;
+    let Some(witness_library) = &plan.inputs.witness_library else {
+        return Err(ProveWitnessCommitmentError::MissingWitnessLibrary);
+    };
+    let library = load_witness_library(witness_library)?;
     run_prove_witness_commitments_with_trace_backend(plan, unit_index, auxiliary_inputs, &library)
 }
 

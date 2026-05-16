@@ -353,7 +353,7 @@ impl From<ProveScheduleError> for ProveRunPlanError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProveExecutionInputArtifacts {
-    pub witness_library: PathBuf,
+    pub witness_library: Option<PathBuf>,
     pub guest_image: PathBuf,
     pub public_inputs: Option<PathBuf>,
 }
@@ -368,7 +368,7 @@ pub struct ProveProgramImageCache {
 pub struct ProveExecutionPlan {
     pub run_plan: ProveRunPlan,
     pub inputs: ProveExecutionInputArtifacts,
-    pub witness_library_info: WitnessLibraryInfo,
+    pub witness_library_info: Option<WitnessLibraryInfo>,
     pub guest_image_info: GuestImageInfo,
     pub program_image_cache: Option<ProveProgramImageCache>,
     pub units: Vec<ProveExecutionUnitArtifacts>,
@@ -690,18 +690,22 @@ pub fn derive_prove_execution_plan_with_program_image_cache(
 ) -> Result<ProveExecutionPlan, ProveExecutionPlanError> {
     let run_plan = derive_prove_run_plan(catalog, request)?;
     validate_execution_pcs_material(&run_plan.schedule)?;
-    validate_regular_file(
-        &inputs.witness_library,
-        |path| ProveExecutionPlanError::MissingWitnessLibrary { path },
-        |path| ProveExecutionPlanError::WitnessLibraryIsNotFile { path },
-    )?;
-    let witness_library_info =
-        read_witness_library_file(&inputs.witness_library).map_err(|source| {
-            ProveExecutionPlanError::InvalidWitnessLibrary {
-                path: inputs.witness_library.clone(),
-                source,
-            }
-        })?;
+    let witness_library_info = match &inputs.witness_library {
+        Some(path) => {
+            validate_regular_file(
+                path,
+                |path| ProveExecutionPlanError::MissingWitnessLibrary { path },
+                |path| ProveExecutionPlanError::WitnessLibraryIsNotFile { path },
+            )?;
+            Some(read_witness_library_file(path).map_err(|source| {
+                ProveExecutionPlanError::InvalidWitnessLibrary {
+                    path: path.clone(),
+                    source,
+                }
+            })?)
+        }
+        None => None,
+    };
     validate_regular_file(
         &inputs.guest_image,
         |path| ProveExecutionPlanError::MissingGuestImage { path },

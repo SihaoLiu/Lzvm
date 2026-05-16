@@ -617,7 +617,7 @@ fn runs_witness_and_commits_stages_from_execution_plan() {
         &catalog,
         sample_request(dir.join("out"), Some(input_data.clone())),
         ProveExecutionInputArtifacts {
-            witness_library: witness_library.clone(),
+            witness_library: Some(witness_library.clone()),
             guest_image,
             public_inputs: None,
         },
@@ -678,7 +678,7 @@ fn preserves_trace_inputs_and_commitments_for_pcs_openings() {
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: Some(public_inputs),
         },
@@ -729,7 +729,7 @@ fn runs_witness_commitments_with_native_trace_backend() {
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: None,
         },
@@ -758,6 +758,38 @@ fn runs_witness_commitments_with_native_trace_backend() {
 }
 
 #[test]
+fn rejects_default_witness_run_without_witness_library() {
+    let dir = temp_dir("missing-runtime-library");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let catalog = sample_catalog(sample_unit());
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+
+    let error = run_prove_witness_commitments(&plan, 0)
+        .expect_err("default witness run should require a library");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        error,
+        ProveWitnessCommitmentError::MissingWitnessLibrary
+    ));
+}
+
+#[test]
 fn rejects_witness_traces_that_violate_regular_constraints() {
     let dir = temp_dir("constraint-violation");
     let _ = fs::remove_dir_all(&dir);
@@ -778,7 +810,7 @@ fn rejects_witness_traces_that_violate_regular_constraints() {
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: None,
         },
@@ -819,7 +851,7 @@ fn uses_public_inputs_when_checking_regular_constraints() {
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: Some(public_inputs),
         },
@@ -855,7 +887,7 @@ fn uses_proof_values_when_checking_regular_constraints() {
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: None,
         },
@@ -895,7 +927,7 @@ fn rejects_regular_hints_with_missing_proof_values() {
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: None,
         },
@@ -932,7 +964,7 @@ fn uses_proof_values_when_checking_regular_hints() {
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: None,
         },
@@ -975,7 +1007,7 @@ fn reports_missing_challenges_for_regular_constraints() {
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: None,
         },
@@ -1010,7 +1042,7 @@ fn builds_witness_commitment_proof_segments() {
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: None,
         },
@@ -1062,7 +1094,7 @@ fn builds_pcs_query_plan_segments_from_proof_inputs() {
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: None,
         },
@@ -1124,7 +1156,7 @@ fn builds_pcs_query_plan_segments_from_transcript_challenge() {
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: None,
         },
@@ -1313,7 +1345,7 @@ fn builds_pcs_fri_polynomial_from_execution_material() {
         &catalog,
         sample_request(dir.join("out"), None),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: None,
         },
@@ -1406,7 +1438,7 @@ fn builds_pcs_fri_opening_segments_from_execution_material() {
         &catalog,
         sample_request(dir.join("out"), None),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: None,
         },
@@ -1507,7 +1539,7 @@ fn builds_pcs_fri_transcript_values_from_execution_material() {
         &catalog,
         sample_request(dir.join("out"), None),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: None,
         },
@@ -1749,7 +1781,7 @@ fn builds_witness_opening_segments_from_query_plans() {
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: None,
         },
@@ -1819,7 +1851,7 @@ fn builds_witness_opening_segment_for_all_query_units() {
         &catalog,
         sample_request(dir.join("out"), Some(input_data)),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: None,
         },
@@ -1879,7 +1911,7 @@ fn rejects_missing_witness_input_data_when_running_commitments() {
         &catalog,
         sample_request(dir.join("out"), Some(input_data.clone())),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: None,
         },
@@ -1909,7 +1941,7 @@ fn rejects_witness_commitment_unit_indexes_outside_the_schedule() {
         &catalog,
         sample_request(dir.join("out"), None),
         ProveExecutionInputArtifacts {
-            witness_library,
+            witness_library: Some(witness_library),
             guest_image,
             public_inputs: None,
         },

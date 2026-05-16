@@ -122,10 +122,19 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
-    let witness_backend = match load_witness_library(&plan.inputs.witness_library) {
-        Ok(backend) => backend,
-        Err(error) => {
-            let _ = writeln!(stderr, "prove witness failed: {error}");
+    let witness_backend = match &plan.inputs.witness_library {
+        Some(path) => match load_witness_library(path) {
+            Ok(backend) => backend,
+            Err(error) => {
+                let _ = writeln!(stderr, "prove witness failed: {error}");
+                return 1;
+            }
+        },
+        None => {
+            let _ = writeln!(
+                stderr,
+                "prove witness failed: witness library is required by the CLI"
+            );
             return 1;
         }
     };
@@ -500,7 +509,7 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
 
 fn parsed_inputs(parsed: &ParsedRunArgs) -> ProveExecutionInputArtifacts {
     ProveExecutionInputArtifacts {
-        witness_library: parsed.positionals[2].clone(),
+        witness_library: Some(parsed.positionals[2].clone()),
         guest_image: parsed.positionals[3].clone(),
         public_inputs: parsed.positionals.get(4).cloned(),
     }
