@@ -2,11 +2,13 @@ use lzvm_artifacts::contribution_segment::{
     encode_contribution_segment, ContributionEntry, ContributionSegment, CONTRIBUTION_SEGMENT_ID,
 };
 use lzvm_artifacts::global_info::{CurveKind, GlobalAir, GlobalInfo, NamedStageValue};
+use lzvm_artifacts::proof::{encode_proof_artifact, parse_proof_artifact, ProofArtifact};
 use lzvm_field::{Felt, FieldError, PoseidonTranscript};
 use lzvm_prover::contribution::{
     aggregate_contribution_values, build_contribution_segment,
-    derive_global_challenge_from_contributions, load_contribution_segment_from_segments,
-    ContributionChallengeError, LoadContributionSegmentError, ProveContributionEntry,
+    derive_global_challenge_from_contributions, derive_global_challenge_from_proof_segments,
+    load_contribution_segment_from_segments, ContributionChallengeError,
+    LoadContributionSegmentError, ProveContributionEntry,
 };
 
 fn sample_entries() -> Vec<ProveContributionEntry> {
@@ -58,7 +60,20 @@ fn proof_value(name: &str, stage: u64) -> NamedStageValue {
 
 #[test]
 fn round_trips_contribution_segments() {
-    let entries = sample_entries();
+    let entries = vec![
+        ProveContributionEntry {
+            worker_index: 0,
+            group_id: 0,
+            aggregated: false,
+            values: vec![Felt::from_u64(1), Felt::from_u64(2), Felt::from_u64(3)],
+        },
+        ProveContributionEntry {
+            worker_index: 1,
+            group_id: 0,
+            aggregated: false,
+            values: vec![Felt::from_u64(4), Felt::from_u64(5), Felt::from_u64(6)],
+        },
+    ];
     let segment = build_contribution_segment(&entries)
         .expect("segment should build")
         .expect("segment should exist");
@@ -166,6 +181,67 @@ fn derives_global_challenge_from_contributions() {
             &public_values,
             &packed_proof_values,
             &entries,
+        )
+        .expect("global challenge should derive"),
+        expected
+    );
+}
+
+#[test]
+fn derives_global_challenge_from_proof_segments() {
+    let global_info = sample_global_info(
+        3,
+        vec![
+            proof_value("stage_one_a", 1),
+            proof_value("stage_two", 2),
+            proof_value("stage_one_b", 1),
+        ],
+    );
+    let public_values = vec![Felt::from_u64(3), Felt::from_u64(4)];
+    let packed_proof_values = vec![
+        Felt::from_u64(10),
+        Felt::from_u64(20),
+        Felt::from_u64(21),
+        Felt::from_u64(22),
+        Felt::from_u64(30),
+    ];
+    let entries = vec![
+        ProveContributionEntry {
+            worker_index: 0,
+            group_id: 0,
+            aggregated: false,
+            values: vec![Felt::from_u64(1), Felt::from_u64(2), Felt::from_u64(3)],
+        },
+        ProveContributionEntry {
+            worker_index: 1,
+            group_id: 0,
+            aggregated: false,
+            values: vec![Felt::from_u64(4), Felt::from_u64(5), Felt::from_u64(6)],
+        },
+    ];
+    let contribution_segment = build_contribution_segment(&entries)
+        .expect("segment should build")
+        .expect("segment should exist");
+    let proof = ProofArtifact {
+        setup_hash: [0; 32],
+        public_values_hash: [0; 32],
+        segments: vec![contribution_segment],
+    };
+    let proof = parse_proof_artifact(&encode_proof_artifact(&proof).expect("proof should encode"))
+        .expect("proof should parse");
+
+    let mut transcript = PoseidonTranscript::new(4).expect("transcript should build");
+    transcript.put(&public_values);
+    transcript.put(&[Felt::from_u64(10), Felt::from_u64(30)]);
+    transcript.put(&[Felt::from_u64(5), Felt::from_u64(7), Felt::from_u64(9)]);
+    let expected = transcript.get_field();
+
+    assert_eq!(
+        derive_global_challenge_from_proof_segments(
+            &global_info,
+            &public_values,
+            &packed_proof_values,
+            &proof.segments,
         )
         .expect("global challenge should derive"),
         expected

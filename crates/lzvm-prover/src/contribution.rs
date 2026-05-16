@@ -59,6 +59,7 @@ pub enum ContributionChallengeError {
         expected: usize,
         found: usize,
     },
+    Load(LoadContributionSegmentError),
     LengthOverflow,
     Transcript(TranscriptError),
 }
@@ -145,6 +146,7 @@ impl fmt::Display for ContributionChallengeError {
                 f,
                 "contribution proof value count mismatch: expected {expected}, found {found}"
             ),
+            Self::Load(error) => write!(f, "{error}"),
             Self::LengthOverflow => write!(f, "contribution challenge length overflow"),
             Self::Transcript(error) => write!(f, "contribution challenge transcript failed: {error}"),
         }
@@ -155,6 +157,7 @@ impl std::error::Error for ContributionChallengeError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Transcript(error) => Some(error),
+            Self::Load(error) => Some(error),
             Self::UnsupportedCurve { .. }
             | Self::MissingLatticeSize
             | Self::LatticeSizeOverflow { .. }
@@ -171,6 +174,12 @@ impl std::error::Error for ContributionChallengeError {
 impl From<TranscriptError> for ContributionChallengeError {
     fn from(error: TranscriptError) -> Self {
         Self::Transcript(error)
+    }
+}
+
+impl From<LoadContributionSegmentError> for ContributionChallengeError {
+    fn from(error: LoadContributionSegmentError) -> Self {
+        Self::Load(error)
     }
 }
 
@@ -248,6 +257,21 @@ pub fn derive_global_challenge_from_contributions(
     }
     transcript.put(&aggregated);
     Ok(transcript.get_field())
+}
+
+pub fn derive_global_challenge_from_proof_segments(
+    global_info: &GlobalInfo,
+    public_values: &[Felt],
+    packed_proof_values: &[Felt],
+    segments: &[ProofSegment],
+) -> Result<Ext3, ContributionChallengeError> {
+    let entries = load_contribution_segment_from_segments(segments)?;
+    derive_global_challenge_from_contributions(
+        global_info,
+        public_values,
+        packed_proof_values,
+        &entries,
+    )
 }
 
 fn aggregate_lattice_contributions(
