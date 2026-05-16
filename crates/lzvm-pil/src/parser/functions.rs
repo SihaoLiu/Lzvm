@@ -272,10 +272,16 @@ fn parse_function_statement(
             (FunctionStatementKind::Expression, span, next_index)
         }
     };
+    let header = function_statement_header_span(tokens, index, next_index, kind, source)?;
+    let body = function_statement_body_span(tokens, index, next_index, kind, span, source)?;
+    let value = function_statement_value_span(tokens, index, next_index, kind);
 
     Ok(ParsedFunctionStatement {
         statement: FunctionStatement {
             kind,
+            header,
+            body,
+            value,
             source_name: source.source_name.clone(),
             start: span.start,
             end: span.end,
@@ -479,6 +485,129 @@ fn parse_semicolon_statement_span(
             .get(limit_index)
             .map_or_else(|| missing_start(tokens, limit_index), |token| token.start),
     })
+}
+
+fn function_statement_header_span(
+    tokens: &[Token],
+    index: usize,
+    next_index: usize,
+    kind: FunctionStatementKind,
+    source: &SourceFile,
+) -> Result<Option<SourceSpan>, ParseError> {
+    if !function_statement_has_header(kind) {
+        return Ok(None);
+    }
+
+    let mut cursor = index + 1;
+    while cursor < next_index {
+        let Some(token) = tokens.get(cursor) else {
+            break;
+        };
+        match token.kind {
+            TokenKind::LParen => {
+                let (span, _) = parse_delimited_span(tokens, cursor, source)?;
+                return Ok(Some(span));
+            }
+            TokenKind::LBrace | TokenKind::Semicolon => break,
+            _ => cursor += 1,
+        }
+    }
+    Ok(None)
+}
+
+fn function_statement_body_span(
+    tokens: &[Token],
+    index: usize,
+    next_index: usize,
+    kind: FunctionStatementKind,
+    span: SourceSpan,
+    source: &SourceFile,
+) -> Result<Option<SourceSpan>, ParseError> {
+    if kind == FunctionStatementKind::Block {
+        return Ok(Some(span));
+    }
+    if !function_statement_has_body(kind) {
+        return Ok(None);
+    }
+
+    let mut cursor = index + 1;
+    while cursor < next_index {
+        let Some(token) = tokens.get(cursor) else {
+            break;
+        };
+        match token.kind {
+            TokenKind::LParen | TokenKind::LBracket => {
+                let (_, next) = parse_delimited_span(tokens, cursor, source)?;
+                cursor = next;
+            }
+            TokenKind::LBrace => {
+                let (body, _) = parse_delimited_span(tokens, cursor, source)?;
+                return Ok(Some(body));
+            }
+            _ => cursor += 1,
+        }
+    }
+    Ok(None)
+}
+
+fn function_statement_value_span(
+    tokens: &[Token],
+    index: usize,
+    next_index: usize,
+    kind: FunctionStatementKind,
+) -> Option<SourceSpan> {
+    if !function_statement_has_value(kind) {
+        return None;
+    }
+    let semicolon_index = next_index.checked_sub(1)?;
+    if tokens.get(semicolon_index)?.kind != TokenKind::Semicolon {
+        return None;
+    }
+    let value_start_index = if kind == FunctionStatementKind::Return {
+        index + 1
+    } else {
+        index
+    };
+    if value_start_index >= semicolon_index {
+        return None;
+    }
+    Some(SourceSpan {
+        start: tokens.get(value_start_index)?.start,
+        end: tokens.get(semicolon_index.checked_sub(1)?)?.end,
+    })
+}
+
+fn function_statement_has_header(kind: FunctionStatementKind) -> bool {
+    matches!(
+        kind,
+        FunctionStatementKind::If
+            | FunctionStatementKind::ElseIf
+            | FunctionStatementKind::For
+            | FunctionStatementKind::While
+            | FunctionStatementKind::Switch
+    )
+}
+
+fn function_statement_has_body(kind: FunctionStatementKind) -> bool {
+    matches!(
+        kind,
+        FunctionStatementKind::If
+            | FunctionStatementKind::ElseIf
+            | FunctionStatementKind::Else
+            | FunctionStatementKind::For
+            | FunctionStatementKind::While
+            | FunctionStatementKind::Do
+            | FunctionStatementKind::Switch
+    )
+}
+
+fn function_statement_has_value(kind: FunctionStatementKind) -> bool {
+    matches!(
+        kind,
+        FunctionStatementKind::Return
+            | FunctionStatementKind::Declaration
+            | FunctionStatementKind::Expression
+    )
 }
 
 fn function_statement_declaration_start(kind: TokenKind) -> bool {

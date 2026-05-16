@@ -527,6 +527,20 @@ fn parses_function_body_statement_spans() {
         FunctionStatementKind::If
     );
     assert_eq!(
+        &source.contents[declarations[0].statements[0]
+            .header
+            .expect("if header should be recorded")
+            .start..declarations[0].statements[0].header.unwrap().end],
+        "(value == 0)"
+    );
+    assert_eq!(
+        &source.contents[declarations[0].statements[0]
+            .body
+            .expect("if body should be recorded")
+            .start..declarations[0].statements[0].body.unwrap().end],
+        "{ return 1; }"
+    );
+    assert_eq!(
         &source.contents[declarations[0].statements[0].start..declarations[0].statements[0].end],
         "if (value == 0) { return 1; } else if (value == 1) { return 2; } else { return 3; }"
     );
@@ -542,6 +556,34 @@ fn parses_function_body_statement_spans() {
             FunctionStatementKind::For,
             FunctionStatementKind::Return
         ]
+    );
+    assert_eq!(
+        &source.contents[declarations[1].statements[0]
+            .value
+            .expect("declaration value should be recorded")
+            .start..declarations[1].statements[0].value.unwrap().end],
+        "int total = 0"
+    );
+    assert_eq!(
+        &source.contents[declarations[1].statements[1]
+            .header
+            .expect("loop header should be recorded")
+            .start..declarations[1].statements[1].header.unwrap().end],
+        "(int i = 0; i < length(values); ++i)"
+    );
+    assert_eq!(
+        &source.contents[declarations[1].statements[1]
+            .body
+            .expect("loop body should be recorded")
+            .start..declarations[1].statements[1].body.unwrap().end],
+        "{ total += values[i]; }"
+    );
+    assert_eq!(
+        &source.contents[declarations[1].statements[2]
+            .value
+            .expect("return value should be recorded")
+            .start..declarations[1].statements[2].value.unwrap().end],
+        "total"
     );
 }
 

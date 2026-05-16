@@ -141,6 +141,9 @@ pub enum FunctionStatementKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionStatement {
     pub kind: FunctionStatementKind,
+    pub header: Option<SourceSpan>,
+    pub body: Option<SourceSpan>,
+    pub value: Option<SourceSpan>,
     pub source_name: String,
     pub start: usize,
     pub end: usize,
