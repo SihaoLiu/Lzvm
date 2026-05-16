@@ -29,6 +29,7 @@ use lzvm_prover::setup_preflight::validate_setup_preflight;
 use lzvm_prover::unit_values::{
     build_unit_values_segment_from_packed_values_batch, ProveUnitValues,
 };
+use lzvm_prover::witness_loader::{load_witness_library, WitnessBackend};
 use lzvm_prover::{
     build_constant_opening_segment, build_pcs_evaluation_segment,
     build_pcs_fri_opening_segment_from_transcript_values,
@@ -37,7 +38,7 @@ use lzvm_prover::{
     build_pcs_query_plan_segment_from_challenge, build_pcs_query_plan_segment_with_bindings,
     build_witness_commitment_segment, build_witness_opening_segment,
     build_witness_opening_segment_batch, derive_prove_execution_plan_with_program_image_cache,
-    run_prove_witness_commitments_with_trace,
+    run_prove_witness_commitments_with_trace_backend,
     unit_values::build_unit_values_segment_from_packed_values, ProveExecutionInputArtifacts,
     ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePcsEvaluationValues,
     ProvePcsFriTranscriptTraceSegmentValues, ProveSchedule, ProveWitnessAuxiliaryInputs,
@@ -121,8 +122,19 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
+    let witness_backend = match load_witness_library(&plan.inputs.witness_library) {
+        Ok(backend) => backend,
+        Err(error) => {
+            let _ = writeln!(stderr, "prove witness failed: {error}");
+            return 1;
+        }
+    };
     if parsed.all_units || plan.run_plan.options.aggregate {
-        let outputs = match run_prove_witness_commitments_for_all_units(&plan, &auxiliary_inputs) {
+        let outputs = match run_prove_witness_commitments_for_all_units(
+            &plan,
+            &auxiliary_inputs,
+            &witness_backend,
+        ) {
             Ok(outputs) => outputs,
             Err(error) => {
                 let _ = writeln!(stderr, "prove witness failed: {error}");
@@ -226,7 +238,12 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
         return 0;
     }
-    let output = match run_prove_witness_commitments_with_trace(&plan, 0, auxiliary_inputs) {
+    let output = match run_prove_witness_commitments_with_trace_backend(
+        &plan,
+        0,
+        auxiliary_inputs,
+        &witness_backend,
+    ) {
         Ok(output) => output,
         Err(error) => {
             let _ = writeln!(stderr, "prove witness failed: {error}");
@@ -1191,14 +1208,19 @@ fn load_batch_unit_values_inputs(
 fn run_prove_witness_commitments_for_all_units(
     plan: &ProveExecutionPlan,
     auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
+    backend: &(impl WitnessBackend + ?Sized),
 ) -> Result<Vec<ProveWitnessTraceCommitments>, String> {
     let mut outputs = Vec::with_capacity(plan.units.len());
     for unit_index in 0..plan.units.len() {
-        let output =
-            run_prove_witness_commitments_with_trace(plan, unit_index, auxiliary_inputs.clone())
-                .map_err(|error| {
-                    format!("run witness commitments failed for unit {unit_index}: {error}")
-                })?;
+        let output = run_prove_witness_commitments_with_trace_backend(
+            plan,
+            unit_index,
+            auxiliary_inputs.clone(),
+            backend,
+        )
+        .map_err(|error| {
+            format!("run witness commitments failed for unit {unit_index}: {error}")
+        })?;
         outputs.push(output);
     }
     Ok(outputs)

@@ -68,10 +68,11 @@ use lzvm_prover::{
     build_witness_opening_segment, build_witness_opening_segment_batch,
     derive_prove_execution_plan, derive_prove_schedule, run_prove_witness_commitments,
     run_prove_witness_commitments_with_auxiliary_inputs, run_prove_witness_commitments_with_trace,
-    GpuRunOptions, ProveExecutionInputArtifacts, ProvePartitionPlan, ProvePassRequest,
-    ProvePcsEvaluationValues, ProvePcsFriOpeningTraceValues, ProvePcsFriOpeningValues,
-    ProvePcsFriTranscriptTraceValues, ProvePcsQueryPlanSegmentError, ProveRunOptions,
-    ProveRunRequest, ProveSchedule, ProveWitnessAuxiliaryInputs, ProveWitnessCommitmentError,
+    run_prove_witness_commitments_with_trace_backend, GpuRunOptions, ProveExecutionInputArtifacts,
+    ProvePartitionPlan, ProvePassRequest, ProvePcsEvaluationValues, ProvePcsFriOpeningTraceValues,
+    ProvePcsFriOpeningValues, ProvePcsFriTranscriptTraceValues, ProvePcsQueryPlanSegmentError,
+    ProveRunOptions, ProveRunRequest, ProveSchedule, ProveWitnessAuxiliaryInputs,
+    ProveWitnessCommitmentError,
 };
 use sha2::{Digest, Sha256};
 
@@ -611,9 +612,16 @@ fn runs_witness_and_commits_stages_from_execution_plan() {
     )
     .expect("execution plan should derive");
 
-    let output = run_prove_witness_commitments(&plan, 0).expect("witness commitments should run");
-
     let library = load_witness_library(&witness_library).expect("witness library should load");
+    let output = run_prove_witness_commitments_with_trace_backend(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        &library,
+    )
+    .expect("witness commitments should run")
+    .into_commitments();
+
     let unit = &plan.run_plan.schedule.units[0];
     let layout = derive_witness_trace_layout(unit).expect("layout should derive");
     let trace = run_witness_trace(

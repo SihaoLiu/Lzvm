@@ -901,7 +901,8 @@ pub fn run_prove_witness_commitments_with_trace(
     run_prove_witness_commitments_with_trace_backend(plan, unit_index, auxiliary_inputs, &library)
 }
 
-pub(crate) fn run_prove_witness_commitments_with_trace_backend<B: WitnessBackend + ?Sized>(
+/// Runs witness commitments with a caller-supplied witness backend.
+pub fn run_prove_witness_commitments_with_trace_backend<B: WitnessBackend + ?Sized>(
     plan: &ProveExecutionPlan,
     unit_index: usize,
     auxiliary_inputs: ProveWitnessAuxiliaryInputs,
