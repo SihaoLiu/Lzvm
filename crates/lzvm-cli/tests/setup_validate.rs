@@ -4311,6 +4311,33 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
         "status=ok\nunits=4\nsegments=11\npublic_values=1\n"
     );
     assert!(verify_stderr.is_empty());
+
+    let mut proof_verify_stdout = Vec::new();
+    let mut proof_verify_stderr = Vec::new();
+    let proof_verify_code = run_cli(
+        &[
+            "verify",
+            "proof",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut proof_verify_stdout,
+        &mut proof_verify_stderr,
+    );
+    assert_eq!(
+        proof_verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&proof_verify_stderr)
+    );
+    assert_eq!(
+        String::from_utf8(proof_verify_stdout).expect("stdout should be utf-8"),
+        "status=ok\nunits=4\nsegments=11\npublic_values=1\n"
+    );
+    assert!(proof_verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
