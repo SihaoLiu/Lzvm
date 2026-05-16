@@ -104,24 +104,6 @@ pub enum VerifierOperand {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerifierInfoError {
-    Json {
-        message: String,
-    },
-    MissingField {
-        field: &'static str,
-    },
-    InvalidField {
-        field: &'static str,
-    },
-    UnknownOperation {
-        op: String,
-    },
-    UnknownReferenceKind {
-        kind: String,
-    },
-    InvalidNumber {
-        value: String,
-    },
     TemporaryReferenceOutOfBounds {
         temporary_id: u32,
         temporary_count: u32,
@@ -168,14 +150,6 @@ pub enum VerifierInfoError {
 impl fmt::Display for VerifierInfoError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Json { message } => write!(f, "verifier-info json error: {message}"),
-            Self::MissingField { field } => write!(f, "missing verifier-info field: {field}"),
-            Self::InvalidField { field } => write!(f, "invalid verifier-info field: {field}"),
-            Self::UnknownOperation { op } => write!(f, "unknown verifier-info operation: {op}"),
-            Self::UnknownReferenceKind { kind } => {
-                write!(f, "unknown verifier-info reference kind: {kind}")
-            }
-            Self::InvalidNumber { value } => write!(f, "invalid verifier-info number: {value}"),
             Self::TemporaryReferenceOutOfBounds {
                 temporary_id,
                 temporary_count,
@@ -357,20 +331,6 @@ pub fn encode_verifier_info(value: &VerifierInfo) -> Result<Vec<u8>, VerifierInf
     encode_sectioned_file(&file).map_err(VerifierInfoError::from)
 }
 
-#[cfg(feature = "json")]
-pub fn parse_verifier_info_json(input: &str) -> Result<VerifierInfo, VerifierInfoError> {
-    let value: serde_json::Value =
-        serde_json::from_str(input).map_err(|error| VerifierInfoError::Json {
-            message: error.to_string(),
-        })?;
-    let object = as_object(&value, "$")?;
-
-    Ok(VerifierInfo {
-        quotient: parse_verifier_code(required(object, "qVerifier")?, "qVerifier")?,
-        query: parse_verifier_code(required(object, "queryVerifier")?, "queryVerifier")?,
-    })
-}
-
 fn parse_verifier_info_section(bytes: &[u8]) -> Result<VerifierInfo, VerifierInfoError> {
     let mut reader = Reader::new(bytes);
     let value = VerifierInfo {
@@ -412,27 +372,6 @@ fn validate_verifier_code(
         }
     }
     Ok(())
-}
-
-#[cfg(feature = "json")]
-fn parse_verifier_code(
-    value: &serde_json::Value,
-    field: &'static str,
-) -> Result<VerifierCode, VerifierInfoError> {
-    let object = as_object(value, field)?;
-    let temporary_count = required_u32(object, "tmpUsed")?;
-    let operations = parse_operations(required_array(object, "code")?, temporary_count)?;
-    if operations.is_empty() {
-        return Err(VerifierInfoError::EmptyCodeBlock { field });
-    }
-
-    Ok(VerifierCode {
-        expression_id: optional_u32(object, "expId")?,
-        stage: optional_u32(object, "stage")?,
-        line: optional_string(object, "line")?.unwrap_or_default(),
-        temporary_count,
-        operations,
-    })
 }
 
 fn read_verifier_code(reader: &mut Reader<'_>) -> Result<VerifierCode, VerifierInfoError> {
@@ -496,41 +435,6 @@ fn write_verifier_operation(
     Ok(())
 }
 
-#[cfg(feature = "json")]
-fn parse_operations(
-    values: &[serde_json::Value],
-    temporary_count: u32,
-) -> Result<Vec<VerifierOperation>, VerifierInfoError> {
-    let mut operations = Vec::with_capacity(values.len());
-    for value in values {
-        let object = as_object(value, "code")?;
-        let op = parse_operation(&required_string(object, "op")?)?;
-        let destination = parse_destination(required(object, "dest")?, temporary_count)?;
-        let sources = parse_operands(required_array(object, "src")?, temporary_count)?;
-        validate_destination(&destination, temporary_count)?;
-        for source in &sources {
-            validate_operand(source, temporary_count)?;
-        }
-        operations.push(VerifierOperation {
-            op,
-            destination,
-            sources,
-        });
-    }
-    Ok(operations)
-}
-
-#[cfg(feature = "json")]
-fn parse_operation(op: &str) -> Result<VerifierOperationKind, VerifierInfoError> {
-    match op {
-        "add" => Ok(VerifierOperationKind::Add),
-        "sub" => Ok(VerifierOperationKind::Sub),
-        "mul" => Ok(VerifierOperationKind::Mul),
-        "copy" => Ok(VerifierOperationKind::Copy),
-        _ => Err(VerifierInfoError::UnknownOperation { op: op.to_owned() }),
-    }
-}
-
 fn operation_tag(value: VerifierOperationKind) -> u8 {
     match value {
         VerifierOperationKind::Add => 1,
@@ -576,196 +480,6 @@ fn validate_operand(
         }
     }
     Ok(())
-}
-
-#[cfg(feature = "json")]
-fn parse_destination(
-    value: &serde_json::Value,
-    temporary_count: u32,
-) -> Result<VerifierDestination, VerifierInfoError> {
-    let object = as_object(value, "dest")?;
-    if required_string(object, "type")? != "tmp" {
-        return Err(VerifierInfoError::InvalidField { field: "dest" });
-    }
-    let destination = VerifierDestination::temporary(
-        required_u32(object, "id")?,
-        optional_u32(object, "dim")?.unwrap_or(1),
-    );
-    validate_destination(&destination, temporary_count)?;
-    Ok(destination)
-}
-
-#[cfg(feature = "json")]
-fn parse_operands(
-    values: &[serde_json::Value],
-    temporary_count: u32,
-) -> Result<Vec<VerifierOperand>, VerifierInfoError> {
-    let mut operands = Vec::with_capacity(values.len());
-    for value in values {
-        let operand = parse_operand(value)?;
-        validate_operand(&operand, temporary_count)?;
-        operands.push(operand);
-    }
-    Ok(operands)
-}
-
-#[cfg(feature = "json")]
-fn parse_operand(value: &serde_json::Value) -> Result<VerifierOperand, VerifierInfoError> {
-    let object = as_object(value, "reference")?;
-    let kind = required_string(object, "type")?;
-    let dimension = optional_u32(object, "dim")?.unwrap_or(1);
-    match kind.as_str() {
-        "tmp" => Ok(VerifierOperand::temporary(
-            required_u32(object, "id")?,
-            dimension,
-        )),
-        "number" => Ok(VerifierOperand::number(
-            required_number(object, "value")?,
-            dimension,
-        )),
-        "eval" => Ok(VerifierOperand::evaluation(
-            required_u32(object, "id")?,
-            dimension,
-        )),
-        "challenge" => Ok(VerifierOperand::challenge(
-            required_u32(object, "id")?,
-            optional_u32(object, "stage")?,
-            optional_u32(object, "stageId")?,
-            dimension,
-        )),
-        "public" => Ok(VerifierOperand::public(
-            required_u32(object, "id")?,
-            dimension,
-        )),
-        "const" => Ok(VerifierOperand::constant(
-            required_u32(object, "id")?,
-            dimension,
-        )),
-        "cm" => Ok(VerifierOperand::commitment(
-            required_u32(object, "id")?,
-            dimension,
-        )),
-        "Zi" => {
-            let id = match optional_u32(object, "boundaryId")? {
-                Some(id) => id,
-                None => required_u32(object, "id")?,
-            };
-            Ok(VerifierOperand::boundary_zerofier(id, dimension))
-        }
-        "proofvalue" | "proofValue" => Ok(VerifierOperand::proof_value(
-            required_u32(object, "id")?,
-            dimension,
-        )),
-        "xDivXSub" | "xdivxsub" => Ok(VerifierOperand::x_div_x_sub(
-            required_u32(object, "id")?,
-            dimension,
-        )),
-        _ => Err(VerifierInfoError::UnknownReferenceKind { kind }),
-    }
-}
-
-#[cfg(feature = "json")]
-fn required_number(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<u64, VerifierInfoError> {
-    let value = required(object, field)?;
-    if let Some(text) = value.as_str() {
-        return text
-            .parse::<u64>()
-            .map_err(|_| VerifierInfoError::InvalidNumber {
-                value: text.to_owned(),
-            });
-    }
-    value
-        .as_u64()
-        .ok_or_else(|| VerifierInfoError::InvalidNumber {
-            value: value.to_string(),
-        })
-}
-
-#[cfg(feature = "json")]
-fn as_object<'a>(
-    value: &'a serde_json::Value,
-    field: &'static str,
-) -> Result<&'a serde_json::Map<String, serde_json::Value>, VerifierInfoError> {
-    value
-        .as_object()
-        .ok_or(VerifierInfoError::InvalidField { field })
-}
-
-#[cfg(feature = "json")]
-fn required<'a>(
-    object: &'a serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<&'a serde_json::Value, VerifierInfoError> {
-    object
-        .get(field)
-        .ok_or(VerifierInfoError::MissingField { field })
-}
-
-#[cfg(feature = "json")]
-fn required_array<'a>(
-    object: &'a serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<&'a Vec<serde_json::Value>, VerifierInfoError> {
-    required(object, field)?
-        .as_array()
-        .ok_or(VerifierInfoError::InvalidField { field })
-}
-
-#[cfg(feature = "json")]
-fn required_string(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<String, VerifierInfoError> {
-    required(object, field)?
-        .as_str()
-        .map(str::to_owned)
-        .ok_or(VerifierInfoError::InvalidField { field })
-}
-
-#[cfg(feature = "json")]
-fn required_u32(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<u32, VerifierInfoError> {
-    value_to_u32(required(object, field)?, field)
-}
-
-#[cfg(feature = "json")]
-fn optional_u32(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<Option<u32>, VerifierInfoError> {
-    object
-        .get(field)
-        .map(|value| value_to_u32(value, field))
-        .transpose()
-}
-
-#[cfg(feature = "json")]
-fn value_to_u32(value: &serde_json::Value, field: &'static str) -> Result<u32, VerifierInfoError> {
-    let Some(number) = value.as_u64() else {
-        return Err(VerifierInfoError::InvalidField { field });
-    };
-    u32::try_from(number).map_err(|_| VerifierInfoError::InvalidField { field })
-}
-
-#[cfg(feature = "json")]
-fn optional_string(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &'static str,
-) -> Result<Option<String>, VerifierInfoError> {
-    object
-        .get(field)
-        .map(|value| {
-            value
-                .as_str()
-                .map(str::to_owned)
-                .ok_or(VerifierInfoError::InvalidField { field })
-        })
-        .transpose()
 }
 
 fn write_destination(out: &mut Vec<u8>, value: &VerifierDestination) {
