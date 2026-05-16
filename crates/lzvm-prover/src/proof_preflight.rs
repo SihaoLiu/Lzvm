@@ -1,6 +1,10 @@
 use std::fmt;
 use std::path::Path;
 
+use lzvm_artifacts::program_image_segment::{
+    parse_program_image_cache_segment, ProgramImageCacheSegmentError,
+    PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+};
 use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact, ProofArtifactError};
 use lzvm_artifacts::public_values::{
     public_values_digest, read_public_values_file, PublicValues, PublicValuesError,
@@ -18,6 +22,7 @@ pub enum ProofPreflightError {
     SetupHashMismatch,
     PublicValuesDigest(PublicValuesError),
     PublicValuesHashMismatch,
+    ProgramImageCache(ProgramImageCacheSegmentError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +43,7 @@ impl fmt::Display for ProofPreflightError {
             Self::SetupHashMismatch => write!(f, "setup hash mismatch"),
             Self::PublicValuesDigest(error) => write!(f, "{error}"),
             Self::PublicValuesHashMismatch => write!(f, "public-values hash mismatch"),
+            Self::ProgramImageCache(error) => write!(f, "{error}"),
         }
     }
 }
@@ -64,6 +70,7 @@ impl std::error::Error for ProofPreflightError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::PublicValuesDigest(error) => Some(error),
+            Self::ProgramImageCache(error) => Some(error),
             Self::SetupHashMismatch | Self::PublicValuesHashMismatch => None,
         }
     }
@@ -117,6 +124,14 @@ pub fn validate_proof_public_values(
         public_values_digest(public_values).map_err(ProofPreflightError::PublicValuesDigest)?;
     if proof.public_values_hash != digest {
         return Err(ProofPreflightError::PublicValuesHashMismatch);
+    }
+    for segment in proof
+        .segments
+        .iter()
+        .filter(|segment| segment.id == PROGRAM_IMAGE_CACHE_SEGMENT_ID)
+    {
+        parse_program_image_cache_segment(&segment.data)
+            .map_err(ProofPreflightError::ProgramImageCache)?;
     }
 
     Ok(ProofPreflightReport {

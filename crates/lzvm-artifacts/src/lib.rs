@@ -21,6 +21,7 @@ pub mod pcs_plan;
 pub mod pcs_proof_values_segment;
 pub mod pcs_query_segment;
 pub mod program_image;
+pub mod program_image_segment;
 pub mod proof;
 pub mod public_values;
 pub mod sectioned;

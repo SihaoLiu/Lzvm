@@ -51,7 +51,12 @@ use lzvm_artifacts::pcs_proof_values_segment::{
     PCS_PROOF_VALUES_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_query_segment::{parse_pcs_query_plan_segment, PCS_QUERY_PLAN_SEGMENT_ID};
-use lzvm_artifacts::program_image::ProgramImageGpuMode;
+use lzvm_artifacts::program_image::{
+    read_program_image_commitment_cache_file, ProgramImageGpuMode,
+};
+use lzvm_artifacts::program_image_segment::{
+    parse_program_image_cache_segment, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+};
 use lzvm_artifacts::proof::{
     encode_proof_artifact, parse_proof_artifact, ProofArtifact, ProofSegment,
 };
@@ -2550,6 +2555,92 @@ fn writes_prove_witness_proof_without_save_outputs() {
     assert_eq!(proof.setup_hash, setup_hash);
     assert_eq!(proof.segments.len(), 5);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
+    let dir = temp_dir("prove-witness-program-image-cache-segment");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let public_values_path = dir.join("public_values.bin");
+    let program_path = dir.join("program.bin");
+    let constraint_digest_path = dir.join("constraint.digest");
+    let root_path = dir.join("root.bin");
+    let cache_path = dir.join("program_image.cache");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&sample_public_values(setup_hash))
+            .expect("public values should encode"),
+    );
+    write_bytes(&program_path, b"packed-program");
+    write_bytes(&constraint_digest_path, [0x44_u8; 32]);
+    write_bytes(
+        &root_path,
+        encode_verification_key_binary(&VerificationKeyRoot::FieldElements(vec![11, 12, 13, 14]))
+            .expect("root should encode"),
+    );
+    write_program_image_commitment_cache_file(ProgramImageCommitmentCacheFileRequest {
+        program_path: &program_path,
+        guest_image_path: &guest_image,
+        constraint_digest_path: &constraint_digest_path,
+        root_path: &root_path,
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cuda,
+        output_path: &cache_path,
+    })
+    .expect("cache should write");
+    let expected_cache =
+        read_program_image_commitment_cache_file(&cache_path).expect("cache should read");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let proof_bytes = fs::read(output_dir.join("proof.bin")).expect("proof output should read");
+    let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
+    let segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PROGRAM_IMAGE_CACHE_SEGMENT_ID)
+        .expect("program image cache segment should be present");
+    let parsed_cache =
+        parse_program_image_cache_segment(&segment.data).expect("cache segment should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    assert_eq!(parsed_cache, expected_cache);
 }
 
 #[test]

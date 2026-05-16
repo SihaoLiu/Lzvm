@@ -12,7 +12,8 @@ const PROGRAM_IMAGE_VERSION: u32 = 1;
 const PROGRAM_IMAGE_SECTION_ID: u32 = 1;
 const DIGEST_BYTES: usize = 32;
 const ROOT_WORDS: usize = 4;
-const ENCODED_BYTES: usize = DIGEST_BYTES * 3 + ROOT_WORDS * 8 + 8 + 4 * 4;
+pub(crate) const PROGRAM_IMAGE_CACHE_PAYLOAD_BYTES: usize =
+    DIGEST_BYTES * 3 + ROOT_WORDS * 8 + 8 + 4 * 4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgramImageCommitmentCache {
@@ -208,7 +209,7 @@ pub fn encode_program_image_commitment_cache(
     encode_sectioned_file(&file).map_err(ProgramImageCommitmentCacheError::Sectioned)
 }
 
-fn validate_program_image_commitment_cache(
+pub(crate) fn validate_program_image_commitment_cache(
     value: &ProgramImageCommitmentCache,
 ) -> Result<(), ProgramImageCommitmentCacheError> {
     if value.trace_row_count == 0 {
@@ -230,12 +231,12 @@ fn validate_program_image_commitment_cache(
     Ok(())
 }
 
-fn parse_program_image_commitment_cache_payload(
+pub(crate) fn parse_program_image_commitment_cache_payload(
     bytes: &[u8],
 ) -> Result<ProgramImageCommitmentCache, ProgramImageCommitmentCacheError> {
-    if bytes.len() != ENCODED_BYTES {
+    if bytes.len() != PROGRAM_IMAGE_CACHE_PAYLOAD_BYTES {
         return Err(ProgramImageCommitmentCacheError::InvalidPayloadLength {
-            expected: ENCODED_BYTES,
+            expected: PROGRAM_IMAGE_CACHE_PAYLOAD_BYTES,
             found: bytes.len(),
         });
     }
@@ -261,8 +262,10 @@ fn parse_program_image_commitment_cache_payload(
     })
 }
 
-fn encode_program_image_commitment_cache_payload(value: &ProgramImageCommitmentCache) -> Vec<u8> {
-    let mut out = Vec::with_capacity(ENCODED_BYTES);
+pub(crate) fn encode_program_image_commitment_cache_payload(
+    value: &ProgramImageCommitmentCache,
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(PROGRAM_IMAGE_CACHE_PAYLOAD_BYTES);
     out.extend_from_slice(&value.program_digest);
     out.extend_from_slice(&value.source_image_digest);
     out.extend_from_slice(&value.constraint_system_digest);

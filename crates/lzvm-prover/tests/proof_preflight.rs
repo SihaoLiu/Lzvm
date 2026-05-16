@@ -1,3 +1,6 @@
+use lzvm_artifacts::program_image_segment::{
+    ProgramImageCacheSegmentError, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+};
 use lzvm_artifacts::proof::{ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, PublicValueEntry, PublicValues};
 use lzvm_field::{Felt, FieldError, MODULUS};
@@ -71,6 +74,27 @@ fn rejects_proof_public_value_digest_mismatches() {
         .expect_err("public value digest should match");
 
     assert_eq!(error, ProofPreflightError::PublicValuesHashMismatch);
+}
+
+#[test]
+fn rejects_invalid_program_image_cache_segments() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    proof.segments.push(ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: vec![1],
+    });
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("cache segment should parse");
+
+    assert_eq!(
+        error,
+        ProofPreflightError::ProgramImageCache(ProgramImageCacheSegmentError::UnexpectedEof {
+            needed: 8,
+            available: 1
+        })
+    );
 }
 
 #[test]

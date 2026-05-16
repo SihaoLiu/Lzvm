@@ -11,6 +11,10 @@ use lzvm_artifacts::pcs_evaluation_segment::{
 };
 use lzvm_artifacts::pcs_nonce_segment::parse_pcs_query_nonce_segment;
 use lzvm_artifacts::pcs_proof_values_segment::PCS_PROOF_VALUES_SEGMENT_ID;
+use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
+use lzvm_artifacts::program_image_segment::{
+    encode_program_image_cache_segment, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+};
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 use lzvm_artifacts::unit_values_segment::parse_unit_values_segment;
@@ -130,6 +134,10 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             unit_values: &unit_values,
             evaluation_values_segment_input: parsed.evaluation_values_segment.as_deref(),
             verify_outputs: plan.run_plan.options.verify_outputs,
+            program_image_cache: plan
+                .program_image_cache
+                .as_ref()
+                .map(|summary| &summary.cache),
         };
         let proof_bytes = match build_witness_proof_artifact_for_all_units(&proof_request) {
             Ok(proof_bytes) => proof_bytes,
@@ -171,6 +179,10 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                     public_inputs: plan.inputs.public_inputs.as_deref(),
                     unit_values_input: parsed.unit_values.as_deref(),
                     proof_values_input: parsed.proof_values.as_deref(),
+                    program_image_cache: plan
+                        .program_image_cache
+                        .as_ref()
+                        .map(|summary| &summary.cache),
                     output,
                 };
                 if let Err(message) = save_witness_outputs(&request, &segment) {
@@ -235,6 +247,10 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         public_inputs: plan.inputs.public_inputs.as_deref(),
         unit_values_input: parsed.unit_values.as_deref(),
         proof_values_input: parsed.proof_values.as_deref(),
+        program_image_cache: plan
+            .program_image_cache
+            .as_ref()
+            .map(|summary| &summary.cache),
         output: &output,
     };
     let proof_bytes =
@@ -513,6 +529,7 @@ struct WitnessOutputSaveRequest<'a> {
     public_inputs: Option<&'a Path>,
     unit_values_input: Option<&'a Path>,
     proof_values_input: Option<&'a Path>,
+    program_image_cache: Option<&'a ProgramImageCommitmentCache>,
     output: &'a ProveWitnessTraceCommitments,
 }
 
@@ -660,6 +677,22 @@ pub fn build_witness_proof_artifact(
     Ok(proof)
 }
 
+fn push_program_image_cache_segment(
+    segments: &mut Vec<ProofSegment>,
+    cache: Option<&ProgramImageCommitmentCache>,
+) -> Result<(), String> {
+    let Some(cache) = cache else {
+        return Ok(());
+    };
+    let data = encode_program_image_cache_segment(cache)
+        .map_err(|error| format!("build program image cache segment failed: {error}"))?;
+    segments.push(ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data,
+    });
+    Ok(())
+}
+
 struct WitnessAllUnitsProofRequest<'a> {
     catalog: &'a KeyDirectoryCatalog,
     schedule: &'a ProveSchedule,
@@ -671,6 +704,7 @@ struct WitnessAllUnitsProofRequest<'a> {
     unit_values: &'a [ProveUnitValues],
     evaluation_values_segment_input: Option<&'a Path>,
     verify_outputs: bool,
+    program_image_cache: Option<&'a ProgramImageCommitmentCache>,
 }
 
 fn build_witness_proof_artifact_for_all_units(
@@ -709,6 +743,8 @@ fn build_witness_proof_artifact_for_all_units(
             request.unit_values,
         )?
     };
+    let mut proof = proof;
+    push_program_image_cache_segment(&mut proof.segments, request.program_image_cache)?;
     if request.verify_outputs {
         validate_setup_preflight(request.catalog, &proof, &public_values)
             .map_err(|error| format!("verify proof output failed: {error}"))?;
@@ -1228,6 +1264,7 @@ fn build_proof_bytes(
     if let Some(unit_values_segment) = unit_values_segment {
         segments.push(unit_values_segment);
     }
+    push_program_image_cache_segment(&mut segments, request.program_image_cache)?;
     let proof = ProofArtifact {
         setup_hash: request.schedule.setup_hash,
         public_values_hash,
