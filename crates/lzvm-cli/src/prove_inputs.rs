@@ -215,7 +215,7 @@ fn format_program_image_gpu_mode(mode: ProgramImageGpuMode) -> &'static str {
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]"
+        "usage: lzvm prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>"
     );
     2
 }
