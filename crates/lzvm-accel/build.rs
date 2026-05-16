@@ -3,6 +3,8 @@ use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-changed=native/cuda_field.cu");
+    println!("cargo:rerun-if-changed=native/cuda_host.cpp");
+    println!("cargo:rerun-if-changed=native/cuda_host.hpp");
     println!("cargo:rerun-if-env-changed=LZVM_CUDA_ARCH");
 
     if std::env::var_os("CARGO_FEATURE_CUDA").is_none() {
@@ -12,27 +14,58 @@ fn main() {
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("manifest dir"));
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("out dir"));
     let source = manifest_dir.join("native/cuda_field.cu");
+    let host_source = manifest_dir.join("native/cuda_host.cpp");
+    let cuda_object = out_dir.join("cuda_field.o");
+    let host_object = out_dir.join("cuda_host.o");
     let library = out_dir.join("liblzvm_cuda_field.a");
     let arch = std::env::var("LZVM_CUDA_ARCH").unwrap_or_else(|_| "sm_120".to_owned());
+    let cuda_home = std::env::var("CUDA_HOME")
+        .or_else(|_| std::env::var("CUDA_PATH"))
+        .unwrap_or_else(|_| "/usr/local/cuda".to_owned());
+    let native_include = manifest_dir.join("native");
 
     let status = Command::new("nvcc")
         .arg("-std=c++17")
         .arg(format!("-arch={arch}"))
-        .arg("-lib")
+        .arg("-c")
+        .arg(format!("-I{}", native_include.display()))
         .arg("-Xcompiler")
         .arg("-fPIC")
         .arg(&source)
         .arg("-o")
-        .arg(&library)
+        .arg(&cuda_object)
         .status()
         .expect("failed to run nvcc");
     if !status.success() {
         panic!("nvcc failed while building {}", source.display());
     }
 
-    let cuda_home = std::env::var("CUDA_HOME")
-        .or_else(|_| std::env::var("CUDA_PATH"))
-        .unwrap_or_else(|_| "/usr/local/cuda".to_owned());
+    let status = Command::new("c++")
+        .arg("-std=c++17")
+        .arg("-fPIC")
+        .arg(format!("-I{}", native_include.display()))
+        .arg(format!("-I{cuda_home}/include"))
+        .arg("-c")
+        .arg(&host_source)
+        .arg("-o")
+        .arg(&host_object)
+        .status()
+        .expect("failed to run c++");
+    if !status.success() {
+        panic!("c++ failed while building {}", host_source.display());
+    }
+
+    let status = Command::new("ar")
+        .arg("crus")
+        .arg(&library)
+        .arg(&cuda_object)
+        .arg(&host_object)
+        .status()
+        .expect("failed to run ar");
+    if !status.success() {
+        panic!("ar failed while building {}", library.display());
+    }
+
     println!("cargo:rustc-link-search=native={}", out_dir.display());
     println!("cargo:rustc-link-search=native={cuda_home}/lib64");
     println!("cargo:rustc-link-lib=static=lzvm_cuda_field");
