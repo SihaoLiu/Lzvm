@@ -1,6 +1,6 @@
-mod types;
-
-pub use crate::constant_opening::build_constant_opening_segment;
+pub use crate::constant_opening::{
+    build_constant_opening_segment, ProveConstantOpeningSegmentError,
+};
 pub use crate::pcs_evaluation::{
     build_pcs_evaluation_segment, ProvePcsEvaluationSegmentError, ProvePcsEvaluationValues,
 };
@@ -17,5 +17,5 @@ pub use crate::pcs_query_plan::{
 pub use crate::witness_commitment::{build_witness_commitment_segment, ProveWitnessSegmentError};
 pub use crate::witness_opening::{
     build_witness_opening_segment, build_witness_opening_segment_batch,
+    ProveWitnessOpeningSegmentError,
 };
-pub use types::*;

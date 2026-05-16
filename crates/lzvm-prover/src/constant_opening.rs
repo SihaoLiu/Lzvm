@@ -5,9 +5,9 @@ use lzvm_artifacts::constant_opening_segment::{
     ConstantOpeningQuerySegment, ConstantOpeningSegment, ConstantOpeningSegmentError,
     ConstantOpeningUnitSegment, CONSTANT_OPENING_SEGMENT_ID,
 };
-use lzvm_artifacts::constant_tree::read_constant_tree_file;
+use lzvm_artifacts::constant_tree::{read_constant_tree_file, ConstantTreeError};
 use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
-use lzvm_artifacts::pcs_query_segment::parse_pcs_query_plan_segment;
+use lzvm_artifacts::pcs_query_segment::{parse_pcs_query_plan_segment, PcsQueryPlanSegmentError};
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_field::{Felt, FieldError};
 
@@ -17,9 +17,26 @@ use crate::constant_tree_opening::{
     ConstantTreeOpeningError,
 };
 use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
-use crate::prove_witness::ProveConstantOpeningSegmentError;
 use crate::ProveSchedule;
 use crate::ProveUnitSchedule;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProveConstantOpeningSegmentError {
+    QueryPlan(PcsQueryPlanSegmentError),
+    UnitIndexOutOfRange {
+        unit_index: usize,
+        unit_count: usize,
+    },
+    UnitIndexOverflow {
+        unit_index: u32,
+    },
+    ConstantTree {
+        unit_index: usize,
+        source: ConstantTreeError,
+    },
+    Opening(ConstantTreeOpeningError),
+    Segment(ConstantOpeningSegmentError),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadConstantOpeningSegmentError {
@@ -53,6 +70,65 @@ pub enum ValidateConstantOpeningSegmentsError {
     WidthOverflow,
     FieldValue(FieldError),
     FieldDigest(FieldError),
+}
+
+impl fmt::Display for ProveConstantOpeningSegmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::QueryPlan(error) => {
+                write!(f, "prove constant opening query plan parse failed: {error}")
+            }
+            Self::UnitIndexOutOfRange {
+                unit_index,
+                unit_count,
+            } => write!(
+                f,
+                "prove constant opening unit index {unit_index} is outside unit count {unit_count}"
+            ),
+            Self::UnitIndexOverflow { unit_index } => write!(
+                f,
+                "prove constant opening unit index does not fit usize: {unit_index}"
+            ),
+            Self::ConstantTree { unit_index, source } => write!(
+                f,
+                "prove constant opening tree read failed for unit {unit_index}: {source}"
+            ),
+            Self::Opening(error) => write!(f, "prove constant opening failed: {error}"),
+            Self::Segment(error) => {
+                write!(f, "prove constant opening segment encode failed: {error}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ProveConstantOpeningSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::QueryPlan(error) => Some(error),
+            Self::ConstantTree { source, .. } => Some(source),
+            Self::Opening(error) => Some(error),
+            Self::Segment(error) => Some(error),
+            Self::UnitIndexOutOfRange { .. } | Self::UnitIndexOverflow { .. } => None,
+        }
+    }
+}
+
+impl From<PcsQueryPlanSegmentError> for ProveConstantOpeningSegmentError {
+    fn from(error: PcsQueryPlanSegmentError) -> Self {
+        Self::QueryPlan(error)
+    }
+}
+
+impl From<ConstantTreeOpeningError> for ProveConstantOpeningSegmentError {
+    fn from(error: ConstantTreeOpeningError) -> Self {
+        Self::Opening(error)
+    }
+}
+
+impl From<ConstantOpeningSegmentError> for ProveConstantOpeningSegmentError {
+    fn from(error: ConstantOpeningSegmentError) -> Self {
+        Self::Segment(error)
+    }
 }
 
 impl fmt::Display for LoadConstantOpeningSegmentError {
