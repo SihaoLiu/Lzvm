@@ -88,10 +88,14 @@ use lzvm_artifacts::witness_segment::{
 };
 use lzvm_cli::{build_witness_proof_artifact, build_witness_proof_core_artifact, run_cli};
 use lzvm_field::{poseidon2_hash_16, Ext3, Felt};
+use lzvm_prover::contribution::{
+    build_contribution_segment, derive_global_challenge_from_proof_segments, ProveContributionEntry,
+};
 use lzvm_prover::pcs_fri::{verify_fri_fold, verify_fri_opening_folds, PcsFriOpeningFoldRequest};
 use lzvm_prover::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptSegmentInputs,
 };
+use lzvm_prover::proof_preflight::public_values_as_fields;
 use lzvm_prover::setup_preflight::{validate_setup_preflight, validate_setup_preflight_from_files};
 use lzvm_prover::unit_values::ProveUnitValues;
 use lzvm_prover::verifier_query::{
@@ -1390,6 +1394,27 @@ fn write_setup_directory_with_proof_group_and_unit_value(root: &Path) {
             sample_regular_constraint_program(),
         );
     }
+}
+
+fn sample_contribution_entries(lattice_size: usize) -> Vec<ProveContributionEntry> {
+    vec![
+        ProveContributionEntry {
+            worker_index: 0,
+            group_id: 0,
+            aggregated: false,
+            values: (0..lattice_size)
+                .map(|index| Felt::from_u64(index as u64 + 1))
+                .collect(),
+        },
+        ProveContributionEntry {
+            worker_index: 1,
+            group_id: 0,
+            aggregated: true,
+            values: (0..lattice_size)
+                .map(|index| Felt::from_u64(index as u64 + 11))
+                .collect(),
+        },
+    ]
 }
 
 fn write_execution_ready_setup_directory_with_proof_group_and_unit_value(root: &Path) {
@@ -7006,6 +7031,82 @@ fn rejects_setup_aware_verify_preflight_with_mismatched_setup_catalog() {
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "verify setup-preflight failed: setup catalog fingerprint mismatch\n"
     );
+}
+
+#[test]
+fn verifies_contribution_challenge_from_proof_artifact() {
+    let dir = temp_dir("verify-contribution");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should parse");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    assert_eq!(catalog.layout.global_info.stage_one_proof_value_count(), 0);
+
+    let entries = sample_contribution_entries(
+        catalog
+            .layout
+            .global_info
+            .lattice_size
+            .expect("lattice size should exist") as usize,
+    );
+    let contribution_segment = build_contribution_segment(&entries)
+        .expect("contribution segment should build")
+        .expect("contribution segment should exist");
+    let proof = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![contribution_segment],
+    };
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let public_fields =
+        public_values_as_fields(&public_values).expect("public values should flatten");
+    let expected_challenge = derive_global_challenge_from_proof_segments(
+        &catalog.layout.global_info,
+        &public_fields,
+        &[],
+        &proof.segments,
+    )
+    .expect("challenge should derive");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "contribution",
+            dir.to_str().expect("setup path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nsegments=1\npublic_values=1\nproof_values=0\ncontributions=2\ncontribution_challenge={},{},{}\n",
+            expected_challenge.c0.to_u64(),
+            expected_challenge.c1.to_u64(),
+            expected_challenge.c2.to_u64()
+        )
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]

@@ -1,13 +1,27 @@
 use std::collections::BTreeSet;
 use std::fmt;
+use std::path::Path;
 
 use lzvm_artifacts::contribution_segment::{
     encode_contribution_segment, parse_contribution_segment, ContributionEntry,
     ContributionSegment, ContributionSegmentError, CONTRIBUTION_SEGMENT_ID,
 };
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
-use lzvm_artifacts::proof::ProofSegment;
+use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryError};
+use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifactError, ProofSegment};
+use lzvm_artifacts::public_values::{read_public_values_file, PublicValuesError};
+use lzvm_artifacts::setup_manifest::SetupDirectoryManifestError;
 use lzvm_field::{Ext3, Felt, FieldError, PoseidonTranscript, TranscriptError};
+
+use crate::proof_preflight::{public_values_as_fields, PublicValueFieldError};
+use crate::proof_values::{
+    flatten_pcs_proof_values, load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError,
+    ProvePcsProofValuesSegmentError,
+};
+use crate::setup_preflight::{
+    validate_setup_directory_manifest_if_present, validate_setup_preflight_hashes,
+    SetupPreflightError,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProveContributionEntry {
@@ -15,6 +29,15 @@ pub struct ProveContributionEntry {
     pub group_id: u32,
     pub aggregated: bool,
     pub values: Vec<Felt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContributionChallengeReport {
+    pub segment_count: usize,
+    pub public_value_count: usize,
+    pub proof_value_count: usize,
+    pub contribution_count: usize,
+    pub challenge: Ext3,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +85,19 @@ pub enum ContributionChallengeError {
     Load(LoadContributionSegmentError),
     LengthOverflow,
     Transcript(TranscriptError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContributionChallengeFileError {
+    Catalog(KeyDirectoryError),
+    SetupDirectoryManifest(SetupDirectoryManifestError),
+    Proof(ProofArtifactError),
+    PublicValues(PublicValuesError),
+    SetupPreflight(SetupPreflightError),
+    PublicValueField(PublicValueFieldError),
+    ProofValues(LoadPcsProofValuesSegmentError),
+    ProofValuePacking(ProvePcsProofValuesSegmentError),
+    Contribution(ContributionChallengeError),
 }
 
 impl fmt::Display for ProveContributionSegmentError {
@@ -183,6 +219,92 @@ impl From<LoadContributionSegmentError> for ContributionChallengeError {
     }
 }
 
+impl fmt::Display for ContributionChallengeFileError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Catalog(error) => write!(f, "{error}"),
+            Self::SetupDirectoryManifest(error) => write!(f, "{error}"),
+            Self::Proof(error) => write!(f, "{error}"),
+            Self::PublicValues(error) => write!(f, "{error}"),
+            Self::SetupPreflight(error) => write!(f, "{error}"),
+            Self::PublicValueField(error) => write!(f, "{error}"),
+            Self::ProofValues(error) => write!(f, "{error}"),
+            Self::ProofValuePacking(error) => write!(f, "{error}"),
+            Self::Contribution(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for ContributionChallengeFileError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Catalog(error) => Some(error),
+            Self::SetupDirectoryManifest(error) => Some(error),
+            Self::Proof(error) => Some(error),
+            Self::PublicValues(error) => Some(error),
+            Self::SetupPreflight(error) => Some(error),
+            Self::PublicValueField(error) => Some(error),
+            Self::ProofValues(error) => Some(error),
+            Self::ProofValuePacking(error) => Some(error),
+            Self::Contribution(error) => Some(error),
+        }
+    }
+}
+
+impl From<KeyDirectoryError> for ContributionChallengeFileError {
+    fn from(error: KeyDirectoryError) -> Self {
+        Self::Catalog(error)
+    }
+}
+
+impl From<SetupDirectoryManifestError> for ContributionChallengeFileError {
+    fn from(error: SetupDirectoryManifestError) -> Self {
+        Self::SetupDirectoryManifest(error)
+    }
+}
+
+impl From<ProofArtifactError> for ContributionChallengeFileError {
+    fn from(error: ProofArtifactError) -> Self {
+        Self::Proof(error)
+    }
+}
+
+impl From<PublicValuesError> for ContributionChallengeFileError {
+    fn from(error: PublicValuesError) -> Self {
+        Self::PublicValues(error)
+    }
+}
+
+impl From<SetupPreflightError> for ContributionChallengeFileError {
+    fn from(error: SetupPreflightError) -> Self {
+        Self::SetupPreflight(error)
+    }
+}
+
+impl From<PublicValueFieldError> for ContributionChallengeFileError {
+    fn from(error: PublicValueFieldError) -> Self {
+        Self::PublicValueField(error)
+    }
+}
+
+impl From<LoadPcsProofValuesSegmentError> for ContributionChallengeFileError {
+    fn from(error: LoadPcsProofValuesSegmentError) -> Self {
+        Self::ProofValues(error)
+    }
+}
+
+impl From<ProvePcsProofValuesSegmentError> for ContributionChallengeFileError {
+    fn from(error: ProvePcsProofValuesSegmentError) -> Self {
+        Self::ProofValuePacking(error)
+    }
+}
+
+impl From<ContributionChallengeError> for ContributionChallengeFileError {
+    fn from(error: ContributionChallengeError) -> Self {
+        Self::Contribution(error)
+    }
+}
+
 pub fn build_contribution_segment(
     entries: &[ProveContributionEntry],
 ) -> Result<Option<ProofSegment>, ProveContributionSegmentError> {
@@ -272,6 +394,39 @@ pub fn derive_global_challenge_from_proof_segments(
         packed_proof_values,
         &entries,
     )
+}
+
+pub fn derive_global_challenge_from_files(
+    setup_dir: impl AsRef<Path>,
+    proof_path: impl AsRef<Path>,
+    public_values_path: impl AsRef<Path>,
+) -> Result<ContributionChallengeReport, ContributionChallengeFileError> {
+    let setup_dir = setup_dir.as_ref();
+    let catalog = read_key_directory_catalog(setup_dir)?;
+    validate_setup_directory_manifest_if_present(setup_dir, &catalog)?;
+    let proof = read_proof_artifact_file(proof_path)?;
+    let public_values = read_public_values_file(public_values_path)?;
+    let public_report = validate_setup_preflight_hashes(&catalog, &proof, &public_values)?;
+    let public_fields = public_values_as_fields(&public_values)?;
+    let proof_values =
+        load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)?;
+    let packed_proof_values = flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)?;
+    let entries = load_contribution_segment_from_segments(&proof.segments)
+        .map_err(ContributionChallengeError::from)?;
+    let challenge = derive_global_challenge_from_contributions(
+        &catalog.layout.global_info,
+        &public_fields,
+        &packed_proof_values,
+        &entries,
+    )?;
+
+    Ok(ContributionChallengeReport {
+        segment_count: public_report.segment_count,
+        public_value_count: public_report.public_value_count,
+        proof_value_count: proof_values.len(),
+        contribution_count: entries.len(),
+        challenge,
+    })
 }
 
 fn aggregate_lattice_contributions(

@@ -4,6 +4,7 @@ use std::path::Path;
 use lzvm_artifacts::program_image::ProgramImageGpuMode;
 use lzvm_artifacts::trace_bundle::{encode_trace_bundle, TraceBundle, TraceBundleUnit};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
+use lzvm_prover::contribution::derive_global_challenge_from_files;
 use lzvm_prover::derive_prove_schedule_from_directory;
 use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
 use lzvm_prover::setup_preflight::validate_setup_preflight_from_files;
@@ -45,6 +46,10 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             verify_proof(setup_dir, proof_bin, public_values_path, stdout, stderr)
         }
         ["verify", "proof", ..] => write_verify_proof_usage(stderr),
+        ["verify", "contribution", setup_dir, proof_bin, public_values_path] => {
+            verify_contribution(setup_dir, proof_bin, public_values_path, stdout, stderr)
+        }
+        ["verify", "contribution", ..] => write_verify_contribution_usage(stderr),
         ["verify", "preflight", proof_bin, public_values_path] => {
             verify_preflight(proof_bin, public_values_path, stdout, stderr)
         }
@@ -489,6 +494,37 @@ fn verify_proof(
         stdout,
         stderr,
     )
+}
+
+fn verify_contribution(
+    setup_dir: &str,
+    proof_bin: &str,
+    public_values_path: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let report = match derive_global_challenge_from_files(setup_dir, proof_bin, public_values_path)
+    {
+        Ok(report) => report,
+        Err(error) => {
+            let _ = writeln!(stderr, "verify contribution failed: {error}");
+            return 1;
+        }
+    };
+
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "segments={}", report.segment_count);
+    let _ = writeln!(stdout, "public_values={}", report.public_value_count);
+    let _ = writeln!(stdout, "proof_values={}", report.proof_value_count);
+    let _ = writeln!(stdout, "contributions={}", report.contribution_count);
+    let _ = writeln!(
+        stdout,
+        "contribution_challenge={},{},{}",
+        report.challenge.c0.to_u64(),
+        report.challenge.c1.to_u64(),
+        report.challenge.c2.to_u64()
+    );
+    0
 }
 
 fn verify_setup_validation(
@@ -987,6 +1023,14 @@ fn write_verify_proof_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
         "usage: lzvm verify proof <setup-dir> <proof-bin> <public-values>"
+    );
+    2
+}
+
+fn write_verify_contribution_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm verify contribution <setup-dir> <proof-bin> <public-values>"
     );
     2
 }
