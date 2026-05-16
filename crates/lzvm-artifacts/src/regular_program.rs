@@ -15,6 +15,10 @@ use crate::sectioned::{
     encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile,
 };
 
+pub use crate::regular_lowering::{
+    regular_program_from_expression_info, RegularProgramLoweringError,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RegularProgram {
     pub expressions: ExpressionProgram,

@@ -8,8 +8,17 @@ use lzvm_artifacts::hint_program::{
     parse_regular_hint_program, Hint, HintField, HintOperand, HintProgram, HintValue,
 };
 use lzvm_artifacts::regular_program::{
-    encode_regular_program, parse_regular_program, read_regular_program_file, RegularProgram,
+    encode_regular_program, parse_regular_program, read_regular_program_file,
+    regular_program_from_expression_info, RegularProgram,
 };
+use lzvm_artifacts::{
+    expression_info::{
+        BoundaryKind, CodeDestination, CodeOperand, CodeOperation, ConstraintCode, ExpressionCode,
+        ExpressionInfo, OperationKind,
+    },
+    setup_info::{CommitmentColumn, FriStep, StarkStruct, UnitSetupInfo},
+};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -119,4 +128,218 @@ fn reads_regular_programs_from_a_file_path() {
     fs::remove_file(&path).expect("program file should be removed");
 
     assert_eq!(parsed, program);
+}
+
+#[test]
+fn builds_regular_program_from_expression_info() {
+    let info = ExpressionInfo {
+        hints: Vec::new(),
+        expressions: vec![ExpressionCode {
+            expression_id: 11,
+            stage: 1,
+            line: "public plus constant".to_owned(),
+            temporary_count: 1,
+            destination: None,
+            operations: vec![CodeOperation {
+                op: OperationKind::Add,
+                destination: CodeDestination::temporary(0, 1),
+                sources: vec![CodeOperand::public(0, 1), CodeOperand::number(5, 1)],
+            }],
+        }],
+        constraints: vec![ConstraintCode {
+            stage: 1,
+            boundary: BoundaryKind::EveryRow,
+            offset_min: None,
+            offset_max: None,
+            line: "public minus constant".to_owned(),
+            intermediate: false,
+            temporary_count: 1,
+            operations: vec![CodeOperation {
+                op: OperationKind::Sub,
+                destination: CodeDestination::temporary(0, 1),
+                sources: vec![CodeOperand::public(0, 1), CodeOperand::number(5, 1)],
+            }],
+        }],
+    };
+
+    let program =
+        regular_program_from_expression_info(&info, &minimal_setup_info()).expect("program lowers");
+
+    assert_eq!(program.expressions.max_tmp1, 1);
+    assert_eq!(program.expressions.max_tmp3, 0);
+    assert_eq!(program.expressions.max_args, 8);
+    assert_eq!(program.expressions.max_ops, 1);
+    assert_eq!(program.expressions.ops, vec![0]);
+    assert_eq!(program.expressions.args, vec![0, 0, 7, 0, 0, 8, 0, 0]);
+    assert_eq!(program.expressions.numbers, vec![5]);
+    assert_eq!(program.expressions.entries[0].expression_id, 11);
+    assert_eq!(program.expressions.entries[0].destination_dimension, 1);
+    assert_eq!(program.expressions.entries[0].destination_id, 0);
+
+    assert_eq!(program.constraints.ops, vec![0]);
+    assert_eq!(program.constraints.args, vec![1, 0, 7, 0, 0, 8, 0, 0]);
+    assert_eq!(program.constraints.numbers, vec![5]);
+    assert_eq!(program.constraints.entries[0].first_row, 0);
+    assert_eq!(program.constraints.entries[0].last_row, 4);
+    assert_eq!(program.hints.hints, Vec::new());
+
+    let encoded = encode_regular_program(&program).expect("program should encode");
+    assert_eq!(
+        parse_regular_program(&encoded).expect("program should parse"),
+        program
+    );
+}
+
+#[test]
+fn lowers_extension_constraint_sources_in_canonical_order() {
+    let info = ExpressionInfo {
+        hints: Vec::new(),
+        expressions: Vec::new(),
+        constraints: vec![ConstraintCode {
+            stage: 1,
+            boundary: BoundaryKind::EveryFrame,
+            offset_min: Some(0),
+            offset_max: Some(1),
+            line: "challenge minus stage value".to_owned(),
+            intermediate: true,
+            temporary_count: 1,
+            operations: vec![CodeOperation {
+                op: OperationKind::Sub,
+                destination: CodeDestination::temporary(0, 3),
+                sources: vec![
+                    CodeOperand::challenge(0, Some(1), Some(0), 3),
+                    CodeOperand::commitment_at(0, Some(0), 3),
+                ],
+            }],
+        }],
+    };
+
+    let program = regular_program_from_expression_info(&info, &setup_info_with_commitment())
+        .expect("program lowers");
+
+    assert_eq!(program.constraints.ops, vec![2]);
+    assert_eq!(program.constraints.args, vec![3, 0, 1, 0, 0, 12, 0, 0]);
+    assert_eq!(program.constraints.entries[0].destination_dimension, 3);
+    assert_eq!(program.constraints.entries[0].destination_id, 0);
+    assert_eq!(program.constraints.entries[0].first_row, 0);
+    assert_eq!(program.constraints.entries[0].last_row, 3);
+    assert_eq!(program.constraints.entries[0].temp1_count, 0);
+    assert_eq!(program.constraints.entries[0].temp3_count, 1);
+    assert!(program.constraints.entries[0].intermediate);
+}
+
+#[test]
+fn lowers_copy_operations_as_add_zero() {
+    let info = ExpressionInfo {
+        hints: Vec::new(),
+        expressions: vec![ExpressionCode {
+            expression_id: 12,
+            stage: 1,
+            line: "copy expression".to_owned(),
+            temporary_count: 2,
+            destination: None,
+            operations: vec![
+                CodeOperation {
+                    op: OperationKind::Add,
+                    destination: CodeDestination::temporary(0, 1),
+                    sources: vec![CodeOperand::public(0, 1), CodeOperand::number(5, 1)],
+                },
+                CodeOperation {
+                    op: OperationKind::Copy,
+                    destination: CodeDestination::temporary(1, 1),
+                    sources: vec![CodeOperand::temporary(0, 1)],
+                },
+            ],
+        }],
+        constraints: Vec::new(),
+    };
+
+    let program =
+        regular_program_from_expression_info(&info, &minimal_setup_info()).expect("program lowers");
+
+    assert_eq!(program.expressions.max_tmp1, 1);
+    assert_eq!(program.expressions.ops, vec![0, 0]);
+    assert_eq!(
+        program.expressions.args,
+        vec![0, 0, 7, 0, 0, 8, 0, 0, 0, 0, 5, 0, 0, 8, 1, 0]
+    );
+    assert_eq!(program.expressions.numbers, vec![5, 0]);
+    assert_eq!(program.expressions.entries[0].destination_id, 0);
+    assert_eq!(program.expressions.entries[0].temp1_count, 1);
+}
+
+#[test]
+fn clamps_negative_frame_lower_bounds_to_first_row() {
+    let info = ExpressionInfo {
+        hints: Vec::new(),
+        expressions: Vec::new(),
+        constraints: vec![ConstraintCode {
+            stage: 1,
+            boundary: BoundaryKind::EveryFrame,
+            offset_min: Some(-1),
+            offset_max: Some(2),
+            line: "bounded frame".to_owned(),
+            intermediate: false,
+            temporary_count: 1,
+            operations: vec![CodeOperation {
+                op: OperationKind::Add,
+                destination: CodeDestination::temporary(0, 1),
+                sources: vec![CodeOperand::public(0, 1), CodeOperand::number(0, 1)],
+            }],
+        }],
+    };
+
+    let program =
+        regular_program_from_expression_info(&info, &minimal_setup_info()).expect("program lowers");
+
+    assert_eq!(program.constraints.entries[0].first_row, 0);
+    assert_eq!(program.constraints.entries[0].last_row, 2);
+}
+
+fn minimal_setup_info() -> UnitSetupInfo {
+    UnitSetupInfo {
+        n_stages: 1,
+        n_constants: 0,
+        constant_columns: Vec::new(),
+        n_publics: Some(1),
+        n_constraints: Some(1),
+        q_degree: 1,
+        opening_points: vec![0],
+        section_widths: BTreeMap::new(),
+        challenge_count: 0,
+        eval_count: 0,
+        evaluation_map: Vec::new(),
+        boundaries: Vec::new(),
+        commitment_columns: Vec::new(),
+        unit_value_map: Vec::new(),
+        group_value_map: Vec::new(),
+        stark: StarkStruct {
+            n_bits: 2,
+            n_bits_ext: 3,
+            n_queries: 1,
+            steps: vec![FriStep { n_bits: 3 }],
+            hash_commits: false,
+            last_level_verification: 0,
+            pow_bits: 0,
+            merkle_tree_arity: 2,
+            verification_hash_type: None,
+            transcript_arity: None,
+            merkle_tree_custom: None,
+        },
+    }
+}
+
+fn setup_info_with_commitment() -> UnitSetupInfo {
+    let mut setup = minimal_setup_info();
+    setup.commitment_columns = vec![CommitmentColumn {
+        name: "stage.alpha".to_owned(),
+        stage: 1,
+        dimension: 3,
+        pols_map_id: 0,
+        stage_id: 0,
+        stage_position: 0,
+        intermediate: false,
+        lengths: Vec::new(),
+    }];
+    setup
 }

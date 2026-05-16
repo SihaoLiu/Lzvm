@@ -25,6 +25,7 @@ pub mod program_image;
 pub mod program_image_segment;
 pub mod proof;
 pub mod public_values;
+mod regular_lowering;
 pub mod regular_program;
 pub mod sectioned;
 pub mod setup_info;
