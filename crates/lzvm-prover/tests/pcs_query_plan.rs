@@ -16,6 +16,10 @@ use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::pcs_query_segment::{
     encode_pcs_query_plan_segment, PcsQueryPlanSegment, PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
 };
+use lzvm_artifacts::program_image::{ProgramImageCommitmentCache, ProgramImageGpuMode};
+use lzvm_artifacts::program_image_segment::{
+    encode_program_image_cache_segment, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+};
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
     encode_witness_commitment_segment, WitnessCommitmentSegment, WitnessCommitmentStageSegment,
@@ -123,6 +127,32 @@ fn rejects_seeded_pcs_query_plan_mismatches() {
     )
     .expect("query plan should build");
     let segments = vec![material, witness, query];
+
+    let error = validate_seeded_pcs_query_plan_segments(&schedule, public_hash, &segments)
+        .expect_err("query plan mismatch should be rejected");
+
+    assert_eq!(error, ValidatePcsQueryPlanSegmentsError::QueryPlanMismatch);
+}
+
+#[test]
+fn rejects_seeded_pcs_query_plan_mismatches_with_program_image_cache_segment() {
+    let schedule = sample_schedule();
+    let public_hash = [7; 32];
+    let material = material_segment();
+    let witness = witness_segment(0);
+    let cache_segment = ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: encode_program_image_cache_segment(&sample_program_image_cache())
+            .expect("cache should encode"),
+    };
+    let query = build_pcs_query_plan_segment(
+        &schedule,
+        public_hash,
+        &material,
+        std::slice::from_ref(&witness),
+    )
+    .expect("query plan should build");
+    let segments = vec![material, witness, cache_segment, query];
 
     let error = validate_seeded_pcs_query_plan_segments(&schedule, public_hash, &segments)
         .expect_err("query plan mismatch should be rejected");
@@ -312,6 +342,20 @@ fn witness_commitment(unit_index: u32) -> WitnessCommitmentSegment {
             tree_byte_count: 64,
             tree_digest: [0; 32],
         }],
+    }
+}
+
+fn sample_program_image_cache() -> ProgramImageCommitmentCache {
+    ProgramImageCommitmentCache {
+        program_digest: [0x11; 32],
+        source_image_digest: [0x22; 32],
+        constraint_system_digest: [0x33; 32],
+        tree_root: [10, 11, 12, 13],
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cuda,
     }
 }
 

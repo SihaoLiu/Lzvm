@@ -10,6 +10,7 @@ use lzvm_artifacts::pcs_query_segment::{
     parse_pcs_query_plan_segment, PcsQueryPlanSegment, PcsQueryPlanSegmentError,
     PCS_QUERY_PLAN_SEGMENT_ID,
 };
+use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
     parse_witness_commitment_segment, WitnessCommitmentSegmentError,
@@ -21,8 +22,8 @@ use crate::pcs_evaluation::{load_pcs_evaluation_unit_from_segments, LoadPcsEvalu
 use crate::pcs_fri::{load_pcs_fri_opening_unit_from_segments, LoadPcsFriOpeningUnitError};
 use crate::pcs_transcript::PcsTranscriptSegmentInputs;
 use crate::prove_witness::{
-    build_pcs_query_plan_segment, build_pcs_query_plan_segment_from_transcript_segments,
-    ProvePcsQueryPlanSegmentError,
+    build_pcs_query_plan_segment_from_transcript_segments,
+    build_pcs_query_plan_segment_with_bindings, ProvePcsQueryPlanSegmentError,
 };
 use crate::unit_values::{load_unit_values_from_segments, LoadUnitValuesSegmentError};
 use crate::witness_commitment::{
@@ -185,17 +186,27 @@ pub fn validate_seeded_pcs_query_plan_segments(
         ))?;
     let witness_segments = load_witness_commitment_segments(&schedule.units, segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::Witness)?;
-    let expected_segment = build_pcs_query_plan_segment(
+    let binding_segments = seeded_query_binding_segments(segments);
+    let expected_segment = build_pcs_query_plan_segment_with_bindings(
         schedule,
         public_values_hash,
         material_segment,
         &witness_segments,
+        &binding_segments,
     )
     .map_err(ValidatePcsQueryPlanSegmentsError::Build)?;
     if query_segment.data != expected_segment.data {
         return Err(ValidatePcsQueryPlanSegmentsError::QueryPlanMismatch);
     }
     Ok(())
+}
+
+fn seeded_query_binding_segments(segments: &[ProofSegment]) -> Vec<ProofSegment> {
+    segments
+        .iter()
+        .filter(|segment| segment.id == PROGRAM_IMAGE_CACHE_SEGMENT_ID)
+        .cloned()
+        .collect()
 }
 
 pub fn validate_transcript_pcs_query_plan_segments(
