@@ -3,9 +3,12 @@
 use std::collections::BTreeMap;
 
 use lzvm_artifacts::expression_info::{
-    ExpressionCode, ExpressionInfo, HintFieldInfo, HintInfo, HintPayload, HintValueInfo,
+    BoundaryKind, ConstraintCode, ExpressionCode, ExpressionInfo, HintFieldInfo, HintInfo,
+    HintPayload, HintValueInfo,
 };
-use lzvm_artifacts::global_info::{AggregationType, CurveKind, GlobalAir, GlobalInfo, PublicValue};
+use lzvm_artifacts::global_info::{
+    AggregationType, CurveKind, GlobalAir, GlobalInfo, NamedStageValue, PublicValue,
+};
 use lzvm_artifacts::setup_info::{
     Boundary, ConstantColumn, EvaluationMapEntry, FriStep, StarkStruct, UnitSetupInfo,
 };
@@ -440,5 +443,177 @@ pub fn sample_key_directory_verifier_info() -> VerifierInfo {
                 sources: vec![VerifierOperand::evaluation(0, 3)],
             }],
         },
+    }
+}
+
+pub fn sample_metadata_bundle_setup_info() -> UnitSetupInfo {
+    UnitSetupInfo {
+        n_stages: 2,
+        n_constants: 5,
+        constant_columns: vec![
+            ConstantColumn {
+                name: "main.a".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 0,
+                stage_id: 0,
+                lengths: Vec::new(),
+            },
+            ConstantColumn {
+                name: "main.b".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 1,
+                stage_id: 1,
+                lengths: Vec::new(),
+            },
+            ConstantColumn {
+                name: "main.c".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 2,
+                stage_id: 2,
+                lengths: Vec::new(),
+            },
+            ConstantColumn {
+                name: "main.d".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 3,
+                stage_id: 3,
+                lengths: Vec::new(),
+            },
+            ConstantColumn {
+                name: "main.e".to_owned(),
+                stage: 0,
+                dimension: 1,
+                pols_map_id: 4,
+                stage_id: 4,
+                lengths: vec![5],
+            },
+        ],
+        n_publics: Some(2),
+        n_constraints: Some(1),
+        q_degree: 7,
+        opening_points: vec![0, 1, -1],
+        section_widths: BTreeMap::from([
+            ("const".to_owned(), 5),
+            ("cm1".to_owned(), 2),
+            ("cm2".to_owned(), 3),
+            ("cm3".to_owned(), 1),
+        ]),
+        challenge_count: 2,
+        eval_count: 1,
+        evaluation_map: vec![EvaluationMapEntry::default()],
+        boundaries: Vec::new(),
+        commitment_columns: Vec::new(),
+        unit_value_map: Vec::new(),
+        group_value_map: Vec::new(),
+        stark: StarkStruct {
+            n_bits: 2,
+            n_bits_ext: 4,
+            n_queries: 4,
+            steps: vec![
+                FriStep { n_bits: 4 },
+                FriStep { n_bits: 3 },
+                FriStep { n_bits: 1 },
+            ],
+            hash_commits: true,
+            last_level_verification: 2,
+            pow_bits: 20,
+            merkle_tree_arity: 4,
+            verification_hash_type: Some("GL".to_owned()),
+            transcript_arity: Some(4),
+            merkle_tree_custom: Some(true),
+        },
+    }
+}
+
+pub fn sample_metadata_bundle_expression_info() -> ExpressionInfo {
+    ExpressionInfo {
+        hints: Vec::new(),
+        expressions: vec![ExpressionCode {
+            expression_id: 9,
+            stage: 3,
+            line: "query-expression".to_owned(),
+            temporary_count: 0,
+            destination: None,
+            operations: Vec::new(),
+        }],
+        constraints: vec![ConstraintCode {
+            stage: 2,
+            boundary: BoundaryKind::EveryRow,
+            offset_min: None,
+            offset_max: None,
+            line: "constraint-a".to_owned(),
+            intermediate: false,
+            temporary_count: 0,
+            operations: Vec::new(),
+        }],
+    }
+}
+
+pub fn sample_metadata_bundle_verifier_info() -> VerifierInfo {
+    VerifierInfo {
+        quotient: VerifierCode {
+            expression_id: None,
+            stage: None,
+            line: String::new(),
+            temporary_count: 1,
+            operations: vec![VerifierOperation {
+                op: VerifierOperationKind::Copy,
+                destination: VerifierDestination::temporary(0, 3),
+                sources: vec![VerifierOperand::number(1, 1)],
+            }],
+        },
+        query: VerifierCode {
+            expression_id: Some(9),
+            stage: Some(3),
+            line: "query-expression".to_owned(),
+            temporary_count: 1,
+            operations: vec![VerifierOperation {
+                op: VerifierOperationKind::Copy,
+                destination: VerifierDestination::temporary(0, 3),
+                sources: vec![VerifierOperand::evaluation(0, 3)],
+            }],
+        },
+    }
+}
+
+pub fn sample_metadata_bundle_global_info() -> GlobalInfo {
+    GlobalInfo {
+        name: "sample-program".to_owned(),
+        air_groups: vec!["group-a".to_owned()],
+        airs: vec![vec![GlobalAir {
+            name: "unit-a".to_owned(),
+            num_rows: 1024,
+            has_compressor: false,
+        }]],
+        curve: CurveKind::None,
+        lattice_size: Some(368),
+        aggregation_types: vec![Vec::<AggregationType>::new()],
+        n_publics: 1,
+        num_challenges: vec![1, 2],
+        num_proof_values: vec![1, 1],
+        proof_values_map: vec![
+            NamedStageValue {
+                name: "proof-a".to_owned(),
+                stage: 1,
+                id: None,
+                lengths: Vec::new(),
+            },
+            NamedStageValue {
+                name: "proof-b".to_owned(),
+                stage: 2,
+                id: None,
+                lengths: Vec::new(),
+            },
+        ],
+        publics_map: vec![PublicValue {
+            name: "public-a".to_owned(),
+            stage: 1,
+            lengths: Vec::new(),
+        }],
+        transcript_arity: 4,
     }
 }

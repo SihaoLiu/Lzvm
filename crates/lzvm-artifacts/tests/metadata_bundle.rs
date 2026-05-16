@@ -1,132 +1,21 @@
 use lzvm_artifacts::constant_tree::expected_constant_tree_byte_count;
-use lzvm_artifacts::expression_info::{encode_expression_info, parse_expression_info_json};
+use lzvm_artifacts::expression_info::{encode_expression_info, ExpressionInfo};
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
 use lzvm_artifacts::fixed::{encode_fixed_columns, FixedColumn, FixedColumns};
-use lzvm_artifacts::global_info::{encode_global_info, parse_global_info_json};
+use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo};
 use lzvm_artifacts::metadata_bundle::{
     read_global_metadata_bundle, read_unit_artifact_bundle, read_unit_metadata_bundle,
     GlobalMetadataPaths, MetadataBundleError, UnitArtifactPaths, UnitMetadataPaths,
 };
 use lzvm_artifacts::metadata_validation::MetadataValidationError;
-use lzvm_artifacts::setup_info::{encode_unit_setup_info, parse_unit_setup_info_json};
+use lzvm_artifacts::setup_info::{encode_unit_setup_info, UnitSetupInfo};
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
-use lzvm_artifacts::verifier_info::{encode_verifier_info, parse_verifier_info_json};
+use lzvm_artifacts::verifier_info::{encode_verifier_info, VerifierInfo};
 use std::fs;
 use std::path::{Path, PathBuf};
-
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 2,
-        "nConstants": 5,
-        "nPublics": 2,
-        "nConstraints": 1,
-        "qDeg": 7,
-        "openingPoints": [0, 1, -1],
-        "mapSectionsN": {
-            "const": 5,
-            "cm1": 2,
-            "cm2": 3,
-            "cm3": 1
-        },
-        "challengesMap": [{}, {}],
-        "evMap": [{}],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 2,
-            "nBitsExt": 4,
-            "nQueries": 4,
-            "steps": [
-                {"nBits": 4},
-                {"nBits": 3},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 20,
-            "merkleTreeArity": 4,
-            "verificationHashType": "GL",
-            "transcriptArity": 4,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
-
-fn sample_expression_info_json() -> &'static str {
-    r#"{
-        "hintsInfo": [],
-        "expressionsCode": [
-            {
-                "expId": 9,
-                "stage": 3,
-                "line": "query-expression",
-                "tmpUsed": 0,
-                "code": []
-            }
-        ],
-        "constraints": [
-            {
-                "tmpUsed": 0,
-                "code": [],
-                "boundary": "everyRow",
-                "line": "constraint-a",
-                "imPol": 0,
-                "stage": 2
-            }
-        ]
-    }"#
-}
-
-fn sample_verifier_info_json() -> &'static str {
-    r#"{
-        "qVerifier": {
-            "tmpUsed": 1,
-            "code": [
-                {
-                    "op": "copy",
-                    "dest": {"type": "tmp", "id": 0, "dim": 3},
-                    "src": [{"type": "number", "value": "1", "dim": 1}]
-                }
-            ]
-        },
-        "queryVerifier": {
-            "expId": 9,
-            "stage": 3,
-            "tmpUsed": 1,
-            "line": "query-expression",
-            "code": [
-                {
-                    "op": "copy",
-                    "dest": {"type": "tmp", "id": 0, "dim": 3},
-                    "src": [{"type": "eval", "id": 0, "dim": 3}]
-                }
-            ]
-        }
-    }"#
-}
-
-fn sample_global_info_json() -> &'static str {
-    r#"{
-        "name": "sample-program",
-        "air_groups": ["group-a"],
-        "airs": [[{"name": "unit-a", "num_rows": 1024}]],
-        "curve": "None",
-        "latticeSize": 368,
-        "aggTypes": [[]],
-        "nPublics": 1,
-        "numChallenges": [1, 2],
-        "numProofValues": [1, 1],
-        "proofValuesMap": [
-            {"name": "proof-a", "stage": 1},
-            {"name": "proof-b", "stage": 2}
-        ],
-        "publicsMap": [
-            {"name": "public-a", "stage": 1}
-        ],
-        "transcriptArity": 4
-    }"#
-}
+mod fixtures;
 
 fn sample_expression_program(expression_id: u32) -> ExpressionProgram {
     ExpressionProgram {
@@ -190,46 +79,51 @@ fn create_clean_dir(name: &str) -> PathBuf {
     dir
 }
 
-fn write_unit_fixture(paths: &UnitMetadataPaths, setup: &str, expressions: &str, verifier: &str) {
+fn write_unit_fixture(
+    paths: &UnitMetadataPaths,
+    setup: &UnitSetupInfo,
+    expressions: &ExpressionInfo,
+    verifier: &VerifierInfo,
+) {
     write_setup_info_fixture(&paths.setup_info, setup);
     write_expression_info_fixture(&paths.expression_info, expressions);
     write_verifier_info_fixture(&paths.verifier_info, verifier);
 }
 
-fn write_setup_info_fixture(path: &Path, content: &str) {
+fn write_setup_info_fixture(path: &Path, setup: &UnitSetupInfo) {
     if path.extension().and_then(|extension| extension.to_str()) == Some("bin") {
-        let setup = parse_unit_setup_info_json(content).expect("setup should parse");
-        let bytes = encode_unit_setup_info(&setup).expect("setup should encode");
+        let bytes = encode_unit_setup_info(setup).expect("setup should encode");
         fs::write(path, bytes).expect("fixture should be written");
     } else {
-        write_file(path, content);
+        write_file(path, "{}");
     }
 }
 
-fn write_expression_info_fixture(path: &Path, content: &str) {
+fn write_expression_info_fixture(path: &Path, expressions: &ExpressionInfo) {
     if path.extension().and_then(|extension| extension.to_str()) == Some("bin") {
-        let expressions = parse_expression_info_json(content).expect("expressions should parse");
-        let bytes = encode_expression_info(&expressions).expect("expressions should encode");
+        let bytes = encode_expression_info(expressions).expect("expressions should encode");
         fs::write(path, bytes).expect("fixture should be written");
     } else {
-        write_file(path, content);
+        write_file(path, "{}");
     }
 }
 
-fn write_verifier_info_fixture(path: &Path, content: &str) {
+fn write_verifier_info_fixture(path: &Path, verifier: &VerifierInfo) {
     if path.extension().and_then(|extension| extension.to_str()) == Some("bin") {
-        let verifier = parse_verifier_info_json(content).expect("verifier should parse");
-        let bytes = encode_verifier_info(&verifier).expect("verifier should encode");
+        let bytes = encode_verifier_info(verifier).expect("verifier should encode");
         fs::write(path, bytes).expect("fixture should be written");
     } else {
-        write_file(path, content);
+        write_file(path, "{}");
     }
 }
 
-fn write_global_info_fixture(path: &Path, content: &str) {
-    let global = parse_global_info_json(content).expect("global info should parse");
-    let bytes = encode_global_info(&global).expect("global info should encode");
-    fs::write(path, bytes).expect("fixture should be written");
+fn write_global_info_fixture(path: &Path, global: &GlobalInfo) {
+    if path.extension().and_then(|extension| extension.to_str()) == Some("bin") {
+        let bytes = encode_global_info(global).expect("global info should encode");
+        fs::write(path, bytes).expect("fixture should be written");
+    } else {
+        write_file(path, "{}");
+    }
 }
 
 fn write_root_binary(path: &Path, values: Vec<u64>) {
@@ -250,8 +144,7 @@ fn write_fixed_columns(path: &Path) {
 }
 
 fn write_constant_tree(path: &Path, root_values: [u64; 4]) {
-    let setup = lzvm_artifacts::setup_info::parse_unit_setup_info_json(sample_setup_info_json())
-        .expect("setup should parse");
+    let setup = fixtures::sample_metadata_bundle_setup_info();
     let mut bytes = vec![3_u8; expected_constant_tree_byte_count(&setup).unwrap()];
     for (index, value) in root_values.iter().enumerate() {
         let offset = bytes.len() - 32 + index * 8;
@@ -281,9 +174,9 @@ fn reads_and_validates_unit_metadata_from_paths() {
     let paths = UnitMetadataPaths::from_unit_prefix(dir.join("unit-a"));
     write_unit_fixture(
         &paths,
-        sample_setup_info_json(),
-        sample_expression_info_json(),
-        sample_verifier_info_json(),
+        &fixtures::sample_metadata_bundle_setup_info(),
+        &fixtures::sample_metadata_bundle_expression_info(),
+        &fixtures::sample_metadata_bundle_verifier_info(),
     );
 
     let bundle = read_unit_metadata_bundle(&paths).expect("bundle should load");
@@ -304,9 +197,9 @@ fn rejects_text_unit_metadata_bundle_files() {
     );
     write_unit_fixture(
         &paths,
-        sample_setup_info_json(),
-        sample_expression_info_json(),
-        sample_verifier_info_json(),
+        &fixtures::sample_metadata_bundle_setup_info(),
+        &fixtures::sample_metadata_bundle_expression_info(),
+        &fixtures::sample_metadata_bundle_verifier_info(),
     );
 
     let error = read_unit_metadata_bundle(&paths).expect_err("text bundle should be rejected");
@@ -319,12 +212,13 @@ fn rejects_text_unit_metadata_bundle_files() {
 fn rejects_unit_metadata_bundles_that_fail_cross_file_validation() {
     let dir = create_clean_dir("unit-invalid");
     let paths = UnitMetadataPaths::from_unit_prefix(dir.join("unit-a"));
-    let setup_json = sample_setup_info_json().replace("\"nConstraints\": 1", "\"nConstraints\": 2");
+    let mut setup = fixtures::sample_metadata_bundle_setup_info();
+    setup.n_constraints = Some(2);
     write_unit_fixture(
         &paths,
-        &setup_json,
-        sample_expression_info_json(),
-        sample_verifier_info_json(),
+        &setup,
+        &fixtures::sample_metadata_bundle_expression_info(),
+        &fixtures::sample_metadata_bundle_verifier_info(),
     );
 
     let error = read_unit_metadata_bundle(&paths).expect_err("bundle should be rejected");
@@ -343,7 +237,7 @@ fn rejects_unit_metadata_bundles_that_fail_cross_file_validation() {
 fn reads_and_validates_global_metadata_from_a_path() {
     let dir = create_clean_dir("global-valid");
     let path = dir.join("global_info.bin");
-    write_global_info_fixture(&path, sample_global_info_json());
+    write_global_info_fixture(&path, &fixtures::sample_metadata_bundle_global_info());
 
     let bundle =
         read_global_metadata_bundle(&GlobalMetadataPaths::new(path)).expect("bundle should load");
@@ -357,7 +251,7 @@ fn reads_and_validates_global_metadata_from_a_path() {
 fn rejects_text_global_metadata_bundle_files() {
     let dir = create_clean_dir("global-text-rejected");
     let path = dir.join("global_info.json");
-    write_file(&path, sample_global_info_json());
+    write_file(&path, "{}");
 
     let error = read_global_metadata_bundle(&GlobalMetadataPaths::new(path))
         .expect_err("text bundle should be rejected");
@@ -370,9 +264,9 @@ fn rejects_text_global_metadata_bundle_files() {
 fn rejects_global_metadata_bundles_that_fail_cross_file_validation() {
     let dir = create_clean_dir("global-invalid");
     let path = dir.join("global_info.bin");
-    let global_json =
-        sample_global_info_json().replace("\"numChallenges\": [1, 2]", "\"numChallenges\": []");
-    write_global_info_fixture(&path, &global_json);
+    let mut global = fixtures::sample_metadata_bundle_global_info();
+    global.num_challenges.clear();
+    write_global_info_fixture(&path, &global);
 
     let error = read_global_metadata_bundle(&GlobalMetadataPaths::new(path))
         .expect_err("bundle should be rejected");
@@ -428,9 +322,9 @@ fn reads_and_validates_unit_artifacts_from_paths() {
     let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
     write_unit_fixture(
         &paths.metadata,
-        sample_setup_info_json(),
-        sample_expression_info_json(),
-        sample_verifier_info_json(),
+        &fixtures::sample_metadata_bundle_setup_info(),
+        &fixtures::sample_metadata_bundle_expression_info(),
+        &fixtures::sample_metadata_bundle_verifier_info(),
     );
     write_file(&stale_verification_key_json_path(&paths), "[9,9,9,9]");
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
@@ -459,9 +353,9 @@ fn reads_and_validates_unit_artifacts_from_binary_key_without_json() {
     let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
     write_unit_fixture(
         &paths.metadata,
-        sample_setup_info_json(),
-        sample_expression_info_json(),
-        sample_verifier_info_json(),
+        &fixtures::sample_metadata_bundle_setup_info(),
+        &fixtures::sample_metadata_bundle_expression_info(),
+        &fixtures::sample_metadata_bundle_verifier_info(),
     );
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
     write_expression_program(&paths.expression_program, 17);
@@ -484,9 +378,9 @@ fn rejects_unit_artifacts_when_binary_key_does_not_match_constant_tree() {
     let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
     write_unit_fixture(
         &paths.metadata,
-        sample_setup_info_json(),
-        sample_expression_info_json(),
-        sample_verifier_info_json(),
+        &fixtures::sample_metadata_bundle_setup_info(),
+        &fixtures::sample_metadata_bundle_expression_info(),
+        &fixtures::sample_metadata_bundle_verifier_info(),
     );
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 5]);
     write_expression_program(&paths.expression_program, 17);
@@ -512,9 +406,9 @@ fn rejects_unit_artifacts_with_missing_verifier_programs() {
     let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
     write_unit_fixture(
         &paths.metadata,
-        sample_setup_info_json(),
-        sample_expression_info_json(),
-        sample_verifier_info_json(),
+        &fixtures::sample_metadata_bundle_setup_info(),
+        &fixtures::sample_metadata_bundle_expression_info(),
+        &fixtures::sample_metadata_bundle_verifier_info(),
     );
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
     write_expression_program(&paths.expression_program, 17);
@@ -533,9 +427,9 @@ fn rejects_unit_artifacts_with_missing_fixed_columns() {
     let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
     write_unit_fixture(
         &paths.metadata,
-        sample_setup_info_json(),
-        sample_expression_info_json(),
-        sample_verifier_info_json(),
+        &fixtures::sample_metadata_bundle_setup_info(),
+        &fixtures::sample_metadata_bundle_expression_info(),
+        &fixtures::sample_metadata_bundle_verifier_info(),
     );
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
     write_expression_program(&paths.expression_program, 17);
@@ -553,9 +447,9 @@ fn rejects_unit_artifacts_with_missing_constant_trees() {
     let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
     write_unit_fixture(
         &paths.metadata,
-        sample_setup_info_json(),
-        sample_expression_info_json(),
-        sample_verifier_info_json(),
+        &fixtures::sample_metadata_bundle_setup_info(),
+        &fixtures::sample_metadata_bundle_expression_info(),
+        &fixtures::sample_metadata_bundle_verifier_info(),
     );
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
     write_expression_program(&paths.expression_program, 17);
@@ -574,9 +468,9 @@ fn rejects_unit_artifacts_with_constant_tree_root_mismatches() {
     let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
     write_unit_fixture(
         &paths.metadata,
-        sample_setup_info_json(),
-        sample_expression_info_json(),
-        sample_verifier_info_json(),
+        &fixtures::sample_metadata_bundle_setup_info(),
+        &fixtures::sample_metadata_bundle_expression_info(),
+        &fixtures::sample_metadata_bundle_verifier_info(),
     );
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
     write_expression_program(&paths.expression_program, 17);
@@ -602,9 +496,9 @@ fn rejects_unit_artifacts_with_fixed_row_count_mismatches() {
     let paths = UnitArtifactPaths::from_unit_prefix(dir.join("unit-a"));
     write_unit_fixture(
         &paths.metadata,
-        sample_setup_info_json(),
-        sample_expression_info_json(),
-        sample_verifier_info_json(),
+        &fixtures::sample_metadata_bundle_setup_info(),
+        &fixtures::sample_metadata_bundle_expression_info(),
+        &fixtures::sample_metadata_bundle_verifier_info(),
     );
     write_root_binary(&paths.verification_key_binary, vec![1, 2, 3, 4]);
     write_expression_program(&paths.expression_program, 17);
