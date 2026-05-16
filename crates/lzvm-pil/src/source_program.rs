@@ -1,12 +1,13 @@
 use crate::{
     parse_air_group_declarations, parse_air_group_value_declarations,
     parse_air_template_declarations, parse_column_declarations, parse_commit_declarations,
-    parse_container_declarations, parse_include_directives, parse_public_declarations,
-    parse_public_table_declarations, parse_use_directives, parse_value_declarations,
-    AirGroupDeclaration, AirGroupValueDeclaration, AirTemplateDeclaration, ColumnDeclaration,
-    CommitDeclaration, ContainerDeclaration, IncludeKind, IncludeVisibility, ParseError,
-    PublicDeclaration, PublicTableDeclaration, SourceFile, SourceGraph, SourceGraphEdge,
-    SourceGraphError, SourceGraphLoader, SourceLoaderConfig, UseDirective, ValueDeclaration,
+    parse_container_declarations, parse_include_directives, parse_pragma_directives,
+    parse_public_declarations, parse_public_table_declarations, parse_use_directives,
+    parse_value_declarations, AirGroupDeclaration, AirGroupValueDeclaration,
+    AirTemplateDeclaration, ColumnDeclaration, CommitDeclaration, ContainerDeclaration,
+    IncludeKind, IncludeVisibility, ParseError, PragmaDirective, PublicDeclaration,
+    PublicTableDeclaration, SourceFile, SourceGraph, SourceGraphEdge, SourceGraphError,
+    SourceGraphLoader, SourceLoaderConfig, UseDirective, ValueDeclaration,
 };
 use lzvm_artifacts::source_program::{
     read_source_program_archive_file, SourceProgramArchive, SourceProgramArchiveEdge,
@@ -26,6 +27,7 @@ pub struct SourceProgram {
 pub struct SourceProgramModule {
     pub source_name: String,
     pub source: SourceFile,
+    pub pragmas: Vec<PragmaDirective>,
     pub includes: Vec<crate::IncludeDirective>,
     pub uses: Vec<UseDirective>,
     pub containers: Vec<ContainerDeclaration>,
@@ -191,6 +193,7 @@ fn parse_source_module(source: &SourceFile) -> Result<SourceProgramModule, Parse
     Ok(SourceProgramModule {
         source_name: source.source_name.clone(),
         source: source.clone(),
+        pragmas: parse_pragma_directives(source)?,
         includes: parse_include_directives(source)?,
         uses: parse_use_directives(source)?,
         containers: parse_container_declarations(source)?,

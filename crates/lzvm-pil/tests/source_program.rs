@@ -27,6 +27,7 @@ fn loads_source_program_with_declarations_from_graph_sources() {
         &root,
         "main.pil",
         "include \"shared.pil\";\n\
+         #pragma arg -I pil,lib\n\
          use lib.shared;\n\
          container air.main;\n\
          airtemplate Main(int N = 2**16) { finalize(); }\n\
@@ -66,6 +67,8 @@ fn loads_source_program_with_declarations_from_graph_sources() {
     assert_eq!(program.graph.edges[0].to, "shared.pil");
 
     let main = &program.modules[0];
+    assert_eq!(main.pragmas.len(), 1);
+    assert_eq!(main.pragmas[0].value, "arg -I pil,lib");
     assert_eq!(main.includes.len(), 1);
     assert_eq!(main.uses.len(), 1);
     assert_eq!(main.containers.len(), 1);

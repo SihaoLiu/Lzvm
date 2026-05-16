@@ -1,10 +1,10 @@
 use super::{
     parse_air_group_declarations, parse_air_group_value_declarations,
     parse_air_template_declarations, parse_column_declarations, parse_commit_declarations,
-    parse_container_declarations, parse_include_directives, parse_public_declarations,
-    parse_public_table_declarations, parse_use_directives, parse_value_declarations,
-    ColumnInitializerKind, ColumnKind, IncludeKind, IncludeVisibility, ParseError,
-    ValueDeclarationKind,
+    parse_container_declarations, parse_include_directives, parse_pragma_directives,
+    parse_public_declarations, parse_public_table_declarations, parse_use_directives,
+    parse_value_declarations, ColumnInitializerKind, ColumnKind, IncludeKind, IncludeVisibility,
+    ParseError, ValueDeclarationKind,
 };
 use crate::SourceFile;
 use std::path::PathBuf;
@@ -80,6 +80,21 @@ fn rejects_missing_statement_terminator() {
         error,
         ParseError::ExpectedTerminator { source_name, .. } if source_name == "main.pil"
     ));
+}
+
+#[test]
+fn parses_pragma_directives_with_raw_values() {
+    let source = source("#pragma arg -I pil,lib\n#pragma feature fast\nconst int N = 2**16;");
+
+    let directives = parse_pragma_directives(&source).expect("pragmas should parse");
+
+    assert_eq!(directives.len(), 2);
+    assert_eq!(directives[0].value, "arg -I pil,lib");
+    assert_eq!(
+        &source.contents[directives[0].start..directives[0].end],
+        "#pragma arg -I pil,lib"
+    );
+    assert_eq!(directives[1].value, "feature fast");
 }
 
 #[test]

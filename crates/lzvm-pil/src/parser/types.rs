@@ -8,6 +8,14 @@ pub struct SourceSpan {
     pub end: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PragmaDirective {
+    pub value: String,
+    pub source_name: String,
+    pub start: usize,
+    pub end: usize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IncludeKind {
     Include,

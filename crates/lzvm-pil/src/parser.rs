@@ -11,6 +11,25 @@ const DEFAULT_CHALLENGE_STAGE: u32 = 2;
 const DEFAULT_VALUE_STAGE: u32 = 1;
 const DEFAULT_AIR_GROUP_VALUE_STAGE: u32 = 2;
 
+pub fn parse_pragma_directives(source: &SourceFile) -> Result<Vec<PragmaDirective>, ParseError> {
+    let tokens = lex_source(&source.contents).map_err(|error| ParseError::Lex {
+        source_name: source.source_name.clone(),
+        error,
+    })?;
+    let mut directives = Vec::new();
+    for token in &tokens {
+        if token.kind == TokenKind::Pragma {
+            directives.push(PragmaDirective {
+                value: token.lexeme.clone(),
+                source_name: source.source_name.clone(),
+                start: token.start,
+                end: token.end,
+            });
+        }
+    }
+    Ok(directives)
+}
+
 pub fn parse_include_directives(source: &SourceFile) -> Result<Vec<IncludeDirective>, ParseError> {
     let tokens = lex_source(&source.contents).map_err(|error| ParseError::Lex {
         source_name: source.source_name.clone(),
