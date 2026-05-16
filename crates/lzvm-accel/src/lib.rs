@@ -1,4 +1,6 @@
 use std::fmt;
+#[cfg(feature = "cuda")]
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccelError {
@@ -28,6 +30,7 @@ impl std::error::Error for AccelError {}
 
 #[cfg(feature = "cuda")]
 unsafe extern "C" {
+    fn lzvm_cuda_setup_init(roots: *const u64, root_count: usize, max_bits_ext: usize) -> i32;
     fn lzvm_cuda_goldilocks_add(lhs: *const u64, rhs: *const u64, out: *mut u64, len: usize)
         -> i32;
     fn lzvm_cuda_goldilocks_mul(lhs: *const u64, rhs: *const u64, out: *mut u64, len: usize)
@@ -125,6 +128,9 @@ const ROOTS_OF_UNITY: [u64; 33] = [
 const SHIFT: u64 = 7;
 
 #[cfg(feature = "cuda")]
+static CUDA_SETUP_MAX_BITS: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(feature = "cuda")]
 fn pow_mod(mut base: u64, mut exponent: u64) -> u64 {
     const MODULUS: u64 = 0xffff_ffff_0000_0001;
 
@@ -137,6 +143,35 @@ fn pow_mod(mut base: u64, mut exponent: u64) -> u64 {
         exponent >>= 1;
     }
     result
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_setup_init(max_bits_ext: usize) -> Result<(), AccelError> {
+    if ROOTS_OF_UNITY.get(max_bits_ext).is_none() {
+        return Err(AccelError::InvalidDomain {
+            bits: max_bits_ext,
+            len: ROOTS_OF_UNITY.len(),
+        });
+    }
+
+    let code = unsafe {
+        lzvm_cuda_setup_init(ROOTS_OF_UNITY.as_ptr(), ROOTS_OF_UNITY.len(), max_bits_ext)
+    };
+    if code == 0 {
+        CUDA_SETUP_MAX_BITS.store(max_bits_ext, Ordering::Relaxed);
+        Ok(())
+    } else {
+        Err(AccelError::Cuda { code })
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn ensure_cuda_setup(max_bits_ext: usize) -> Result<(), AccelError> {
+    if CUDA_SETUP_MAX_BITS.load(Ordering::Relaxed) >= max_bits_ext {
+        Ok(())
+    } else {
+        cuda_setup_init(max_bits_ext)
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -243,6 +278,7 @@ pub fn cuda_goldilocks_ntt(values: &[u64], bits: usize) -> Result<Vec<u64>, Acce
             len: values.len(),
         });
     }
+    ensure_cuda_setup(bits)?;
 
     let mut out = vec![0_u64; values.len()];
     let code = unsafe {
@@ -278,6 +314,7 @@ pub fn cuda_goldilocks_intt(values: &[u64], bits: usize) -> Result<Vec<u64>, Acc
             len: values.len(),
         });
     }
+    ensure_cuda_setup(bits)?;
 
     let mut out = vec![0_u64; values.len()];
     let code = unsafe {
@@ -342,6 +379,7 @@ pub fn cuda_goldilocks_coset_extend(
             len: values.len(),
         });
     }
+    ensure_cuda_setup(target_bits)?;
 
     let mut out = vec![0_u64; target_len];
     let code = unsafe {
@@ -515,6 +553,11 @@ pub fn cuda_keccak256_fixed(input: &[u8], message_len: usize) -> Result<Vec<[u8;
     } else {
         Err(AccelError::Cuda { code })
     }
+}
+
+#[cfg(not(feature = "cuda"))]
+pub fn cuda_setup_init(_max_bits_ext: usize) -> Result<(), AccelError> {
+    Err(AccelError::CudaUnavailable)
 }
 
 #[cfg(not(feature = "cuda"))]

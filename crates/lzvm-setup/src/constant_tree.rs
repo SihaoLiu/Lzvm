@@ -1,5 +1,7 @@
 use std::path::Path;
 
+#[cfg(feature = "cuda")]
+use lzvm_accel::cuda_setup_init;
 use lzvm_artifacts::constant_tree::{parse_constant_tree_bytes, read_constant_tree_file};
 use lzvm_artifacts::fixed::{
     encode_raw_fixed_columns, read_raw_fixed_column_layout_file, write_raw_fixed_columns_file,
@@ -40,6 +42,12 @@ pub fn extend_fixed_columns_for_constant_tree_with_backend(
     setup: &UnitSetupInfo,
     backend: FixedExtensionBackend,
 ) -> Result<Vec<u8>, SetupError> {
+    #[cfg(feature = "cuda")]
+    if matches!(backend, FixedExtensionBackend::Cuda) {
+        cuda_setup_init(setup.stark.n_bits_ext as usize)
+            .map_err(|error| SetupError::CudaBackend(error.to_string()))?;
+    }
+
     let extended_row_count = checked_domain_len(setup.stark.n_bits_ext)?;
     let columns = fixed_columns_for_extension(value, setup)?;
     let extended_columns = match backend {

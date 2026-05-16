@@ -4,7 +4,7 @@ use lzvm_accel::{cuda_goldilocks_add, cuda_goldilocks_mul};
 use lzvm_accel::{
     cuda_goldilocks_butterfly, cuda_goldilocks_coset_extend, cuda_goldilocks_intt,
     cuda_goldilocks_ntt, cuda_keccak256_fixed, cuda_poseidon2_width16, cuda_poseidon2_width4,
-    cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8,
+    cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8, cuda_setup_init,
 };
 #[cfg(feature = "cuda")]
 use lzvm_crypto::keccak256;
@@ -158,6 +158,24 @@ fn cuda_computes_goldilocks_butterflies() {
 #[test]
 #[cfg(feature = "cuda")]
 fn cuda_computes_forward_ntt() {
+    let input = vec![3, 5, 7, 11, 13, 17, 19, 23];
+    let mut expected = input
+        .iter()
+        .map(|value| Felt::from_u64(*value))
+        .collect::<Vec<_>>();
+    ntt_in_place(&mut expected, 3).expect("cpu ntt should run");
+    let expected = expected.into_iter().map(Felt::to_u64).collect::<Vec<_>>();
+
+    let actual = cuda_goldilocks_ntt(&input, 3).expect("cuda ntt should run");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_initializes_setup_constants_before_ntt() {
+    cuda_setup_init(4).expect("cuda setup should initialize");
+
     let input = vec![3, 5, 7, 11, 13, 17, 19, 23];
     let mut expected = input
         .iter()

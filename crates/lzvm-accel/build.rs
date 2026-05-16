@@ -55,8 +55,9 @@ fn main() {
         panic!("c++ failed while building {}", host_source.display());
     }
 
+    let _ = std::fs::remove_file(&library);
     let status = Command::new("ar")
-        .arg("crus")
+        .arg("crs")
         .arg(&library)
         .arg(&cuda_object)
         .arg(&host_object)

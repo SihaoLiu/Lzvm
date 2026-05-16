@@ -25,6 +25,11 @@ constexpr size_t kKeccakRateBytes = 136;
 constexpr size_t kKeccakStateLanes = 25;
 constexpr size_t kKeccakRateLanes = 17;
 constexpr size_t kKeccakOutputBytes = 32;
+constexpr size_t kMaxRootBits = 32;
+
+__device__ __constant__ uint64_t kNttStageRoots[kMaxRootBits + 1];
+__device__ __constant__ uint64_t kNttStageRootInverses[kMaxRootBits + 1];
+__device__ __constant__ unsigned int kNttStageRootLimit;
 
 __device__ __constant__ uint64_t kPoseidon2Width4Diag[kPoseidon2Width4] = {
     0xf0ce126fe8a83094ULL,
@@ -651,7 +656,13 @@ __global__ void bit_reverse_kernel(uint64_t* values, size_t len, size_t bits) {
     }
 }
 
-__global__ void ntt_stage_kernel(uint64_t* values, size_t len, size_t stage_len, uint64_t root) {
+__global__ void ntt_stage_kernel(
+    uint64_t* values,
+    size_t len,
+    size_t stage_len,
+    size_t stage_bits,
+    uint64_t root,
+    bool inverse_roots) {
     const size_t pair_count = len / 2;
     const size_t pair = blockIdx.x * blockDim.x + threadIdx.x;
     if (pair < pair_count) {
@@ -660,7 +671,10 @@ __global__ void ntt_stage_kernel(uint64_t* values, size_t len, size_t stage_len,
         const size_t offset = pair % half;
         const size_t even_index = group * stage_len + offset;
         const size_t odd_index = even_index + half;
-        const uint64_t stage_twiddle = pow_mod(root, len / stage_len);
+        const uint64_t stage_twiddle =
+            stage_bits <= static_cast<size_t>(kNttStageRootLimit)
+            ? (inverse_roots ? kNttStageRootInverses[stage_bits] : kNttStageRoots[stage_bits])
+            : pow_mod(root, len / stage_len);
         const uint64_t factor = pow_mod(stage_twiddle, offset);
         const uint64_t even = values[even_index];
         const uint64_t odd = mul_mod(values[odd_index], factor);
@@ -873,7 +887,12 @@ __global__ void keccak256_fixed_kernel(
     }
 }
 
-cudaError_t run_ntt(uint64_t* device_values, size_t len, size_t bits, uint64_t root) {
+cudaError_t run_ntt(
+    uint64_t* device_values,
+    size_t len,
+    size_t bits,
+    uint64_t root,
+    bool inverse_roots) {
     const size_t blocks = (len + kThreads - 1) / kThreads;
     bit_reverse_kernel<<<blocks, kThreads>>>(device_values, len, bits);
     cudaError_t status = static_cast<cudaError_t>(lzvm_cuda_check_launch());
@@ -881,10 +900,11 @@ cudaError_t run_ntt(uint64_t* device_values, size_t len, size_t bits, uint64_t r
         return status;
     }
 
-    for (size_t stage_len = 2; stage_len <= len; stage_len <<= 1) {
+    for (size_t stage_len = 2, stage_bits = 1; stage_len <= len; stage_len <<= 1, ++stage_bits) {
         const size_t pair_count = len / 2;
         const size_t stage_blocks = (pair_count + kThreads - 1) / kThreads;
-        ntt_stage_kernel<<<stage_blocks, kThreads>>>(device_values, len, stage_len, root);
+        ntt_stage_kernel<<<stage_blocks, kThreads>>>(
+            device_values, len, stage_len, stage_bits, root, inverse_roots);
         status = static_cast<cudaError_t>(lzvm_cuda_check_launch());
         if (status != cudaSuccess) {
             return status;
@@ -894,6 +914,36 @@ cudaError_t run_ntt(uint64_t* device_values, size_t len, size_t bits, uint64_t r
 }
 
 }  // namespace
+
+extern "C" int lzvm_cuda_setup_init(
+    const uint64_t* roots,
+    size_t root_count,
+    size_t max_bits_ext) {
+    if (roots == nullptr) {
+        return -1;
+    }
+    if (root_count == 0 || root_count > kMaxRootBits + 1 || max_bits_ext >= root_count) {
+        return -2;
+    }
+
+    int device_id = 0;
+    LZVM_CUDA_RETURN_ON_ERROR(cudaGetDevice(&device_id));
+    LZVM_CUDA_RETURN_ON_ERROR(cudaSetDevice(device_id));
+    LZVM_CUDA_RETURN_ON_ERROR(
+        cudaMemcpyToSymbol(kNttStageRoots, roots, root_count * sizeof(uint64_t)));
+
+    uint64_t inverse_roots[kMaxRootBits + 1];
+    for (size_t index = 0; index < root_count; ++index) {
+        inverse_roots[index] = host_pow_mod(roots[index], kModulus - 2);
+    }
+    LZVM_CUDA_RETURN_ON_ERROR(cudaMemcpyToSymbol(
+        kNttStageRootInverses, inverse_roots, root_count * sizeof(uint64_t)));
+
+    const unsigned int root_limit = static_cast<unsigned int>(max_bits_ext);
+    LZVM_CUDA_RETURN_ON_ERROR(
+        cudaMemcpyToSymbol(kNttStageRootLimit, &root_limit, sizeof(root_limit)));
+    return 0;
+}
 
 extern "C" int lzvm_cuda_goldilocks_add(
     const uint64_t* lhs,
@@ -1022,7 +1072,7 @@ extern "C" int lzvm_cuda_goldilocks_ntt(
     LZVM_CUDA_RETURN_ON_ERROR(device_values.reset(len));
     LZVM_CUDA_RETURN_ON_ERROR(device_values.copy_from_bytes(values, bytes));
 
-    cudaError_t status = run_ntt(device_values.data(), len, bits, root);
+    cudaError_t status = run_ntt(device_values.data(), len, bits, root, false);
     if (status != cudaSuccess) {
         return static_cast<int>(status);
     }
@@ -1052,7 +1102,7 @@ extern "C" int lzvm_cuda_goldilocks_intt(
     LZVM_CUDA_RETURN_ON_ERROR(device_values.copy_from_bytes(values, bytes));
 
     const uint64_t root_inverse = host_pow_mod(root, kModulus - 2);
-    cudaError_t status = run_ntt(device_values.data(), len, bits, root_inverse);
+    cudaError_t status = run_ntt(device_values.data(), len, bits, root_inverse, true);
     if (status != cudaSuccess) {
         return static_cast<int>(status);
     }
@@ -1091,7 +1141,8 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend(
     LZVM_CUDA_RETURN_ON_ERROR(device_values.reset(target_len));
     LZVM_CUDA_RETURN_ON_ERROR(device_values.copy_from_bytes(values, source_bytes));
 
-    cudaError_t status = run_ntt(device_values.data(), source_len, source_bits, source_root_inverse);
+    cudaError_t status =
+        run_ntt(device_values.data(), source_len, source_bits, source_root_inverse, true);
     if (status != cudaSuccess) {
         return static_cast<int>(status);
     }
@@ -1102,7 +1153,7 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend(
         device_values.data(), source_len, target_len, inverse_len, shift);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
 
-    status = run_ntt(device_values.data(), target_len, target_bits, target_root);
+    status = run_ntt(device_values.data(), target_len, target_bits, target_root, false);
     if (status != cudaSuccess) {
         return static_cast<int>(status);
     }
