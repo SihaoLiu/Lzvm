@@ -10,7 +10,9 @@ use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
 use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryError};
 use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifactError, ProofSegment};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValuesError};
+use lzvm_artifacts::setup_info::StageValue;
 use lzvm_artifacts::setup_manifest::SetupDirectoryManifestError;
+use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_field::{poseidon2_hash_16, Ext3, Felt, FieldError, PoseidonTranscript, TranscriptError};
 
 use crate::proof_preflight::{public_values_as_fields, PublicValueFieldError};
@@ -99,6 +101,18 @@ pub enum ContributionChallengeError {
     ProofValueCountMismatch {
         expected: usize,
         found: usize,
+    },
+    UnitValueCountMismatch {
+        expected: usize,
+        found: usize,
+    },
+    VerificationKeyValueCountMismatch {
+        expected: usize,
+        found: usize,
+    },
+    VerificationKeyNonCanonicalValue {
+        index: usize,
+        source: FieldError,
     },
     Load(LoadContributionSegmentError),
     LengthOverflow,
@@ -210,6 +224,18 @@ impl fmt::Display for ContributionChallengeError {
                 f,
                 "contribution proof value count mismatch: expected {expected}, found {found}"
             ),
+            Self::UnitValueCountMismatch { expected, found } => write!(
+                f,
+                "contribution unit value count mismatch: expected {expected}, found {found}"
+            ),
+            Self::VerificationKeyValueCountMismatch { expected, found } => write!(
+                f,
+                "contribution verification-key value count mismatch: expected {expected}, found {found}"
+            ),
+            Self::VerificationKeyNonCanonicalValue { index, source } => write!(
+                f,
+                "contribution verification-key value {index} is non-canonical: {source}"
+            ),
             Self::Load(error) => write!(f, "{error}"),
             Self::LengthOverflow => write!(f, "contribution challenge length overflow"),
             Self::Transcript(error) => write!(f, "contribution challenge transcript failed: {error}"),
@@ -222,6 +248,7 @@ impl std::error::Error for ContributionChallengeError {
         match self {
             Self::Transcript(error) => Some(error),
             Self::Load(error) => Some(error),
+            Self::VerificationKeyNonCanonicalValue { source, .. } => Some(source),
             Self::UnsupportedCurve { .. }
             | Self::MissingLatticeSize
             | Self::LatticeSizeOverflow { .. }
@@ -232,6 +259,8 @@ impl std::error::Error for ContributionChallengeError {
             | Self::DuplicateEntry { .. }
             | Self::ValueCountMismatch { .. }
             | Self::ProofValueCountMismatch { .. }
+            | Self::UnitValueCountMismatch { .. }
+            | Self::VerificationKeyValueCountMismatch { .. }
             | Self::LengthOverflow => None,
         }
     }
@@ -395,6 +424,17 @@ pub fn aggregate_contribution_values(
             })
         }
     }
+}
+
+pub fn build_internal_contribution_input(
+    root: [Felt; 4],
+    verification_key: &VerificationKeyRoot,
+    unit_value_map: &[StageValue],
+    packed_unit_values: &[Felt],
+) -> Result<InternalContributionInput, ContributionChallengeError> {
+    let values =
+        build_internal_contribution_values(verification_key, unit_value_map, packed_unit_values)?;
+    Ok(InternalContributionInput { root, values })
 }
 
 pub fn derive_worker_contribution_entry(
@@ -587,6 +627,60 @@ fn aggregate_lattice_contributions(
     Ok(out)
 }
 
+fn build_internal_contribution_values(
+    verification_key: &VerificationKeyRoot,
+    unit_value_map: &[StageValue],
+    packed_unit_values: &[Felt],
+) -> Result<Vec<Felt>, ContributionChallengeError> {
+    let VerificationKeyRoot::FieldElements(key_values) = verification_key;
+    if key_values.len() != CONTRIBUTION_ROOT_SLOT_START {
+        return Err(
+            ContributionChallengeError::VerificationKeyValueCountMismatch {
+                expected: CONTRIBUTION_ROOT_SLOT_START,
+                found: key_values.len(),
+            },
+        );
+    }
+
+    let expected_unit_values = expected_packed_stage_value_count(unit_value_map)?;
+    if packed_unit_values.len() != expected_unit_values {
+        return Err(ContributionChallengeError::UnitValueCountMismatch {
+            expected: expected_unit_values,
+            found: packed_unit_values.len(),
+        });
+    }
+
+    let stage_one_count = unit_value_map
+        .iter()
+        .filter(|entry| entry.stage == 1)
+        .count();
+    let capacity = CONTRIBUTION_ROOT_SLOT_END
+        .checked_add(stage_one_count)
+        .ok_or(ContributionChallengeError::LengthOverflow)?;
+    let mut values = Vec::with_capacity(capacity);
+    for (index, value) in key_values.iter().copied().enumerate() {
+        values.push(Felt::from_canonical(value).map_err(|source| {
+            ContributionChallengeError::VerificationKeyNonCanonicalValue { index, source }
+        })?);
+    }
+    values.extend([Felt::ZERO; CONTRIBUTION_ROOT_SLOT_START]);
+
+    let mut offset = 0_usize;
+    for entry in unit_value_map {
+        if entry.stage == 1 {
+            values.push(packed_unit_values[offset]);
+            offset = offset
+                .checked_add(1)
+                .ok_or(ContributionChallengeError::LengthOverflow)?;
+        } else {
+            offset = offset
+                .checked_add(3)
+                .ok_or(ContributionChallengeError::LengthOverflow)?;
+        }
+    }
+    Ok(values)
+}
+
 fn derive_internal_contribution_values(
     input_index: usize,
     input: &InternalContributionInput,
@@ -620,6 +714,16 @@ fn derive_internal_contribution_values(
         offset += CONTRIBUTION_HASH_STATE_WIDTH;
     }
     Ok(values)
+}
+
+fn expected_packed_stage_value_count(
+    unit_value_map: &[StageValue],
+) -> Result<usize, ContributionChallengeError> {
+    unit_value_map.iter().try_fold(0_usize, |count, value| {
+        count
+            .checked_add(if value.stage == 1 { 1 } else { 3 })
+            .ok_or(ContributionChallengeError::LengthOverflow)
+    })
 }
 
 fn contribution_lattice_size(

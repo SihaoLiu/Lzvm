@@ -3,9 +3,11 @@ use lzvm_artifacts::contribution_segment::{
 };
 use lzvm_artifacts::global_info::{CurveKind, GlobalAir, GlobalInfo, NamedStageValue};
 use lzvm_artifacts::proof::{encode_proof_artifact, parse_proof_artifact, ProofArtifact};
+use lzvm_artifacts::setup_info::StageValue;
+use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_field::{poseidon2_hash_16, Felt, FieldError, PoseidonTranscript};
 use lzvm_prover::contribution::{
-    aggregate_contribution_values, build_contribution_segment,
+    aggregate_contribution_values, build_contribution_segment, build_internal_contribution_input,
     derive_global_challenge_from_contributions, derive_global_challenge_from_proof_segments,
     derive_worker_contribution_entry, load_contribution_segment_from_segments,
     ContributionChallengeError, InternalContributionInput, LoadContributionSegmentError,
@@ -59,6 +61,14 @@ fn proof_value(name: &str, stage: u64) -> NamedStageValue {
     }
 }
 
+fn stage_value(name: &str, stage: u32) -> StageValue {
+    StageValue {
+        name: name.to_owned(),
+        stage,
+        lengths: vec![1],
+    }
+}
+
 fn expected_internal_contribution(
     root: [Felt; 4],
     values: &[Felt],
@@ -78,6 +88,33 @@ fn expected_internal_contribution(
     }
     out.truncate(lattice_size);
     out
+}
+
+fn expected_internal_values(
+    verification_key: [u64; 4],
+    unit_value_map: &[StageValue],
+    packed_unit_values: &[Felt],
+) -> Vec<Felt> {
+    let mut values = vec![
+        Felt::from_u64(verification_key[0]),
+        Felt::from_u64(verification_key[1]),
+        Felt::from_u64(verification_key[2]),
+        Felt::from_u64(verification_key[3]),
+        Felt::ZERO,
+        Felt::ZERO,
+        Felt::ZERO,
+        Felt::ZERO,
+    ];
+    let mut offset = 0_usize;
+    for entry in unit_value_map {
+        if entry.stage == 1 {
+            values.push(packed_unit_values[offset]);
+            offset += 1;
+        } else {
+            offset += 3;
+        }
+    }
+    values
 }
 
 #[test]
@@ -156,6 +193,72 @@ fn aggregates_lattice_contribution_values() {
             .expect("contributions should aggregate"),
         vec![Felt::from_u64(5), Felt::from_u64(7), Felt::from_u64(9)]
     );
+}
+
+#[test]
+fn builds_internal_contribution_input_from_unit_metadata_values() {
+    let root = [
+        Felt::from_u64(501),
+        Felt::from_u64(502),
+        Felt::from_u64(503),
+        Felt::from_u64(504),
+    ];
+    let verification_key = VerificationKeyRoot::FieldElements(vec![11, 22, 33, 44]);
+    let unit_value_map = vec![
+        stage_value("local_a", 1),
+        stage_value("local_b", 2),
+        stage_value("local_c", 1),
+    ];
+    let packed_unit_values = vec![
+        Felt::from_u64(101),
+        Felt::from_u64(201),
+        Felt::from_u64(202),
+        Felt::from_u64(203),
+        Felt::from_u64(102),
+    ];
+
+    let input = build_internal_contribution_input(
+        root,
+        &verification_key,
+        &unit_value_map,
+        &packed_unit_values,
+    )
+    .expect("internal contribution input should build");
+
+    assert_eq!(
+        input,
+        InternalContributionInput {
+            root,
+            values: expected_internal_values(
+                [11, 22, 33, 44],
+                &unit_value_map,
+                &packed_unit_values
+            ),
+        }
+    );
+}
+
+#[test]
+fn rejects_internal_contribution_input_unit_value_count_mismatch() {
+    let verification_key = VerificationKeyRoot::FieldElements(vec![11, 22, 33, 44]);
+    let unit_value_map = vec![
+        stage_value("local_a", 1),
+        stage_value("local_b", 2),
+        stage_value("local_c", 1),
+    ];
+
+    assert!(matches!(
+        build_internal_contribution_input(
+            [Felt::ZERO; 4],
+            &verification_key,
+            &unit_value_map,
+            &[Felt::from_u64(101), Felt::from_u64(201)]
+        ),
+        Err(ContributionChallengeError::UnitValueCountMismatch {
+            expected: 5,
+            found: 2,
+        })
+    ));
 }
 
 #[test]
