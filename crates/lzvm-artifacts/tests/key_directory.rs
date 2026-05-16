@@ -3,11 +3,11 @@ use lzvm_artifacts::constraint_program::{
     encode_global_constraint_program, encode_regular_constraint_program, ConstraintEntry,
     ConstraintProgram, GlobalConstraintProgram,
 };
-use lzvm_artifacts::expression_info::{encode_expression_info, parse_expression_info_json};
+use lzvm_artifacts::expression_info::{encode_expression_info, ExpressionInfo};
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
-use lzvm_artifacts::global_info::{encode_global_info, parse_global_info_json};
+use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo};
 use lzvm_artifacts::hint_program::{
     encode_global_hint_program, encode_regular_hint_program,
     regular_hint_program_from_expression_info, Hint, HintField, HintOperand, HintProgram,
@@ -21,162 +21,12 @@ use lzvm_artifacts::key_directory::{
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_material};
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, encode_pcs_setup_plan};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
-use lzvm_artifacts::setup_info::{encode_unit_setup_info, parse_unit_setup_info_json};
+use lzvm_artifacts::setup_info::{encode_unit_setup_info, UnitSetupInfo};
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
-use lzvm_artifacts::verifier_info::{encode_verifier_info, parse_verifier_info_json};
+use lzvm_artifacts::verifier_info::{encode_verifier_info, VerifierInfo};
 use std::fs;
 use std::path::{Path, PathBuf};
-
-fn sample_global_info_json() -> &'static str {
-    r#"{
-        "name": "sample-program",
-        "air_groups": ["group-a", "group-b"],
-        "airs": [
-            [
-                {"name": "unit-a", "num_rows": 16, "hasCompressor": true},
-                {"name": "unit-b", "num_rows": 16}
-            ],
-            [
-                {"name": "unit-c", "num_rows": 32}
-            ]
-        ],
-        "curve": "None",
-        "latticeSize": 368,
-        "aggTypes": [[], []],
-        "nPublics": 0,
-        "numChallenges": [1, 2],
-        "numProofValues": [],
-        "publicsMap": [],
-        "transcriptArity": 4
-    }"#
-}
-
-fn sample_catalog_global_info_json() -> &'static str {
-    r#"{
-        "name": "sample-program",
-        "air_groups": ["group-a"],
-        "airs": [[{"name": "unit-a", "num_rows": 2}]],
-        "curve": "None",
-        "latticeSize": 368,
-        "aggTypes": [[]],
-        "nPublics": 0,
-        "numChallenges": [1],
-        "numProofValues": [],
-        "publicsMap": [],
-        "transcriptArity": 4
-    }"#
-}
-
-fn sample_setup_info_json() -> &'static str {
-    r#"{
-        "nStages": 1,
-        "nConstants": 2,
-        "nPublics": 0,
-        "nConstraints": 0,
-        "qDeg": 3,
-        "openingPoints": [0],
-        "mapSectionsN": {
-            "const": 2,
-            "cm1": 1,
-            "cm2": 1
-        },
-        "constPolsMap": [
-            {"stage": 0, "name": "main.left", "dim": 1, "polsMapId": 0, "stageId": 0},
-            {"stage": 0, "name": "main.right", "dim": 1, "polsMapId": 1, "stageId": 1}
-        ],
-        "challengesMap": [],
-        "evMap": [],
-        "boundaries": [],
-        "starkStruct": {
-            "nBits": 1,
-            "nBitsExt": 2,
-            "nQueries": 1,
-            "steps": [
-                {"nBits": 2},
-                {"nBits": 1}
-            ],
-            "hashCommits": true,
-            "lastLevelVerification": 2,
-            "powBits": 0,
-            "merkleTreeArity": 4,
-            "verificationHashType": "GL",
-            "transcriptArity": 4,
-            "merkleTreeCustom": true
-        }
-    }"#
-}
-
-fn sample_expression_info_json() -> &'static str {
-    r#"{
-        "hintsInfo": [],
-        "expressionsCode": [
-            {
-                "expId": 7,
-                "stage": 2,
-                "line": "query-expression",
-                "tmpUsed": 0,
-                "code": []
-            }
-        ],
-        "constraints": []
-    }"#
-}
-
-fn sample_expression_info_with_hints_json() -> &'static str {
-    r#"{
-        "hintsInfo": [
-            {
-                "name": "hint-a",
-                "fields": [
-                    {
-                        "name": "field-a",
-                        "values": [
-                            {"op": "cm", "id": 0, "rowOffset": 0, "rowOffsetIndex": 0, "stage": 1, "stageId": 0, "dim": 1, "pos": [0]}
-                        ]
-                    }
-                ]
-            }
-        ],
-        "expressionsCode": [
-            {
-                "expId": 7,
-                "stage": 2,
-                "line": "query-expression",
-                "tmpUsed": 0,
-                "code": []
-            }
-        ],
-        "constraints": []
-    }"#
-}
-
-fn sample_verifier_info_json() -> &'static str {
-    r#"{
-        "qVerifier": {
-            "tmpUsed": 1,
-            "code": [
-                {
-                    "op": "copy",
-                    "dest": {"type": "tmp", "id": 0, "dim": 3},
-                    "src": [{"type": "number", "value": "1", "dim": 1}]
-                }
-            ]
-        },
-        "queryVerifier": {
-            "expId": 7,
-            "stage": 2,
-            "tmpUsed": 1,
-            "line": "query-expression",
-            "code": [
-                {
-                    "op": "copy",
-                    "dest": {"type": "tmp", "id": 0, "dim": 3},
-                    "src": [{"type": "eval", "id": 0, "dim": 3}]
-                }
-            ]
-        }
-    }"#
-}
+mod fixtures;
 
 fn sample_expression_program() -> ExpressionProgram {
     ExpressionProgram {
@@ -275,8 +125,7 @@ fn sample_program_file() -> Vec<u8> {
         .expect("expression program should encode");
     let regular = encode_regular_constraint_program(&sample_regular_constraint_program())
         .expect("regular constraints should encode");
-    let expression_info = parse_expression_info_json(sample_expression_info_json())
-        .expect("expression metadata should parse");
+    let expression_info = fixtures::sample_key_directory_expression_info();
     let regular_hints =
         regular_hint_program_from_expression_info(&expression_info).expect("hints should derive");
     let hints = encode_regular_hint_program(&regular_hints).expect("hints should encode");
@@ -295,11 +144,9 @@ fn sample_program_file() -> Vec<u8> {
     .expect("combined program should encode")
 }
 
-fn sample_program_file_with_regular_hints(expression_info_json: &str) -> Vec<u8> {
-    let expressions =
-        parse_expression_info_json(expression_info_json).expect("expression metadata should parse");
+fn sample_program_file_with_regular_hints(expressions: &ExpressionInfo) -> Vec<u8> {
     let regular_hints =
-        regular_hint_program_from_expression_info(&expressions).expect("hints should derive");
+        regular_hint_program_from_expression_info(expressions).expect("hints should derive");
     let hints = encode_regular_hint_program(&regular_hints).expect("hints should encode");
     let mut program_file =
         parse_sectioned_file(&sample_program_file(), *b"chps", 1).expect("program should parse");
@@ -359,27 +206,23 @@ fn write_bytes(path: &Path, value: impl AsRef<[u8]>) {
     fs::write(path, value).expect("fixture file should be written");
 }
 
-fn write_unit_setup_metadata(path: &Path, value: &str) {
-    let setup = parse_unit_setup_info_json(value).expect("setup metadata should parse");
-    let bytes = encode_unit_setup_info(&setup).expect("setup metadata should encode");
+fn write_unit_setup_metadata(path: &Path, setup: &UnitSetupInfo) {
+    let bytes = encode_unit_setup_info(setup).expect("setup metadata should encode");
     write_bytes(path, bytes);
 }
 
-fn write_expression_metadata(path: &Path, value: &str) {
-    let expressions = parse_expression_info_json(value).expect("expression metadata should parse");
-    let bytes = encode_expression_info(&expressions).expect("expression metadata should encode");
+fn write_expression_metadata(path: &Path, expressions: &ExpressionInfo) {
+    let bytes = encode_expression_info(expressions).expect("expression metadata should encode");
     write_bytes(path, bytes);
 }
 
-fn write_verifier_metadata(path: &Path, value: &str) {
-    let verifier = parse_verifier_info_json(value).expect("verifier metadata should parse");
-    let bytes = encode_verifier_info(&verifier).expect("verifier metadata should encode");
+fn write_verifier_metadata(path: &Path, verifier: &VerifierInfo) {
+    let bytes = encode_verifier_info(verifier).expect("verifier metadata should encode");
     write_bytes(path, bytes);
 }
 
-fn write_global_metadata(path: &Path, value: &str) {
-    let info = parse_global_info_json(value).expect("global metadata should parse");
-    let bytes = encode_global_info(&info).expect("global metadata should encode");
+fn write_global_metadata(path: &Path, info: &GlobalInfo) {
+    let bytes = encode_global_info(info).expect("global metadata should encode");
     write_bytes(path, bytes);
 }
 
@@ -387,7 +230,7 @@ fn write_global_files(root: &Path) {
     fs::create_dir_all(root).expect("fixture root should be created");
     write_global_metadata(
         &root.join("pilout.globalInfo.bin"),
-        sample_global_info_json(),
+        &fixtures::sample_key_directory_global_info(),
     );
     fs::write(root.join("pilout.globalConstraints.bin"), [])
         .expect("global constraints program should be written");
@@ -397,7 +240,7 @@ fn write_catalog_global_files(root: &Path) {
     fs::create_dir_all(root).expect("fixture root should be created");
     write_global_metadata(
         &root.join("pilout.globalInfo.bin"),
-        sample_catalog_global_info_json(),
+        &fixtures::sample_key_directory_catalog_global_info(),
     );
     fs::write(
         root.join("pilout.globalConstraints.bin"),
@@ -410,7 +253,7 @@ fn write_catalog_global_files_with_hints(root: &Path) {
     fs::create_dir_all(root).expect("fixture root should be created");
     write_global_metadata(
         &root.join("pilout.globalInfo.bin"),
-        sample_catalog_global_info_json(),
+        &fixtures::sample_key_directory_catalog_global_info(),
     );
     fs::write(
         root.join("pilout.globalConstraints.bin"),
@@ -423,7 +266,7 @@ fn write_binary_catalog_global_files(root: &Path) {
     fs::create_dir_all(root).expect("fixture root should be created");
     write_global_metadata(
         &root.join("pilout.globalInfo.bin"),
-        sample_catalog_global_info_json(),
+        &fixtures::sample_key_directory_catalog_global_info(),
     );
     fs::write(
         root.join("pilout.globalConstraints.bin"),
@@ -434,13 +277,13 @@ fn write_binary_catalog_global_files(root: &Path) {
 
 fn write_catalog_unit_files(unit: &KeyUnitPaths) {
     if let Some(path) = unit.setup_info_binary() {
-        write_unit_setup_metadata(&path, sample_setup_info_json());
+        write_unit_setup_metadata(&path, &fixtures::sample_key_directory_setup_info());
     }
     if let Some(path) = unit.expression_info_binary() {
-        write_expression_metadata(&path, sample_expression_info_json());
+        write_expression_metadata(&path, &fixtures::sample_key_directory_expression_info());
     }
     if let Some(path) = unit.verifier_info_binary() {
-        write_verifier_metadata(&path, sample_verifier_info_json());
+        write_verifier_metadata(&path, &fixtures::sample_key_directory_verifier_info());
     }
 
     let program = sample_program_file();
@@ -463,19 +306,24 @@ fn write_catalog_unit_files(unit: &KeyUnitPaths) {
 
 fn write_catalog_unit_files_with_hints(unit: &KeyUnitPaths) {
     if let Some(path) = unit.setup_info_binary() {
-        write_unit_setup_metadata(&path, sample_setup_info_json());
+        write_unit_setup_metadata(&path, &fixtures::sample_key_directory_setup_info());
     }
     if let Some(path) = unit.expression_info_binary() {
-        write_expression_metadata(&path, sample_expression_info_with_hints_json());
+        write_expression_metadata(
+            &path,
+            &fixtures::sample_key_directory_expression_info_with_hints(),
+        );
     }
     if let Some(path) = unit.verifier_info_binary() {
-        write_verifier_metadata(&path, sample_verifier_info_json());
+        write_verifier_metadata(&path, &fixtures::sample_key_directory_verifier_info());
     }
 
     if let Some(path) = unit.expression_program() {
         write_bytes(
             &path,
-            sample_program_file_with_regular_hints(sample_expression_info_with_hints_json()),
+            sample_program_file_with_regular_hints(
+                &fixtures::sample_key_directory_expression_info_with_hints(),
+            ),
         );
     }
     let verifier_program = encode_expression_program(&sample_expression_program())
@@ -502,7 +350,7 @@ fn write_catalog_constant_trees(layout: &lzvm_artifacts::key_directory::KeyDirec
 fn write_catalog_pcs_setup_materials(
     layout: &lzvm_artifacts::key_directory::KeyDirectoryLayout,
 ) -> u64 {
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_key_directory_setup_info();
     let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
     let fixed = sample_raw_fixed_columns();
     let root = VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4]);
@@ -646,11 +494,7 @@ fn rejects_key_directory_layout_without_binary_global_metadata() {
     let dir = temp_dir("global-json-only");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("fixture root should be created");
-    fs::write(
-        dir.join("pilout.globalInfo.json"),
-        sample_catalog_global_info_json(),
-    )
-    .expect("global metadata should be written");
+    fs::write(dir.join("pilout.globalInfo.json"), "{}").expect("global metadata should be written");
 
     let error = read_key_directory_layout(&dir).expect_err("layout should be rejected");
 
@@ -790,7 +634,7 @@ fn reads_key_directory_catalog_from_binary_unit_setup_metadata() {
         write_catalog_unit_files(unit);
     }
 
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_key_directory_setup_info();
 
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
 
@@ -818,8 +662,7 @@ fn reads_key_directory_catalog_from_binary_verifier_metadata() {
         write_catalog_unit_files(unit);
     }
 
-    let verifier =
-        parse_verifier_info_json(sample_verifier_info_json()).expect("verifier should parse");
+    let verifier = fixtures::sample_key_directory_verifier_info();
 
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
 
@@ -847,8 +690,7 @@ fn reads_key_directory_catalog_from_binary_expression_metadata() {
         write_catalog_unit_files(unit);
     }
 
-    let expressions = parse_expression_info_json(sample_expression_info_json())
-        .expect("expressions should parse");
+    let expressions = fixtures::sample_key_directory_expression_info();
 
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
 
@@ -1088,7 +930,7 @@ fn rejects_catalog_entries_with_mismatched_pcs_setup_plan_companions() {
     for unit in &layout.units {
         write_catalog_unit_files(unit);
     }
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_key_directory_setup_info();
     let mut plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
     plan.query_count += 1;
     write_bytes(
@@ -1123,7 +965,7 @@ fn rejects_catalog_entries_with_mismatched_pcs_setup_material_companions() {
     write_catalog_constant_trees(&layout);
     write_catalog_pcs_setup_materials(&layout);
 
-    let setup = parse_unit_setup_info_json(sample_setup_info_json()).expect("setup should parse");
+    let setup = fixtures::sample_key_directory_setup_info();
     let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
     let root = VerificationKeyRoot::FieldElements(vec![1, 2, 3, 4]);
     let tree = parse_constant_tree_bytes(sample_constant_tree(&root), &setup)

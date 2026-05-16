@@ -2,8 +2,16 @@
 
 use std::collections::BTreeMap;
 
+use lzvm_artifacts::expression_info::{
+    ExpressionCode, ExpressionInfo, HintFieldInfo, HintInfo, HintPayload, HintValueInfo,
+};
+use lzvm_artifacts::global_info::{AggregationType, CurveKind, GlobalAir, GlobalInfo, PublicValue};
 use lzvm_artifacts::setup_info::{
     Boundary, ConstantColumn, EvaluationMapEntry, FriStep, StarkStruct, UnitSetupInfo,
+};
+use lzvm_artifacts::verifier_info::{
+    VerifierCode, VerifierDestination, VerifierInfo, VerifierOperand, VerifierOperation,
+    VerifierOperationKind,
 };
 
 pub fn sample_constant_tree_setup_info() -> UnitSetupInfo {
@@ -303,6 +311,134 @@ pub fn sample_duplicate_fixed_columns_setup_info() -> UnitSetupInfo {
             verification_hash_type: Some("GL".to_owned()),
             transcript_arity: Some(2),
             merkle_tree_custom: Some(true),
+        },
+    }
+}
+
+pub fn sample_key_directory_global_info() -> GlobalInfo {
+    GlobalInfo {
+        name: "sample-program".to_owned(),
+        air_groups: vec!["group-a".to_owned(), "group-b".to_owned()],
+        airs: vec![
+            vec![
+                GlobalAir {
+                    name: "unit-a".to_owned(),
+                    num_rows: 16,
+                    has_compressor: true,
+                },
+                GlobalAir {
+                    name: "unit-b".to_owned(),
+                    num_rows: 16,
+                    has_compressor: false,
+                },
+            ],
+            vec![GlobalAir {
+                name: "unit-c".to_owned(),
+                num_rows: 32,
+                has_compressor: false,
+            }],
+        ],
+        curve: CurveKind::None,
+        lattice_size: Some(368),
+        aggregation_types: vec![Vec::<AggregationType>::new(), Vec::<AggregationType>::new()],
+        n_publics: 0,
+        num_challenges: vec![1, 2],
+        num_proof_values: Vec::new(),
+        proof_values_map: Vec::new(),
+        publics_map: Vec::<PublicValue>::new(),
+        transcript_arity: 4,
+    }
+}
+
+pub fn sample_key_directory_catalog_global_info() -> GlobalInfo {
+    GlobalInfo {
+        name: "sample-program".to_owned(),
+        air_groups: vec!["group-a".to_owned()],
+        airs: vec![vec![GlobalAir {
+            name: "unit-a".to_owned(),
+            num_rows: 2,
+            has_compressor: false,
+        }]],
+        curve: CurveKind::None,
+        lattice_size: Some(368),
+        aggregation_types: vec![Vec::<AggregationType>::new()],
+        n_publics: 0,
+        num_challenges: vec![1],
+        num_proof_values: Vec::new(),
+        proof_values_map: Vec::new(),
+        publics_map: Vec::<PublicValue>::new(),
+        transcript_arity: 4,
+    }
+}
+
+pub fn sample_key_directory_setup_info() -> UnitSetupInfo {
+    sample_pcs_material_setup_info()
+}
+
+pub fn sample_key_directory_expression_info() -> ExpressionInfo {
+    key_directory_expression_info(Vec::new())
+}
+
+pub fn sample_key_directory_expression_info_with_hints() -> ExpressionInfo {
+    key_directory_expression_info(vec![HintInfo {
+        name: "hint-a".to_owned(),
+        fields: vec![HintFieldInfo {
+            name: "field-a".to_owned(),
+            values: vec![HintValueInfo {
+                positions: vec![0],
+                payload: HintPayload::Commitment {
+                    id: 0,
+                    row_offset_index: Some(0),
+                    row_offset: Some(0),
+                    stage: Some(1),
+                    stage_id: Some(0),
+                    dimension: Some(1),
+                    air_group_id: None,
+                    air_id: None,
+                },
+            }],
+        }],
+    }])
+}
+
+fn key_directory_expression_info(hints: Vec<HintInfo>) -> ExpressionInfo {
+    ExpressionInfo {
+        hints,
+        expressions: vec![ExpressionCode {
+            expression_id: 7,
+            stage: 2,
+            line: "query-expression".to_owned(),
+            temporary_count: 0,
+            destination: None,
+            operations: Vec::new(),
+        }],
+        constraints: Vec::new(),
+    }
+}
+
+pub fn sample_key_directory_verifier_info() -> VerifierInfo {
+    VerifierInfo {
+        quotient: VerifierCode {
+            expression_id: None,
+            stage: None,
+            line: String::new(),
+            temporary_count: 1,
+            operations: vec![VerifierOperation {
+                op: VerifierOperationKind::Copy,
+                destination: VerifierDestination::temporary(0, 3),
+                sources: vec![VerifierOperand::number(1, 1)],
+            }],
+        },
+        query: VerifierCode {
+            expression_id: Some(7),
+            stage: Some(2),
+            line: "query-expression".to_owned(),
+            temporary_count: 1,
+            operations: vec![VerifierOperation {
+                op: VerifierOperationKind::Copy,
+                destination: VerifierDestination::temporary(0, 3),
+                sources: vec![VerifierOperand::evaluation(0, 3)],
+            }],
         },
     }
 }
