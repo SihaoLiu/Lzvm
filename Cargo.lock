@@ -101,7 +101,6 @@ dependencies = [
  "lzvm-field",
  "lzvm-prover",
  "lzvm-setup",
- "serde_json",
 ]
 
 [[package]]
@@ -116,7 +115,6 @@ dependencies = [
  "lzvm-accel",
  "lzvm-artifacts",
  "lzvm-field",
- "serde_json",
  "sha2",
 ]
 
