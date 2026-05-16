@@ -48,6 +48,7 @@ pub mod unit_values;
 pub mod verifier_eval;
 pub mod verifier_query;
 pub mod witness_commitment;
+mod witness_execution;
 pub mod witness_layout;
 pub mod witness_loader;
 pub mod witness_opening;
@@ -80,14 +81,16 @@ pub use prove_witness::{
     build_pcs_query_plan_segment_from_transcript_segments,
     build_pcs_query_plan_segment_with_bindings, build_witness_commitment_segment,
     build_witness_opening_segment, build_witness_opening_segment_batch,
+    ProveConstantOpeningSegmentError, ProvePcsEvaluationSegmentError, ProvePcsEvaluationValues,
+    ProvePcsMaterialSegmentError, ProvePcsQueryPlanSegmentError, ProveWitnessOpeningSegmentError,
+    ProveWitnessSegmentError,
+};
+pub use witness_execution::{
     run_prove_witness_commitments, run_prove_witness_commitments_for_all_units,
     run_prove_witness_commitments_for_all_units_with_trace_bundle,
     run_prove_witness_commitments_with_auxiliary_inputs, run_prove_witness_commitments_with_trace,
-    run_prove_witness_commitments_with_trace_backend, ProveConstantOpeningSegmentError,
-    ProvePcsEvaluationSegmentError, ProvePcsEvaluationValues, ProvePcsMaterialSegmentError,
-    ProvePcsQueryPlanSegmentError, ProveWitnessAuxiliaryInputs, ProveWitnessCommitmentError,
-    ProveWitnessCommitments, ProveWitnessOpeningSegmentError, ProveWitnessSegmentError,
-    ProveWitnessTraceCommitments,
+    run_prove_witness_commitments_with_trace_backend, ProveWitnessAuxiliaryInputs,
+    ProveWitnessCommitmentError, ProveWitnessCommitments, ProveWitnessTraceCommitments,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
