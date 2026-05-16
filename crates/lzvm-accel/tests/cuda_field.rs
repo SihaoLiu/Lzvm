@@ -4,7 +4,7 @@ use lzvm_accel::{cuda_goldilocks_add, cuda_goldilocks_mul};
 use lzvm_accel::{
     cuda_goldilocks_butterfly, cuda_goldilocks_coset_extend, cuda_goldilocks_intt,
     cuda_goldilocks_ntt, cuda_keccak256_fixed, cuda_poseidon2_width16, cuda_poseidon2_width4,
-    cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8, cuda_setup_init,
+    cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8, cuda_setup_init, CudaDeviceBuffer,
 };
 #[cfg(feature = "cuda")]
 use lzvm_crypto::keccak256;
@@ -153,6 +153,25 @@ fn cuda_computes_goldilocks_butterflies() {
 
     assert_eq!(actual_even, expected_even);
     assert_eq!(actual_odd, expected_odd);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_device_buffer_round_trips_bytes() {
+    let input = (0_u8..64)
+        .map(|value| value.wrapping_mul(3))
+        .collect::<Vec<_>>();
+    let mut buffer = CudaDeviceBuffer::new(input.len()).expect("device buffer should allocate");
+
+    assert_eq!(buffer.len(), input.len());
+    assert!(!buffer.is_empty());
+
+    buffer
+        .copy_from(&input)
+        .expect("host bytes should copy to device");
+    let output = buffer.to_vec().expect("device bytes should copy to host");
+
+    assert_eq!(output, input);
 }
 
 #[test]

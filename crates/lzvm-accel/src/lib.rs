@@ -1,4 +1,8 @@
+#[cfg(feature = "cuda")]
+use std::ffi::c_void;
 use std::fmt;
+#[cfg(feature = "cuda")]
+use std::ptr;
 #[cfg(feature = "cuda")]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -30,6 +34,10 @@ impl std::error::Error for AccelError {}
 
 #[cfg(feature = "cuda")]
 unsafe extern "C" {
+    fn lzvm_cuda_alloc_bytes(out: *mut *mut c_void, bytes: usize) -> i32;
+    fn lzvm_cuda_free_bytes(ptr: *mut c_void);
+    fn lzvm_cuda_copy_h2d_bytes(dst: *mut c_void, src: *const c_void, bytes: usize) -> i32;
+    fn lzvm_cuda_copy_d2h_bytes(dst: *mut c_void, src: *const c_void, bytes: usize) -> i32;
     fn lzvm_cuda_setup_init(roots: *const u64, root_count: usize, max_bits_ext: usize) -> i32;
     fn lzvm_cuda_goldilocks_add(lhs: *const u64, rhs: *const u64, out: *mut u64, len: usize)
         -> i32;
@@ -171,6 +179,96 @@ fn ensure_cuda_setup(max_bits_ext: usize) -> Result<(), AccelError> {
         Ok(())
     } else {
         cuda_setup_init(max_bits_ext)
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_status(code: i32) -> Result<(), AccelError> {
+    if code == 0 {
+        Ok(())
+    } else {
+        Err(AccelError::Cuda { code })
+    }
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Debug)]
+pub struct CudaDeviceBuffer {
+    ptr: *mut c_void,
+    len: usize,
+}
+
+#[cfg(feature = "cuda")]
+impl CudaDeviceBuffer {
+    pub fn new(len: usize) -> Result<Self, AccelError> {
+        let mut ptr = ptr::null_mut();
+        let code = unsafe { lzvm_cuda_alloc_bytes(&mut ptr, len) };
+        cuda_status(code)?;
+        Ok(Self { ptr, len })
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub fn as_raw_ptr(&self) -> *mut c_void {
+        self.ptr
+    }
+
+    pub fn copy_from(&mut self, input: &[u8]) -> Result<(), AccelError> {
+        if input.len() != self.len {
+            return Err(AccelError::LengthMismatch {
+                lhs: self.len,
+                rhs: input.len(),
+            });
+        }
+        if self.len == 0 {
+            return Ok(());
+        }
+        let code = unsafe { lzvm_cuda_copy_h2d_bytes(self.ptr, input.as_ptr().cast(), self.len) };
+        cuda_status(code)
+    }
+
+    pub fn copy_to(&self, output: &mut [u8]) -> Result<(), AccelError> {
+        if output.len() != self.len {
+            return Err(AccelError::LengthMismatch {
+                lhs: self.len,
+                rhs: output.len(),
+            });
+        }
+        if self.len == 0 {
+            return Ok(());
+        }
+        let code = unsafe {
+            lzvm_cuda_copy_d2h_bytes(
+                output.as_mut_ptr().cast(),
+                self.ptr as *const c_void,
+                self.len,
+            )
+        };
+        cuda_status(code)
+    }
+
+    pub fn to_vec(&self) -> Result<Vec<u8>, AccelError> {
+        let mut output = vec![0_u8; self.len];
+        self.copy_to(&mut output)?;
+        Ok(output)
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl Drop for CudaDeviceBuffer {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            unsafe {
+                lzvm_cuda_free_bytes(self.ptr);
+            }
+            self.ptr = ptr::null_mut();
+        }
     }
 }
 
