@@ -1,14 +1,14 @@
-mod constant_opening;
 mod query_plan;
 mod types;
-mod witness_opening;
 
+pub use crate::constant_opening::build_constant_opening_segment;
 pub use crate::pcs_evaluation::build_pcs_evaluation_segment;
 pub use crate::pcs_material_manifest::build_pcs_material_manifest_segment;
-pub use constant_opening::*;
+pub use crate::witness_opening::{
+    build_witness_opening_segment, build_witness_opening_segment_batch,
+};
 pub use query_plan::*;
 pub use types::*;
-pub use witness_opening::*;
 
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
