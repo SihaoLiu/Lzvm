@@ -69,6 +69,7 @@ use lzvm_artifacts::setup_manifest::{
     encode_setup_directory_manifest, read_setup_directory_manifest_file,
     SETUP_DIRECTORY_MANIFEST_FILE,
 };
+use lzvm_artifacts::trace_bundle::{encode_trace_bundle, TraceBundle, TraceBundleUnit};
 use lzvm_artifacts::unit_values_segment::{
     encode_unit_values_segment, parse_unit_values_segment, UnitValuesSegment,
     UnitValuesUnitSegment, UNIT_VALUES_SEGMENT_ID,
@@ -993,6 +994,26 @@ fn write_field_words(path: &Path, values: &[u64]) {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     write_bytes(path, bytes);
+}
+
+fn sample_trace_bytes(seed: u64) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(4 * 8);
+    for value in seed + 1..=seed + 4 {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes
+}
+
+fn sample_trace_bundle_bytes(unit_count: u32, seed: u64) -> Vec<u8> {
+    encode_trace_bundle(&TraceBundle {
+        units: (0..unit_count)
+            .map(|unit_index| TraceBundleUnit {
+                unit_index,
+                trace_bytes: sample_trace_bytes(seed),
+            })
+            .collect(),
+    })
+    .expect("trace bundle should encode")
 }
 
 fn build_shared_library(dir: &Path, name: &str, source: &str) -> PathBuf {
@@ -2475,6 +2496,55 @@ fn prints_prove_inputs_from_trace_bytes() {
 }
 
 #[test]
+fn prints_prove_inputs_from_trace_bundle() {
+    let dir = temp_dir("prove-inputs-trace-bundle");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let expected = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let material_bytes = pcs_material_byte_count(&catalog);
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let bundle_path = dir.join("trace-bundle.bin");
+    let guest_image_bytes = sample_guest_image();
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let bundle_bytes = sample_trace_bundle_bytes(4, 7);
+    write_bytes(&guest_image, &guest_image_bytes);
+    write_bytes(&bundle_path, &bundle_bytes);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            "--trace-bundle",
+            bundle_path.to_str().expect("bundle path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library=none\ntrace_bundle={}\ntrace_bundle_units=4\ntrace_bundle_bytes={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs=none\n",
+            output_dir.display(),
+            bundle_path.display(),
+            bundle_bytes.len(),
+            guest_image.display(),
+            format_hash(&guest_image_info.digest),
+        )
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn rejects_missing_trace_bytes_for_prove_inputs() {
     let dir = temp_dir("prove-inputs-missing-trace-bytes");
     let _ = fs::remove_dir_all(&dir);
@@ -2725,6 +2795,172 @@ fn runs_prove_witness_commitments_from_trace_bytes() {
         )
     );
     assert!(stderr.is_empty());
+}
+
+#[test]
+fn runs_prove_witness_commitments_from_trace_bundle() {
+    let dir = temp_dir("prove-witness-trace-bundle");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_proof_group_and_unit_value(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let bundle_path = dir.join("trace-bundle.bin");
+    let unit_values_path = dir.join("unit_values.bin");
+    let proof_values_path = dir.join("proof_values.bin");
+    let group_values_path = dir.join("group_values.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [17_u8]);
+    write_field_words(&unit_values_path, &[101, 201, 202, 203]);
+    write_field_words(&proof_values_path, &[51, 52, 53]);
+    write_field_words(&group_values_path, &[61, 62, 63]);
+    let bundle_bytes = sample_trace_bundle_bytes(4, 17);
+    write_bytes(&bundle_path, &bundle_bytes);
+
+    let public_values = sample_public_values(setup_hash);
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--trace-bundle",
+            bundle_path.to_str().expect("bundle path should be utf-8"),
+            "--aggregate",
+            "--save-outputs",
+            "--unit-values",
+            unit_values_path
+                .to_str()
+                .expect("unit values path should be utf-8"),
+            "--proof-values",
+            proof_values_path
+                .to_str()
+                .expect("proof values path should be utf-8"),
+            "--group-values",
+            group_values_path
+                .to_str()
+                .expect("group values path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let proof_bytes = fs::read(output_dir.join("proof.bin")).expect("proof output should read");
+    let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
+    let witness_ids = proof
+        .segments
+        .iter()
+        .filter(|segment| {
+            segment.id >= WITNESS_COMMITMENT_SEGMENT_BASE_ID
+                && segment.id < WITNESS_COMMITMENT_SEGMENT_BASE_ID + 2
+        })
+        .map(|segment| segment.id)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        witness_ids,
+        vec![
+            WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+            WITNESS_COMMITMENT_SEGMENT_BASE_ID + 1,
+        ]
+    );
+    assert!(output_dir.join("unit-0.witness-segment").exists());
+    assert!(output_dir.join("unit-1.witness-segment").exists());
+    let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout.starts_with("status=ok\npass=full\n"));
+    assert!(stdout.contains("unit_index=0\n"));
+    assert!(stdout.contains("unit_index=1\n"));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_trace_bundle_missing_unit_for_aggregate_witness_runs() {
+    let dir = temp_dir("prove-witness-trace-bundle-missing-unit");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_proof_group_and_unit_value(&dir);
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let bundle_path = dir.join("trace-bundle.bin");
+    let unit_values_path = dir.join("unit_values.bin");
+    let proof_values_path = dir.join("proof_values.bin");
+    let group_values_path = dir.join("group_values.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [17_u8]);
+    write_field_words(&unit_values_path, &[101, 201, 202, 203]);
+    write_field_words(&proof_values_path, &[51, 52, 53]);
+    write_field_words(&group_values_path, &[61, 62, 63]);
+    let bundle_bytes = sample_trace_bundle_bytes(1, 17);
+    write_bytes(&bundle_path, &bundle_bytes);
+
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&sample_public_values(setup_hash))
+            .expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--trace-bundle",
+            bundle_path.to_str().expect("bundle path should be utf-8"),
+            "--aggregate",
+            "--save-outputs",
+            "--unit-values",
+            unit_values_path
+                .to_str()
+                .expect("unit values path should be utf-8"),
+            "--proof-values",
+            proof_values_path
+                .to_str()
+                .expect("proof values path should be utf-8"),
+            "--group-values",
+            group_values_path
+                .to_str()
+                .expect("group values path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove witness failed: trace bundle is missing unit 1\n"
+    );
 }
 
 #[test]
@@ -6581,7 +6817,7 @@ fn reports_usage_for_missing_prove_input_paths() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n"
+        "usage: lzvm prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>\n"
     );
 }
 
@@ -6595,7 +6831,7 @@ fn reports_usage_for_missing_prove_witness_paths() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n"
+        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>\n"
     );
 }
 

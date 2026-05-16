@@ -17,6 +17,7 @@ use lzvm_artifacts::program_image_segment::{
 };
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
+use lzvm_artifacts::trace_bundle::{read_trace_bundle_file, TraceBundle};
 use lzvm_artifacts::unit_values_segment::parse_unit_values_segment;
 use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 use lzvm_field::{Ext3, Felt};
@@ -71,7 +72,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     let inputs = parsed_inputs(&parsed);
     let plan = match derive_prove_execution_plan_with_program_image_cache(
         &catalog,
-        parsed.run_args.request,
+        parsed.run_args.request.clone(),
         inputs,
         parsed.run_args.program_image_cache.clone(),
     ) {
@@ -129,34 +130,84 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
-    let witness_backend: Box<dyn WitnessBackend> =
-        match (&plan.inputs.witness_library, &parsed.trace_bytes) {
-            (Some(path), _) => match load_witness_library(path) {
-                Ok(backend) => Box::new(backend),
+    let trace_bundle = match &parsed.trace_bundle {
+        Some(path) => match read_trace_bundle_file(path) {
+            Ok(bundle) => Some(bundle),
+            Err(error) => {
+                let _ = writeln!(stderr, "prove witness failed: {error}");
+                return 1;
+            }
+        },
+        None => None,
+    };
+    if let Some(bundle) = &trace_bundle {
+        if parsed.all_units || plan.run_plan.options.aggregate {
+            let outputs = match run_prove_witness_commitments_for_all_units_with_trace_bundle(
+                &plan,
+                &auxiliary_inputs,
+                bundle,
+            ) {
+                Ok(outputs) => outputs,
                 Err(error) => {
                     let _ = writeln!(stderr, "prove witness failed: {error}");
                     return 1;
                 }
-            },
-            (None, Some(path)) => match fs::read(path) {
-                Ok(trace_bytes) => Box::new(TraceBytesBackend::new(trace_bytes)),
-                Err(error) => {
-                    let _ = writeln!(
-                        stderr,
-                        "prove witness failed: read trace bytes failed: {}: {error}",
-                        path.display()
-                    );
-                    return 1;
-                }
-            },
-            (None, None) => {
+            };
+            if let Err(message) = finish_all_units_witness_run(
+                &catalog,
+                &plan,
+                &parsed,
+                &auxiliary_inputs,
+                &outputs,
+                stdout,
+            ) {
+                let _ = writeln!(stderr, "prove witness failed: {message}");
+                return 1;
+            }
+            return 0;
+        }
+    }
+    let witness_backend: Box<dyn WitnessBackend> = match (
+        &plan.inputs.witness_library,
+        &parsed.trace_bytes,
+        &trace_bundle,
+    ) {
+        (Some(path), _, _) => match load_witness_library(path) {
+            Ok(backend) => Box::new(backend),
+            Err(error) => {
+                let _ = writeln!(stderr, "prove witness failed: {error}");
+                return 1;
+            }
+        },
+        (None, Some(path), _) => match fs::read(path) {
+            Ok(trace_bytes) => Box::new(TraceBytesBackend::new(trace_bytes)),
+            Err(error) => {
                 let _ = writeln!(
                     stderr,
-                    "prove witness failed: witness library or trace bytes are required"
+                    "prove witness failed: read trace bytes failed: {}: {error}",
+                    path.display()
                 );
                 return 1;
             }
-        };
+        },
+        (None, None, Some(bundle)) => match bundle.trace_bytes_for_unit(0) {
+            Some(trace_bytes) => Box::new(TraceBytesBackend::new(trace_bytes.to_vec())),
+            None => {
+                let _ = writeln!(
+                    stderr,
+                    "prove witness failed: trace bundle is missing unit 0"
+                );
+                return 1;
+            }
+        },
+        (None, None, None) => {
+            let _ = writeln!(
+                stderr,
+                "prove witness failed: witness library, trace bytes, or trace bundle are required"
+            );
+            return 1;
+        }
+    };
     if parsed.all_units || plan.run_plan.options.aggregate {
         let outputs = match run_prove_witness_commitments_for_all_units(
             &plan,
@@ -169,100 +220,16 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                 return 1;
             }
         };
-        let unit_values = match load_batch_unit_values_inputs(
-            &plan.run_plan.schedule,
-            parsed.unit_values_segment.as_deref(),
-            &auxiliary_inputs.unit_values,
+        if let Err(message) = finish_all_units_witness_run(
+            &catalog,
+            &plan,
+            &parsed,
+            &auxiliary_inputs,
+            &outputs,
+            stdout,
         ) {
-            Ok(unit_values) => unit_values,
-            Err(message) => {
-                let _ = writeln!(stderr, "prove witness failed: {message}");
-                return 1;
-            }
-        };
-        let proof_request = WitnessAllUnitsProofRequest {
-            catalog: &catalog,
-            schedule: &plan.run_plan.schedule,
-            execution_units: &plan.units,
-            gpu_streams: plan.run_plan.gpu.max_streams,
-            public_inputs: plan.inputs.public_inputs.as_deref(),
-            outputs: &outputs,
-            auxiliary_inputs: &auxiliary_inputs,
-            unit_values: &unit_values,
-            evaluation_values_segment_input: parsed.evaluation_values_segment.as_deref(),
-            verify_outputs: plan.run_plan.options.verify_outputs,
-            program_image_cache: plan
-                .program_image_cache
-                .as_ref()
-                .map(|summary| &summary.cache),
-        };
-        let proof_bytes = match build_witness_proof_artifact_for_all_units(&proof_request) {
-            Ok(proof_bytes) => proof_bytes,
-            Err(message) => {
-                let _ = writeln!(stderr, "prove witness failed: {message}");
-                return 1;
-            }
-        };
-        if plan.run_plan.options.save_outputs {
-            for output in &outputs {
-                let commitments = output.commitments();
-                let segment = match build_witness_commitment_segment(commitments) {
-                    Ok(segment) => segment,
-                    Err(error) => {
-                        let _ = writeln!(
-                            stderr,
-                            "prove witness failed: build witness segment failed: {error}"
-                        );
-                        return 1;
-                    }
-                };
-                let output_unit_index = commitments.unit_index();
-                let execution_unit = match plan.units.get(output_unit_index) {
-                    Some(unit) => unit,
-                    None => {
-                        let _ = writeln!(
-                            stderr,
-                            "prove witness failed: output unit index out of range: {output_unit_index}"
-                        );
-                        return 1;
-                    }
-                };
-                let request = WitnessOutputSaveRequest {
-                    output_dir: &plan.run_plan.options.output_dir,
-                    catalog: &catalog,
-                    schedule: &plan.run_plan.schedule,
-                    execution_unit,
-                    gpu_streams: plan.run_plan.gpu.max_streams,
-                    public_inputs: plan.inputs.public_inputs.as_deref(),
-                    unit_values_input: parsed.unit_values.as_deref(),
-                    proof_values_input: parsed.proof_values.as_deref(),
-                    program_image_cache: plan
-                        .program_image_cache
-                        .as_ref()
-                        .map(|summary| &summary.cache),
-                    output,
-                };
-                if let Err(message) = save_witness_outputs(&request, &segment) {
-                    let _ = writeln!(stderr, "prove witness failed: {message}");
-                    return 1;
-                }
-            }
-        }
-        if let Some(proof_bytes) = proof_bytes {
-            if let Err(message) =
-                write_proof_output(&plan.run_plan.options.output_dir, &proof_bytes)
-            {
-                let _ = writeln!(stderr, "prove witness failed: {message}");
-                return 1;
-            }
-        }
-
-        write_run_plan_summary(stdout, &plan.run_plan);
-        if let Some(summary) = &plan.program_image_cache {
-            write_program_image_cache_summary(stdout, summary);
-        }
-        for output in &outputs {
-            write_witness_output_summary(stdout, output.commitments());
+            let _ = writeln!(stderr, "prove witness failed: {message}");
+            return 1;
         }
         return 0;
     }
@@ -348,6 +315,7 @@ struct ParsedWitnessArgs {
     run_args: ParsedRunArgs,
     all_units: bool,
     trace_bytes: Option<std::path::PathBuf>,
+    trace_bundle: Option<std::path::PathBuf>,
     unit_values: Option<std::path::PathBuf>,
     unit_values_segment: Option<std::path::PathBuf>,
     proof_values: Option<std::path::PathBuf>,
@@ -363,6 +331,7 @@ struct ParsedWitnessArgs {
 fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
     let mut all_units = false;
     let mut trace_bytes = None;
+    let mut trace_bundle = None;
     let mut unit_values = None;
     let mut unit_values_segment = None;
     let mut proof_values = None;
@@ -386,6 +355,17 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
                 if trace_bytes.replace((*value).into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --trace-bytes option".to_owned(),
+                    ));
+                }
+            }
+            "--trace-bundle" => {
+                index += 1;
+                let value = args.get(index).ok_or_else(|| {
+                    ParseError::Invalid("missing --trace-bundle value".to_owned())
+                })?;
+                if trace_bundle.replace((*value).into()).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --trace-bundle option".to_owned(),
                     ));
                 }
             }
@@ -523,12 +503,19 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             "cannot combine --challenge-values and --challenge-values-segment".to_owned(),
         ));
     }
-    let min_positionals = if trace_bytes.is_some() { 3 } else { 4 };
-    let max_positionals = if trace_bytes.is_some() { 4 } else { 5 };
+    if trace_bytes.is_some() && trace_bundle.is_some() {
+        return Err(ParseError::Invalid(
+            "cannot combine --trace-bytes and --trace-bundle".to_owned(),
+        ));
+    }
+    let trace_mode = trace_bytes.is_some() || trace_bundle.is_some();
+    let min_positionals = if trace_mode { 3 } else { 4 };
+    let max_positionals = if trace_mode { 4 } else { 5 };
     Ok(ParsedWitnessArgs {
         run_args: parse_run_args(&filtered, min_positionals, max_positionals)?,
         all_units,
         trace_bytes,
+        trace_bundle,
         unit_values,
         unit_values_segment,
         proof_values,
@@ -543,13 +530,14 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
 }
 
 fn parsed_inputs(parsed: &ParsedWitnessArgs) -> ProveExecutionInputArtifacts {
-    let witness_library = if parsed.trace_bytes.is_some() {
+    let trace_mode = parsed.trace_bytes.is_some() || parsed.trace_bundle.is_some();
+    let witness_library = if trace_mode {
         None
     } else {
         Some(parsed.run_args.positionals[2].clone())
     };
-    let guest_image_index = if parsed.trace_bytes.is_some() { 2 } else { 3 };
-    let public_inputs_index = if parsed.trace_bytes.is_some() { 3 } else { 4 };
+    let guest_image_index = if trace_mode { 2 } else { 3 };
+    let public_inputs_index = if trace_mode { 3 } else { 4 };
     ProveExecutionInputArtifacts {
         witness_library,
         guest_image: parsed.run_args.positionals[guest_image_index].clone(),
@@ -685,6 +673,78 @@ fn write_witness_output_summary(stdout: &mut dyn Write, commitments: &ProveWitne
             commitment.tree_bytes().len()
         );
     }
+}
+
+fn finish_all_units_witness_run(
+    catalog: &KeyDirectoryCatalog,
+    plan: &ProveExecutionPlan,
+    parsed: &ParsedWitnessArgs,
+    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
+    outputs: &[ProveWitnessTraceCommitments],
+    stdout: &mut dyn Write,
+) -> Result<(), String> {
+    let unit_values = load_batch_unit_values_inputs(
+        &plan.run_plan.schedule,
+        parsed.unit_values_segment.as_deref(),
+        &auxiliary_inputs.unit_values,
+    )?;
+    let proof_request = WitnessAllUnitsProofRequest {
+        catalog,
+        schedule: &plan.run_plan.schedule,
+        execution_units: &plan.units,
+        gpu_streams: plan.run_plan.gpu.max_streams,
+        public_inputs: plan.inputs.public_inputs.as_deref(),
+        outputs,
+        auxiliary_inputs,
+        unit_values: &unit_values,
+        evaluation_values_segment_input: parsed.evaluation_values_segment.as_deref(),
+        verify_outputs: plan.run_plan.options.verify_outputs,
+        program_image_cache: plan
+            .program_image_cache
+            .as_ref()
+            .map(|summary| &summary.cache),
+    };
+    let proof_bytes = build_witness_proof_artifact_for_all_units(&proof_request)?;
+    if plan.run_plan.options.save_outputs {
+        for output in outputs {
+            let commitments = output.commitments();
+            let segment = build_witness_commitment_segment(commitments)
+                .map_err(|error| format!("build witness segment failed: {error}"))?;
+            let output_unit_index = commitments.unit_index();
+            let execution_unit = plan
+                .units
+                .get(output_unit_index)
+                .ok_or_else(|| format!("output unit index out of range: {output_unit_index}"))?;
+            let request = WitnessOutputSaveRequest {
+                output_dir: &plan.run_plan.options.output_dir,
+                catalog,
+                schedule: &plan.run_plan.schedule,
+                execution_unit,
+                gpu_streams: plan.run_plan.gpu.max_streams,
+                public_inputs: plan.inputs.public_inputs.as_deref(),
+                unit_values_input: parsed.unit_values.as_deref(),
+                proof_values_input: parsed.proof_values.as_deref(),
+                program_image_cache: plan
+                    .program_image_cache
+                    .as_ref()
+                    .map(|summary| &summary.cache),
+                output,
+            };
+            save_witness_outputs(&request, &segment)?;
+        }
+    }
+    if let Some(proof_bytes) = proof_bytes {
+        write_proof_output(&plan.run_plan.options.output_dir, &proof_bytes)?;
+    }
+
+    write_run_plan_summary(stdout, &plan.run_plan);
+    if let Some(summary) = &plan.program_image_cache {
+        write_program_image_cache_summary(stdout, summary);
+    }
+    for output in outputs {
+        write_witness_output_summary(stdout, output.commitments());
+    }
+    Ok(())
 }
 
 pub fn build_witness_proof_core_artifact(
@@ -1281,6 +1341,33 @@ fn run_prove_witness_commitments_for_all_units(
     Ok(outputs)
 }
 
+fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
+    plan: &ProveExecutionPlan,
+    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
+    bundle: &TraceBundle,
+) -> Result<Vec<ProveWitnessTraceCommitments>, String> {
+    let mut outputs = Vec::with_capacity(plan.units.len());
+    for unit_index in 0..plan.units.len() {
+        let unit_index_u32 = u32::try_from(unit_index)
+            .map_err(|_| format!("trace bundle unit index is too large: {unit_index}"))?;
+        let trace_bytes = bundle
+            .trace_bytes_for_unit(unit_index_u32)
+            .ok_or_else(|| format!("trace bundle is missing unit {unit_index}"))?;
+        let backend = TraceBytesBackend::new(trace_bytes.to_vec());
+        let output = run_prove_witness_commitments_with_trace_backend(
+            plan,
+            unit_index,
+            auxiliary_inputs.clone(),
+            &backend,
+        )
+        .map_err(|error| {
+            format!("run witness commitments failed for unit {unit_index}: {error}")
+        })?;
+        outputs.push(output);
+    }
+    Ok(outputs)
+}
+
 fn build_proof_bytes(
     request: &WitnessOutputSaveRequest<'_>,
     segment: &ProofSegment,
@@ -1521,7 +1608,7 @@ fn write_output_file(path: &Path, value: &[u8]) -> Result<(), String> {
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>"
+        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>"
     );
     2
 }

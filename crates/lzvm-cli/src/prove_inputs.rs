@@ -2,6 +2,7 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
+use lzvm_artifacts::trace_bundle::{read_trace_bundle_file, TraceBundle};
 use lzvm_prover::{
     derive_prove_execution_plan_with_program_image_cache, ProveExecutionInputArtifacts,
 };
@@ -39,6 +40,13 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     }
 
     let trace_bytes_len = match validate_trace_bytes(&parsed.trace_bytes) {
+        Ok(value) => value,
+        Err(message) => {
+            let _ = writeln!(stderr, "prove inputs failed: {message}");
+            return 1;
+        }
+    };
+    let trace_bundle = match validate_trace_bundle(&parsed.trace_bundle) {
         Ok(value) => value,
         Err(message) => {
             let _ = writeln!(stderr, "prove inputs failed: {message}");
@@ -84,6 +92,11 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             trace_bytes_len.expect("trace bytes length should be available")
         );
     }
+    if let Some((path, bundle, bundle_len)) = &trace_bundle {
+        let _ = writeln!(stdout, "trace_bundle={}", path.display());
+        let _ = writeln!(stdout, "trace_bundle_units={}", bundle.unit_count());
+        let _ = writeln!(stdout, "trace_bundle_bytes={}", bundle_len);
+    }
     let _ = writeln!(stdout, "guest_image={}", plan.inputs.guest_image.display());
     let _ = writeln!(
         stdout,
@@ -120,10 +133,12 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
 struct ParsedInputsArgs {
     run_args: ParsedRunArgs,
     trace_bytes: Option<PathBuf>,
+    trace_bundle: Option<PathBuf>,
 }
 
 fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
     let mut trace_bytes = None;
+    let mut trace_bundle = None;
     let mut filtered = Vec::with_capacity(args.len());
     let mut index = 0;
     while index < args.len() {
@@ -139,27 +154,46 @@ fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
                     ));
                 }
             }
+            "--trace-bundle" => {
+                index += 1;
+                let value = args.get(index).ok_or_else(|| {
+                    ParseError::Invalid("missing --trace-bundle value".to_owned())
+                })?;
+                if trace_bundle.replace((*value).into()).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --trace-bundle option".to_owned(),
+                    ));
+                }
+            }
             value => filtered.push(value),
         }
         index += 1;
     }
 
-    let min_positionals = if trace_bytes.is_some() { 3 } else { 4 };
-    let max_positionals = if trace_bytes.is_some() { 4 } else { 5 };
+    if trace_bytes.is_some() && trace_bundle.is_some() {
+        return Err(ParseError::Invalid(
+            "cannot combine --trace-bytes and --trace-bundle".to_owned(),
+        ));
+    }
+    let trace_mode = trace_bytes.is_some() || trace_bundle.is_some();
+    let min_positionals = if trace_mode { 3 } else { 4 };
+    let max_positionals = if trace_mode { 4 } else { 5 };
     Ok(ParsedInputsArgs {
         run_args: parse_run_args(&filtered, min_positionals, max_positionals)?,
         trace_bytes,
+        trace_bundle,
     })
 }
 
 fn parsed_inputs(parsed: &ParsedInputsArgs) -> ProveExecutionInputArtifacts {
-    let witness_library = if parsed.trace_bytes.is_some() {
+    let trace_mode = parsed.trace_bytes.is_some() || parsed.trace_bundle.is_some();
+    let witness_library = if trace_mode {
         None
     } else {
         Some(parsed.run_args.positionals[2].clone())
     };
-    let guest_image_index = if parsed.trace_bytes.is_some() { 2 } else { 3 };
-    let public_inputs_index = if parsed.trace_bytes.is_some() { 3 } else { 4 };
+    let guest_image_index = if trace_mode { 2 } else { 3 };
+    let public_inputs_index = if trace_mode { 3 } else { 4 };
     ProveExecutionInputArtifacts {
         witness_library,
         guest_image: parsed.run_args.positionals[guest_image_index].clone(),
@@ -183,10 +217,26 @@ fn validate_trace_bytes(path: &Option<PathBuf>) -> Result<Option<u64>, String> {
     Ok(Some(metadata.len()))
 }
 
+fn validate_trace_bundle(
+    path: &Option<PathBuf>,
+) -> Result<Option<(PathBuf, TraceBundle, u64)>, String> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("trace bundle is missing: {}: {error}", path.display()))?;
+    if !metadata.is_file() {
+        return Err(format!("trace bundle is not a file: {}", path.display()));
+    }
+    let bundle = read_trace_bundle_file(path)
+        .map_err(|error| format!("trace bundle failed: {}: {error}", path.display()))?;
+    Ok(Some((path.clone(), bundle, metadata.len())))
+}
+
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>"
+        "usage: lzvm prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>"
     );
     2
 }
