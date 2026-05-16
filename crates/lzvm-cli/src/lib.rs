@@ -11,6 +11,7 @@ use lzvm_setup::{
     summarize_setup_directory, FixedExtensionBackend, ProgramImageCommitmentCacheFileRequest,
 };
 
+mod pil_archive;
 mod pil_graph;
 mod pil_summary;
 mod program_image_cache;
@@ -22,6 +23,7 @@ pub use prove_witness::{build_witness_proof_artifact, build_witness_proof_core_a
 
 pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
+        ["pil", "archive", rest @ ..] => pil_archive::run(rest, stdout, stderr),
         ["pil", "graph", rest @ ..] => pil_graph::run(rest, stdout, stderr),
         ["pil", "summary", rest @ ..] => pil_summary::run(rest, stdout, stderr),
         ["prove", "inputs", rest @ ..] => prove_inputs::run(rest, stdout, stderr),
