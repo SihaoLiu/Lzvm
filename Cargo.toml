@@ -3,6 +3,7 @@ members = [
     "crates/lzvm-artifacts",
     "crates/lzvm-accel",
     "crates/lzvm-cli",
+    "crates/lzvm-crypto",
     "crates/lzvm-field",
     "crates/lzvm-prover",
     "crates/lzvm-setup",
