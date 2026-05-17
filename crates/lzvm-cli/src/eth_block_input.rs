@@ -2,7 +2,9 @@ use std::fmt;
 use std::io::Write;
 use std::path::Path;
 
-use lzvm_artifacts::eth_block_input::{build_eth_block_input, encode_eth_block_input};
+use lzvm_artifacts::eth_block_input::{
+    build_eth_block_input, encode_eth_block_input, parse_eth_block_input, EthBlockInput,
+};
 
 pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
@@ -13,6 +15,13 @@ pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write)
             write_block_input(block_path, output_path, true, stdout, stderr)
         }
         _ => write_usage(stderr),
+    }
+}
+
+pub(crate) fn run_summary(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
+    match args {
+        [input_path] => summarize_block_input(input_path, stdout, stderr),
+        _ => write_summary_usage(stderr),
     }
 }
 
@@ -83,9 +92,46 @@ fn write_block_input(
         return 1;
     }
 
+    write_input_summary(stdout, output_path, encoded.len(), &input, false);
+    0
+}
+
+fn summarize_block_input(input_path: &str, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
+    let encoded = match std::fs::read(input_path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = writeln!(
+                stderr,
+                "eth block input summary failed: read input failed: {input_path}: {error}"
+            );
+            return 1;
+        }
+    };
+    let input = match parse_eth_block_input(&encoded) {
+        Ok(input) => input,
+        Err(error) => {
+            let _ = writeln!(stderr, "eth block input summary failed: {error}");
+            return 1;
+        }
+    };
+
+    write_input_summary(stdout, Path::new(input_path), encoded.len(), &input, true);
+    0
+}
+
+fn write_input_summary(
+    stdout: &mut dyn Write,
+    input_path: &Path,
+    encoded_len: usize,
+    input: &EthBlockInput,
+    include_block_rlp_bytes: bool,
+) {
     let _ = writeln!(stdout, "status=ok");
-    let _ = writeln!(stdout, "block_input={}", output_path.display());
-    let _ = writeln!(stdout, "bytes={}", encoded.len());
+    let _ = writeln!(stdout, "block_input={}", input_path.display());
+    let _ = writeln!(stdout, "bytes={encoded_len}");
+    if include_block_rlp_bytes {
+        let _ = writeln!(stdout, "block_rlp_bytes={}", input.block_rlp.len());
+    }
     let _ = writeln!(stdout, "block_hash={}", format_hash(&input.block_hash));
     let _ = writeln!(stdout, "block_number={}", input.block_number);
     let _ = writeln!(stdout, "timestamp={}", input.timestamp);
@@ -123,7 +169,6 @@ fn write_block_input(
             withdrawals.hash_preimages.len()
         );
     }
-    0
 }
 
 fn decode_hex_bytes(input: &[u8]) -> Result<Vec<u8>, HexDecodeError> {
@@ -212,5 +257,10 @@ fn write_usage(stderr: &mut dyn Write) -> i32 {
         stderr,
         "usage: lzvm eth write-block-input [--hex] <block-rlp> <out-input>"
     );
+    2
+}
+
+fn write_summary_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(stderr, "usage: lzvm eth block-input-summary <block-input>");
     2
 }

@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use lzvm_artifacts::eth_block_input::parse_eth_block_input;
+use lzvm_artifacts::eth_block_input::{
+    build_eth_block_input, encode_eth_block_input, parse_eth_block_input,
+};
 use lzvm_cli::run_cli;
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -95,6 +97,45 @@ fn writes_hex_block_input_artifact() {
     assert!(String::from_utf8(stdout)
         .expect("stdout should be utf-8")
         .starts_with("status=ok\n"));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn summarizes_block_input_artifacts() {
+    let dir = temp_dir("summary");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("block.input");
+    let block_rlp = sample_block_rlp();
+    let input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let encoded = encode_eth_block_input(&input).expect("block input should encode");
+    write_bytes(&input_path, &encoded);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "block-input-summary",
+            input_path.to_str().expect("input path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nblock_input={}\nbytes={}\nblock_rlp_bytes={}\nblock_hash={}\nblock_number=2\ntimestamp=101\ntransactions_root={}\ntransaction_trie_preimages=1\nwithdrawals=absent\n",
+            input_path.display(),
+            encoded.len(),
+            block_rlp.len(),
+            to_hex(&input.block_hash),
+            to_hex(&input.transactions_root)
+        )
+    );
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
