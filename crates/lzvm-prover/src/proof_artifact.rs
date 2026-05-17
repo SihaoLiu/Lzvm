@@ -3,6 +3,7 @@ use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
+use lzvm_artifacts::pcs_evaluation_segment::parse_pcs_evaluation_segment;
 use lzvm_artifacts::pcs_nonce_segment::parse_pcs_query_nonce_segment;
 use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
 use lzvm_artifacts::program_image_segment::{
@@ -766,10 +767,17 @@ fn build_witness_transcript_proof_artifact_for_all_units(
     }
     witness_segments.sort_by_key(|segment| segment.id);
 
-    let evaluation_segment = match request.evaluation_values_segment {
-        Some(segment) => segment.clone(),
-        None => build_pcs_evaluation_segment(request.schedule, proof_inputs.evaluation_values)
-            .map_err(|error| format!("build evaluation segment failed: {error}"))?,
+    let (evaluation_segment, transcript_evaluation_values) = match request.evaluation_values_segment
+    {
+        Some(segment) => (
+            segment.clone(),
+            collect_evaluation_values_from_segment(segment)?,
+        ),
+        None => (
+            build_pcs_evaluation_segment(request.schedule, proof_inputs.evaluation_values)
+                .map_err(|error| format!("build evaluation segment failed: {error}"))?,
+            proof_inputs.evaluation_values.to_vec(),
+        ),
     };
     let transcript_auxiliary_inputs = request
         .outputs
@@ -790,8 +798,7 @@ fn build_witness_transcript_proof_artifact_for_all_units(
             if !proof_inputs.group_values.is_empty() {
                 auxiliary_inputs.group_values = proof_inputs.group_values.to_vec();
             }
-            if let Some(values) = proof_inputs
-                .evaluation_values
+            if let Some(values) = transcript_evaluation_values
                 .iter()
                 .find(|values| values.unit_index == unit_index)
             {
@@ -920,6 +927,49 @@ struct AllUnitsTranscriptProofInputs<'a> {
     group_values: &'a [Ext3],
     evaluation_values: &'a [ProvePcsEvaluationValues],
     unit_values: &'a [ProveUnitValues],
+}
+
+fn collect_evaluation_values_from_segment(
+    segment: &ProofSegment,
+) -> Result<Vec<ProvePcsEvaluationValues>, String> {
+    let parsed = parse_pcs_evaluation_segment(&segment.data)
+        .map_err(|error| format!("parse evaluation segment failed: {error}"))?;
+    parsed
+        .units
+        .into_iter()
+        .map(|unit| {
+            let unit_index = usize::try_from(unit.unit_index).map_err(|_| {
+                format!(
+                    "evaluation segment unit index does not fit usize: {}",
+                    unit.unit_index
+                )
+            })?;
+            let values = unit
+                .values
+                .into_iter()
+                .enumerate()
+                .map(|(index, words)| {
+                    let c0 = Felt::from_canonical(words[0]).map_err(|error| {
+                        format!(
+                            "invalid evaluation segment unit {unit_index} value {index}: {error}"
+                        )
+                    })?;
+                    let c1 = Felt::from_canonical(words[1]).map_err(|error| {
+                        format!(
+                            "invalid evaluation segment unit {unit_index} value {index}: {error}"
+                        )
+                    })?;
+                    let c2 = Felt::from_canonical(words[2]).map_err(|error| {
+                        format!(
+                            "invalid evaluation segment unit {unit_index} value {index}: {error}"
+                        )
+                    })?;
+                    Ok(Ext3::new(c0, c1, c2))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            Ok(ProvePcsEvaluationValues { unit_index, values })
+        })
+        .collect()
 }
 
 fn collect_global_proof_values(

@@ -398,6 +398,31 @@ fn fixed_plus_stage_expression_program(expression_id: u32) -> ExpressionProgram 
     }
 }
 
+fn evaluation_plus_zero_expression_program(expression_id: u32) -> ExpressionProgram {
+    ExpressionProgram {
+        max_tmp1: 0,
+        max_tmp3: 1,
+        max_args: 8,
+        max_ops: 1,
+        entries: vec![ExpressionEntry {
+            expression_id,
+            destination_dimension: 3,
+            destination_id: 0,
+            stage: 2,
+            temp1_count: 0,
+            temp3_count: 1,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 8,
+            args_offset: 0,
+            source_line: "evaluation plus zero".to_owned(),
+        }],
+        ops: vec![1],
+        args: vec![0, 0, 13, 0, 0, 8, 0, 0],
+        numbers: vec![0],
+    }
+}
+
 fn encode_trace_words(values: &[u64]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(values.len() * 8);
     for value in values {
@@ -1341,7 +1366,7 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
     first_unit.pcs_plan =
         derive_pcs_setup_plan(&first_unit.metadata.setup).expect("PCS setup plan should derive");
     first_unit.metadata.verifier.quotient.expression_id = Some(expression_id);
-    first_unit.expression_program = fixed_plus_stage_expression_program(expression_id);
+    first_unit.expression_program = evaluation_plus_zero_expression_program(expression_id);
     write_sample_fixed_columns(
         &first_unit.paths.fixed_columns,
         &first_unit.metadata.setup,
@@ -1368,7 +1393,7 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
     second_unit.pcs_plan =
         derive_pcs_setup_plan(&second_unit.metadata.setup).expect("PCS setup plan should derive");
     second_unit.metadata.verifier.quotient.expression_id = Some(expression_id);
-    second_unit.expression_program = fixed_plus_stage_expression_program(expression_id);
+    second_unit.expression_program = evaluation_plus_zero_expression_program(expression_id);
     write_sample_fixed_columns(
         &second_unit.paths.fixed_columns,
         &second_unit.metadata.setup,
@@ -1408,8 +1433,9 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
         },
     )
     .expect("execution plan should derive");
+    let evaluation_values = vec![Ext3::from_u64s([30, 31, 32]), Ext3::from_u64s([40, 41, 42])];
     let output_auxiliary_inputs = ProveWitnessAuxiliaryInputs {
-        evaluations: vec![Ext3::from_u64s([30, 31, 32]), Ext3::from_u64s([40, 41, 42])],
+        evaluations: evaluation_values.clone(),
         ..ProveWitnessAuxiliaryInputs::default()
     };
     let request_auxiliary_inputs = ProveWitnessAuxiliaryInputs::default();
@@ -1440,26 +1466,71 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
     .expect("proof artifact should exist");
     let proof = parse_proof_artifact(&encode_proof_artifact(&proof).expect("proof should encode"))
         .expect("proof should parse");
+
+    let evaluation_values_segment = build_pcs_evaluation_segment(
+        &plan.run_plan.schedule,
+        &[
+            ProvePcsEvaluationValues {
+                unit_index: 0,
+                values: evaluation_values.clone(),
+            },
+            ProvePcsEvaluationValues {
+                unit_index: 1,
+                values: evaluation_values.clone(),
+            },
+        ],
+    )
+    .expect("evaluation segment should build");
+    let outputs_without_evaluations = vec![
+        run_prove_witness_commitments_with_trace(&plan, 0, ProveWitnessAuxiliaryInputs::default())
+            .expect("first unit should run without evaluations"),
+        run_prove_witness_commitments_with_trace(&plan, 1, ProveWitnessAuxiliaryInputs::default())
+            .expect("second unit should run without evaluations"),
+    ];
+    let proof_from_segment = lzvm_prover::build_witness_proof_artifact_for_all_units(
+        &lzvm_prover::WitnessAllUnitsProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            execution_units: &plan.units,
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            outputs: &outputs_without_evaluations,
+            auxiliary_inputs: &request_auxiliary_inputs,
+            unit_values: &[],
+            evaluation_values_segment: Some(&evaluation_values_segment),
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+        },
+    )
+    .expect("proof artifact should build from evaluation segment")
+    .expect("proof artifact should exist from evaluation segment");
+    let proof_from_segment = parse_proof_artifact(
+        &encode_proof_artifact(&proof_from_segment).expect("proof should encode"),
+    )
+    .expect("proof should parse");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
-    let evaluation_segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
-        .expect("evaluation segment should exist");
-    let evaluations = parse_pcs_evaluation_segment(&evaluation_segment.data)
-        .expect("evaluation segment should parse");
-    assert_eq!(evaluations.units.len(), 2);
-    assert_eq!(evaluations.units[0].unit_index, 0);
-    assert_eq!(evaluations.units[1].unit_index, 1);
-    assert_eq!(
-        evaluations.units[0].values,
-        vec![[30, 31, 32], [40, 41, 42]]
-    );
-    assert_eq!(
-        evaluations.units[1].values,
-        vec![[30, 31, 32], [40, 41, 42]]
-    );
+    for proof in [&proof, &proof_from_segment] {
+        let evaluation_segment = proof
+            .segments
+            .iter()
+            .find(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
+            .expect("evaluation segment should exist");
+        let evaluations = parse_pcs_evaluation_segment(&evaluation_segment.data)
+            .expect("evaluation segment should parse");
+        assert_eq!(evaluations.units.len(), 2);
+        assert_eq!(evaluations.units[0].unit_index, 0);
+        assert_eq!(evaluations.units[1].unit_index, 1);
+        assert_eq!(
+            evaluations.units[0].values,
+            vec![[30, 31, 32], [40, 41, 42]]
+        );
+        assert_eq!(
+            evaluations.units[1].values,
+            vec![[30, 31, 32], [40, 41, 42]]
+        );
+    }
 }
 
 #[test]
