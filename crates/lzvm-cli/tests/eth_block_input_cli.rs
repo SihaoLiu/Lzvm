@@ -58,7 +58,7 @@ fn writes_binary_block_input_artifact() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nstate_root={}\nreceipts_root={}\nblock_number=2\ntimestamp=101\ntransactions_root={}\ntransaction_trie_preimages=1\nwithdrawals=absent\n",
+            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nstate_root={}\nreceipts_root={}\nblock_number=2\ntimestamp=101\ngas_limit=1000000\ngas_used=900000\ntransactions_root={}\ntransaction_trie_preimages=1\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
             to_hex(&input_hash),
@@ -136,7 +136,7 @@ fn summarizes_block_input_artifacts() {
     assert_eq!(
         stdout_text,
         format!(
-            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_rlp_bytes={}\nblock_hash={}\nstate_root={}\nreceipts_root={}\nblock_number=2\ntimestamp=101\ntransactions_root={}\ntransaction_trie_preimages=1\nwithdrawals=absent\n",
+            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_rlp_bytes={}\nblock_hash={}\nstate_root={}\nreceipts_root={}\nblock_number=2\ntimestamp=101\ngas_limit=1000000\ngas_used=900000\ntransactions_root={}\ntransaction_trie_preimages=1\nwithdrawals=absent\n",
             input_path.display(),
             encoded.len(),
             to_hex(&input_hash),

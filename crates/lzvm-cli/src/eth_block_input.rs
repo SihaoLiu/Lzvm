@@ -153,6 +153,8 @@ fn write_input_summary(
     );
     let _ = writeln!(stdout, "block_number={}", input.block_number);
     let _ = writeln!(stdout, "timestamp={}", input.timestamp);
+    let _ = writeln!(stdout, "gas_limit={}", input.gas_limit);
+    let _ = writeln!(stdout, "gas_used={}", input.gas_used);
     let _ = writeln!(
         stdout,
         "transactions_root={}",

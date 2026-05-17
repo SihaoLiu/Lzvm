@@ -20,6 +20,8 @@ pub(crate) struct EthBlockInputSummary {
     pub(crate) receipts_root: [u8; 32],
     pub(crate) block_number: u64,
     pub(crate) timestamp: u64,
+    pub(crate) gas_limit: u64,
+    pub(crate) gas_used: u64,
     pub(crate) transactions_root: [u8; 32],
     pub(crate) transaction_preimage_count: usize,
     pub(crate) withdrawal_preimage_count: Option<usize>,
@@ -52,6 +54,8 @@ pub(crate) fn validate_eth_block_input(
         receipts_root: input.receipts_root,
         block_number: input.block_number,
         timestamp: input.timestamp,
+        gas_limit: input.gas_limit,
+        gas_used: input.gas_used,
         transactions_root: input.transactions_root,
         transaction_preimage_count: input.transactions.hash_preimages.len(),
         withdrawal_preimage_count: input
@@ -90,6 +94,8 @@ pub(crate) fn write_eth_block_input_summary(
     );
     let _ = writeln!(stdout, "eth_block_number={}", summary.block_number);
     let _ = writeln!(stdout, "eth_block_timestamp={}", summary.timestamp);
+    let _ = writeln!(stdout, "eth_gas_limit={}", summary.gas_limit);
+    let _ = writeln!(stdout, "eth_gas_used={}", summary.gas_used);
     let _ = writeln!(
         stdout,
         "eth_transactions_root={}",
