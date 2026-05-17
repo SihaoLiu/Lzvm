@@ -80,6 +80,7 @@ pub enum LoadUnitValuesSegmentError {
         unit_index: usize,
     },
     MissingSegment,
+    DuplicateSegment,
     MissingUnit {
         unit_index: usize,
     },
@@ -107,6 +108,7 @@ impl fmt::Display for LoadUnitValuesSegmentError {
                 write!(f, "unit values segment unit index overflow: {unit_index}")
             }
             Self::MissingSegment => write!(f, "missing unit values segment"),
+            Self::DuplicateSegment => write!(f, "duplicate unit values segment"),
             Self::MissingUnit { unit_index } => {
                 write!(f, "missing unit values segment for unit {unit_index}")
             }
@@ -142,6 +144,7 @@ impl std::error::Error for LoadUnitValuesSegmentError {
             Self::Segment(error) => Some(error),
             Self::UnitIndexOverflow { .. }
             | Self::MissingSegment
+            | Self::DuplicateSegment
             | Self::MissingUnit { .. }
             | Self::UnexpectedUnit { .. }
             | Self::ValueCountMismatch { .. }
@@ -230,9 +233,13 @@ pub fn load_unit_values_from_segments(
 ) -> Result<Vec<Felt>, LoadUnitValuesSegmentError> {
     let expected_count = expected_packed_unit_value_count(unit_value_map)
         .map_err(|_| LoadUnitValuesSegmentError::LengthOverflow)?;
-    let segment = segments
+    let mut matching_segments = segments
         .iter()
-        .find(|segment| segment.id == UNIT_VALUES_SEGMENT_ID);
+        .filter(|segment| segment.id == UNIT_VALUES_SEGMENT_ID);
+    let segment = matching_segments.next();
+    if matching_segments.next().is_some() {
+        return Err(LoadUnitValuesSegmentError::DuplicateSegment);
+    }
     let parsed = match segment {
         Some(segment) => Some(
             parse_unit_values_segment(&segment.data)

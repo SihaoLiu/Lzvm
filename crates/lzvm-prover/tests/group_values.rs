@@ -56,6 +56,19 @@ fn rejects_unexpected_group_values_segment() {
 }
 
 #[test]
+fn rejects_duplicate_group_values_segments() {
+    let segment = build_group_values_segment(&sample_global_info(1), &[ext([7, 8, 9])])
+        .expect("segment should build")
+        .expect("segment should be present");
+
+    let error =
+        load_group_values_from_segments(&sample_global_info(1), &[segment.clone(), segment])
+            .expect_err("duplicate segments should reject");
+
+    assert_eq!(error.to_string(), "duplicate group values segment");
+}
+
+#[test]
 fn rejects_loaded_group_values_count_mismatch() {
     let segment = group_values_segment([[7, 8, 9]]);
 

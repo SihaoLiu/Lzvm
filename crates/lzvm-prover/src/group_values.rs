@@ -51,6 +51,7 @@ impl From<GroupValuesSegmentError> for ProveGroupValuesSegmentError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadGroupValuesSegmentError {
     MissingSegment,
+    DuplicateSegment,
     UnexpectedSegment,
     ValueCountMismatch { expected: usize, found: usize },
     NonCanonicalValue { index: usize, source: FieldError },
@@ -62,6 +63,7 @@ impl fmt::Display for LoadGroupValuesSegmentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingSegment => write!(f, "missing group values segment"),
+            Self::DuplicateSegment => write!(f, "duplicate group values segment"),
             Self::UnexpectedSegment => write!(f, "unexpected group values segment"),
             Self::ValueCountMismatch { expected, found } => write!(
                 f,
@@ -82,6 +84,7 @@ impl std::error::Error for LoadGroupValuesSegmentError {
             Self::NonCanonicalValue { source, .. } => Some(source),
             Self::Segment(error) => Some(error),
             Self::MissingSegment
+            | Self::DuplicateSegment
             | Self::UnexpectedSegment
             | Self::ValueCountMismatch { .. }
             | Self::LengthOverflow => None,
@@ -124,9 +127,13 @@ pub fn load_group_values_from_segments(
 ) -> Result<Vec<Ext3>, LoadGroupValuesSegmentError> {
     let expected_count = expected_group_value_count(global_info)
         .map_err(|_| LoadGroupValuesSegmentError::LengthOverflow)?;
-    let segment = segments
+    let mut matching_segments = segments
         .iter()
-        .find(|segment| segment.id == GROUP_VALUES_SEGMENT_ID);
+        .filter(|segment| segment.id == GROUP_VALUES_SEGMENT_ID);
+    let segment = matching_segments.next();
+    if matching_segments.next().is_some() {
+        return Err(LoadGroupValuesSegmentError::DuplicateSegment);
+    }
     if expected_count == 0 {
         if segment.is_some() {
             return Err(LoadGroupValuesSegmentError::UnexpectedSegment);

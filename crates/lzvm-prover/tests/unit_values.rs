@@ -105,6 +105,17 @@ fn rejects_missing_unit_values_unit() {
 }
 
 #[test]
+fn rejects_duplicate_unit_values_segments() {
+    let map = vec![stage_value("unit.alpha", 1)];
+    let segment = unit_values_segment(0, &[11]);
+
+    let error = load_unit_values_from_segments(0, &map, &[segment.clone(), segment])
+        .expect_err("duplicate segments should reject");
+
+    assert_eq!(error.to_string(), "duplicate unit values segment");
+}
+
+#[test]
 fn rejects_unexpected_unit_values_unit() {
     let segment = unit_values_segment(0, &[11]);
 
