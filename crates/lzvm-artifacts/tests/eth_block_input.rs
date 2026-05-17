@@ -429,7 +429,7 @@ fn rejects_missing_withdrawals_body() {
 }
 
 #[test]
-fn rejects_extra_header_fields() {
+fn accepts_extra_header_fields() {
     let mut header_items = legacy_header_items(empty_trie_root(), Some(empty_trie_root()));
     header_items.push(rlp_bytes(&[0xee]));
     let header_rlp = rlp_list(&header_items);
@@ -441,14 +441,16 @@ fn rejects_extra_header_fields() {
         empty_list,
     ]);
 
-    let error = build_eth_block_input(&block_rlp)
-        .expect_err("block input should reject extra header fields");
+    let input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let encoded = encode_eth_block_input(&input).expect("block input should encode");
+    let parsed = parse_eth_block_input(&encoded).expect("block input should parse");
 
-    assert!(matches!(error, EthBlockInputError::UnsupportedHeaderFields));
+    assert_eq!(input.block_rlp, block_rlp);
+    assert_eq!(parsed, input);
 }
 
 #[test]
-fn rejects_extra_body_fields() {
+fn accepts_extra_body_fields() {
     let header_rlp = rlp_list(&legacy_header_items(
         empty_trie_root(),
         Some(empty_trie_root()),
@@ -462,10 +464,12 @@ fn rejects_extra_body_fields() {
         rlp_bytes(&[0xee]),
     ]);
 
-    let error =
-        build_eth_block_input(&block_rlp).expect_err("block input should reject extra body fields");
+    let input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let encoded = encode_eth_block_input(&input).expect("block input should encode");
+    let parsed = parse_eth_block_input(&encoded).expect("block input should parse");
 
-    assert!(matches!(error, EthBlockInputError::UnsupportedBodyFields));
+    assert_eq!(input.block_rlp, block_rlp);
+    assert_eq!(parsed, input);
 }
 
 #[test]
