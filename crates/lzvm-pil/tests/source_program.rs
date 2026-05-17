@@ -149,3 +149,55 @@ fn loads_source_program_with_declarations_from_graph_sources() {
 
     fs::remove_dir_all(&root).expect("case directory should be removed");
 }
+
+#[test]
+fn indexes_air_units_with_group_and_unit_context() {
+    let root = case_dir("air-units");
+    write_file(
+        &root,
+        "main.pil",
+        "airtemplate Main() { }\n\
+         airtemplate Aux() { }\n\
+         airgroup Alpha {\n\
+             Main();\n\
+             Main() alias AlphaMain;\n\
+             virtual Aux() alias AuxVirtual;\n\
+             Aux();\n\
+         }\n\
+         airgroup Beta { Main() alias BetaMain; }\n\
+         airgroup Alpha { Aux() alias AlphaLater; }",
+    );
+    let mut loader = SourceProgramLoader::new(SourceLoaderConfig {
+        working_dir: root.clone(),
+        ..SourceLoaderConfig::default()
+    });
+
+    let program = loader
+        .load_main("main.pil")
+        .expect("source program should load");
+    let units = program.air_units();
+
+    assert_eq!(
+        units
+            .iter()
+            .map(|unit| (
+                unit.group_name.as_str(),
+                unit.group_id,
+                unit.unit_id,
+                unit.unit_name.as_str(),
+                unit.template_name.as_str(),
+                unit.virtual_instance
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("Alpha", 0, 0, "Main", "Main", false),
+            ("Alpha", 0, 1, "AlphaMain", "Main", false),
+            ("Alpha", 0, 10_000, "AuxVirtual", "Aux", true),
+            ("Alpha", 0, 2, "Aux", "Aux", false),
+            ("Beta", 1, 0, "BetaMain", "Main", false),
+            ("Alpha", 0, 3, "AlphaLater", "Aux", false),
+        ]
+    );
+
+    fs::remove_dir_all(&root).expect("case directory should be removed");
+}

@@ -26,6 +26,81 @@ pub struct SourceProgram {
     pub modules: Vec<SourceProgramModule>,
 }
 
+impl SourceProgram {
+    pub fn air_units(&self) -> Vec<SourceProgramAirUnit> {
+        let group_ids = self.air_group_ids();
+        let mut unit_counts = BTreeMap::<String, i128>::new();
+        let mut virtual_unit_counts = BTreeMap::<String, i128>::new();
+        let mut units = Vec::new();
+
+        for module in &self.modules {
+            for instance in &module.air_instances {
+                let group_id = group_ids.get(&instance.air_group).copied().unwrap_or(-1);
+                let unit_id = if instance.virtual_instance {
+                    let count = virtual_unit_counts
+                        .entry(instance.air_group.clone())
+                        .or_default();
+                    let unit_id = VIRTUAL_UNIT_ID_BASE + *count;
+                    *count += 1;
+                    unit_id
+                } else {
+                    let count = unit_counts.entry(instance.air_group.clone()).or_default();
+                    let unit_id = *count;
+                    *count += 1;
+                    unit_id
+                };
+                units.push(SourceProgramAirUnit {
+                    source_name: instance.source_name.clone(),
+                    group_name: instance.air_group.clone(),
+                    group_id,
+                    unit_id,
+                    unit_name: instance
+                        .alias
+                        .clone()
+                        .unwrap_or_else(|| instance.template.clone()),
+                    template_name: instance.template.clone(),
+                    virtual_instance: instance.virtual_instance,
+                    start: instance.start,
+                    end: instance.end,
+                });
+            }
+        }
+
+        units
+    }
+
+    fn air_group_ids(&self) -> BTreeMap<String, i128> {
+        let mut group_ids = BTreeMap::new();
+        let mut next_group_id = 0_i128;
+        for module in &self.modules {
+            for group in &module.air_groups {
+                if let std::collections::btree_map::Entry::Vacant(entry) =
+                    group_ids.entry(group.name.clone())
+                {
+                    entry.insert(next_group_id);
+                    next_group_id += 1;
+                }
+            }
+        }
+        group_ids
+    }
+}
+
+const VIRTUAL_UNIT_ID_BASE: i128 = 10_000;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceProgramAirUnit {
+    pub source_name: String,
+    pub group_name: String,
+    pub group_id: i128,
+    pub unit_id: i128,
+    pub unit_name: String,
+    pub template_name: String,
+    pub virtual_instance: bool,
+    pub start: usize,
+    pub end: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceProgramModule {
     pub source_name: String,
