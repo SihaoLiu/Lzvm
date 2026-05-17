@@ -381,6 +381,7 @@ pub fn encode_eth_block_input(value: &EthBlockInput) -> Result<Vec<u8>, EthBlock
         value.withdrawals_root.is_some(),
         value.withdrawals.is_some(),
     )?;
+    validate_trie_roots(value)?;
     validate_preimages(
         EthBlockInputTrie::Transactions,
         value.transactions_root,
@@ -591,6 +592,23 @@ fn validate_withdrawal_sections(
         (true, false) | (false, true) => Err(EthBlockInputError::UnexpectedWithdrawalsRoot),
         _ => Ok(()),
     }
+}
+
+fn validate_trie_roots(value: &EthBlockInput) -> Result<(), EthBlockInputError> {
+    if value.transactions.root != value.transactions_root {
+        return Err(EthBlockInputError::TransactionsRootMismatch);
+    }
+    if let Some(receipts) = &value.receipts {
+        if receipts.root != value.receipts_root {
+            return Err(EthBlockInputError::ReceiptsRootMismatch);
+        }
+    }
+    if let (Some(root), Some(withdrawals)) = (value.withdrawals_root, &value.withdrawals) {
+        if withdrawals.root != root {
+            return Err(EthBlockInputError::WithdrawalsRootMismatch);
+        }
+    }
+    Ok(())
 }
 
 fn validate_receipts_against_block(
