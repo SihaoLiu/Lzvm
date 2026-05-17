@@ -1206,6 +1206,123 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
 }
 
 #[test]
+fn builds_all_units_contribution_proof_artifact_from_output_proof_values() {
+    let dir = temp_dir("contribution-proof-all-units-output-proof-values");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [17_u8]).expect("input data should be written");
+
+    let mut second_unit = sample_unit();
+    second_unit.paths.unit_id = Some(1);
+    second_unit.paths.unit_name = Some("unit-b".to_owned());
+    second_unit.paths.prefix = "unit-b".into();
+    second_unit.paths.metadata_prefix = Some("unit-b".into());
+    second_unit.paths.program_prefix = Some("unit-b".into());
+    second_unit.paths.verification_key_prefix = "unit-b".into();
+    second_unit.paths.constant_tree = dir.join("unit-b.consttree");
+    let mut first_unit = sample_unit();
+    first_unit.paths.constant_tree = dir.join("unit.consttree");
+    let first_tree_bytes = expected_constant_tree_byte_count(&first_unit.metadata.setup)
+        .expect("tree size should derive");
+    let second_tree_bytes = expected_constant_tree_byte_count(&second_unit.metadata.setup)
+        .expect("tree size should derive");
+    fs::write(
+        &first_unit.paths.constant_tree,
+        vec![0_u8; first_tree_bytes],
+    )
+    .expect("first constant tree should be written");
+    fs::write(
+        &second_unit.paths.constant_tree,
+        vec![0_u8; second_tree_bytes],
+    )
+    .expect("second constant tree should be written");
+    let mut catalog = sample_catalog_units(vec![first_unit, second_unit]);
+    catalog.layout.global_info.lattice_size = Some(32);
+    catalog.layout.global_info.num_proof_values = vec![1];
+    catalog.layout.global_info.proof_values_map = vec![NamedStageValue {
+        name: "global-proof".to_owned(),
+        stage: 1,
+        id: None,
+        lengths: Vec::new(),
+    }];
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values_path = dir.join("public.bin");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: vec![PublicValueEntry {
+            name: "sample_public".to_owned(),
+            elements: vec![17],
+        }],
+    };
+    fs::write(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    )
+    .expect("public values should be written");
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: Some(public_values_path),
+        },
+    )
+    .expect("execution plan should derive");
+    let output_auxiliary_inputs = ProveWitnessAuxiliaryInputs {
+        proof_values: vec![Felt::from_u64(31)],
+        ..ProveWitnessAuxiliaryInputs::default()
+    };
+    let request_auxiliary_inputs = ProveWitnessAuxiliaryInputs::default();
+    let outputs = vec![
+        run_prove_witness_commitments_with_trace(&plan, 0, output_auxiliary_inputs.clone())
+            .expect("first unit should run"),
+        run_prove_witness_commitments_with_trace(&plan, 1, output_auxiliary_inputs.clone())
+            .expect("second unit should run"),
+    ];
+
+    let proof = lzvm_prover::build_witness_contribution_proof_artifact_for_all_units(
+        &lzvm_prover::WitnessAllUnitsProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            execution_units: &plan.units,
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            outputs: &outputs,
+            auxiliary_inputs: &request_auxiliary_inputs,
+            unit_values: &[],
+            evaluation_values_segment: None,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+        },
+    )
+    .expect("proof artifact should build")
+    .expect("proof artifact should exist");
+    let proof = parse_proof_artifact(&encode_proof_artifact(&proof).expect("proof should encode"))
+        .expect("proof should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let proof_values_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_PROOF_VALUES_SEGMENT_ID)
+        .expect("proof values segment should exist");
+    let proof_values = parse_pcs_proof_values_segment(&proof_values_segment.data)
+        .expect("proof values should parse");
+    assert_eq!(proof_values.values, vec![[31, 0, 0]]);
+    assert!(proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == CONTRIBUTION_SEGMENT_ID));
+}
+
+#[test]
 fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
     let dir = temp_dir("proof-artifact-all-units-fri-output-evals");
     let _ = fs::remove_dir_all(&dir);

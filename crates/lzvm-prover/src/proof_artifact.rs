@@ -469,9 +469,11 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
         &contribution_sources,
     )?
     .ok_or_else(|| "contribution proof has no contribution segment".to_owned())?;
+    let proof_values =
+        collect_global_proof_values(request.outputs, &request.auxiliary_inputs.proof_values)?;
     let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(
         &request.catalog.layout.global_info,
-        &request.auxiliary_inputs.proof_values,
+        &proof_values,
     )
     .map_err(|error| format!("build proof values segment failed: {error}"))?;
 
