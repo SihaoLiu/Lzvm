@@ -35,6 +35,7 @@ pub struct ProofPreflightReport {
     pub program_image_cache_hashes: Vec<[u8; 32]>,
     pub eth_block_input_count: usize,
     pub eth_block_input_hashes: Vec<[u8; 32]>,
+    pub eth_block_input_ommers_hashes: Vec<[u8; 32]>,
     pub eth_block_input_transaction_preimage_counts: Vec<usize>,
     pub eth_block_input_legacy_transaction_counts: Vec<usize>,
     pub eth_block_input_typed_transaction_counts: Vec<usize>,
@@ -200,6 +201,7 @@ pub fn validate_proof_public_values(
         .iter()
         .filter(|segment| segment.id == ETH_BLOCK_INPUT_SEGMENT_ID)
         .count();
+    let mut eth_block_input_ommers_hashes = Vec::new();
     if eth_block_input_count == 0 && contains_eth_block_public_values(public_values) {
         return Err(ProofPreflightError::MissingEthBlockInput);
     }
@@ -211,6 +213,7 @@ pub fn validate_proof_public_values(
         eth_block_input_hashes.push(eth_block_input_bytes_digest(&segment.data));
         let input = parse_eth_block_input_segment(&segment.data)
             .map_err(ProofPreflightError::EthBlockInput)?;
+        eth_block_input_ommers_hashes.push(input.ommers_hash);
         let (legacy_transaction_count, typed_transaction_count) =
             eth_block_input_transaction_kind_counts(&input)
                 .map_err(ProofPreflightError::EthBlockInput)?;
@@ -252,6 +255,7 @@ pub fn validate_proof_public_values(
         program_image_cache_hashes,
         eth_block_input_count,
         eth_block_input_hashes,
+        eth_block_input_ommers_hashes,
         eth_block_input_transaction_preimage_counts,
         eth_block_input_legacy_transaction_counts,
         eth_block_input_typed_transaction_counts,

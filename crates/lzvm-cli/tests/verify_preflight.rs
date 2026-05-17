@@ -276,9 +276,10 @@ fn verifies_preflight_reports_eth_block_input_digest() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\neth_withdrawals=absent\n",
+            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_ommers_hash={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\neth_withdrawals=absent\n",
             to_hex(&public_values_hash),
             to_hex(&eth_block_input_hash),
+            to_hex(&block_input.ommers_hash),
             block_input.transactions.hash_preimages.len(),
             receipt_build.hash_preimages.len()
         )
@@ -326,9 +327,10 @@ fn verifies_preflight_reports_eth_block_withdrawals() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_transaction_trie_preimages={}\neth_transaction_count=0\neth_legacy_transactions=0\neth_typed_transactions=0\neth_receipts=absent\neth_withdrawals=present\neth_withdrawal_count=1\neth_withdrawal_trie_preimages={}\n",
+            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_ommers_hash={}\neth_transaction_trie_preimages={}\neth_transaction_count=0\neth_legacy_transactions=0\neth_typed_transactions=0\neth_receipts=absent\neth_withdrawals=present\neth_withdrawal_count=1\neth_withdrawal_trie_preimages={}\n",
             to_hex(&public_values_hash),
             to_hex(&eth_block_input_hash),
+            to_hex(&block_input.ommers_hash),
             block_input.transactions.hash_preimages.len(),
             withdrawal_build.hash_preimages.len()
         )
