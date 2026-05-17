@@ -5,7 +5,9 @@ use lzvm_artifacts::eth_block_input::{
     build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
     parse_eth_block_input,
 };
-use lzvm_artifacts::eth_trie::{receipt_trie_build, transaction_trie_build};
+use lzvm_artifacts::eth_trie::{
+    receipt_trie_build, transaction_trie_build, withdrawals_trie_build,
+};
 use lzvm_artifacts::public_values::{parse_public_values, public_values_digest};
 use lzvm_artifacts::rlp::parse_rlp;
 use lzvm_cli::run_cli;
@@ -213,6 +215,38 @@ fn writes_receipt_kind_counts_for_typed_block_input_artifacts() {
     assert!(stderr.is_empty());
     let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
     assert!(stdout_text.contains("legacy_receipts=0\ntyped_receipts=1\n"));
+}
+
+#[test]
+fn writes_withdrawal_count_for_block_input_artifacts() {
+    let dir = temp_dir("withdrawals");
+    let _ = fs::remove_dir_all(&dir);
+    let block_path = dir.join("block.rlp");
+    let output_path = dir.join("block.input");
+    let withdrawal_item = sample_withdrawal_item();
+    let withdrawals = vec![parse_rlp(&withdrawal_item).expect("withdrawal should parse")];
+    let withdrawal_build = withdrawals_trie_build(&withdrawals);
+    let block_rlp = sample_block_rlp_with_withdrawals(withdrawal_build.root, vec![withdrawal_item]);
+    write_bytes(&block_path, &block_rlp);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-block-input",
+            block_path.to_str().expect("block path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("withdrawals=present\nwithdrawal_count=1\n"));
 }
 
 #[test]
@@ -490,6 +524,19 @@ fn sample_block_rlp_with_transaction_items(
     rlp_list(&[header_rlp, transactions, empty_list])
 }
 
+fn sample_block_rlp_with_withdrawals(
+    withdrawals_root: [u8; 32],
+    withdrawal_items: Vec<Vec<u8>>,
+) -> Vec<u8> {
+    let header_rlp = rlp_list(&legacy_header_items(
+        hex32("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"),
+        Some(withdrawals_root),
+    ));
+    let empty_list = rlp_list(&[]);
+    let withdrawals = rlp_list(&withdrawal_items);
+    rlp_list(&[header_rlp, empty_list.clone(), empty_list, withdrawals])
+}
+
 fn sample_block_rlp_with_base_fee() -> Vec<u8> {
     let mut header_items = legacy_header_items(
         hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
@@ -574,6 +621,15 @@ fn typed_receipt_item(receipt_type: u8) -> Vec<u8> {
     let mut bytes = vec![receipt_type];
     bytes.extend_from_slice(&sample_receipt_item());
     rlp_bytes(&bytes)
+}
+
+fn sample_withdrawal_item() -> Vec<u8> {
+    rlp_list(&[
+        rlp_bytes(&[]),
+        rlp_bytes(&[1]),
+        rlp_bytes(&[0x22; 20]),
+        rlp_bytes(&[0x40]),
+    ])
 }
 
 fn typed_transaction_item() -> Vec<u8> {

@@ -507,6 +507,17 @@ pub fn eth_block_input_receipt_kind_counts(
     Ok(Some((legacy, receipts.len() - legacy)))
 }
 
+pub fn eth_block_input_withdrawal_count(
+    input: &EthBlockInput,
+) -> Result<Option<usize>, EthBlockInputError> {
+    let block = parse_eth_block_rlp(&input.block_rlp)?;
+    let Some(withdrawals) = block.withdrawals else {
+        return Ok(None);
+    };
+    let withdrawals = decode_eth_withdrawals_rlp(&withdrawals)?;
+    Ok(Some(withdrawals.len()))
+}
+
 pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInputError> {
     let file = parse_sectioned_file(bytes, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION)
         .map_err(EthBlockInputError::Sectioned)?;

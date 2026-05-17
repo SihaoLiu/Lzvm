@@ -5,7 +5,8 @@ use std::path::Path;
 use lzvm_artifacts::eth_block_input::{
     build_eth_block_input, build_eth_block_input_with_receipts, encode_eth_block_input,
     eth_block_input_bytes_digest, eth_block_input_receipt_kind_counts,
-    eth_block_input_transaction_kind_counts, parse_eth_block_input, EthBlockInput,
+    eth_block_input_transaction_kind_counts, eth_block_input_withdrawal_count,
+    parse_eth_block_input, EthBlockInput,
 };
 
 pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -239,6 +240,11 @@ fn write_input_summary(
         }
     );
     if let Some(withdrawals) = &input.withdrawals {
+        if let Some(withdrawal_count) = eth_block_input_withdrawal_count(input)
+            .expect("ETH block input summary requires validated withdrawal data")
+        {
+            let _ = writeln!(stdout, "withdrawal_count={withdrawal_count}");
+        }
         let withdrawals_root = input
             .withdrawals_root
             .expect("withdrawals build requires withdrawals root");
