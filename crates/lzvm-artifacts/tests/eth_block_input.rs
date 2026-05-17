@@ -497,6 +497,86 @@ fn rejects_preimage_hash_mismatches() {
 }
 
 #[test]
+fn rejects_encoding_transaction_preimage_hash_mismatches() {
+    let block_rlp = sample_block_rlp_with_transactions(
+        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
+        vec![rlp_list(&[rlp_bytes(&[1])])],
+    );
+    let mut input = build_eth_block_input(&block_rlp).expect("block input should build");
+    input.transactions.hash_preimages[0].hash[0] ^= 1;
+
+    let error =
+        encode_eth_block_input(&input).expect_err("block input should reject preimage hash");
+
+    assert!(matches!(
+        error,
+        EthBlockInputError::PreimageHashMismatch {
+            trie: EthBlockInputTrie::Transactions,
+            index: 0,
+        }
+    ));
+}
+
+#[test]
+fn rejects_encoding_receipt_preimage_hash_mismatches() {
+    let receipt_item = receipt_item();
+    let receipts = vec![parse_rlp(&receipt_item).expect("receipt item should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    let transaction_items = vec![rlp_list(&[rlp_bytes(&[1])])];
+    let block_rlp = sample_block_rlp_with_transactions_and_receipts(
+        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
+        receipt_build.root,
+        transaction_items,
+    );
+    let receipts_rlp = rlp_list(&[receipt_item]);
+    let mut input = build_eth_block_input_with_receipts(&block_rlp, &receipts_rlp)
+        .expect("block input should build");
+    input
+        .receipts
+        .as_mut()
+        .expect("receipts should exist")
+        .hash_preimages[0]
+        .hash[0] ^= 1;
+
+    let error =
+        encode_eth_block_input(&input).expect_err("block input should reject preimage hash");
+
+    assert!(matches!(
+        error,
+        EthBlockInputError::PreimageHashMismatch {
+            trie: EthBlockInputTrie::Receipts,
+            index: 0,
+        }
+    ));
+}
+
+#[test]
+fn rejects_encoding_withdrawal_preimage_hash_mismatches() {
+    let block_rlp = sample_block_rlp_with_withdrawals(
+        hex32("51c445cba96d0dfd446eec8b2b94f104608cf8443a92f7f87c76a383d6687300"),
+        vec![withdrawal_item()],
+    );
+    let mut input = build_eth_block_input(&block_rlp).expect("block input should build");
+    input
+        .withdrawals
+        .as_mut()
+        .expect("withdrawals should exist")
+        .hash_preimages[0]
+        .hash[0] ^= 1;
+
+    let error =
+        encode_eth_block_input(&input).expect_err("block input should reject preimage hash");
+
+    assert!(matches!(
+        error,
+        EthBlockInputError::PreimageHashMismatch {
+            trie: EthBlockInputTrie::Withdrawals,
+            index: 0,
+        }
+    ));
+}
+
+#[test]
 fn rejects_missing_transaction_root_preimages() {
     let block_rlp = sample_block_rlp_with_transactions(
         hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),

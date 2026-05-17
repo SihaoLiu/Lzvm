@@ -381,6 +381,25 @@ pub fn encode_eth_block_input(value: &EthBlockInput) -> Result<Vec<u8>, EthBlock
         value.withdrawals_root.is_some(),
         value.withdrawals.is_some(),
     )?;
+    validate_preimages(
+        EthBlockInputTrie::Transactions,
+        value.transactions_root,
+        &value.transactions.hash_preimages,
+    )?;
+    if let (Some(root), Some(withdrawals)) = (value.withdrawals_root, &value.withdrawals) {
+        validate_preimages(
+            EthBlockInputTrie::Withdrawals,
+            root,
+            &withdrawals.hash_preimages,
+        )?;
+    }
+    if let Some(receipts) = &value.receipts {
+        validate_preimages(
+            EthBlockInputTrie::Receipts,
+            value.receipts_root,
+            &receipts.hash_preimages,
+        )?;
+    }
     let metadata = encode_metadata(value);
     let mut sections = vec![
         SectionedSection {
