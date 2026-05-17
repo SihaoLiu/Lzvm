@@ -40,6 +40,7 @@ use crate::global_constraints::{
     validate_global_constraints_from_proof_segments, ValidateGlobalConstraintProofSegmentsError,
     ValidateGlobalConstraintProofSegmentsRequest,
 };
+use crate::group_values::{load_group_values_from_segments, LoadGroupValuesSegmentError};
 use crate::hint_eval::{
     resolve_global_hint_program_from_proof_segments, ResolveGlobalHintProofSegmentsError,
     ResolveGlobalHintProofSegmentsRequest,
@@ -60,6 +61,7 @@ use crate::proof_preflight::{
     public_values_as_fields, validate_proof_public_values, ProofPreflightError,
     ProofPreflightReport, PublicValueFieldError,
 };
+use crate::proof_values::{load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError};
 use crate::witness_commitment::{
     load_witness_commitment_segments, LoadWitnessCommitmentSegmentsError,
 };
@@ -130,6 +132,8 @@ pub enum SetupPreflightError {
     GlobalHints(ResolveGlobalHintProofSegmentsError),
     PcsFri(ValidateOptionalPcsFriOpeningProofSegmentsError),
     Contribution(ContributionChallengeError),
+    ProofValues(LoadPcsProofValuesSegmentError),
+    GroupValues(LoadGroupValuesSegmentError),
     UnexpectedProofSegment { id: u32 },
 }
 
@@ -159,6 +163,8 @@ impl fmt::Display for SetupPreflightError {
             Self::GlobalHints(error) => write!(f, "{error}"),
             Self::PcsFri(error) => write!(f, "{error}"),
             Self::Contribution(error) => write!(f, "{error}"),
+            Self::ProofValues(error) => write!(f, "{error}"),
+            Self::GroupValues(error) => write!(f, "{error}"),
             Self::UnexpectedProofSegment { id } => {
                 write!(f, "unexpected setup proof segment id {id}")
             }
@@ -194,6 +200,8 @@ impl std::error::Error for SetupPreflightError {
             Self::GlobalHints(error) => Some(error),
             Self::PcsFri(error) => Some(error),
             Self::Contribution(error) => Some(error),
+            Self::ProofValues(error) => Some(error),
+            Self::GroupValues(error) => Some(error),
             Self::CatalogHashMismatch | Self::UnexpectedProofSegment { .. } => None,
         }
     }
@@ -357,6 +365,7 @@ pub fn validate_setup_preflight(
     let schedule = derive_prove_schedule(catalog).map_err(SetupPreflightError::Schedule)?;
     validate_setup_proof_segment_ids(&proof.segments)?;
     validate_optional_contribution_segment(catalog, proof)?;
+    validate_optional_global_value_segments(catalog, proof)?;
     let uses_transcript_inputs = uses_transcript_pcs_query_plan_inputs(&proof.segments);
     let needs_public_fields = uses_transcript_inputs
         || !catalog.global_constraints.entries.is_empty()
@@ -431,6 +440,33 @@ pub fn validate_setup_preflight(
     .map_err(SetupPreflightError::PcsFri)?;
 
     Ok(report)
+}
+
+fn validate_optional_global_value_segments(
+    catalog: &KeyDirectoryCatalog,
+    proof: &ProofArtifact,
+) -> Result<(), SetupPreflightError> {
+    if proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == PCS_PROOF_VALUES_SEGMENT_ID)
+    {
+        load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
+            .map(|_| ())
+            .map_err(SetupPreflightError::ProofValues)?;
+    }
+
+    if proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == GROUP_VALUES_SEGMENT_ID)
+    {
+        load_group_values_from_segments(&catalog.layout.global_info, &proof.segments)
+            .map(|_| ())
+            .map_err(SetupPreflightError::GroupValues)?;
+    }
+
+    Ok(())
 }
 
 fn validate_optional_contribution_segment(
