@@ -6223,7 +6223,7 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=12\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=12\npublic_values=1\npublic_value_fields=1\n"
     );
     assert!(verify_stderr.is_empty());
 
@@ -6250,7 +6250,7 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     );
     assert_eq!(
         String::from_utf8(proof_verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=12\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=12\npublic_values=1\npublic_value_fields=1\n"
     );
     assert!(proof_verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -6378,7 +6378,7 @@ fn runs_prove_witness_for_aggregate_with_evaluation_values_segment() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=12\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=12\npublic_values=1\npublic_value_fields=1\n"
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -6536,7 +6536,7 @@ fn runs_prove_witness_for_aggregate_fri_with_unit_values_segment() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=13\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=13\npublic_values=1\npublic_value_fields=1\n"
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -6739,7 +6739,7 @@ fn saves_prove_witness_transcript_fri_outputs_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=9\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=9\npublic_values=1\npublic_value_fields=1\n"
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -6953,7 +6953,7 @@ fn saves_prove_witness_proof_values_segment_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=7\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=7\npublic_values=1\npublic_value_fields=1\n"
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -7066,7 +7066,7 @@ fn saves_prove_witness_group_values_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=7\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=7\npublic_values=1\npublic_value_fields=1\n"
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -7235,7 +7235,7 @@ fn saves_prove_witness_unit_values_segment_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=7\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=7\npublic_values=1\npublic_value_fields=1\n"
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -7725,7 +7725,7 @@ fn runs_setup_aware_verify_preflight() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=5\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=5\npublic_values=1\npublic_value_fields=1\n"
     );
     assert!(stderr.is_empty());
 }
@@ -7773,7 +7773,7 @@ fn validates_setup_aware_verify_preflight_with_pcs_fri_opening() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=6\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=6\npublic_values=1\npublic_value_fields=1\n"
     );
     assert!(stderr.is_empty());
 }
@@ -7887,7 +7887,7 @@ fn validates_setup_aware_verify_preflight_with_transcript_query_plan() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=8\npublic_values=1\n"
+        "status=ok\nunits=4\nsegments=8\npublic_values=1\npublic_value_fields=1\n"
     );
     assert!(stderr.is_empty());
 }
@@ -7918,7 +7918,7 @@ fn validates_setup_aware_verify_preflight_with_proof_values() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\n")
+        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\npublic_value_fields=1\n")
     );
     assert!(stderr.is_empty());
 
@@ -7927,6 +7927,7 @@ fn validates_setup_aware_verify_preflight_with_proof_values() {
     assert_eq!(report.unit_count, 4);
     assert_eq!(report.segment_count, segment_count);
     assert_eq!(report.public_value_count, 1);
+    assert_eq!(report.public_value_field_count, 1);
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
@@ -7957,7 +7958,7 @@ fn validates_setup_aware_verify_proof_with_proof_values() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\n")
+        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\npublic_value_fields=1\n")
     );
     assert!(stderr.is_empty());
 
@@ -7991,7 +7992,7 @@ fn validates_setup_aware_verify_preflight_with_unit_values() {
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\n")
+        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\npublic_value_fields=1\n")
     );
     assert!(stderr.is_empty());
 }
@@ -8023,7 +8024,7 @@ fn validates_setup_aware_verify_preflight_with_global_constraints() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\n")
+        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\npublic_value_fields=1\n")
     );
     assert!(stderr.is_empty());
 }
@@ -8055,7 +8056,7 @@ fn validates_setup_aware_verify_preflight_with_global_hints() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\n")
+        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\npublic_value_fields=1\n")
     );
     assert!(stderr.is_empty());
 }
@@ -8087,7 +8088,7 @@ fn validates_setup_aware_verify_preflight_with_challenge_global_constraints() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\n")
+        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\npublic_value_fields=1\n")
     );
     assert!(stderr.is_empty());
 }
@@ -8119,7 +8120,7 @@ fn validates_setup_aware_verify_preflight_with_group_value_global_constraints() 
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\n")
+        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\npublic_value_fields=1\n")
     );
     assert!(stderr.is_empty());
 }
