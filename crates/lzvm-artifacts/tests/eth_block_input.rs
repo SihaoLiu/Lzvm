@@ -261,6 +261,20 @@ fn rejects_transaction_root_mismatches() {
 }
 
 #[test]
+fn rejects_gas_used_above_gas_limit() {
+    let block_rlp = sample_block_rlp_with_transactions_and_gas(
+        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
+        &[1],
+        &[2],
+        vec![rlp_list(&[rlp_bytes(&[1])])],
+    );
+
+    let error = build_eth_block_input(&block_rlp).expect_err("block input should reject gas");
+
+    assert!(matches!(error, EthBlockInputError::GasUsedExceedsGasLimit));
+}
+
+#[test]
 fn rejects_missing_withdrawals_body() {
     let header_rlp = rlp_list(&legacy_header_items(
         empty_trie_root(),
@@ -405,6 +419,21 @@ fn sample_block_rlp_with_transactions(
     transaction_items: Vec<Vec<u8>>,
 ) -> Vec<u8> {
     let header_rlp = rlp_list(&legacy_header_items(transactions_root, None));
+    let transactions = rlp_list(&transaction_items);
+    let empty_list = rlp_list(&[]);
+    rlp_list(&[header_rlp, transactions, empty_list])
+}
+
+fn sample_block_rlp_with_transactions_and_gas(
+    transactions_root: [u8; 32],
+    gas_limit: &[u8],
+    gas_used: &[u8],
+    transaction_items: Vec<Vec<u8>>,
+) -> Vec<u8> {
+    let mut header_items = legacy_header_items(transactions_root, None);
+    header_items[9] = rlp_bytes(gas_limit);
+    header_items[10] = rlp_bytes(gas_used);
+    let header_rlp = rlp_list(&header_items);
     let transactions = rlp_list(&transaction_items);
     let empty_list = rlp_list(&[]);
     rlp_list(&[header_rlp, transactions, empty_list])

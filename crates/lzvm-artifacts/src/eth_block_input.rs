@@ -109,6 +109,7 @@ pub enum EthBlockInputError {
     TimestampMismatch,
     GasLimitMismatch,
     GasUsedMismatch,
+    GasUsedExceedsGasLimit,
     BaseFeePerGasMismatch,
     BaseFeePerGasOverflow {
         max_bytes: usize,
@@ -197,6 +198,9 @@ impl fmt::Display for EthBlockInputError {
             Self::TimestampMismatch => write!(f, "ETH block input timestamp mismatch"),
             Self::GasLimitMismatch => write!(f, "ETH block input gas limit mismatch"),
             Self::GasUsedMismatch => write!(f, "ETH block input gas used mismatch"),
+            Self::GasUsedExceedsGasLimit => {
+                write!(f, "ETH block input gas used exceeds gas limit")
+            }
             Self::BaseFeePerGasMismatch => write!(f, "ETH block input base fee mismatch"),
             Self::BaseFeePerGasOverflow { max_bytes, found } => write!(
                 f,
@@ -274,6 +278,9 @@ impl From<EthWithdrawalError> for EthBlockInputError {
 pub fn build_eth_block_input(block_rlp: &[u8]) -> Result<EthBlockInput, EthBlockInputError> {
     let block = parse_eth_block_rlp(block_rlp)?;
     let header = decode_eth_header_rlp(&block.header)?;
+    if header.gas_used > header.gas_limit {
+        return Err(EthBlockInputError::GasUsedExceedsGasLimit);
+    }
     let block_hash = eth_header_hash(&block.header);
     let transactions = transaction_trie_build(&block.transactions)?;
     if transactions.root != header.transactions_root {
