@@ -1,3 +1,4 @@
+use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
     parse_witness_commitment_segment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
@@ -16,11 +17,17 @@ pub fn load_witness_commitment_segments(
     let end_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
         .checked_add(unit_count)
         .ok_or(LoadWitnessCommitmentSegmentsError::SegmentIdOverflow)?;
+    if end_id > PCS_MATERIAL_MANIFEST_SEGMENT_ID {
+        return Err(LoadWitnessCommitmentSegmentsError::SegmentIdOverflow);
+    }
     let mut out = Vec::new();
     let mut seen_unit_indices = std::collections::BTreeSet::new();
 
     for segment in segments {
-        if segment.id < WITNESS_COMMITMENT_SEGMENT_BASE_ID || segment.id >= end_id {
+        if segment.id < WITNESS_COMMITMENT_SEGMENT_BASE_ID {
+            continue;
+        }
+        if segment.id >= PCS_MATERIAL_MANIFEST_SEGMENT_ID {
             continue;
         }
         let unit_index_u32 = segment
@@ -29,6 +36,9 @@ pub fn load_witness_commitment_segments(
             .ok_or(LoadWitnessCommitmentSegmentsError::UnitIndexOverflow)?;
         let unit_index = usize::try_from(unit_index_u32)
             .map_err(|_| LoadWitnessCommitmentSegmentsError::UnitIndexOverflow)?;
+        if segment.id >= end_id {
+            return Err(LoadWitnessCommitmentSegmentsError::UnexpectedSegment { unit_index });
+        }
         if !seen_unit_indices.insert(unit_index_u32) {
             return Err(LoadWitnessCommitmentSegmentsError::DuplicateSegment { unit_index });
         }

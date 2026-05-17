@@ -201,6 +201,21 @@ fn rejects_duplicate_witness_commitment_segments() {
 }
 
 #[test]
+fn rejects_unexpected_witness_commitment_segments() {
+    let units = vec![sample_unit(2, vec![1])];
+    let expected_segment = witness_commitment_proof_segment(0, &units[0]);
+    let unexpected_segment = witness_commitment_proof_segment_with_payload_unit(1, 1, &units[0]);
+
+    let error = load_witness_commitment_segments(&units, &[expected_segment, unexpected_segment])
+        .expect_err("unexpected segment should be rejected");
+
+    assert_eq!(
+        error.to_string(),
+        "unexpected witness commitment segment for unit 1"
+    );
+}
+
+#[test]
 fn rejects_witness_commitment_unit_mismatches() {
     let units = vec![sample_unit(2, vec![1])];
     let segment = witness_commitment_proof_segment_with_payload_unit(0, 1, &units[0]);

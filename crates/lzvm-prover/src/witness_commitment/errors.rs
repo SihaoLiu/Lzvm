@@ -249,6 +249,9 @@ pub enum LoadWitnessCommitmentSegmentsError {
     DuplicateSegment {
         unit_index: usize,
     },
+    UnexpectedSegment {
+        unit_index: usize,
+    },
     Segment {
         unit_index: usize,
         source: WitnessCommitmentSegmentError,
@@ -289,6 +292,12 @@ impl fmt::Display for LoadWitnessCommitmentSegmentsError {
                 write!(
                     f,
                     "duplicate witness commitment segment for unit {unit_index}"
+                )
+            }
+            Self::UnexpectedSegment { unit_index } => {
+                write!(
+                    f,
+                    "unexpected witness commitment segment for unit {unit_index}"
                 )
             }
             Self::Segment { unit_index, source } => write!(
@@ -346,6 +355,7 @@ impl std::error::Error for LoadWitnessCommitmentSegmentsError {
             | Self::UnitIndexOverflow
             | Self::MissingSegment
             | Self::DuplicateSegment { .. }
+            | Self::UnexpectedSegment { .. }
             | Self::UnitMismatch { .. }
             | Self::RowCountMismatch { .. }
             | Self::ColumnCountOverflow
