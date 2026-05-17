@@ -53,6 +53,17 @@ pub enum SetupDirectoryManifestError {
         unit_count: u64,
         pcs_material_unit_count: u64,
     },
+    InvalidSourceFixedFileManifestCounts {
+        present: bool,
+        entry_count: u64,
+        byte_count: u64,
+    },
+    InvalidSourceProgramArchiveCounts {
+        present: bool,
+        source_count: u64,
+        edge_count: u64,
+        byte_count: u64,
+    },
     Mismatch {
         path: PathBuf,
     },
@@ -85,6 +96,23 @@ impl fmt::Display for SetupDirectoryManifestError {
                 f,
                 "setup directory manifest material unit count {pcs_material_unit_count} exceeds unit count {unit_count}"
             ),
+            Self::InvalidSourceFixedFileManifestCounts {
+                present,
+                entry_count,
+                byte_count,
+            } => write!(
+                f,
+                "setup directory manifest source fixed-file manifest present={present} has entry count {entry_count} and byte count {byte_count}"
+            ),
+            Self::InvalidSourceProgramArchiveCounts {
+                present,
+                source_count,
+                edge_count,
+                byte_count,
+            } => write!(
+                f,
+                "setup directory manifest source program archive present={present} has source count {source_count}, edge count {edge_count}, and byte count {byte_count}"
+            ),
             Self::Mismatch { path } => {
                 write!(f, "setup directory manifest mismatch at {}", path.display())
             }
@@ -104,6 +132,8 @@ impl std::error::Error for SetupDirectoryManifestError {
             | Self::InvalidPayloadLength { .. }
             | Self::EmptyUnits
             | Self::InvalidMaterialUnitCount { .. }
+            | Self::InvalidSourceFixedFileManifestCounts { .. }
+            | Self::InvalidSourceProgramArchiveCounts { .. }
             | Self::Mismatch { .. }
             | Self::LengthOverflow
             | Self::Io { .. } => None,
@@ -288,6 +318,33 @@ fn validate_setup_directory_manifest(
             unit_count: value.unit_count,
             pcs_material_unit_count: value.pcs_material_unit_count,
         });
+    }
+    if !value.source_fixed_file_manifest_present
+        && (value.source_fixed_file_manifest_entry_count != 0
+            || value.source_fixed_file_manifest_byte_count != 0)
+    {
+        return Err(
+            SetupDirectoryManifestError::InvalidSourceFixedFileManifestCounts {
+                present: value.source_fixed_file_manifest_present,
+                entry_count: value.source_fixed_file_manifest_entry_count,
+                byte_count: value.source_fixed_file_manifest_byte_count,
+            },
+        );
+    }
+    if (!value.source_program_archive_present
+        && (value.source_program_archive_source_count != 0
+            || value.source_program_archive_edge_count != 0
+            || value.source_program_archive_byte_count != 0))
+        || (value.source_program_archive_present && value.source_program_archive_source_count == 0)
+    {
+        return Err(
+            SetupDirectoryManifestError::InvalidSourceProgramArchiveCounts {
+                present: value.source_program_archive_present,
+                source_count: value.source_program_archive_source_count,
+                edge_count: value.source_program_archive_edge_count,
+                byte_count: value.source_program_archive_byte_count,
+            },
+        );
     }
     Ok(())
 }

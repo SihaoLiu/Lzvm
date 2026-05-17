@@ -162,4 +162,45 @@ fn rejects_invalid_setup_directory_manifest_counts() {
             pcs_material_unit_count: 5
         })
     ));
+
+    let mut manifest = sample_manifest();
+    manifest.source_fixed_file_manifest_present = false;
+    assert!(matches!(
+        encode_setup_directory_manifest(&manifest),
+        Err(
+            SetupDirectoryManifestError::InvalidSourceFixedFileManifestCounts {
+                present: false,
+                entry_count: 7,
+                byte_count: 256
+            }
+        )
+    ));
+
+    let mut manifest = sample_manifest();
+    manifest.source_program_archive_present = false;
+    assert!(matches!(
+        encode_setup_directory_manifest(&manifest),
+        Err(
+            SetupDirectoryManifestError::InvalidSourceProgramArchiveCounts {
+                present: false,
+                source_count: 3,
+                edge_count: 2,
+                byte_count: 1024
+            }
+        )
+    ));
+
+    let mut manifest = sample_manifest();
+    manifest.source_program_archive_source_count = 0;
+    assert!(matches!(
+        encode_setup_directory_manifest(&manifest),
+        Err(
+            SetupDirectoryManifestError::InvalidSourceProgramArchiveCounts {
+                present: true,
+                source_count: 0,
+                edge_count: 2,
+                byte_count: 1024
+            }
+        )
+    ));
 }
