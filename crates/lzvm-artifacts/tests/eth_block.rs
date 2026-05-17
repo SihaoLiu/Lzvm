@@ -1,5 +1,7 @@
 use lzvm_artifacts::eth_block::{
-    decode_eth_header_rlp, parse_eth_block_rlp, EthBlockError, EthBlockRlp, HeaderField,
+    decode_eth_header_rlp, decode_eth_transaction_rlp, decode_eth_transactions_rlp,
+    parse_eth_block_rlp, EthBlockError, EthBlockRlp, EthTransactionError, EthTransactionRlp,
+    HeaderField,
 };
 use lzvm_artifacts::rlp::RlpItem;
 
@@ -161,6 +163,72 @@ fn rejects_noncanonical_header_quantities() {
         EthBlockError::NonCanonicalQuantity {
             field: HeaderField::Number
         }
+    ));
+}
+
+#[test]
+fn decodes_legacy_transactions_as_field_lists() {
+    let transaction = RlpItem::List(vec![RlpItem::Bytes(vec![1]), RlpItem::Bytes(vec![2])]);
+
+    let decoded = decode_eth_transaction_rlp(&transaction).expect("transaction should decode");
+
+    assert_eq!(
+        decoded,
+        EthTransactionRlp::Legacy(vec![RlpItem::Bytes(vec![1]), RlpItem::Bytes(vec![2])])
+    );
+}
+
+#[test]
+fn decodes_typed_transaction_envelopes_as_opaque_payloads() {
+    let transaction = RlpItem::Bytes(vec![2, 0xc0]);
+
+    let decoded = decode_eth_transaction_rlp(&transaction).expect("transaction should decode");
+
+    assert_eq!(
+        decoded,
+        EthTransactionRlp::Typed {
+            transaction_type: 2,
+            payload: vec![0xc0],
+        }
+    );
+}
+
+#[test]
+fn decodes_transaction_lists() {
+    let transactions = vec![
+        RlpItem::List(vec![RlpItem::Bytes(vec![1])]),
+        RlpItem::Bytes(vec![3, 0xc0]),
+    ];
+
+    let decoded = decode_eth_transactions_rlp(&transactions).expect("transactions should decode");
+
+    assert_eq!(decoded.len(), 2);
+    assert!(matches!(decoded[0], EthTransactionRlp::Legacy(_)));
+    assert!(matches!(
+        decoded[1],
+        EthTransactionRlp::Typed {
+            transaction_type: 3,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn rejects_empty_typed_transaction_envelopes() {
+    let error = decode_eth_transaction_rlp(&RlpItem::Bytes(Vec::new()))
+        .expect_err("transaction should fail");
+
+    assert!(matches!(error, EthTransactionError::EmptyTypedTransaction));
+}
+
+#[test]
+fn rejects_out_of_range_typed_transaction_envelopes() {
+    let error = decode_eth_transaction_rlp(&RlpItem::Bytes(vec![0x80]))
+        .expect_err("transaction should fail");
+
+    assert!(matches!(
+        error,
+        EthTransactionError::InvalidTransactionType { found: 0x80 }
     ));
 }
 

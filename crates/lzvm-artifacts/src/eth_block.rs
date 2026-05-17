@@ -36,6 +36,15 @@ pub struct EthHeaderRlp {
     pub extra_header_fields: Vec<RlpItem>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EthTransactionRlp {
+    Legacy(Vec<RlpItem>),
+    Typed {
+        transaction_type: u8,
+        payload: Vec<u8>,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HeaderField {
     ParentHash,
@@ -55,6 +64,12 @@ pub enum HeaderField {
     Nonce,
     BaseFeePerGas,
     WithdrawalsRoot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EthTransactionError {
+    EmptyTypedTransaction,
+    InvalidTransactionType { found: u8 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,6 +146,19 @@ impl fmt::Display for EthBlockError {
 }
 
 impl std::error::Error for EthBlockError {}
+
+impl fmt::Display for EthTransactionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyTypedTransaction => write!(f, "empty typed transaction envelope"),
+            Self::InvalidTransactionType { found } => {
+                write!(f, "invalid transaction type byte: 0x{found:02x}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for EthTransactionError {}
 
 impl fmt::Display for HeaderField {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -251,6 +279,37 @@ pub fn decode_eth_header_rlp(header: &[RlpItem]) -> Result<EthHeaderRlp, EthBloc
         withdrawals_root,
         extra_header_fields,
     })
+}
+
+pub fn decode_eth_transaction_rlp(
+    transaction: &RlpItem,
+) -> Result<EthTransactionRlp, EthTransactionError> {
+    match transaction {
+        RlpItem::List(fields) => Ok(EthTransactionRlp::Legacy(fields.clone())),
+        RlpItem::Bytes(bytes) => {
+            let Some((&transaction_type, payload)) = bytes.split_first() else {
+                return Err(EthTransactionError::EmptyTypedTransaction);
+            };
+            if transaction_type > 0x7f {
+                return Err(EthTransactionError::InvalidTransactionType {
+                    found: transaction_type,
+                });
+            }
+            Ok(EthTransactionRlp::Typed {
+                transaction_type,
+                payload: payload.to_vec(),
+            })
+        }
+    }
+}
+
+pub fn decode_eth_transactions_rlp(
+    transactions: &[RlpItem],
+) -> Result<Vec<EthTransactionRlp>, EthTransactionError> {
+    transactions
+        .iter()
+        .map(decode_eth_transaction_rlp)
+        .collect()
 }
 
 fn take_list(item: RlpItem, error: EthBlockError) -> Result<Vec<RlpItem>, EthBlockError> {
