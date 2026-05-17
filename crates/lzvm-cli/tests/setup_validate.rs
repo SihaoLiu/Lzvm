@@ -6147,16 +6147,18 @@ fn writes_eth_block_public_values_from_setup_directory() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=21\npublic_value_fields=170\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\nwithdrawals=absent\n",
+            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=21\npublic_value_fields=170\nblock_hash={}\nparent_hash={}\nommers_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\nlogs_bloom={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\nwithdrawals=absent\n",
             public_values_path.display(),
             encoded.len(),
             setup_hash_hex,
             format_hash(&public_values_hash),
             format_hash(&block_input.block_hash),
             format_hash(&block_input.parent_hash),
+            format_hash(&block_input.ommers_hash),
             format_hex(&block_input.beneficiary),
             format_hash(&block_input.state_root),
             format_hash(&block_input.receipts_root),
+            format_hex(&block_input.logs_bloom),
             format_hash(&block_input.mix_hash),
             format_hex(&block_input.nonce),
             format_hash(&block_input.transactions_root)

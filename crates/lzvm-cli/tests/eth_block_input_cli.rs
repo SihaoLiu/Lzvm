@@ -425,16 +425,18 @@ fn writes_block_public_values_from_block_input() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=21\npublic_value_fields=170\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\nwithdrawals=absent\n",
+            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=21\npublic_value_fields=170\nblock_hash={}\nparent_hash={}\nommers_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\nlogs_bloom={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
             setup_hash_hex,
             to_hex(&public_values_hash),
             to_hex(&input.block_hash),
             to_hex(&input.parent_hash),
+            to_hex(&input.ommers_hash),
             to_hex(&input.beneficiary),
             to_hex(&input.state_root),
             to_hex(&input.receipts_root),
+            to_hex(&input.logs_bloom),
             to_hex(&input.mix_hash),
             to_hex(&input.nonce),
             to_hex(&input.transactions_root)
@@ -494,16 +496,18 @@ fn writes_block_public_values_from_base_fee_block_input() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=21\npublic_value_fields=170\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=64\nmix_hash={}\nnonce={}\ntransactions_root={}\nwithdrawals=absent\n",
+            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=21\npublic_value_fields=170\nblock_hash={}\nparent_hash={}\nommers_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\nlogs_bloom={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=64\nmix_hash={}\nnonce={}\ntransactions_root={}\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
             setup_hash_hex,
             to_hex(&public_values_hash),
             to_hex(&input.block_hash),
             to_hex(&input.parent_hash),
+            to_hex(&input.ommers_hash),
             to_hex(&input.beneficiary),
             to_hex(&input.state_root),
             to_hex(&input.receipts_root),
+            to_hex(&input.logs_bloom),
             to_hex(&input.mix_hash),
             to_hex(&input.nonce),
             to_hex(&input.transactions_root)

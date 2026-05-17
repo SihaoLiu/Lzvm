@@ -114,6 +114,7 @@ fn write_block_public_values(
     );
     let _ = writeln!(stdout, "block_hash={}", format_hash(&input.block_hash));
     let _ = writeln!(stdout, "parent_hash={}", format_hash(&input.parent_hash));
+    let _ = writeln!(stdout, "ommers_hash={}", format_hash(&input.ommers_hash));
     let _ = writeln!(stdout, "beneficiary={}", format_hex(&input.beneficiary));
     let _ = writeln!(stdout, "state_root={}", format_hash(&input.state_root));
     let _ = writeln!(
@@ -121,6 +122,7 @@ fn write_block_public_values(
         "receipts_root={}",
         format_hash(&input.receipts_root)
     );
+    let _ = writeln!(stdout, "logs_bloom={}", format_hex(&input.logs_bloom));
     let _ = writeln!(stdout, "difficulty={}", format_u256(&input.difficulty));
     let _ = writeln!(stdout, "block_number={}", input.block_number);
     let _ = writeln!(stdout, "timestamp={}", input.timestamp);
