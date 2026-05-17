@@ -657,6 +657,13 @@ fn verify_preflight(
                     prove_plan::format_hash(block_hash)
                 );
             }
+            if let Some(parent_hash) = report.eth_block_input_parent_hashes.get(index) {
+                let _ = writeln!(
+                    stdout,
+                    "eth_parent_hash={}",
+                    prove_plan::format_hash(parent_hash)
+                );
+            }
             if let Some(ommers_hash) = report.eth_block_input_ommers_hashes.get(index) {
                 let _ = writeln!(
                     stdout,
@@ -994,6 +1001,7 @@ struct VerifySetupValidationCommand<'a> {
 struct EthBlockInputBinding {
     hash: [u8; 32],
     block_hash: [u8; 32],
+    parent_hash: [u8; 32],
     ommers_hash: [u8; 32],
     beneficiary: [u8; 20],
     state_root: [u8; 32],
@@ -1106,6 +1114,13 @@ fn verify_setup_validation(
                         stdout,
                         "eth_block_hash={}",
                         prove_plan::format_hash(block_hash)
+                    );
+                }
+                if let Some(parent_hash) = public_report.eth_block_input_parent_hashes.get(index) {
+                    let _ = writeln!(
+                        stdout,
+                        "eth_parent_hash={}",
+                        prove_plan::format_hash(parent_hash)
                     );
                 }
                 if let Some(ommers_hash) = public_report.eth_block_input_ommers_hashes.get(index) {
@@ -1260,6 +1275,11 @@ fn verify_setup_validation(
         );
         let _ = writeln!(
             stdout,
+            "eth_parent_hash={}",
+            prove_plan::format_hash(&binding.parent_hash)
+        );
+        let _ = writeln!(
+            stdout,
             "eth_ommers_hash={}",
             prove_plan::format_hash(&binding.ommers_hash)
         );
@@ -1408,6 +1428,7 @@ fn verify_eth_block_input_binding(
     Ok(EthBlockInputBinding {
         hash: input_hash,
         block_hash: input.block_hash,
+        parent_hash: input.parent_hash,
         ommers_hash: input.ommers_hash,
         beneficiary: input.beneficiary,
         state_root: input.state_root,

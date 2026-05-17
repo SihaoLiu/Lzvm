@@ -171,6 +171,7 @@ fn validates_proof_public_value_preflight_hashes() {
             eth_block_input_count: 0,
             eth_block_input_hashes: Vec::new(),
             eth_block_input_block_hashes: Vec::new(),
+            eth_block_input_parent_hashes: Vec::new(),
             eth_block_input_ommers_hashes: Vec::new(),
             eth_block_input_beneficiaries: Vec::new(),
             eth_block_input_state_roots: Vec::new(),
@@ -294,6 +295,10 @@ fn counts_eth_block_input_segments() {
     assert_eq!(
         report.eth_block_input_block_hashes,
         vec![block_input.block_hash]
+    );
+    assert_eq!(
+        report.eth_block_input_parent_hashes,
+        vec![block_input.parent_hash]
     );
     assert_eq!(
         report.eth_block_input_gas_limits,

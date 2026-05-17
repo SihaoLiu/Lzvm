@@ -36,6 +36,7 @@ pub struct ProofPreflightReport {
     pub eth_block_input_count: usize,
     pub eth_block_input_hashes: Vec<[u8; 32]>,
     pub eth_block_input_block_hashes: Vec<[u8; 32]>,
+    pub eth_block_input_parent_hashes: Vec<[u8; 32]>,
     pub eth_block_input_ommers_hashes: Vec<[u8; 32]>,
     pub eth_block_input_beneficiaries: Vec<[u8; 20]>,
     pub eth_block_input_state_roots: Vec<[u8; 32]>,
@@ -204,6 +205,7 @@ pub fn validate_proof_public_values(
     let program_image_cache_count = program_image_caches.len();
     let mut eth_block_input_hashes = Vec::new();
     let mut eth_block_input_block_hashes = Vec::new();
+    let mut eth_block_input_parent_hashes = Vec::new();
     let mut eth_block_input_transaction_preimage_counts = Vec::new();
     let mut eth_block_input_legacy_transaction_counts = Vec::new();
     let mut eth_block_input_typed_transaction_counts = Vec::new();
@@ -244,6 +246,7 @@ pub fn validate_proof_public_values(
         let input = parse_eth_block_input_segment(&segment.data)
             .map_err(ProofPreflightError::EthBlockInput)?;
         eth_block_input_block_hashes.push(input.block_hash);
+        eth_block_input_parent_hashes.push(input.parent_hash);
         eth_block_input_ommers_hashes.push(input.ommers_hash);
         eth_block_input_beneficiaries.push(input.beneficiary);
         eth_block_input_state_roots.push(input.state_root);
@@ -301,6 +304,7 @@ pub fn validate_proof_public_values(
         eth_block_input_count,
         eth_block_input_hashes,
         eth_block_input_block_hashes,
+        eth_block_input_parent_hashes,
         eth_block_input_ommers_hashes,
         eth_block_input_beneficiaries,
         eth_block_input_state_roots,

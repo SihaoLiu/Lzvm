@@ -290,10 +290,11 @@ fn verifies_preflight_reports_eth_block_input_digest() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_block_hash={}\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty={}\neth_block_number={}\neth_block_timestamp={}\neth_extra_data={}\neth_gas_limit={}\neth_gas_used={}\neth_base_fee_per_gas={}\neth_mix_hash={}\neth_nonce={}\neth_transactions_root={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\neth_withdrawals=absent\n",
+            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_block_hash={}\neth_parent_hash={}\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty={}\neth_block_number={}\neth_block_timestamp={}\neth_extra_data={}\neth_gas_limit={}\neth_gas_used={}\neth_base_fee_per_gas={}\neth_mix_hash={}\neth_nonce={}\neth_transactions_root={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\neth_withdrawals=absent\n",
             to_hex(&public_values_hash),
             to_hex(&eth_block_input_hash),
             to_hex(&block_input.block_hash),
+            to_hex(&block_input.parent_hash),
             to_hex(&block_input.ommers_hash),
             to_hex(&block_input.beneficiary),
             to_hex(&block_input.state_root),
@@ -356,10 +357,11 @@ fn verifies_preflight_reports_eth_block_withdrawals() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_block_hash={}\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty={}\neth_block_number={}\neth_block_timestamp={}\neth_extra_data={}\neth_gas_limit={}\neth_gas_used={}\neth_base_fee_per_gas={}\neth_mix_hash={}\neth_nonce={}\neth_transactions_root={}\neth_transaction_trie_preimages={}\neth_transaction_count=0\neth_legacy_transactions=0\neth_typed_transactions=0\neth_receipts=absent\neth_withdrawals=present\neth_withdrawal_count=1\neth_withdrawal_trie_preimages={}\n",
+            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_block_hash={}\neth_parent_hash={}\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty={}\neth_block_number={}\neth_block_timestamp={}\neth_extra_data={}\neth_gas_limit={}\neth_gas_used={}\neth_base_fee_per_gas={}\neth_mix_hash={}\neth_nonce={}\neth_transactions_root={}\neth_transaction_trie_preimages={}\neth_transaction_count=0\neth_legacy_transactions=0\neth_typed_transactions=0\neth_receipts=absent\neth_withdrawals=present\neth_withdrawal_count=1\neth_withdrawal_trie_preimages={}\n",
             to_hex(&public_values_hash),
             to_hex(&eth_block_input_hash),
             to_hex(&block_input.block_hash),
+            to_hex(&block_input.parent_hash),
             to_hex(&block_input.ommers_hash),
             to_hex(&block_input.beneficiary),
             to_hex(&block_input.state_root),
