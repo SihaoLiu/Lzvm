@@ -8,6 +8,8 @@ use lzvm_artifacts::constraint_program::{
     ConstraintEntry, ConstraintProgram, GlobalConstraintProgram,
 };
 use lzvm_artifacts::contribution_segment::CONTRIBUTION_SEGMENT_ID;
+use lzvm_artifacts::eth_block_input::build_eth_block_input;
+use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
 use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::{ExpressionEntry, ExpressionProgram};
 use lzvm_artifacts::fixed::{write_raw_fixed_columns_file, FixedColumn, FixedColumns};
@@ -140,6 +142,91 @@ fn sample_witness_library() -> Vec<u8> {
     bytes[18..20].copy_from_slice(&62_u16.to_le_bytes());
     bytes[52..54].copy_from_slice(&64_u16.to_le_bytes());
     bytes
+}
+
+fn sample_block_rlp_with_parent(parent_hash: [u8; 32]) -> Vec<u8> {
+    let header_rlp = rlp_list(&legacy_header_items(
+        parent_hash,
+        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
+    ));
+    let transactions = rlp_list(&[rlp_list(&[rlp_bytes(&[1])])]);
+    let empty_list = rlp_list(&[]);
+    rlp_list(&[header_rlp, transactions, empty_list])
+}
+
+fn legacy_header_items(parent_hash: [u8; 32], transactions_root: [u8; 32]) -> Vec<Vec<u8>> {
+    vec![
+        rlp_bytes(&parent_hash),
+        rlp_bytes(&hex32(
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )),
+        rlp_bytes(&[0x33; 20]),
+        rlp_bytes(&[0x44; 32]),
+        rlp_bytes(&transactions_root),
+        rlp_bytes(&[0x66; 32]),
+        rlp_bytes(&[0x77; 256]),
+        rlp_bytes(&[1]),
+        rlp_bytes(&[2]),
+        rlp_bytes(&[0x0f, 0x42, 0x40]),
+        rlp_bytes(&[0x0d, 0xbb, 0xa0]),
+        rlp_bytes(&[0x65]),
+        rlp_bytes(b"lzvm"),
+        rlp_bytes(&[0xaa; 32]),
+        rlp_bytes(&[0xbb; 8]),
+    ]
+}
+
+fn rlp_bytes(payload: &[u8]) -> Vec<u8> {
+    if payload.len() == 1 && payload[0] <= 0x7f {
+        return vec![payload[0]];
+    }
+    rlp_with_payload(0x80, 0xb7, payload)
+}
+
+fn rlp_list(items: &[Vec<u8>]) -> Vec<u8> {
+    let payload = items.iter().flatten().copied().collect::<Vec<_>>();
+    rlp_with_payload(0xc0, 0xf7, &payload)
+}
+
+fn rlp_with_payload(short_base: u8, long_base: u8, payload: &[u8]) -> Vec<u8> {
+    if payload.len() <= 55 {
+        let mut output = vec![short_base + payload.len() as u8];
+        output.extend_from_slice(payload);
+        return output;
+    }
+
+    let length = length_bytes(payload.len());
+    let mut output = vec![long_base + length.len() as u8];
+    output.extend_from_slice(&length);
+    output.extend_from_slice(payload);
+    output
+}
+
+fn length_bytes(mut value: usize) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    while value > 0 {
+        bytes.push((value & 0xff) as u8);
+        value >>= 8;
+    }
+    bytes.reverse();
+    bytes
+}
+
+fn hex32(value: &str) -> [u8; 32] {
+    let bytes = hex_bytes(value);
+    bytes.try_into().expect("hex string should be 32 bytes")
+}
+
+fn hex_bytes(value: &str) -> Vec<u8> {
+    assert_eq!(value.len() % 2, 0);
+    value
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|chunk| {
+            let text = std::str::from_utf8(chunk).expect("hex should be utf-8");
+            u8::from_str_radix(text, 16).expect("hex byte should parse")
+        })
+        .collect()
 }
 
 fn sample_setup() -> UnitSetupInfo {
@@ -1005,6 +1092,67 @@ fn builds_witness_proof_artifact_for_unit_in_prover() {
         load_contribution_segment_from_segments(&proof.segments)
             .expect("contribution segment should load"),
         vec![expected_entry]
+    );
+}
+
+#[test]
+fn rejects_mismatched_eth_block_public_values_in_prover_unit_request() {
+    let dir = temp_dir("proof-artifact-unit-eth-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [5_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
+        .expect("constant tree should be written");
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.lattice_size = Some(32);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let output =
+        run_prove_witness_commitments_with_trace(&plan, 0, ProveWitnessAuxiliaryInputs::default())
+            .expect("witness commitments should run");
+    let public_block_input = build_eth_block_input(&sample_block_rlp_with_parent([0x11; 32]))
+        .expect("public block input should build");
+    let proof_block_input = build_eth_block_input(&sample_block_rlp_with_parent([0x22; 32]))
+        .expect("proof block input should build");
+    let public_values =
+        public_values_from_eth_block_input(plan.run_plan.schedule.setup_hash, &public_block_input);
+
+    let error =
+        lzvm_prover::build_witness_proof_artifact_for_unit(&lzvm_prover::WitnessProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            execution_unit: &plan.units[0],
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            unit_values: None,
+            output: &output,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: Some(&proof_block_input),
+        })
+        .expect_err("mismatched block public values should reject");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        error,
+        "ETH block public value mismatch: eth_block_hash_u32_be"
     );
 }
 

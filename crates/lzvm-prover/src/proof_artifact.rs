@@ -2,6 +2,7 @@ use lzvm_artifacts::eth_block_input::EthBlockInput;
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
+use lzvm_artifacts::eth_block_public_values::validate_eth_block_public_values;
 use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
 use lzvm_artifacts::pcs_evaluation_segment::parse_pcs_evaluation_segment;
 use lzvm_artifacts::pcs_nonce_segment::parse_pcs_query_nonce_segment;
@@ -190,6 +191,7 @@ pub fn build_witness_proof_artifact_for_unit(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
+    validate_eth_block_binding(public_values, request.eth_block_input)?;
     let binding_segments =
         build_proof_binding_segments(request.program_image_cache, request.eth_block_input)?;
     let binding_segments_slice = binding_segments.as_slice();
@@ -375,6 +377,7 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
+    validate_eth_block_binding(public_values, request.eth_block_input)?;
     let binding_segments =
         build_proof_binding_segments(request.program_image_cache, request.eth_block_input)?;
     let unit_values = request
@@ -444,6 +447,7 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
+    validate_eth_block_binding(public_values, request.eth_block_input)?;
     let binding_segments =
         build_proof_binding_segments(request.program_image_cache, request.eth_block_input)?;
     let contribution_sources = request
@@ -507,6 +511,7 @@ pub fn build_witness_proof_artifact_for_all_units(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
+    validate_eth_block_binding(public_values, request.eth_block_input)?;
     let binding_segments =
         build_proof_binding_segments(request.program_image_cache, request.eth_block_input)?;
     let binding_segments_slice = binding_segments.as_slice();
@@ -623,6 +628,17 @@ fn build_eth_block_input_proof_segment(
         id: ETH_BLOCK_INPUT_SEGMENT_ID,
         data,
     }))
+}
+
+fn validate_eth_block_binding(
+    public_values: &PublicValues,
+    input: Option<&EthBlockInput>,
+) -> Result<(), String> {
+    if let Some(input) = input {
+        validate_eth_block_public_values(input, public_values)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 fn build_proof_binding_segments(
