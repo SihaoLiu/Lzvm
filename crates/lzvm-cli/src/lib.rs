@@ -932,6 +932,7 @@ struct VerifySetupValidationCommand<'a> {
 struct EthBlockInputBinding {
     hash: [u8; 32],
     ommers_hash: [u8; 32],
+    logs_bloom: [u8; 256],
     transaction_preimage_count: usize,
     legacy_transaction_count: usize,
     typed_transaction_count: usize,
@@ -1115,6 +1116,11 @@ fn verify_setup_validation(
             "eth_ommers_hash={}",
             prove_plan::format_hash(&binding.ommers_hash)
         );
+        let _ = writeln!(
+            stdout,
+            "eth_logs_bloom={}",
+            format_bytes_hex(&binding.logs_bloom)
+        );
         write_eth_transaction_preimage_summary(stdout, binding.transaction_preimage_count);
         write_eth_transaction_count_summary(
             stdout,
@@ -1210,6 +1216,7 @@ fn verify_eth_block_input_binding(
     Ok(EthBlockInputBinding {
         hash: input_hash,
         ommers_hash: input.ommers_hash,
+        logs_bloom: input.logs_bloom,
         transaction_preimage_count,
         legacy_transaction_count,
         typed_transaction_count,
