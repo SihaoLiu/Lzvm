@@ -228,6 +228,8 @@ fn write_input_summary(
         if let Some((legacy_receipts, typed_receipts)) = eth_block_input_receipt_kind_counts(input)
             .expect("ETH block input summary requires validated receipt data")
         {
+            let receipt_count = legacy_receipts + typed_receipts;
+            let _ = writeln!(stdout, "receipt_count={receipt_count}");
             let _ = writeln!(stdout, "legacy_receipts={legacy_receipts}");
             let _ = writeln!(stdout, "typed_receipts={typed_receipts}");
         }
