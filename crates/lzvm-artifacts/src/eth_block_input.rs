@@ -87,6 +87,7 @@ pub enum EthBlockInputError {
     TransactionsRootMismatch,
     OmmersHashMismatch,
     UnsupportedHeaderFields,
+    UnsupportedBodyFields,
     MissingWithdrawalsRoot,
     UnexpectedWithdrawalsRoot,
     BlockHashMismatch,
@@ -175,6 +176,7 @@ impl fmt::Display for EthBlockInputError {
             Self::UnsupportedHeaderFields => {
                 write!(f, "ETH block input unsupported header fields")
             }
+            Self::UnsupportedBodyFields => write!(f, "ETH block input unsupported body fields"),
             Self::MissingWithdrawalsRoot => {
                 write!(f, "ETH block withdrawals body present without withdrawals root")
             }
@@ -287,6 +289,9 @@ pub fn build_eth_block_input(block_rlp: &[u8]) -> Result<EthBlockInput, EthBlock
     }
     if !header.extra_header_fields.is_empty() {
         return Err(EthBlockInputError::UnsupportedHeaderFields);
+    }
+    if !block.extra_body_fields.is_empty() {
+        return Err(EthBlockInputError::UnsupportedBodyFields);
     }
     let block_hash = eth_header_hash(&block.header);
     let transactions = transaction_trie_build(&block.transactions)?;
