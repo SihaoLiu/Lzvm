@@ -13,12 +13,14 @@ use crate::verifier_query::VerifierFriQueryOutputSegmentsError;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadPcsFriOpeningSegmentError {
     MissingSegment,
+    DuplicateSegment,
     Segment(PcsFriOpeningSegmentError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadPcsFriOpeningUnitError {
     MissingSegment,
+    DuplicateSegment,
     MissingUnit { unit_index: usize },
     UnitIndexOverflow,
     Segment(PcsFriOpeningSegmentError),
@@ -74,6 +76,7 @@ impl fmt::Display for LoadPcsFriOpeningSegmentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingSegment => write!(f, "missing PCS FRI opening segment"),
+            Self::DuplicateSegment => write!(f, "duplicate PCS FRI opening segment"),
             Self::Segment(error) => write!(f, "invalid PCS FRI opening segment: {error}"),
         }
     }
@@ -83,7 +86,7 @@ impl std::error::Error for LoadPcsFriOpeningSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Segment(error) => Some(error),
-            Self::MissingSegment => None,
+            Self::MissingSegment | Self::DuplicateSegment => None,
         }
     }
 }
@@ -92,6 +95,7 @@ impl fmt::Display for LoadPcsFriOpeningUnitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingSegment => write!(f, "missing PCS FRI opening segment"),
+            Self::DuplicateSegment => write!(f, "duplicate PCS FRI opening segment"),
             Self::MissingUnit { unit_index } => {
                 write!(f, "PCS FRI opening segment mismatch for unit {unit_index}")
             }
@@ -105,7 +109,10 @@ impl std::error::Error for LoadPcsFriOpeningUnitError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Segment(error) => Some(error),
-            Self::MissingSegment | Self::MissingUnit { .. } | Self::UnitIndexOverflow => None,
+            Self::MissingSegment
+            | Self::DuplicateSegment
+            | Self::MissingUnit { .. }
+            | Self::UnitIndexOverflow => None,
         }
     }
 }
@@ -114,6 +121,7 @@ impl From<LoadPcsFriOpeningSegmentError> for LoadPcsFriOpeningUnitError {
     fn from(error: LoadPcsFriOpeningSegmentError) -> Self {
         match error {
             LoadPcsFriOpeningSegmentError::MissingSegment => Self::MissingSegment,
+            LoadPcsFriOpeningSegmentError::DuplicateSegment => Self::DuplicateSegment,
             LoadPcsFriOpeningSegmentError::Segment(error) => Self::Segment(error),
         }
     }

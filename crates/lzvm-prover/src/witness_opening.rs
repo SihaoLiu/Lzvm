@@ -128,12 +128,14 @@ impl From<WitnessOpeningSegmentError> for ProveWitnessOpeningSegmentError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadWitnessOpeningSegmentError {
     MissingSegment,
+    DuplicateSegment,
     Segment(WitnessOpeningSegmentError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadWitnessOpeningUnitError {
     MissingSegment,
+    DuplicateSegment,
     MissingUnit { unit_index: usize },
     UnitIndexOverflow,
     Segment(WitnessOpeningSegmentError),
@@ -170,6 +172,7 @@ impl fmt::Display for LoadWitnessOpeningSegmentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingSegment => write!(f, "missing witness opening segment"),
+            Self::DuplicateSegment => write!(f, "duplicate witness opening segment"),
             Self::Segment(error) => write!(f, "invalid witness opening segment: {error}"),
         }
     }
@@ -179,7 +182,7 @@ impl std::error::Error for LoadWitnessOpeningSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Segment(error) => Some(error),
-            Self::MissingSegment => None,
+            Self::MissingSegment | Self::DuplicateSegment => None,
         }
     }
 }
@@ -188,6 +191,7 @@ impl fmt::Display for LoadWitnessOpeningUnitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingSegment => write!(f, "missing witness opening segment"),
+            Self::DuplicateSegment => write!(f, "duplicate witness opening segment"),
             Self::MissingUnit { unit_index } => {
                 write!(f, "witness opening segment mismatch for unit {unit_index}")
             }
@@ -201,7 +205,10 @@ impl std::error::Error for LoadWitnessOpeningUnitError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Segment(error) => Some(error),
-            Self::MissingSegment | Self::MissingUnit { .. } | Self::UnitIndexOverflow => None,
+            Self::MissingSegment
+            | Self::DuplicateSegment
+            | Self::MissingUnit { .. }
+            | Self::UnitIndexOverflow => None,
         }
     }
 }
@@ -210,6 +217,7 @@ impl From<LoadWitnessOpeningSegmentError> for LoadWitnessOpeningUnitError {
     fn from(error: LoadWitnessOpeningSegmentError) -> Self {
         match error {
             LoadWitnessOpeningSegmentError::MissingSegment => Self::MissingSegment,
+            LoadWitnessOpeningSegmentError::DuplicateSegment => Self::DuplicateSegment,
             LoadWitnessOpeningSegmentError::Segment(error) => Self::Segment(error),
         }
     }
@@ -271,10 +279,15 @@ impl std::error::Error for ValidateWitnessOpeningSegmentsError {
 pub fn load_witness_opening_segment_from_segments(
     segments: &[ProofSegment],
 ) -> Result<WitnessOpeningSegment, LoadWitnessOpeningSegmentError> {
-    let segment = segments
+    let mut matching_segments = segments
         .iter()
-        .find(|segment| segment.id == WITNESS_OPENING_SEGMENT_ID)
+        .filter(|segment| segment.id == WITNESS_OPENING_SEGMENT_ID);
+    let segment = matching_segments
+        .next()
         .ok_or(LoadWitnessOpeningSegmentError::MissingSegment)?;
+    if matching_segments.next().is_some() {
+        return Err(LoadWitnessOpeningSegmentError::DuplicateSegment);
+    }
     parse_witness_opening_segment(&segment.data).map_err(LoadWitnessOpeningSegmentError::Segment)
 }
 

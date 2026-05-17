@@ -67,6 +67,16 @@ fn rejects_invalid_witness_opening_segment() {
 }
 
 #[test]
+fn rejects_duplicate_witness_opening_segments() {
+    let segment = witness_opening_proof_segment(vec![witness_opening_unit(0)]);
+
+    let error = load_witness_opening_segment_from_segments(&[segment.clone(), segment])
+        .expect_err("duplicate segment should be rejected");
+
+    assert_eq!(error.to_string(), "duplicate witness opening segment");
+}
+
+#[test]
 fn rejects_missing_witness_opening_unit() {
     let segment = witness_opening_proof_segment(vec![witness_opening_unit(1)]);
 

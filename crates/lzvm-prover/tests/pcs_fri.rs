@@ -448,6 +448,16 @@ fn rejects_invalid_pcs_fri_opening_segment() {
 }
 
 #[test]
+fn rejects_duplicate_pcs_fri_opening_segments() {
+    let segment = pcs_fri_opening_proof_segment(vec![sample_fri_opening_unit(0)]);
+
+    let error = load_pcs_fri_opening_segment_from_segments(&[segment.clone(), segment])
+        .expect_err("duplicate segment should be rejected");
+
+    assert_eq!(error.to_string(), "duplicate PCS FRI opening segment");
+}
+
+#[test]
 fn rejects_missing_pcs_fri_opening_unit() {
     let segment = pcs_fri_opening_proof_segment(vec![sample_fri_opening_unit(1)]);
 

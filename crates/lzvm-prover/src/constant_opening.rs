@@ -41,12 +41,14 @@ pub enum ProveConstantOpeningSegmentError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadConstantOpeningSegmentError {
     MissingSegment,
+    DuplicateSegment,
     Segment(ConstantOpeningSegmentError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadConstantOpeningUnitError {
     MissingSegment,
+    DuplicateSegment,
     MissingUnit { unit_index: usize },
     UnitIndexOverflow,
     Segment(ConstantOpeningSegmentError),
@@ -135,6 +137,7 @@ impl fmt::Display for LoadConstantOpeningSegmentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingSegment => write!(f, "missing constant opening segment"),
+            Self::DuplicateSegment => write!(f, "duplicate constant opening segment"),
             Self::Segment(error) => write!(f, "invalid constant opening segment: {error}"),
         }
     }
@@ -144,7 +147,7 @@ impl std::error::Error for LoadConstantOpeningSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Segment(error) => Some(error),
-            Self::MissingSegment => None,
+            Self::MissingSegment | Self::DuplicateSegment => None,
         }
     }
 }
@@ -153,6 +156,7 @@ impl fmt::Display for LoadConstantOpeningUnitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingSegment => write!(f, "missing constant opening segment"),
+            Self::DuplicateSegment => write!(f, "duplicate constant opening segment"),
             Self::MissingUnit { unit_index } => {
                 write!(f, "constant opening segment mismatch for unit {unit_index}")
             }
@@ -166,7 +170,10 @@ impl std::error::Error for LoadConstantOpeningUnitError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Segment(error) => Some(error),
-            Self::MissingSegment | Self::MissingUnit { .. } | Self::UnitIndexOverflow => None,
+            Self::MissingSegment
+            | Self::DuplicateSegment
+            | Self::MissingUnit { .. }
+            | Self::UnitIndexOverflow => None,
         }
     }
 }
@@ -175,6 +182,7 @@ impl From<LoadConstantOpeningSegmentError> for LoadConstantOpeningUnitError {
     fn from(error: LoadConstantOpeningSegmentError) -> Self {
         match error {
             LoadConstantOpeningSegmentError::MissingSegment => Self::MissingSegment,
+            LoadConstantOpeningSegmentError::DuplicateSegment => Self::DuplicateSegment,
             LoadConstantOpeningSegmentError::Segment(error) => Self::Segment(error),
         }
     }
@@ -224,10 +232,15 @@ impl std::error::Error for ValidateConstantOpeningSegmentsError {
 pub fn load_constant_opening_segment_from_segments(
     segments: &[ProofSegment],
 ) -> Result<ConstantOpeningSegment, LoadConstantOpeningSegmentError> {
-    let segment = segments
+    let mut matching_segments = segments
         .iter()
-        .find(|segment| segment.id == CONSTANT_OPENING_SEGMENT_ID)
+        .filter(|segment| segment.id == CONSTANT_OPENING_SEGMENT_ID);
+    let segment = matching_segments
+        .next()
         .ok_or(LoadConstantOpeningSegmentError::MissingSegment)?;
+    if matching_segments.next().is_some() {
+        return Err(LoadConstantOpeningSegmentError::DuplicateSegment);
+    }
     parse_constant_opening_segment(&segment.data).map_err(LoadConstantOpeningSegmentError::Segment)
 }
 

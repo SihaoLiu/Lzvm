@@ -23,10 +23,15 @@ pub use validation::{
 pub fn load_pcs_fri_opening_segment_from_segments(
     segments: &[ProofSegment],
 ) -> Result<PcsFriOpeningSegment, LoadPcsFriOpeningSegmentError> {
-    let segment = segments
+    let mut matching_segments = segments
         .iter()
-        .find(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
+        .filter(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID);
+    let segment = matching_segments
+        .next()
         .ok_or(LoadPcsFriOpeningSegmentError::MissingSegment)?;
+    if matching_segments.next().is_some() {
+        return Err(LoadPcsFriOpeningSegmentError::DuplicateSegment);
+    }
     parse_pcs_fri_opening_segment(&segment.data).map_err(LoadPcsFriOpeningSegmentError::Segment)
 }
 
