@@ -340,6 +340,32 @@ fn challenge_row_zero_stage_constraint() -> ConstraintProgram {
     }
 }
 
+fn domain_helper_row_zero_stage_constraint() -> ConstraintProgram {
+    ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 1,
+            first_row: 0,
+            last_row: 1,
+            temp1_count: 2,
+            temp3_count: 0,
+            ops_count: 2,
+            ops_offset: 0,
+            args_count: 16,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "domain helper row zero residual".to_owned(),
+        }],
+        ops: vec![0, 0],
+        args: vec![
+            1, 0, 1, 0, 0, 3, 0, 0, //
+            1, 1, 5, 0, 0, 8, 0, 0,
+        ],
+        numbers: vec![1],
+    }
+}
+
 fn fixed_plus_stage_expression_program(expression_id: u32) -> ExpressionProgram {
     ExpressionProgram {
         max_tmp1: 1,
@@ -1376,6 +1402,42 @@ fn uses_public_inputs_when_checking_regular_constraints() {
 
     let output = run_prove_witness_commitments(&plan, 0)
         .expect("public-valued regular constraint should pass");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(output.unit_index(), 0);
+    assert_eq!(output.trace_row_count(), 16);
+}
+
+#[test]
+fn uses_domain_helpers_when_checking_regular_constraints() {
+    let dir = temp_dir("domain-helper-constraint");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.paths.fixed_columns = dir.join("unit.const");
+    fs::write(&unit.paths.fixed_columns, vec![0_u8; 16 * 2 * 8])
+        .expect("fixed columns should be written");
+    unit.regular_constraints = domain_helper_row_zero_stage_constraint();
+    let catalog = sample_catalog(unit);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+
+    let output =
+        run_prove_witness_commitments(&plan, 0).expect("domain helper constraint should pass");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(output.unit_index(), 0);

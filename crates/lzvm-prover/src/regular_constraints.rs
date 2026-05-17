@@ -24,6 +24,8 @@ pub struct RegularConstraintInputs<'a> {
     pub stage_columns: &'a [RegularStageColumns<'a>],
     pub custom_fixed_columns: &'a [RegularColumnMatrix<'a>],
     pub opening_point_offsets: &'a [i64],
+    pub domain_points: &'a [Felt],
+    pub zerofier_values: RegularColumnMatrix<'a>,
     pub publics: &'a [Felt],
     pub unit_values: &'a [Felt],
     pub proof_values: &'a [Felt],
@@ -185,6 +187,16 @@ fn validate_inputs(inputs: RegularConstraintInputs<'_>) -> Result<(), RegularCon
     }
     for matrix in inputs.custom_fixed_columns {
         validate_matrix("custom fixed column", *matrix, inputs.domain_size)?;
+    }
+    if !inputs.domain_points.is_empty() && inputs.domain_points.len() != inputs.domain_size {
+        return Err(RegularConstraintEvalError::MatrixLengthMismatch {
+            buffer: "domain point",
+            expected: inputs.domain_size,
+            found: inputs.domain_points.len(),
+        });
+    }
+    if inputs.zerofier_values.column_count != 0 || !inputs.zerofier_values.values.is_empty() {
+        validate_matrix("zerofier", inputs.zerofier_values, inputs.domain_size)?;
     }
     Ok(())
 }
@@ -428,6 +440,7 @@ fn read_base(
             source.offset,
             source_row(source, row, inputs)?,
         ),
+        BufferKind::DomainOrZerofier => read_domain_or_zerofier(source.offset, row, inputs),
         BufferKind::Tmp1 => read_felt("tmp1", tmp1, source.offset),
         BufferKind::Tmp3 => read_felt("tmp3", tmp3, source.offset),
         BufferKind::Public => read_felt("public", inputs.publics, source.offset),
@@ -475,6 +488,11 @@ fn read_ext(
             source.offset,
             source_row(source, row, inputs)?,
         ),
+        BufferKind::DomainOrZerofier => Ok(scalar_ext(read_domain_or_zerofier(
+            source.offset,
+            row,
+            inputs,
+        )?)),
         BufferKind::Tmp1 => read_felt_ext("tmp1", tmp1, source.offset),
         BufferKind::Tmp3 => read_felt_ext("tmp3", tmp3, source.offset),
         BufferKind::Public => read_felt_ext("public", inputs.publics, source.offset),
@@ -494,6 +512,7 @@ enum BufferKind {
     Fixed,
     Stage(u16),
     CustomFixed(usize),
+    DomainOrZerofier,
     Tmp1,
     Tmp3,
     Public,
@@ -527,7 +546,10 @@ impl BufferLayout {
         if buffer <= self.stage_count + 1 {
             return Ok(BufferKind::Stage(buffer as u16));
         }
-        if buffer == self.stage_count + 2 || buffer == self.stage_count + 3 {
+        if buffer == self.stage_count + 2 {
+            return Ok(BufferKind::DomainOrZerofier);
+        }
+        if buffer == self.stage_count + 3 {
             return Err(RegularConstraintEvalError::UnsupportedSourceBuffer {
                 buffer: buffer as u16,
             });
@@ -590,6 +612,18 @@ fn source_row(
     let shifted = i128::try_from(row).map_err(|_| RegularConstraintEvalError::LengthOverflow)?
         + i128::from(*offset);
     Ok(shifted.rem_euclid(domain_size) as usize)
+}
+
+fn read_domain_or_zerofier(
+    offset: usize,
+    row: usize,
+    inputs: RegularConstraintInputs<'_>,
+) -> Result<Felt, RegularConstraintEvalError> {
+    if offset == 0 {
+        read_felt("domain point", inputs.domain_points, row)
+    } else {
+        read_matrix_base("zerofier", inputs.zerofier_values, offset - 1, row)
+    }
 }
 
 fn read_matrix_base(

@@ -1,7 +1,8 @@
 use lzvm_artifacts::constraint_program::{ConstraintEntry, ConstraintProgram};
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::regular_constraints::{
-    evaluate_regular_constraints, RegularColumnMatrix, RegularConstraintInputs, RegularStageColumns,
+    evaluate_regular_constraints, RegularColumnMatrix, RegularConstraintEvalError,
+    RegularConstraintInputs, RegularStageColumns,
 };
 
 #[test]
@@ -92,6 +93,104 @@ fn treats_declared_last_row_as_exclusive() {
     .expect("regular constraint should evaluate");
 
     assert_eq!(results[0].invalid_rows, Vec::new());
+}
+
+#[test]
+fn reports_missing_domain_helper_values_by_name() {
+    let program = ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 0,
+            first_row: 0,
+            last_row: 1,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 8,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "domain helper residual".to_owned(),
+        }],
+        ops: vec![0],
+        args: vec![0, 0, 3, 0, 0, 8, 0, 0],
+        numbers: vec![0],
+    };
+
+    let error = evaluate_regular_constraints(
+        &program,
+        RegularConstraintInputs {
+            domain_size: 1,
+            stage_count: 1,
+            opening_point_offsets: &[0],
+            ..RegularConstraintInputs::default()
+        },
+    )
+    .expect_err("missing domain helper value should be reported by source name");
+
+    assert_eq!(
+        error,
+        RegularConstraintEvalError::SourceIndexOutOfRange {
+            buffer: "domain point",
+            offset: 0,
+            width: 1,
+            len: 0,
+        }
+    );
+}
+
+#[test]
+fn reads_domain_and_zerofier_helper_values() {
+    let program = ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 0,
+            first_row: 0,
+            last_row: 2,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 8,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "domain helper residual".to_owned(),
+        }],
+        ops: vec![0],
+        args: vec![0, 0, 3, 0, 0, 3, 1, 0],
+        numbers: Vec::new(),
+    };
+    let zerofier_values = [felt(3), felt(4)];
+
+    let results = evaluate_regular_constraints(
+        &program,
+        RegularConstraintInputs {
+            domain_size: 2,
+            stage_count: 1,
+            domain_points: &[felt(10), felt(20)],
+            zerofier_values: RegularColumnMatrix {
+                column_count: 1,
+                values: &zerofier_values,
+            },
+            opening_point_offsets: &[0],
+            ..RegularConstraintInputs::default()
+        },
+    )
+    .expect("regular constraint should evaluate helper values");
+
+    assert_eq!(results[0].invalid_rows.len(), 2);
+    assert_eq!(results[0].invalid_rows[0].row, 0);
+    assert_eq!(
+        results[0].invalid_rows[0].value,
+        Ext3::from_u64s([13, 0, 0])
+    );
+    assert_eq!(results[0].invalid_rows[1].row, 1);
+    assert_eq!(
+        results[0].invalid_rows[1].value,
+        Ext3::from_u64s([24, 0, 0])
+    );
 }
 
 #[test]

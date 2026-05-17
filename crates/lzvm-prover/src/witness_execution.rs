@@ -7,6 +7,9 @@ use lzvm_artifacts::trace_bundle::TraceBundle;
 use lzvm_field::{Ext3, Felt, FieldError};
 
 use crate::fixed_material::FixedColumnsMaterialError;
+use crate::fri_polynomial::{
+    build_fri_domain_points, FriPolynomialError, FriPolynomialZerofierTable,
+};
 use crate::hint_eval::{
     regular_hint_input_requirements, resolve_regular_hint_program_for_row, HintEvalError,
 };
@@ -167,6 +170,10 @@ pub enum ProveWitnessCommitmentError {
         unit_index: usize,
         buffer: &'static str,
     },
+    RegularConstraintDomainHelper {
+        unit_index: usize,
+        source: FriPolynomialError,
+    },
     RegularConstraintEval(RegularConstraintEvalError),
     MissingRegularHintInput {
         unit_index: usize,
@@ -293,6 +300,10 @@ impl fmt::Display for ProveWitnessCommitmentError {
                 f,
                 "missing regular constraint {buffer} input for prove witness commitment unit {unit_index}"
             ),
+            Self::RegularConstraintDomainHelper { unit_index, source } => write!(
+                f,
+                "prove witness commitment regular constraint domain helper build failed for unit {unit_index}: {source}"
+            ),
             Self::RegularConstraintEval(error) => {
                 write!(f, "prove witness commitment regular constraint evaluation failed: {error}")
             }
@@ -326,6 +337,7 @@ impl std::error::Error for ProveWitnessCommitmentError {
             Self::WitnessRun(error) => Some(error),
             Self::PublicInputs { source, .. } => Some(source),
             Self::FixedColumns { source, .. } => Some(source),
+            Self::RegularConstraintDomainHelper { source, .. } => Some(source),
             Self::RegularConstraintEval(error) => Some(error),
             Self::RegularHintEval { source, .. } => Some(source),
             Self::Commit(error) => Some(error),
@@ -598,6 +610,18 @@ fn validate_witness_regular_constraints(
             values: stage.values(),
         });
     }
+    let domain_points =
+        build_fri_domain_points(plan_unit.setup.stark.n_bits).map_err(|source| {
+            ProveWitnessCommitmentError::RegularConstraintDomainHelper { unit_index, source }
+        })?;
+    let zerofiers = FriPolynomialZerofierTable::build(
+        plan_unit.setup.stark.n_bits,
+        plan_unit.setup.stark.n_bits,
+        &plan_unit.setup.boundaries,
+    )
+    .map_err(
+        |source| ProveWitnessCommitmentError::RegularConstraintDomainHelper { unit_index, source },
+    )?;
 
     let results = evaluate_regular_constraints(
         &plan_unit.regular_constraints,
@@ -611,6 +635,11 @@ fn validate_witness_regular_constraints(
             stage_columns: &stage_columns,
             custom_fixed_columns: &[],
             opening_point_offsets: &plan_unit.opening_point_offsets,
+            domain_points: &domain_points,
+            zerofier_values: RegularColumnMatrix {
+                column_count: zerofiers.column_count,
+                values: &zerofiers.values,
+            },
             publics,
             unit_values: &auxiliary_inputs.unit_values,
             proof_values: &auxiliary_inputs.proof_values,
@@ -729,6 +758,8 @@ fn validate_witness_regular_hints(
                 stage_columns: &stage_columns,
                 custom_fixed_columns: &[],
                 opening_point_offsets: &plan_unit.opening_point_offsets,
+                domain_points: &[],
+                zerofier_values: RegularColumnMatrix::default(),
                 publics,
                 unit_values: &auxiliary_inputs.unit_values,
                 proof_values: &auxiliary_inputs.proof_values,
