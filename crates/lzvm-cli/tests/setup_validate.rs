@@ -1316,6 +1316,20 @@ fn write_source_program_archive(root: &Path) {
     );
 }
 
+fn source_fixed_file_manifest_bytes(root: &Path) -> u64 {
+    let layout = read_key_directory_layout(root).expect("layout should parse");
+    fs::metadata(&layout.source_fixed_file_manifest)
+        .expect("source fixed-file manifest should exist")
+        .len()
+}
+
+fn source_program_archive_bytes(root: &Path) -> u64 {
+    let layout = read_key_directory_layout(root).expect("layout should parse");
+    fs::metadata(&layout.source_program_archive)
+        .expect("source program archive should exist")
+        .len()
+}
+
 fn write_source_program_archive_with_multibyte_manifest_source(root: &Path) {
     let layout = read_key_directory_layout(root).expect("layout should parse");
     let archive = SourceProgramArchive {
@@ -2114,7 +2128,7 @@ fn validates_a_complete_setup_directory() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nsource_fixed_file_manifest=absent\nsource_fixed_file_manifest_entries=0\nsource_program_archive=absent\nsource_program_archive_sources=0\nsource_program_archive_edges=0\n"
+        "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nsource_fixed_file_manifest=absent\nsource_fixed_file_manifest_entries=0\nsource_fixed_file_manifest_bytes=0\nsource_program_archive=absent\nsource_program_archive_sources=0\nsource_program_archive_edges=0\nsource_program_archive_bytes=0\n"
     );
     assert!(stderr.is_empty());
 
@@ -2126,9 +2140,11 @@ fn validates_a_complete_setup_directory() {
     assert_eq!(report.pcs_material_bytes, 0);
     assert!(!report.source_fixed_file_manifest_present);
     assert_eq!(report.source_fixed_file_manifest_entry_count, 0);
+    assert_eq!(report.source_fixed_file_manifest_bytes, 0);
     assert!(!report.source_program_archive_present);
     assert_eq!(report.source_program_archive_source_count, 0);
     assert_eq!(report.source_program_archive_edge_count, 0);
+    assert_eq!(report.source_program_archive_bytes, 0);
     assert_eq!(
         report.fingerprint,
         key_directory_catalog_digest_hex(
@@ -2146,6 +2162,7 @@ fn reports_source_fixed_file_manifest_status_for_setup_directories() {
     let _ = fs::remove_dir_all(&dir);
     write_setup_directory(&dir);
     write_source_fixed_file_manifest(&dir);
+    let manifest_bytes = source_fixed_file_manifest_bytes(&dir);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -2162,16 +2179,20 @@ fn reports_source_fixed_file_manifest_status_for_setup_directories() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nsource_fixed_file_manifest=present\nsource_fixed_file_manifest_entries=1\nsource_program_archive=absent\nsource_program_archive_sources=0\nsource_program_archive_edges=0\n"
+        format!(
+            "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nsource_fixed_file_manifest=present\nsource_fixed_file_manifest_entries=1\nsource_fixed_file_manifest_bytes={manifest_bytes}\nsource_program_archive=absent\nsource_program_archive_sources=0\nsource_program_archive_edges=0\nsource_program_archive_bytes=0\n"
+        )
     );
     assert!(stderr.is_empty());
 
     let report = summarize_setup_directory(&dir).expect("directory summary should load");
     assert!(report.source_fixed_file_manifest_present);
     assert_eq!(report.source_fixed_file_manifest_entry_count, 1);
+    assert_eq!(report.source_fixed_file_manifest_bytes, manifest_bytes);
     assert!(!report.source_program_archive_present);
     assert_eq!(report.source_program_archive_source_count, 0);
     assert_eq!(report.source_program_archive_edge_count, 0);
+    assert_eq!(report.source_program_archive_bytes, 0);
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
@@ -2182,6 +2203,7 @@ fn reports_source_program_archive_status_for_setup_directories() {
     let _ = fs::remove_dir_all(&dir);
     write_setup_directory(&dir);
     write_source_program_archive(&dir);
+    let archive_bytes = source_program_archive_bytes(&dir);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -2198,16 +2220,20 @@ fn reports_source_program_archive_status_for_setup_directories() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nsource_fixed_file_manifest=absent\nsource_fixed_file_manifest_entries=0\nsource_program_archive=present\nsource_program_archive_sources=2\nsource_program_archive_edges=1\n"
+        format!(
+            "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nsource_fixed_file_manifest=absent\nsource_fixed_file_manifest_entries=0\nsource_fixed_file_manifest_bytes=0\nsource_program_archive=present\nsource_program_archive_sources=2\nsource_program_archive_edges=1\nsource_program_archive_bytes={archive_bytes}\n"
+        )
     );
     assert!(stderr.is_empty());
 
     let report = summarize_setup_directory(&dir).expect("directory summary should load");
     assert!(!report.source_fixed_file_manifest_present);
     assert_eq!(report.source_fixed_file_manifest_entry_count, 0);
+    assert_eq!(report.source_fixed_file_manifest_bytes, 0);
     assert!(report.source_program_archive_present);
     assert_eq!(report.source_program_archive_source_count, 2);
     assert_eq!(report.source_program_archive_edge_count, 1);
+    assert_eq!(report.source_program_archive_bytes, archive_bytes);
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
@@ -2513,7 +2539,7 @@ fn validates_generated_key_directory_materials() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nsource_fixed_file_manifest=absent\nsource_fixed_file_manifest_entries=0\nsource_program_archive=absent\nsource_program_archive_sources=0\nsource_program_archive_edges=0\n"
+            "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nsource_fixed_file_manifest=absent\nsource_fixed_file_manifest_entries=0\nsource_fixed_file_manifest_bytes=0\nsource_program_archive=absent\nsource_program_archive_sources=0\nsource_program_archive_edges=0\nsource_program_archive_bytes=0\n"
         )
     );
     assert!(stderr.is_empty());
@@ -2526,9 +2552,11 @@ fn validates_generated_key_directory_materials() {
     assert_eq!(report.pcs_material_bytes, material_bytes);
     assert!(!report.source_fixed_file_manifest_present);
     assert_eq!(report.source_fixed_file_manifest_entry_count, 0);
+    assert_eq!(report.source_fixed_file_manifest_bytes, 0);
     assert!(!report.source_program_archive_present);
     assert_eq!(report.source_program_archive_source_count, 0);
     assert_eq!(report.source_program_archive_edge_count, 0);
+    assert_eq!(report.source_program_archive_bytes, 0);
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
@@ -2785,7 +2813,7 @@ fn fingerprints_a_complete_setup_directory() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nunits=4\nsource_fixed_file_manifest=absent\nsource_fixed_file_manifest_entries=0\nsource_program_archive=absent\nsource_program_archive_sources=0\nsource_program_archive_edges=0\nfingerprint={expected}\n"
+            "status=ok\nunits=4\nsource_fixed_file_manifest=absent\nsource_fixed_file_manifest_entries=0\nsource_fixed_file_manifest_bytes=0\nsource_program_archive=absent\nsource_program_archive_sources=0\nsource_program_archive_edges=0\nsource_program_archive_bytes=0\nfingerprint={expected}\n"
         )
     );
     assert!(stderr.is_empty());
@@ -2795,6 +2823,8 @@ fn fingerprints_a_complete_setup_directory() {
     assert_eq!(report.fingerprint, expected);
     assert_eq!(report.global_constraint_count, 0);
     assert_eq!(report.fixed_bytes, 128);
+    assert_eq!(report.source_fixed_file_manifest_bytes, 0);
+    assert_eq!(report.source_program_archive_bytes, 0);
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
@@ -2806,6 +2836,8 @@ fn fingerprints_report_source_companion_status() {
     write_setup_directory(&dir);
     write_source_fixed_file_manifest(&dir);
     write_source_program_archive(&dir);
+    let manifest_bytes = source_fixed_file_manifest_bytes(&dir);
+    let archive_bytes = source_program_archive_bytes(&dir);
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
     let expected = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
 
@@ -2825,7 +2857,7 @@ fn fingerprints_report_source_companion_status() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nunits=4\nsource_fixed_file_manifest=present\nsource_fixed_file_manifest_entries=1\nsource_program_archive=present\nsource_program_archive_sources=2\nsource_program_archive_edges=1\nfingerprint={expected}\n"
+            "status=ok\nunits=4\nsource_fixed_file_manifest=present\nsource_fixed_file_manifest_entries=1\nsource_fixed_file_manifest_bytes={manifest_bytes}\nsource_program_archive=present\nsource_program_archive_sources=2\nsource_program_archive_edges=1\nsource_program_archive_bytes={archive_bytes}\nfingerprint={expected}\n"
         )
     );
     assert!(stderr.is_empty());

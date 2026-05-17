@@ -83,6 +83,10 @@ pub fn summarize_setup_directory(
         .as_ref()
         .map(|manifest| manifest.entries.len())
         .unwrap_or_default();
+    let source_fixed_file_manifest_bytes = file_len_if_present(
+        source_fixed_file_manifest_present,
+        &catalog.layout.source_fixed_file_manifest,
+    )?;
     let source_program_archive_present = catalog.source_program_archive.is_some();
     let source_program_archive_source_count = catalog
         .source_program_archive
@@ -94,6 +98,10 @@ pub fn summarize_setup_directory(
         .as_ref()
         .map(|archive| archive.edges.len())
         .unwrap_or_default();
+    let source_program_archive_bytes = file_len_if_present(
+        source_program_archive_present,
+        &catalog.layout.source_program_archive,
+    )?;
     Ok(SetupDirectorySummaryReport {
         unit_count: usize::try_from(manifest.unit_count)
             .map_err(|_| SetupDirectoryManifestError::LengthOverflow)?,
@@ -105,11 +113,26 @@ pub fn summarize_setup_directory(
         pcs_material_bytes: manifest.pcs_material_byte_count,
         source_fixed_file_manifest_present,
         source_fixed_file_manifest_entry_count,
+        source_fixed_file_manifest_bytes,
         source_program_archive_present,
         source_program_archive_source_count,
         source_program_archive_edge_count,
+        source_program_archive_bytes,
         fingerprint: encode_digest_hex(&manifest.catalog_digest),
     })
+}
+
+fn file_len_if_present(present: bool, path: &Path) -> Result<u64, SetupDirectorySummaryError> {
+    if !present {
+        return Ok(0);
+    }
+    Ok(std::fs::metadata(path)
+        .map_err(|error| SetupError::Io {
+            role: "read source companion metadata",
+            path: path.to_path_buf(),
+            message: error.to_string(),
+        })?
+        .len())
 }
 
 pub fn write_setup_directory_manifest(

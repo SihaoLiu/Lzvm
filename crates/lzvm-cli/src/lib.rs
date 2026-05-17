@@ -760,6 +760,11 @@ fn write_setup_source_companion_status(
     );
     let _ = writeln!(
         stdout,
+        "source_fixed_file_manifest_bytes={}",
+        report.source_fixed_file_manifest_bytes
+    );
+    let _ = writeln!(
+        stdout,
         "source_program_archive={}",
         if report.source_program_archive_present {
             "present"
@@ -776,6 +781,11 @@ fn write_setup_source_companion_status(
         stdout,
         "source_program_archive_edges={}",
         report.source_program_archive_edge_count
+    );
+    let _ = writeln!(
+        stdout,
+        "source_program_archive_bytes={}",
+        report.source_program_archive_bytes
     );
 }
 
