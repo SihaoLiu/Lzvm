@@ -116,6 +116,14 @@ unsafe extern "C" {
         out: *mut u64,
         child_state_count: usize,
     ) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width8_linear_round_device"]
+    fn lzvm_cuda_poseidon2_width8_linear_round_device_raw(
+        current_states: *const u64,
+        row_values: *const u64,
+        out: *mut u64,
+        row_count: usize,
+        chunk_len: usize,
+    ) -> i32;
     fn lzvm_cuda_poseidon2_width16(values: *const u64, out: *mut u64, state_count: usize) -> i32;
     #[link_name = "lzvm_cuda_poseidon2_width16_device"]
     fn lzvm_cuda_poseidon2_width16_device_raw(
@@ -128,6 +136,14 @@ unsafe extern "C" {
         values: *const u64,
         out: *mut u64,
         child_state_count: usize,
+    ) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width16_linear_round_device"]
+    fn lzvm_cuda_poseidon2_width16_linear_round_device_raw(
+        current_states: *const u64,
+        row_values: *const u64,
+        out: *mut u64,
+        row_count: usize,
+        chunk_len: usize,
     ) -> i32;
     fn lzvm_cuda_keccak256_fixed(
         input: *const u8,
@@ -769,6 +785,82 @@ fn run_cuda_poseidon2_merkle_parent_device_op(
 }
 
 #[cfg(feature = "cuda")]
+type CudaPoseidon2LinearRoundDeviceOp =
+    unsafe extern "C" fn(*const u64, *const u64, *mut u64, usize, usize) -> i32;
+
+#[cfg(feature = "cuda")]
+fn run_cuda_poseidon2_linear_round_device_op(
+    current_states: &CudaDeviceBuffer,
+    row_values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    width: usize,
+    rate: usize,
+    chunk_len: usize,
+    operation: CudaPoseidon2LinearRoundDeviceOp,
+) -> Result<(), AccelError> {
+    if !current_states.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: current_states.len(),
+            rhs: current_states.len() / 8 * 8,
+        });
+    }
+    if !row_values.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: row_values.len(),
+            rhs: row_values.len() / 8 * 8,
+        });
+    }
+    if current_states.len() != out.len() {
+        return Err(AccelError::LengthMismatch {
+            lhs: current_states.len(),
+            rhs: out.len(),
+        });
+    }
+    if chunk_len == 0 || chunk_len > rate {
+        return Err(AccelError::InvalidDomain {
+            bits: width,
+            len: chunk_len,
+        });
+    }
+
+    let current_word_count = current_states.len() / 8;
+    if !current_word_count.is_multiple_of(width) {
+        return Err(AccelError::InvalidDomain {
+            bits: width,
+            len: current_word_count,
+        });
+    }
+    let row_count = current_word_count / width;
+    let expected_row_bytes = row_count
+        .checked_mul(chunk_len)
+        .and_then(|word_count| word_count.checked_mul(8))
+        .ok_or(AccelError::InvalidDomain {
+            bits: width,
+            len: current_word_count,
+        })?;
+    if row_values.len() != expected_row_bytes {
+        return Err(AccelError::LengthMismatch {
+            lhs: expected_row_bytes,
+            rhs: row_values.len(),
+        });
+    }
+    if row_count == 0 {
+        return Ok(());
+    }
+
+    let code = unsafe {
+        operation(
+            current_states.as_raw_ptr() as *const u64,
+            row_values.as_raw_ptr() as *const u64,
+            out.as_raw_ptr() as *mut u64,
+            row_count,
+            chunk_len,
+        )
+    };
+    cuda_status(code)
+}
+
+#[cfg(feature = "cuda")]
 pub fn cuda_poseidon2_width4_device(
     values: &CudaDeviceBuffer,
     out: &mut CudaDeviceBuffer,
@@ -909,6 +1001,42 @@ pub fn cuda_poseidon2_width16_merkle_parent_device(
         4,
         4,
         lzvm_cuda_poseidon2_width16_merkle_parent_device_raw,
+    )
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_poseidon2_width8_linear_round_device(
+    current_states: &CudaDeviceBuffer,
+    row_values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    chunk_len: usize,
+) -> Result<(), AccelError> {
+    run_cuda_poseidon2_linear_round_device_op(
+        current_states,
+        row_values,
+        out,
+        8,
+        4,
+        chunk_len,
+        lzvm_cuda_poseidon2_width8_linear_round_device_raw,
+    )
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_poseidon2_width16_linear_round_device(
+    current_states: &CudaDeviceBuffer,
+    row_values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    chunk_len: usize,
+) -> Result<(), AccelError> {
+    run_cuda_poseidon2_linear_round_device_op(
+        current_states,
+        row_values,
+        out,
+        16,
+        12,
+        chunk_len,
+        lzvm_cuda_poseidon2_width16_linear_round_device_raw,
     )
 }
 

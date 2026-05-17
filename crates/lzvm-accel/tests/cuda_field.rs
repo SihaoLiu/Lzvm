@@ -4,9 +4,10 @@ use lzvm_accel::{cuda_goldilocks_add, cuda_goldilocks_mul};
 use lzvm_accel::{
     cuda_goldilocks_butterfly, cuda_goldilocks_coset_extend, cuda_goldilocks_coset_extend_device,
     cuda_goldilocks_intt, cuda_goldilocks_ntt, cuda_keccak256_fixed, cuda_poseidon2_width16,
-    cuda_poseidon2_width16_device, cuda_poseidon2_width16_merkle_parent_device,
-    cuda_poseidon2_width4, cuda_poseidon2_width4_device, cuda_poseidon2_width4_find_nonce,
-    cuda_poseidon2_width8, cuda_poseidon2_width8_device,
+    cuda_poseidon2_width16_device, cuda_poseidon2_width16_linear_round_device,
+    cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width4,
+    cuda_poseidon2_width4_device, cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8,
+    cuda_poseidon2_width8_device, cuda_poseidon2_width8_linear_round_device,
     cuda_poseidon2_width8_merkle_parent_device, cuda_setup_init, CudaDeviceBuffer,
 };
 #[cfg(feature = "cuda")]
@@ -409,6 +410,43 @@ fn cuda_hashes_poseidon2_width_8_states_from_device_memory() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_linear_round_poseidon2_width_8_states_from_device_memory() {
+    let current_states = CudaDeviceBuffer::from_u64_words(&[0_u64; 24])
+        .expect("current state buffer should allocate");
+    let row_values = CudaDeviceBuffer::from_u64_words(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+        .expect("row buffer should allocate");
+    let mut output_states =
+        CudaDeviceBuffer::new(24 * 8).expect("output state buffer should allocate");
+
+    cuda_poseidon2_width8_linear_round_device(&current_states, &row_values, &mut output_states, 4)
+        .expect("cuda linear round should run");
+
+    let expected = [
+        poseidon2_hash_8(std::array::from_fn(|index| {
+            Felt::from_u64([1, 2, 3, 4, 0, 0, 0, 0][index])
+        }))
+        .map(Felt::to_u64),
+        poseidon2_hash_8(std::array::from_fn(|index| {
+            Felt::from_u64([5, 6, 7, 8, 0, 0, 0, 0][index])
+        }))
+        .map(Felt::to_u64),
+        poseidon2_hash_8(std::array::from_fn(|index| {
+            Felt::from_u64([9, 10, 11, 12, 0, 0, 0, 0][index])
+        }))
+        .map(Felt::to_u64),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    let actual = output_states
+        .to_u64_words()
+        .expect("device words should copy back to host");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_hashes_poseidon2_width_8_parent_states_from_device_memory() {
     let input = vec![
         1, 2, 3, 4, 101, 102, 103, 104, 5, 6, 7, 8, 201, 202, 203, 204, 9, 10, 11, 12, 301, 302,
@@ -450,6 +488,51 @@ fn cuda_hashes_poseidon2_width_16_states() {
         .collect::<Vec<_>>();
 
     let actual = cuda_poseidon2_width16(&input).expect("cuda hash should run");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_linear_round_poseidon2_width_16_states_from_device_memory() {
+    let current_states = CudaDeviceBuffer::from_u64_words(&[0_u64; 48])
+        .expect("current state buffer should allocate");
+    let row_values = CudaDeviceBuffer::from_u64_words(&[
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+        26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+    ])
+    .expect("row buffer should allocate");
+    let mut output_states =
+        CudaDeviceBuffer::new(48 * 8).expect("output state buffer should allocate");
+
+    cuda_poseidon2_width16_linear_round_device(
+        &current_states,
+        &row_values,
+        &mut output_states,
+        12,
+    )
+    .expect("cuda linear round should run");
+
+    let expected = [
+        poseidon2_hash_16(std::array::from_fn(|index| {
+            Felt::from_u64([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0, 0, 0, 0][index])
+        }))
+        .map(Felt::to_u64),
+        poseidon2_hash_16(std::array::from_fn(|index| {
+            Felt::from_u64([13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 0, 0, 0, 0][index])
+        }))
+        .map(Felt::to_u64),
+        poseidon2_hash_16(std::array::from_fn(|index| {
+            Felt::from_u64([25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 0, 0, 0, 0][index])
+        }))
+        .map(Felt::to_u64),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    let actual = output_states
+        .to_u64_words()
+        .expect("device words should copy back to host");
 
     assert_eq!(actual, expected);
 }
