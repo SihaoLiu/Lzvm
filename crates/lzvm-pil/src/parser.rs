@@ -237,6 +237,16 @@ fn tokenize_pragma_words(
         if bytes[index..].starts_with(b"//") {
             break;
         }
+        if bytes[index..].starts_with(b"/*") {
+            let Some(end) = value[index + 2..].find("*/") else {
+                return Err(ParseError::InvalidPragmaArgument {
+                    source_name: source_name.to_owned(),
+                    start: base + index,
+                });
+            };
+            index += end + 4;
+            continue;
+        }
 
         let start = index;
         let quote = bytes[index];

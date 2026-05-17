@@ -331,6 +331,23 @@ fn parses_fixed_file_pragmas_with_trailing_line_comments() {
 }
 
 #[test]
+fn parses_fixed_file_pragmas_with_trailing_block_comments() {
+    let source = source(
+        "#pragma output_fixed_file fixed.bin /* generated table */\n\
+         #pragma fixed_load fixed.bin 3 /* selected column */",
+    );
+
+    let directives = parse_fixed_file_pragmas(&source).expect("pragmas should parse");
+
+    assert_eq!(directives.len(), 2);
+    assert_eq!(
+        directives[0].path.as_ref().map(|path| path.value.as_str()),
+        Some("fixed.bin")
+    );
+    assert_eq!(directives[1].column, Some(3));
+}
+
+#[test]
 fn resolves_fixed_file_pragma_template_paths() {
     let source = source(
         "#pragma output_fixed_file `${AIRGROUP}/${AIRGROUP_ID}/${AIR_ID}/${AIR_NAME}/${AIRTEMPLATE}.fixed`",
