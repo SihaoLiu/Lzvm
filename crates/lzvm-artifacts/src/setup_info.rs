@@ -325,6 +325,13 @@ pub fn read_unit_setup_info_binary_file(
 pub fn parse_unit_setup_info(bytes: &[u8]) -> Result<UnitSetupInfo, SetupInfoError> {
     let file = parse_sectioned_file(bytes, SETUP_INFO_KIND, SETUP_INFO_VERSION)
         .map_err(SetupInfoError::from)?;
+    if file.version == 0 {
+        return Err(SetupInfoError::UnsupportedVersion {
+            found: file.version,
+            max: SETUP_INFO_VERSION,
+        });
+    }
+
     if file.sections.len() != 1 {
         return Err(SetupInfoError::InvalidSectionCount {
             found: u32::try_from(file.sections.len()).unwrap_or(u32::MAX),
