@@ -71,6 +71,19 @@ fn wrap_expression_section(data: Vec<u8>) -> Vec<u8> {
     .expect("fixture should encode")
 }
 
+fn counted_section(ops_len: u32, args_len: u32, numbers_len: u32, entry_count: u32) -> Vec<u8> {
+    let mut section = Vec::new();
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, ops_len);
+    push_u32(&mut section, args_len);
+    push_u32(&mut section, numbers_len);
+    push_u32(&mut section, entry_count);
+    section
+}
+
 fn invalid_span_file() -> Vec<u8> {
     let mut section = Vec::new();
     push_u32(&mut section, 0);
@@ -152,6 +165,36 @@ fn rejects_truncated_expression_sections() {
     assert!(matches!(
         parse_expression_program(&section_truncated_payload_file()),
         Err(ExpressionProgramError::UnexpectedEof { .. })
+    ));
+}
+
+#[test]
+fn rejects_entry_count_that_exceeds_remaining_entry_records() {
+    let bytes = wrap_expression_section(counted_section(0, 0, 0, 1));
+
+    assert!(matches!(
+        parse_expression_program(&bytes),
+        Err(ExpressionProgramError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_args_count_that_exceeds_remaining_args() {
+    let bytes = wrap_expression_section(counted_section(0, 1, 0, 0));
+
+    assert!(matches!(
+        parse_expression_program(&bytes),
+        Err(ExpressionProgramError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_numbers_count_that_exceeds_remaining_numbers() {
+    let bytes = wrap_expression_section(counted_section(0, 0, 1, 0));
+
+    assert!(matches!(
+        parse_expression_program(&bytes),
+        Err(ExpressionProgramError::LengthOverflow)
     ));
 }
 

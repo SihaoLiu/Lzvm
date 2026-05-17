@@ -5,6 +5,10 @@ use crate::sectioned::{
     encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
 
+const ENTRY_MIN_BYTES: usize = 10 * 4 + 1;
+const ARG_BYTES: usize = 2;
+const NUMBER_BYTES: usize = 8;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExpressionProgram {
     pub max_tmp1: u32,
@@ -146,9 +150,12 @@ fn parse_expression_section(bytes: &[u8]) -> Result<ExpressionProgram, Expressio
     let ops_len = reader.read_u32()?;
     let args_len = reader.read_u32()?;
     let numbers_len = reader.read_u32()?;
-    let entry_count = reader.read_u32()?;
+    let entry_count = u32_to_usize(reader.read_u32()?)?;
 
-    let mut entries = Vec::with_capacity(entry_count as usize);
+    if entry_count > reader.remaining_len() / ENTRY_MIN_BYTES {
+        return Err(ExpressionProgramError::LengthOverflow);
+    }
+    let mut entries = Vec::with_capacity(entry_count);
     for _ in 0..entry_count {
         entries.push(ExpressionEntry {
             expression_id: reader.read_u32()?,
@@ -173,11 +180,17 @@ fn parse_expression_section(bytes: &[u8]) -> Result<ExpressionProgram, Expressio
 
     let ops = reader.read_exact(ops_count)?.to_vec();
 
+    if args_count > reader.remaining_len() / ARG_BYTES {
+        return Err(ExpressionProgramError::LengthOverflow);
+    }
     let mut args = Vec::with_capacity(args_count);
     for _ in 0..args_count {
         args.push(reader.read_u16()?);
     }
 
+    if numbers_count > reader.remaining_len() / NUMBER_BYTES {
+        return Err(ExpressionProgramError::LengthOverflow);
+    }
     let mut numbers = Vec::with_capacity(numbers_count);
     for _ in 0..numbers_count {
         numbers.push(reader.read_u64()?);
@@ -307,6 +320,10 @@ fn write_string(out: &mut Vec<u8>, value: &str) -> Result<(), ExpressionProgramE
     Ok(())
 }
 
+fn u32_to_usize(value: u32) -> Result<usize, ExpressionProgramError> {
+    usize::try_from(value).map_err(|_| ExpressionProgramError::LengthOverflow)
+}
+
 struct Reader<'a> {
     bytes: &'a [u8],
     offset: usize,
@@ -319,6 +336,10 @@ impl<'a> Reader<'a> {
 
     fn position(&self) -> usize {
         self.offset
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], ExpressionProgramError> {
