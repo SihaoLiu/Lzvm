@@ -4,6 +4,7 @@ pub mod constant_tree;
 pub mod constraint_program;
 pub mod contribution_segment;
 pub mod eth_block;
+pub mod eth_trie;
 pub mod expression_info;
 pub mod expression_program;
 pub mod fixed;
