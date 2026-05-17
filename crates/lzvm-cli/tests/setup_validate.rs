@@ -3547,7 +3547,9 @@ fn prove_inputs_reports_eth_block_receipts_when_present() {
         "eth_receipt_trie_preimages={}\n",
         receipt_build.hash_preimages.len()
     )));
-    assert!(stdout_text.contains("eth_legacy_receipts=1\neth_typed_receipts=0\n"));
+    assert!(
+        stdout_text.contains("eth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\n")
+    );
 }
 
 #[test]

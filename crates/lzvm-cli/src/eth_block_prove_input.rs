@@ -182,6 +182,8 @@ pub(crate) fn write_eth_block_input_summary(
             if let (Some(legacy_count), Some(typed_count)) =
                 (summary.legacy_receipt_count, summary.typed_receipt_count)
             {
+                let receipt_count = legacy_count + typed_count;
+                let _ = writeln!(stdout, "eth_receipt_count={receipt_count}");
                 let _ = writeln!(stdout, "eth_legacy_receipts={legacy_count}");
                 let _ = writeln!(stdout, "eth_typed_receipts={typed_count}");
             }
