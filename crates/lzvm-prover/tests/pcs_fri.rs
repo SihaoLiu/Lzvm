@@ -495,6 +495,35 @@ fn validates_optional_pcs_fri_opening_when_segment_is_absent() {
 }
 
 #[test]
+fn rejects_optional_pcs_fri_opening_transcript_inputs_without_opening() {
+    let (unit, mut segments) = valid_pcs_fri_opening_segments();
+    let schedule = sample_prove_schedule(unit);
+    segments.retain(|segment| segment.id != PCS_FRI_OPENING_SEGMENT_ID);
+    segments.push(ProofSegment {
+        id: PCS_EVALUATION_SEGMENT_ID,
+        data: Vec::new(),
+    });
+
+    let error = validate_optional_pcs_fri_opening_proof_segments(
+        ValidateOptionalPcsFriOpeningProofSegmentsRequest {
+            schedule: &schedule,
+            verifier_codes: &[],
+            global_info: &global_info_without_proof_values(),
+            public_values: &[],
+            segments: &segments,
+        },
+    )
+    .expect_err("transcript inputs should require FRI opening");
+
+    assert_eq!(
+        error,
+        ValidateOptionalPcsFriOpeningProofSegmentsError::OpeningSegment(
+            LoadPcsFriOpeningSegmentError::MissingSegment
+        )
+    );
+}
+
+#[test]
 fn validates_optional_pcs_fri_opening_from_seeded_inputs() {
     let (unit, segments) = valid_pcs_fri_opening_segments();
     let schedule = sample_prove_schedule(unit);

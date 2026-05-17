@@ -4,8 +4,8 @@ use lzvm_artifacts::proof::ProofSegment;
 use lzvm_field::{Ext3, Felt};
 
 use super::errors::{
-    ValidateOptionalPcsFriOpeningProofSegmentsError, ValidatePcsFriOpeningFoldUnitsError,
-    ValidatePcsFriOpeningSegmentsError,
+    LoadPcsFriOpeningSegmentError, ValidateOptionalPcsFriOpeningProofSegmentsError,
+    ValidatePcsFriOpeningFoldUnitsError, ValidatePcsFriOpeningSegmentsError,
 };
 use super::requests::{
     PcsFriOpeningFoldRequest, ValidateOptionalPcsFriOpeningProofSegmentsRequest,
@@ -201,6 +201,13 @@ pub fn validate_optional_pcs_fri_opening_proof_segments(
         .iter()
         .any(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
     {
+        if uses_transcript_pcs_query_plan_inputs(request.segments) {
+            return Err(
+                ValidateOptionalPcsFriOpeningProofSegmentsError::OpeningSegment(
+                    LoadPcsFriOpeningSegmentError::MissingSegment,
+                ),
+            );
+        }
         return Ok(());
     }
 
