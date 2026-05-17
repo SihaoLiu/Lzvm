@@ -27,6 +27,22 @@ fn sample_segment() -> WitnessOpeningSegment {
     }
 }
 
+fn segment_header(unit_count: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"wos0");
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, unit_count);
+    bytes
+}
+
+fn push_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_u64(out: &mut Vec<u8>, value: u64) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
 #[test]
 fn encodes_and_parses_witness_opening_segments() {
     let encoded =
@@ -76,5 +92,104 @@ fn rejects_duplicate_witness_opening_units() {
     assert!(matches!(
         encode_witness_opening_segment(&segment),
         Err(WitnessOpeningSegmentError::DuplicateUnitIndex { unit_index: 0 })
+    ));
+}
+
+#[test]
+fn rejects_truncated_witness_opening_segments() {
+    assert!(matches!(
+        parse_witness_opening_segment(b"wos0\x01\0"),
+        Err(WitnessOpeningSegmentError::UnexpectedEof {
+            needed: 8,
+            available: 6
+        })
+    ));
+}
+
+#[test]
+fn rejects_unit_count_that_exceeds_remaining_unit_headers() {
+    assert!(matches!(
+        parse_witness_opening_segment(&segment_header(1)),
+        Err(WitnessOpeningSegmentError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_query_count_that_exceeds_remaining_query_headers() {
+    let mut bytes = segment_header(1);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 1);
+
+    assert!(matches!(
+        parse_witness_opening_segment(&bytes),
+        Err(WitnessOpeningSegmentError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_stage_count_that_exceeds_remaining_stage_headers() {
+    let mut bytes = segment_header(1);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 1);
+    push_u64(&mut bytes, 3);
+    push_u32(&mut bytes, 1);
+
+    assert!(matches!(
+        parse_witness_opening_segment(&bytes),
+        Err(WitnessOpeningSegmentError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_value_count_that_exceeds_remaining_words() {
+    let mut bytes = segment_header(1);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 1);
+    push_u64(&mut bytes, 3);
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, 0);
+
+    assert!(matches!(
+        parse_witness_opening_segment(&bytes),
+        Err(WitnessOpeningSegmentError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_level_count_that_exceeds_remaining_level_headers() {
+    let mut bytes = segment_header(1);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 1);
+    push_u64(&mut bytes, 3);
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, 1);
+    push_u64(&mut bytes, 11);
+
+    assert!(matches!(
+        parse_witness_opening_segment(&bytes),
+        Err(WitnessOpeningSegmentError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_sibling_count_that_exceeds_remaining_digests() {
+    let mut bytes = segment_header(1);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 1);
+    push_u64(&mut bytes, 3);
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, 1);
+    push_u64(&mut bytes, 11);
+    push_u32(&mut bytes, 1);
+
+    assert!(matches!(
+        parse_witness_opening_segment(&bytes),
+        Err(WitnessOpeningSegmentError::LengthOverflow)
     ));
 }
