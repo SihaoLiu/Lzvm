@@ -156,10 +156,14 @@ pub(crate) fn parse_run_args(
             "--input-data" => {
                 index += 1;
                 partition_option_used = true;
-                input_data = Some(PathBuf::from(
-                    args.get(index)
-                        .ok_or(ParseError::Invalid("missing --input-data value".to_owned()))?,
-                ));
+                let value = args
+                    .get(index)
+                    .ok_or(ParseError::Invalid("missing --input-data value".to_owned()))?;
+                if input_data.replace(PathBuf::from(*value)).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --input-data option".to_owned(),
+                    ));
+                }
             }
             "--program-image-cache" => {
                 index += 1;
@@ -468,6 +472,27 @@ mod tests {
             }
             _ => panic!("expected contributions pass"),
         }
+    }
+
+    #[test]
+    fn rejects_duplicate_input_data_option() {
+        let result = parse_run_args(
+            &[
+                "--input-data",
+                "first.bin",
+                "--input-data",
+                "second.bin",
+                "setup-dir",
+                "out-dir",
+            ],
+            2,
+            2,
+        );
+
+        assert!(matches!(
+            result,
+            Err(ParseError::Invalid(message)) if message == "duplicate --input-data option"
+        ));
     }
 
     #[test]
