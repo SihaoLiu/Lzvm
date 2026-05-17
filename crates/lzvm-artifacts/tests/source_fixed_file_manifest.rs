@@ -116,6 +116,13 @@ fn rejects_invalid_source_fixed_file_manifest_entries() {
         encode_source_fixed_file_manifest(&manifest),
         Err(SourceFixedFileManifestError::UnexpectedColumn { entry_index: 0 })
     ));
+
+    let mut manifest = sample_manifest();
+    manifest.entries[1].column = None;
+    assert!(matches!(
+        encode_source_fixed_file_manifest(&manifest),
+        Err(SourceFixedFileManifestError::MissingColumn { entry_index: 1 })
+    ));
 }
 
 #[test]

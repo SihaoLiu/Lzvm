@@ -68,6 +68,9 @@ pub enum SourceFixedFileManifestError {
     EmptyPath {
         entry_index: usize,
     },
+    MissingColumn {
+        entry_index: usize,
+    },
     UnexpectedColumn {
         entry_index: usize,
     },
@@ -132,6 +135,9 @@ impl fmt::Display for SourceFixedFileManifestError {
             Self::EmptyPath { entry_index } => {
                 write!(f, "source fixed file manifest entry {entry_index} has an empty path")
             }
+            Self::MissingColumn { entry_index } => {
+                write!(f, "source fixed file manifest entry {entry_index} has no column")
+            }
             Self::UnexpectedColumn { entry_index } => write!(
                 f,
                 "source fixed file manifest entry {entry_index} has an unexpected column"
@@ -190,6 +196,7 @@ impl std::error::Error for SourceFixedFileManifestError {
             | Self::MissingPath { .. }
             | Self::UnexpectedPath { .. }
             | Self::EmptyPath { .. }
+            | Self::MissingColumn { .. }
             | Self::UnexpectedColumn { .. }
             | Self::EmptyGroupName { .. }
             | Self::EmptyUnitName { .. }
@@ -282,8 +289,19 @@ fn validate_source_fixed_file_manifest(
         if entry.path.as_ref().is_some_and(|path| path.is_empty()) {
             return Err(SourceFixedFileManifestError::EmptyPath { entry_index });
         }
-        if entry.kind != SourceFixedFileManifestKind::FixedLoad && entry.column.is_some() {
-            return Err(SourceFixedFileManifestError::UnexpectedColumn { entry_index });
+        match entry.kind {
+            SourceFixedFileManifestKind::FixedLoad => {
+                if entry.column.is_none() {
+                    return Err(SourceFixedFileManifestError::MissingColumn { entry_index });
+                }
+            }
+            SourceFixedFileManifestKind::FixedExternal
+            | SourceFixedFileManifestKind::ExternFixedFile
+            | SourceFixedFileManifestKind::OutputFixedFile => {
+                if entry.column.is_some() {
+                    return Err(SourceFixedFileManifestError::UnexpectedColumn { entry_index });
+                }
+            }
         }
         if entry.group_name.is_empty() {
             return Err(SourceFixedFileManifestError::EmptyGroupName { entry_index });

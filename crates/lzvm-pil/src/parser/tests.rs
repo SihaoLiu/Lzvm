@@ -281,6 +281,18 @@ fn rejects_fixed_load_with_invalid_column() {
 }
 
 #[test]
+fn rejects_fixed_load_without_column() {
+    let source = source("#pragma fixed_load fixed.bin");
+
+    let error = parse_fixed_file_pragmas(&source).expect_err("column should be required");
+
+    assert!(matches!(
+        error,
+        ParseError::InvalidPragmaArgument { source_name, .. } if source_name == "main.pil"
+    ));
+}
+
+#[test]
 fn resolves_fixed_file_pragma_template_paths() {
     let source = source(
         "#pragma output_fixed_file `${AIRGROUP}/${AIRGROUP_ID}/${AIR_ID}/${AIR_NAME}/${AIRTEMPLATE}.fixed`",

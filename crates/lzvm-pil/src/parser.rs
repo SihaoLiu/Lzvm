@@ -70,7 +70,12 @@ pub fn parse_fixed_file_pragmas(source: &SourceFile) -> Result<Vec<FixedFilePrag
                         start: word.start,
                     }
                 })?),
-                None => None,
+                None => {
+                    return Err(ParseError::InvalidPragmaArgument {
+                        source_name: source.source_name.clone(),
+                        start: token.end,
+                    });
+                }
             },
             _ => None,
         };
