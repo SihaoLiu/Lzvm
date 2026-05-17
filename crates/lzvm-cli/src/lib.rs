@@ -650,6 +650,9 @@ fn verify_preflight(
                 "eth_block_input_hash={}",
                 prove_plan::format_hash(hash)
             );
+            if let Some(block_rlp_bytes) = report.eth_block_input_block_rlp_byte_counts.get(index) {
+                let _ = writeln!(stdout, "eth_block_rlp_bytes={block_rlp_bytes}");
+            }
             if let Some(block_hash) = report.eth_block_input_block_hashes.get(index) {
                 let _ = writeln!(
                     stdout,
@@ -1005,6 +1008,7 @@ struct VerifySetupValidationCommand<'a> {
 
 struct EthBlockInputBinding {
     hash: [u8; 32],
+    block_rlp_bytes: usize,
     block_hash: [u8; 32],
     parent_hash: [u8; 32],
     ommers_hash: [u8; 32],
@@ -1115,6 +1119,12 @@ fn verify_setup_validation(
                 prove_plan::format_hash(hash)
             );
             if eth_block_input_binding.is_none() {
+                if let Some(block_rlp_bytes) = public_report
+                    .eth_block_input_block_rlp_byte_counts
+                    .get(index)
+                {
+                    let _ = writeln!(stdout, "eth_block_rlp_bytes={block_rlp_bytes}");
+                }
                 if let Some(block_hash) = public_report.eth_block_input_block_hashes.get(index) {
                     let _ = writeln!(
                         stdout,
@@ -1279,6 +1289,7 @@ fn verify_setup_validation(
             );
         }
         let _ = writeln!(stdout, "eth_block_input_match=ok");
+        let _ = writeln!(stdout, "eth_block_rlp_bytes={}", binding.block_rlp_bytes);
         let _ = writeln!(
             stdout,
             "eth_block_hash={}",
@@ -1440,6 +1451,7 @@ fn verify_eth_block_input_binding(
     validate_eth_block_public_values(&input, &public_values).map_err(|error| error.to_string())?;
     Ok(EthBlockInputBinding {
         hash: input_hash,
+        block_rlp_bytes: input.block_rlp.len(),
         block_hash: input.block_hash,
         parent_hash: input.parent_hash,
         ommers_hash: input.ommers_hash,
