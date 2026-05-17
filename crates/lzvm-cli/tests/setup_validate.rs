@@ -2209,6 +2209,64 @@ fn write_source_companions_refreshes_existing_setup_directory_manifest() {
 }
 
 #[test]
+fn write_source_companions_preserves_manifested_setup_when_refresh_fails() {
+    let dir = temp_dir("source-companions-refresh-rollback");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let root = dir.to_str().expect("path should be utf-8");
+    run_setup_command(&["setup", "generate-key", root]);
+
+    let source_dir = dir.join("source");
+    let main_path = source_dir.join("main.pil");
+    write_bytes(
+        &main_path,
+        "airtemplate Main() {\n\
+             #pragma output_fixed_file `${AIR_NAME}.fixed`\n\
+         }\n\
+         airgroup Main { Main(); }\n\
+         col witness main.trace;",
+    );
+
+    let mut companion_stdout = Vec::new();
+    let mut companion_stderr = Vec::new();
+    let companion_code = run_cli(
+        &[
+            "setup",
+            "write-source-companions",
+            main_path.to_str().expect("main path should be utf-8"),
+            root,
+        ],
+        &mut companion_stdout,
+        &mut companion_stderr,
+    );
+
+    assert_eq!(companion_code, 1);
+    assert!(String::from_utf8_lossy(&companion_stderr)
+        .contains("source fixed-file manifest entry 0 references group 0:Main"));
+
+    let mut validate_stdout = Vec::new();
+    let mut validate_stderr = Vec::new();
+    let validate_code = run_cli(
+        &["setup", "validate", root],
+        &mut validate_stdout,
+        &mut validate_stderr,
+    );
+
+    assert_eq!(
+        validate_code,
+        0,
+        "setup validate failed after rejected source companions: {}",
+        String::from_utf8_lossy(&validate_stderr)
+    );
+    assert!(validate_stderr.is_empty());
+    let report = summarize_setup_directory(&dir).expect("directory summary should load");
+    assert!(!report.source_program_archive_present);
+    assert!(!report.source_fixed_file_manifest_present);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn validates_generated_key_directory_materials() {
     let dir = temp_dir("generated-key-validate");
     let _ = fs::remove_dir_all(&dir);

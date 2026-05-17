@@ -1,5 +1,6 @@
 use std::fmt;
-use std::path::PathBuf;
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::setup_manifest::SETUP_DIRECTORY_MANIFEST_FILE;
 use lzvm_artifacts::source_fixed_file_manifest::{
@@ -115,12 +116,22 @@ pub fn write_source_companions(
     let manifest_bytes = encode_source_fixed_file_manifest(&manifest)
         .map_err(SourceCompanionWriteError::FixedManifestEncode)?;
 
+    let archive_output_path = request.setup_dir.join(SOURCE_PROGRAM_ARCHIVE_FILE);
+    let manifest_output_path = request.setup_dir.join(SOURCE_FIXED_FILE_MANIFEST_FILE);
     let refresh_manifest = request
         .setup_dir
         .join(SETUP_DIRECTORY_MANIFEST_FILE)
         .is_file();
-    let archive_output_path = request.setup_dir.join(SOURCE_PROGRAM_ARCHIVE_FILE);
-    let manifest_output_path = request.setup_dir.join(SOURCE_FIXED_FILE_MANIFEST_FILE);
+    let archive_snapshot = if refresh_manifest {
+        read_optional_file(&archive_output_path)?
+    } else {
+        None
+    };
+    let manifest_snapshot = if refresh_manifest {
+        read_optional_file(&manifest_output_path)?
+    } else {
+        None
+    };
     let archive_staging_path = write_staging_bytes(
         &archive_output_path,
         &archive_bytes,
@@ -146,8 +157,11 @@ pub fn write_source_companions(
     )
     .map_err(SourceCompanionWriteError::Setup)?;
     if refresh_manifest {
-        write_setup_directory_manifest(&request.setup_dir)
-            .map_err(SourceCompanionWriteError::Manifest)?;
+        if let Err(error) = write_setup_directory_manifest(&request.setup_dir) {
+            restore_optional_file(&archive_output_path, archive_snapshot.as_deref())?;
+            restore_optional_file(&manifest_output_path, manifest_snapshot.as_deref())?;
+            return Err(SourceCompanionWriteError::Manifest(error));
+        }
     }
 
     Ok(SourceCompanionWriteReport {
@@ -172,4 +186,40 @@ pub fn write_source_companions(
             entry_count: manifest.entries.len(),
         },
     })
+}
+
+fn read_optional_file(path: &Path) -> Result<Option<Vec<u8>>, SourceCompanionWriteError> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(SourceCompanionWriteError::Setup(SetupError::Io {
+            role: "read existing source companion",
+            path: path.to_path_buf(),
+            message: error.to_string(),
+        })),
+    }
+}
+
+fn restore_optional_file(
+    path: &Path,
+    bytes: Option<&[u8]>,
+) -> Result<(), SourceCompanionWriteError> {
+    match bytes {
+        Some(bytes) => std::fs::write(path, bytes).map_err(|error| {
+            SourceCompanionWriteError::Setup(SetupError::Io {
+                role: "restore source companion",
+                path: path.to_path_buf(),
+                message: error.to_string(),
+            })
+        }),
+        None => match std::fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(SourceCompanionWriteError::Setup(SetupError::Io {
+                role: "remove rejected source companion",
+                path: path.to_path_buf(),
+                message: error.to_string(),
+            })),
+        },
+    }
 }
