@@ -31,7 +31,10 @@ use lzvm_artifacts::witness_segment::{
 };
 use lzvm_field::Felt;
 
-use crate::pcs_evaluation::{load_pcs_evaluation_unit_from_segments, LoadPcsEvaluationUnitError};
+use crate::pcs_evaluation::{
+    load_pcs_evaluation_unit_from_segments, validate_pcs_evaluation_units_match_query_units,
+    LoadPcsEvaluationUnitError,
+};
 use crate::pcs_fri::{load_pcs_fri_opening_unit_from_segments, LoadPcsFriOpeningUnitError};
 use crate::pcs_transcript::PcsTranscriptSegmentInputs;
 use crate::unit_values::{load_unit_values_from_segments, LoadUnitValuesSegmentError};
@@ -264,6 +267,8 @@ fn validate_transcript_query_plan_unit_inputs(
         load_unit_values_from_segments(unit_index, &unit.unit_value_map, segments)
             .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
     }
+    validate_pcs_evaluation_units_match_query_units(query_units, segments)
+        .map_err(ValidatePcsQueryPlanSegmentsError::Evaluation)?;
     Ok(())
 }
 

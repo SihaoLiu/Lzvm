@@ -4,6 +4,7 @@ use lzvm_artifacts::pcs_evaluation_segment::{
     encode_pcs_evaluation_segment, parse_pcs_evaluation_segment, PcsEvaluationSegment,
     PcsEvaluationSegmentError, PcsEvaluationUnitSegment, PCS_EVALUATION_SEGMENT_ID,
 };
+use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_field::Ext3;
 
@@ -86,6 +87,9 @@ pub enum LoadPcsEvaluationUnitError {
     MissingUnit {
         unit_index: usize,
     },
+    UnexpectedUnit {
+        unit_index: usize,
+    },
     UnitIndexOverflow,
     ValueCountMismatch {
         unit_index: usize,
@@ -102,6 +106,9 @@ impl fmt::Display for LoadPcsEvaluationUnitError {
             Self::DuplicateSegment => write!(f, "duplicate PCS evaluation segment"),
             Self::MissingUnit { unit_index } => {
                 write!(f, "PCS evaluation segment mismatch for unit {unit_index}")
+            }
+            Self::UnexpectedUnit { unit_index } => {
+                write!(f, "unexpected PCS evaluation segment unit {unit_index}")
             }
             Self::UnitIndexOverflow => write!(f, "PCS evaluation segment unit index overflow"),
             Self::ValueCountMismatch { unit_index, .. } => write!(
@@ -120,6 +127,7 @@ impl std::error::Error for LoadPcsEvaluationUnitError {
             Self::MissingSegment
             | Self::DuplicateSegment
             | Self::MissingUnit { .. }
+            | Self::UnexpectedUnit { .. }
             | Self::UnitIndexOverflow
             | Self::ValueCountMismatch { .. } => None,
         }
@@ -159,6 +167,34 @@ pub fn load_pcs_evaluation_unit_from_segments(
         });
     }
     Ok(evaluation_unit)
+}
+
+pub(crate) fn validate_pcs_evaluation_units_match_query_units(
+    query_units: &[PcsQueryPlanUnit],
+    segments: &[ProofSegment],
+) -> Result<(), LoadPcsEvaluationUnitError> {
+    let mut matching_segments = segments
+        .iter()
+        .filter(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID);
+    let segment = matching_segments
+        .next()
+        .ok_or(LoadPcsEvaluationUnitError::MissingSegment)?;
+    if matching_segments.next().is_some() {
+        return Err(LoadPcsEvaluationUnitError::DuplicateSegment);
+    }
+    let evaluations =
+        parse_pcs_evaluation_segment(&segment.data).map_err(LoadPcsEvaluationUnitError::Segment)?;
+    for unit in evaluations.units {
+        if !query_units
+            .iter()
+            .any(|query_unit| query_unit.unit_index == unit.unit_index)
+        {
+            let unit_index = usize::try_from(unit.unit_index)
+                .map_err(|_| LoadPcsEvaluationUnitError::UnitIndexOverflow)?;
+            return Err(LoadPcsEvaluationUnitError::UnexpectedUnit { unit_index });
+        }
+    }
+    Ok(())
 }
 
 pub fn build_pcs_evaluation_segment(

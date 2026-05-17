@@ -553,6 +553,36 @@ fn rejects_transcript_pcs_query_plan_mismatches_with_program_image_cache_segment
     assert_eq!(error, ValidatePcsQueryPlanSegmentsError::QueryPlanMismatch);
 }
 
+#[test]
+fn rejects_transcript_pcs_query_plan_extra_evaluation_units() {
+    let (schedule, mut segments) = transcript_query_plan_segments();
+    let evaluation_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
+        .expect("evaluation segment should exist");
+    evaluation_segment.data = encode_pcs_evaluation_segment(&PcsEvaluationSegment {
+        units: vec![
+            PcsEvaluationUnitSegment {
+                unit_index: 0,
+                values: vec![[9, 10, 11]],
+            },
+            PcsEvaluationUnitSegment {
+                unit_index: 1,
+                values: vec![[19, 20, 21]],
+            },
+        ],
+    })
+    .expect("evaluation segment should encode");
+
+    let error = validate_transcript_pcs_query_plan_segments(&schedule, &[], &segments)
+        .expect_err("extra evaluation unit should be rejected");
+
+    assert_eq!(
+        error.to_string(),
+        "unexpected PCS evaluation segment unit 1"
+    );
+}
+
 fn pcs_query_plan_proof_segment(units: Vec<PcsQueryPlanUnit>) -> ProofSegment {
     ProofSegment {
         id: PCS_QUERY_PLAN_SEGMENT_ID,
