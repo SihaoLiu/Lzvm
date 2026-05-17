@@ -2,7 +2,9 @@ use std::path::Path;
 
 #[cfg(feature = "cuda")]
 use lzvm_accel::{
-    cuda_poseidon2_width16_device, cuda_poseidon2_width8_device, cuda_setup_init, CudaDeviceBuffer,
+    cuda_poseidon2_width16_device, cuda_poseidon2_width16_merkle_parent_device,
+    cuda_poseidon2_width8_device, cuda_poseidon2_width8_merkle_parent_device, cuda_setup_init,
+    CudaDeviceBuffer,
 };
 use lzvm_artifacts::constant_tree::{parse_constant_tree_bytes, read_constant_tree_file};
 use lzvm_artifacts::fixed::{
@@ -361,21 +363,20 @@ fn build_constant_tree_from_leaves_on_cuda(
     let mut out = Vec::with_capacity(shape.expected_tree_len);
     out.extend_from_slice(leaves);
 
-    let mut level = cuda_linear_hashes(&rows, shape.arity)?;
-    for digest in &level {
+    let mut level = cuda_linear_hashes_with_states(&rows, shape.arity)?;
+    for digest in &level.digests {
         append_digest(&mut out, *digest);
     }
 
-    while level.len() > 1 {
-        let extra_zeros = (shape.arity - (level.len() % shape.arity)) % shape.arity;
+    while level.state_count > 1 {
+        let extra_zeros = (shape.arity - (level.state_count % shape.arity)) % shape.arity;
         for _ in 0..extra_zeros {
             let zero = [Felt::ZERO; HASH_WORDS];
             append_digest(&mut out, zero);
-            level.push(zero);
         }
 
-        let next = cuda_parent_hashes(&level, shape.arity)?;
-        for digest in &next {
+        let next = cuda_parent_level_with_states(&level, shape.arity)?;
+        for digest in &next.digests {
             append_digest(&mut out, *digest);
         }
         level = next;
@@ -679,13 +680,20 @@ fn parent_hash_arity4(children: &[[Felt; HASH_WORDS]]) -> [Felt; HASH_WORDS] {
 }
 
 #[cfg(feature = "cuda")]
-fn cuda_linear_hashes(
+struct CudaTreeLevel {
+    digests: Vec<[Felt; HASH_WORDS]>,
+    states: CudaDeviceBuffer,
+    state_count: usize,
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_linear_hashes_with_states(
     rows: &[Vec<Felt>],
     arity: usize,
-) -> Result<Vec<[Felt; HASH_WORDS]>, SetupError> {
+) -> Result<CudaTreeLevel, SetupError> {
     match arity {
-        2 => cuda_linear_hashes_arity2(rows),
-        4 => cuda_linear_hashes_arity4(rows),
+        2 => cuda_linear_hashes_arity2_with_states(rows),
+        4 => cuda_linear_hashes_arity4_with_states(rows),
         _ => Err(SetupError::UnsupportedConstantTreeArity {
             arity: u32::try_from(arity).unwrap_or(u32::MAX),
         }),
@@ -693,84 +701,104 @@ fn cuda_linear_hashes(
 }
 
 #[cfg(feature = "cuda")]
-fn cuda_linear_hashes_arity2(rows: &[Vec<Felt>]) -> Result<Vec<[Felt; HASH_WORDS]>, SetupError> {
+fn cuda_linear_hashes_arity2_with_states(rows: &[Vec<Felt>]) -> Result<CudaTreeLevel, SetupError> {
     const WIDTH: usize = 8;
 
     let value_count = rows.first().map_or(0, Vec::len);
-    if value_count <= HASH_WORDS {
-        return Ok(rows.iter().map(|row| padded_digest(row)).collect());
-    }
+    let digests = if value_count <= HASH_WORDS {
+        rows.iter()
+            .map(|row| padded_digest(row))
+            .collect::<Vec<_>>()
+    } else {
+        let mut states = vec![[Felt::ZERO; WIDTH]; rows.len()];
+        let mut offset = 0;
+        while offset < value_count {
+            let chunk_len = (value_count - offset).min(HASH_WORDS);
+            let mut input = Vec::with_capacity(rows.len() * WIDTH);
+            for (state, row) in states.iter().zip(rows) {
+                let capacity = [state[0], state[1], state[2], state[3]];
+                let mut next = [Felt::ZERO; WIDTH];
+                next[..chunk_len].copy_from_slice(&row[offset..offset + chunk_len]);
+                next[HASH_WORDS..].copy_from_slice(&capacity);
+                push_felt_words(&mut input, &next);
+            }
 
-    let mut states = vec![[Felt::ZERO; WIDTH]; rows.len()];
-    let mut offset = 0;
-    while offset < value_count {
-        let chunk_len = (value_count - offset).min(HASH_WORDS);
-        let mut input = Vec::with_capacity(rows.len() * WIDTH);
-        for (state, row) in states.iter().zip(rows) {
-            let capacity = [state[0], state[1], state[2], state[3]];
-            let mut next = [Felt::ZERO; WIDTH];
-            next[..chunk_len].copy_from_slice(&row[offset..offset + chunk_len]);
-            next[HASH_WORDS..].copy_from_slice(&capacity);
-            push_felt_words(&mut input, &next);
+            let output = cuda_poseidon2_width8_device_words(&input)?;
+            for (state, chunk) in states.iter_mut().zip(output.chunks_exact(WIDTH)) {
+                *state = felt_array_from_words(chunk)?;
+            }
+            offset += chunk_len;
         }
 
-        let output = cuda_poseidon2_width8_device_words(&input)?;
-        for (state, chunk) in states.iter_mut().zip(output.chunks_exact(WIDTH)) {
-            *state = felt_array_from_words(chunk)?;
-        }
-        offset += chunk_len;
-    }
+        states
+            .into_iter()
+            .map(|state| [state[0], state[1], state[2], state[3]])
+            .collect::<Vec<_>>()
+    };
 
-    Ok(states
-        .into_iter()
-        .map(|state| [state[0], state[1], state[2], state[3]])
-        .collect())
+    let state_words = cuda_state_words_from_digests(&digests, WIDTH)?;
+    let states = cuda_device_buffer_from_words(&state_words)?;
+    Ok(CudaTreeLevel {
+        state_count: digests.len(),
+        digests,
+        states,
+    })
 }
 
 #[cfg(feature = "cuda")]
-fn cuda_linear_hashes_arity4(rows: &[Vec<Felt>]) -> Result<Vec<[Felt; HASH_WORDS]>, SetupError> {
+fn cuda_linear_hashes_arity4_with_states(rows: &[Vec<Felt>]) -> Result<CudaTreeLevel, SetupError> {
     const RATE: usize = 12;
     const WIDTH: usize = 16;
 
     let value_count = rows.first().map_or(0, Vec::len);
-    if value_count <= HASH_WORDS {
-        return Ok(rows.iter().map(|row| padded_digest(row)).collect());
-    }
+    let digests = if value_count <= HASH_WORDS {
+        rows.iter()
+            .map(|row| padded_digest(row))
+            .collect::<Vec<_>>()
+    } else {
+        let mut states = vec![[Felt::ZERO; WIDTH]; rows.len()];
+        let mut offset = 0;
+        while offset < value_count {
+            let chunk_len = (value_count - offset).min(RATE);
+            let mut input = Vec::with_capacity(rows.len() * WIDTH);
+            for (state, row) in states.iter().zip(rows) {
+                let capacity = [state[0], state[1], state[2], state[3]];
+                let mut next = [Felt::ZERO; WIDTH];
+                next[..chunk_len].copy_from_slice(&row[offset..offset + chunk_len]);
+                next[RATE..].copy_from_slice(&capacity);
+                push_felt_words(&mut input, &next);
+            }
 
-    let mut states = vec![[Felt::ZERO; WIDTH]; rows.len()];
-    let mut offset = 0;
-    while offset < value_count {
-        let chunk_len = (value_count - offset).min(RATE);
-        let mut input = Vec::with_capacity(rows.len() * WIDTH);
-        for (state, row) in states.iter().zip(rows) {
-            let capacity = [state[0], state[1], state[2], state[3]];
-            let mut next = [Felt::ZERO; WIDTH];
-            next[..chunk_len].copy_from_slice(&row[offset..offset + chunk_len]);
-            next[RATE..].copy_from_slice(&capacity);
-            push_felt_words(&mut input, &next);
+            let output = cuda_poseidon2_width16_device_words(&input)?;
+            for (state, chunk) in states.iter_mut().zip(output.chunks_exact(WIDTH)) {
+                *state = felt_array_from_words(chunk)?;
+            }
+            offset += chunk_len;
         }
 
-        let output = cuda_poseidon2_width16_device_words(&input)?;
-        for (state, chunk) in states.iter_mut().zip(output.chunks_exact(WIDTH)) {
-            *state = felt_array_from_words(chunk)?;
-        }
-        offset += chunk_len;
-    }
+        states
+            .into_iter()
+            .map(|state| [state[0], state[1], state[2], state[3]])
+            .collect::<Vec<_>>()
+    };
 
-    Ok(states
-        .into_iter()
-        .map(|state| [state[0], state[1], state[2], state[3]])
-        .collect())
+    let state_words = cuda_state_words_from_digests(&digests, WIDTH)?;
+    let states = cuda_device_buffer_from_words(&state_words)?;
+    Ok(CudaTreeLevel {
+        state_count: digests.len(),
+        digests,
+        states,
+    })
 }
 
 #[cfg(feature = "cuda")]
-fn cuda_parent_hashes(
-    level: &[[Felt; HASH_WORDS]],
+fn cuda_parent_level_with_states(
+    level: &CudaTreeLevel,
     arity: usize,
-) -> Result<Vec<[Felt; HASH_WORDS]>, SetupError> {
+) -> Result<CudaTreeLevel, SetupError> {
     match arity {
-        2 => cuda_parent_hashes_arity2(level),
-        4 => cuda_parent_hashes_arity4(level),
+        2 => cuda_parent_level_arity2_with_states(level),
+        4 => cuda_parent_level_arity4_with_states(level),
         _ => Err(SetupError::UnsupportedConstantTreeArity {
             arity: u32::try_from(arity).unwrap_or(u32::MAX),
         }),
@@ -778,42 +806,53 @@ fn cuda_parent_hashes(
 }
 
 #[cfg(feature = "cuda")]
-fn cuda_parent_hashes_arity2(
-    level: &[[Felt; HASH_WORDS]],
-) -> Result<Vec<[Felt; HASH_WORDS]>, SetupError> {
+fn cuda_parent_level_arity2_with_states(
+    level: &CudaTreeLevel,
+) -> Result<CudaTreeLevel, SetupError> {
     const WIDTH: usize = 8;
 
-    let mut input = Vec::with_capacity(level.len() * HASH_WORDS);
-    for children in level.chunks_exact(2) {
-        push_felt_words(&mut input, &children[0]);
-        push_felt_words(&mut input, &children[1]);
-    }
-
-    let output = cuda_poseidon2_width8_device_words(&input)?;
-    output
-        .chunks_exact(WIDTH)
-        .map(digest_from_state_words)
-        .collect()
+    let parent_state_count = level.state_count.div_ceil(2);
+    let mut states = CudaDeviceBuffer::new(
+        parent_state_count
+            .checked_mul(WIDTH)
+            .and_then(|words| words.checked_mul(WORD_BYTES))
+            .ok_or(SetupError::LengthOverflow)?,
+    )
+    .map_err(cuda_backend_error)?;
+    cuda_poseidon2_width8_merkle_parent_device(&level.states, &mut states)
+        .map_err(cuda_backend_error)?;
+    let words = states.to_u64_words().map_err(cuda_backend_error)?;
+    let digests = cuda_digests_from_state_words(&words, WIDTH)?;
+    Ok(CudaTreeLevel {
+        state_count: parent_state_count,
+        digests,
+        states,
+    })
 }
 
 #[cfg(feature = "cuda")]
-fn cuda_parent_hashes_arity4(
-    level: &[[Felt; HASH_WORDS]],
-) -> Result<Vec<[Felt; HASH_WORDS]>, SetupError> {
+fn cuda_parent_level_arity4_with_states(
+    level: &CudaTreeLevel,
+) -> Result<CudaTreeLevel, SetupError> {
     const WIDTH: usize = 16;
 
-    let mut input = Vec::with_capacity(level.len() * HASH_WORDS);
-    for children in level.chunks_exact(4) {
-        for child in children {
-            push_felt_words(&mut input, child);
-        }
-    }
-
-    let output = cuda_poseidon2_width16_device_words(&input)?;
-    output
-        .chunks_exact(WIDTH)
-        .map(digest_from_state_words)
-        .collect()
+    let parent_state_count = level.state_count.div_ceil(4);
+    let mut states = CudaDeviceBuffer::new(
+        parent_state_count
+            .checked_mul(WIDTH)
+            .and_then(|words| words.checked_mul(WORD_BYTES))
+            .ok_or(SetupError::LengthOverflow)?,
+    )
+    .map_err(cuda_backend_error)?;
+    cuda_poseidon2_width16_merkle_parent_device(&level.states, &mut states)
+        .map_err(cuda_backend_error)?;
+    let words = states.to_u64_words().map_err(cuda_backend_error)?;
+    let digests = cuda_digests_from_state_words(&words, WIDTH)?;
+    Ok(CudaTreeLevel {
+        state_count: parent_state_count,
+        digests,
+        states,
+    })
 }
 
 #[cfg(feature = "cuda")]
@@ -849,6 +888,48 @@ fn cuda_poseidon2_words_device(
     .map_err(cuda_backend_error)?;
     operation(&input_buffer, &mut output_buffer).map_err(cuda_backend_error)?;
     output_buffer.to_u64_words().map_err(cuda_backend_error)
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_device_buffer_from_words(words: &[u64]) -> Result<CudaDeviceBuffer, SetupError> {
+    if words.is_empty() {
+        CudaDeviceBuffer::new(0).map_err(cuda_backend_error)
+    } else {
+        CudaDeviceBuffer::from_u64_words(words).map_err(cuda_backend_error)
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_state_words_from_digests(
+    digests: &[[Felt; HASH_WORDS]],
+    width: usize,
+) -> Result<Vec<u64>, SetupError> {
+    let mut words = vec![
+        0_u64;
+        digests
+            .len()
+            .checked_mul(width)
+            .ok_or(SetupError::LengthOverflow)?
+    ];
+    for (index, digest) in digests.iter().enumerate() {
+        let offset = index.checked_mul(width).ok_or(SetupError::LengthOverflow)?;
+        for (word_index, value) in digest.iter().enumerate() {
+            words[offset + word_index] = value.to_u64();
+        }
+    }
+    Ok(words)
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_digests_from_state_words(
+    words: &[u64],
+    width: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, SetupError> {
+    let mut digests = Vec::with_capacity(words.len() / width);
+    for state in words.chunks_exact(width) {
+        digests.push(digest_from_state_words(state)?);
+    }
+    Ok(digests)
 }
 
 #[cfg(feature = "cuda")]
@@ -896,7 +977,10 @@ fn append_digest(out: &mut Vec<u8>, digest: [Felt; HASH_WORDS]) {
 
 #[cfg(all(test, feature = "cuda"))]
 mod tests {
-    use super::{cuda_poseidon2_width16_device_words, cuda_poseidon2_width8_device_words};
+    use super::{
+        cuda_parent_level_with_states, cuda_poseidon2_width16_device_words,
+        cuda_poseidon2_width8_device_words, CudaTreeLevel, HASH_WORDS,
+    };
     use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt};
 
     #[test]
@@ -920,11 +1004,76 @@ mod tests {
         assert_eq!(width16_actual, width16_expected);
     }
 
+    #[test]
+    fn cuda_parent_level_with_states_matches_cpu_reference() {
+        let width8_level = CudaTreeLevel {
+            digests: vec![
+                digest([1, 2, 3, 4]),
+                digest([5, 6, 7, 8]),
+                digest([9, 10, 11, 12]),
+            ],
+            states: super::CudaDeviceBuffer::from_u64_words(&[
+                1, 2, 3, 4, 101, 102, 103, 104, 5, 6, 7, 8, 201, 202, 203, 204, 9, 10, 11, 12, 301,
+                302, 303, 304,
+            ])
+            .expect("device buffer should allocate"),
+            state_count: 3,
+        };
+        let width8_next = cuda_parent_level_with_states(&width8_level, 2)
+            .expect("width-8 parent level should hash");
+        assert_eq!(width8_next.state_count, 2);
+        assert_eq!(
+            width8_next.digests,
+            vec![
+                super::parent_hash_arity2(width8_level.digests[0], width8_level.digests[1]),
+                super::parent_hash_arity2(width8_level.digests[2], [Felt::ZERO; HASH_WORDS]),
+            ]
+        );
+
+        let width16_level = CudaTreeLevel {
+            digests: vec![
+                digest([1, 2, 3, 4]),
+                digest([5, 6, 7, 8]),
+                digest([9, 10, 11, 12]),
+                digest([13, 14, 15, 16]),
+                digest([17, 18, 19, 20]),
+            ],
+            states: super::CudaDeviceBuffer::from_u64_words(&[
+                1, 2, 3, 4, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 5, 6, 7, 8,
+                201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 9, 10, 11, 12, 301,
+                302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 13, 14, 15, 16, 401, 402,
+                403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 17, 18, 19, 20, 501, 502, 503,
+                504, 505, 506, 507, 508, 509, 510, 511, 512,
+            ])
+            .expect("device buffer should allocate"),
+            state_count: 5,
+        };
+        let width16_next = cuda_parent_level_with_states(&width16_level, 4)
+            .expect("width-16 parent level should hash");
+        assert_eq!(width16_next.state_count, 2);
+        assert_eq!(
+            width16_next.digests,
+            vec![
+                super::parent_hash_arity4(&width16_level.digests[0..4]),
+                super::parent_hash_arity4(&[
+                    width16_level.digests[4],
+                    [Felt::ZERO; HASH_WORDS],
+                    [Felt::ZERO; HASH_WORDS],
+                    [Felt::ZERO; HASH_WORDS],
+                ]),
+            ]
+        );
+    }
+
     fn felt_array<const WIDTH: usize>(words: &[u64]) -> [Felt; WIDTH] {
         let mut values = [Felt::ZERO; WIDTH];
         for (value, word) in values.iter_mut().zip(words) {
             *value = Felt::from_u64(*word);
         }
         values
+    }
+
+    fn digest(values: [u64; HASH_WORDS]) -> [Felt; HASH_WORDS] {
+        values.map(Felt::from_u64)
     }
 }
