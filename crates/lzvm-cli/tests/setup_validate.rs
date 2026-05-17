@@ -6044,6 +6044,80 @@ fn verify_proof_binding_reports_eth_block_extra_field_counts() {
 }
 
 #[test]
+fn verify_proof_reports_eth_block_extra_field_counts_from_proof_segment() {
+    let dir = temp_dir("verify-proof-segment-eth-extra-field-counts");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let block_input_path = dir.join("block.input");
+    let generated_public_values_path = output_dir.join("eth-block-public-values.bin");
+    let proof_path = output_dir.join("proof.bin");
+    let block_rlp = sample_block_rlp_with_extra_fields();
+    let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let encoded_block_input =
+        encode_eth_block_input(&block_input).expect("block input should encode");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+    write_bytes(&block_input_path, &encoded_block_input);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "proof",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            generated_public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert!(verify_stderr.is_empty());
+    let verify_stdout_text =
+        String::from_utf8(verify_stdout).expect("verify stdout should be utf-8");
+    assert!(verify_stdout_text.contains("eth_extra_header_fields=1\neth_extra_body_fields=1\n"));
+}
+
+#[test]
 fn prove_witness_all_units_reports_generated_eth_block_public_values() {
     let dir = temp_dir("prove-witness-all-units-eth-public-values");
     let _ = fs::remove_dir_all(&dir);

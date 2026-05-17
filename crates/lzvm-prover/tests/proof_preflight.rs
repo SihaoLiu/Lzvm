@@ -172,6 +172,8 @@ fn validates_proof_public_value_preflight_hashes() {
             eth_block_input_hashes: Vec::new(),
             eth_block_input_byte_counts: Vec::new(),
             eth_block_input_block_rlp_byte_counts: Vec::new(),
+            eth_block_input_extra_header_field_counts: Vec::new(),
+            eth_block_input_extra_body_field_counts: Vec::new(),
             eth_block_input_block_hashes: Vec::new(),
             eth_block_input_parent_hashes: Vec::new(),
             eth_block_input_ommers_hashes: Vec::new(),

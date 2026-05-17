@@ -127,6 +127,22 @@ fn sample_block_rlp_with_withdrawals_root(withdrawals_root: [u8; 32]) -> Vec<u8>
     rlp_list(&[header_rlp, empty_list.clone(), empty_list, withdrawals])
 }
 
+fn sample_block_rlp_with_extra_fields() -> Vec<u8> {
+    let empty_root = hex32("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421");
+    let mut header_items =
+        legacy_header_items_with_receipts(empty_root, sample_hash(0x66), Some(empty_root));
+    header_items.push(rlp_bytes(&[0xee]));
+    let header_rlp = rlp_list(&header_items);
+    let empty_list = rlp_list(&[]);
+    rlp_list(&[
+        header_rlp,
+        empty_list.clone(),
+        empty_list.clone(),
+        empty_list,
+        rlp_bytes(&[0xdd]),
+    ])
+}
+
 fn legacy_header_items_with_receipts(
     transactions_root: [u8; 32],
     receipts_root: [u8; 32],
@@ -319,6 +335,44 @@ fn verifies_preflight_reports_eth_block_input_digest() {
         )
     );
     assert!(stderr.is_empty());
+}
+
+#[test]
+fn verifies_preflight_reports_eth_block_extra_field_counts() {
+    let block_rlp = sample_block_rlp_with_extra_fields();
+    let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let values = public_values_from_eth_block_input(sample_hash(0x44), &block_input);
+    let public_values_hash = public_values_digest(&values).expect("digest should compute");
+    let segment_data = encode_eth_block_input_segment(&block_input).expect("segment should encode");
+    let proof = ProofArtifact {
+        setup_hash: values.setup_hash,
+        public_values_hash,
+        segments: vec![ProofSegment {
+            id: ETH_BLOCK_INPUT_SEGMENT_ID,
+            data: segment_data,
+        }],
+    };
+    let (dir, proof_path, public_path) =
+        write_fixture_pair("eth-block-input-extra-fields", &proof, &values);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "preflight",
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_path.to_str().expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("eth_extra_header_fields=1\neth_extra_body_fields=1\n"));
 }
 
 #[test]

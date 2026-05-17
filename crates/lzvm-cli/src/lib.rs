@@ -656,6 +656,19 @@ fn verify_preflight(
             if let Some(block_rlp_bytes) = report.eth_block_input_block_rlp_byte_counts.get(index) {
                 let _ = writeln!(stdout, "eth_block_rlp_bytes={block_rlp_bytes}");
             }
+            write_eth_extra_field_summary(
+                stdout,
+                report
+                    .eth_block_input_extra_header_field_counts
+                    .get(index)
+                    .copied()
+                    .unwrap_or(0),
+                report
+                    .eth_block_input_extra_body_field_counts
+                    .get(index)
+                    .copied()
+                    .unwrap_or(0),
+            );
             if let Some(block_hash) = report.eth_block_input_block_hashes.get(index) {
                 let _ = writeln!(
                     stdout,
@@ -1142,6 +1155,19 @@ fn verify_setup_validation(
                 {
                     let _ = writeln!(stdout, "eth_block_rlp_bytes={block_rlp_bytes}");
                 }
+                write_eth_extra_field_summary(
+                    stdout,
+                    public_report
+                        .eth_block_input_extra_header_field_counts
+                        .get(index)
+                        .copied()
+                        .unwrap_or(0),
+                    public_report
+                        .eth_block_input_extra_body_field_counts
+                        .get(index)
+                        .copied()
+                        .unwrap_or(0),
+                );
                 if let Some(block_hash) = public_report.eth_block_input_block_hashes.get(index) {
                     let _ = writeln!(
                         stdout,
@@ -1313,18 +1339,11 @@ fn verify_setup_validation(
         let _ = writeln!(stdout, "eth_block_input_match=ok");
         let _ = writeln!(stdout, "eth_block_input_bytes={}", binding.bytes);
         let _ = writeln!(stdout, "eth_block_rlp_bytes={}", binding.block_rlp_bytes);
-        if binding.extra_header_field_count > 0 || binding.extra_body_field_count > 0 {
-            let _ = writeln!(
-                stdout,
-                "eth_extra_header_fields={}",
-                binding.extra_header_field_count
-            );
-            let _ = writeln!(
-                stdout,
-                "eth_extra_body_fields={}",
-                binding.extra_body_field_count
-            );
-        }
+        write_eth_extra_field_summary(
+            stdout,
+            binding.extra_header_field_count,
+            binding.extra_body_field_count,
+        );
         let _ = writeln!(
             stdout,
             "eth_block_hash={}",
@@ -1539,6 +1558,18 @@ fn write_eth_transaction_preimage_summary(
         stdout,
         "eth_transaction_trie_preimages={transaction_preimage_count}"
     );
+}
+
+fn write_eth_extra_field_summary(
+    stdout: &mut dyn Write,
+    extra_header_field_count: usize,
+    extra_body_field_count: usize,
+) {
+    if extra_header_field_count == 0 && extra_body_field_count == 0 {
+        return;
+    }
+    let _ = writeln!(stdout, "eth_extra_header_fields={extra_header_field_count}");
+    let _ = writeln!(stdout, "eth_extra_body_fields={extra_body_field_count}");
 }
 
 fn format_bytes_hex(bytes: &[u8]) -> String {
