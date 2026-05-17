@@ -5,11 +5,48 @@ use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, parse_pcs_setup_plan, read_pcs_setup_plan_file,
     PcsPlanError,
 };
+use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedSection};
 
 mod fixtures;
 
 fn temp_file_path(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("lzvm-pcs-plan-{}-{name}", std::process::id()))
+}
+
+fn pcs_plan_file(section: Vec<u8>) -> Vec<u8> {
+    encode_sectioned_file(&SectionedFile {
+        kind: *b"pcsp",
+        version: 2,
+        sections: vec![SectionedSection {
+            id: 1,
+            data: section,
+        }],
+    })
+    .expect("sectioned fixture should encode")
+}
+
+fn section_prefix() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    push_u32(&mut bytes, 10);
+    push_u32(&mut bytes, 13);
+    push_u64(&mut bytes, 1024);
+    push_u64(&mut bytes, 8192);
+    push_u64(&mut bytes, 8);
+    push_u32(&mut bytes, 4);
+    push_u32(&mut bytes, 20);
+    push_u32(&mut bytes, 4);
+    bytes.push(0);
+    bytes.push(0);
+    push_u32(&mut bytes, 5);
+    bytes
+}
+
+fn push_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_u64(out: &mut Vec<u8>, value: u64) {
+    out.extend_from_slice(&value.to_le_bytes());
 }
 
 #[test]
@@ -117,6 +154,47 @@ fn rejects_invalid_pcs_folding_schedule() {
             input_bits: 13,
             output_bits: 13
         })
+    ));
+}
+
+#[test]
+fn rejects_stage_commit_width_count_that_exceeds_remaining_widths() {
+    let mut section = section_prefix();
+    push_u32(&mut section, 1);
+    let bytes = pcs_plan_file(section);
+
+    assert!(matches!(
+        parse_pcs_setup_plan(&bytes),
+        Err(PcsPlanError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_opening_point_count_that_exceeds_remaining_points() {
+    let mut section = section_prefix();
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 2);
+    push_u32(&mut section, 1);
+    let bytes = pcs_plan_file(section);
+
+    assert!(matches!(
+        parse_pcs_setup_plan(&bytes),
+        Err(PcsPlanError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_fri_layer_count_that_exceeds_remaining_layers() {
+    let mut section = section_prefix();
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 2);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    let bytes = pcs_plan_file(section);
+
+    assert!(matches!(
+        parse_pcs_setup_plan(&bytes),
+        Err(PcsPlanError::LengthOverflow)
     ));
 }
 

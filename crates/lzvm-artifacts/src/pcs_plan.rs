@@ -9,6 +9,9 @@ use crate::setup_info::{SetupInfoError, UnitSetupInfo};
 const PCS_PLAN_KIND: [u8; 4] = *b"pcsp";
 const PCS_PLAN_VERSION: u32 = 2;
 const PCS_PLAN_SECTION_ID: u32 = 1;
+const STAGE_COMMIT_WIDTH_BYTES: usize = 4;
+const OPENING_POINT_BYTES: usize = 8;
+const FRI_LAYER_BYTES: usize = 4 + 4 + 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PcsSetupPlan {
@@ -303,20 +306,29 @@ fn parse_pcs_setup_plan_section(bytes: &[u8]) -> Result<PcsSetupPlan, PcsPlanErr
     let hash_commits = reader.read_bool("hash_commits")?;
     let constant_width = reader.read_u32()?;
 
-    let stage_commit_width_count = reader.read_u32()?;
-    let mut stage_commit_widths = Vec::with_capacity(stage_commit_width_count as usize);
+    let stage_commit_width_count = u32_to_usize(reader.read_u32()?)?;
+    if stage_commit_width_count > reader.remaining_len() / STAGE_COMMIT_WIDTH_BYTES {
+        return Err(PcsPlanError::LengthOverflow);
+    }
+    let mut stage_commit_widths = Vec::with_capacity(stage_commit_width_count);
     for _ in 0..stage_commit_width_count {
         stage_commit_widths.push(reader.read_u32()?);
     }
 
-    let opening_point_count = reader.read_u32()?;
-    let mut opening_points = Vec::with_capacity(opening_point_count as usize);
+    let opening_point_count = u32_to_usize(reader.read_u32()?)?;
+    if opening_point_count > reader.remaining_len() / OPENING_POINT_BYTES {
+        return Err(PcsPlanError::LengthOverflow);
+    }
+    let mut opening_points = Vec::with_capacity(opening_point_count);
     for _ in 0..opening_point_count {
         opening_points.push(reader.read_i64()?);
     }
 
-    let fri_layer_count = reader.read_u32()?;
-    let mut fri_layers = Vec::with_capacity(fri_layer_count as usize);
+    let fri_layer_count = u32_to_usize(reader.read_u32()?)?;
+    if fri_layer_count > reader.remaining_len() / FRI_LAYER_BYTES {
+        return Err(PcsPlanError::LengthOverflow);
+    }
+    let mut fri_layers = Vec::with_capacity(fri_layer_count);
     for _ in 0..fri_layer_count {
         fri_layers.push(PcsFriLayer {
             input_bits: reader.read_u32()?,
@@ -473,6 +485,10 @@ impl<'a> Reader<'a> {
         self.offset
     }
 
+    fn remaining_len(&self) -> usize {
+        self.bytes.len() - self.offset
+    }
+
     fn read_u8(&mut self) -> Result<u8, PcsPlanError> {
         let bytes = self.read_exact(1)?;
         Ok(bytes[0])
@@ -561,4 +577,8 @@ fn write_bool(out: &mut Vec<u8>, value: bool) {
 
 fn usize_to_u32(value: usize) -> Result<u32, PcsPlanError> {
     u32::try_from(value).map_err(|_| PcsPlanError::LengthOverflow)
+}
+
+fn u32_to_usize(value: u32) -> Result<usize, PcsPlanError> {
+    usize::try_from(value).map_err(|_| PcsPlanError::LengthOverflow)
 }
