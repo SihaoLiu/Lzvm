@@ -168,7 +168,10 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                 &parsed,
                 &auxiliary_inputs,
                 &outputs,
-                eth_block_input.as_ref(),
+                FinishEthBlockInput {
+                    summary: eth_block_input.as_ref(),
+                    generated_public_inputs,
+                },
                 stdout,
             ) {
                 let _ = writeln!(stderr, "prove witness failed: {message}");
@@ -236,7 +239,10 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             &parsed,
             &auxiliary_inputs,
             &outputs,
-            eth_block_input.as_ref(),
+            FinishEthBlockInput {
+                summary: eth_block_input.as_ref(),
+                generated_public_inputs,
+            },
             stdout,
         ) {
             let _ = writeln!(stderr, "prove witness failed: {message}");
@@ -702,6 +708,12 @@ fn prepare_eth_block_public_inputs(
     })
 }
 
+#[derive(Clone, Copy)]
+struct FinishEthBlockInput<'a> {
+    summary: Option<&'a EthBlockInputSummary>,
+    generated_public_inputs: bool,
+}
+
 struct WitnessAuxiliaryInputRequest<'a> {
     global_info: &'a GlobalInfo,
     unit_values_input: Option<&'a Path>,
@@ -835,7 +847,7 @@ fn finish_all_units_witness_run(
     parsed: &ParsedWitnessArgs,
     auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
     outputs: &[ProveWitnessTraceCommitments],
-    eth_block_input: Option<&EthBlockInputSummary>,
+    eth_block_input: FinishEthBlockInput<'_>,
     stdout: &mut dyn Write,
 ) -> Result<(), String> {
     let unit_values = load_batch_unit_values_inputs(
@@ -850,7 +862,8 @@ fn finish_all_units_witness_run(
             })?),
             None => None,
         };
-    if let (Some(summary), Some(public_values)) = (eth_block_input, public_values.as_ref()) {
+    if let (Some(summary), Some(public_values)) = (eth_block_input.summary, public_values.as_ref())
+    {
         validate_eth_block_public_values(&summary.input, public_values)
             .map_err(|error| error.to_string())?;
     }
@@ -873,7 +886,7 @@ fn finish_all_units_witness_run(
             .program_image_cache
             .as_ref()
             .map(|summary| &summary.cache),
-        eth_block_input: eth_block_input.map(|summary| &summary.input),
+        eth_block_input: eth_block_input.summary.map(|summary| &summary.input),
     };
     let proof = if plan.run_plan.pass.kind() == ProvePassKind::Contributions {
         lzvm_prover::build_witness_contribution_proof_artifact_for_all_units(&proof_request)?
@@ -909,7 +922,7 @@ fn finish_all_units_witness_run(
                     .program_image_cache
                     .as_ref()
                     .map(|summary| &summary.cache),
-                eth_block_input: eth_block_input.as_ref().map(|summary| &summary.input),
+                eth_block_input: eth_block_input.summary.map(|summary| &summary.input),
                 output,
                 contribution_only: plan.run_plan.pass.kind() == ProvePassKind::Contributions,
             };
@@ -939,10 +952,13 @@ fn finish_all_units_witness_run(
             public_values_field_count(public_values)
         );
     }
+    if eth_block_input.generated_public_inputs {
+        let _ = writeln!(stdout, "public_inputs_generated=eth_block_input");
+    }
     if let Some(summary) = &plan.program_image_cache {
         write_program_image_cache_summary(stdout, summary);
     }
-    if let Some(summary) = eth_block_input {
+    if let Some(summary) = eth_block_input.summary {
         write_eth_block_input_summary(stdout, summary);
     }
     for output in outputs {
