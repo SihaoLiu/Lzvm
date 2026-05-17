@@ -62,6 +62,47 @@ pub fn parse_rlp(bytes: &[u8]) -> Result<RlpItem, RlpError> {
     Ok(item)
 }
 
+pub fn encode_rlp(item: &RlpItem) -> Vec<u8> {
+    match item {
+        RlpItem::Bytes(bytes) => encode_bytes(bytes),
+        RlpItem::List(items) => {
+            let payload = items.iter().flat_map(encode_rlp).collect::<Vec<_>>();
+            encode_payload(0xc0, 0xf7, &payload)
+        }
+    }
+}
+
+fn encode_bytes(bytes: &[u8]) -> Vec<u8> {
+    if bytes.len() == 1 && bytes[0] <= 0x7f {
+        return vec![bytes[0]];
+    }
+    encode_payload(0x80, 0xb7, bytes)
+}
+
+fn encode_payload(short_base: u8, long_base: u8, payload: &[u8]) -> Vec<u8> {
+    if payload.len() <= 55 {
+        let mut output = vec![short_base + payload.len() as u8];
+        output.extend_from_slice(payload);
+        return output;
+    }
+
+    let length = encode_length(payload.len());
+    let mut output = vec![long_base + length.len() as u8];
+    output.extend_from_slice(&length);
+    output.extend_from_slice(payload);
+    output
+}
+
+fn encode_length(mut value: usize) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    while value > 0 {
+        bytes.push((value & 0xff) as u8);
+        value >>= 8;
+    }
+    bytes.reverse();
+    bytes
+}
+
 fn parse_item(bytes: &[u8], offset: usize, limit: usize) -> Result<(RlpItem, usize), RlpError> {
     require_available(bytes, offset, limit, 1)?;
     let prefix = bytes[offset];

@@ -1,4 +1,4 @@
-use lzvm_artifacts::rlp::{parse_rlp, RlpError, RlpItem};
+use lzvm_artifacts::rlp::{encode_rlp, parse_rlp, RlpError, RlpItem};
 
 #[test]
 fn decodes_canonical_rlp_values() {
@@ -37,6 +37,50 @@ fn decodes_canonical_rlp_values() {
             ]),
         ])
     );
+}
+
+#[test]
+fn encodes_short_rlp_values() {
+    assert_eq!(encode_rlp(&RlpItem::Bytes(vec![0x7f])), vec![0x7f]);
+    assert_eq!(encode_rlp(&RlpItem::Bytes(Vec::new())), vec![0x80]);
+    assert_eq!(
+        encode_rlp(&RlpItem::Bytes(b"cat".to_vec())),
+        vec![0x83, b'c', b'a', b't']
+    );
+    assert_eq!(encode_rlp(&RlpItem::List(Vec::new())), vec![0xc0]);
+    assert_eq!(
+        encode_rlp(&RlpItem::List(vec![
+            RlpItem::Bytes(b"cat".to_vec()),
+            RlpItem::Bytes(b"dog".to_vec()),
+        ])),
+        vec![0xc8, 0x83, b'c', b'a', b't', 0x83, b'd', b'o', b'g']
+    );
+}
+
+#[test]
+fn encodes_long_rlp_payloads() {
+    let long_bytes = RlpItem::Bytes(vec![b'a'; 56]);
+    let mut expected_bytes = vec![0xb8, 56];
+    expected_bytes.extend(std::iter::repeat_n(b'a', 56));
+    assert_eq!(encode_rlp(&long_bytes), expected_bytes);
+
+    let long_list = RlpItem::List(vec![RlpItem::Bytes(Vec::new()); 56]);
+    let mut expected_list = vec![0xf8, 56];
+    expected_list.extend(std::iter::repeat_n(0x80, 56));
+    assert_eq!(encode_rlp(&long_list), expected_list);
+}
+
+#[test]
+fn round_trips_nested_rlp_items() {
+    let item = RlpItem::List(vec![
+        RlpItem::List(Vec::new()),
+        RlpItem::List(vec![
+            RlpItem::Bytes(b"dog".to_vec()),
+            RlpItem::List(Vec::new()),
+        ]),
+    ]);
+
+    assert_eq!(parse_rlp(&encode_rlp(&item)), Ok(item));
 }
 
 #[test]
