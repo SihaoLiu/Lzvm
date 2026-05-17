@@ -2,9 +2,9 @@ use lzvm_artifacts::eth_block_input::{
     build_eth_block_input, build_eth_block_input_with_receipts, encode_eth_block_input,
     parse_eth_block_input, EthBlockInputError, EthBlockInputTrie,
 };
-use lzvm_artifacts::eth_trie::{receipt_trie_build, transaction_trie_build};
+use lzvm_artifacts::eth_trie::{receipt_trie_build, transaction_trie_build, TrieHashPreimage};
 use lzvm_artifacts::rlp::parse_rlp;
-use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
+use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedSection};
 
 const ETH_BLOCK_INPUT_KIND: [u8; 4] = *b"ethi";
 const ETH_BLOCK_INPUT_VERSION: u32 = 1;
@@ -139,6 +139,37 @@ fn rejects_block_logs_bloom_mismatches() {
 
     let error = build_eth_block_input_with_receipts(&block_rlp, &receipts_rlp)
         .expect_err("block input should reject mismatched block logs bloom");
+
+    assert!(matches!(error, EthBlockInputError::LogsBloomMismatch));
+}
+
+#[test]
+fn rejects_encoded_receipt_logs_bloom_mismatches() {
+    let receipt_item = receipt_item();
+    let receipts = vec![parse_rlp(&receipt_item).expect("receipt item should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    let block_rlp = sample_block_rlp_with_transactions_receipts_and_logs_bloom(
+        empty_trie_root(),
+        receipt_build.root,
+        [0x77; 256],
+        Vec::new(),
+    );
+    let receipts_rlp = rlp_list(&[receipt_item]);
+    let input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let encoded = encode_eth_block_input(&input).expect("block input should encode");
+    let mut file = parse_sectioned_file(&encoded, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION)
+        .expect("sectioned input should parse");
+    file.sections.push(SectionedSection {
+        id: RECEIPT_PREIMAGES_SECTION_ID,
+        data: encode_hash_preimages(&receipt_build.hash_preimages),
+    });
+    file.sections.push(SectionedSection {
+        id: RECEIPTS_RLP_SECTION_ID,
+        data: receipts_rlp,
+    });
+    let encoded = encode_sectioned_file(&file).expect("sectioned input should encode");
+
+    let error = parse_eth_block_input(&encoded).expect_err("block input should reject receipts");
 
     assert!(matches!(error, EthBlockInputError::LogsBloomMismatch));
 }
@@ -395,6 +426,25 @@ fn receipt_item() -> Vec<u8> {
         rlp_bytes(&[0; 256]),
         rlp_list(&[]),
     ])
+}
+
+fn encode_hash_preimages(preimages: &[TrieHashPreimage]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(
+        &u32::try_from(preimages.len())
+            .expect("preimage count should fit")
+            .to_le_bytes(),
+    );
+    for preimage in preimages {
+        out.extend_from_slice(&preimage.hash);
+        out.extend_from_slice(
+            &u64::try_from(preimage.rlp.len())
+                .expect("preimage length should fit")
+                .to_le_bytes(),
+        );
+        out.extend_from_slice(&preimage.rlp);
+    }
+    out
 }
 
 fn withdrawal_item() -> Vec<u8> {

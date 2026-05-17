@@ -452,7 +452,12 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
     let receipts_rlp = match receipts_rlp {
         Some(bytes) => {
             let parsed_receipts = parse_eth_receipts_rlp(&bytes)?;
-            decode_eth_receipts_rlp(&parsed_receipts)?;
+            let decoded_receipts = decode_eth_receipts_rlp(&parsed_receipts)?;
+            if let Some(logs_bloom) = eth_receipts_logs_bloom(&decoded_receipts) {
+                if logs_bloom != validated_input.logs_bloom {
+                    return Err(EthBlockInputError::LogsBloomMismatch);
+                }
+            }
             let build = receipt_trie_build(&parsed_receipts);
             if build.root != metadata.receipts_root {
                 return Err(EthBlockInputError::ReceiptsRootMismatch);
