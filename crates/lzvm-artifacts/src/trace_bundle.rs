@@ -27,6 +27,7 @@ pub enum TraceBundleError {
     EmptyTraceBytes { unit_index: u32 },
     DuplicateUnitIndex { unit_index: u32 },
     ReadFailed { path: PathBuf, message: String },
+    UnsupportedVersion { found: u32, expected: u32 },
     Sectioned(SectionedError),
 }
 
@@ -47,6 +48,12 @@ impl fmt::Display for TraceBundleError {
                     path.display()
                 )
             }
+            Self::UnsupportedVersion { found, expected } => {
+                write!(
+                    f,
+                    "unsupported trace bundle version {found}, expected {expected}"
+                )
+            }
             Self::Sectioned(error) => write!(f, "trace bundle file error: {error}"),
         }
     }
@@ -59,7 +66,8 @@ impl std::error::Error for TraceBundleError {
             Self::EmptyUnits
             | Self::EmptyTraceBytes { .. }
             | Self::DuplicateUnitIndex { .. }
-            | Self::ReadFailed { .. } => None,
+            | Self::ReadFailed { .. }
+            | Self::UnsupportedVersion { .. } => None,
         }
     }
 }
@@ -119,6 +127,13 @@ pub fn encode_trace_bundle(value: &TraceBundle) -> Result<Vec<u8>, TraceBundleEr
 
 pub fn parse_trace_bundle(bytes: &[u8]) -> Result<TraceBundle, TraceBundleError> {
     let parsed = parse_sectioned_file(bytes, TRACE_BUNDLE_KIND, TRACE_BUNDLE_VERSION)?;
+    if parsed.version != TRACE_BUNDLE_VERSION {
+        return Err(TraceBundleError::UnsupportedVersion {
+            found: parsed.version,
+            expected: TRACE_BUNDLE_VERSION,
+        });
+    }
+
     if parsed.sections.is_empty() {
         return Err(TraceBundleError::EmptyUnits);
     }

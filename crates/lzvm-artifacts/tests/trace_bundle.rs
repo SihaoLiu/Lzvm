@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use lzvm_artifacts::trace_bundle::{
     encode_trace_bundle, parse_trace_bundle, read_trace_bundle_file, TraceBundle, TraceBundleError,
-    TraceBundleUnit,
+    TraceBundleUnit, TRACE_BUNDLE_KIND, TRACE_BUNDLE_VERSION,
 };
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -35,6 +35,29 @@ fn encodes_and_parses_trace_bundles() {
     assert_eq!(parsed.unit_count(), 2);
     assert_eq!(parsed.trace_bytes_for_unit(2), Some(&[5_u8, 6][..]));
     assert_eq!(parsed.trace_bytes_for_unit(1), None);
+}
+
+#[test]
+fn rejects_unsupported_trace_bundle_versions() {
+    let encoded = lzvm_artifacts::sectioned::encode_sectioned_file(
+        &lzvm_artifacts::sectioned::SectionedFile {
+            kind: TRACE_BUNDLE_KIND,
+            version: TRACE_BUNDLE_VERSION - 1,
+            sections: vec![lzvm_artifacts::sectioned::SectionedSection {
+                id: 0,
+                data: vec![1],
+            }],
+        },
+    )
+    .expect("sectioned bundle should encode");
+
+    assert_eq!(
+        parse_trace_bundle(&encoded).expect_err("unsupported trace bundle version should reject"),
+        TraceBundleError::UnsupportedVersion {
+            found: TRACE_BUNDLE_VERSION - 1,
+            expected: TRACE_BUNDLE_VERSION,
+        }
+    );
 }
 
 #[test]
