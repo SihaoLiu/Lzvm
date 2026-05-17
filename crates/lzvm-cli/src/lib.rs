@@ -654,6 +654,14 @@ fn verify_preflight(
                     .copied()
                     .unwrap_or(None),
             );
+            write_eth_withdrawal_preimage_summary(
+                stdout,
+                report
+                    .eth_block_input_withdrawal_preimage_counts
+                    .get(index)
+                    .copied()
+                    .unwrap_or(None),
+            );
         }
     }
     0
@@ -862,6 +870,7 @@ struct VerifySetupValidationCommand<'a> {
 struct EthBlockInputBinding {
     hash: [u8; 32],
     receipt_preimage_count: Option<usize>,
+    withdrawal_preimage_count: Option<usize>,
 }
 
 fn verify_setup_validation(
@@ -954,6 +963,14 @@ fn verify_setup_validation(
                         .copied()
                         .unwrap_or(None),
                 );
+                write_eth_withdrawal_preimage_summary(
+                    stdout,
+                    public_report
+                        .eth_block_input_withdrawal_preimage_counts
+                        .get(index)
+                        .copied()
+                        .unwrap_or(None),
+                );
             }
         }
     }
@@ -967,6 +984,7 @@ fn verify_setup_validation(
         }
         let _ = writeln!(stdout, "eth_block_input_match=ok");
         write_eth_receipt_preimage_summary(stdout, binding.receipt_preimage_count);
+        write_eth_withdrawal_preimage_summary(stdout, binding.withdrawal_preimage_count);
     }
     if program_image_cache_matched {
         let _ = writeln!(stdout, "program_image_cache_match=ok");
@@ -1008,6 +1026,10 @@ fn verify_eth_block_input_binding(
         .receipts
         .as_ref()
         .map(|receipts| receipts.hash_preimages.len());
+    let withdrawal_preimage_count = input
+        .withdrawals
+        .as_ref()
+        .map(|withdrawals| withdrawals.hash_preimages.len());
     let expected = encode_eth_block_input_segment(&input)
         .map_err(|error| format!("encode ETH block input segment failed: {error}"))?;
     let segment = proof
@@ -1024,6 +1046,7 @@ fn verify_eth_block_input_binding(
     Ok(EthBlockInputBinding {
         hash: input_hash,
         receipt_preimage_count,
+        withdrawal_preimage_count,
     })
 }
 
@@ -1038,6 +1061,21 @@ fn write_eth_receipt_preimage_summary(
         }
         None => {
             let _ = writeln!(stdout, "eth_receipts=absent");
+        }
+    }
+}
+
+fn write_eth_withdrawal_preimage_summary(
+    stdout: &mut dyn Write,
+    withdrawal_preimage_count: Option<usize>,
+) {
+    match withdrawal_preimage_count {
+        Some(count) => {
+            let _ = writeln!(stdout, "eth_withdrawals=present");
+            let _ = writeln!(stdout, "eth_withdrawal_trie_preimages={count}");
+        }
+        None => {
+            let _ = writeln!(stdout, "eth_withdrawals=absent");
         }
     }
 }

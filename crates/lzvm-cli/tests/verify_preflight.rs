@@ -2,13 +2,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::eth_block_input::{
-    build_eth_block_input_with_receipts, eth_block_input_bytes_digest,
+    build_eth_block_input, build_eth_block_input_with_receipts, eth_block_input_bytes_digest,
 };
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
-use lzvm_artifacts::eth_trie::receipt_trie_build;
+use lzvm_artifacts::eth_trie::{receipt_trie_build, withdrawals_trie_build};
 use lzvm_artifacts::program_image::{ProgramImageCommitmentCache, ProgramImageGpuMode};
 use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
@@ -102,6 +102,17 @@ fn sample_block_rlp_with_receipts_root(receipts_root: [u8; 32]) -> Vec<u8> {
     rlp_list(&[header_rlp, transactions, empty_list])
 }
 
+fn sample_block_rlp_with_withdrawals_root(withdrawals_root: [u8; 32]) -> Vec<u8> {
+    let header_rlp = rlp_list(&legacy_header_items_with_receipts(
+        hex32("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"),
+        sample_hash(0x66),
+        Some(withdrawals_root),
+    ));
+    let empty_list = rlp_list(&[]);
+    let withdrawals = rlp_list(&[sample_withdrawal_item()]);
+    rlp_list(&[header_rlp, empty_list.clone(), empty_list, withdrawals])
+}
+
 fn legacy_header_items_with_receipts(
     transactions_root: [u8; 32],
     receipts_root: [u8; 32],
@@ -139,6 +150,15 @@ fn sample_receipt_item() -> Vec<u8> {
         rlp_bytes(&[0x52, 0x08]),
         rlp_bytes(&[0; 256]),
         rlp_list(&[]),
+    ])
+}
+
+fn sample_withdrawal_item() -> Vec<u8> {
+    rlp_list(&[
+        rlp_bytes(&[]),
+        rlp_bytes(&[1]),
+        rlp_bytes(&[0x22; 20]),
+        rlp_bytes(&[0x40]),
     ])
 }
 
@@ -256,10 +276,59 @@ fn verifies_preflight_reports_eth_block_input_digest() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_receipts=present\neth_receipt_trie_preimages={}\n",
+            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_receipts=present\neth_receipt_trie_preimages={}\neth_withdrawals=absent\n",
             to_hex(&public_values_hash),
             to_hex(&eth_block_input_hash),
             receipt_build.hash_preimages.len()
+        )
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn verifies_preflight_reports_eth_block_withdrawals() {
+    let withdrawal_item = sample_withdrawal_item();
+    let withdrawals = vec![parse_rlp(&withdrawal_item).expect("withdrawal should parse")];
+    let withdrawal_build = withdrawals_trie_build(&withdrawals);
+    let block_rlp = sample_block_rlp_with_withdrawals_root(withdrawal_build.root);
+    let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let values = public_values_from_eth_block_input(sample_hash(0x44), &block_input);
+    let public_values_hash = public_values_digest(&values).expect("digest should compute");
+    let segment_data = encode_eth_block_input_segment(&block_input).expect("segment should encode");
+    let eth_block_input_hash = eth_block_input_bytes_digest(&segment_data);
+    let proof = ProofArtifact {
+        setup_hash: values.setup_hash,
+        public_values_hash,
+        segments: vec![ProofSegment {
+            id: ETH_BLOCK_INPUT_SEGMENT_ID,
+            data: segment_data,
+        }],
+    };
+    let (dir, proof_path, public_path) =
+        write_fixture_pair("eth-block-input-withdrawals", &proof, &values);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "preflight",
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_path.to_str().expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_receipts=absent\neth_withdrawals=present\neth_withdrawal_trie_preimages={}\n",
+            to_hex(&public_values_hash),
+            to_hex(&eth_block_input_hash),
+            withdrawal_build.hash_preimages.len()
         )
     );
     assert!(stderr.is_empty());

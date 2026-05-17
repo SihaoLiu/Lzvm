@@ -61,6 +61,7 @@ pub struct SetupPreflightReport {
     pub eth_block_input_count: usize,
     pub eth_block_input_hashes: Vec<[u8; 32]>,
     pub eth_block_input_receipt_preimage_counts: Vec<Option<usize>>,
+    pub eth_block_input_withdrawal_preimage_counts: Vec<Option<usize>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -214,6 +215,7 @@ pub fn validate_setup_preflight_hashes(
         eth_block_input_count,
         eth_block_input_hashes,
         eth_block_input_receipt_preimage_counts,
+        eth_block_input_withdrawal_preimage_counts,
     } = validate_proof_public_values(proof, public_values).map_err(SetupPreflightError::Proof)?;
 
     Ok(SetupPreflightReport {
@@ -228,6 +230,7 @@ pub fn validate_setup_preflight_hashes(
         eth_block_input_count,
         eth_block_input_hashes,
         eth_block_input_receipt_preimage_counts,
+        eth_block_input_withdrawal_preimage_counts,
     })
 }
 

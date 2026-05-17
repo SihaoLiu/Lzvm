@@ -105,6 +105,7 @@ fn validates_setup_preflight_hashes() {
             eth_block_input_count: 0,
             eth_block_input_hashes: Vec::new(),
             eth_block_input_receipt_preimage_counts: Vec::new(),
+            eth_block_input_withdrawal_preimage_counts: Vec::new(),
         }
     );
 }
