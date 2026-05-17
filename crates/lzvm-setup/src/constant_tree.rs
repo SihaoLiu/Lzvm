@@ -1,10 +1,12 @@
 use std::path::Path;
 
+#[cfg(all(test, feature = "cuda"))]
+use lzvm_accel::{cuda_poseidon2_width16_device, cuda_poseidon2_width8_device};
 #[cfg(feature = "cuda")]
 use lzvm_accel::{
-    cuda_poseidon2_width16_device, cuda_poseidon2_width16_merkle_parent_device,
-    cuda_poseidon2_width8_device, cuda_poseidon2_width8_merkle_parent_device, cuda_setup_init,
-    CudaDeviceBuffer,
+    cuda_poseidon2_width16_linear_round_device, cuda_poseidon2_width16_merkle_parent_device,
+    cuda_poseidon2_width8_linear_round_device, cuda_poseidon2_width8_merkle_parent_device,
+    cuda_setup_init, CudaDeviceBuffer,
 };
 use lzvm_artifacts::constant_tree::{parse_constant_tree_bytes, read_constant_tree_file};
 use lzvm_artifacts::fixed::{
@@ -710,30 +712,33 @@ fn cuda_linear_hashes_arity2_with_states(rows: &[Vec<Felt>]) -> Result<CudaTreeL
             .map(|row| padded_digest(row))
             .collect::<Vec<_>>()
     } else {
-        let mut states = vec![[Felt::ZERO; WIDTH]; rows.len()];
+        let mut current_states = zero_state_buffer(rows.len(), WIDTH)?;
         let mut offset = 0;
         while offset < value_count {
             let chunk_len = (value_count - offset).min(HASH_WORDS);
-            let mut input = Vec::with_capacity(rows.len() * WIDTH);
-            for (state, row) in states.iter().zip(rows) {
-                let capacity = [state[0], state[1], state[2], state[3]];
-                let mut next = [Felt::ZERO; WIDTH];
-                next[..chunk_len].copy_from_slice(&row[offset..offset + chunk_len]);
-                next[HASH_WORDS..].copy_from_slice(&capacity);
-                push_felt_words(&mut input, &next);
-            }
-
-            let output = cuda_poseidon2_width8_device_words(&input)?;
-            for (state, chunk) in states.iter_mut().zip(output.chunks_exact(WIDTH)) {
-                *state = felt_array_from_words(chunk)?;
-            }
+            let row_values = pack_linear_round_values(rows, offset, chunk_len)?;
+            let row_values_buffer =
+                CudaDeviceBuffer::from_u64_words(&row_values).map_err(cuda_backend_error)?;
+            let mut next_states = CudaDeviceBuffer::new(
+                rows.len()
+                    .checked_mul(WIDTH)
+                    .and_then(|words| words.checked_mul(WORD_BYTES))
+                    .ok_or(SetupError::LengthOverflow)?,
+            )
+            .map_err(cuda_backend_error)?;
+            cuda_poseidon2_width8_linear_round_device(
+                &current_states,
+                &row_values_buffer,
+                &mut next_states,
+                chunk_len,
+            )
+            .map_err(cuda_backend_error)?;
+            current_states = next_states;
             offset += chunk_len;
         }
 
-        states
-            .into_iter()
-            .map(|state| [state[0], state[1], state[2], state[3]])
-            .collect::<Vec<_>>()
+        let output = current_states.to_u64_words().map_err(cuda_backend_error)?;
+        cuda_digests_from_state_words(&output, WIDTH)?
     };
 
     let state_words = cuda_state_words_from_digests(&digests, WIDTH)?;
@@ -756,30 +761,33 @@ fn cuda_linear_hashes_arity4_with_states(rows: &[Vec<Felt>]) -> Result<CudaTreeL
             .map(|row| padded_digest(row))
             .collect::<Vec<_>>()
     } else {
-        let mut states = vec![[Felt::ZERO; WIDTH]; rows.len()];
+        let mut current_states = zero_state_buffer(rows.len(), WIDTH)?;
         let mut offset = 0;
         while offset < value_count {
             let chunk_len = (value_count - offset).min(RATE);
-            let mut input = Vec::with_capacity(rows.len() * WIDTH);
-            for (state, row) in states.iter().zip(rows) {
-                let capacity = [state[0], state[1], state[2], state[3]];
-                let mut next = [Felt::ZERO; WIDTH];
-                next[..chunk_len].copy_from_slice(&row[offset..offset + chunk_len]);
-                next[RATE..].copy_from_slice(&capacity);
-                push_felt_words(&mut input, &next);
-            }
-
-            let output = cuda_poseidon2_width16_device_words(&input)?;
-            for (state, chunk) in states.iter_mut().zip(output.chunks_exact(WIDTH)) {
-                *state = felt_array_from_words(chunk)?;
-            }
+            let row_values = pack_linear_round_values(rows, offset, chunk_len)?;
+            let row_values_buffer =
+                CudaDeviceBuffer::from_u64_words(&row_values).map_err(cuda_backend_error)?;
+            let mut next_states = CudaDeviceBuffer::new(
+                rows.len()
+                    .checked_mul(WIDTH)
+                    .and_then(|words| words.checked_mul(WORD_BYTES))
+                    .ok_or(SetupError::LengthOverflow)?,
+            )
+            .map_err(cuda_backend_error)?;
+            cuda_poseidon2_width16_linear_round_device(
+                &current_states,
+                &row_values_buffer,
+                &mut next_states,
+                chunk_len,
+            )
+            .map_err(cuda_backend_error)?;
+            current_states = next_states;
             offset += chunk_len;
         }
 
-        states
-            .into_iter()
-            .map(|state| [state[0], state[1], state[2], state[3]])
-            .collect::<Vec<_>>()
+        let output = current_states.to_u64_words().map_err(cuda_backend_error)?;
+        cuda_digests_from_state_words(&output, WIDTH)?
     };
 
     let state_words = cuda_state_words_from_digests(&digests, WIDTH)?;
@@ -856,41 +864,6 @@ fn cuda_parent_level_arity4_with_states(
 }
 
 #[cfg(feature = "cuda")]
-type CudaPoseidon2DeviceOp =
-    fn(&CudaDeviceBuffer, &mut CudaDeviceBuffer) -> Result<(), lzvm_accel::AccelError>;
-
-#[cfg(feature = "cuda")]
-fn cuda_poseidon2_width8_device_words(words: &[u64]) -> Result<Vec<u64>, SetupError> {
-    cuda_poseidon2_words_device(words, cuda_poseidon2_width8_device)
-}
-
-#[cfg(feature = "cuda")]
-fn cuda_poseidon2_width16_device_words(words: &[u64]) -> Result<Vec<u64>, SetupError> {
-    cuda_poseidon2_words_device(words, cuda_poseidon2_width16_device)
-}
-
-#[cfg(feature = "cuda")]
-fn cuda_poseidon2_words_device(
-    words: &[u64],
-    operation: CudaPoseidon2DeviceOp,
-) -> Result<Vec<u64>, SetupError> {
-    if words.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let input_buffer = CudaDeviceBuffer::from_u64_words(words).map_err(cuda_backend_error)?;
-    let mut output_buffer = CudaDeviceBuffer::new(
-        words
-            .len()
-            .checked_mul(WORD_BYTES)
-            .ok_or(SetupError::LengthOverflow)?,
-    )
-    .map_err(cuda_backend_error)?;
-    operation(&input_buffer, &mut output_buffer).map_err(cuda_backend_error)?;
-    output_buffer.to_u64_words().map_err(cuda_backend_error)
-}
-
-#[cfg(feature = "cuda")]
 fn cuda_device_buffer_from_words(words: &[u64]) -> Result<CudaDeviceBuffer, SetupError> {
     if words.is_empty() {
         CudaDeviceBuffer::new(0).map_err(cuda_backend_error)
@@ -937,6 +910,41 @@ fn cuda_backend_error(error: lzvm_accel::AccelError) -> SetupError {
     SetupError::CudaBackend(error.to_string())
 }
 
+#[cfg(all(test, feature = "cuda"))]
+type CudaPoseidon2DeviceOp =
+    fn(&CudaDeviceBuffer, &mut CudaDeviceBuffer) -> Result<(), lzvm_accel::AccelError>;
+
+#[cfg(all(test, feature = "cuda"))]
+fn cuda_poseidon2_width8_device_words(words: &[u64]) -> Result<Vec<u64>, SetupError> {
+    cuda_poseidon2_words_device(words, cuda_poseidon2_width8_device)
+}
+
+#[cfg(all(test, feature = "cuda"))]
+fn cuda_poseidon2_width16_device_words(words: &[u64]) -> Result<Vec<u64>, SetupError> {
+    cuda_poseidon2_words_device(words, cuda_poseidon2_width16_device)
+}
+
+#[cfg(all(test, feature = "cuda"))]
+fn cuda_poseidon2_words_device(
+    words: &[u64],
+    operation: CudaPoseidon2DeviceOp,
+) -> Result<Vec<u64>, SetupError> {
+    if words.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let input_buffer = CudaDeviceBuffer::from_u64_words(words).map_err(cuda_backend_error)?;
+    let mut output_buffer = CudaDeviceBuffer::new(
+        words
+            .len()
+            .checked_mul(WORD_BYTES)
+            .ok_or(SetupError::LengthOverflow)?,
+    )
+    .map_err(cuda_backend_error)?;
+    operation(&input_buffer, &mut output_buffer).map_err(cuda_backend_error)?;
+    output_buffer.to_u64_words().map_err(cuda_backend_error)
+}
+
 #[cfg(feature = "cuda")]
 fn padded_digest(values: &[Felt]) -> [Felt; HASH_WORDS] {
     let mut digest = [Felt::ZERO; HASH_WORDS];
@@ -945,18 +953,36 @@ fn padded_digest(values: &[Felt]) -> [Felt; HASH_WORDS] {
 }
 
 #[cfg(feature = "cuda")]
-fn push_felt_words(out: &mut Vec<u64>, values: &[Felt]) {
-    out.extend(values.iter().map(|value| value.to_u64()));
+fn pack_linear_round_values(
+    rows: &[Vec<Felt>],
+    offset: usize,
+    chunk_len: usize,
+) -> Result<Vec<u64>, SetupError> {
+    let mut input = Vec::with_capacity(
+        rows.len()
+            .checked_mul(chunk_len)
+            .ok_or(SetupError::LengthOverflow)?,
+    );
+    for row in rows {
+        input.extend(
+            row[offset..offset + chunk_len]
+                .iter()
+                .map(|value| value.to_u64()),
+        );
+    }
+    Ok(input)
 }
 
 #[cfg(feature = "cuda")]
-fn felt_array_from_words<const WIDTH: usize>(words: &[u64]) -> Result<[Felt; WIDTH], SetupError> {
-    debug_assert_eq!(words.len(), WIDTH);
-    let mut values = [Felt::ZERO; WIDTH];
-    for (value, word) in values.iter_mut().zip(words) {
-        *value = Felt::from_canonical(*word)?;
+fn zero_state_buffer(row_count: usize, width: usize) -> Result<CudaDeviceBuffer, SetupError> {
+    let words = row_count
+        .checked_mul(width)
+        .ok_or(SetupError::LengthOverflow)?;
+    if words == 0 {
+        return CudaDeviceBuffer::new(0).map_err(cuda_backend_error);
     }
-    Ok(values)
+    let zeros = vec![0_u64; words];
+    CudaDeviceBuffer::from_u64_words(&zeros).map_err(cuda_backend_error)
 }
 
 #[cfg(feature = "cuda")]
