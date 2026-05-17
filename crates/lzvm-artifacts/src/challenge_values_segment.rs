@@ -7,6 +7,7 @@ const CHALLENGE_VALUES_VERSION: u32 = 1;
 const HEADER_BYTES: usize = 4 + 4 + 4;
 const WORD_BYTES: usize = 8;
 const EXTENSION_WORDS: usize = 3;
+const EXTENSION_BYTES: usize = EXTENSION_WORDS * WORD_BYTES;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChallengeValuesSegment {
@@ -75,7 +76,11 @@ pub fn parse_challenge_values_segment(
     if version != CHALLENGE_VALUES_VERSION {
         return Err(ChallengeValuesSegmentError::UnsupportedVersion { version });
     }
-    let value_count = reader.read_u32()? as usize;
+    let value_count = usize::try_from(reader.read_u32()?)
+        .map_err(|_| ChallengeValuesSegmentError::LengthOverflow)?;
+    if value_count > reader.remaining_len() / EXTENSION_BYTES {
+        return Err(ChallengeValuesSegmentError::LengthOverflow);
+    }
     let mut values = Vec::with_capacity(value_count);
     for _ in 0..value_count {
         values.push(reader.read_extension()?);
@@ -140,6 +145,10 @@ impl<'a> SegmentReader<'a> {
 
     fn read_extension(&mut self) -> Result<[u64; EXTENSION_WORDS], ChallengeValuesSegmentError> {
         Ok([self.read_u64()?, self.read_u64()?, self.read_u64()?])
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 
     fn read_array<const N: usize>(&mut self) -> Result<[u8; N], ChallengeValuesSegmentError> {
