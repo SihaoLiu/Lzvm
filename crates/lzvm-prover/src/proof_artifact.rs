@@ -507,6 +507,10 @@ pub fn build_witness_proof_artifact_for_all_units(
     let binding_segments =
         build_proof_binding_segments(request.program_image_cache, request.eth_block_input)?;
     let binding_segments_slice = binding_segments.as_slice();
+    let proof_values =
+        collect_global_proof_values(request.outputs, &request.auxiliary_inputs.proof_values)?;
+    let group_values =
+        collect_global_group_values(request.outputs, &request.auxiliary_inputs.group_values)?;
     let proof_unit_values =
         collect_proof_unit_values(request.schedule, request.outputs, request.unit_values)?;
     let witness_outputs = request
@@ -525,6 +529,8 @@ pub fn build_witness_proof_artifact_for_all_units(
             public_values_hash,
             &witness_outputs,
             binding_segments_slice,
+            &proof_values,
+            &group_values,
             &proof_unit_values,
         )?
     } else if binding_segments_slice.is_empty() {
@@ -533,8 +539,8 @@ pub fn build_witness_proof_artifact_for_all_units(
             request.schedule,
             public_values_hash,
             &witness_outputs,
-            &request.auxiliary_inputs.proof_values,
-            &request.auxiliary_inputs.group_values,
+            &proof_values,
+            &group_values,
             &proof_unit_values,
         )?
     } else {
@@ -544,8 +550,8 @@ pub fn build_witness_proof_artifact_for_all_units(
             public_values_hash,
             &witness_outputs,
             ProofArtifactInputs {
-                proof_values: &request.auxiliary_inputs.proof_values,
-                group_values: &request.auxiliary_inputs.group_values,
+                proof_values: &proof_values,
+                group_values: &group_values,
                 unit_values: &proof_unit_values,
                 binding_segments: binding_segments_slice,
             },
@@ -738,6 +744,8 @@ fn build_witness_transcript_proof_artifact_for_all_units(
     public_values_hash: [u8; 32],
     witness_outputs: &[&ProveWitnessCommitments],
     binding_segments: &[ProofSegment],
+    proof_values: &[Felt],
+    group_values: &[Ext3],
     unit_values: &[ProveUnitValues],
 ) -> Result<ProofArtifact, String> {
     let material_segment = build_pcs_material_manifest_segment(request.schedule)
@@ -777,6 +785,12 @@ fn build_witness_transcript_proof_artifact_for_all_units(
                 .find(|values| values.unit_index == unit_index)
             {
                 inputs.unit_values = values.packed_values.clone();
+            }
+            if !proof_values.is_empty() {
+                inputs.proof_values = proof_values.to_vec();
+            }
+            if !group_values.is_empty() {
+                inputs.group_values = group_values.to_vec();
             }
             inputs
         })
@@ -856,14 +870,12 @@ fn build_witness_transcript_proof_artifact_for_all_units(
 
     let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(
         &request.catalog.layout.global_info,
-        &request.auxiliary_inputs.proof_values,
+        proof_values,
     )
     .map_err(|error| format!("build proof values segment failed: {error}"))?;
-    let group_values_segment = build_group_values_segment(
-        &request.catalog.layout.global_info,
-        &request.auxiliary_inputs.group_values,
-    )
-    .map_err(|error| format!("build group values segment failed: {error}"))?;
+    let group_values_segment =
+        build_group_values_segment(&request.catalog.layout.global_info, group_values)
+            .map_err(|error| format!("build group values segment failed: {error}"))?;
     let unit_values_segment = build_unit_values_segment_from_packed_values_batch(unit_values)
         .map_err(|error| format!("build unit values segment failed: {error}"))?;
 
@@ -892,6 +904,64 @@ fn build_witness_transcript_proof_artifact_for_all_units(
         public_values_hash,
         segments,
     })
+}
+
+fn collect_global_proof_values(
+    outputs: &[ProveWitnessTraceCommitments],
+    explicit_values: &[Felt],
+) -> Result<Vec<Felt>, String> {
+    if !explicit_values.is_empty() {
+        return Ok(explicit_values.to_vec());
+    }
+
+    let mut values: Option<&[Felt]> = None;
+    for output in outputs {
+        let candidate = output.auxiliary_inputs().proof_values.as_slice();
+        if candidate.is_empty() {
+            continue;
+        }
+        if let Some(existing) = values {
+            if existing != candidate {
+                let unit_index = output.commitments().unit_index();
+                return Err(format!(
+                    "conflicting proof values across witness outputs at unit {unit_index}"
+                ));
+            }
+        } else {
+            values = Some(candidate);
+        }
+    }
+
+    Ok(values.map_or_else(Vec::new, ToOwned::to_owned))
+}
+
+fn collect_global_group_values(
+    outputs: &[ProveWitnessTraceCommitments],
+    explicit_values: &[Ext3],
+) -> Result<Vec<Ext3>, String> {
+    if !explicit_values.is_empty() {
+        return Ok(explicit_values.to_vec());
+    }
+
+    let mut values: Option<&[Ext3]> = None;
+    for output in outputs {
+        let candidate = output.auxiliary_inputs().group_values.as_slice();
+        if candidate.is_empty() {
+            continue;
+        }
+        if let Some(existing) = values {
+            if existing != candidate {
+                let unit_index = output.commitments().unit_index();
+                return Err(format!(
+                    "conflicting group values across witness outputs at unit {unit_index}"
+                ));
+            }
+        } else {
+            values = Some(candidate);
+        }
+    }
+
+    Ok(values.map_or_else(Vec::new, ToOwned::to_owned))
 }
 
 fn collect_proof_unit_values(

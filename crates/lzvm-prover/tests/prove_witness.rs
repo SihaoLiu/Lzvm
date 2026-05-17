@@ -11,7 +11,10 @@ use lzvm_artifacts::contribution_segment::CONTRIBUTION_SEGMENT_ID;
 use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::{ExpressionEntry, ExpressionProgram};
 use lzvm_artifacts::fixed::{write_raw_fixed_columns_file, FixedColumn, FixedColumns};
-use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
+use lzvm_artifacts::global_info::{
+    AggregationType, CurveKind, GlobalAir, GlobalInfo, NamedStageValue,
+};
+use lzvm_artifacts::group_values_segment::{parse_group_values_segment, GROUP_VALUES_SEGMENT_ID};
 use lzvm_artifacts::hint_program::{Hint, HintField, HintOperand, HintProgram, HintValue};
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry,
@@ -33,6 +36,9 @@ use lzvm_artifacts::pcs_nonce_segment::{
     parse_pcs_query_nonce_segment, PCS_QUERY_NONCE_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
+use lzvm_artifacts::pcs_proof_values_segment::{
+    parse_pcs_proof_values_segment, PCS_PROOF_VALUES_SEGMENT_ID,
+};
 use lzvm_artifacts::pcs_query_segment::{
     encode_pcs_query_plan_segment, parse_pcs_query_plan_segment, PcsQueryPlanSegment,
     PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
@@ -1002,6 +1008,28 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
     .expect("second constant tree should be written");
     let mut catalog = sample_catalog_units(vec![first_unit, second_unit]);
     catalog.layout.global_info.lattice_size = Some(32);
+    catalog.layout.global_info.airs = vec![vec![
+        GlobalAir {
+            name: "unit-a".to_owned(),
+            num_rows: 16,
+            has_compressor: false,
+        },
+        GlobalAir {
+            name: "unit-b".to_owned(),
+            num_rows: 16,
+            has_compressor: false,
+        },
+    ]];
+    catalog.layout.global_info.aggregation_types = vec![vec![AggregationType {
+        aggregation_type: 0,
+    }]];
+    catalog.layout.global_info.num_proof_values = vec![1];
+    catalog.layout.global_info.proof_values_map = vec![NamedStageValue {
+        name: "global-proof".to_owned(),
+        stage: 1,
+        id: None,
+        lengths: Vec::new(),
+    }];
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values_path = dir.join("public.bin");
     let public_values = PublicValues {
@@ -1027,7 +1055,7 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
         },
     )
     .expect("execution plan should derive");
-    let auxiliary_inputs = ProveWitnessAuxiliaryInputs {
+    let output_auxiliary_inputs = ProveWitnessAuxiliaryInputs {
         unit_values: vec![
             Felt::from_u64(901),
             Felt::from_u64(1001),
@@ -1035,12 +1063,15 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
             Felt::from_u64(1003),
             Felt::from_u64(902),
         ],
+        proof_values: vec![Felt::from_u64(31)],
+        group_values: vec![Ext3::from_u64s([41, 42, 43])],
         ..ProveWitnessAuxiliaryInputs::default()
     };
+    let request_auxiliary_inputs = ProveWitnessAuxiliaryInputs::default();
     let outputs = vec![
-        run_prove_witness_commitments_with_trace(&plan, 0, auxiliary_inputs.clone())
+        run_prove_witness_commitments_with_trace(&plan, 0, output_auxiliary_inputs.clone())
             .expect("first unit should run"),
-        run_prove_witness_commitments_with_trace(&plan, 1, auxiliary_inputs.clone())
+        run_prove_witness_commitments_with_trace(&plan, 1, output_auxiliary_inputs.clone())
             .expect("second unit should run"),
     ];
 
@@ -1052,7 +1083,7 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
             gpu_streams: plan.run_plan.gpu.max_streams,
             public_values: Some(&public_values),
             outputs: &outputs,
-            auxiliary_inputs: &auxiliary_inputs,
+            auxiliary_inputs: &request_auxiliary_inputs,
             unit_values: &[],
             evaluation_values_segment: None,
             verify_outputs: false,
@@ -1089,6 +1120,22 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
         .segments
         .iter()
         .any(|segment| { segment.id == CONTRIBUTION_SEGMENT_ID }));
+    let proof_values_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_PROOF_VALUES_SEGMENT_ID)
+        .expect("proof values segment should exist");
+    let proof_values = parse_pcs_proof_values_segment(&proof_values_segment.data)
+        .expect("proof values should parse");
+    assert_eq!(proof_values.values, vec![[31, 0, 0]]);
+    let group_values_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == GROUP_VALUES_SEGMENT_ID)
+        .expect("group values segment should exist");
+    let group_values =
+        parse_group_values_segment(&group_values_segment.data).expect("group values should parse");
+    assert_eq!(group_values.values, vec![[41, 42, 43]]);
     let unit_values_segment = proof
         .segments
         .iter()
