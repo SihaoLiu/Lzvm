@@ -436,6 +436,13 @@ fn encode_fixed_columns_section(value: &FixedColumns) -> Result<Vec<u8>, FixedCo
 
 pub fn parse_fixed_columns(bytes: &[u8]) -> Result<FixedColumns, FixedColumnError> {
     let file = parse_sectioned_file(bytes, *b"cnst", 1).map_err(FixedColumnError::from)?;
+    if file.version != 1 {
+        return Err(FixedColumnError::UnsupportedVersion {
+            found: file.version,
+            max: 1,
+        });
+    }
+
     if file.sections.len() != 1 {
         return Err(FixedColumnError::InvalidSectionCount {
             found: u32::try_from(file.sections.len()).unwrap_or(u32::MAX),

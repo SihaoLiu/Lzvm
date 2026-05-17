@@ -135,6 +135,17 @@ fn parses_fixed_columns_with_names_dimensions_and_values() {
 }
 
 #[test]
+fn rejects_unsupported_fixed_column_file_versions() {
+    let mut bytes = sample_file();
+    bytes[4..8].copy_from_slice(&0_u32.to_le_bytes());
+
+    assert!(matches!(
+        parse_fixed_columns(&bytes),
+        Err(FixedColumnError::UnsupportedVersion { found: 0, max: 1 })
+    ));
+}
+
+#[test]
 fn rejects_an_invalid_magic_header() {
     let mut bytes = sample_file();
     bytes[0] = b'x';
