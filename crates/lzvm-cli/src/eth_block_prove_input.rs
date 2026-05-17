@@ -16,6 +16,8 @@ pub(crate) struct EthBlockInputSummary {
     pub(crate) input: EthBlockInput,
     pub(crate) block_rlp_len: usize,
     pub(crate) block_hash: [u8; 32],
+    pub(crate) state_root: [u8; 32],
+    pub(crate) receipts_root: [u8; 32],
     pub(crate) block_number: u64,
     pub(crate) timestamp: u64,
     pub(crate) transactions_root: [u8; 32],
@@ -46,6 +48,8 @@ pub(crate) fn validate_eth_block_input(
         input: input.clone(),
         block_rlp_len: input.block_rlp.len(),
         block_hash: input.block_hash,
+        state_root: input.state_root,
+        receipts_root: input.receipts_root,
         block_number: input.block_number,
         timestamp: input.timestamp,
         transactions_root: input.transactions_root,
@@ -73,6 +77,16 @@ pub(crate) fn write_eth_block_input_summary(
         stdout,
         "eth_block_hash={}",
         format_hash(&summary.block_hash)
+    );
+    let _ = writeln!(
+        stdout,
+        "eth_state_root={}",
+        format_hash(&summary.state_root)
+    );
+    let _ = writeln!(
+        stdout,
+        "eth_receipts_root={}",
+        format_hash(&summary.receipts_root)
     );
     let _ = writeln!(stdout, "eth_block_number={}", summary.block_number);
     let _ = writeln!(stdout, "eth_block_timestamp={}", summary.timestamp);
