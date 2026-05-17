@@ -97,15 +97,23 @@ pub fn parse_unit_values_segment(
     if version != UNIT_VALUES_VERSION {
         return Err(UnitValuesSegmentError::UnsupportedVersion { version });
     }
-    let unit_count = reader.read_u32()? as usize;
+    let unit_count =
+        usize::try_from(reader.read_u32()?).map_err(|_| UnitValuesSegmentError::LengthOverflow)?;
     if unit_count == 0 {
         return Err(UnitValuesSegmentError::EmptyUnits);
+    }
+    if unit_count > reader.remaining_len() / UNIT_HEADER_BYTES {
+        return Err(UnitValuesSegmentError::LengthOverflow);
     }
 
     let mut units = Vec::with_capacity(unit_count);
     for _ in 0..unit_count {
         let unit_index = reader.read_u32()?;
-        let value_count = reader.read_u32()? as usize;
+        let value_count = usize::try_from(reader.read_u32()?)
+            .map_err(|_| UnitValuesSegmentError::LengthOverflow)?;
+        if value_count > reader.remaining_len() / WORD_BYTES {
+            return Err(UnitValuesSegmentError::LengthOverflow);
+        }
         let mut values = Vec::with_capacity(value_count);
         for _ in 0..value_count {
             values.push(reader.read_u64()?);
@@ -176,6 +184,10 @@ impl<'a> SegmentReader<'a> {
 
     fn read_u64(&mut self) -> Result<u64, UnitValuesSegmentError> {
         Ok(u64::from_le_bytes(self.read_array::<8>()?))
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 
     fn read_array<const N: usize>(&mut self) -> Result<[u8; N], UnitValuesSegmentError> {
