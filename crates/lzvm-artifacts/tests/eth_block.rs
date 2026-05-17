@@ -1,10 +1,10 @@
 use lzvm_artifacts::eth_block::{
-    decode_eth_header_rlp, decode_eth_receipt_rlp, decode_eth_receipts_rlp,
-    decode_eth_transaction_rlp, decode_eth_transactions_rlp, decode_eth_withdrawal_rlp,
-    decode_eth_withdrawals_rlp, eth_header_hash, eth_ommers_hash, keccak256, parse_eth_block_rlp,
-    EthBlockError, EthBlockRlp, EthReceiptError, EthReceiptRlp, EthTransactionError,
-    EthTransactionRlp, EthWithdrawalError, EthWithdrawalRlp, HeaderField, ReceiptField,
-    WithdrawalField,
+    decode_eth_header_rlp, decode_eth_log_rlp, decode_eth_logs_rlp, decode_eth_receipt_rlp,
+    decode_eth_receipts_rlp, decode_eth_transaction_rlp, decode_eth_transactions_rlp,
+    decode_eth_withdrawal_rlp, decode_eth_withdrawals_rlp, eth_header_hash, eth_ommers_hash,
+    keccak256, parse_eth_block_rlp, EthBlockError, EthBlockRlp, EthLogError, EthLogRlp,
+    EthReceiptError, EthReceiptRlp, EthTransactionError, EthTransactionRlp, EthWithdrawalError,
+    EthWithdrawalRlp, HeaderField, LogField, ReceiptField, WithdrawalField,
 };
 use lzvm_artifacts::rlp::RlpItem;
 
@@ -282,9 +282,71 @@ fn decodes_legacy_receipts() {
             status_or_post_state: vec![1],
             cumulative_gas_used: 0x5208,
             logs_bloom: Box::new([0x11; 256]),
-            logs: vec![log_item()],
+            logs: vec![decoded_log_item()],
         }
     );
+}
+
+#[test]
+fn decodes_logs() {
+    let decoded = decode_eth_log_rlp(&log_item()).expect("log should decode");
+
+    assert_eq!(decoded, decoded_log_item());
+}
+
+#[test]
+fn decodes_log_lists() {
+    let logs = vec![log_item(), log_item()];
+
+    let decoded = decode_eth_logs_rlp(&logs).expect("logs should decode");
+
+    assert_eq!(decoded, vec![decoded_log_item(), decoded_log_item()]);
+}
+
+#[test]
+fn rejects_malformed_logs() {
+    let error = decode_eth_log_rlp(&RlpItem::Bytes(Vec::new())).expect_err("log should fail");
+    assert!(matches!(error, EthLogError::ExpectedLogList));
+
+    let error = decode_eth_log_rlp(&RlpItem::List(vec![RlpItem::Bytes(Vec::new()); 2]))
+        .expect_err("log should fail");
+    assert!(matches!(error, EthLogError::LogFieldCount { found: 2 }));
+
+    let mut wrong_address = match log_item() {
+        RlpItem::List(fields) => fields,
+        RlpItem::Bytes(_) => panic!("log should be a list"),
+    };
+    wrong_address[0] = RlpItem::Bytes(vec![0x22; 19]);
+    let error = decode_eth_log_rlp(&RlpItem::List(wrong_address)).expect_err("log should fail");
+    assert!(matches!(
+        error,
+        EthLogError::LogFieldLength {
+            field: LogField::Address,
+            expected: 20,
+            found: 19,
+        }
+    ));
+
+    let mut wrong_topics = match log_item() {
+        RlpItem::List(fields) => fields,
+        RlpItem::Bytes(_) => panic!("log should be a list"),
+    };
+    wrong_topics[1] = RlpItem::Bytes(Vec::new());
+    let error = decode_eth_log_rlp(&RlpItem::List(wrong_topics)).expect_err("log should fail");
+    assert!(matches!(error, EthLogError::ExpectedTopicsList));
+
+    let mut wrong_data = match log_item() {
+        RlpItem::List(fields) => fields,
+        RlpItem::Bytes(_) => panic!("log should be a list"),
+    };
+    wrong_data[2] = RlpItem::List(Vec::new());
+    let error = decode_eth_log_rlp(&RlpItem::List(wrong_data)).expect_err("log should fail");
+    assert!(matches!(
+        error,
+        EthLogError::ExpectedLogFieldBytes {
+            field: LogField::Data,
+        }
+    ));
 }
 
 #[test]
@@ -363,6 +425,18 @@ fn rejects_malformed_receipts() {
     let error =
         decode_eth_receipt_rlp(&RlpItem::List(wrong_logs)).expect_err("receipt should fail");
     assert!(matches!(error, EthReceiptError::ExpectedLogsList));
+
+    let mut wrong_log_body = match receipt_item() {
+        RlpItem::List(fields) => fields,
+        RlpItem::Bytes(_) => panic!("receipt should be a list"),
+    };
+    wrong_log_body[3] = RlpItem::List(vec![RlpItem::Bytes(Vec::new())]);
+    let error =
+        decode_eth_receipt_rlp(&RlpItem::List(wrong_log_body)).expect_err("receipt should fail");
+    assert!(matches!(
+        error,
+        EthReceiptError::Log(EthLogError::ExpectedLogList)
+    ));
 }
 
 #[test]
@@ -476,6 +550,14 @@ fn log_item() -> RlpItem {
         RlpItem::List(vec![RlpItem::Bytes(vec![0x33; 32])]),
         RlpItem::Bytes(vec![0x44, 0x55]),
     ])
+}
+
+fn decoded_log_item() -> EthLogRlp {
+    EthLogRlp {
+        address: [0x22; 20],
+        topics: vec![[0x33; 32]],
+        data: vec![0x44, 0x55],
+    }
 }
 
 fn legacy_header_items() -> Vec<Vec<u8>> {

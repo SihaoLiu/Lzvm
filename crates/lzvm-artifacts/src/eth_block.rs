@@ -52,12 +52,19 @@ pub enum EthReceiptRlp {
         status_or_post_state: Vec<u8>,
         cumulative_gas_used: u64,
         logs_bloom: Box<[u8; 256]>,
-        logs: Vec<RlpItem>,
+        logs: Vec<EthLogRlp>,
     },
     Typed {
         receipt_type: u8,
         payload: Vec<u8>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EthLogRlp {
+    pub address: [u8; 20],
+    pub topics: Vec<[u8; 32]>,
+    pub data: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,6 +112,13 @@ pub enum ReceiptField {
     Logs,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogField {
+    Address,
+    Topic,
+    Data,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EthTransactionError {
     EmptyTypedTransaction,
@@ -113,6 +127,7 @@ pub enum EthTransactionError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EthReceiptError {
+    Log(EthLogError),
     EmptyTypedReceipt,
     InvalidReceiptType {
         found: u8,
@@ -138,6 +153,23 @@ pub enum EthReceiptError {
         max_bytes: usize,
         found: usize,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EthLogError {
+    ExpectedLogList,
+    LogFieldCount {
+        found: usize,
+    },
+    ExpectedLogFieldBytes {
+        field: LogField,
+    },
+    LogFieldLength {
+        field: LogField,
+        expected: usize,
+        found: usize,
+    },
+    ExpectedTopicsList,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -255,6 +287,7 @@ impl std::error::Error for EthTransactionError {}
 impl fmt::Display for EthReceiptError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Log(error) => write!(f, "{error}"),
             Self::EmptyTypedReceipt => write!(f, "empty typed receipt envelope"),
             Self::InvalidReceiptType { found } => {
                 write!(f, "invalid receipt type byte: 0x{found:02x}")
@@ -291,6 +324,29 @@ impl fmt::Display for EthReceiptError {
 }
 
 impl std::error::Error for EthReceiptError {}
+
+impl fmt::Display for EthLogError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ExpectedLogList => write!(f, "expected log list"),
+            Self::LogFieldCount { found } => write!(f, "expected 3 log fields, found {found}"),
+            Self::ExpectedLogFieldBytes { field } => {
+                write!(f, "expected log field {field} to be bytes")
+            }
+            Self::LogFieldLength {
+                field,
+                expected,
+                found,
+            } => write!(
+                f,
+                "expected log field {field} to have length {expected}, found {found}"
+            ),
+            Self::ExpectedTopicsList => write!(f, "expected log topics list"),
+        }
+    }
+}
+
+impl std::error::Error for EthLogError {}
 
 impl fmt::Display for EthWithdrawalError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -371,6 +427,17 @@ impl fmt::Display for ReceiptField {
             Self::CumulativeGasUsed => "cumulative_gas_used",
             Self::LogsBloom => "logs_bloom",
             Self::Logs => "logs",
+        };
+        f.write_str(name)
+    }
+}
+
+impl fmt::Display for LogField {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            Self::Address => "address",
+            Self::Topic => "topic",
+            Self::Data => "data",
         };
         f.write_str(name)
     }
@@ -503,6 +570,31 @@ pub fn decode_eth_transactions_rlp(
         .collect()
 }
 
+pub fn decode_eth_log_rlp(log: &RlpItem) -> Result<EthLogRlp, EthLogError> {
+    let fields = match log {
+        RlpItem::List(fields) => fields,
+        RlpItem::Bytes(_) => return Err(EthLogError::ExpectedLogList),
+    };
+    if fields.len() != 3 {
+        return Err(EthLogError::LogFieldCount {
+            found: fields.len(),
+        });
+    }
+    let topics = log_topics(&fields[1])?
+        .iter()
+        .map(|topic| log_fixed_bytes::<32>(topic, LogField::Topic))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(EthLogRlp {
+        address: log_fixed_bytes::<20>(&fields[0], LogField::Address)?,
+        topics,
+        data: log_bytes(&fields[2], LogField::Data)?.to_vec(),
+    })
+}
+
+pub fn decode_eth_logs_rlp(logs: &[RlpItem]) -> Result<Vec<EthLogRlp>, EthLogError> {
+    logs.iter().map(decode_eth_log_rlp).collect()
+}
+
 pub fn decode_eth_receipt_rlp(receipt: &RlpItem) -> Result<EthReceiptRlp, EthReceiptError> {
     match receipt {
         RlpItem::List(fields) => decode_legacy_eth_receipt(fields),
@@ -542,7 +634,7 @@ fn decode_legacy_eth_receipt(fields: &[RlpItem]) -> Result<EthReceiptRlp, EthRec
             &fields[2],
             ReceiptField::LogsBloom,
         )?),
-        logs: receipt_logs(&fields[3])?.to_vec(),
+        logs: decode_eth_logs_rlp(receipt_logs(&fields[3])?).map_err(EthReceiptError::Log)?,
     })
 }
 
@@ -635,6 +727,32 @@ fn bytes(item: &RlpItem, field: HeaderField) -> Result<&[u8], EthBlockError> {
     match item {
         RlpItem::Bytes(bytes) => Ok(bytes),
         RlpItem::List(_) => Err(EthBlockError::ExpectedHeaderFieldBytes { field }),
+    }
+}
+
+fn log_fixed_bytes<const N: usize>(
+    item: &RlpItem,
+    field: LogField,
+) -> Result<[u8; N], EthLogError> {
+    let bytes = log_bytes(item, field)?;
+    bytes.try_into().map_err(|_| EthLogError::LogFieldLength {
+        field,
+        expected: N,
+        found: bytes.len(),
+    })
+}
+
+fn log_bytes(item: &RlpItem, field: LogField) -> Result<&[u8], EthLogError> {
+    match item {
+        RlpItem::Bytes(bytes) => Ok(bytes),
+        RlpItem::List(_) => Err(EthLogError::ExpectedLogFieldBytes { field }),
+    }
+}
+
+fn log_topics(item: &RlpItem) -> Result<&[RlpItem], EthLogError> {
+    match item {
+        RlpItem::List(topics) => Ok(topics),
+        RlpItem::Bytes(_) => Err(EthLogError::ExpectedTopicsList),
     }
 }
 
