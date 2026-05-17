@@ -21,6 +21,11 @@ pub(crate) fn write_program_image_cache_summary(
     );
     let _ = writeln!(
         stdout,
+        "program_image_cache_constraint_system_digest={}",
+        format_hash(&summary.cache.constraint_system_digest)
+    );
+    let _ = writeln!(
+        stdout,
         "program_image_cache_trace_rows={}",
         summary.cache.trace_row_count
     );

@@ -4661,10 +4661,15 @@ fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
         .expect("program image cache segment should be present");
     let parsed_cache =
         parse_program_image_cache_segment(&segment.data).expect("cache segment should parse");
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
     assert!(stderr.is_empty());
+    assert!(stdout_text.contains(&format!(
+        "program_image_cache_constraint_system_digest={}\n",
+        format_hash(&expected_cache.constraint_system_digest)
+    )));
     assert_eq!(parsed_cache, expected_cache);
 }
 
