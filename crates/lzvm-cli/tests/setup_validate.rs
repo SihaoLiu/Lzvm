@@ -6251,7 +6251,7 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=12\npublic_values=1\npublic_value_fields=1\n"
+        expected_setup_verify_stdout(12, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
 
@@ -6278,7 +6278,7 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     );
     assert_eq!(
         String::from_utf8(proof_verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=12\npublic_values=1\npublic_value_fields=1\n"
+        expected_setup_verify_stdout(12, &public_values_path)
     );
     assert!(proof_verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -6406,7 +6406,7 @@ fn runs_prove_witness_for_aggregate_with_evaluation_values_segment() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=12\npublic_values=1\npublic_value_fields=1\n"
+        expected_setup_verify_stdout(12, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -6564,7 +6564,7 @@ fn runs_prove_witness_for_aggregate_fri_with_unit_values_segment() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=13\npublic_values=1\npublic_value_fields=1\n"
+        expected_setup_verify_stdout(13, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -6767,7 +6767,7 @@ fn saves_prove_witness_transcript_fri_outputs_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=9\npublic_values=1\npublic_value_fields=1\n"
+        expected_setup_verify_stdout(9, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -6981,7 +6981,7 @@ fn saves_prove_witness_proof_values_segment_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=7\npublic_values=1\npublic_value_fields=1\n"
+        expected_setup_verify_stdout(7, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -7094,7 +7094,7 @@ fn saves_prove_witness_group_values_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=7\npublic_values=1\npublic_value_fields=1\n"
+        expected_setup_verify_stdout(7, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -7263,7 +7263,7 @@ fn saves_prove_witness_unit_values_segment_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=7\npublic_values=1\npublic_value_fields=1\n"
+        expected_setup_verify_stdout(7, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -7730,6 +7730,8 @@ fn runs_setup_aware_verify_preflight() {
     write_execution_ready_setup_directory(&dir);
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values_hash =
+        public_values_digest(&sample_public_values(setup_hash)).expect("digest should compute");
     let (proof_path, public_values_path) =
         write_proof_pair_with_material(&dir, setup_hash, &catalog);
 
@@ -7753,7 +7755,10 @@ fn runs_setup_aware_verify_preflight() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=5\npublic_values=1\npublic_value_fields=1\n"
+        format!(
+            "status=ok\nunits=4\nsegments=5\npublic_values=1\npublic_values_hash={}\npublic_value_fields=1\n",
+            format_hash(&public_values_hash)
+        )
     );
     assert!(stderr.is_empty());
 }
@@ -7796,14 +7801,14 @@ fn validates_setup_aware_verify_preflight_with_pcs_fri_opening() {
         &mut stdout,
         &mut stderr,
     );
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=6\npublic_values=1\npublic_value_fields=1\n"
+        expected_setup_verify_stdout(6, &public_values_path)
     );
     assert!(stderr.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]
@@ -7910,14 +7915,14 @@ fn validates_setup_aware_verify_preflight_with_transcript_query_plan() {
         &mut stdout,
         &mut stderr,
     );
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nsegments=8\npublic_values=1\npublic_value_fields=1\n"
+        expected_setup_verify_stdout(8, &public_values_path)
     );
     assert!(stderr.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]
@@ -7946,7 +7951,7 @@ fn validates_setup_aware_verify_preflight_with_proof_values() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\npublic_value_fields=1\n")
+        expected_setup_verify_stdout(segment_count, &public_values_path)
     );
     assert!(stderr.is_empty());
 
@@ -7986,7 +7991,7 @@ fn validates_setup_aware_verify_proof_with_proof_values() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\npublic_value_fields=1\n")
+        expected_setup_verify_stdout(segment_count, &public_values_path)
     );
     assert!(stderr.is_empty());
 
@@ -8015,14 +8020,14 @@ fn validates_setup_aware_verify_preflight_with_unit_values() {
         &mut stdout,
         &mut stderr,
     );
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\npublic_value_fields=1\n")
+        expected_setup_verify_stdout(segment_count, &public_values_path)
     );
     assert!(stderr.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]
@@ -8047,14 +8052,14 @@ fn validates_setup_aware_verify_preflight_with_global_constraints() {
         &mut stdout,
         &mut stderr,
     );
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\npublic_value_fields=1\n")
+        expected_setup_verify_stdout(segment_count, &public_values_path)
     );
     assert!(stderr.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]
@@ -8079,14 +8084,14 @@ fn validates_setup_aware_verify_preflight_with_global_hints() {
         &mut stdout,
         &mut stderr,
     );
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\npublic_value_fields=1\n")
+        expected_setup_verify_stdout(segment_count, &public_values_path)
     );
     assert!(stderr.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]
@@ -8111,14 +8116,14 @@ fn validates_setup_aware_verify_preflight_with_challenge_global_constraints() {
         &mut stdout,
         &mut stderr,
     );
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\npublic_value_fields=1\n")
+        expected_setup_verify_stdout(segment_count, &public_values_path)
     );
     assert!(stderr.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]
@@ -8143,14 +8148,14 @@ fn validates_setup_aware_verify_preflight_with_group_value_global_constraints() 
         &mut stdout,
         &mut stderr,
     );
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        format!("status=ok\nunits=4\nsegments={segment_count}\npublic_values=1\npublic_value_fields=1\n")
+        expected_setup_verify_stdout(segment_count, &public_values_path)
     );
     assert!(stderr.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]
@@ -9513,4 +9518,20 @@ fn format_hash(hash: &[u8; 32]) -> String {
         out.push(HEX[(byte & 0x0f) as usize] as char);
     }
     out
+}
+
+fn expected_setup_verify_stdout(segment_count: usize, public_values_path: &Path) -> String {
+    let bytes = fs::read(public_values_path).expect("public values should read");
+    let public_values = parse_public_values(&bytes).expect("public values should parse");
+    let public_values_hash = public_values_digest(&public_values).expect("digest should compute");
+    let public_value_fields = public_values
+        .values
+        .iter()
+        .map(|entry| entry.elements.len())
+        .sum::<usize>();
+    format!(
+        "status=ok\nunits=4\nsegments={segment_count}\npublic_values={}\npublic_values_hash={}\npublic_value_fields={public_value_fields}\n",
+        public_values.values.len(),
+        format_hash(&public_values_hash)
+    )
 }

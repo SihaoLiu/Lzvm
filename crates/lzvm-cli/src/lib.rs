@@ -821,6 +821,11 @@ fn verify_setup_validation(
     let _ = writeln!(stdout, "public_values={}", public_report.public_value_count);
     let _ = writeln!(
         stdout,
+        "public_values_hash={}",
+        prove_plan::format_hash(&public_report.public_values_hash)
+    );
+    let _ = writeln!(
+        stdout,
         "public_value_fields={}",
         public_report.public_value_field_count
     );
