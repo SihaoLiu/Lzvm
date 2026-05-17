@@ -2,8 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::eth_block_input::{
-    build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
-    parse_eth_block_input,
+    build_eth_block_input, build_eth_block_input_with_receipts, encode_eth_block_input,
+    eth_block_input_bytes_digest, parse_eth_block_input,
 };
 use lzvm_artifacts::eth_trie::{
     receipt_trie_build, transaction_trie_build, withdrawals_trie_build,
@@ -566,6 +566,55 @@ fn writes_block_public_values_from_withdrawal_block_input() {
         to_hex(&withdrawal_build.root)
     )));
     assert!(stdout_text.contains("withdrawal_count=1\n"));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn writes_block_public_values_from_receipt_block_input() {
+    let dir = temp_dir("public-values-receipts");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("block.input");
+    let output_path = dir.join("public-values.bin");
+    let setup_hash = [0x44_u8; 32];
+    let setup_hash_hex = to_hex(&setup_hash);
+    let receipt_item = sample_receipt_item();
+    let receipts = vec![parse_rlp(&receipt_item).expect("receipt should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    let receipts_rlp = rlp_list(&[receipt_item]);
+    let block_rlp = sample_block_rlp_with_receipts_root(receipt_build.root);
+    let input = build_eth_block_input_with_receipts(&block_rlp, &receipts_rlp)
+        .expect("block input should build");
+    let encoded_input = encode_eth_block_input(&input).expect("block input should encode");
+    write_bytes(&input_path, &encoded_input);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-block-public-values",
+            "--setup-hash",
+            &setup_hash_hex,
+            input_path.to_str().expect("input path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("receipts=present\n"));
+    assert!(stdout_text.contains(&format!("receipts_rlp_bytes={}\n", receipts_rlp.len())));
+    assert!(stdout_text.contains(&format!(
+        "receipt_trie_preimages={}\n",
+        receipt_build.hash_preimages.len()
+    )));
+    assert!(stdout_text.contains("receipt_count=1\n"));
+    assert!(stdout_text.contains("legacy_receipts=1\n"));
+    assert!(stdout_text.contains("typed_receipts=0\n"));
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
