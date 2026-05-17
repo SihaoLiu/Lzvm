@@ -94,4 +94,25 @@ fn rejects_invalid_source_fixed_file_manifest_entries() {
             end: 61
         })
     ));
+
+    let mut manifest = sample_manifest();
+    manifest.entries[0].path = None;
+    assert!(matches!(
+        encode_source_fixed_file_manifest(&manifest),
+        Err(SourceFixedFileManifestError::MissingPath { entry_index: 0 })
+    ));
+
+    let mut manifest = sample_manifest();
+    manifest.entries[0].kind = SourceFixedFileManifestKind::FixedExternal;
+    assert!(matches!(
+        encode_source_fixed_file_manifest(&manifest),
+        Err(SourceFixedFileManifestError::UnexpectedPath { entry_index: 0 })
+    ));
+
+    let mut manifest = sample_manifest();
+    manifest.entries[0].column = Some(3);
+    assert!(matches!(
+        encode_source_fixed_file_manifest(&manifest),
+        Err(SourceFixedFileManifestError::UnexpectedColumn { entry_index: 0 })
+    ));
 }

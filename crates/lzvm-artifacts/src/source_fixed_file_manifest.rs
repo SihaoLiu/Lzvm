@@ -59,7 +59,16 @@ pub enum SourceFixedFileManifestError {
     EmptySourceName {
         entry_index: usize,
     },
+    MissingPath {
+        entry_index: usize,
+    },
+    UnexpectedPath {
+        entry_index: usize,
+    },
     EmptyPath {
+        entry_index: usize,
+    },
+    UnexpectedColumn {
         entry_index: usize,
     },
     EmptyGroupName {
@@ -113,9 +122,20 @@ impl fmt::Display for SourceFixedFileManifestError {
             Self::EmptySourceName { entry_index } => {
                 write!(f, "source fixed file manifest entry {entry_index} has no source name")
             }
+            Self::MissingPath { entry_index } => {
+                write!(f, "source fixed file manifest entry {entry_index} has no path")
+            }
+            Self::UnexpectedPath { entry_index } => write!(
+                f,
+                "source fixed file manifest entry {entry_index} has an unexpected path"
+            ),
             Self::EmptyPath { entry_index } => {
                 write!(f, "source fixed file manifest entry {entry_index} has an empty path")
             }
+            Self::UnexpectedColumn { entry_index } => write!(
+                f,
+                "source fixed file manifest entry {entry_index} has an unexpected column"
+            ),
             Self::EmptyGroupName { entry_index } => {
                 write!(f, "source fixed file manifest entry {entry_index} has no group name")
             }
@@ -167,7 +187,10 @@ impl std::error::Error for SourceFixedFileManifestError {
             | Self::InvalidKind { .. }
             | Self::InvalidBoolean { .. }
             | Self::EmptySourceName { .. }
+            | Self::MissingPath { .. }
+            | Self::UnexpectedPath { .. }
             | Self::EmptyPath { .. }
+            | Self::UnexpectedColumn { .. }
             | Self::EmptyGroupName { .. }
             | Self::EmptyUnitName { .. }
             | Self::EmptyTemplateName { .. }
@@ -242,8 +265,25 @@ fn validate_source_fixed_file_manifest(
         if entry.source_name.is_empty() {
             return Err(SourceFixedFileManifestError::EmptySourceName { entry_index });
         }
+        match entry.kind {
+            SourceFixedFileManifestKind::FixedExternal => {
+                if entry.path.is_some() {
+                    return Err(SourceFixedFileManifestError::UnexpectedPath { entry_index });
+                }
+            }
+            SourceFixedFileManifestKind::ExternFixedFile
+            | SourceFixedFileManifestKind::FixedLoad
+            | SourceFixedFileManifestKind::OutputFixedFile => {
+                if entry.path.is_none() {
+                    return Err(SourceFixedFileManifestError::MissingPath { entry_index });
+                }
+            }
+        }
         if entry.path.as_ref().is_some_and(|path| path.is_empty()) {
             return Err(SourceFixedFileManifestError::EmptyPath { entry_index });
+        }
+        if entry.kind != SourceFixedFileManifestKind::FixedLoad && entry.column.is_some() {
+            return Err(SourceFixedFileManifestError::UnexpectedColumn { entry_index });
         }
         if entry.group_name.is_empty() {
             return Err(SourceFixedFileManifestError::EmptyGroupName { entry_index });
