@@ -2,12 +2,12 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
-use lzvm_artifacts::eth_block_input::parse_eth_block_input;
 use lzvm_artifacts::trace_bundle::{read_trace_bundle_file, TraceBundle};
 use lzvm_prover::{
     derive_prove_execution_plan_with_program_image_cache, ProveExecutionInputArtifacts,
 };
 
+use crate::eth_block_prove_input::{validate_eth_block_input, write_eth_block_input_summary};
 use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{
     format_hash, parse_run_args, read_checked_setup_catalog, write_run_plan_summary, ParseError,
@@ -132,35 +132,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             .unwrap_or_else(|| "none".to_owned())
     );
     if let Some(summary) = &eth_block_input {
-        let _ = writeln!(stdout, "eth_block_input={}", summary.path.display());
-        let _ = writeln!(stdout, "eth_block_input_bytes={}", summary.byte_len);
-        let _ = writeln!(stdout, "eth_block_rlp_bytes={}", summary.block_rlp_len);
-        let _ = writeln!(
-            stdout,
-            "eth_block_hash={}",
-            format_hash(&summary.block_hash)
-        );
-        let _ = writeln!(stdout, "eth_block_number={}", summary.block_number);
-        let _ = writeln!(stdout, "eth_block_timestamp={}", summary.timestamp);
-        let _ = writeln!(
-            stdout,
-            "eth_transactions_root={}",
-            format_hash(&summary.transactions_root)
-        );
-        let _ = writeln!(
-            stdout,
-            "eth_transaction_trie_preimages={}",
-            summary.transaction_preimage_count
-        );
-        match summary.withdrawal_preimage_count {
-            Some(count) => {
-                let _ = writeln!(stdout, "eth_withdrawals=present");
-                let _ = writeln!(stdout, "eth_withdrawal_trie_preimages={count}");
-            }
-            None => {
-                let _ = writeln!(stdout, "eth_withdrawals=absent");
-            }
-        }
+        write_eth_block_input_summary(stdout, summary);
     }
     if let Some(summary) = &plan.program_image_cache {
         write_program_image_cache_summary(stdout, summary);
@@ -290,51 +262,6 @@ fn validate_trace_bundle(
     let bundle = read_trace_bundle_file(path)
         .map_err(|error| format!("trace bundle failed: {}: {error}", path.display()))?;
     Ok(Some((path.clone(), bundle, metadata.len())))
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct EthBlockInputSummary {
-    path: PathBuf,
-    byte_len: u64,
-    block_rlp_len: usize,
-    block_hash: [u8; 32],
-    block_number: u64,
-    timestamp: u64,
-    transactions_root: [u8; 32],
-    transaction_preimage_count: usize,
-    withdrawal_preimage_count: Option<usize>,
-}
-
-fn validate_eth_block_input(
-    path: &Option<PathBuf>,
-) -> Result<Option<EthBlockInputSummary>, String> {
-    let Some(path) = path else {
-        return Ok(None);
-    };
-    let metadata = fs::metadata(path)
-        .map_err(|error| format!("ETH block input is missing: {}: {error}", path.display()))?;
-    if !metadata.is_file() {
-        return Err(format!("ETH block input is not a file: {}", path.display()));
-    }
-    let bytes = fs::read(path)
-        .map_err(|error| format!("ETH block input read failed: {}: {error}", path.display()))?;
-    let input = parse_eth_block_input(&bytes)
-        .map_err(|error| format!("ETH block input failed: {}: {error}", path.display()))?;
-
-    Ok(Some(EthBlockInputSummary {
-        path: path.clone(),
-        byte_len: metadata.len(),
-        block_rlp_len: input.block_rlp.len(),
-        block_hash: input.block_hash,
-        block_number: input.block_number,
-        timestamp: input.timestamp,
-        transactions_root: input.transactions_root,
-        transaction_preimage_count: input.transactions.hash_preimages.len(),
-        withdrawal_preimage_count: input
-            .withdrawals
-            .as_ref()
-            .map(|withdrawals| withdrawals.hash_preimages.len()),
-    }))
 }
 
 fn write_usage(stderr: &mut dyn Write) -> i32 {

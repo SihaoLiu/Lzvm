@@ -19,6 +19,7 @@ use lzvm_setup::{
 };
 
 mod eth_block_input;
+mod eth_block_prove_input;
 mod eth_block_summary;
 mod pil_archive;
 mod pil_archive_summary;
