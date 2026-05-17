@@ -406,24 +406,14 @@ fn parent_hash_arity4(children: &[[Felt; HASH_WORDS]]) -> [Felt; HASH_WORDS] {
 fn parent_hashes_arity2_cuda(
     children: &[[Felt; HASH_WORDS]],
 ) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
-    let mut states = Vec::with_capacity(children.len() * HASH_WORDS);
-    for child in children {
-        states.extend(child.iter().map(|value| value.to_u64()));
-    }
-    let hashed = cuda_poseidon2_width8_device_words(&states)?;
-    digests_from_hashed_states(&hashed, 8)
+    cuda_parent_hashes_on_device(children, 2, 8, cuda_poseidon2_width8_merkle_parent_device)
 }
 
 #[cfg(feature = "cuda")]
 fn parent_hashes_arity4_cuda(
     children: &[[Felt; HASH_WORDS]],
 ) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
-    let mut states = Vec::with_capacity(children.len() * HASH_WORDS);
-    for child in children {
-        states.extend(child.iter().map(|value| value.to_u64()));
-    }
-    let hashed = cuda_poseidon2_width16_device_words(&states)?;
-    digests_from_hashed_states(&hashed, 16)
+    cuda_parent_hashes_on_device(children, 4, 16, cuda_poseidon2_width16_merkle_parent_device)
 }
 
 #[cfg(feature = "cuda")]
@@ -438,6 +428,35 @@ fn cuda_poseidon2_width8_device_words(words: &[u64]) -> Result<Vec<u64>, MerkleH
 #[cfg(feature = "cuda")]
 fn cuda_poseidon2_width16_device_words(words: &[u64]) -> Result<Vec<u64>, MerkleHashError> {
     cuda_poseidon2_words_device(words, cuda_poseidon2_width16_device)
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_parent_hashes_on_device(
+    children: &[[Felt; HASH_WORDS]],
+    arity: usize,
+    width: usize,
+    operation: CudaPoseidon2DeviceOp,
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    if children.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let input_words = digest_level_as_state_words(children, width)?;
+    let input_buffer = CudaDeviceBuffer::from_u64_words(&input_words)
+        .map_err(|_| MerkleHashError::LengthOverflow)?;
+    let parent_count = children.len().div_ceil(arity);
+    let mut output_buffer = CudaDeviceBuffer::new(
+        parent_count
+            .checked_mul(width)
+            .and_then(|word_count| word_count.checked_mul(8))
+            .ok_or(MerkleHashError::LengthOverflow)?,
+    )
+    .map_err(|_| MerkleHashError::LengthOverflow)?;
+    operation(&input_buffer, &mut output_buffer).map_err(|_| MerkleHashError::LengthOverflow)?;
+    let hashed = output_buffer
+        .to_u64_words()
+        .map_err(|_| MerkleHashError::LengthOverflow)?;
+    digests_from_hashed_states(&hashed, width)
 }
 
 #[cfg(feature = "cuda")]
