@@ -16,7 +16,9 @@ use lzvm_artifacts::pcs_evaluation_segment::{
 use lzvm_artifacts::pcs_proof_values_segment::PCS_PROOF_VALUES_SEGMENT_ID;
 use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
-use lzvm_artifacts::public_values::{encode_public_values, read_public_values_file, PublicValues};
+use lzvm_artifacts::public_values::{
+    encode_public_values, public_values_digest, read_public_values_file, PublicValues,
+};
 use lzvm_artifacts::trace_bundle::read_trace_bundle_file;
 use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
 use lzvm_field::{Ext3, Felt};
@@ -317,6 +319,11 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         let _ = writeln!(stdout, "public_inputs={}", path.display());
     }
     if let Some(summary) = &public_inputs_summary {
+        let _ = writeln!(
+            stdout,
+            "public_inputs_hash={}",
+            crate::prove_plan::format_hash(&summary.digest)
+        );
         let _ = writeln!(stdout, "public_input_values={}", summary.value_count);
         let _ = writeln!(stdout, "public_input_fields={}", summary.field_count);
     }
@@ -357,6 +364,7 @@ struct PreparedPublicInputs {
 }
 
 struct PublicInputSummary {
+    digest: [u8; 32],
     value_count: usize,
     field_count: usize,
 }
@@ -367,7 +375,10 @@ fn summarize_public_inputs(path: Option<&Path>) -> Result<Option<PublicInputSumm
     };
     let public_values = read_public_values_file(path)
         .map_err(|error| format!("read public inputs failed: {}: {error}", path.display()))?;
+    let digest = public_values_digest(&public_values)
+        .map_err(|error| format!("digest public inputs failed: {}: {error}", path.display()))?;
     Ok(Some(PublicInputSummary {
+        digest,
         value_count: public_values.values.len(),
         field_count: public_values_field_count(&public_values),
     }))
@@ -914,6 +925,13 @@ fn finish_all_units_witness_run(
         let _ = writeln!(stdout, "public_inputs={}", path.display());
     }
     if let Some(public_values) = public_values.as_ref() {
+        let digest = public_values_digest(public_values)
+            .map_err(|error| format!("digest public inputs failed: {error}"))?;
+        let _ = writeln!(
+            stdout,
+            "public_inputs_hash={}",
+            crate::prove_plan::format_hash(&digest)
+        );
         let _ = writeln!(stdout, "public_input_values={}", public_values.values.len());
         let _ = writeln!(
             stdout,

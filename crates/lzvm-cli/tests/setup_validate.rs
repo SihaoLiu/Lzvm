@@ -4442,6 +4442,7 @@ fn writes_prove_witness_proof_without_save_outputs() {
     write_bytes(&input_data, [7_u8]);
 
     let public_values = sample_public_values(setup_hash);
+    let public_values_hash = public_values_digest(&public_values).expect("digest should compute");
     let public_values_path = dir.join("public_values.bin");
     write_bytes(
         &public_values_path,
@@ -4516,10 +4517,11 @@ fn writes_prove_witness_proof_without_save_outputs() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data={}\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash_hex}\npublic_inputs={}\npublic_input_values=1\npublic_input_fields=1\nunit_index=0\ninput_bytes=1\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data={}\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash_hex}\npublic_inputs={}\npublic_inputs_hash={}\npublic_input_values=1\npublic_input_fields=1\nunit_index=0\ninput_bytes=1\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
             input_data.display(),
             output_dir.display(),
             public_values_path.display(),
+            format_hash(&public_values_hash),
             expected_stages
         )
     );
@@ -6119,6 +6121,7 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     write_field_words(&evaluation_values_path, &[30, 31, 32, 40, 41, 42]);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = sample_public_values(setup_hash);
+    let public_values_hash = public_values_digest(&public_values).expect("digest should compute");
     let public_values_path = dir.join("public_values.bin");
     write_bytes(
         &public_values_path,
@@ -6157,6 +6160,10 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     assert!(stderr.is_empty());
     let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
     assert!(stdout_text.contains(&format!("public_inputs={}\n", public_values_path.display())));
+    assert!(stdout_text.contains(&format!(
+        "public_inputs_hash={}\n",
+        format_hash(&public_values_hash)
+    )));
     assert!(stdout_text.contains("public_input_values=1\npublic_input_fields=1\n"));
     let proof_path = output_dir.join("proof.bin");
     let proof_bytes = fs::read(&proof_path).expect("proof output should read");
