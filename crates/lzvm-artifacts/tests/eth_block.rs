@@ -1,10 +1,10 @@
 use lzvm_artifacts::eth_block::{
     decode_eth_header_rlp, decode_eth_log_rlp, decode_eth_logs_rlp, decode_eth_receipt_rlp,
     decode_eth_receipts_rlp, decode_eth_transaction_rlp, decode_eth_transactions_rlp,
-    decode_eth_withdrawal_rlp, decode_eth_withdrawals_rlp, eth_header_hash, eth_ommers_hash,
-    keccak256, parse_eth_block_rlp, EthBlockError, EthBlockRlp, EthLogError, EthLogRlp,
-    EthReceiptError, EthReceiptRlp, EthTransactionError, EthTransactionRlp, EthWithdrawalError,
-    EthWithdrawalRlp, HeaderField, LogField, ReceiptField, WithdrawalField,
+    decode_eth_withdrawal_rlp, decode_eth_withdrawals_rlp, eth_header_hash, eth_logs_bloom,
+    eth_ommers_hash, keccak256, parse_eth_block_rlp, EthBlockError, EthBlockRlp, EthLogError,
+    EthLogRlp, EthReceiptError, EthReceiptRlp, EthTransactionError, EthTransactionRlp,
+    EthWithdrawalError, EthWithdrawalRlp, HeaderField, LogField, ReceiptField, WithdrawalField,
 };
 use lzvm_artifacts::rlp::RlpItem;
 
@@ -281,10 +281,15 @@ fn decodes_legacy_receipts() {
         EthReceiptRlp::Legacy {
             status_or_post_state: vec![1],
             cumulative_gas_used: 0x5208,
-            logs_bloom: Box::new([0x11; 256]),
+            logs_bloom: Box::new(sample_logs_bloom()),
             logs: vec![decoded_log_item()],
         }
     );
+}
+
+#[test]
+fn computes_logs_bloom() {
+    assert_eq!(eth_logs_bloom(&[decoded_log_item()]), sample_logs_bloom());
 }
 
 #[test]
@@ -417,6 +422,17 @@ fn rejects_malformed_receipts() {
         }
     ));
 
+    let mut mismatched_bloom = match receipt_item() {
+        RlpItem::List(fields) => fields,
+        RlpItem::Bytes(_) => panic!("receipt should be a list"),
+    };
+    let mut bloom = sample_logs_bloom();
+    bloom[0] ^= 1;
+    mismatched_bloom[2] = RlpItem::Bytes(bloom.to_vec());
+    let error =
+        decode_eth_receipt_rlp(&RlpItem::List(mismatched_bloom)).expect_err("receipt should fail");
+    assert!(matches!(error, EthReceiptError::LogsBloomMismatch));
+
     let mut wrong_logs = match receipt_item() {
         RlpItem::List(fields) => fields,
         RlpItem::Bytes(_) => panic!("receipt should be a list"),
@@ -539,7 +555,7 @@ fn receipt_item() -> RlpItem {
     RlpItem::List(vec![
         RlpItem::Bytes(vec![1]),
         RlpItem::Bytes(vec![0x52, 0x08]),
-        RlpItem::Bytes(vec![0x11; 256]),
+        RlpItem::Bytes(sample_logs_bloom().to_vec()),
         RlpItem::List(vec![log_item()]),
     ])
 }
@@ -558,6 +574,14 @@ fn decoded_log_item() -> EthLogRlp {
         topics: vec![[0x33; 32]],
         data: vec![0x44, 0x55],
     }
+}
+
+fn sample_logs_bloom() -> [u8; 256] {
+    hex_bytes(
+        "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000100000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    )
+    .try_into()
+    .expect("logs bloom should have 256 bytes")
 }
 
 fn legacy_header_items() -> Vec<Vec<u8>> {

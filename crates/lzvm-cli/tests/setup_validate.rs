@@ -1050,7 +1050,7 @@ fn sample_receipt_item() -> Vec<u8> {
     rlp_list(&[
         rlp_bytes(&[1]),
         rlp_bytes(&[0x52, 0x08]),
-        rlp_bytes(&[0x11; 256]),
+        rlp_bytes(&[0; 256]),
         rlp_list(&[]),
     ])
 }

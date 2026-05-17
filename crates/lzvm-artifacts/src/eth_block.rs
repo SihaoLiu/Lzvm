@@ -153,6 +153,7 @@ pub enum EthReceiptError {
         max_bytes: usize,
         found: usize,
     },
+    LogsBloomMismatch,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -319,6 +320,7 @@ impl fmt::Display for EthReceiptError {
                 f,
                 "receipt field {field} quantity exceeds {max_bytes} bytes, found {found}"
             ),
+            Self::LogsBloomMismatch => write!(f, "receipt logs bloom mismatch"),
         }
     }
 }
@@ -595,6 +597,17 @@ pub fn decode_eth_logs_rlp(logs: &[RlpItem]) -> Result<Vec<EthLogRlp>, EthLogErr
     logs.iter().map(decode_eth_log_rlp).collect()
 }
 
+pub fn eth_logs_bloom(logs: &[EthLogRlp]) -> [u8; 256] {
+    let mut bloom = [0_u8; 256];
+    for log in logs {
+        add_bloom_value(&mut bloom, &log.address);
+        for topic in &log.topics {
+            add_bloom_value(&mut bloom, topic);
+        }
+    }
+    bloom
+}
+
 pub fn decode_eth_receipt_rlp(receipt: &RlpItem) -> Result<EthReceiptRlp, EthReceiptError> {
     match receipt {
         RlpItem::List(fields) => decode_legacy_eth_receipt(fields),
@@ -627,14 +640,16 @@ fn decode_legacy_eth_receipt(fields: &[RlpItem]) -> Result<EthReceiptRlp, EthRec
             found: fields.len(),
         });
     }
+    let logs_bloom = receipt_fixed_bytes::<256>(&fields[2], ReceiptField::LogsBloom)?;
+    let logs = decode_eth_logs_rlp(receipt_logs(&fields[3])?).map_err(EthReceiptError::Log)?;
+    if logs_bloom != eth_logs_bloom(&logs) {
+        return Err(EthReceiptError::LogsBloomMismatch);
+    }
     Ok(EthReceiptRlp::Legacy {
         status_or_post_state: receipt_bytes(&fields[0], ReceiptField::StatusOrPostState)?.to_vec(),
         cumulative_gas_used: receipt_quantity_u64(&fields[1], ReceiptField::CumulativeGasUsed)?,
-        logs_bloom: Box::new(receipt_fixed_bytes::<256>(
-            &fields[2],
-            ReceiptField::LogsBloom,
-        )?),
-        logs: decode_eth_logs_rlp(receipt_logs(&fields[3])?).map_err(EthReceiptError::Log)?,
+        logs_bloom: Box::new(logs_bloom),
+        logs,
     })
 }
 
@@ -675,6 +690,14 @@ pub fn eth_header_hash(header: &[RlpItem]) -> [u8; 32] {
 
 pub fn eth_ommers_hash(ommers: &[RlpItem]) -> [u8; 32] {
     keccak256(&encode_rlp(&RlpItem::List(ommers.to_vec())))
+}
+
+fn add_bloom_value(bloom: &mut [u8; 256], value: &[u8]) {
+    let hash = keccak256(value);
+    for index in 0..3 {
+        let bit = (((hash[2 * index] as usize) << 8) | hash[2 * index + 1] as usize) & 2047;
+        bloom[255 - bit / 8] |= 1 << (bit % 8);
+    }
 }
 
 fn take_list(item: RlpItem, error: EthBlockError) -> Result<Vec<RlpItem>, EthBlockError> {
