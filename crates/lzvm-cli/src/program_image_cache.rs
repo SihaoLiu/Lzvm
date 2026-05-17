@@ -21,12 +21,33 @@ pub(crate) fn write_program_image_cache_fields(
     cache: &ProgramImageCommitmentCache,
 ) {
     if let Ok(segment) = encode_program_image_cache_segment(cache) {
-        let _ = writeln!(
+        write_program_image_cache_fields_with_segment_hash(
             stdout,
-            "program_image_cache_segment_hash={}",
-            format_hash(&program_image_cache_segment_digest(&segment))
+            cache,
+            &program_image_cache_segment_digest(&segment),
         );
+        return;
     }
+    write_program_image_cache_fields_without_segment_hash(stdout, cache);
+}
+
+pub(crate) fn write_program_image_cache_fields_with_segment_hash(
+    stdout: &mut dyn Write,
+    cache: &ProgramImageCommitmentCache,
+    segment_hash: &[u8; 32],
+) {
+    let _ = writeln!(
+        stdout,
+        "program_image_cache_segment_hash={}",
+        format_hash(segment_hash)
+    );
+    write_program_image_cache_fields_without_segment_hash(stdout, cache);
+}
+
+fn write_program_image_cache_fields_without_segment_hash(
+    stdout: &mut dyn Write,
+    cache: &ProgramImageCommitmentCache,
+) {
     let _ = writeln!(
         stdout,
         "program_image_cache_program_digest={}",

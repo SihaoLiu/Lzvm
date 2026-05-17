@@ -57,6 +57,7 @@ pub struct SetupPreflightReport {
     pub public_value_field_count: usize,
     pub program_image_cache_count: usize,
     pub program_image_caches: Vec<ProgramImageCommitmentCache>,
+    pub program_image_cache_hashes: Vec<[u8; 32]>,
     pub eth_block_input_count: usize,
     pub eth_block_input_hashes: Vec<[u8; 32]>,
 }
@@ -208,6 +209,7 @@ pub fn validate_setup_preflight_hashes(
         public_value_field_count,
         program_image_cache_count,
         program_image_caches,
+        program_image_cache_hashes,
         eth_block_input_count,
         eth_block_input_hashes,
     } = validate_proof_public_values(proof, public_values).map_err(SetupPreflightError::Proof)?;
@@ -220,6 +222,7 @@ pub fn validate_setup_preflight_hashes(
         public_value_field_count,
         program_image_cache_count,
         program_image_caches,
+        program_image_cache_hashes,
         eth_block_input_count,
         eth_block_input_hashes,
     })

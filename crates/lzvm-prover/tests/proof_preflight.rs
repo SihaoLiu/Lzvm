@@ -3,7 +3,9 @@ use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
+use lzvm_artifacts::program_image::{ProgramImageCommitmentCache, ProgramImageGpuMode};
 use lzvm_artifacts::program_image_segment::{
+    encode_program_image_cache_segment, program_image_cache_segment_digest,
     ProgramImageCacheSegmentError, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::{ProofArtifact, ProofSegment};
@@ -37,6 +39,20 @@ fn sample_proof(public_values: &PublicValues) -> ProofArtifact {
             id: 100,
             data: vec![1, 2, 3, 4],
         }],
+    }
+}
+
+fn sample_program_image_cache() -> ProgramImageCommitmentCache {
+    ProgramImageCommitmentCache {
+        program_digest: [0x11; 32],
+        source_image_digest: [0x22; 32],
+        constraint_system_digest: [0x33; 32],
+        tree_root: [10, 11, 12, 13],
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cuda,
     }
 }
 
@@ -151,6 +167,7 @@ fn validates_proof_public_value_preflight_hashes() {
             public_value_field_count: 1,
             program_image_cache_count: 0,
             program_image_caches: Vec::new(),
+            program_image_cache_hashes: Vec::new(),
             eth_block_input_count: 0,
             eth_block_input_hashes: Vec::new(),
         }
@@ -215,6 +232,25 @@ fn rejects_invalid_program_image_cache_segments() {
             available: 1
         })
     );
+}
+
+#[test]
+fn reports_program_image_cache_segment_hashes() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    let segment_data =
+        encode_program_image_cache_segment(&sample_program_image_cache()).expect("cache encodes");
+    let segment_hash = program_image_cache_segment_digest(&segment_data);
+    proof.segments.push(ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: segment_data,
+    });
+
+    let report = validate_proof_public_values(&proof, &public_values)
+        .expect("proof and public values should match");
+
+    assert_eq!(report.program_image_cache_count, 1);
+    assert_eq!(report.program_image_cache_hashes, vec![segment_hash]);
 }
 
 #[test]

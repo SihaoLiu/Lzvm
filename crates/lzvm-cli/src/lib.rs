@@ -628,8 +628,14 @@ fn verify_preflight(
             "program_image_caches={}",
             report.program_image_cache_count
         );
-        for cache in &report.program_image_caches {
-            program_image_cache::write_program_image_cache_fields(stdout, cache);
+        for (cache, hash) in report
+            .program_image_caches
+            .iter()
+            .zip(&report.program_image_cache_hashes)
+        {
+            program_image_cache::write_program_image_cache_fields_with_segment_hash(
+                stdout, cache, hash,
+            );
         }
     }
     if report.eth_block_input_count > 0 {
@@ -904,8 +910,14 @@ fn verify_setup_validation(
             "program_image_caches={}",
             public_report.program_image_cache_count
         );
-        for cache in &public_report.program_image_caches {
-            program_image_cache::write_program_image_cache_fields(stdout, cache);
+        for (cache, hash) in public_report
+            .program_image_caches
+            .iter()
+            .zip(&public_report.program_image_cache_hashes)
+        {
+            program_image_cache::write_program_image_cache_fields_with_segment_hash(
+                stdout, cache, hash,
+            );
         }
     }
     if public_report.eth_block_input_count > 0 {
