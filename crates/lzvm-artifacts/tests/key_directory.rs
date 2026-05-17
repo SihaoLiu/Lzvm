@@ -24,12 +24,12 @@ use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, Sec
 use lzvm_artifacts::setup_info::{encode_unit_setup_info, UnitSetupInfo};
 use lzvm_artifacts::source_fixed_file_manifest::{
     encode_source_fixed_file_manifest, SourceFixedFileManifest, SourceFixedFileManifestEntry,
-    SourceFixedFileManifestKind, SOURCE_FIXED_FILE_MANIFEST_FILE,
+    SourceFixedFileManifestError, SourceFixedFileManifestKind, SOURCE_FIXED_FILE_MANIFEST_FILE,
 };
 use lzvm_artifacts::source_program::{
     encode_source_program_archive, SourceProgramArchive, SourceProgramArchiveEdge,
-    SourceProgramArchiveIncludeKind, SourceProgramArchiveIncludeVisibility,
-    SourceProgramArchiveSource, SOURCE_PROGRAM_ARCHIVE_FILE,
+    SourceProgramArchiveError, SourceProgramArchiveIncludeKind,
+    SourceProgramArchiveIncludeVisibility, SourceProgramArchiveSource, SOURCE_PROGRAM_ARCHIVE_FILE,
 };
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use lzvm_artifacts::verifier_info::{encode_verifier_info, VerifierInfo};
@@ -882,6 +882,29 @@ fn reads_key_directory_catalog_source_fixed_file_manifest_when_present() {
 }
 
 #[test]
+fn rejects_source_fixed_file_manifest_directory_paths() {
+    let dir = temp_dir("catalog-source-fixed-file-manifest-directory");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    fs::create_dir_all(&layout.source_fixed_file_manifest)
+        .expect("manifest directory should be created");
+
+    let error = read_key_directory_catalog(&dir).expect_err("catalog should reject directory");
+
+    assert!(matches!(
+        error,
+        KeyDirectoryError::SourceFixedFileManifest(
+            SourceFixedFileManifestError::ReadFailed { path, .. }
+        ) if path == layout.source_fixed_file_manifest
+    ));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn reads_key_directory_catalog_source_program_archive_when_present() {
     let dir = temp_dir("catalog-source-program-archive");
     let _ = fs::remove_dir_all(&dir);
@@ -900,6 +923,29 @@ fn reads_key_directory_catalog_source_program_archive_when_present() {
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
 
     assert_eq!(catalog.source_program_archive, Some(expected));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_source_program_archive_directory_paths() {
+    let dir = temp_dir("catalog-source-program-archive-directory");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    fs::create_dir_all(&layout.source_program_archive)
+        .expect("archive directory should be created");
+
+    let error = read_key_directory_catalog(&dir).expect_err("catalog should reject directory");
+
+    assert!(matches!(
+        error,
+        KeyDirectoryError::SourceProgramArchive(
+            SourceProgramArchiveError::ReadFailed { path, .. }
+        ) if path == layout.source_program_archive
+    ));
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 

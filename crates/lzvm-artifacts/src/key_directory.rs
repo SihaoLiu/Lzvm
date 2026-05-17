@@ -704,7 +704,10 @@ fn read_global_info_path(paths: &GlobalKeyPaths) -> Result<GlobalInfo, KeyDirect
 fn read_source_fixed_file_manifest_if_present(
     path: &Path,
 ) -> Result<Option<SourceFixedFileManifest>, KeyDirectoryError> {
-    if !path.is_file() {
+    if !path.try_exists().map_err(|error| KeyDirectoryError::Io {
+        role: "source fixed-file manifest",
+        message: error.to_string(),
+    })? {
         return Ok(None);
     }
     read_source_fixed_file_manifest_file(path)
@@ -715,7 +718,10 @@ fn read_source_fixed_file_manifest_if_present(
 fn read_source_program_archive_if_present(
     path: &Path,
 ) -> Result<Option<SourceProgramArchive>, KeyDirectoryError> {
-    if !path.is_file() {
+    if !path.try_exists().map_err(|error| KeyDirectoryError::Io {
+        role: "source program archive",
+        message: error.to_string(),
+    })? {
         return Ok(None);
     }
     read_source_program_archive_file(path)
