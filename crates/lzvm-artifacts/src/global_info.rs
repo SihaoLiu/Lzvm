@@ -9,6 +9,18 @@ const GLOBAL_INFO_KIND: [u8; 4] = *b"ginf";
 const GLOBAL_INFO_VERSION: u32 = 1;
 const GLOBAL_INFO_SECTION_ID: u32 = 1;
 
+const U32_BYTES: usize = 4;
+const U64_BYTES: usize = 8;
+const FLAG_BYTES: usize = 1;
+const STRING_MIN_BYTES: usize = 1;
+const AIR_GROUP_MIN_BYTES: usize = STRING_MIN_BYTES;
+const AIR_SECTION_MIN_BYTES: usize = U32_BYTES;
+const AIR_UNIT_MIN_BYTES: usize = STRING_MIN_BYTES + U64_BYTES + FLAG_BYTES;
+const AGGREGATION_GROUP_MIN_BYTES: usize = U32_BYTES;
+const AGGREGATION_ENTRY_BYTES: usize = U64_BYTES;
+const NAMED_STAGE_VALUE_MIN_BYTES: usize = STRING_MIN_BYTES + U64_BYTES + FLAG_BYTES + U32_BYTES;
+const PUBLIC_VALUE_MIN_BYTES: usize = STRING_MIN_BYTES + U64_BYTES + U32_BYTES;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GlobalInfo {
     pub name: String,
@@ -273,17 +285,17 @@ fn parse_global_info_section(bytes: &[u8]) -> Result<GlobalInfo, GlobalInfoError
     let transcript_arity = reader.read_u64()?;
     let n_publics = reader.read_u64()?;
 
-    let air_group_count = reader.read_u32()?;
-    let mut air_groups = Vec::with_capacity(air_group_count as usize);
+    let air_group_count = read_bounded_count(&mut reader, AIR_GROUP_MIN_BYTES)?;
+    let mut air_groups = Vec::with_capacity(air_group_count);
     for _ in 0..air_group_count {
         air_groups.push(reader.read_string()?);
     }
 
-    let airs_group_count = reader.read_u32()?;
-    let mut airs = Vec::with_capacity(airs_group_count as usize);
+    let airs_group_count = read_bounded_count(&mut reader, AIR_SECTION_MIN_BYTES)?;
+    let mut airs = Vec::with_capacity(airs_group_count);
     for _ in 0..airs_group_count {
-        let unit_count = reader.read_u32()?;
-        let mut units = Vec::with_capacity(unit_count as usize);
+        let unit_count = read_bounded_count(&mut reader, AIR_UNIT_MIN_BYTES)?;
+        let mut units = Vec::with_capacity(unit_count);
         for _ in 0..unit_count {
             units.push(GlobalAir {
                 name: reader.read_string()?,
@@ -294,11 +306,11 @@ fn parse_global_info_section(bytes: &[u8]) -> Result<GlobalInfo, GlobalInfoError
         airs.push(units);
     }
 
-    let aggregation_group_count = reader.read_u32()?;
-    let mut aggregation_types = Vec::with_capacity(aggregation_group_count as usize);
+    let aggregation_group_count = read_bounded_count(&mut reader, AGGREGATION_GROUP_MIN_BYTES)?;
+    let mut aggregation_types = Vec::with_capacity(aggregation_group_count);
     for _ in 0..aggregation_group_count {
-        let entry_count = reader.read_u32()?;
-        let mut entries = Vec::with_capacity(entry_count as usize);
+        let entry_count = read_bounded_count(&mut reader, AGGREGATION_ENTRY_BYTES)?;
+        let mut entries = Vec::with_capacity(entry_count);
         for _ in 0..entry_count {
             entries.push(AggregationType {
                 aggregation_type: reader.read_u64()?,
@@ -397,47 +409,43 @@ fn validate_air_group_shape(
 fn read_named_stage_values(
     reader: &mut Reader<'_>,
 ) -> Result<Vec<NamedStageValue>, GlobalInfoError> {
-    let value_count = reader.read_u32()?;
-    let mut values = Vec::with_capacity(value_count as usize);
-    for index in 0..value_count {
-        let lengths_count = {
-            let name = reader.read_string()?;
-            let stage = reader.read_u64()?;
-            let id = reader.read_optional_u64("proof_value_id")?;
-            let lengths_count = reader.read_u32()?;
-            values.push(NamedStageValue {
-                name,
-                stage,
-                id,
-                lengths: Vec::with_capacity(lengths_count as usize),
-            });
-            lengths_count
-        };
+    let value_count = read_bounded_count(reader, NAMED_STAGE_VALUE_MIN_BYTES)?;
+    let mut values = Vec::with_capacity(value_count);
+    for _ in 0..value_count {
+        let name = reader.read_string()?;
+        let stage = reader.read_u64()?;
+        let id = reader.read_optional_u64("proof_value_id")?;
+        let lengths_count = read_bounded_count(reader, U64_BYTES)?;
+        let mut lengths = Vec::with_capacity(lengths_count);
         for _ in 0..lengths_count {
-            values[index as usize].lengths.push(reader.read_u64()?);
+            lengths.push(reader.read_u64()?);
         }
+        values.push(NamedStageValue {
+            name,
+            stage,
+            id,
+            lengths,
+        });
     }
     Ok(values)
 }
 
 fn read_public_values(reader: &mut Reader<'_>) -> Result<Vec<PublicValue>, GlobalInfoError> {
-    let value_count = reader.read_u32()?;
-    let mut values = Vec::with_capacity(value_count as usize);
-    for index in 0..value_count {
-        let lengths_count = {
-            let name = reader.read_string()?;
-            let stage = reader.read_u64()?;
-            let lengths_count = reader.read_u32()?;
-            values.push(PublicValue {
-                name,
-                stage,
-                lengths: Vec::with_capacity(lengths_count as usize),
-            });
-            lengths_count
-        };
+    let value_count = read_bounded_count(reader, PUBLIC_VALUE_MIN_BYTES)?;
+    let mut values = Vec::with_capacity(value_count);
+    for _ in 0..value_count {
+        let name = reader.read_string()?;
+        let stage = reader.read_u64()?;
+        let lengths_count = read_bounded_count(reader, U64_BYTES)?;
+        let mut lengths = Vec::with_capacity(lengths_count);
         for _ in 0..lengths_count {
-            values[index as usize].lengths.push(reader.read_u64()?);
+            lengths.push(reader.read_u64()?);
         }
+        values.push(PublicValue {
+            name,
+            stage,
+            lengths,
+        });
     }
     Ok(values)
 }
@@ -473,8 +481,8 @@ fn write_public_values(out: &mut Vec<u8>, values: &[PublicValue]) -> Result<(), 
 }
 
 fn read_u64_vec(reader: &mut Reader<'_>) -> Result<Vec<u64>, GlobalInfoError> {
-    let count = reader.read_u32()?;
-    let mut values = Vec::with_capacity(count as usize);
+    let count = read_bounded_count(reader, U64_BYTES)?;
+    let mut values = Vec::with_capacity(count);
     for _ in 0..count {
         values.push(reader.read_u64()?);
     }
@@ -553,6 +561,21 @@ fn usize_to_u32(value: usize) -> Result<u32, GlobalInfoError> {
     u32::try_from(value).map_err(|_| GlobalInfoError::LengthOverflow)
 }
 
+fn read_bounded_count(
+    reader: &mut Reader<'_>,
+    record_min_bytes: usize,
+) -> Result<usize, GlobalInfoError> {
+    let count = u32_to_usize(reader.read_u32()?)?;
+    if count > reader.remaining_len() / record_min_bytes {
+        return Err(GlobalInfoError::LengthOverflow);
+    }
+    Ok(count)
+}
+
+fn u32_to_usize(value: u32) -> Result<usize, GlobalInfoError> {
+    usize::try_from(value).map_err(|_| GlobalInfoError::LengthOverflow)
+}
+
 fn write_u32(out: &mut Vec<u8>, value: u32) {
     out.extend_from_slice(&value.to_le_bytes());
 }
@@ -598,6 +621,10 @@ impl<'a> Reader<'a> {
 
     fn position(&self) -> usize {
         self.offset
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], GlobalInfoError> {
