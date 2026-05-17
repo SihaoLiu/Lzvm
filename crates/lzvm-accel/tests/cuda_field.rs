@@ -4,7 +4,8 @@ use lzvm_accel::{cuda_goldilocks_add, cuda_goldilocks_mul};
 use lzvm_accel::{
     cuda_goldilocks_butterfly, cuda_goldilocks_coset_extend, cuda_goldilocks_coset_extend_device,
     cuda_goldilocks_intt, cuda_goldilocks_ntt, cuda_keccak256_fixed, cuda_poseidon2_width16,
-    cuda_poseidon2_width4, cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8,
+    cuda_poseidon2_width16_device, cuda_poseidon2_width4, cuda_poseidon2_width4_device,
+    cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8, cuda_poseidon2_width8_device,
     cuda_setup_init, CudaDeviceBuffer,
 };
 #[cfg(feature = "cuda")]
@@ -308,6 +309,31 @@ fn cuda_hashes_poseidon2_width_4_states() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_hashes_poseidon2_width_4_states_from_device_memory() {
+    let input = (0_u64..12).collect::<Vec<_>>();
+    let expected = input
+        .chunks_exact(4)
+        .flat_map(|chunk| {
+            let state = std::array::from_fn(|index| Felt::from_u64(chunk[index]));
+            poseidon2_hash_4(state).map(Felt::to_u64)
+        })
+        .collect::<Vec<_>>();
+
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&input).expect("input device buffer should allocate");
+    let mut output_buffer =
+        CudaDeviceBuffer::new(input.len() * 8).expect("output device buffer should allocate");
+    cuda_poseidon2_width4_device(&input_buffer, &mut output_buffer)
+        .expect("cuda device hash should run");
+    let actual = output_buffer
+        .to_u64_words()
+        .expect("device words should copy back to host");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_finds_poseidon2_width_4_nonce_ranges() {
     let challenge = [0_u64, 1, 2];
     let target = 1_u64 << 62;
@@ -357,6 +383,31 @@ fn cuda_hashes_poseidon2_width_8_states() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_hashes_poseidon2_width_8_states_from_device_memory() {
+    let input = (0_u64..16).collect::<Vec<_>>();
+    let expected = input
+        .chunks_exact(8)
+        .flat_map(|chunk| {
+            let state = std::array::from_fn(|index| Felt::from_u64(chunk[index]));
+            poseidon2_hash_8(state).map(Felt::to_u64)
+        })
+        .collect::<Vec<_>>();
+
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&input).expect("input device buffer should allocate");
+    let mut output_buffer =
+        CudaDeviceBuffer::new(input.len() * 8).expect("output device buffer should allocate");
+    cuda_poseidon2_width8_device(&input_buffer, &mut output_buffer)
+        .expect("cuda device hash should run");
+    let actual = output_buffer
+        .to_u64_words()
+        .expect("device words should copy back to host");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_hashes_poseidon2_width_16_states() {
     let input = (0_u64..32).collect::<Vec<_>>();
     let expected = input
@@ -368,6 +419,31 @@ fn cuda_hashes_poseidon2_width_16_states() {
         .collect::<Vec<_>>();
 
     let actual = cuda_poseidon2_width16(&input).expect("cuda hash should run");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_hashes_poseidon2_width_16_states_from_device_memory() {
+    let input = (0_u64..32).collect::<Vec<_>>();
+    let expected = input
+        .chunks_exact(16)
+        .flat_map(|chunk| {
+            let state = std::array::from_fn(|index| Felt::from_u64(chunk[index]));
+            poseidon2_hash_16(state).map(Felt::to_u64)
+        })
+        .collect::<Vec<_>>();
+
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&input).expect("input device buffer should allocate");
+    let mut output_buffer =
+        CudaDeviceBuffer::new(input.len() * 8).expect("output device buffer should allocate");
+    cuda_poseidon2_width16_device(&input_buffer, &mut output_buffer)
+        .expect("cuda device hash should run");
+    let actual = output_buffer
+        .to_u64_words()
+        .expect("device words should copy back to host");
 
     assert_eq!(actual, expected);
 }

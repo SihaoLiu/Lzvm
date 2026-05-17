@@ -89,6 +89,12 @@ unsafe extern "C" {
         shift: u64,
     ) -> i32;
     fn lzvm_cuda_poseidon2_width4(values: *const u64, out: *mut u64, state_count: usize) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width4_device"]
+    fn lzvm_cuda_poseidon2_width4_device_raw(
+        values: *const u64,
+        out: *mut u64,
+        state_count: usize,
+    ) -> i32;
     fn lzvm_cuda_poseidon2_width4_find_nonce(
         challenge: *const u64,
         start: u64,
@@ -98,7 +104,19 @@ unsafe extern "C" {
         found: *mut u32,
     ) -> i32;
     fn lzvm_cuda_poseidon2_width8(values: *const u64, out: *mut u64, state_count: usize) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width8_device"]
+    fn lzvm_cuda_poseidon2_width8_device_raw(
+        values: *const u64,
+        out: *mut u64,
+        state_count: usize,
+    ) -> i32;
     fn lzvm_cuda_poseidon2_width16(values: *const u64, out: *mut u64, state_count: usize) -> i32;
+    #[link_name = "lzvm_cuda_poseidon2_width16_device"]
+    fn lzvm_cuda_poseidon2_width16_device_raw(
+        values: *const u64,
+        out: *mut u64,
+        state_count: usize,
+    ) -> i32;
     fn lzvm_cuda_keccak256_fixed(
         input: *const u8,
         message_len: usize,
@@ -637,6 +655,59 @@ pub fn cuda_poseidon2_width4(values: &[u64]) -> Result<Vec<u64>, AccelError> {
 }
 
 #[cfg(feature = "cuda")]
+type CudaPoseidon2DeviceOp = unsafe extern "C" fn(*const u64, *mut u64, usize) -> i32;
+
+#[cfg(feature = "cuda")]
+fn run_cuda_poseidon2_device_op(
+    values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    width: usize,
+    bits: usize,
+    operation: CudaPoseidon2DeviceOp,
+) -> Result<(), AccelError> {
+    if !values.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: values.len(),
+            rhs: values.len() / 8 * 8,
+        });
+    }
+    if values.len() != out.len() {
+        return Err(AccelError::LengthMismatch {
+            lhs: values.len(),
+            rhs: out.len(),
+        });
+    }
+
+    let word_count = values.len() / 8;
+    if !word_count.is_multiple_of(width) {
+        return Err(AccelError::InvalidDomain {
+            bits,
+            len: word_count,
+        });
+    }
+    if word_count == 0 {
+        return Ok(());
+    }
+
+    let code = unsafe {
+        operation(
+            values.as_raw_ptr() as *const u64,
+            out.as_raw_ptr() as *mut u64,
+            word_count / width,
+        )
+    };
+    cuda_status(code)
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_poseidon2_width4_device(
+    values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+) -> Result<(), AccelError> {
+    run_cuda_poseidon2_device_op(values, out, 4, 2, lzvm_cuda_poseidon2_width4_device_raw)
+}
+
+#[cfg(feature = "cuda")]
 pub fn cuda_poseidon2_width4_find_nonce(
     challenge: [u64; 3],
     start: u64,
@@ -702,6 +773,14 @@ pub fn cuda_poseidon2_width8(values: &[u64]) -> Result<Vec<u64>, AccelError> {
 }
 
 #[cfg(feature = "cuda")]
+pub fn cuda_poseidon2_width8_device(
+    values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+) -> Result<(), AccelError> {
+    run_cuda_poseidon2_device_op(values, out, 8, 3, lzvm_cuda_poseidon2_width8_device_raw)
+}
+
+#[cfg(feature = "cuda")]
 pub fn cuda_poseidon2_width16(values: &[u64]) -> Result<Vec<u64>, AccelError> {
     const WIDTH: usize = 16;
 
@@ -724,6 +803,14 @@ pub fn cuda_poseidon2_width16(values: &[u64]) -> Result<Vec<u64>, AccelError> {
     } else {
         Err(AccelError::Cuda { code })
     }
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_poseidon2_width16_device(
+    values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+) -> Result<(), AccelError> {
+    run_cuda_poseidon2_device_op(values, out, 16, 4, lzvm_cuda_poseidon2_width16_device_raw)
 }
 
 #[cfg(feature = "cuda")]

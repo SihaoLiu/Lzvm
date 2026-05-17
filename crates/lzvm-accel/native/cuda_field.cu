@@ -943,6 +943,60 @@ int run_coset_extend_on_device(
     return 0;
 }
 
+int run_poseidon2_width4_on_device(
+    const uint64_t* device_values,
+    uint64_t* device_out,
+    size_t state_count) {
+    if (state_count == 0) {
+        return 0;
+    }
+    if (device_values == nullptr || device_out == nullptr) {
+        return -1;
+    }
+
+    const size_t blocks = (state_count + kThreads - 1) / kThreads;
+    poseidon2_width4_kernel<<<blocks, kThreads>>>(device_values, device_out, state_count);
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
+    return 0;
+}
+
+int run_poseidon2_width8_on_device(
+    const uint64_t* device_values,
+    uint64_t* device_out,
+    size_t state_count) {
+    if (state_count == 0) {
+        return 0;
+    }
+    if (device_values == nullptr || device_out == nullptr) {
+        return -1;
+    }
+
+    const size_t blocks = (state_count + kThreads - 1) / kThreads;
+    poseidon2_width8_kernel<<<blocks, kThreads>>>(device_values, device_out, state_count);
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
+    return 0;
+}
+
+int run_poseidon2_width16_on_device(
+    const uint64_t* device_values,
+    uint64_t* device_out,
+    size_t state_count) {
+    if (state_count == 0) {
+        return 0;
+    }
+    if (device_values == nullptr || device_out == nullptr) {
+        return -1;
+    }
+
+    const size_t blocks = (state_count + kThreads - 1) / kThreads;
+    poseidon2_width16_kernel<<<blocks, kThreads>>>(device_values, device_out, state_count);
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
+    return 0;
+}
+
 }  // namespace
 
 extern "C" int lzvm_cuda_setup_init(
@@ -1233,13 +1287,17 @@ extern "C" int lzvm_cuda_poseidon2_width4(
     LZVM_CUDA_RETURN_ON_ERROR(device_values.reset(word_count));
     LZVM_CUDA_RETURN_ON_ERROR(device_out.reset(word_count));
     LZVM_CUDA_RETURN_ON_ERROR(device_values.copy_from_bytes(values, bytes));
-
-    const size_t blocks = (state_count + kThreads - 1) / kThreads;
-    poseidon2_width4_kernel<<<blocks, kThreads>>>(device_values.data(), device_out.data(), state_count);
-    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
-    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
+    LZVM_CUDA_RETURN_ON_ERROR(
+        run_poseidon2_width4_on_device(device_values.data(), device_out.data(), state_count));
     LZVM_CUDA_RETURN_ON_ERROR(device_out.copy_to_bytes(out, bytes));
     return 0;
+}
+
+extern "C" int lzvm_cuda_poseidon2_width4_device(
+    const uint64_t* values,
+    uint64_t* out,
+    size_t state_count) {
+    return run_poseidon2_width4_on_device(values, out, state_count);
 }
 
 extern "C" int lzvm_cuda_poseidon2_width4_find_nonce(
@@ -1306,13 +1364,17 @@ extern "C" int lzvm_cuda_poseidon2_width8(
     LZVM_CUDA_RETURN_ON_ERROR(device_values.reset(word_count));
     LZVM_CUDA_RETURN_ON_ERROR(device_out.reset(word_count));
     LZVM_CUDA_RETURN_ON_ERROR(device_values.copy_from_bytes(values, bytes));
-
-    const size_t blocks = (state_count + kThreads - 1) / kThreads;
-    poseidon2_width8_kernel<<<blocks, kThreads>>>(device_values.data(), device_out.data(), state_count);
-    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
-    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
+    LZVM_CUDA_RETURN_ON_ERROR(
+        run_poseidon2_width8_on_device(device_values.data(), device_out.data(), state_count));
     LZVM_CUDA_RETURN_ON_ERROR(device_out.copy_to_bytes(out, bytes));
     return 0;
+}
+
+extern "C" int lzvm_cuda_poseidon2_width8_device(
+    const uint64_t* values,
+    uint64_t* out,
+    size_t state_count) {
+    return run_poseidon2_width8_on_device(values, out, state_count);
 }
 
 extern "C" int lzvm_cuda_poseidon2_width16(
@@ -1334,13 +1396,17 @@ extern "C" int lzvm_cuda_poseidon2_width16(
     LZVM_CUDA_RETURN_ON_ERROR(device_values.reset(word_count));
     LZVM_CUDA_RETURN_ON_ERROR(device_out.reset(word_count));
     LZVM_CUDA_RETURN_ON_ERROR(device_values.copy_from_bytes(values, bytes));
-
-    const size_t blocks = (state_count + kThreads - 1) / kThreads;
-    poseidon2_width16_kernel<<<blocks, kThreads>>>(device_values.data(), device_out.data(), state_count);
-    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
-    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
+    LZVM_CUDA_RETURN_ON_ERROR(
+        run_poseidon2_width16_on_device(device_values.data(), device_out.data(), state_count));
     LZVM_CUDA_RETURN_ON_ERROR(device_out.copy_to_bytes(out, bytes));
     return 0;
+}
+
+extern "C" int lzvm_cuda_poseidon2_width16_device(
+    const uint64_t* values,
+    uint64_t* out,
+    size_t state_count) {
+    return run_poseidon2_width16_on_device(values, out, state_count);
 }
 
 extern "C" int lzvm_cuda_keccak256_fixed(
