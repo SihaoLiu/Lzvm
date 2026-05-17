@@ -705,6 +705,9 @@ fn verify_preflight(
             if let Some(mix_hash) = report.eth_block_input_mix_hashes.get(index) {
                 let _ = writeln!(stdout, "eth_mix_hash={}", prove_plan::format_hash(mix_hash));
             }
+            if let Some(nonce) = report.eth_block_input_nonces.get(index) {
+                let _ = writeln!(stdout, "eth_nonce={}", format_bytes_hex(nonce));
+            }
             write_eth_transaction_preimage_summary(
                 stdout,
                 report
@@ -989,6 +992,7 @@ struct EthBlockInputBinding {
     gas_used: u64,
     base_fee_per_gas: Option<[u8; 32]>,
     mix_hash: [u8; 32],
+    nonce: [u8; 8],
     transaction_preimage_count: usize,
     legacy_transaction_count: usize,
     typed_transaction_count: usize,
@@ -1138,6 +1142,9 @@ fn verify_setup_validation(
                 if let Some(mix_hash) = public_report.eth_block_input_mix_hashes.get(index) {
                     let _ = writeln!(stdout, "eth_mix_hash={}", prove_plan::format_hash(mix_hash));
                 }
+                if let Some(nonce) = public_report.eth_block_input_nonces.get(index) {
+                    let _ = writeln!(stdout, "eth_nonce={}", format_bytes_hex(nonce));
+                }
                 write_eth_transaction_preimage_summary(
                     stdout,
                     public_report
@@ -1263,6 +1270,7 @@ fn verify_setup_validation(
             "eth_mix_hash={}",
             prove_plan::format_hash(&binding.mix_hash)
         );
+        let _ = writeln!(stdout, "eth_nonce={}", format_bytes_hex(&binding.nonce));
         write_eth_transaction_preimage_summary(stdout, binding.transaction_preimage_count);
         write_eth_transaction_count_summary(
             stdout,
@@ -1370,6 +1378,7 @@ fn verify_eth_block_input_binding(
         gas_used: input.gas_used,
         base_fee_per_gas: input.base_fee_per_gas,
         mix_hash: input.mix_hash,
+        nonce: input.nonce,
         transaction_preimage_count,
         legacy_transaction_count,
         typed_transaction_count,

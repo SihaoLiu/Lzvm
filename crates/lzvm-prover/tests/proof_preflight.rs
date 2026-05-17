@@ -183,6 +183,7 @@ fn validates_proof_public_value_preflight_hashes() {
             eth_block_input_gas_used_values: Vec::new(),
             eth_block_input_base_fees_per_gas: Vec::new(),
             eth_block_input_mix_hashes: Vec::new(),
+            eth_block_input_nonces: Vec::new(),
             eth_block_input_transaction_preimage_counts: Vec::new(),
             eth_block_input_legacy_transaction_counts: Vec::new(),
             eth_block_input_typed_transaction_counts: Vec::new(),
@@ -304,6 +305,7 @@ fn counts_eth_block_input_segments() {
         report.eth_block_input_mix_hashes,
         vec![block_input.mix_hash]
     );
+    assert_eq!(report.eth_block_input_nonces, vec![block_input.nonce]);
     assert_eq!(report.eth_block_input_transaction_preimage_counts, vec![1]);
     assert_eq!(report.eth_block_input_legacy_transaction_counts, vec![1]);
     assert_eq!(report.eth_block_input_typed_transaction_counts, vec![0]);
