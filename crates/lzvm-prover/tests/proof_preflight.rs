@@ -179,6 +179,7 @@ fn validates_proof_public_value_preflight_hashes() {
             eth_block_input_block_numbers: Vec::new(),
             eth_block_input_timestamps: Vec::new(),
             eth_block_input_extra_data: Vec::new(),
+            eth_block_input_gas_limits: Vec::new(),
             eth_block_input_transaction_preimage_counts: Vec::new(),
             eth_block_input_legacy_transaction_counts: Vec::new(),
             eth_block_input_typed_transaction_counts: Vec::new(),
@@ -284,6 +285,10 @@ fn counts_eth_block_input_segments() {
         .expect("proof and public values should match");
 
     assert_eq!(report.eth_block_input_count, 1);
+    assert_eq!(
+        report.eth_block_input_gas_limits,
+        vec![block_input.gas_limit]
+    );
     assert_eq!(report.eth_block_input_transaction_preimage_counts, vec![1]);
     assert_eq!(report.eth_block_input_legacy_transaction_counts, vec![1]);
     assert_eq!(report.eth_block_input_typed_transaction_counts, vec![0]);
