@@ -4,7 +4,12 @@ use std::path::{Path, PathBuf};
 use lzvm_artifacts::challenge_values_segment::{
     encode_challenge_values_segment, ChallengeValuesSegment,
 };
+use lzvm_artifacts::eth_block_input::parse_eth_block_input;
+use lzvm_artifacts::eth_block_input_segment::{
+    encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
+};
 use lzvm_artifacts::program_image::ProgramImageGpuMode;
+use lzvm_artifacts::proof::read_proof_artifact_file;
 use lzvm_artifacts::trace_bundle::{encode_trace_bundle, TraceBundle, TraceBundleUnit};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_prover::contribution::{
@@ -76,10 +81,7 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             verify_setup_preflight(setup_dir, proof_bin, public_values_path, stdout, stderr)
         }
         ["verify", "setup-preflight", ..] => write_verify_setup_preflight_usage(stderr),
-        ["verify", "proof", setup_dir, proof_bin, public_values_path] => {
-            verify_proof(setup_dir, proof_bin, public_values_path, stdout, stderr)
-        }
-        ["verify", "proof", ..] => write_verify_proof_usage(stderr),
+        ["verify", "proof", rest @ ..] => verify_proof(rest, stdout, stderr),
         ["verify", "contribution", setup_dir, proof_bin, public_values_path] => {
             verify_contribution(setup_dir, proof_bin, public_values_path, stdout, stderr)
         }
@@ -607,23 +609,73 @@ fn verify_setup_preflight(
         setup_dir,
         proof_bin,
         public_values_path,
+        None,
         stdout,
         stderr,
     )
 }
 
-fn verify_proof(
-    setup_dir: &str,
-    proof_bin: &str,
-    public_values_path: &str,
-    stdout: &mut dyn Write,
-    stderr: &mut dyn Write,
-) -> i32 {
+struct ParsedVerifyProofArgs<'a> {
+    setup_dir: &'a str,
+    proof_bin: &'a str,
+    public_values_path: &'a str,
+    eth_block_input: Option<&'a str>,
+}
+
+fn parse_verify_proof_args<'a>(
+    args: &'a [&'a str],
+) -> Result<ParsedVerifyProofArgs<'a>, VerifyProofArgError> {
+    let mut eth_block_input = None;
+    let mut positionals = Vec::with_capacity(args.len());
+    let mut index = 0;
+    while index < args.len() {
+        match args[index] {
+            "--eth-block-input" => {
+                index += 1;
+                let value = args.get(index).ok_or_else(|| {
+                    VerifyProofArgError::Invalid("missing --eth-block-input value".to_owned())
+                })?;
+                if eth_block_input.replace(*value).is_some() {
+                    return Err(VerifyProofArgError::Invalid(
+                        "duplicate --eth-block-input option".to_owned(),
+                    ));
+                }
+            }
+            value => positionals.push(value),
+        }
+        index += 1;
+    }
+    if positionals.len() != 3 {
+        return Err(VerifyProofArgError::Usage);
+    }
+    Ok(ParsedVerifyProofArgs {
+        setup_dir: positionals[0],
+        proof_bin: positionals[1],
+        public_values_path: positionals[2],
+        eth_block_input,
+    })
+}
+
+enum VerifyProofArgError {
+    Usage,
+    Invalid(String),
+}
+
+fn verify_proof(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
+    let parsed = match parse_verify_proof_args(args) {
+        Ok(parsed) => parsed,
+        Err(VerifyProofArgError::Usage) => return write_verify_proof_usage(stderr),
+        Err(VerifyProofArgError::Invalid(message)) => {
+            let _ = writeln!(stderr, "verify proof failed: {message}");
+            return 1;
+        }
+    };
     verify_setup_validation(
         "verify proof",
-        setup_dir,
-        proof_bin,
-        public_values_path,
+        parsed.setup_dir,
+        parsed.proof_bin,
+        parsed.public_values_path,
+        parsed.eth_block_input,
         stdout,
         stderr,
     )
@@ -701,6 +753,7 @@ fn verify_setup_validation(
     setup_dir: &str,
     proof_bin: &str,
     public_values_path: &str,
+    eth_block_input: Option<&str>,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
@@ -712,6 +765,15 @@ fn verify_setup_validation(
                 return 1;
             }
         };
+    if let Some(path) = eth_block_input {
+        match verify_eth_block_input_binding(proof_bin, path) {
+            Ok(()) => {}
+            Err(message) => {
+                let _ = writeln!(stderr, "{role} failed: {message}");
+                return 1;
+            }
+        }
+    }
 
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "units={}", public_report.unit_count);
@@ -724,7 +786,30 @@ fn verify_setup_validation(
             public_report.eth_block_input_count
         );
     }
+    if eth_block_input.is_some() {
+        let _ = writeln!(stdout, "eth_block_input_match=ok");
+    }
     0
+}
+
+fn verify_eth_block_input_binding(proof_bin: &str, input_path: &str) -> Result<(), String> {
+    let proof = read_proof_artifact_file(proof_bin)
+        .map_err(|error| format!("read proof artifact failed: {proof_bin}: {error}"))?;
+    let input_bytes = std::fs::read(input_path)
+        .map_err(|error| format!("read ETH block input failed: {input_path}: {error}"))?;
+    let input = parse_eth_block_input(&input_bytes)
+        .map_err(|error| format!("ETH block input failed: {input_path}: {error}"))?;
+    let expected = encode_eth_block_input_segment(&input)
+        .map_err(|error| format!("encode ETH block input segment failed: {error}"))?;
+    let segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == ETH_BLOCK_INPUT_SEGMENT_ID)
+        .ok_or_else(|| "missing ETH block input proof segment".to_owned())?;
+    if segment.data != expected {
+        return Err("ETH block input proof segment mismatch".to_owned());
+    }
+    Ok(())
 }
 
 fn validate_setup_directory(
@@ -1248,7 +1333,7 @@ fn write_verify_setup_preflight_usage(stderr: &mut dyn Write) -> i32 {
 fn write_verify_proof_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm verify proof <setup-dir> <proof-bin> <public-values>"
+        "usage: lzvm verify proof [--eth-block-input <block-input>] <setup-dir> <proof-bin> <public-values>"
     );
     2
 }

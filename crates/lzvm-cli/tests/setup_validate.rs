@@ -973,9 +973,18 @@ fn sample_guest_image() -> Vec<u8> {
 }
 
 fn sample_block_rlp() -> Vec<u8> {
+    sample_block_rlp_with_extra(b"lzvm")
+}
+
+fn sample_block_rlp_variant() -> Vec<u8> {
+    sample_block_rlp_with_extra(b"lzvm-alt")
+}
+
+fn sample_block_rlp_with_extra(extra_data: &[u8]) -> Vec<u8> {
     let header_rlp = rlp_list(&legacy_header_items(
         hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
         None,
+        extra_data,
     ));
     let transactions = rlp_list(&[rlp_list(&[rlp_bytes(&[1])])]);
     let empty_list = rlp_list(&[]);
@@ -985,6 +994,7 @@ fn sample_block_rlp() -> Vec<u8> {
 fn legacy_header_items(
     transactions_root: [u8; 32],
     withdrawals_root: Option<[u8; 32]>,
+    extra_data: &[u8],
 ) -> Vec<Vec<u8>> {
     let mut items = vec![
         rlp_bytes(&[0x11; 32]),
@@ -1001,7 +1011,7 @@ fn legacy_header_items(
         rlp_bytes(&[0x0f, 0x42, 0x40]),
         rlp_bytes(&[0x0d, 0xbb, 0xa0]),
         rlp_bytes(&[0x65]),
-        rlp_bytes(b"lzvm"),
+        rlp_bytes(extra_data),
         rlp_bytes(&[0xaa; 32]),
         rlp_bytes(&[0xbb; 8]),
     ];
@@ -4314,6 +4324,11 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
     let block_input_bytes =
         encode_eth_block_input(&block_input).expect("block input should encode");
+    let other_block_input =
+        build_eth_block_input(&sample_block_rlp_variant()).expect("block input should build");
+    let other_block_input_bytes =
+        encode_eth_block_input(&other_block_input).expect("block input should encode");
+    let other_block_input_path = dir.join("other-block.input");
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(&input_data, [7_u8]);
     write_bytes(
@@ -4322,6 +4337,7 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
             .expect("public values should encode"),
     );
     write_bytes(&block_input_path, &block_input_bytes);
+    write_bytes(&other_block_input_path, &other_block_input_bytes);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -4365,6 +4381,10 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
         &[
             "verify",
             "proof",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
             dir.to_str().expect("path should be utf-8"),
             proof_path.to_str().expect("proof path should be utf-8"),
             public_values_path
@@ -4373,6 +4393,25 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
         ],
         &mut verify_stdout,
         &mut verify_stderr,
+    );
+    let mut mismatch_stdout = Vec::new();
+    let mut mismatch_stderr = Vec::new();
+    let mismatch_code = run_cli(
+        &[
+            "verify",
+            "proof",
+            "--eth-block-input",
+            other_block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut mismatch_stdout,
+        &mut mismatch_stderr,
     );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
@@ -4387,7 +4426,13 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     assert!(verify_stderr.is_empty());
     assert!(String::from_utf8(verify_stdout)
         .expect("verify stdout should be utf-8")
-        .contains("eth_block_inputs=1\n"));
+        .contains("eth_block_inputs=1\neth_block_input_match=ok\n"));
+    assert_eq!(mismatch_code, 1);
+    assert_eq!(
+        String::from_utf8(mismatch_stderr).expect("mismatch stderr should be utf-8"),
+        "verify proof failed: ETH block input proof segment mismatch\n"
+    );
+    assert!(mismatch_stdout.is_empty());
     assert_eq!(parsed_input.block_rlp, block_rlp);
     assert_eq!(parsed_input.block_hash, block_input.block_hash);
     assert_eq!(parsed_input.transactions.hash_preimages.len(), 1);
@@ -8688,7 +8733,7 @@ fn reports_usage_for_missing_verify_proof_inputs() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm verify proof <setup-dir> <proof-bin> <public-values>\n"
+        "usage: lzvm verify proof [--eth-block-input <block-input>] <setup-dir> <proof-bin> <public-values>\n"
     );
 }
 
