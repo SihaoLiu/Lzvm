@@ -35,6 +35,7 @@ fn sample_catalog() -> KeyDirectoryCatalog {
                 info: "global-info.bin".into(),
                 constraints_program: "global-constraints.bin".into(),
             },
+            source_fixed_file_manifest: "lzvm.source-fixed-file-manifest".into(),
             units: Vec::new(),
         },
         global_constraints: GlobalConstraintProgram {
@@ -44,6 +45,7 @@ fn sample_catalog() -> KeyDirectoryCatalog {
             numbers: Vec::new(),
         },
         global_hints: HintProgram { hints: Vec::new() },
+        source_fixed_file_manifest: None,
         units: Vec::new(),
     }
 }

@@ -218,6 +218,7 @@ fn sample_catalog(units: Vec<KeyUnitCatalogEntry>) -> KeyDirectoryCatalog {
                 info: "global-info.json".into(),
                 constraints_program: "global-constraints.bin".into(),
             },
+            source_fixed_file_manifest: "lzvm.source-fixed-file-manifest".into(),
             units: Vec::new(),
         },
         global_constraints: GlobalConstraintProgram {
@@ -227,6 +228,7 @@ fn sample_catalog(units: Vec<KeyUnitCatalogEntry>) -> KeyDirectoryCatalog {
             numbers: Vec::new(),
         },
         global_hints: empty_regular_hints(),
+        source_fixed_file_manifest: None,
         units,
     }
 }

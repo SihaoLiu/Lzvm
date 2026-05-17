@@ -22,6 +22,10 @@ use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_ma
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, encode_pcs_setup_plan};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
 use lzvm_artifacts::setup_info::{encode_unit_setup_info, UnitSetupInfo};
+use lzvm_artifacts::source_fixed_file_manifest::{
+    encode_source_fixed_file_manifest, SourceFixedFileManifest, SourceFixedFileManifestEntry,
+    SourceFixedFileManifestKind, SOURCE_FIXED_FILE_MANIFEST_FILE,
+};
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use lzvm_artifacts::verifier_info::{encode_verifier_info, VerifierInfo};
 use std::fs;
@@ -368,6 +372,33 @@ fn write_catalog_pcs_setup_materials(
         );
     }
     byte_count
+}
+
+fn sample_source_fixed_file_manifest(path: &str) -> SourceFixedFileManifest {
+    SourceFixedFileManifest {
+        entries: vec![SourceFixedFileManifestEntry {
+            source_name: "main.pil".to_owned(),
+            kind: SourceFixedFileManifestKind::OutputFixedFile,
+            path: Some(path.to_owned()),
+            column: None,
+            group_name: "group-a".to_owned(),
+            group_id: 0,
+            unit_id: 0,
+            unit_name: "unit-a".to_owned(),
+            template_name: "Main".to_owned(),
+            virtual_instance: false,
+            start: 10,
+            end: 40,
+        }],
+    }
+}
+
+fn write_source_fixed_file_manifest_fixture(path: &Path, manifest: &SourceFixedFileManifest) {
+    write_bytes(
+        path,
+        encode_source_fixed_file_manifest(manifest)
+            .expect("source fixed-file manifest should encode"),
+    );
 }
 
 #[test]
@@ -795,6 +826,28 @@ fn reads_key_directory_catalog_pcs_setup_materials_when_present() {
 }
 
 #[test]
+fn reads_key_directory_catalog_source_fixed_file_manifest_when_present() {
+    let dir = temp_dir("catalog-source-fixed-file-manifest");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    assert_eq!(
+        layout.source_fixed_file_manifest,
+        dir.join(SOURCE_FIXED_FILE_MANIFEST_FILE)
+    );
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    let expected = sample_source_fixed_file_manifest("unit-a.fixed");
+    write_source_fixed_file_manifest_fixture(&layout.source_fixed_file_manifest, &expected);
+
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+
+    assert_eq!(catalog.source_fixed_file_manifest, Some(expected));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn hashes_key_directory_catalogs_deterministically() {
     let dir = temp_dir("catalog-digest");
     let _ = fs::remove_dir_all(&dir);
@@ -845,6 +898,15 @@ fn hashes_key_directory_catalogs_deterministically() {
     changed_global.layout.global_info.transcript_arity += 1;
     assert_ne!(
         key_directory_catalog_digest(&changed_global).expect("changed digest should compute"),
+        digest
+    );
+
+    let mut changed_source_manifest = catalog.clone();
+    changed_source_manifest.source_fixed_file_manifest =
+        Some(sample_source_fixed_file_manifest("changed.fixed"));
+    assert_ne!(
+        key_directory_catalog_digest(&changed_source_manifest)
+            .expect("changed digest should compute"),
         digest
     );
 

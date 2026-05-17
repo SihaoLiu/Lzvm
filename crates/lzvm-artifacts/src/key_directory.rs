@@ -24,6 +24,10 @@ use crate::pcs_plan::{
     derive_pcs_setup_plan, read_pcs_setup_plan_file, PcsPlanError, PcsSetupPlan,
 };
 use crate::regular_program::{encode_regular_program, RegularProgram};
+use crate::source_fixed_file_manifest::{
+    encode_source_fixed_file_manifest, read_source_fixed_file_manifest_file,
+    SourceFixedFileManifest, SourceFixedFileManifestError, SOURCE_FIXED_FILE_MANIFEST_FILE,
+};
 use crate::verification_key::{
     read_verification_key_binary_file, VerificationKeyError, VerificationKeyRoot,
 };
@@ -40,6 +44,7 @@ pub struct KeyDirectoryLayout {
     pub root: PathBuf,
     pub global_info: GlobalInfo,
     pub global_paths: GlobalKeyPaths,
+    pub source_fixed_file_manifest: PathBuf,
     pub units: Vec<KeyUnitPaths>,
 }
 
@@ -48,6 +53,7 @@ pub struct KeyDirectoryCatalog {
     pub layout: KeyDirectoryLayout,
     pub global_constraints: GlobalConstraintProgram,
     pub global_hints: HintProgram,
+    pub source_fixed_file_manifest: Option<SourceFixedFileManifest>,
     pub units: Vec<KeyUnitCatalogEntry>,
 }
 
@@ -122,6 +128,7 @@ pub enum KeyDirectoryError {
     ExpressionProgram(ExpressionProgramError),
     VerificationKey(VerificationKeyError),
     FixedColumns(FixedColumnError),
+    SourceFixedFileManifest(SourceFixedFileManifestError),
     MissingPath {
         role: &'static str,
         path: PathBuf,
@@ -206,6 +213,9 @@ impl fmt::Display for KeyDirectoryError {
                 write!(f, "key-directory verification-key error: {error}")
             }
             Self::FixedColumns(error) => write!(f, "key-directory fixed-column error: {error}"),
+            Self::SourceFixedFileManifest(error) => {
+                write!(f, "key-directory source fixed-file manifest error: {error}")
+            }
             Self::MissingPath { role, path } => {
                 write!(f, "missing key-directory {role}: {}", path.display())
             }
@@ -305,6 +315,12 @@ impl From<VerificationKeyError> for KeyDirectoryError {
 impl From<FixedColumnError> for KeyDirectoryError {
     fn from(error: FixedColumnError) -> Self {
         Self::FixedColumns(error)
+    }
+}
+
+impl From<SourceFixedFileManifestError> for KeyDirectoryError {
+    fn from(error: SourceFixedFileManifestError) -> Self {
+        Self::SourceFixedFileManifest(error)
     }
 }
 
@@ -440,6 +456,7 @@ pub fn read_key_directory_layout(
     let units = derive_unit_paths(&root, &global_info);
 
     Ok(KeyDirectoryLayout {
+        source_fixed_file_manifest: root.join(SOURCE_FIXED_FILE_MANIFEST_FILE),
         root,
         global_info,
         global_paths,
@@ -479,6 +496,8 @@ pub fn read_key_directory_catalog_from_layout(
             .map_err(KeyDirectoryError::GlobalConstraints)?;
     let global_hints = read_global_hint_program_file(&layout.global_paths.constraints_program)
         .map_err(KeyDirectoryError::GlobalHints)?;
+    let source_fixed_file_manifest =
+        read_source_fixed_file_manifest_if_present(&layout.source_fixed_file_manifest)?;
     let mut units = Vec::with_capacity(layout.units.len());
     for unit in &layout.units {
         units.push(read_key_unit_catalog_entry(unit)?);
@@ -488,6 +507,7 @@ pub fn read_key_directory_catalog_from_layout(
         layout: layout.clone(),
         global_constraints,
         global_hints,
+        source_fixed_file_manifest,
         units,
     })
 }
@@ -508,6 +528,10 @@ pub fn key_directory_catalog_digest(
             message: error.to_string(),
         })?,
     );
+    hash_optional_source_fixed_file_manifest(
+        &mut hasher,
+        catalog.source_fixed_file_manifest.as_ref(),
+    )?;
     hash_u64(&mut hasher, catalog.units.len() as u64);
     for unit in &catalog.units {
         hash_u8(&mut hasher, key_unit_kind_tag(unit.paths.kind));
@@ -574,6 +598,17 @@ impl GlobalKeyPaths {
 
 fn read_global_info_path(paths: &GlobalKeyPaths) -> Result<GlobalInfo, KeyDirectoryError> {
     read_global_info_binary_file(&paths.info).map_err(KeyDirectoryError::GlobalInfo)
+}
+
+fn read_source_fixed_file_manifest_if_present(
+    path: &Path,
+) -> Result<Option<SourceFixedFileManifest>, KeyDirectoryError> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+    read_source_fixed_file_manifest_file(path)
+        .map(Some)
+        .map_err(KeyDirectoryError::SourceFixedFileManifest)
 }
 
 fn read_key_unit_catalog_entry(
@@ -986,6 +1021,21 @@ fn hash_pcs_setup_material(hasher: &mut Sha256, material: &PcsSetupMaterial) {
     hash_u64(hasher, material.constant_tree_byte_count);
     hash_u64(hasher, material.leaf_byte_count);
     hash_u64(hasher, material.node_byte_count);
+}
+
+fn hash_optional_source_fixed_file_manifest(
+    hasher: &mut Sha256,
+    value: Option<&SourceFixedFileManifest>,
+) -> Result<(), KeyDirectoryError> {
+    match value {
+        Some(value) => {
+            hash_bool(hasher, true);
+            let bytes = encode_source_fixed_file_manifest(value)?;
+            hash_bytes(hasher, &bytes);
+        }
+        None => hash_bool(hasher, false),
+    }
+    Ok(())
 }
 
 fn hash_u8(hasher: &mut Sha256, value: u8) {

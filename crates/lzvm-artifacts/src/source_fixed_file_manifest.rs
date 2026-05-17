@@ -5,6 +5,8 @@ use crate::sectioned::{
     encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
 
+pub const SOURCE_FIXED_FILE_MANIFEST_FILE: &str = "lzvm.source-fixed-file-manifest";
+
 const SOURCE_FIXED_FILE_MANIFEST_KIND: [u8; 4] = *b"sffm";
 const SOURCE_FIXED_FILE_MANIFEST_VERSION: u32 = 1;
 const SOURCE_FIXED_FILE_MANIFEST_SECTION_ID: u32 = 1;
