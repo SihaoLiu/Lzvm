@@ -3,9 +3,9 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use lzvm_artifacts::eth_block_input::{
-    eth_block_input_bytes_digest, eth_block_input_receipt_kind_counts,
-    eth_block_input_transaction_kind_counts, eth_block_input_withdrawal_count,
-    parse_eth_block_input, EthBlockInput,
+    eth_block_input_bytes_digest, eth_block_input_extra_field_counts,
+    eth_block_input_receipt_kind_counts, eth_block_input_transaction_kind_counts,
+    eth_block_input_withdrawal_count, parse_eth_block_input, EthBlockInput,
 };
 
 use crate::prove_plan::format_hash;
@@ -17,6 +17,8 @@ pub(crate) struct EthBlockInputSummary {
     pub(crate) digest: [u8; 32],
     pub(crate) input: EthBlockInput,
     pub(crate) block_rlp_len: usize,
+    pub(crate) extra_header_field_count: usize,
+    pub(crate) extra_body_field_count: usize,
     pub(crate) block_hash: [u8; 32],
     pub(crate) parent_hash: [u8; 32],
     pub(crate) beneficiary: [u8; 20],
@@ -64,6 +66,7 @@ pub(crate) fn validate_eth_block_input(
     let (legacy_transaction_count, typed_transaction_count) = transaction_kind_counts(&input)?;
     let receipt_kind_counts = receipt_kind_counts(&input)?;
     let withdrawal_count = withdrawal_count(&input)?;
+    let (extra_header_field_count, extra_body_field_count) = extra_field_counts(&input)?;
 
     Ok(Some(EthBlockInputSummary {
         path: path.clone(),
@@ -71,6 +74,8 @@ pub(crate) fn validate_eth_block_input(
         digest: eth_block_input_bytes_digest(&bytes),
         input: input.clone(),
         block_rlp_len: input.block_rlp.len(),
+        extra_header_field_count,
+        extra_body_field_count,
         block_hash: input.block_hash,
         parent_hash: input.parent_hash,
         beneficiary: input.beneficiary,
@@ -122,6 +127,18 @@ pub(crate) fn write_eth_block_input_summary(
         format_hash(&summary.digest)
     );
     let _ = writeln!(stdout, "eth_block_rlp_bytes={}", summary.block_rlp_len);
+    if summary.extra_header_field_count > 0 || summary.extra_body_field_count > 0 {
+        let _ = writeln!(
+            stdout,
+            "eth_extra_header_fields={}",
+            summary.extra_header_field_count
+        );
+        let _ = writeln!(
+            stdout,
+            "eth_extra_body_fields={}",
+            summary.extra_body_field_count
+        );
+    }
     let _ = writeln!(
         stdout,
         "eth_block_hash={}",
@@ -242,6 +259,11 @@ fn receipt_kind_counts(input: &EthBlockInput) -> Result<Option<(usize, usize)>, 
 fn withdrawal_count(input: &EthBlockInput) -> Result<Option<usize>, String> {
     eth_block_input_withdrawal_count(input)
         .map_err(|error| format!("ETH block input withdrawal count failed: {error}"))
+}
+
+fn extra_field_counts(input: &EthBlockInput) -> Result<(usize, usize), String> {
+    eth_block_input_extra_field_counts(input)
+        .map_err(|error| format!("ETH block input extra field count failed: {error}"))
 }
 
 fn format_hex(bytes: &[u8]) -> String {

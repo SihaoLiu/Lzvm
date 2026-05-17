@@ -1023,6 +1023,21 @@ fn sample_block_rlp_with_extra(extra_data: &[u8]) -> Vec<u8> {
     rlp_list(&[header_rlp, transactions, empty_list])
 }
 
+fn sample_block_rlp_with_extra_fields() -> Vec<u8> {
+    let empty_root = hex32("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421");
+    let mut header_items = legacy_header_items(empty_root, Some(empty_root), b"lzvm");
+    header_items.push(rlp_bytes(&[0xee]));
+    let header_rlp = rlp_list(&header_items);
+    let empty_list = rlp_list(&[]);
+    rlp_list(&[
+        header_rlp,
+        empty_list.clone(),
+        empty_list.clone(),
+        empty_list,
+        rlp_bytes(&[0xdd]),
+    ])
+}
+
 fn legacy_header_items(
     transactions_root: [u8; 32],
     withdrawals_root: Option<[u8; 32]>,
@@ -3553,6 +3568,52 @@ fn prove_inputs_reports_eth_block_receipts_when_present() {
     assert!(
         stdout_text.contains("eth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\n")
     );
+}
+
+#[test]
+fn prove_inputs_reports_eth_block_extra_field_counts() {
+    let dir = temp_dir("prove-inputs-eth-extra-fields");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let block_input_path = dir.join("block.input");
+    let block_rlp = sample_block_rlp_with_extra_fields();
+    let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    write_bytes(&witness_library, sample_witness_library());
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(
+        &block_input_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("eth_extra_header_fields=1\neth_extra_body_fields=1\n"));
 }
 
 #[test]

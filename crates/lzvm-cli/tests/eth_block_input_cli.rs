@@ -341,6 +341,56 @@ fn summarizes_block_input_artifacts() {
 }
 
 #[test]
+fn reports_extra_field_counts_for_block_input_artifacts() {
+    let dir = temp_dir("extra-field-counts");
+    let _ = fs::remove_dir_all(&dir);
+    let block_path = dir.join("block.rlp");
+    let input_path = dir.join("block.input");
+    let block_rlp = sample_block_rlp_with_extra_fields();
+    write_bytes(&block_path, &block_rlp);
+
+    let mut write_stdout = Vec::new();
+    let mut write_stderr = Vec::new();
+    let write_code = run_cli(
+        &[
+            "eth",
+            "write-block-input",
+            block_path.to_str().expect("block path should be utf-8"),
+            input_path.to_str().expect("input path should be utf-8"),
+        ],
+        &mut write_stdout,
+        &mut write_stderr,
+    );
+
+    let mut summary_stdout = Vec::new();
+    let mut summary_stderr = Vec::new();
+    let summary_code = run_cli(
+        &[
+            "eth",
+            "block-input-summary",
+            input_path.to_str().expect("input path should be utf-8"),
+        ],
+        &mut summary_stdout,
+        &mut summary_stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(write_code, 0, "{}", String::from_utf8_lossy(&write_stderr));
+    assert!(write_stderr.is_empty());
+    assert_eq!(
+        summary_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&summary_stderr)
+    );
+    assert!(summary_stderr.is_empty());
+    let write_stdout = String::from_utf8(write_stdout).expect("write stdout should be utf-8");
+    let summary_stdout = String::from_utf8(summary_stdout).expect("summary stdout should be utf-8");
+    assert!(write_stdout.contains("extra_header_fields=1\nextra_body_fields=1\n"));
+    assert!(summary_stdout.contains("extra_header_fields=1\nextra_body_fields=1\n"));
+}
+
+#[test]
 fn writes_block_public_values_from_block_input() {
     let dir = temp_dir("public-values");
     let _ = fs::remove_dir_all(&dir);
@@ -674,6 +724,21 @@ fn sample_block_rlp_with_base_fee() -> Vec<u8> {
     let transactions = rlp_list(&[rlp_list(&[rlp_bytes(&[1])])]);
     let empty_list = rlp_list(&[]);
     rlp_list(&[header_rlp, transactions, empty_list])
+}
+
+fn sample_block_rlp_with_extra_fields() -> Vec<u8> {
+    let empty_root = hex32("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421");
+    let mut header_items = legacy_header_items(empty_root, Some(empty_root));
+    header_items.push(rlp_bytes(&[0xee]));
+    let header_rlp = rlp_list(&header_items);
+    let empty_list = rlp_list(&[]);
+    rlp_list(&[
+        header_rlp,
+        empty_list.clone(),
+        empty_list.clone(),
+        empty_list,
+        rlp_bytes(&[0xdd]),
+    ])
 }
 
 fn sample_block_rlp_with_receipts_root(receipts_root: [u8; 32]) -> Vec<u8> {

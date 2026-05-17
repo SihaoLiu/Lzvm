@@ -506,6 +506,17 @@ pub fn eth_block_input_withdrawal_count(
     Ok(Some(withdrawals.len()))
 }
 
+pub fn eth_block_input_extra_field_counts(
+    input: &EthBlockInput,
+) -> Result<(usize, usize), EthBlockInputError> {
+    let block = parse_eth_block_rlp(&input.block_rlp)?;
+    let header = decode_eth_header_rlp(&block.header)?;
+    Ok((
+        header.extra_header_fields.len(),
+        block.extra_body_fields.len(),
+    ))
+}
+
 pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInputError> {
     let file = parse_sectioned_file(bytes, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION)
         .map_err(EthBlockInputError::Sectioned)?;

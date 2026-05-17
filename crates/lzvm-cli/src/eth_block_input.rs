@@ -4,9 +4,9 @@ use std::path::Path;
 
 use lzvm_artifacts::eth_block_input::{
     build_eth_block_input, build_eth_block_input_with_receipts, encode_eth_block_input,
-    eth_block_input_bytes_digest, eth_block_input_receipt_kind_counts,
-    eth_block_input_transaction_kind_counts, eth_block_input_withdrawal_count,
-    parse_eth_block_input, EthBlockInput,
+    eth_block_input_bytes_digest, eth_block_input_extra_field_counts,
+    eth_block_input_receipt_kind_counts, eth_block_input_transaction_kind_counts,
+    eth_block_input_withdrawal_count, parse_eth_block_input, EthBlockInput,
 };
 
 pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -180,6 +180,12 @@ fn write_input_summary(
     let _ = writeln!(stdout, "block_input_hash={}", format_hash(digest));
     if include_block_rlp_bytes {
         let _ = writeln!(stdout, "block_rlp_bytes={}", input.block_rlp.len());
+    }
+    let (extra_header_fields, extra_body_fields) = eth_block_input_extra_field_counts(input)
+        .expect("ETH block input summary requires validated block data");
+    if extra_header_fields > 0 || extra_body_fields > 0 {
+        let _ = writeln!(stdout, "extra_header_fields={extra_header_fields}");
+        let _ = writeln!(stdout, "extra_body_fields={extra_body_fields}");
     }
     let _ = writeln!(stdout, "block_hash={}", format_hash(&input.block_hash));
     let _ = writeln!(stdout, "parent_hash={}", format_hash(&input.parent_hash));
