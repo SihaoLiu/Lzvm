@@ -135,7 +135,7 @@ pub fn encode_proof_artifact(value: &ProofArtifact) -> Result<Vec<u8>, ProofArti
     encode_sectioned_file(&file).map_err(ProofArtifactError::Sectioned)
 }
 
-fn validate_proof_artifact(value: &ProofArtifact) -> Result<(), ProofArtifactError> {
+pub fn validate_proof_artifact(value: &ProofArtifact) -> Result<(), ProofArtifactError> {
     if value.segments.is_empty() {
         return Err(ProofArtifactError::MissingSegments);
     }

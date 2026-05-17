@@ -12,7 +12,9 @@ use lzvm_artifacts::program_image_segment::{
     parse_program_image_cache_segment, ProgramImageCacheSegmentError,
     PROGRAM_IMAGE_CACHE_SEGMENT_ID,
 };
-use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact, ProofArtifactError};
+use lzvm_artifacts::proof::{
+    read_proof_artifact_file, validate_proof_artifact, ProofArtifact, ProofArtifactError,
+};
 use lzvm_artifacts::public_values::{
     public_values_digest, read_public_values_file, PublicValues, PublicValuesError,
 };
@@ -34,6 +36,7 @@ pub enum ProofPreflightError {
     EthBlockInput(EthBlockInputError),
     EthBlockPublicValues(EthBlockPublicValuesError),
     MissingEthBlockInput,
+    ProofArtifact(ProofArtifactError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +61,7 @@ impl fmt::Display for ProofPreflightError {
             Self::EthBlockInput(error) => write!(f, "{error}"),
             Self::EthBlockPublicValues(error) => write!(f, "{error}"),
             Self::MissingEthBlockInput => write!(f, "missing ETH block input proof segment"),
+            Self::ProofArtifact(error) => write!(f, "{error}"),
         }
     }
 }
@@ -87,6 +91,7 @@ impl std::error::Error for ProofPreflightError {
             Self::ProgramImageCache(error) => Some(error),
             Self::EthBlockInput(error) => Some(error),
             Self::EthBlockPublicValues(error) => Some(error),
+            Self::ProofArtifact(error) => Some(error),
             Self::SetupHashMismatch
             | Self::PublicValuesHashMismatch
             | Self::MissingEthBlockInput => None,
@@ -134,6 +139,8 @@ pub fn validate_proof_public_values(
     proof: &ProofArtifact,
     public_values: &PublicValues,
 ) -> Result<ProofPreflightReport, ProofPreflightError> {
+    validate_proof_artifact(proof).map_err(ProofPreflightError::ProofArtifact)?;
+
     if proof.setup_hash != public_values.setup_hash {
         return Err(ProofPreflightError::SetupHashMismatch);
     }

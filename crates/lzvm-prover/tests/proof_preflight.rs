@@ -176,6 +176,21 @@ fn rejects_proof_public_value_digest_mismatches() {
 }
 
 #[test]
+fn rejects_duplicate_proof_segments_in_memory() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    proof.segments.push(ProofSegment {
+        id: 100,
+        data: vec![5, 6, 7, 8],
+    });
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("proof preflight should validate artifact invariants");
+
+    assert_eq!(error.to_string(), "duplicate proof segment id: 100");
+}
+
+#[test]
 fn rejects_invalid_program_image_cache_segments() {
     let public_values = sample_public_values();
     let mut proof = sample_proof(&public_values);
