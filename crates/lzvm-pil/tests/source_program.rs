@@ -201,3 +201,67 @@ fn indexes_air_units_with_group_and_unit_context() {
 
     fs::remove_dir_all(&root).expect("case directory should be removed");
 }
+
+#[test]
+fn resolves_template_fixed_file_pragmas_for_air_units() {
+    let root = case_dir("resolved-fixed-files");
+    write_file(
+        &root,
+        "main.pil",
+        "airtemplate Table() {\n\
+             #pragma output_fixed_file `${AIRGROUP}/${AIRGROUP_ID}/${AIR_ID}/${AIR_NAME}/${AIRTEMPLATE}.fixed`\n\
+         }\n\
+         airgroup GroupA {\n\
+             Table();\n\
+             Table() alias Second;\n\
+         }",
+    );
+    let mut loader = SourceProgramLoader::new(SourceLoaderConfig {
+        working_dir: root.clone(),
+        ..SourceLoaderConfig::default()
+    });
+
+    let program = loader
+        .load_main("main.pil")
+        .expect("source program should load");
+    let fixed_files = program
+        .resolved_fixed_file_pragmas()
+        .expect("fixed-file pragmas should resolve");
+
+    assert_eq!(
+        fixed_files
+            .iter()
+            .map(|fixed_file| (
+                fixed_file.kind,
+                fixed_file.path.as_deref(),
+                fixed_file.group_name.as_str(),
+                fixed_file.group_id,
+                fixed_file.unit_id,
+                fixed_file.unit_name.as_str(),
+                fixed_file.template_name.as_str()
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                FixedFilePragmaKind::OutputFixedFile,
+                Some("GroupA/0/0/Table/Table.fixed"),
+                "GroupA",
+                0,
+                0,
+                "Table",
+                "Table"
+            ),
+            (
+                FixedFilePragmaKind::OutputFixedFile,
+                Some("GroupA/0/1/Second/Table.fixed"),
+                "GroupA",
+                0,
+                1,
+                "Second",
+                "Table"
+            ),
+        ]
+    );
+
+    fs::remove_dir_all(&root).expect("case directory should be removed");
+}

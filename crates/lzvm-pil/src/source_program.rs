@@ -5,9 +5,10 @@ use crate::{
     parse_fixed_file_pragmas, parse_function_declarations, parse_include_directives,
     parse_pragma_directives, parse_public_declarations, parse_public_table_declarations,
     parse_use_directives, parse_value_declarations, parse_variable_declarations,
-    AirGroupDeclaration, AirGroupValueDeclaration, AirInstanceDeclaration, AirTemplateDeclaration,
-    ColumnDeclaration, CommitDeclaration, ConstantDeclaration, ContainerDeclaration,
-    FixedFilePragma, FunctionDeclaration, IncludeKind, IncludeVisibility, ParseError,
+    resolve_fixed_file_pragma_path, AirGroupDeclaration, AirGroupValueDeclaration,
+    AirInstanceDeclaration, AirTemplateDeclaration, ColumnDeclaration, CommitDeclaration,
+    ConstantDeclaration, ContainerDeclaration, FixedFilePragma, FixedFilePragmaKind,
+    FixedFileTemplateContext, FunctionDeclaration, IncludeKind, IncludeVisibility, ParseError,
     PragmaDirective, PublicDeclaration, PublicTableDeclaration, SourceFile, SourceGraph,
     SourceGraphEdge, SourceGraphError, SourceGraphLoader, SourceLoaderConfig, UseDirective,
     ValueDeclaration, VariableDeclaration,
@@ -69,6 +70,61 @@ impl SourceProgram {
         units
     }
 
+    pub fn resolved_fixed_file_pragmas(
+        &self,
+    ) -> Result<Vec<SourceProgramResolvedFixedFilePragma>, ParseError> {
+        let sources_by_name = self
+            .modules
+            .iter()
+            .map(|module| (module.source_name.as_str(), &module.source))
+            .collect::<BTreeMap<_, _>>();
+        let mut pragmas_by_template = BTreeMap::<&str, Vec<&AirTemplateFixedFilePragma>>::new();
+        for module in &self.modules {
+            for pragma in &module.air_template_fixed_file_pragmas {
+                pragmas_by_template
+                    .entry(pragma.template_name.as_str())
+                    .or_default()
+                    .push(pragma);
+            }
+        }
+
+        let mut resolved = Vec::new();
+        for unit in self.air_units() {
+            let Some(pragmas) = pragmas_by_template.get(unit.template_name.as_str()) else {
+                continue;
+            };
+            let context = FixedFileTemplateContext {
+                group_name: unit.group_name.clone(),
+                group_id: unit.group_id,
+                unit_id: unit.unit_id,
+                unit_name: unit.unit_name.clone(),
+                template_name: unit.template_name.clone(),
+            };
+            for scoped in pragmas {
+                let Some(source) = sources_by_name.get(scoped.pragma.source_name.as_str()) else {
+                    continue;
+                };
+                let path = resolve_fixed_file_pragma_path(source, &scoped.pragma, &context)?;
+                resolved.push(SourceProgramResolvedFixedFilePragma {
+                    source_name: scoped.pragma.source_name.clone(),
+                    kind: scoped.pragma.kind,
+                    path,
+                    column: scoped.pragma.column,
+                    group_name: unit.group_name.clone(),
+                    group_id: unit.group_id,
+                    unit_id: unit.unit_id,
+                    unit_name: unit.unit_name.clone(),
+                    template_name: unit.template_name.clone(),
+                    virtual_instance: unit.virtual_instance,
+                    start: scoped.pragma.start,
+                    end: scoped.pragma.end,
+                });
+            }
+        }
+
+        Ok(resolved)
+    }
+
     fn air_group_ids(&self) -> BTreeMap<String, i128> {
         let mut group_ids = BTreeMap::new();
         let mut next_group_id = 0_i128;
@@ -91,6 +147,22 @@ const VIRTUAL_UNIT_ID_BASE: i128 = 10_000;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceProgramAirUnit {
     pub source_name: String,
+    pub group_name: String,
+    pub group_id: i128,
+    pub unit_id: i128,
+    pub unit_name: String,
+    pub template_name: String,
+    pub virtual_instance: bool,
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceProgramResolvedFixedFilePragma {
+    pub source_name: String,
+    pub kind: FixedFilePragmaKind,
+    pub path: Option<String>,
+    pub column: Option<u32>,
     pub group_name: String,
     pub group_id: i128,
     pub unit_id: i128,
