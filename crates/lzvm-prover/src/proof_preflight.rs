@@ -3,7 +3,7 @@ use std::path::Path;
 
 use lzvm_artifacts::eth_block_input::{
     eth_block_input_bytes_digest, eth_block_input_receipt_kind_counts,
-    eth_block_input_transaction_kind_counts, EthBlockInputError,
+    eth_block_input_transaction_kind_counts, eth_block_input_withdrawal_count, EthBlockInputError,
 };
 use lzvm_artifacts::eth_block_input_segment::{
     parse_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
@@ -41,6 +41,7 @@ pub struct ProofPreflightReport {
     pub eth_block_input_receipt_preimage_counts: Vec<Option<usize>>,
     pub eth_block_input_legacy_receipt_counts: Vec<Option<usize>>,
     pub eth_block_input_typed_receipt_counts: Vec<Option<usize>>,
+    pub eth_block_input_withdrawal_counts: Vec<Option<usize>>,
     pub eth_block_input_withdrawal_preimage_counts: Vec<Option<usize>>,
 }
 
@@ -192,6 +193,7 @@ pub fn validate_proof_public_values(
     let mut eth_block_input_receipt_preimage_counts = Vec::new();
     let mut eth_block_input_legacy_receipt_counts = Vec::new();
     let mut eth_block_input_typed_receipt_counts = Vec::new();
+    let mut eth_block_input_withdrawal_counts = Vec::new();
     let mut eth_block_input_withdrawal_preimage_counts = Vec::new();
     let eth_block_input_count = proof
         .segments
@@ -214,6 +216,8 @@ pub fn validate_proof_public_values(
                 .map_err(ProofPreflightError::EthBlockInput)?;
         let receipt_kind_counts = eth_block_input_receipt_kind_counts(&input)
             .map_err(ProofPreflightError::EthBlockInput)?;
+        let withdrawal_count =
+            eth_block_input_withdrawal_count(&input).map_err(ProofPreflightError::EthBlockInput)?;
         eth_block_input_transaction_preimage_counts.push(input.transactions.hash_preimages.len());
         eth_block_input_legacy_transaction_counts.push(legacy_transaction_count);
         eth_block_input_typed_transaction_counts.push(typed_transaction_count);
@@ -227,6 +231,7 @@ pub fn validate_proof_public_values(
             .push(receipt_kind_counts.map(|(legacy_count, _)| legacy_count));
         eth_block_input_typed_receipt_counts
             .push(receipt_kind_counts.map(|(_, typed_count)| typed_count));
+        eth_block_input_withdrawal_counts.push(withdrawal_count);
         eth_block_input_withdrawal_preimage_counts.push(
             input
                 .withdrawals
@@ -253,6 +258,7 @@ pub fn validate_proof_public_values(
         eth_block_input_receipt_preimage_counts,
         eth_block_input_legacy_receipt_counts,
         eth_block_input_typed_receipt_counts,
+        eth_block_input_withdrawal_counts,
         eth_block_input_withdrawal_preimage_counts,
     })
 }

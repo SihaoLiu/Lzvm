@@ -326,7 +326,7 @@ fn verifies_preflight_reports_eth_block_withdrawals() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_transaction_trie_preimages={}\neth_legacy_transactions=0\neth_typed_transactions=0\neth_receipts=absent\neth_withdrawals=present\neth_withdrawal_trie_preimages={}\n",
+            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_transaction_trie_preimages={}\neth_legacy_transactions=0\neth_typed_transactions=0\neth_receipts=absent\neth_withdrawals=present\neth_withdrawal_count=1\neth_withdrawal_trie_preimages={}\n",
             to_hex(&public_values_hash),
             to_hex(&eth_block_input_hash),
             block_input.transactions.hash_preimages.len(),

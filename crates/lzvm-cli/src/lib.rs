@@ -691,8 +691,13 @@ fn verify_preflight(
                     .copied()
                     .unwrap_or(None),
             );
-            write_eth_withdrawal_preimage_summary(
+            write_eth_withdrawal_summary(
                 stdout,
+                report
+                    .eth_block_input_withdrawal_counts
+                    .get(index)
+                    .copied()
+                    .unwrap_or(None),
                 report
                     .eth_block_input_withdrawal_preimage_counts
                     .get(index)
@@ -1039,8 +1044,13 @@ fn verify_setup_validation(
                         .copied()
                         .unwrap_or(None),
                 );
-                write_eth_withdrawal_preimage_summary(
+                write_eth_withdrawal_summary(
                     stdout,
+                    public_report
+                        .eth_block_input_withdrawal_counts
+                        .get(index)
+                        .copied()
+                        .unwrap_or(None),
                     public_report
                         .eth_block_input_withdrawal_preimage_counts
                         .get(index)
@@ -1071,7 +1081,7 @@ fn verify_setup_validation(
             binding.legacy_receipt_count,
             binding.typed_receipt_count,
         );
-        write_eth_withdrawal_preimage_summary(stdout, binding.withdrawal_preimage_count);
+        write_eth_withdrawal_summary(stdout, None, binding.withdrawal_preimage_count);
     }
     if program_image_cache_matched {
         let _ = writeln!(stdout, "program_image_cache_match=ok");
@@ -1193,13 +1203,17 @@ fn write_eth_receipt_kind_summary(
     }
 }
 
-fn write_eth_withdrawal_preimage_summary(
+fn write_eth_withdrawal_summary(
     stdout: &mut dyn Write,
+    withdrawal_count: Option<usize>,
     withdrawal_preimage_count: Option<usize>,
 ) {
     match withdrawal_preimage_count {
         Some(count) => {
             let _ = writeln!(stdout, "eth_withdrawals=present");
+            if let Some(withdrawal_count) = withdrawal_count {
+                let _ = writeln!(stdout, "eth_withdrawal_count={withdrawal_count}");
+            }
             let _ = writeln!(stdout, "eth_withdrawal_trie_preimages={count}");
         }
         None => {
