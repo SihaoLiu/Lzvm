@@ -1,8 +1,8 @@
 use lzvm_artifacts::eth_block_input::{
-    build_eth_block_input, encode_eth_block_input, parse_eth_block_input, EthBlockInputError,
-    EthBlockInputTrie,
+    build_eth_block_input, build_eth_block_input_with_receipts, encode_eth_block_input,
+    parse_eth_block_input, EthBlockInputError, EthBlockInputTrie,
 };
-use lzvm_artifacts::eth_trie::transaction_trie_build;
+use lzvm_artifacts::eth_trie::{receipt_trie_build, transaction_trie_build};
 use lzvm_artifacts::rlp::parse_rlp;
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
 
@@ -10,6 +10,7 @@ const ETH_BLOCK_INPUT_KIND: [u8; 4] = *b"ethi";
 const ETH_BLOCK_INPUT_VERSION: u32 = 1;
 const METADATA_SECTION_ID: u32 = 1;
 const TRANSACTION_PREIMAGES_SECTION_ID: u32 = 3;
+const RECEIPT_PREIMAGES_SECTION_ID: u32 = 5;
 
 #[test]
 fn encodes_and_parses_eth_block_inputs() {
@@ -56,6 +57,38 @@ fn builds_withdrawals_eth_block_inputs() {
         input.withdrawals_root.expect("root should exist")
     );
     assert_eq!(withdrawals.hash_preimages.len(), 1);
+}
+
+#[test]
+fn builds_receipt_eth_block_inputs() {
+    let receipt_item = receipt_item();
+    let receipts = vec![parse_rlp(&receipt_item).expect("receipt item should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    let block_rlp = sample_block_rlp_with_transactions_and_receipts(
+        empty_trie_root(),
+        receipt_build.root,
+        Vec::new(),
+    );
+    let receipts_rlp = rlp_list(&[receipt_item]);
+
+    let input = build_eth_block_input_with_receipts(&block_rlp, &receipts_rlp)
+        .expect("block input should build with receipts");
+    let input_receipts = input.receipts.as_ref().expect("receipts trie should exist");
+
+    assert_eq!(input.receipts_root, receipt_build.root);
+    assert_eq!(input_receipts.root, input.receipts_root);
+    assert_eq!(input_receipts.hash_preimages, receipt_build.hash_preimages);
+
+    let encoded = encode_eth_block_input(&input).expect("block input should encode");
+    let file = parse_sectioned_file(&encoded, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION)
+        .expect("sectioned input should parse");
+    assert!(file
+        .sections
+        .iter()
+        .any(|section| section.id == RECEIPT_PREIMAGES_SECTION_ID));
+
+    let parsed = parse_eth_block_input(&encoded).expect("block input should parse");
+    assert_eq!(parsed, input);
 }
 
 #[test]
@@ -221,6 +254,21 @@ fn sample_block_rlp_with_transactions(
     rlp_list(&[header_rlp, transactions, empty_list])
 }
 
+fn sample_block_rlp_with_transactions_and_receipts(
+    transactions_root: [u8; 32],
+    receipts_root: [u8; 32],
+    transaction_items: Vec<Vec<u8>>,
+) -> Vec<u8> {
+    let header_rlp = rlp_list(&legacy_header_items_with_receipts(
+        transactions_root,
+        receipts_root,
+        None,
+    ));
+    let transactions = rlp_list(&transaction_items);
+    let empty_list = rlp_list(&[]);
+    rlp_list(&[header_rlp, transactions, empty_list])
+}
+
 fn sample_block_rlp_with_withdrawals(
     withdrawals_root: [u8; 32],
     withdrawal_items: Vec<Vec<u8>>,
@@ -238,6 +286,14 @@ fn legacy_header_items(
     transactions_root: [u8; 32],
     withdrawals_root: Option<[u8; 32]>,
 ) -> Vec<Vec<u8>> {
+    legacy_header_items_with_receipts(transactions_root, [0x66; 32], withdrawals_root)
+}
+
+fn legacy_header_items_with_receipts(
+    transactions_root: [u8; 32],
+    receipts_root: [u8; 32],
+    withdrawals_root: Option<[u8; 32]>,
+) -> Vec<Vec<u8>> {
     let mut items = vec![
         rlp_bytes(&[0x11; 32]),
         rlp_bytes(&hex32(
@@ -246,7 +302,7 @@ fn legacy_header_items(
         rlp_bytes(&[0x33; 20]),
         rlp_bytes(&[0x44; 32]),
         rlp_bytes(&transactions_root),
-        rlp_bytes(&[0x66; 32]),
+        rlp_bytes(&receipts_root),
         rlp_bytes(&[0x77; 256]),
         rlp_bytes(&[1]),
         rlp_bytes(&[2]),
@@ -262,6 +318,15 @@ fn legacy_header_items(
         items.push(rlp_bytes(&root));
     }
     items
+}
+
+fn receipt_item() -> Vec<u8> {
+    rlp_list(&[
+        rlp_bytes(&[1]),
+        rlp_bytes(&[0x52, 0x08]),
+        rlp_bytes(&[0x11; 256]),
+        rlp_list(&[]),
+    ])
 }
 
 fn withdrawal_item() -> Vec<u8> {
