@@ -35,6 +35,14 @@ pub fn public_values_from_eth_block_input(
                 elements: hash_u32_be(&input.block_hash),
             },
             PublicValueEntry {
+                name: "eth_parent_hash_u32_be".to_owned(),
+                elements: hash_u32_be(&input.parent_hash),
+            },
+            PublicValueEntry {
+                name: "eth_beneficiary_u32_be".to_owned(),
+                elements: bytes_u32_be(&input.beneficiary),
+            },
+            PublicValueEntry {
                 name: "eth_state_root_u32_be".to_owned(),
                 elements: hash_u32_be(&input.state_root),
             },
@@ -105,6 +113,10 @@ pub fn validate_eth_block_public_values(
 }
 
 fn hash_u32_be(bytes: &[u8; 32]) -> Vec<u64> {
+    bytes_u32_be(bytes)
+}
+
+fn bytes_u32_be(bytes: &[u8]) -> Vec<u64> {
     bytes
         .chunks_exact(4)
         .map(|chunk| {

@@ -220,6 +220,8 @@ fn is_eth_block_public_value_name(name: &str) -> bool {
     matches!(
         name,
         "eth_block_hash_u32_be"
+            | "eth_parent_hash_u32_be"
+            | "eth_beneficiary_u32_be"
             | "eth_state_root_u32_be"
             | "eth_receipts_root_u32_be"
             | "eth_block_number_u32_le"
