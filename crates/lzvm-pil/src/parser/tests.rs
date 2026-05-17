@@ -5,9 +5,9 @@ use super::{
     parse_function_declarations, parse_include_directives, parse_pragma_directives,
     parse_public_declarations, parse_public_table_declarations, parse_use_directives,
     parse_value_declarations, parse_variable_declarations, BinaryOperator, ColumnInitializerKind,
-    ColumnKind, ConstantDeclarationKind, Expression, ExpressionKind, FunctionStatementKind,
-    FunctionVisibility, IncludeKind, IncludeVisibility, ParseError, UnaryOperator,
-    ValueDeclarationKind,
+    ColumnKind, ConstantDeclarationKind, Expression, ExpressionKind, FunctionStatementDeclaration,
+    FunctionStatementKind, FunctionVisibility, IncludeKind, IncludeVisibility, ParseError,
+    UnaryOperator, ValueDeclarationKind,
 };
 use crate::SourceFile;
 use std::path::PathBuf;
@@ -257,6 +257,71 @@ fn parses_variable_declarations_and_skips_signature_types() {
         "3",
     );
     assert!(declarations[3].initializer_expression.is_none());
+}
+
+#[test]
+fn parses_function_statement_declaration_payloads() {
+    let source = source(
+        "function build(): int {\n\
+           const int LIMIT = 4;\n\
+           int local = LIMIT;\n\
+           col witness local.trace;\n\
+           return local;\n\
+         }",
+    );
+
+    let declarations = parse_function_declarations(&source).expect("functions should parse");
+    let statements = &declarations[0].statements;
+
+    assert_eq!(statements.len(), 4);
+
+    match statements[0]
+        .declaration
+        .as_ref()
+        .expect("constant declaration payload")
+    {
+        FunctionStatementDeclaration::Constant(declaration) => {
+            assert_eq!(declaration.kind, ConstantDeclarationKind::Const);
+            assert_eq!(declaration.type_name.as_deref(), Some("int"));
+            assert_eq!(declaration.name, "LIMIT");
+        }
+        other => panic!("unexpected declaration payload: {other:?}"),
+    }
+
+    match statements[1]
+        .declaration
+        .as_ref()
+        .expect("variable declaration payload")
+    {
+        FunctionStatementDeclaration::Variable(declaration) => {
+            assert_eq!(declaration.type_name, "int");
+            assert_eq!(declaration.name, "local");
+            assert!(matches!(
+                declaration
+                    .initializer_expression
+                    .as_ref()
+                    .expect("initializer expression")
+                    .kind,
+                ExpressionKind::Name(ref name) if name == "LIMIT"
+            ));
+        }
+        other => panic!("unexpected declaration payload: {other:?}"),
+    }
+
+    match statements[2]
+        .declaration
+        .as_ref()
+        .expect("column declaration payload")
+    {
+        FunctionStatementDeclaration::Column(declaration) => {
+            assert_eq!(declaration.kind, ColumnKind::Witness);
+            assert_eq!(declaration.items.len(), 1);
+            assert_eq!(declaration.items[0].name, "local.trace");
+        }
+        other => panic!("unexpected declaration payload: {other:?}"),
+    }
+
+    assert!(statements[3].declaration.is_none());
 }
 
 #[test]

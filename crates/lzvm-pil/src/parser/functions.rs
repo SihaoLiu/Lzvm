@@ -1,11 +1,12 @@
 use super::declarations::{
-    expected_close_error, missing_start, parse_delimited_span, parse_name_reference,
-    parse_required_braced_span,
+    expected_close_error, missing_start, parse_delimited_span,
+    parse_function_statement_declaration_at, parse_name_reference, parse_required_braced_span,
 };
 use super::expressions::{parse_expression_span_best_effort, parse_expression_tokens};
 use super::types::{
-    Expression, FunctionDeclaration, FunctionParameter, FunctionStatement, FunctionStatementKind,
-    FunctionVisibility, ParseError, SourceSpan,
+    Expression, FunctionDeclaration, FunctionParameter, FunctionStatement,
+    FunctionStatementDeclaration, FunctionStatementKind, FunctionVisibility, ParseError,
+    SourceSpan,
 };
 use crate::{lex_source, SourceFile, Token, TokenKind};
 
@@ -278,10 +279,12 @@ fn parse_function_statement(
     let body = function_statement_body_span(tokens, index, next_index, kind, span, source)?;
     let value = function_statement_value_span(tokens, index, next_index, kind);
     let value_expression = function_statement_expression(tokens, value.as_ref(), kind, source)?;
+    let declaration = function_statement_declaration(tokens, index, next_index, kind, source);
 
     Ok(ParsedFunctionStatement {
         statement: FunctionStatement {
             kind,
+            declaration,
             header,
             body,
             value,
@@ -696,12 +699,34 @@ fn function_statement_declaration_start(kind: TokenKind) -> bool {
     matches!(
         kind,
         TokenKind::Const
+            | TokenKind::Constant
             | TokenKind::Int
             | TokenKind::Fe
             | TokenKind::Expr
             | TokenKind::String
             | TokenKind::Col
     )
+}
+
+fn function_statement_declaration(
+    tokens: &[Token],
+    index: usize,
+    next_index: usize,
+    kind: FunctionStatementKind,
+    source: &SourceFile,
+) -> Option<FunctionStatementDeclaration> {
+    if kind != FunctionStatementKind::Declaration {
+        return None;
+    }
+
+    let parsed = parse_function_statement_declaration_at(tokens, index, source)
+        .ok()
+        .flatten()?;
+    if parsed.next_index != next_index {
+        return None;
+    }
+
+    Some(parsed.declaration)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -17,33 +17,13 @@ pub fn parse_column_declarations(
     let mut index = 0;
 
     while index < tokens.len() {
-        if tokens[index].kind != TokenKind::Col {
-            index += 1;
-            continue;
-        }
-
-        let Some(header) = parse_column_header(&tokens, index) else {
+        let Some(parsed) = parse_column_declaration_at(&tokens, index, source)? else {
             index += 1;
             continue;
         };
 
-        let mut cursor = header.next_index;
-        let (features, next_cursor) = parse_column_features(&tokens, cursor, source)?;
-        cursor = next_cursor;
-        let (items, initializer, next_index, end) =
-            parse_column_body(&tokens, cursor, header.kind, source)?;
-
-        declarations.push(ColumnDeclaration {
-            kind: header.kind,
-            commit: header.commit,
-            features,
-            items,
-            initializer,
-            source_name: source.source_name.clone(),
-            start: header.start,
-            end,
-        });
-        index = next_index;
+        index = parsed.next_index;
+        declarations.push(parsed.declaration);
     }
 
     Ok(declarations)
@@ -793,6 +773,12 @@ fn parse_u32_literal(token: &Token, source: &SourceFile) -> Result<u32, ParseErr
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedColumnDeclaration {
+    declaration: ColumnDeclaration,
+    next_index: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ColumnHeader {
     kind: ColumnKind,
     commit: Option<String>,
@@ -960,10 +946,53 @@ fn parse_array_dimensions(
     })
 }
 
+fn parse_column_declaration_at(
+    tokens: &[Token],
+    index: usize,
+    source: &SourceFile,
+) -> Result<Option<ParsedColumnDeclaration>, ParseError> {
+    if tokens
+        .get(index)
+        .is_none_or(|token| token.kind != TokenKind::Col)
+    {
+        return Ok(None);
+    }
+
+    let Some(header) = parse_column_header(tokens, index) else {
+        return Ok(None);
+    };
+
+    let mut cursor = header.next_index;
+    let (features, next_cursor) = parse_column_features(tokens, cursor, source)?;
+    cursor = next_cursor;
+    let (items, initializer, next_index, end) =
+        parse_column_body(tokens, cursor, header.kind, source)?;
+
+    Ok(Some(ParsedColumnDeclaration {
+        declaration: ColumnDeclaration {
+            kind: header.kind,
+            commit: header.commit,
+            features,
+            items,
+            initializer,
+            source_name: source.source_name.clone(),
+            start: header.start,
+            end,
+        },
+        next_index,
+    }))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ParsedVariableDeclaration {
     declaration: VariableDeclaration,
     next_index: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ParsedFunctionStatementDeclaration {
+    pub(crate) declaration: FunctionStatementDeclaration,
+    pub(crate) next_index: usize,
 }
 
 fn parse_variable_declaration_at(
@@ -1037,6 +1066,43 @@ fn parse_variable_declaration_at(
         },
         next_index,
     })
+}
+
+pub(crate) fn parse_function_statement_declaration_at(
+    tokens: &[Token],
+    index: usize,
+    source: &SourceFile,
+) -> Result<Option<ParsedFunctionStatementDeclaration>, ParseError> {
+    let Some(token) = tokens.get(index) else {
+        return Ok(None);
+    };
+
+    match token.kind {
+        TokenKind::Const | TokenKind::Constant => {
+            let parsed = parse_constant_declaration_at(tokens, index, source)?;
+            Ok(Some(ParsedFunctionStatementDeclaration {
+                declaration: FunctionStatementDeclaration::Constant(parsed.declaration),
+                next_index: parsed.next_index,
+            }))
+        }
+        TokenKind::Int | TokenKind::Fe | TokenKind::Expr | TokenKind::String => {
+            let parsed = parse_variable_declaration_at(tokens, index, source)?;
+            Ok(Some(ParsedFunctionStatementDeclaration {
+                declaration: FunctionStatementDeclaration::Variable(parsed.declaration),
+                next_index: parsed.next_index,
+            }))
+        }
+        TokenKind::Col => {
+            let Some(parsed) = parse_column_declaration_at(tokens, index, source)? else {
+                return Ok(None);
+            };
+            Ok(Some(ParsedFunctionStatementDeclaration {
+                declaration: FunctionStatementDeclaration::Column(parsed.declaration),
+                next_index: parsed.next_index,
+            }))
+        }
+        _ => Ok(None),
+    }
 }
 
 fn variable_type_name(token: &Token) -> Option<String> {

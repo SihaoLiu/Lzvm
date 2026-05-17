@@ -16,10 +16,10 @@ pub use parser::{
     BinaryOperator, CallArgument, ColumnDeclaration, ColumnFeature, ColumnInitializer,
     ColumnInitializerKind, ColumnItem, ColumnKind, CommitDeclaration, ConstantDeclaration,
     ConstantDeclarationKind, ContainerDeclaration, Expression, ExpressionKind, FunctionDeclaration,
-    FunctionParameter, FunctionStatement, FunctionStatementKind, FunctionVisibility,
-    IncludeDirective, IncludeKind, IncludeVisibility, ParseError, PragmaDirective,
-    PublicDeclaration, PublicTableDeclaration, SourceSpan, UnaryOperator, UseDirective,
-    ValueDeclaration, ValueDeclarationKind, VariableDeclaration,
+    FunctionParameter, FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind,
+    FunctionVisibility, IncludeDirective, IncludeKind, IncludeVisibility, ParseError,
+    PragmaDirective, PublicDeclaration, PublicTableDeclaration, SourceSpan, UnaryOperator,
+    UseDirective, ValueDeclaration, ValueDeclarationKind, VariableDeclaration,
 };
 pub use source::{SourceFile, SourceLoadError, SourceLoader, SourceLoaderConfig};
 pub use source_graph::{

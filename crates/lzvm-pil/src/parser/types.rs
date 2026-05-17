@@ -142,8 +142,16 @@ pub enum FunctionStatementKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FunctionStatementDeclaration {
+    Constant(ConstantDeclaration),
+    Variable(VariableDeclaration),
+    Column(ColumnDeclaration),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionStatement {
     pub kind: FunctionStatementKind,
+    pub declaration: Option<FunctionStatementDeclaration>,
     pub header: Option<SourceSpan>,
     pub body: Option<SourceSpan>,
     pub value: Option<SourceSpan>,
