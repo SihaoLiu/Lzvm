@@ -2,9 +2,11 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
-use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
+use lzvm_artifacts::eth_block_public_values::{
+    public_values_from_eth_block_input, validate_eth_block_public_values,
+};
 use lzvm_artifacts::key_directory::{key_directory_catalog_digest, KeyDirectoryCatalog};
-use lzvm_artifacts::public_values::encode_public_values;
+use lzvm_artifacts::public_values::{encode_public_values, read_public_values_file};
 use lzvm_artifacts::trace_bundle::{read_trace_bundle_file, TraceBundle};
 use lzvm_prover::{
     derive_prove_execution_plan_with_program_image_cache, ProveExecutionInputArtifacts,
@@ -268,7 +270,15 @@ fn prepare_public_inputs(
         });
     };
 
-    if inputs.public_inputs.is_some() {
+    if let Some(public_inputs) = &inputs.public_inputs {
+        let public_values = read_public_values_file(public_inputs).map_err(|error| {
+            format!(
+                "read public inputs failed: {}: {error}",
+                public_inputs.display()
+            )
+        })?;
+        validate_eth_block_public_values(&summary.input, &public_values)
+            .map_err(|error| error.to_string())?;
         return Ok(PreparedPublicInputs {
             inputs,
             generated: false,
