@@ -173,7 +173,7 @@ impl SourceLoader {
         if let Some((found_search_index, candidate)) = attempted_paths
             .iter()
             .enumerate()
-            .find(|(_, path)| path.exists())
+            .find(|(_, path)| path.is_file())
         {
             return Ok((
                 candidate.clone(),
@@ -459,5 +459,28 @@ mod tests {
             error.attempted_paths,
             vec![root.join("missing.pil"), lib.join("missing.pil")]
         );
+    }
+
+    #[test]
+    fn skips_non_file_candidates_when_resolving_search_roots() {
+        let root = case_dir("non-file-candidate");
+        let lib = root.join("lib");
+        fs::create_dir_all(root.join("shared.pil")).expect("directory candidate should be created");
+        let library = write_file(&lib, "shared.pil", "constant X = 2;");
+        let mut loader = SourceLoader::new(SourceLoaderConfig {
+            working_dir: root.clone(),
+            include_paths: vec![lib],
+            ..SourceLoaderConfig::default()
+        });
+        let main = write_file(&root, "main.pil", "include \"shared.pil\";");
+        let main = loader.load_main(&main).expect("main should load");
+
+        let include = loader
+            .load_include("shared.pil", main.file_dir())
+            .expect("include should skip directory candidates");
+
+        assert_eq!(include.full_path, library);
+        assert_eq!(include.source_name, "shared.pil");
+        assert_eq!(include.contents, "constant X = 2;\n");
     }
 }
