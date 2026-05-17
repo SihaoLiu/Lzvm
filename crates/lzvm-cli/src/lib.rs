@@ -646,6 +646,14 @@ fn verify_preflight(
                 "eth_block_input_hash={}",
                 prove_plan::format_hash(hash)
             );
+            write_eth_transaction_preimage_summary(
+                stdout,
+                report
+                    .eth_block_input_transaction_preimage_counts
+                    .get(index)
+                    .copied()
+                    .unwrap_or(0),
+            );
             write_eth_receipt_preimage_summary(
                 stdout,
                 report
@@ -869,6 +877,7 @@ struct VerifySetupValidationCommand<'a> {
 
 struct EthBlockInputBinding {
     hash: [u8; 32],
+    transaction_preimage_count: usize,
     receipt_preimage_count: Option<usize>,
     withdrawal_preimage_count: Option<usize>,
 }
@@ -955,6 +964,14 @@ fn verify_setup_validation(
                 prove_plan::format_hash(hash)
             );
             if eth_block_input_binding.is_none() {
+                write_eth_transaction_preimage_summary(
+                    stdout,
+                    public_report
+                        .eth_block_input_transaction_preimage_counts
+                        .get(index)
+                        .copied()
+                        .unwrap_or(0),
+                );
                 write_eth_receipt_preimage_summary(
                     stdout,
                     public_report
@@ -983,6 +1000,7 @@ fn verify_setup_validation(
             );
         }
         let _ = writeln!(stdout, "eth_block_input_match=ok");
+        write_eth_transaction_preimage_summary(stdout, binding.transaction_preimage_count);
         write_eth_receipt_preimage_summary(stdout, binding.receipt_preimage_count);
         write_eth_withdrawal_preimage_summary(stdout, binding.withdrawal_preimage_count);
     }
@@ -1022,6 +1040,7 @@ fn verify_eth_block_input_binding(
     let input_hash = eth_block_input_bytes_digest(&input_bytes);
     let input = parse_eth_block_input(&input_bytes)
         .map_err(|error| format!("ETH block input failed: {input_path}: {error}"))?;
+    let transaction_preimage_count = input.transactions.hash_preimages.len();
     let receipt_preimage_count = input
         .receipts
         .as_ref()
@@ -1045,9 +1064,20 @@ fn verify_eth_block_input_binding(
     validate_eth_block_public_values(&input, &public_values).map_err(|error| error.to_string())?;
     Ok(EthBlockInputBinding {
         hash: input_hash,
+        transaction_preimage_count,
         receipt_preimage_count,
         withdrawal_preimage_count,
     })
+}
+
+fn write_eth_transaction_preimage_summary(
+    stdout: &mut dyn Write,
+    transaction_preimage_count: usize,
+) {
+    let _ = writeln!(
+        stdout,
+        "eth_transaction_trie_preimages={transaction_preimage_count}"
+    );
 }
 
 fn write_eth_receipt_preimage_summary(

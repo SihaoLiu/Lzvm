@@ -32,6 +32,7 @@ pub struct ProofPreflightReport {
     pub program_image_cache_hashes: Vec<[u8; 32]>,
     pub eth_block_input_count: usize,
     pub eth_block_input_hashes: Vec<[u8; 32]>,
+    pub eth_block_input_transaction_preimage_counts: Vec<usize>,
     pub eth_block_input_receipt_preimage_counts: Vec<Option<usize>>,
     pub eth_block_input_withdrawal_preimage_counts: Vec<Option<usize>>,
 }
@@ -178,6 +179,7 @@ pub fn validate_proof_public_values(
     }
     let program_image_cache_count = program_image_caches.len();
     let mut eth_block_input_hashes = Vec::new();
+    let mut eth_block_input_transaction_preimage_counts = Vec::new();
     let mut eth_block_input_receipt_preimage_counts = Vec::new();
     let mut eth_block_input_withdrawal_preimage_counts = Vec::new();
     let eth_block_input_count = proof
@@ -196,6 +198,7 @@ pub fn validate_proof_public_values(
         eth_block_input_hashes.push(eth_block_input_bytes_digest(&segment.data));
         let input = parse_eth_block_input_segment(&segment.data)
             .map_err(ProofPreflightError::EthBlockInput)?;
+        eth_block_input_transaction_preimage_counts.push(input.transactions.hash_preimages.len());
         eth_block_input_receipt_preimage_counts.push(
             input
                 .receipts
@@ -222,6 +225,7 @@ pub fn validate_proof_public_values(
         program_image_cache_hashes,
         eth_block_input_count,
         eth_block_input_hashes,
+        eth_block_input_transaction_preimage_counts,
         eth_block_input_receipt_preimage_counts,
         eth_block_input_withdrawal_preimage_counts,
     })

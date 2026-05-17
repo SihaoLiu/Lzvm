@@ -5112,8 +5112,9 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     let verify_stdout_text =
         String::from_utf8(verify_stdout).expect("verify stdout should be utf-8");
     assert!(verify_stdout_text.contains(&format!(
-        "eth_block_inputs=1\neth_block_input_hash={}\neth_block_input_match=ok\neth_receipts=present\neth_receipt_trie_preimages={}\n",
+        "eth_block_inputs=1\neth_block_input_hash={}\neth_block_input_match=ok\neth_transaction_trie_preimages={}\neth_receipts=present\neth_receipt_trie_preimages={}\n",
         format_hash(&block_input_hash),
+        block_input.transactions.hash_preimages.len(),
         receipt_build.hash_preimages.len()
     )));
     assert_eq!(mismatch_code, 1);

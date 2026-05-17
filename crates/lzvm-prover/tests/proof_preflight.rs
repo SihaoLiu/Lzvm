@@ -170,6 +170,7 @@ fn validates_proof_public_value_preflight_hashes() {
             program_image_cache_hashes: Vec::new(),
             eth_block_input_count: 0,
             eth_block_input_hashes: Vec::new(),
+            eth_block_input_transaction_preimage_counts: Vec::new(),
             eth_block_input_receipt_preimage_counts: Vec::new(),
             eth_block_input_withdrawal_preimage_counts: Vec::new(),
         }
@@ -269,6 +270,7 @@ fn counts_eth_block_input_segments() {
         .expect("proof and public values should match");
 
     assert_eq!(report.eth_block_input_count, 1);
+    assert_eq!(report.eth_block_input_transaction_preimage_counts, vec![1]);
     assert_eq!(report.eth_block_input_receipt_preimage_counts, vec![None]);
     assert_eq!(
         report.eth_block_input_withdrawal_preimage_counts,
