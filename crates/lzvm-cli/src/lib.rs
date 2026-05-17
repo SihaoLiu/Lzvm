@@ -1031,6 +1031,9 @@ fn verify_setup_validation(
                         prove_plan::format_hash(ommers_hash)
                     );
                 }
+                if let Some(logs_bloom) = public_report.eth_block_input_logs_blooms.get(index) {
+                    let _ = writeln!(stdout, "eth_logs_bloom={}", format_bytes_hex(logs_bloom));
+                }
                 write_eth_transaction_preimage_summary(
                     stdout,
                     public_report
