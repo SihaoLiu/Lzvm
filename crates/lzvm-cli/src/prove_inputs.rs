@@ -1,12 +1,12 @@
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::eth_block_public_values::{
     public_values_from_eth_block_input, validate_eth_block_public_values,
 };
 use lzvm_artifacts::key_directory::{key_directory_catalog_digest, KeyDirectoryCatalog};
-use lzvm_artifacts::public_values::{encode_public_values, read_public_values_file};
+use lzvm_artifacts::public_values::{encode_public_values, read_public_values_file, PublicValues};
 use lzvm_artifacts::trace_bundle::{read_trace_bundle_file, TraceBundle};
 use lzvm_prover::{
     derive_prove_execution_plan_with_program_image_cache, ProveExecutionInputArtifacts,
@@ -88,6 +88,14 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
+    let public_inputs_summary = match summarize_public_inputs(plan.inputs.public_inputs.as_deref())
+    {
+        Ok(summary) => summary,
+        Err(message) => {
+            let _ = writeln!(stderr, "prove inputs failed: {message}");
+            return 1;
+        }
+    };
 
     write_run_plan_summary(stdout, &plan.run_plan);
     match (&plan.inputs.witness_library, &plan.witness_library_info) {
@@ -144,6 +152,10 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "none".to_owned())
     );
+    if let Some(summary) = &public_inputs_summary {
+        let _ = writeln!(stdout, "public_input_values={}", summary.value_count);
+        let _ = writeln!(stdout, "public_input_fields={}", summary.field_count);
+    }
     if generated_public_inputs {
         let _ = writeln!(stdout, "public_inputs_generated=eth_block_input");
     }
@@ -167,6 +179,31 @@ struct ParsedInputsArgs {
 struct PreparedPublicInputs {
     inputs: ProveExecutionInputArtifacts,
     generated: bool,
+}
+
+struct PublicInputSummary {
+    value_count: usize,
+    field_count: usize,
+}
+
+fn summarize_public_inputs(path: Option<&Path>) -> Result<Option<PublicInputSummary>, String> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let public_values = read_public_values_file(path)
+        .map_err(|error| format!("read public inputs failed: {}: {error}", path.display()))?;
+    Ok(Some(PublicInputSummary {
+        value_count: public_values.values.len(),
+        field_count: public_values_field_count(&public_values),
+    }))
+}
+
+fn public_values_field_count(public_values: &PublicValues) -> usize {
+    public_values
+        .values
+        .iter()
+        .map(|entry| entry.elements.len())
+        .sum()
 }
 
 fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
