@@ -83,6 +83,24 @@ fn encodes_and_parses_public_values_binary() {
 }
 
 #[test]
+fn rejects_unsupported_public_values_file_versions() {
+    let section = encode_public_values(&sample_public_values()).expect("fixture should encode");
+    let parsed = lzvm_artifacts::sectioned::parse_sectioned_file(&section, *b"pval", 1)
+        .expect("sectioned fixture should parse");
+    let encoded = encode_sectioned_file(&SectionedFile {
+        kind: *b"pval",
+        version: 0,
+        sections: parsed.sections,
+    })
+    .expect("sectioned fixture should encode");
+
+    assert!(matches!(
+        parse_public_values(&encoded),
+        Err(PublicValuesError::UnsupportedVersion { found: 0, max: 1 })
+    ));
+}
+
+#[test]
 fn hashes_public_values_deterministically() {
     assert_eq!(
         public_values_digest(&sample_public_values()).expect("fixture should digest"),

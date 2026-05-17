@@ -158,6 +158,13 @@ pub fn read_public_values_binary_file(
 pub fn parse_public_values(bytes: &[u8]) -> Result<PublicValues, PublicValuesError> {
     let file = parse_sectioned_file(bytes, PUBLIC_VALUES_KIND, PUBLIC_VALUES_VERSION)
         .map_err(PublicValuesError::from)?;
+    if file.version != PUBLIC_VALUES_VERSION {
+        return Err(PublicValuesError::UnsupportedVersion {
+            found: file.version,
+            max: PUBLIC_VALUES_VERSION,
+        });
+    }
+
     if file.sections.len() != 1 {
         return Err(PublicValuesError::InvalidSectionCount {
             found: u32::try_from(file.sections.len()).unwrap_or(u32::MAX),
