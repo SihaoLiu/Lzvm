@@ -5536,7 +5536,10 @@ fn verify_proof_binding_reports_eth_block_withdrawal_count() {
     let verify_stdout_text =
         String::from_utf8(verify_stdout).expect("verify stdout should be utf-8");
     assert!(verify_stdout_text.contains("eth_block_input_match=ok\n"));
-    assert!(verify_stdout_text.contains("eth_withdrawals=present\neth_withdrawal_count=1\n"));
+    assert!(verify_stdout_text.contains(&format!(
+        "eth_withdrawals=present\neth_withdrawals_root={}\neth_withdrawal_count=1\n",
+        format_hash(&withdrawal_build.root)
+    )));
     assert!(verify_stdout_text.contains(&format!(
         "eth_withdrawal_trie_preimages={}\n",
         withdrawal_build.hash_preimages.len()

@@ -783,6 +783,11 @@ fn verify_preflight(
             write_eth_withdrawal_summary(
                 stdout,
                 report
+                    .eth_block_input_withdrawal_roots
+                    .get(index)
+                    .copied()
+                    .unwrap_or(None),
+                report
                     .eth_block_input_withdrawal_counts
                     .get(index)
                     .copied()
@@ -1023,6 +1028,7 @@ struct EthBlockInputBinding {
     receipt_preimage_count: Option<usize>,
     legacy_receipt_count: Option<usize>,
     typed_receipt_count: Option<usize>,
+    withdrawal_root: Option<[u8; 32]>,
     withdrawal_count: Option<usize>,
     withdrawal_preimage_count: Option<usize>,
 }
@@ -1246,6 +1252,11 @@ fn verify_setup_validation(
                 write_eth_withdrawal_summary(
                     stdout,
                     public_report
+                        .eth_block_input_withdrawal_roots
+                        .get(index)
+                        .copied()
+                        .unwrap_or(None),
+                    public_report
                         .eth_block_input_withdrawal_counts
                         .get(index)
                         .copied()
@@ -1356,6 +1367,7 @@ fn verify_setup_validation(
         );
         write_eth_withdrawal_summary(
             stdout,
+            binding.withdrawal_root,
             binding.withdrawal_count,
             binding.withdrawal_preimage_count,
         );
@@ -1408,6 +1420,7 @@ fn verify_eth_block_input_binding(
         .map_err(|error| format!("ETH block input receipt count failed: {error}"))?;
     let withdrawal_count = eth_block_input_withdrawal_count(&input)
         .map_err(|error| format!("ETH block input withdrawal count failed: {error}"))?;
+    let withdrawal_root = input.withdrawals_root;
     let withdrawal_preimage_count = input
         .withdrawals
         .as_ref()
@@ -1450,6 +1463,7 @@ fn verify_eth_block_input_binding(
         receipt_preimage_count,
         legacy_receipt_count: receipt_kind_counts.map(|(legacy_count, _)| legacy_count),
         typed_receipt_count: receipt_kind_counts.map(|(_, typed_count)| typed_count),
+        withdrawal_root,
         withdrawal_count,
         withdrawal_preimage_count,
     })
@@ -1534,12 +1548,20 @@ fn write_eth_receipt_kind_summary(
 
 fn write_eth_withdrawal_summary(
     stdout: &mut dyn Write,
+    withdrawal_root: Option<[u8; 32]>,
     withdrawal_count: Option<usize>,
     withdrawal_preimage_count: Option<usize>,
 ) {
     match withdrawal_preimage_count {
         Some(count) => {
             let _ = writeln!(stdout, "eth_withdrawals=present");
+            if let Some(root) = withdrawal_root {
+                let _ = writeln!(
+                    stdout,
+                    "eth_withdrawals_root={}",
+                    prove_plan::format_hash(&root)
+                );
+            }
             if let Some(withdrawal_count) = withdrawal_count {
                 let _ = writeln!(stdout, "eth_withdrawal_count={withdrawal_count}");
             }

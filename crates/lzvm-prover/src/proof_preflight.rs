@@ -58,6 +58,7 @@ pub struct ProofPreflightReport {
     pub eth_block_input_receipt_preimage_counts: Vec<Option<usize>>,
     pub eth_block_input_legacy_receipt_counts: Vec<Option<usize>>,
     pub eth_block_input_typed_receipt_counts: Vec<Option<usize>>,
+    pub eth_block_input_withdrawal_roots: Vec<Option<[u8; 32]>>,
     pub eth_block_input_withdrawal_counts: Vec<Option<usize>>,
     pub eth_block_input_withdrawal_preimage_counts: Vec<Option<usize>>,
 }
@@ -212,6 +213,7 @@ pub fn validate_proof_public_values(
     let mut eth_block_input_receipt_preimage_counts = Vec::new();
     let mut eth_block_input_legacy_receipt_counts = Vec::new();
     let mut eth_block_input_typed_receipt_counts = Vec::new();
+    let mut eth_block_input_withdrawal_roots = Vec::new();
     let mut eth_block_input_withdrawal_counts = Vec::new();
     let mut eth_block_input_withdrawal_preimage_counts = Vec::new();
     let eth_block_input_count = proof
@@ -282,6 +284,7 @@ pub fn validate_proof_public_values(
             .push(receipt_kind_counts.map(|(legacy_count, _)| legacy_count));
         eth_block_input_typed_receipt_counts
             .push(receipt_kind_counts.map(|(_, typed_count)| typed_count));
+        eth_block_input_withdrawal_roots.push(input.withdrawals_root);
         eth_block_input_withdrawal_counts.push(withdrawal_count);
         eth_block_input_withdrawal_preimage_counts.push(
             input
@@ -326,6 +329,7 @@ pub fn validate_proof_public_values(
         eth_block_input_receipt_preimage_counts,
         eth_block_input_legacy_receipt_counts,
         eth_block_input_typed_receipt_counts,
+        eth_block_input_withdrawal_roots,
         eth_block_input_withdrawal_counts,
         eth_block_input_withdrawal_preimage_counts,
     })
