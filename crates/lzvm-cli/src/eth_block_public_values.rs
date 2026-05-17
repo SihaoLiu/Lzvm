@@ -2,7 +2,7 @@ use std::fmt;
 use std::io::Write;
 use std::path::Path;
 
-use lzvm_artifacts::eth_block_input::parse_eth_block_input;
+use lzvm_artifacts::eth_block_input::{eth_block_input_withdrawal_count, parse_eth_block_input};
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
 use lzvm_artifacts::key_directory::key_directory_catalog_digest;
 use lzvm_artifacts::public_values::{encode_public_values, public_values_digest, PublicValues};
@@ -54,6 +54,13 @@ fn write_block_public_values(
     };
     let input = match parse_eth_block_input(&input_bytes) {
         Ok(input) => input,
+        Err(error) => {
+            let _ = writeln!(stderr, "eth block public values failed: {error}");
+            return 1;
+        }
+    };
+    let withdrawal_count = match eth_block_input_withdrawal_count(&input) {
+        Ok(count) => count,
         Err(error) => {
             let _ = writeln!(stderr, "eth block public values failed: {error}");
             return 1;
@@ -141,15 +148,18 @@ fn write_block_public_values(
         "transactions_root={}",
         format_hash(&input.transactions_root)
     );
-    let _ = writeln!(
-        stdout,
-        "withdrawals={}",
-        if input.withdrawals_root.is_some() {
-            "present"
-        } else {
-            "absent"
+    match input.withdrawals_root {
+        Some(root) => {
+            let _ = writeln!(stdout, "withdrawals=present");
+            let _ = writeln!(stdout, "withdrawals_root={}", format_hash(&root));
+            if let Some(count) = withdrawal_count {
+                let _ = writeln!(stdout, "withdrawal_count={count}");
+            }
         }
-    );
+        None => {
+            let _ = writeln!(stdout, "withdrawals=absent");
+        }
+    }
     0
 }
 

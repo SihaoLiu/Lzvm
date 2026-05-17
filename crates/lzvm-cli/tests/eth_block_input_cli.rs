@@ -517,6 +517,59 @@ fn writes_block_public_values_from_base_fee_block_input() {
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
+#[test]
+fn writes_block_public_values_from_withdrawal_block_input() {
+    let dir = temp_dir("public-values-withdrawals");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("block.input");
+    let output_path = dir.join("public-values.bin");
+    let setup_hash = [0x44_u8; 32];
+    let setup_hash_hex = to_hex(&setup_hash);
+    let withdrawal_item = sample_withdrawal_item();
+    let withdrawals = vec![parse_rlp(&withdrawal_item).expect("withdrawal should parse")];
+    let withdrawal_build = withdrawals_trie_build(&withdrawals);
+    let block_rlp = sample_block_rlp_with_withdrawals(withdrawal_build.root, vec![withdrawal_item]);
+    let input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let encoded_input = encode_eth_block_input(&input).expect("block input should encode");
+    write_bytes(&input_path, &encoded_input);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-block-public-values",
+            "--setup-hash",
+            &setup_hash_hex,
+            input_path.to_str().expect("input path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let encoded = fs::read(&output_path).expect("public values should be written");
+    let parsed = parse_public_values(&encoded).expect("public values should parse");
+    assert_eq!(parsed.values[19].name, "eth_withdrawals_root_present");
+    assert_eq!(parsed.values[19].elements, vec![1]);
+    assert_eq!(parsed.values[20].name, "eth_withdrawals_root_u32_be");
+    assert_eq!(
+        parsed.values[20].elements,
+        hash_u32_be(&withdrawal_build.root)
+    );
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("withdrawals=present\n"));
+    assert!(stdout_text.contains(&format!(
+        "withdrawals_root={}\n",
+        to_hex(&withdrawal_build.root)
+    )));
+    assert!(stdout_text.contains("withdrawal_count=1\n"));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
 fn sample_block_rlp() -> Vec<u8> {
     let header_rlp = rlp_list(&legacy_header_items(
         hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
