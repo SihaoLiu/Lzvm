@@ -71,7 +71,7 @@ fn writes_source_companions_through_setup_namespace() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nsource_program_archive_bytes={archive_bytes}\nsource_program_archive_sources=2\nsource_program_archive_edges=1\nsource_fixed_file_manifest_bytes={manifest_bytes}\nsource_fixed_file_manifest_entries=2\nsetup_dir={}\nsource_program_archive={}\nsource_fixed_file_manifest={}\n",
+            "status=ok\nsource_program_archive_bytes={archive_bytes}\nsource_program_archive_sources=2\nsource_program_archive_edges=1\nsource_fixed_file_manifest_bytes={manifest_bytes}\nsource_fixed_file_manifest_entries=2\nsetup_directory_manifest_refreshed=false\nsetup_dir={}\nsource_program_archive={}\nsource_fixed_file_manifest={}\n",
             setup_dir.display(),
             archive_path.display(),
             manifest_path.display()

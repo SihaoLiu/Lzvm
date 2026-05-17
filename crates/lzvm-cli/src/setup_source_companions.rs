@@ -54,6 +54,23 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         "source_fixed_file_manifest_entries={}",
         report.source_fixed_file_manifest.entry_count
     );
+    let _ = writeln!(
+        stdout,
+        "setup_directory_manifest_refreshed={}",
+        report.setup_directory_manifest.is_some()
+    );
+    if let Some(manifest) = report.setup_directory_manifest.as_ref() {
+        let _ = writeln!(
+            stdout,
+            "setup_directory_manifest_bytes={}",
+            manifest.bytes_written
+        );
+        let _ = writeln!(
+            stdout,
+            "setup_directory_manifest_fingerprint={}",
+            manifest.fingerprint
+        );
+    }
     let _ = writeln!(stdout, "setup_dir={}", report.setup_dir.display());
     let _ = writeln!(
         stdout,
@@ -65,6 +82,13 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         "source_fixed_file_manifest={}",
         report.source_fixed_file_manifest.output_path.display()
     );
+    if let Some(manifest) = report.setup_directory_manifest.as_ref() {
+        let _ = writeln!(
+            stdout,
+            "setup_directory_manifest={}",
+            manifest.path.display()
+        );
+    }
     0
 }
 

@@ -58,6 +58,7 @@ fn writes_source_companions_to_setup_directory_defaults() {
         .expect("source fixed-file manifest should read");
 
     assert_eq!(report.setup_dir, setup_dir);
+    assert_eq!(report.setup_directory_manifest, None);
     assert_eq!(report.source_program_archive.output_path, archive_path);
     assert_eq!(report.source_fixed_file_manifest.output_path, manifest_path);
     assert_eq!(report.source_program_archive.source_count, 2);

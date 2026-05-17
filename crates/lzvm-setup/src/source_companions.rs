@@ -17,9 +17,9 @@ use lzvm_pil::{
 
 use crate::{
     publish_staging_bytes, source_fixed_file_manifest_from_resolved,
-    write_setup_directory_manifest, write_staging_bytes, SetupDirectorySummaryError, SetupError,
-    SourceFixedFileManifestWriteError, SourceFixedFileManifestWriteReport,
-    SourceProgramArchiveWriteReport,
+    write_setup_directory_manifest, write_staging_bytes, SetupDirectoryManifestWriteReport,
+    SetupDirectorySummaryError, SetupError, SourceFixedFileManifestWriteError,
+    SourceFixedFileManifestWriteReport, SourceProgramArchiveWriteReport,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +34,7 @@ pub struct SourceCompanionWriteRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceCompanionWriteReport {
     pub setup_dir: PathBuf,
+    pub setup_directory_manifest: Option<SetupDirectoryManifestWriteReport>,
     pub source_program_archive: SourceProgramArchiveWriteReport,
     pub source_fixed_file_manifest: SourceFixedFileManifestWriteReport,
 }
@@ -156,16 +157,22 @@ pub fn write_source_companions(
         "publish source fixed-file manifest",
     )
     .map_err(SourceCompanionWriteError::Setup)?;
-    if refresh_manifest {
-        if let Err(error) = write_setup_directory_manifest(&request.setup_dir) {
-            restore_optional_file(&archive_output_path, archive_snapshot.as_deref())?;
-            restore_optional_file(&manifest_output_path, manifest_snapshot.as_deref())?;
-            return Err(SourceCompanionWriteError::Manifest(error));
+    let setup_directory_manifest = if refresh_manifest {
+        match write_setup_directory_manifest(&request.setup_dir) {
+            Ok(report) => Some(report),
+            Err(error) => {
+                restore_optional_file(&archive_output_path, archive_snapshot.as_deref())?;
+                restore_optional_file(&manifest_output_path, manifest_snapshot.as_deref())?;
+                return Err(SourceCompanionWriteError::Manifest(error));
+            }
         }
-    }
+    } else {
+        None
+    };
 
     Ok(SourceCompanionWriteReport {
         setup_dir: request.setup_dir.clone(),
+        setup_directory_manifest,
         source_program_archive: SourceProgramArchiveWriteReport {
             output_path: archive_output_path,
             bytes_written: archive_bytes_written,

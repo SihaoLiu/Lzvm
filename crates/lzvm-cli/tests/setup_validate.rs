@@ -2180,6 +2180,12 @@ fn write_source_companions_refreshes_existing_setup_directory_manifest() {
         String::from_utf8_lossy(&companion_stderr)
     );
     assert!(companion_stderr.is_empty());
+    let companion_output = String::from_utf8(companion_stdout).expect("stdout should be utf-8");
+    assert!(companion_output.contains("setup_directory_manifest_refreshed=true\n"));
+    assert!(companion_output.contains(&format!(
+        "setup_directory_manifest={}\n",
+        manifest_path.display()
+    )));
 
     let mut validate_stdout = Vec::new();
     let mut validate_stderr = Vec::new();
