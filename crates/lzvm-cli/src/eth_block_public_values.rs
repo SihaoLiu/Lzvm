@@ -125,6 +125,8 @@ fn write_block_public_values(
     let _ = writeln!(stdout, "timestamp={}", input.timestamp);
     let _ = writeln!(stdout, "gas_limit={}", input.gas_limit);
     let _ = writeln!(stdout, "gas_used={}", input.gas_used);
+    let _ = writeln!(stdout, "mix_hash={}", format_hash(&input.mix_hash));
+    let _ = writeln!(stdout, "nonce={}", format_hex(&input.nonce));
     let _ = writeln!(
         stdout,
         "transactions_root={}",

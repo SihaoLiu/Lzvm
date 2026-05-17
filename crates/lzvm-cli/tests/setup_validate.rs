@@ -3401,7 +3401,7 @@ fn prove_inputs_generates_eth_block_public_values_when_missing() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nwitness_library_bytes=64\nwitness_library_machine=62\nwitness_library_digest={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs={}\npublic_inputs_hash={}\npublic_input_values=13\npublic_input_fields=70\npublic_inputs_generated=eth_block_input\neth_block_input={}\neth_block_input_bytes={}\neth_block_input_hash={}\neth_block_rlp_bytes={}\neth_block_hash={}\neth_parent_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_block_number=2\neth_block_timestamp=101\neth_gas_limit=1000000\neth_gas_used=900000\neth_transactions_root={}\neth_transaction_trie_preimages=1\neth_withdrawals=absent\n",
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nwitness_library_bytes=64\nwitness_library_machine=62\nwitness_library_digest={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs={}\npublic_inputs_hash={}\npublic_input_values=15\npublic_input_fields=80\npublic_inputs_generated=eth_block_input\neth_block_input={}\neth_block_input_bytes={}\neth_block_input_hash={}\neth_block_rlp_bytes={}\neth_block_hash={}\neth_parent_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_block_number=2\neth_block_timestamp=101\neth_gas_limit=1000000\neth_gas_used=900000\neth_transactions_root={}\neth_transaction_trie_preimages=1\neth_withdrawals=absent\n",
             output_dir.display(),
             witness_library.display(),
             format_hash(&witness_library_info.digest),
@@ -5023,7 +5023,7 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     assert!(public_mismatch_stdout.is_empty());
     let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
     assert!(stdout_text.contains(&format!("public_inputs={}\n", public_values_path.display())));
-    assert!(stdout_text.contains("public_input_values=13\npublic_input_fields=70\n"));
+    assert!(stdout_text.contains("public_input_values=15\npublic_input_fields=80\n"));
     assert_eq!(parsed_input.block_rlp, block_rlp);
     assert_eq!(parsed_input.block_hash, block_input.block_hash);
     assert_eq!(parsed_input.transactions.hash_preimages.len(), 1);
@@ -5113,7 +5113,7 @@ fn prove_witness_generates_eth_block_public_values_when_missing() {
         "eth_block_input_hash={}\n",
         format_hash(&block_input_hash)
     )));
-    assert!(stdout_text.contains("public_input_values=13\npublic_input_fields=70\n"));
+    assert!(stdout_text.contains("public_input_values=15\npublic_input_fields=80\n"));
 
     let mut verify_stdout = Vec::new();
     let mut verify_stderr = Vec::new();
@@ -5392,7 +5392,7 @@ fn writes_eth_block_public_values_from_setup_directory() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=13\npublic_value_fields=70\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\nblock_number=2\ntimestamp=101\ngas_limit=1000000\ngas_used=900000\ntransactions_root={}\nwithdrawals=absent\n",
+            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=15\npublic_value_fields=80\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\nblock_number=2\ntimestamp=101\ngas_limit=1000000\ngas_used=900000\nmix_hash={}\nnonce={}\ntransactions_root={}\nwithdrawals=absent\n",
             public_values_path.display(),
             encoded.len(),
             setup_hash_hex,
@@ -5402,6 +5402,8 @@ fn writes_eth_block_public_values_from_setup_directory() {
             format_hex(&block_input.beneficiary),
             format_hash(&block_input.state_root),
             format_hash(&block_input.receipts_root),
+            format_hash(&block_input.mix_hash),
+            format_hex(&block_input.nonce),
             format_hash(&block_input.transactions_root)
         )
     );

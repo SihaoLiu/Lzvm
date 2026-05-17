@@ -36,6 +36,8 @@ pub struct EthBlockInput {
     pub timestamp: u64,
     pub gas_limit: u64,
     pub gas_used: u64,
+    pub mix_hash: [u8; 32],
+    pub nonce: [u8; 8],
     pub ommers_hash: [u8; 32],
     pub transactions_root: [u8; 32],
     pub withdrawals_root: Option<[u8; 32]>,
@@ -81,6 +83,8 @@ pub enum EthBlockInputError {
     TimestampMismatch,
     GasLimitMismatch,
     GasUsedMismatch,
+    MixHashMismatch,
+    NonceMismatch,
     WithdrawalsRootMismatch,
     InvalidPreimageSection,
     PreimageHashMismatch {
@@ -145,6 +149,8 @@ impl fmt::Display for EthBlockInputError {
             Self::TimestampMismatch => write!(f, "ETH block input timestamp mismatch"),
             Self::GasLimitMismatch => write!(f, "ETH block input gas limit mismatch"),
             Self::GasUsedMismatch => write!(f, "ETH block input gas used mismatch"),
+            Self::MixHashMismatch => write!(f, "ETH block input mix hash mismatch"),
+            Self::NonceMismatch => write!(f, "ETH block input nonce mismatch"),
             Self::WithdrawalsRootMismatch => write!(f, "ETH block withdrawals root mismatch"),
             Self::InvalidPreimageSection => write!(f, "invalid ETH trie preimage section"),
             Self::PreimageHashMismatch { trie, index } => {
@@ -241,6 +247,8 @@ pub fn build_eth_block_input(block_rlp: &[u8]) -> Result<EthBlockInput, EthBlock
         timestamp: header.timestamp,
         gas_limit: header.gas_limit,
         gas_used: header.gas_used,
+        mix_hash: header.mix_hash,
+        nonce: header.nonce,
         ommers_hash,
         transactions_root: header.transactions_root,
         withdrawals_root: header.withdrawals_root,
@@ -345,6 +353,8 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
         timestamp: metadata.timestamp,
         gas_limit: metadata.gas_limit,
         gas_used: metadata.gas_used,
+        mix_hash: metadata.mix_hash,
+        nonce: metadata.nonce,
         ommers_hash: metadata.ommers_hash,
         transactions_root: metadata.transactions_root,
         withdrawals_root: metadata.withdrawals_root,
@@ -363,13 +373,15 @@ struct Metadata {
     timestamp: u64,
     gas_limit: u64,
     gas_used: u64,
+    mix_hash: [u8; 32],
+    nonce: [u8; 8],
     ommers_hash: [u8; 32],
     transactions_root: [u8; 32],
     withdrawals_root: Option<[u8; 32]>,
 }
 
 fn encode_metadata(value: &EthBlockInput) -> Vec<u8> {
-    let mut out = Vec::with_capacity(HASH_BYTES * 7 + 20 + 8 * 4 + 4);
+    let mut out = Vec::with_capacity(HASH_BYTES * 8 + 20 + 8 * 5 + 4);
     out.extend_from_slice(&value.block_hash);
     out.extend_from_slice(&value.parent_hash);
     out.extend_from_slice(&value.beneficiary);
@@ -379,6 +391,8 @@ fn encode_metadata(value: &EthBlockInput) -> Vec<u8> {
     out.extend_from_slice(&value.timestamp.to_le_bytes());
     out.extend_from_slice(&value.gas_limit.to_le_bytes());
     out.extend_from_slice(&value.gas_used.to_le_bytes());
+    out.extend_from_slice(&value.mix_hash);
+    out.extend_from_slice(&value.nonce);
     out.extend_from_slice(&value.ommers_hash);
     out.extend_from_slice(&value.transactions_root);
     match value.withdrawals_root {
@@ -402,6 +416,8 @@ fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
     let timestamp = reader.read_u64()?;
     let gas_limit = reader.read_u64()?;
     let gas_used = reader.read_u64()?;
+    let mix_hash = reader.read_hash()?;
+    let nonce = reader.read_8_bytes()?;
     let ommers_hash = reader.read_hash()?;
     let transactions_root = reader.read_hash()?;
     let withdrawals_flag = reader.read_u32()?;
@@ -422,6 +438,8 @@ fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
         timestamp,
         gas_limit,
         gas_used,
+        mix_hash,
+        nonce,
         ommers_hash,
         transactions_root,
         withdrawals_root,
@@ -456,6 +474,12 @@ fn validate_metadata(metadata: &Metadata, block_rlp: &[u8]) -> Result<(), EthBlo
     }
     if metadata.gas_used != input.gas_used {
         return Err(EthBlockInputError::GasUsedMismatch);
+    }
+    if metadata.mix_hash != input.mix_hash {
+        return Err(EthBlockInputError::MixHashMismatch);
+    }
+    if metadata.nonce != input.nonce {
+        return Err(EthBlockInputError::NonceMismatch);
     }
     if metadata.ommers_hash != input.ommers_hash {
         return Err(EthBlockInputError::OmmersHashMismatch);
@@ -651,6 +675,13 @@ impl<'a> Reader<'a> {
     fn read_20_bytes(&mut self) -> Result<[u8; 20], EthBlockInputError> {
         Ok(self
             .read_exact(20)?
+            .try_into()
+            .expect("slice length checked"))
+    }
+
+    fn read_8_bytes(&mut self) -> Result<[u8; 8], EthBlockInputError> {
+        Ok(self
+            .read_exact(8)?
             .try_into()
             .expect("slice length checked"))
     }

@@ -67,6 +67,14 @@ pub fn public_values_from_eth_block_input(
                 elements: u64_u32_le(input.gas_used),
             },
             PublicValueEntry {
+                name: "eth_mix_hash_u32_be".to_owned(),
+                elements: hash_u32_be(&input.mix_hash),
+            },
+            PublicValueEntry {
+                name: "eth_nonce_u32_be".to_owned(),
+                elements: bytes_u32_be(&input.nonce),
+            },
+            PublicValueEntry {
                 name: "eth_ommers_hash_u32_be".to_owned(),
                 elements: hash_u32_be(&input.ommers_hash),
             },

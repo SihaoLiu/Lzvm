@@ -191,7 +191,7 @@ fn writes_block_public_values_from_block_input() {
         public_values_digest(&parsed).expect("public values digest should compute");
     assert_eq!(parsed.setup_hash, setup_hash);
     assert_eq!(parsed.schema_version, 1);
-    assert_eq!(parsed.values.len(), 13);
+    assert_eq!(parsed.values.len(), 15);
     assert_eq!(parsed.values[0].name, "eth_block_hash_u32_be");
     assert_eq!(parsed.values[0].elements, hash_u32_be(&input.block_hash));
     assert_eq!(parsed.values[1].name, "eth_parent_hash_u32_be");
@@ -210,21 +210,25 @@ fn writes_block_public_values_from_block_input() {
     assert_eq!(parsed.values[7].elements, u64_u32_le(1_000_000));
     assert_eq!(parsed.values[8].name, "eth_gas_used_u32_le");
     assert_eq!(parsed.values[8].elements, u64_u32_le(900_000));
-    assert_eq!(parsed.values[9].name, "eth_ommers_hash_u32_be");
-    assert_eq!(parsed.values[9].elements, hash_u32_be(&input.ommers_hash));
-    assert_eq!(parsed.values[10].name, "eth_transactions_root_u32_be");
+    assert_eq!(parsed.values[9].name, "eth_mix_hash_u32_be");
+    assert_eq!(parsed.values[9].elements, hash_u32_be(&input.mix_hash));
+    assert_eq!(parsed.values[10].name, "eth_nonce_u32_be");
+    assert_eq!(parsed.values[10].elements, bytes_u32_be(&input.nonce));
+    assert_eq!(parsed.values[11].name, "eth_ommers_hash_u32_be");
+    assert_eq!(parsed.values[11].elements, hash_u32_be(&input.ommers_hash));
+    assert_eq!(parsed.values[12].name, "eth_transactions_root_u32_be");
     assert_eq!(
-        parsed.values[10].elements,
+        parsed.values[12].elements,
         hash_u32_be(&input.transactions_root)
     );
-    assert_eq!(parsed.values[11].name, "eth_withdrawals_root_present");
-    assert_eq!(parsed.values[11].elements, vec![0]);
-    assert_eq!(parsed.values[12].name, "eth_withdrawals_root_u32_be");
-    assert_eq!(parsed.values[12].elements, vec![0; 8]);
+    assert_eq!(parsed.values[13].name, "eth_withdrawals_root_present");
+    assert_eq!(parsed.values[13].elements, vec![0]);
+    assert_eq!(parsed.values[14].name, "eth_withdrawals_root_u32_be");
+    assert_eq!(parsed.values[14].elements, vec![0; 8]);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=13\npublic_value_fields=70\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\nblock_number=2\ntimestamp=101\ngas_limit=1000000\ngas_used=900000\ntransactions_root={}\nwithdrawals=absent\n",
+            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=15\npublic_value_fields=80\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\nblock_number=2\ntimestamp=101\ngas_limit=1000000\ngas_used=900000\nmix_hash={}\nnonce={}\ntransactions_root={}\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
             setup_hash_hex,
@@ -234,6 +238,8 @@ fn writes_block_public_values_from_block_input() {
             to_hex(&input.beneficiary),
             to_hex(&input.state_root),
             to_hex(&input.receipts_root),
+            to_hex(&input.mix_hash),
+            to_hex(&input.nonce),
             to_hex(&input.transactions_root)
         )
     );
