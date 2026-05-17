@@ -3936,15 +3936,23 @@ fn prove_inputs_rejects_gpu_preallocate_without_cuda() {
 }
 
 #[test]
-fn prove_inputs_rejects_remote_aggregation() {
+fn prints_prove_inputs_with_remote_aggregation() {
     let dir = temp_dir("prove-inputs-remote-aggregation");
     let _ = fs::remove_dir_all(&dir);
     write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let expected = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let material_bytes = pcs_material_byte_count(&catalog);
     let output_dir = dir.join("proof-out");
     let witness_library = dir.join("libwitness.so");
     let guest_image = dir.join("guest.elf");
-    write_bytes(&witness_library, sample_witness_library());
-    write_bytes(&guest_image, sample_guest_image());
+    let witness_library_bytes = sample_witness_library();
+    let witness_library_info =
+        parse_witness_library(&witness_library_bytes).expect("witness library should parse");
+    write_bytes(&witness_library, &witness_library_bytes);
+    let guest_image_bytes = sample_guest_image();
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    write_bytes(&guest_image, &guest_image_bytes);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -3966,24 +3974,39 @@ fn prove_inputs_rejects_remote_aggregation() {
     );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
-    assert_eq!(code, 1);
-    assert!(stdout.is_empty());
+    assert_eq!(code, 0);
     assert_eq!(
-        String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "prove inputs failed: remote aggregation is unsupported by prove inputs\n"
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=true\nremote_aggregation=true\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nwitness_library_bytes=64\nwitness_library_machine=62\nwitness_library_digest={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs=none\n",
+            output_dir.display(),
+            witness_library.display(),
+            format_hash(&witness_library_info.digest),
+            guest_image.display(),
+            format_hash(&guest_image_info.digest)
+        )
     );
+    assert!(stderr.is_empty());
 }
 
 #[test]
-fn prove_inputs_rejects_final_wrap() {
+fn prints_prove_inputs_with_final_wrap() {
     let dir = temp_dir("prove-inputs-final-wrap");
     let _ = fs::remove_dir_all(&dir);
     write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let expected = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let material_bytes = pcs_material_byte_count(&catalog);
     let output_dir = dir.join("proof-out");
     let witness_library = dir.join("libwitness.so");
     let guest_image = dir.join("guest.elf");
-    write_bytes(&witness_library, sample_witness_library());
-    write_bytes(&guest_image, sample_guest_image());
+    let witness_library_bytes = sample_witness_library();
+    let witness_library_info =
+        parse_witness_library(&witness_library_bytes).expect("witness library should parse");
+    write_bytes(&witness_library, &witness_library_bytes);
+    let guest_image_bytes = sample_guest_image();
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    write_bytes(&guest_image, &guest_image_bytes);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -4005,24 +4028,39 @@ fn prove_inputs_rejects_final_wrap() {
     );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
-    assert_eq!(code, 1);
-    assert!(stdout.is_empty());
+    assert_eq!(code, 0);
     assert_eq!(
-        String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "prove inputs failed: final wrap is unsupported by prove inputs\n"
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=true\nremote_aggregation=false\nfinal_wrap=true\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nwitness_library_bytes=64\nwitness_library_machine=62\nwitness_library_digest={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs=none\n",
+            output_dir.display(),
+            witness_library.display(),
+            format_hash(&witness_library_info.digest),
+            guest_image.display(),
+            format_hash(&guest_image_info.digest)
+        )
     );
+    assert!(stderr.is_empty());
 }
 
 #[test]
-fn prove_inputs_rejects_minimal_memory() {
+fn prints_prove_inputs_with_minimal_memory() {
     let dir = temp_dir("prove-inputs-minimal-memory");
     let _ = fs::remove_dir_all(&dir);
     write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let expected = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let material_bytes = pcs_material_byte_count(&catalog);
     let output_dir = dir.join("proof-out");
     let witness_library = dir.join("libwitness.so");
     let guest_image = dir.join("guest.elf");
-    write_bytes(&witness_library, sample_witness_library());
-    write_bytes(&guest_image, sample_guest_image());
+    let witness_library_bytes = sample_witness_library();
+    let witness_library_info =
+        parse_witness_library(&witness_library_bytes).expect("witness library should parse");
+    write_bytes(&witness_library, &witness_library_bytes);
+    let guest_image_bytes = sample_guest_image();
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    write_bytes(&guest_image, &guest_image_bytes);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -4043,12 +4081,19 @@ fn prove_inputs_rejects_minimal_memory() {
     );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
-    assert_eq!(code, 1);
-    assert!(stdout.is_empty());
+    assert_eq!(code, 0);
     assert_eq!(
-        String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "prove inputs failed: minimal memory is unsupported by prove inputs\n"
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=true\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nwitness_library_bytes=64\nwitness_library_machine=62\nwitness_library_digest={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs=none\n",
+            output_dir.display(),
+            witness_library.display(),
+            format_hash(&witness_library_info.digest),
+            guest_image.display(),
+            format_hash(&guest_image_info.digest)
+        )
     );
+    assert!(stderr.is_empty());
 }
 
 #[test]
