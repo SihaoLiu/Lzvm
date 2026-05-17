@@ -15,6 +15,7 @@ use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
 use lzvm_prover::setup_preflight::validate_setup_preflight_from_files;
 use lzvm_setup::{
     summarize_setup_directory, FixedExtensionBackend, ProgramImageCommitmentCacheFileRequest,
+    SetupDirectorySummaryReport,
 };
 
 mod pil_archive;
@@ -552,6 +553,7 @@ fn fingerprint_setup_directory(
         Ok(report) => {
             let _ = writeln!(stdout, "status=ok");
             let _ = writeln!(stdout, "units={}", report.unit_count);
+            write_setup_source_companion_status(stdout, &report);
             let _ = writeln!(stdout, "fingerprint={}", report.fingerprint);
             0
         }
@@ -728,39 +730,7 @@ fn validate_setup_directory(
                 report.pcs_material_unit_count
             );
             let _ = writeln!(stdout, "pcs_material_bytes={}", report.pcs_material_bytes);
-            let _ = writeln!(
-                stdout,
-                "source_fixed_file_manifest={}",
-                if report.source_fixed_file_manifest_present {
-                    "present"
-                } else {
-                    "absent"
-                }
-            );
-            let _ = writeln!(
-                stdout,
-                "source_fixed_file_manifest_entries={}",
-                report.source_fixed_file_manifest_entry_count
-            );
-            let _ = writeln!(
-                stdout,
-                "source_program_archive={}",
-                if report.source_program_archive_present {
-                    "present"
-                } else {
-                    "absent"
-                }
-            );
-            let _ = writeln!(
-                stdout,
-                "source_program_archive_sources={}",
-                report.source_program_archive_source_count
-            );
-            let _ = writeln!(
-                stdout,
-                "source_program_archive_edges={}",
-                report.source_program_archive_edge_count
-            );
+            write_setup_source_companion_status(stdout, &report);
             0
         }
         Err(error) => {
@@ -768,6 +738,45 @@ fn validate_setup_directory(
             1
         }
     }
+}
+
+fn write_setup_source_companion_status(
+    stdout: &mut dyn Write,
+    report: &SetupDirectorySummaryReport,
+) {
+    let _ = writeln!(
+        stdout,
+        "source_fixed_file_manifest={}",
+        if report.source_fixed_file_manifest_present {
+            "present"
+        } else {
+            "absent"
+        }
+    );
+    let _ = writeln!(
+        stdout,
+        "source_fixed_file_manifest_entries={}",
+        report.source_fixed_file_manifest_entry_count
+    );
+    let _ = writeln!(
+        stdout,
+        "source_program_archive={}",
+        if report.source_program_archive_present {
+            "present"
+        } else {
+            "absent"
+        }
+    );
+    let _ = writeln!(
+        stdout,
+        "source_program_archive_sources={}",
+        report.source_program_archive_source_count
+    );
+    let _ = writeln!(
+        stdout,
+        "source_program_archive_edges={}",
+        report.source_program_archive_edge_count
+    );
 }
 
 fn write_pcs_setup_plan(

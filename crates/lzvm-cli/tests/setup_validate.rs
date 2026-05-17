@@ -2619,7 +2619,9 @@ fn fingerprints_a_complete_setup_directory() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        format!("status=ok\nunits=4\nfingerprint={expected}\n")
+        format!(
+            "status=ok\nunits=4\nsource_fixed_file_manifest=absent\nsource_fixed_file_manifest_entries=0\nsource_program_archive=absent\nsource_program_archive_sources=0\nsource_program_archive_edges=0\nfingerprint={expected}\n"
+        )
     );
     assert!(stderr.is_empty());
 
@@ -2628,6 +2630,40 @@ fn fingerprints_a_complete_setup_directory() {
     assert_eq!(report.fingerprint, expected);
     assert_eq!(report.global_constraint_count, 0);
     assert_eq!(report.fixed_bytes, 128);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn fingerprints_report_source_companion_status() {
+    let dir = temp_dir("fingerprint-source-companions");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    write_source_fixed_file_manifest(&dir);
+    write_source_program_archive(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let expected = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "fingerprint",
+            dir.to_str().expect("path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nunits=4\nsource_fixed_file_manifest=present\nsource_fixed_file_manifest_entries=1\nsource_program_archive=present\nsource_program_archive_sources=2\nsource_program_archive_edges=1\nfingerprint={expected}\n"
+        )
+    );
+    assert!(stderr.is_empty());
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
