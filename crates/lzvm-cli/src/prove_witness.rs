@@ -69,13 +69,6 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         );
         return 1;
     }
-    if parsed.run_args.request.options.final_wrap {
-        let _ = writeln!(
-            stderr,
-            "prove witness failed: final wrap is unsupported by prove witness"
-        );
-        return 1;
-    }
     let eth_block_input = match validate_eth_block_input(&parsed.eth_block_input) {
         Ok(value) => value,
         Err(message) => {

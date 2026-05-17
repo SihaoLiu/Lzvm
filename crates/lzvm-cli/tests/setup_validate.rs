@@ -7090,6 +7090,7 @@ fn run_prove_witness_with_aggregate_modifiers(
     let proof_values_path = dir.join("proof_values.bin");
     let group_values_path = dir.join("group_values.bin");
     let public_values_path = dir.join("public_values.bin");
+    let public_values = sample_public_values(setup_hash);
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(&input_data, [17_u8]);
     write_field_words(&unit_values_path, &[101, 201, 202, 203]);
@@ -7097,8 +7098,7 @@ fn run_prove_witness_with_aggregate_modifiers(
     write_field_words(&group_values_path, &[61, 62, 63]);
     write_bytes(
         &public_values_path,
-        encode_public_values(&sample_public_values(setup_hash))
-            .expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
     );
 
     let mut stdout = Vec::new();
@@ -7132,6 +7132,30 @@ fn run_prove_witness_with_aggregate_modifiers(
             .expect("public values path should be utf-8"),
     ]);
     let code = run_cli(&args, &mut stdout, &mut stderr);
+    if code == 0 {
+        let proof_bytes = fs::read(output_dir.join("proof.bin")).expect("proof output should read");
+        let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
+        let witness_ids = proof
+            .segments
+            .iter()
+            .filter(|segment| {
+                segment.id >= WITNESS_COMMITMENT_SEGMENT_BASE_ID
+                    && segment.id < WITNESS_COMMITMENT_SEGMENT_BASE_ID + 2
+            })
+            .map(|segment| segment.id)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            witness_ids,
+            vec![
+                WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+                WITNESS_COMMITMENT_SEGMENT_BASE_ID + 1
+            ]
+        );
+        validate_setup_preflight(&catalog, &proof, &public_values)
+            .expect("setup preflight should validate");
+        assert!(output_dir.join("unit-0.witness-segment").exists());
+        assert!(output_dir.join("unit-1.witness-segment").exists());
+    }
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
     (
         code,
@@ -7141,16 +7165,14 @@ fn run_prove_witness_with_aggregate_modifiers(
 }
 
 #[test]
-fn rejects_prove_witness_with_final_wrap() {
+fn runs_prove_witness_with_final_wrap() {
     let (code, stdout, stderr) =
         run_prove_witness_with_aggregate_modifier("prove-witness-final-wrap", "--final-wrap");
 
-    assert_eq!(code, 1);
-    assert!(stdout.is_empty());
-    assert_eq!(
-        stderr,
-        "prove witness failed: final wrap is unsupported by prove witness\n"
-    );
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("aggregate=true\n"));
+    assert!(stdout.contains("final_wrap=true\n"));
 }
 
 #[test]
