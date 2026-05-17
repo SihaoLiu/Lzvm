@@ -274,6 +274,14 @@ fn rejects_out_of_range_typed_transaction_envelopes() {
 }
 
 #[test]
+fn rejects_malformed_typed_transaction_payloads() {
+    let error = decode_eth_transaction_rlp(&RlpItem::Bytes(vec![2, 0xf9, 0x01]))
+        .expect_err("transaction should fail");
+
+    assert!(matches!(error, EthTransactionError::Rlp(_)));
+}
+
+#[test]
 fn decodes_legacy_receipts() {
     let decoded = decode_eth_receipt_rlp(&receipt_item()).expect("receipt should decode");
 

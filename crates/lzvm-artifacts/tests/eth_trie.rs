@@ -173,8 +173,8 @@ fn transaction_trie_build_records_root_preimage() {
 
 #[test]
 fn transaction_trie_build_records_hashed_child_preimages() {
-    let first = RlpItem::Bytes(vec![1; 40]);
-    let second = RlpItem::Bytes(vec![2; 40]);
+    let first = typed_transaction(1);
+    let second = typed_transaction(2);
     let build = transaction_trie_build(&[first, second]).expect("trie should build");
 
     assert!(
@@ -230,6 +230,15 @@ fn legacy_receipt() -> RlpItem {
         RlpItem::Bytes(vec![0x11; 256]),
         RlpItem::List(vec![]),
     ])
+}
+
+fn typed_transaction(byte: u8) -> RlpItem {
+    let mut bytes = vec![1];
+    bytes.extend_from_slice(&encode_rlp(&RlpItem::List(vec![RlpItem::Bytes(vec![
+        byte;
+        40
+    ])])));
+    RlpItem::Bytes(bytes)
 }
 
 fn withdrawal() -> RlpItem {

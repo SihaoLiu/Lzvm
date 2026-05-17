@@ -392,7 +392,7 @@ fn rejects_missing_transaction_root_preimages() {
 
 #[test]
 fn rejects_missing_transaction_child_preimages() {
-    let transaction_items = vec![rlp_bytes(&[1; 40]), rlp_bytes(&[2; 40])];
+    let transaction_items = vec![typed_transaction_item(1), typed_transaction_item(2)];
     let transactions = transaction_items
         .iter()
         .map(|item| parse_rlp(item).expect("transaction item should parse"))
@@ -596,6 +596,12 @@ fn receipt_item_with_cumulative_gas(cumulative_gas_used: &[u8]) -> Vec<u8> {
         rlp_bytes(&[0; 256]),
         rlp_list(&[]),
     ])
+}
+
+fn typed_transaction_item(byte: u8) -> Vec<u8> {
+    let mut bytes = vec![1];
+    bytes.extend_from_slice(&rlp_list(&[rlp_bytes(&[byte; 40])]));
+    rlp_bytes(&bytes)
 }
 
 fn encode_hash_preimages(preimages: &[TrieHashPreimage]) -> Vec<u8> {

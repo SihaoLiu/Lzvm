@@ -133,8 +133,10 @@ pub enum LogField {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EthTransactionError {
+    Rlp(RlpError),
     EmptyTypedTransaction,
     InvalidTransactionType { found: u8 },
+    ExpectedTransactionList,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -288,10 +290,12 @@ impl std::error::Error for EthBlockError {}
 impl fmt::Display for EthTransactionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Rlp(error) => write!(f, "typed transaction RLP error: {error}"),
             Self::EmptyTypedTransaction => write!(f, "empty typed transaction envelope"),
             Self::InvalidTransactionType { found } => {
                 write!(f, "invalid transaction type byte: 0x{found:02x}")
             }
+            Self::ExpectedTransactionList => write!(f, "expected transaction list"),
         }
     }
 }
@@ -568,6 +572,12 @@ pub fn decode_eth_transaction_rlp(
                 return Err(EthTransactionError::InvalidTransactionType {
                     found: transaction_type,
                 });
+            }
+            if !matches!(
+                parse_rlp(payload).map_err(EthTransactionError::Rlp)?,
+                RlpItem::List(_)
+            ) {
+                return Err(EthTransactionError::ExpectedTransactionList);
             }
             Ok(EthTransactionRlp::Typed {
                 transaction_type,
