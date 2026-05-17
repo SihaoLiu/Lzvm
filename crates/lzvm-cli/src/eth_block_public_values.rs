@@ -3,8 +3,9 @@ use std::io::Write;
 use std::path::Path;
 
 use lzvm_artifacts::eth_block_input::{
-    eth_block_input_receipt_kind_counts, eth_block_input_transaction_kind_counts,
-    eth_block_input_withdrawal_count, parse_eth_block_input,
+    eth_block_input_bytes_digest, eth_block_input_receipt_kind_counts,
+    eth_block_input_transaction_kind_counts, eth_block_input_withdrawal_count,
+    parse_eth_block_input,
 };
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
 use lzvm_artifacts::key_directory::key_directory_catalog_digest;
@@ -62,6 +63,7 @@ fn write_block_public_values(
             return 1;
         }
     };
+    let input_digest = eth_block_input_bytes_digest(&input_bytes);
     let withdrawal_count = match eth_block_input_withdrawal_count(&input) {
         Ok(count) => count,
         Err(error) => {
@@ -124,6 +126,10 @@ fn write_block_public_values(
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "public_values={}", output_path.display());
     let _ = writeln!(stdout, "bytes={}", encoded.len());
+    let _ = writeln!(stdout, "block_input={}", Path::new(input_path).display());
+    let _ = writeln!(stdout, "block_input_bytes={}", input_bytes.len());
+    let _ = writeln!(stdout, "block_input_hash={}", format_hash(&input_digest));
+    let _ = writeln!(stdout, "block_rlp_bytes={}", input.block_rlp.len());
     let _ = writeln!(stdout, "setup_hash={}", format_hash(&setup_hash));
     let _ = writeln!(
         stdout,

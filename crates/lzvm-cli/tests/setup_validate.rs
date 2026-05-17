@@ -6109,10 +6109,9 @@ fn writes_eth_block_public_values_from_setup_directory() {
     let block_input_path = dir.join("block.input");
     let public_values_path = dir.join("eth-public-values.bin");
     let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
-    write_bytes(
-        &block_input_path,
-        encode_eth_block_input(&block_input).expect("block input should encode"),
-    );
+    let block_input_bytes =
+        encode_eth_block_input(&block_input).expect("block input should encode");
+    write_bytes(&block_input_path, &block_input_bytes);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -6147,9 +6146,13 @@ fn writes_eth_block_public_values_from_setup_directory() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=21\npublic_value_fields=170\nblock_hash={}\nparent_hash={}\nommers_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\nlogs_bloom={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\ntransaction_count=1\nlegacy_transactions=1\ntyped_transactions=0\nreceipts=absent\nwithdrawals=absent\n",
+            "status=ok\npublic_values={}\nbytes={}\nblock_input={}\nblock_input_bytes={}\nblock_input_hash={}\nblock_rlp_bytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=21\npublic_value_fields=170\nblock_hash={}\nparent_hash={}\nommers_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\nlogs_bloom={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\ntransaction_count=1\nlegacy_transactions=1\ntyped_transactions=0\nreceipts=absent\nwithdrawals=absent\n",
             public_values_path.display(),
             encoded.len(),
+            block_input_path.display(),
+            block_input_bytes.len(),
+            format_hash(&eth_block_input_bytes_digest(&block_input_bytes)),
+            block_input.block_rlp.len(),
             setup_hash_hex,
             format_hash(&public_values_hash),
             format_hash(&block_input.block_hash),
