@@ -775,6 +775,50 @@ __global__ void poseidon2_width16_kernel(const uint64_t* values, uint64_t* out, 
     }
 }
 
+__global__ void pack_poseidon2_width8_merkle_parent_inputs_kernel(
+    const uint64_t* current_states,
+    uint64_t* packed,
+    size_t child_state_count) {
+    const size_t parent_index = blockIdx.x * blockDim.x + threadIdx.x;
+    const size_t parent_state_count = (child_state_count + 1) / 2;
+    if (parent_index < parent_state_count) {
+        const size_t out_offset = parent_index * kPoseidon2Width8;
+        const size_t first_child = parent_index * 2;
+        for (size_t slot = 0; slot < 2; ++slot) {
+            const size_t child_index = first_child + slot;
+            if (child_index < child_state_count) {
+                const size_t child_offset = child_index * kPoseidon2Width8;
+                const size_t slot_offset = out_offset + slot * 4;
+                for (size_t word = 0; word < 4; ++word) {
+                    packed[slot_offset + word] = current_states[child_offset + word];
+                }
+            }
+        }
+    }
+}
+
+__global__ void pack_poseidon2_width16_merkle_parent_inputs_kernel(
+    const uint64_t* current_states,
+    uint64_t* packed,
+    size_t child_state_count) {
+    const size_t parent_index = blockIdx.x * blockDim.x + threadIdx.x;
+    const size_t parent_state_count = (child_state_count + 3) / 4;
+    if (parent_index < parent_state_count) {
+        const size_t out_offset = parent_index * kPoseidon2Width16;
+        const size_t first_child = parent_index * 4;
+        for (size_t slot = 0; slot < 4; ++slot) {
+            const size_t child_index = first_child + slot;
+            if (child_index < child_state_count) {
+                const size_t child_offset = child_index * kPoseidon2Width16;
+                const size_t slot_offset = out_offset + slot * 4;
+                for (size_t word = 0; word < 4; ++word) {
+                    packed[slot_offset + word] = current_states[child_offset + word];
+                }
+            }
+        }
+    }
+}
+
 __device__ __forceinline__ size_t keccak_lane_index(size_t x, size_t y) {
     return x + 5 * y;
 }
@@ -994,6 +1038,60 @@ int run_poseidon2_width16_on_device(
     poseidon2_width16_kernel<<<blocks, kThreads>>>(device_values, device_out, state_count);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
+    return 0;
+}
+
+int run_poseidon2_width8_merkle_parent_on_device(
+    const uint64_t* device_values,
+    uint64_t* device_out,
+    size_t child_state_count) {
+    if (child_state_count == 0) {
+        return 0;
+    }
+    if (device_values == nullptr || device_out == nullptr) {
+        return -1;
+    }
+
+    const size_t parent_state_count = (child_state_count + 1) / 2;
+    DeviceBuffer<uint64_t> device_packed;
+
+    LZVM_CUDA_RETURN_ON_ERROR(device_packed.reset(parent_state_count * kPoseidon2Width8));
+    LZVM_CUDA_RETURN_ON_ERROR(cudaMemset(
+        device_packed.data(), 0, parent_state_count * kPoseidon2Width8 * sizeof(uint64_t)));
+
+    const size_t blocks = (parent_state_count + kThreads - 1) / kThreads;
+    pack_poseidon2_width8_merkle_parent_inputs_kernel<<<blocks, kThreads>>>(
+        device_values, device_packed.data(), child_state_count);
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+    LZVM_CUDA_RETURN_ON_ERROR(
+        run_poseidon2_width8_on_device(device_packed.data(), device_out, parent_state_count));
+    return 0;
+}
+
+int run_poseidon2_width16_merkle_parent_on_device(
+    const uint64_t* device_values,
+    uint64_t* device_out,
+    size_t child_state_count) {
+    if (child_state_count == 0) {
+        return 0;
+    }
+    if (device_values == nullptr || device_out == nullptr) {
+        return -1;
+    }
+
+    const size_t parent_state_count = (child_state_count + 3) / 4;
+    DeviceBuffer<uint64_t> device_packed;
+
+    LZVM_CUDA_RETURN_ON_ERROR(device_packed.reset(parent_state_count * kPoseidon2Width16));
+    LZVM_CUDA_RETURN_ON_ERROR(cudaMemset(
+        device_packed.data(), 0, parent_state_count * kPoseidon2Width16 * sizeof(uint64_t)));
+
+    const size_t blocks = (parent_state_count + kThreads - 1) / kThreads;
+    pack_poseidon2_width16_merkle_parent_inputs_kernel<<<blocks, kThreads>>>(
+        device_values, device_packed.data(), child_state_count);
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+    LZVM_CUDA_RETURN_ON_ERROR(
+        run_poseidon2_width16_on_device(device_packed.data(), device_out, parent_state_count));
     return 0;
 }
 
@@ -1377,6 +1475,13 @@ extern "C" int lzvm_cuda_poseidon2_width8_device(
     return run_poseidon2_width8_on_device(values, out, state_count);
 }
 
+extern "C" int lzvm_cuda_poseidon2_width8_merkle_parent_device(
+    const uint64_t* values,
+    uint64_t* out,
+    size_t child_state_count) {
+    return run_poseidon2_width8_merkle_parent_on_device(values, out, child_state_count);
+}
+
 extern "C" int lzvm_cuda_poseidon2_width16(
     const uint64_t* values,
     uint64_t* out,
@@ -1407,6 +1512,13 @@ extern "C" int lzvm_cuda_poseidon2_width16_device(
     uint64_t* out,
     size_t state_count) {
     return run_poseidon2_width16_on_device(values, out, state_count);
+}
+
+extern "C" int lzvm_cuda_poseidon2_width16_merkle_parent_device(
+    const uint64_t* values,
+    uint64_t* out,
+    size_t child_state_count) {
+    return run_poseidon2_width16_merkle_parent_on_device(values, out, child_state_count);
 }
 
 extern "C" int lzvm_cuda_keccak256_fixed(

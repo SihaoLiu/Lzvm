@@ -4,9 +4,10 @@ use lzvm_accel::{cuda_goldilocks_add, cuda_goldilocks_mul};
 use lzvm_accel::{
     cuda_goldilocks_butterfly, cuda_goldilocks_coset_extend, cuda_goldilocks_coset_extend_device,
     cuda_goldilocks_intt, cuda_goldilocks_ntt, cuda_keccak256_fixed, cuda_poseidon2_width16,
-    cuda_poseidon2_width16_device, cuda_poseidon2_width4, cuda_poseidon2_width4_device,
-    cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8, cuda_poseidon2_width8_device,
-    cuda_setup_init, CudaDeviceBuffer,
+    cuda_poseidon2_width16_device, cuda_poseidon2_width16_merkle_parent_device,
+    cuda_poseidon2_width4, cuda_poseidon2_width4_device, cuda_poseidon2_width4_find_nonce,
+    cuda_poseidon2_width8, cuda_poseidon2_width8_device,
+    cuda_poseidon2_width8_merkle_parent_device, cuda_setup_init, CudaDeviceBuffer,
 };
 #[cfg(feature = "cuda")]
 use lzvm_crypto::keccak256;
@@ -408,6 +409,36 @@ fn cuda_hashes_poseidon2_width_8_states_from_device_memory() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_hashes_poseidon2_width_8_parent_states_from_device_memory() {
+    let input = vec![
+        1, 2, 3, 4, 101, 102, 103, 104, 5, 6, 7, 8, 201, 202, 203, 204, 9, 10, 11, 12, 301, 302,
+        303, 304,
+    ];
+    let expected_inputs = [[1, 2, 3, 4, 5, 6, 7, 8], [9, 10, 11, 12, 0, 0, 0, 0]];
+    let expected = expected_inputs
+        .into_iter()
+        .flat_map(|state| {
+            poseidon2_hash_8(state.map(Felt::from_u64))
+                .map(Felt::to_u64)
+                .into_iter()
+        })
+        .collect::<Vec<_>>();
+
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&input).expect("input device buffer should allocate");
+    let mut output_buffer =
+        CudaDeviceBuffer::new(expected.len() * 8).expect("output device buffer should allocate");
+    cuda_poseidon2_width8_merkle_parent_device(&input_buffer, &mut output_buffer)
+        .expect("cuda device parent hash should run");
+    let actual = output_buffer
+        .to_u64_words()
+        .expect("device words should copy back to host");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_hashes_poseidon2_width_16_states() {
     let input = (0_u64..32).collect::<Vec<_>>();
     let expected = input
@@ -441,6 +472,40 @@ fn cuda_hashes_poseidon2_width_16_states_from_device_memory() {
         CudaDeviceBuffer::new(input.len() * 8).expect("output device buffer should allocate");
     cuda_poseidon2_width16_device(&input_buffer, &mut output_buffer)
         .expect("cuda device hash should run");
+    let actual = output_buffer
+        .to_u64_words()
+        .expect("device words should copy back to host");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_hashes_poseidon2_width_16_parent_states_from_device_memory() {
+    let mut input = Vec::with_capacity(5 * 16);
+    for child in 0..5_u64 {
+        input.extend((child * 4 + 1)..=(child * 4 + 4));
+        input.extend((0..12_u64).map(|tail| 1_000 + child * 100 + tail));
+    }
+    let expected_inputs = [
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+        [17, 18, 19, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ];
+    let expected = expected_inputs
+        .into_iter()
+        .flat_map(|state| {
+            poseidon2_hash_16(state.map(Felt::from_u64))
+                .map(Felt::to_u64)
+                .into_iter()
+        })
+        .collect::<Vec<_>>();
+
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&input).expect("input device buffer should allocate");
+    let mut output_buffer =
+        CudaDeviceBuffer::new(expected.len() * 8).expect("output device buffer should allocate");
+    cuda_poseidon2_width16_merkle_parent_device(&input_buffer, &mut output_buffer)
+        .expect("cuda device parent hash should run");
     let actual = output_buffer
         .to_u64_words()
         .expect("device words should copy back to host");
