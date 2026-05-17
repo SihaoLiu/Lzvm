@@ -92,6 +92,24 @@ fn wrap_regular_section(data: Vec<u8>) -> Vec<u8> {
     .expect("fixture should encode")
 }
 
+fn wrap_global_section(data: Vec<u8>) -> Vec<u8> {
+    encode_sectioned_file(&SectionedFile {
+        kind: *b"chps",
+        version: 1,
+        sections: vec![SectionedSection { id: 1, data }],
+    })
+    .expect("fixture should encode")
+}
+
+fn counted_section(ops_len: u32, args_len: u32, numbers_len: u32, entry_count: u32) -> Vec<u8> {
+    let mut section = Vec::new();
+    push_u32(&mut section, ops_len);
+    push_u32(&mut section, args_len);
+    push_u32(&mut section, numbers_len);
+    push_u32(&mut section, entry_count);
+    section
+}
+
 fn invalid_regular_span_file() -> Vec<u8> {
     let mut section = Vec::new();
     push_u32(&mut section, 3);
@@ -177,6 +195,46 @@ fn rejects_truncated_constraint_sections() {
     assert!(matches!(
         parse_regular_constraint_program(&truncated_regular_payload_file()),
         Err(ConstraintProgramError::UnexpectedEof { .. })
+    ));
+}
+
+#[test]
+fn rejects_regular_entry_count_that_exceeds_remaining_entry_records() {
+    let bytes = wrap_regular_section(counted_section(0, 0, 0, 1));
+
+    assert!(matches!(
+        parse_regular_constraint_program(&bytes),
+        Err(ConstraintProgramError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_global_entry_count_that_exceeds_remaining_entry_records() {
+    let bytes = wrap_global_section(counted_section(0, 0, 0, 1));
+
+    assert!(matches!(
+        parse_global_constraint_program(&bytes),
+        Err(ConstraintProgramError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_args_count_that_exceeds_remaining_args() {
+    let bytes = wrap_regular_section(counted_section(0, 1, 0, 0));
+
+    assert!(matches!(
+        parse_regular_constraint_program(&bytes),
+        Err(ConstraintProgramError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_numbers_count_that_exceeds_remaining_numbers() {
+    let bytes = wrap_regular_section(counted_section(0, 0, 1, 0));
+
+    assert!(matches!(
+        parse_regular_constraint_program(&bytes),
+        Err(ConstraintProgramError::LengthOverflow)
     ));
 }
 

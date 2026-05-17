@@ -7,6 +7,11 @@ use crate::sectioned::{
 
 type ConstraintBuffers = (Vec<u8>, Vec<u16>, Vec<u64>);
 
+const REGULAR_ENTRY_MIN_BYTES: usize = 12 * 4 + 1;
+const GLOBAL_ENTRY_MIN_BYTES: usize = 8 * 4 + 1;
+const ARG_BYTES: usize = 2;
+const NUMBER_BYTES: usize = 8;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConstraintProgram {
     pub entries: Vec<ConstraintEntry>,
@@ -204,9 +209,12 @@ fn parse_regular_section(bytes: &[u8]) -> Result<ConstraintProgram, ConstraintPr
     let ops_len = reader.read_u32()?;
     let args_len = reader.read_u32()?;
     let numbers_len = reader.read_u32()?;
-    let entry_count = reader.read_u32()?;
+    let entry_count = u32_to_usize(reader.read_u32()?)?;
 
-    let mut entries = Vec::with_capacity(entry_count as usize);
+    if entry_count > reader.remaining_len() / REGULAR_ENTRY_MIN_BYTES {
+        return Err(ConstraintProgramError::LengthOverflow);
+    }
+    let mut entries = Vec::with_capacity(entry_count);
     for _ in 0..entry_count {
         entries.push(ConstraintEntry {
             stage: reader.read_u32()?,
@@ -243,9 +251,12 @@ fn parse_global_section(bytes: &[u8]) -> Result<GlobalConstraintProgram, Constra
     let ops_len = reader.read_u32()?;
     let args_len = reader.read_u32()?;
     let numbers_len = reader.read_u32()?;
-    let entry_count = reader.read_u32()?;
+    let entry_count = u32_to_usize(reader.read_u32()?)?;
 
-    let mut entries = Vec::with_capacity(entry_count as usize);
+    if entry_count > reader.remaining_len() / GLOBAL_ENTRY_MIN_BYTES {
+        return Err(ConstraintProgramError::LengthOverflow);
+    }
+    let mut entries = Vec::with_capacity(entry_count);
     for _ in 0..entry_count {
         entries.push(GlobalConstraintEntry {
             destination_dimension: reader.read_u32()?,
@@ -350,9 +361,15 @@ fn read_buffers(
         usize::try_from(numbers_len).map_err(|_| ConstraintProgramError::LengthOverflow)?;
 
     let ops = reader.read_exact(ops_count)?.to_vec();
+    if args_count > reader.remaining_len() / ARG_BYTES {
+        return Err(ConstraintProgramError::LengthOverflow);
+    }
     let mut args = Vec::with_capacity(args_count);
     for _ in 0..args_count {
         args.push(reader.read_u16()?);
+    }
+    if numbers_count > reader.remaining_len() / NUMBER_BYTES {
+        return Err(ConstraintProgramError::LengthOverflow);
     }
     let mut numbers = Vec::with_capacity(numbers_count);
     for _ in 0..numbers_count {
@@ -488,6 +505,10 @@ fn write_string(out: &mut Vec<u8>, value: &str) -> Result<(), ConstraintProgramE
     Ok(())
 }
 
+fn u32_to_usize(value: u32) -> Result<usize, ConstraintProgramError> {
+    usize::try_from(value).map_err(|_| ConstraintProgramError::LengthOverflow)
+}
+
 struct Reader<'a> {
     bytes: &'a [u8],
     offset: usize,
@@ -500,6 +521,10 @@ impl<'a> Reader<'a> {
 
     fn position(&self) -> usize {
         self.offset
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], ConstraintProgramError> {
