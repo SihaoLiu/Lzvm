@@ -280,11 +280,14 @@ fn parse_function_statement(
     let value = function_statement_value_span(tokens, index, next_index, kind);
     let value_expression = function_statement_expression(tokens, value.as_ref(), kind, source)?;
     let declaration = function_statement_declaration(tokens, index, next_index, kind, source);
+    let header_declaration =
+        function_statement_header_declaration(tokens, header.as_ref(), kind, source);
 
     Ok(ParsedFunctionStatement {
         statement: FunctionStatement {
             kind,
             declaration,
+            header_declaration,
             header,
             body,
             value,
@@ -727,6 +730,64 @@ fn function_statement_declaration(
     }
 
     Some(parsed.declaration)
+}
+
+fn function_statement_header_declaration(
+    tokens: &[Token],
+    header: Option<&SourceSpan>,
+    kind: FunctionStatementKind,
+    source: &SourceFile,
+) -> Option<FunctionStatementDeclaration> {
+    if kind != FunctionStatementKind::For {
+        return None;
+    }
+
+    let header = header?;
+    let (start_index, end_index) = token_span_bounds(tokens, header)?;
+    let init_index = start_index.checked_add(1)?;
+    if init_index >= end_index {
+        return None;
+    }
+    let semicolon_index = first_for_header_semicolon(tokens, init_index, end_index)?;
+    let parsed = parse_function_statement_declaration_at(tokens, init_index, source)
+        .ok()
+        .flatten()?;
+    if parsed.next_index != semicolon_index + 1 {
+        return None;
+    }
+
+    Some(parsed.declaration)
+}
+
+fn first_for_header_semicolon(
+    tokens: &[Token],
+    mut cursor: usize,
+    limit_index: usize,
+) -> Option<usize> {
+    let mut stack: Vec<TokenKind> = Vec::new();
+
+    while cursor < limit_index {
+        let token = tokens.get(cursor)?;
+        if stack.is_empty() && token.kind == TokenKind::Semicolon {
+            return Some(cursor);
+        }
+
+        match token.kind {
+            TokenKind::LParen => stack.push(TokenKind::RParen),
+            TokenKind::LBracket => stack.push(TokenKind::RBracket),
+            TokenKind::LBrace => stack.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                let expected = stack.pop()?;
+                if expected != token.kind {
+                    return None;
+                }
+            }
+            _ => {}
+        }
+        cursor += 1;
+    }
+
+    None
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

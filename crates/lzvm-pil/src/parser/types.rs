@@ -152,6 +152,7 @@ pub enum FunctionStatementDeclaration {
 pub struct FunctionStatement {
     pub kind: FunctionStatementKind,
     pub declaration: Option<FunctionStatementDeclaration>,
+    pub header_declaration: Option<FunctionStatementDeclaration>,
     pub header: Option<SourceSpan>,
     pub body: Option<SourceSpan>,
     pub value: Option<SourceSpan>,

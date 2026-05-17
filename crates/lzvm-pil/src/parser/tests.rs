@@ -892,6 +892,24 @@ fn parses_function_body_statement_spans() {
             .start..declarations[1].statements[1].header.unwrap().end],
         "(int i = 0; i < length(values); ++i)"
     );
+    match declarations[1].statements[1]
+        .header_declaration
+        .as_ref()
+        .expect("loop header declaration should be recorded")
+    {
+        FunctionStatementDeclaration::Variable(declaration) => {
+            assert_eq!(declaration.type_name, "int");
+            assert_eq!(declaration.name, "i");
+            assert_integer_expression(
+                declaration
+                    .initializer_expression
+                    .as_ref()
+                    .expect("loop initializer should be parsed"),
+                "0",
+            );
+        }
+        other => panic!("unexpected declaration payload: {other:?}"),
+    }
     assert_eq!(
         &source.contents[declarations[1].statements[1]
             .body
