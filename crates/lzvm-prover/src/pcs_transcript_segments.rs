@@ -27,6 +27,7 @@ use crate::ProveSchedule;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcsTranscriptProofSegmentsError {
     MissingMaterialSegment,
+    DuplicateMaterialSegment,
     QueryPlan(LoadPcsQueryPlanSegmentError),
     Material(PcsMaterialManifestSegmentError),
     Fri(LoadPcsFriOpeningSegmentError),
@@ -55,6 +56,9 @@ impl fmt::Display for PcsTranscriptProofSegmentsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingMaterialSegment => write!(f, "missing PCS material manifest segment"),
+            Self::DuplicateMaterialSegment => {
+                write!(f, "duplicate PCS material manifest segment")
+            }
             Self::QueryPlan(error) => write!(f, "{error}"),
             Self::Material(error) => write!(f, "invalid PCS material manifest segment: {error}"),
             Self::Fri(error) => write!(f, "{error}"),
@@ -91,6 +95,7 @@ impl std::error::Error for PcsTranscriptProofSegmentsError {
             Self::UnitValues(error) => Some(error),
             Self::Transcript(error) => Some(error),
             Self::MissingMaterialSegment
+            | Self::DuplicateMaterialSegment
             | Self::UnitIndexOverflow
             | Self::WitnessSegmentIdOverflow
             | Self::UnitMismatch { .. } => None,
@@ -116,10 +121,15 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
     public_values: &[Felt],
     segments: &[ProofSegment],
 ) -> Result<Vec<PcsTranscriptUnitChallenges>, PcsTranscriptProofSegmentsError> {
-    let material_segment = segments
+    let mut material_segments = segments
         .iter()
-        .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
+        .filter(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID);
+    let material_segment = material_segments
+        .next()
         .ok_or(PcsTranscriptProofSegmentsError::MissingMaterialSegment)?;
+    if material_segments.next().is_some() {
+        return Err(PcsTranscriptProofSegmentsError::DuplicateMaterialSegment);
+    }
     let query_plan = load_pcs_query_plan_from_segments(segments)
         .map_err(PcsTranscriptProofSegmentsError::QueryPlan)?;
     let material = parse_pcs_material_manifest_segment(&material_segment.data)

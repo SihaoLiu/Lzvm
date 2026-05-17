@@ -105,6 +105,19 @@ fn rejects_transcript_challenge_query_unit_mismatches() {
     );
 }
 
+#[test]
+fn rejects_duplicate_transcript_material_segments() {
+    let schedule = sample_schedule();
+    let mut segments = transcript_segments(0);
+    let duplicate = segments[0].clone();
+    segments.insert(1, duplicate);
+
+    let error = derive_pcs_transcript_challenges_from_proof_segments(&schedule, &[], &segments)
+        .expect_err("duplicate material segment should be rejected");
+
+    assert_eq!(error.to_string(), "duplicate PCS material manifest segment");
+}
+
 fn transcript_segments(query_unit_index: u32) -> Vec<ProofSegment> {
     vec![
         ProofSegment {
