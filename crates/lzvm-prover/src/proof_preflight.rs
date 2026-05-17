@@ -33,6 +33,7 @@ pub enum ProofPreflightError {
     SetupHashMismatch,
     PublicValuesDigest(PublicValuesError),
     PublicValuesHashMismatch,
+    PublicValuesField(PublicValueFieldError),
     ProgramImageCache(ProgramImageCacheSegmentError),
     EthBlockInput(EthBlockInputError),
     EthBlockPublicValues(EthBlockPublicValuesError),
@@ -58,6 +59,7 @@ impl fmt::Display for ProofPreflightError {
             Self::SetupHashMismatch => write!(f, "setup hash mismatch"),
             Self::PublicValuesDigest(error) => write!(f, "{error}"),
             Self::PublicValuesHashMismatch => write!(f, "public-values hash mismatch"),
+            Self::PublicValuesField(error) => write!(f, "{error}"),
             Self::ProgramImageCache(error) => write!(f, "{error}"),
             Self::EthBlockInput(error) => write!(f, "{error}"),
             Self::EthBlockPublicValues(error) => write!(f, "{error}"),
@@ -89,6 +91,7 @@ impl std::error::Error for ProofPreflightError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::PublicValuesDigest(error) => Some(error),
+            Self::PublicValuesField(error) => Some(error),
             Self::ProgramImageCache(error) => Some(error),
             Self::EthBlockInput(error) => Some(error),
             Self::EthBlockPublicValues(error) => Some(error),
@@ -151,6 +154,7 @@ pub fn validate_proof_public_values(
     if proof.public_values_hash != digest {
         return Err(ProofPreflightError::PublicValuesHashMismatch);
     }
+    public_values_as_fields(public_values).map_err(ProofPreflightError::PublicValuesField)?;
     let mut program_image_cache_count = 0;
     for segment in proof
         .segments

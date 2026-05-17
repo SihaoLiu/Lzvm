@@ -10,6 +10,7 @@ use lzvm_artifacts::public_values::{
     encode_public_values, public_values_digest, PublicValueEntry, PublicValues,
 };
 use lzvm_cli::run_cli;
+use lzvm_field::MODULUS;
 use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
 
 fn sample_hash(byte: u8) -> [u8; 32] {
@@ -253,6 +254,40 @@ fn rejects_preflight_with_mismatched_public_values_hashes() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "verify preflight failed: public-values hash mismatch\n"
+    );
+}
+
+#[test]
+fn rejects_preflight_with_noncanonical_public_values() {
+    let mut values = sample_public_values();
+    values.values.push(PublicValueEntry {
+        name: "bad_value".to_owned(),
+        elements: vec![MODULUS],
+    });
+    let proof = sample_proof(&values);
+    let (dir, proof_path, public_path) = write_fixture_pair("bad-public-field", &proof, &values);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "preflight",
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_path.to_str().expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        format!(
+            "verify preflight failed: invalid PCS transcript public value: non-canonical field element: {MODULUS}\n"
+        )
     );
 }
 
