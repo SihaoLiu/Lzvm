@@ -95,6 +95,7 @@ pub(crate) fn parse_run_args(
     let mut save_outputs = false;
     let mut minimal_memory = false;
     let mut gpu = GpuRunOptions::default();
+    let mut gpu_streams_used = false;
     let mut input_data = None;
     let mut program_image_cache = None;
     let mut pass_selection = None;
@@ -128,6 +129,11 @@ pub(crate) fn parse_run_args(
             }
             "--gpu-streams" => {
                 index += 1;
+                if std::mem::replace(&mut gpu_streams_used, true) {
+                    return Err(ParseError::Invalid(
+                        "duplicate --gpu-streams option".to_owned(),
+                    ));
+                }
                 gpu.max_streams = parse_usize(args.get(index), "--gpu-streams")?;
             }
             "--witness-thread-pools" => {
@@ -492,6 +498,27 @@ mod tests {
         assert!(matches!(
             result,
             Err(ParseError::Invalid(message)) if message == "duplicate --input-data option"
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_gpu_streams_option() {
+        let result = parse_run_args(
+            &[
+                "--gpu-streams",
+                "4",
+                "--gpu-streams",
+                "8",
+                "setup-dir",
+                "out-dir",
+            ],
+            2,
+            2,
+        );
+
+        assert!(matches!(
+            result,
+            Err(ParseError::Invalid(message)) if message == "duplicate --gpu-streams option"
         ));
     }
 
