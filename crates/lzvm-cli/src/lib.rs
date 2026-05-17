@@ -12,6 +12,9 @@ use lzvm_artifacts::eth_block_public_values::validate_eth_block_public_values;
 use lzvm_artifacts::program_image::{
     read_program_image_commitment_cache_file, ProgramImageGpuMode,
 };
+use lzvm_artifacts::program_image_segment::{
+    encode_program_image_cache_segment, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+};
 use lzvm_artifacts::proof::read_proof_artifact_file;
 use lzvm_artifacts::public_values::read_public_values_file;
 use lzvm_artifacts::trace_bundle::{encode_trace_bundle, TraceBundle, TraceBundleUnit};
@@ -650,11 +653,14 @@ fn verify_setup_preflight(
     stderr: &mut dyn Write,
 ) -> i32 {
     verify_setup_validation(
-        "verify setup-preflight",
-        setup_dir,
-        proof_bin,
-        public_values_path,
-        None,
+        VerifySetupValidationCommand {
+            role: "verify setup-preflight",
+            setup_dir,
+            proof_bin,
+            public_values_path,
+            eth_block_input: None,
+            program_image_cache: None,
+        },
         stdout,
         stderr,
     )
@@ -665,12 +671,14 @@ struct ParsedVerifyProofArgs<'a> {
     proof_bin: &'a str,
     public_values_path: &'a str,
     eth_block_input: Option<&'a str>,
+    program_image_cache: Option<&'a str>,
 }
 
 fn parse_verify_proof_args<'a>(
     args: &'a [&'a str],
 ) -> Result<ParsedVerifyProofArgs<'a>, VerifyProofArgError> {
     let mut eth_block_input = None;
+    let mut program_image_cache = None;
     let mut positionals = Vec::with_capacity(args.len());
     let mut index = 0;
     while index < args.len() {
@@ -686,6 +694,17 @@ fn parse_verify_proof_args<'a>(
                     ));
                 }
             }
+            "--program-image-cache" => {
+                index += 1;
+                let value = args.get(index).ok_or_else(|| {
+                    VerifyProofArgError::Invalid("missing --program-image-cache value".to_owned())
+                })?;
+                if program_image_cache.replace(*value).is_some() {
+                    return Err(VerifyProofArgError::Invalid(
+                        "duplicate --program-image-cache option".to_owned(),
+                    ));
+                }
+            }
             value => positionals.push(value),
         }
         index += 1;
@@ -698,6 +717,7 @@ fn parse_verify_proof_args<'a>(
         proof_bin: positionals[1],
         public_values_path: positionals[2],
         eth_block_input,
+        program_image_cache,
     })
 }
 
@@ -716,11 +736,14 @@ fn verify_proof(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -
         }
     };
     verify_setup_validation(
-        "verify proof",
-        parsed.setup_dir,
-        parsed.proof_bin,
-        parsed.public_values_path,
-        parsed.eth_block_input,
+        VerifySetupValidationCommand {
+            role: "verify proof",
+            setup_dir: parsed.setup_dir,
+            proof_bin: parsed.proof_bin,
+            public_values_path: parsed.public_values_path,
+            eth_block_input: parsed.eth_block_input,
+            program_image_cache: parsed.program_image_cache,
+        },
         stdout,
         stderr,
     )
@@ -813,34 +836,53 @@ fn verify_contribution_set(
     0
 }
 
+struct VerifySetupValidationCommand<'a> {
+    role: &'a str,
+    setup_dir: &'a str,
+    proof_bin: &'a str,
+    public_values_path: &'a str,
+    eth_block_input: Option<&'a str>,
+    program_image_cache: Option<&'a str>,
+}
+
 fn verify_setup_validation(
-    role: &str,
-    setup_dir: &str,
-    proof_bin: &str,
-    public_values_path: &str,
-    eth_block_input: Option<&str>,
+    command: VerifySetupValidationCommand<'_>,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    let eth_block_input_hash = if let Some(path) = eth_block_input {
-        match verify_eth_block_input_binding(proof_bin, public_values_path, path) {
+    let eth_block_input_hash = if let Some(path) = command.eth_block_input {
+        match verify_eth_block_input_binding(command.proof_bin, command.public_values_path, path) {
             Ok(hash) => Some(hash),
             Err(message) => {
-                let _ = writeln!(stderr, "{role} failed: {message}");
+                let _ = writeln!(stderr, "{} failed: {message}", command.role);
                 return 1;
             }
         }
     } else {
         None
     };
-    let public_report =
-        match validate_setup_preflight_from_files(setup_dir, proof_bin, public_values_path) {
-            Ok(report) => report,
-            Err(error) => {
-                let _ = writeln!(stderr, "{role} failed: {error}");
+    let program_image_cache_matched = if let Some(path) = command.program_image_cache {
+        match verify_program_image_cache_binding(command.proof_bin, path) {
+            Ok(()) => true,
+            Err(message) => {
+                let _ = writeln!(stderr, "{} failed: {message}", command.role);
                 return 1;
             }
-        };
+        }
+    } else {
+        false
+    };
+    let public_report = match validate_setup_preflight_from_files(
+        command.setup_dir,
+        command.proof_bin,
+        command.public_values_path,
+    ) {
+        Ok(report) => report,
+        Err(error) => {
+            let _ = writeln!(stderr, "{} failed: {error}", command.role);
+            return 1;
+        }
+    };
 
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "units={}", public_report.unit_count);
@@ -890,7 +932,28 @@ fn verify_setup_validation(
         }
         let _ = writeln!(stdout, "eth_block_input_match=ok");
     }
+    if program_image_cache_matched {
+        let _ = writeln!(stdout, "program_image_cache_match=ok");
+    }
     0
+}
+
+fn verify_program_image_cache_binding(proof_bin: &str, cache_path: &str) -> Result<(), String> {
+    let proof = read_proof_artifact_file(proof_bin)
+        .map_err(|error| format!("read proof artifact failed: {proof_bin}: {error}"))?;
+    let cache = read_program_image_commitment_cache_file(cache_path)
+        .map_err(|error| format!("read program-image cache failed: {cache_path}: {error}"))?;
+    let expected = encode_program_image_cache_segment(&cache)
+        .map_err(|error| format!("encode program-image cache segment failed: {error}"))?;
+    let segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PROGRAM_IMAGE_CACHE_SEGMENT_ID)
+        .ok_or_else(|| "missing program image cache proof segment".to_owned())?;
+    if segment.data != expected {
+        return Err("program image cache proof segment mismatch".to_owned());
+    }
+    Ok(())
 }
 
 fn verify_eth_block_input_binding(
@@ -1456,7 +1519,7 @@ fn write_verify_setup_preflight_usage(stderr: &mut dyn Write) -> i32 {
 fn write_verify_proof_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm verify proof [--eth-block-input <block-input>] <setup-dir> <proof-bin> <public-values>"
+        "usage: lzvm verify proof [--eth-block-input <block-input>] [--program-image-cache <cache-bin>] <setup-dir> <proof-bin> <public-values>"
     );
     2
 }

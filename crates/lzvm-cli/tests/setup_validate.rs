@@ -4603,9 +4603,11 @@ fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
     let input_data = dir.join("input.bin");
     let public_values_path = dir.join("public_values.bin");
     let program_path = dir.join("program.bin");
+    let other_program_path = dir.join("other-program.bin");
     let constraint_digest_path = dir.join("constraint.digest");
     let root_path = dir.join("root.bin");
     let cache_path = dir.join("program_image.cache");
+    let other_cache_path = dir.join("other-program_image.cache");
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(&input_data, [7_u8]);
     write_bytes(
@@ -4614,6 +4616,7 @@ fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
             .expect("public values should encode"),
     );
     write_bytes(&program_path, b"packed-program");
+    write_bytes(&other_program_path, b"other-packed-program");
     write_bytes(&constraint_digest_path, [0x44_u8; 32]);
     write_bytes(
         &root_path,
@@ -4633,6 +4636,19 @@ fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
         output_path: &cache_path,
     })
     .expect("cache should write");
+    write_program_image_commitment_cache_file(ProgramImageCommitmentCacheFileRequest {
+        program_path: &other_program_path,
+        guest_image_path: &guest_image,
+        constraint_digest_path: &constraint_digest_path,
+        root_path: &root_path,
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cuda,
+        output_path: &other_cache_path,
+    })
+    .expect("other cache should write");
     let expected_cache =
         read_program_image_commitment_cache_file(&cache_path).expect("cache should read");
 
@@ -4687,6 +4703,44 @@ fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
         &mut verify_stderr,
     );
     let verify_stdout_text = String::from_utf8(verify_stdout).expect("stdout should be utf-8");
+    let mut proof_verify_stdout = Vec::new();
+    let mut proof_verify_stderr = Vec::new();
+    let proof_verify_code = run_cli(
+        &[
+            "verify",
+            "proof",
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            dir.to_str().expect("setup path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut proof_verify_stdout,
+        &mut proof_verify_stderr,
+    );
+    let proof_verify_stdout_text =
+        String::from_utf8(proof_verify_stdout).expect("stdout should be utf-8");
+    let mut mismatch_stdout = Vec::new();
+    let mut mismatch_stderr = Vec::new();
+    let mismatch_code = run_cli(
+        &[
+            "verify",
+            "proof",
+            "--program-image-cache",
+            other_cache_path
+                .to_str()
+                .expect("cache path should be utf-8"),
+            dir.to_str().expect("setup path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut mismatch_stdout,
+        &mut mismatch_stderr,
+    );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
@@ -4720,6 +4774,24 @@ fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
     assert!(verify_stdout_text.contains("program_image_cache_blowup_factor=8\n"));
     assert!(verify_stdout_text.contains("program_image_cache_arity=4\n"));
     assert!(verify_stdout_text.contains("program_image_cache_gpu_mode=cuda\n"));
+    assert_eq!(
+        proof_verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&proof_verify_stderr)
+    );
+    assert!(proof_verify_stderr.is_empty());
+    assert!(proof_verify_stdout_text.contains(&format!(
+        "program_image_cache_program_digest={}\n",
+        format_hash(&expected_cache.program_digest)
+    )));
+    assert!(proof_verify_stdout_text.contains("program_image_cache_match=ok\n"));
+    assert_eq!(mismatch_code, 1);
+    assert!(mismatch_stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(mismatch_stderr).expect("mismatch stderr should be utf-8"),
+        "verify proof failed: program image cache proof segment mismatch\n"
+    );
     assert_eq!(parsed_cache, expected_cache);
 }
 
@@ -9637,7 +9709,7 @@ fn reports_usage_for_missing_verify_proof_inputs() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm verify proof [--eth-block-input <block-input>] <setup-dir> <proof-bin> <public-values>\n"
+        "usage: lzvm verify proof [--eth-block-input <block-input>] [--program-image-cache <cache-bin>] <setup-dir> <proof-bin> <public-values>\n"
     );
 }
 
