@@ -19,6 +19,7 @@ use lzvm_setup::{
 
 mod pil_archive;
 mod pil_archive_summary;
+mod pil_fixed_file_manifest;
 mod pil_graph;
 mod pil_summary;
 mod program_image_cache;
@@ -32,6 +33,9 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
     match args {
         ["pil", "archive", rest @ ..] => pil_archive::run(rest, stdout, stderr),
         ["pil", "archive-summary", rest @ ..] => pil_archive_summary::run(rest, stdout, stderr),
+        ["pil", "fixed-file-manifest", rest @ ..] => {
+            pil_fixed_file_manifest::run(rest, stdout, stderr)
+        }
         ["pil", "graph", rest @ ..] => pil_graph::run(rest, stdout, stderr),
         ["pil", "summary", rest @ ..] => pil_summary::run(rest, stdout, stderr),
         ["prove", "inputs", rest @ ..] => prove_inputs::run(rest, stdout, stderr),
@@ -243,6 +247,9 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
         ["setup", "write-pcs-material-directory", ..] => write_pcs_material_directory_usage(stderr),
         ["setup", "write-source-program-archive", rest @ ..] => {
             pil_archive::run(rest, stdout, stderr)
+        }
+        ["setup", "write-source-fixed-file-manifest", rest @ ..] => {
+            pil_fixed_file_manifest::run(rest, stdout, stderr)
         }
         ["setup", "write-verkey-native", setup_info_bin, consttree, out_verkey_bin] => {
             write_verification_key_native(setup_info_bin, consttree, out_verkey_bin, stdout, stderr)

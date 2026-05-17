@@ -1,0 +1,103 @@
+use std::io::Write;
+use std::path::PathBuf;
+
+use lzvm_setup::{write_source_fixed_file_manifest, SourceFixedFileManifestWriteRequest};
+
+pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
+    let parsed = match parse_args(args) {
+        Ok(parsed) => parsed,
+        Err(ParseError::Usage) => return write_usage(stderr),
+        Err(ParseError::Invalid(message)) => {
+            let _ = writeln!(stderr, "pil fixed-file-manifest failed: {message}");
+            return 1;
+        }
+    };
+
+    let request = SourceFixedFileManifestWriteRequest {
+        working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        include_paths: parsed.include_paths,
+        include_path_first: parsed.include_path_first,
+        main_file: parsed.main_file,
+        output_path: parsed.output_path,
+    };
+    let report = match write_source_fixed_file_manifest(&request) {
+        Ok(report) => report,
+        Err(error) => {
+            let _ = writeln!(stderr, "pil fixed-file-manifest failed: {error}");
+            return 1;
+        }
+    };
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "bytes_written={}", report.bytes_written);
+    let _ = writeln!(stdout, "modules={}", report.module_count);
+    let _ = writeln!(
+        stdout,
+        "fixed_file_pragmas={}",
+        report.fixed_file_pragma_count
+    );
+    let _ = writeln!(
+        stdout,
+        "air_template_fixed_file_pragmas={}",
+        report.air_template_fixed_file_pragma_count
+    );
+    let _ = writeln!(stdout, "air_units={}", report.air_unit_count);
+    let _ = writeln!(stdout, "entries={}", report.entry_count);
+    let _ = writeln!(stdout, "output={}", report.output_path.display());
+    0
+}
+
+struct ParsedArgs {
+    main_file: PathBuf,
+    output_path: PathBuf,
+    include_paths: Vec<PathBuf>,
+    include_path_first: bool,
+}
+
+enum ParseError {
+    Usage,
+    Invalid(String),
+}
+
+fn parse_args(args: &[&str]) -> Result<ParsedArgs, ParseError> {
+    let mut include_paths = Vec::new();
+    let mut include_path_first = false;
+    let mut positionals = Vec::new();
+    let mut index = 0;
+
+    while index < args.len() {
+        match args[index] {
+            "--include-path" => {
+                index += 1;
+                let value = args.get(index).ok_or_else(|| {
+                    ParseError::Invalid("missing --include-path value".to_owned())
+                })?;
+                include_paths.push(PathBuf::from(value));
+            }
+            "--include-path-first" => include_path_first = true,
+            value if value.starts_with("--") => {
+                return Err(ParseError::Invalid(format!("unknown option {value}")));
+            }
+            value => positionals.push(PathBuf::from(value)),
+        }
+        index += 1;
+    }
+
+    let [main_file, output_path] = positionals.as_slice() else {
+        return Err(ParseError::Usage);
+    };
+
+    Ok(ParsedArgs {
+        main_file: main_file.clone(),
+        output_path: output_path.clone(),
+        include_paths,
+        include_path_first,
+    })
+}
+
+fn write_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm pil fixed-file-manifest [--include-path <dir>] [--include-path-first] <main-file> <output-file>"
+    );
+    2
+}
