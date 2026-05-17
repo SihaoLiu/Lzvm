@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
+use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedSection};
 use lzvm_artifacts::setup_manifest::{
     encode_setup_directory_manifest, parse_setup_directory_manifest,
     read_setup_directory_manifest_file, SetupDirectoryManifest, SetupDirectoryManifestError,
@@ -13,6 +14,8 @@ fn sample_manifest() -> SetupDirectoryManifest {
         fixed_byte_count: 128,
         pcs_material_unit_count: 4,
         pcs_material_byte_count: 512,
+        source_fixed_file_manifest_present: true,
+        source_fixed_file_manifest_entry_count: 7,
         catalog_digest: [0x55; 32],
     }
 }
@@ -29,6 +32,31 @@ fn encodes_and_parses_setup_directory_manifest() {
 
     assert_eq!(&encoded[0..4], b"sdmf");
     assert_eq!(parsed, sample_manifest());
+}
+
+#[test]
+fn parses_legacy_setup_directory_manifests_without_source_fixed_file_counts() {
+    let mut payload = Vec::new();
+    for value in [4_u64, 3, 128, 4, 512] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    payload.extend_from_slice(&[0x55; 32]);
+    let bytes = encode_sectioned_file(&SectionedFile {
+        kind: *b"sdmf",
+        version: 1,
+        sections: vec![SectionedSection {
+            id: 1,
+            data: payload,
+        }],
+    })
+    .expect("legacy manifest should encode");
+
+    let parsed = parse_setup_directory_manifest(&bytes).expect("legacy manifest should parse");
+
+    assert!(!parsed.source_fixed_file_manifest_present);
+    assert_eq!(parsed.source_fixed_file_manifest_entry_count, 0);
+    assert_eq!(parsed.unit_count, 4);
+    assert_eq!(parsed.catalog_digest, [0x55; 32]);
 }
 
 #[test]

@@ -9,10 +9,11 @@ use crate::sectioned::{
 pub const SETUP_DIRECTORY_MANIFEST_FILE: &str = "lzvm.setup-manifest";
 
 const SETUP_DIRECTORY_MANIFEST_KIND: [u8; 4] = *b"sdmf";
-const SETUP_DIRECTORY_MANIFEST_VERSION: u32 = 1;
+const SETUP_DIRECTORY_MANIFEST_VERSION: u32 = 2;
 const SETUP_DIRECTORY_MANIFEST_SECTION_ID: u32 = 1;
 const DIGEST_BYTES: usize = 32;
-const PAYLOAD_BYTES: usize = 5 * 8 + DIGEST_BYTES;
+const PAYLOAD_V1_BYTES: usize = 5 * 8 + DIGEST_BYTES;
+const PAYLOAD_V2_BYTES: usize = PAYLOAD_V1_BYTES + 2 * 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SetupDirectoryManifest {
@@ -21,6 +22,8 @@ pub struct SetupDirectoryManifest {
     pub fixed_byte_count: u64,
     pub pcs_material_unit_count: u64,
     pub pcs_material_byte_count: u64,
+    pub source_fixed_file_manifest_present: bool,
+    pub source_fixed_file_manifest_entry_count: u64,
     pub catalog_digest: [u8; 32],
 }
 
@@ -142,6 +145,14 @@ pub fn build_setup_directory_manifest(
                 .checked_add(bytes)
                 .ok_or(SetupDirectoryManifestError::LengthOverflow)
         })?;
+    let source_fixed_file_manifest_present = catalog.source_fixed_file_manifest.is_some();
+    let source_fixed_file_manifest_entry_count = catalog
+        .source_fixed_file_manifest
+        .as_ref()
+        .map(|manifest| u64::try_from(manifest.entries.len()))
+        .transpose()
+        .map_err(|_| SetupDirectoryManifestError::LengthOverflow)?
+        .unwrap_or_default();
 
     let out = SetupDirectoryManifest {
         unit_count,
@@ -149,6 +160,8 @@ pub fn build_setup_directory_manifest(
         fixed_byte_count,
         pcs_material_unit_count,
         pcs_material_byte_count,
+        source_fixed_file_manifest_present,
+        source_fixed_file_manifest_entry_count,
         catalog_digest: key_directory_catalog_digest(catalog)?,
     };
     validate_setup_directory_manifest(&out)?;
@@ -198,7 +211,7 @@ pub fn parse_setup_directory_manifest(
     if section.id != SETUP_DIRECTORY_MANIFEST_SECTION_ID {
         return Err(SetupDirectoryManifestError::InvalidSectionId { found: section.id });
     }
-    let out = parse_setup_directory_manifest_payload(&section.data)?;
+    let out = parse_setup_directory_manifest_payload(file.version, &section.data)?;
     validate_setup_directory_manifest(&out)?;
     Ok(out)
 }
@@ -234,11 +247,16 @@ fn validate_setup_directory_manifest(
 }
 
 fn parse_setup_directory_manifest_payload(
+    version: u32,
     bytes: &[u8],
 ) -> Result<SetupDirectoryManifest, SetupDirectoryManifestError> {
-    if bytes.len() != PAYLOAD_BYTES {
+    let expected = match version {
+        0 | 1 => PAYLOAD_V1_BYTES,
+        _ => PAYLOAD_V2_BYTES,
+    };
+    if bytes.len() != expected {
         return Err(SetupDirectoryManifestError::InvalidPayloadLength {
-            expected: PAYLOAD_BYTES,
+            expected,
             found: bytes.len(),
         });
     }
@@ -250,17 +268,29 @@ fn parse_setup_directory_manifest_payload(
         fixed_byte_count: read_u64(bytes, &mut offset),
         pcs_material_unit_count: read_u64(bytes, &mut offset),
         pcs_material_byte_count: read_u64(bytes, &mut offset),
+        source_fixed_file_manifest_present: if version >= 2 {
+            read_u64(bytes, &mut offset) != 0
+        } else {
+            false
+        },
+        source_fixed_file_manifest_entry_count: if version >= 2 {
+            read_u64(bytes, &mut offset)
+        } else {
+            0
+        },
         catalog_digest: read_digest(bytes, &mut offset),
     })
 }
 
 fn encode_setup_directory_manifest_payload(value: &SetupDirectoryManifest) -> Vec<u8> {
-    let mut out = Vec::with_capacity(PAYLOAD_BYTES);
+    let mut out = Vec::with_capacity(PAYLOAD_V2_BYTES);
     out.extend_from_slice(&value.unit_count.to_le_bytes());
     out.extend_from_slice(&value.global_constraint_count.to_le_bytes());
     out.extend_from_slice(&value.fixed_byte_count.to_le_bytes());
     out.extend_from_slice(&value.pcs_material_unit_count.to_le_bytes());
     out.extend_from_slice(&value.pcs_material_byte_count.to_le_bytes());
+    out.extend_from_slice(&u64::from(value.source_fixed_file_manifest_present).to_le_bytes());
+    out.extend_from_slice(&value.source_fixed_file_manifest_entry_count.to_le_bytes());
     out.extend_from_slice(&value.catalog_digest);
     out
 }
