@@ -34,6 +34,7 @@ pub enum PcsSetupMaterialError {
     Sectioned(SectionedError),
     PcsPlan(PcsPlanError),
     ConstantTree(ConstantTreeError),
+    UnsupportedVersion { found: u32, expected: u32 },
     InvalidSectionCount { found: u32 },
     InvalidSectionId { found: u32 },
     InvalidPayloadLength { expected: usize, found: usize },
@@ -50,6 +51,10 @@ impl fmt::Display for PcsSetupMaterialError {
             Self::ConstantTree(error) => {
                 write!(f, "PCS setup material constant-tree error: {error}")
             }
+            Self::UnsupportedVersion { found, expected } => write!(
+                f,
+                "unsupported PCS setup material version {found}, expected {expected}"
+            ),
             Self::InvalidSectionCount { found } => {
                 write!(f, "invalid PCS setup material section count {found}")
             }
@@ -127,6 +132,13 @@ pub fn read_pcs_setup_material_file(
 
 pub fn parse_pcs_setup_material(bytes: &[u8]) -> Result<PcsSetupMaterial, PcsSetupMaterialError> {
     let file = parse_sectioned_file(bytes, PCS_MATERIAL_KIND, PCS_MATERIAL_VERSION)?;
+    if file.version != PCS_MATERIAL_VERSION {
+        return Err(PcsSetupMaterialError::UnsupportedVersion {
+            found: file.version,
+            expected: PCS_MATERIAL_VERSION,
+        });
+    }
+
     if file.sections.len() != 1 {
         return Err(PcsSetupMaterialError::InvalidSectionCount {
             found: u32::try_from(file.sections.len()).unwrap_or(u32::MAX),

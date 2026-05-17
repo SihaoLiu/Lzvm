@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use lzvm_artifacts::constant_tree::parse_constant_tree_bytes;
 use lzvm_artifacts::pcs_material::{
     build_pcs_setup_material, encode_pcs_setup_material, parse_pcs_setup_material,
-    read_pcs_setup_material_file,
+    read_pcs_setup_material_file, PcsSetupMaterialError,
 };
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, encode_pcs_setup_plan};
 use sha2::{Digest, Sha256};
@@ -60,6 +60,34 @@ fn encodes_and_parses_pcs_setup_material() {
 
     assert_eq!(&encoded[0..4], b"pcsm");
     assert_eq!(parsed, material);
+}
+
+#[test]
+fn rejects_unsupported_pcs_setup_material_versions() {
+    let setup = fixtures::sample_pcs_material_setup_info();
+    let plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
+    let tree = parse_constant_tree_bytes(sample_tree_bytes(), &setup).expect("tree should parse");
+    let material =
+        build_pcs_setup_material(&plan, &[1_u8; 32], &tree).expect("material should build");
+    let encoded = encode_pcs_setup_material(&material).expect("material should encode");
+    let parsed = lzvm_artifacts::sectioned::parse_sectioned_file(&encoded, *b"pcsm", 1)
+        .expect("sectioned material should parse");
+    let encoded = lzvm_artifacts::sectioned::encode_sectioned_file(
+        &lzvm_artifacts::sectioned::SectionedFile {
+            kind: *b"pcsm",
+            version: 0,
+            sections: parsed.sections,
+        },
+    )
+    .expect("sectioned material should encode");
+
+    assert_eq!(
+        parse_pcs_setup_material(&encoded).expect_err("unsupported material version should reject"),
+        PcsSetupMaterialError::UnsupportedVersion {
+            found: 0,
+            expected: 1,
+        }
+    );
 }
 
 #[test]
