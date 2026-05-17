@@ -887,6 +887,11 @@ fn parse_verify_proof_args<'a>(
                     ));
                 }
             }
+            value if value.starts_with("--") => {
+                return Err(VerifyProofArgError::Invalid(format!(
+                    "unknown option {value}"
+                )));
+            }
             value => positionals.push(value),
         }
         index += 1;

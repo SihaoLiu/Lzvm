@@ -10739,6 +10739,31 @@ fn reports_usage_for_missing_verify_proof_inputs() {
     );
 }
 
+#[test]
+fn verify_proof_rejects_unknown_options() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "proof",
+            "--unknown",
+            "setup",
+            "proof.bin",
+            "public.bin",
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify proof failed: unknown option --unknown\n"
+    );
+}
+
 fn format_hash(hash: &[u8; 32]) -> String {
     format_hex(hash)
 }
