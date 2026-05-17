@@ -157,7 +157,7 @@ fn writes_binary_block_input_artifact_with_receipts() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\nreceipts=present\nreceipt_trie_preimages={}\nwithdrawals=absent\n",
+            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=21000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\nreceipts=present\nreceipt_trie_preimages={}\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
             to_hex(&input_hash),
@@ -424,6 +424,7 @@ fn sample_block_rlp_with_receipts_root(receipts_root: [u8; 32]) -> Vec<u8> {
         hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
         receipts_root,
         [0; 256],
+        &[0x52, 0x08],
         None,
     ));
     let transactions = rlp_list(&[rlp_list(&[rlp_bytes(&[1])])]);
@@ -439,6 +440,7 @@ fn legacy_header_items(
         transactions_root,
         [0x66; 32],
         [0x77; 256],
+        &[0x0d, 0xbb, 0xa0],
         withdrawals_root,
     )
 }
@@ -447,6 +449,7 @@ fn legacy_header_items_with_receipts_and_logs_bloom(
     transactions_root: [u8; 32],
     receipts_root: [u8; 32],
     logs_bloom: [u8; 256],
+    gas_used: &[u8],
     withdrawals_root: Option<[u8; 32]>,
 ) -> Vec<Vec<u8>> {
     let mut items = vec![
@@ -462,7 +465,7 @@ fn legacy_header_items_with_receipts_and_logs_bloom(
         rlp_bytes(&[1]),
         rlp_bytes(&[2]),
         rlp_bytes(&[0x0f, 0x42, 0x40]),
-        rlp_bytes(&[0x0d, 0xbb, 0xa0]),
+        rlp_bytes(gas_used),
         rlp_bytes(&[0x65]),
         rlp_bytes(b"lzvm"),
         rlp_bytes(&[0xaa; 32]),

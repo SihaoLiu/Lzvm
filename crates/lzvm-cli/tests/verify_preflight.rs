@@ -120,7 +120,7 @@ fn legacy_header_items_with_receipts(
         rlp_bytes(&[1]),
         rlp_bytes(&[2]),
         rlp_bytes(&[0x0f, 0x42, 0x40]),
-        rlp_bytes(&[0x0d, 0xbb, 0xa0]),
+        rlp_bytes(&[0x52, 0x08]),
         rlp_bytes(&[0x65]),
         rlp_bytes(b"lzvm"),
         rlp_bytes(&[0xaa; 32]),

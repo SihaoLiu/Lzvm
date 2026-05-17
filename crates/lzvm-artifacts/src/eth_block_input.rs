@@ -5,9 +5,9 @@ use sha2::{Digest, Sha256};
 
 use crate::eth_block::{
     decode_eth_header_rlp, decode_eth_receipts_rlp, decode_eth_transactions_rlp,
-    decode_eth_withdrawals_rlp, eth_header_hash, eth_ommers_hash, eth_receipts_logs_bloom,
-    keccak256, parse_eth_block_rlp, EthBlockError, EthReceiptError, EthTransactionError,
-    EthWithdrawalError,
+    decode_eth_withdrawals_rlp, eth_header_hash, eth_ommers_hash, eth_receipts_cumulative_gas_used,
+    eth_receipts_logs_bloom, keccak256, parse_eth_block_rlp, EthBlockError, EthReceiptError,
+    EthTransactionError, EthWithdrawalError,
 };
 use crate::eth_trie::{
     receipt_trie_build, transaction_trie_build, withdrawals_trie_build, IndexedTrieBuild,
@@ -336,7 +336,12 @@ pub fn build_eth_block_input_with_receipts(
     let mut input = build_eth_block_input(block_rlp)?;
     let receipts = parse_eth_receipts_rlp(receipts_rlp)?;
     let decoded_receipts = decode_eth_receipts_rlp(&receipts)?;
-    validate_receipts_against_block(block_rlp, &decoded_receipts, input.logs_bloom)?;
+    validate_receipts_against_block(
+        block_rlp,
+        &decoded_receipts,
+        input.logs_bloom,
+        input.gas_used,
+    )?;
     let build = receipt_trie_build(&receipts);
     if build.root != input.receipts_root {
         return Err(EthBlockInputError::ReceiptsRootMismatch);
@@ -455,6 +460,7 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
                 &block_rlp,
                 &decoded_receipts,
                 validated_input.logs_bloom,
+                validated_input.gas_used,
             )?;
             let build = receipt_trie_build(&parsed_receipts);
             if build.root != metadata.receipts_root {
@@ -518,6 +524,7 @@ fn validate_receipts_against_block(
     block_rlp: &[u8],
     receipts: &[crate::eth_block::EthReceiptRlp],
     logs_bloom: [u8; 256],
+    gas_used: u64,
 ) -> Result<(), EthBlockInputError> {
     if let Some(receipts_logs_bloom) = eth_receipts_logs_bloom(receipts) {
         if receipts_logs_bloom != logs_bloom {
@@ -527,6 +534,11 @@ fn validate_receipts_against_block(
     let transaction_count = parse_eth_block_rlp(block_rlp)?.transactions.len();
     if receipts.len() != transaction_count {
         return Err(EthBlockInputError::ReceiptCountMismatch);
+    }
+    if let Some(receipts_gas_used) = eth_receipts_cumulative_gas_used(receipts) {
+        if receipts_gas_used != gas_used {
+            return Err(EthBlockInputError::GasUsedMismatch);
+        }
     }
     Ok(())
 }

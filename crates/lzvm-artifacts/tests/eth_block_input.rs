@@ -194,6 +194,27 @@ fn rejects_receipt_count_mismatches() {
 }
 
 #[test]
+fn rejects_receipt_gas_used_mismatches() {
+    let receipt_item = receipt_item();
+    let receipts = vec![parse_rlp(&receipt_item).expect("receipt item should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    let transaction_items = vec![rlp_list(&[rlp_bytes(&[1])])];
+    let block_rlp = sample_block_rlp_with_transactions_receipts_logs_bloom_and_gas_used(
+        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
+        receipt_build.root,
+        [0; 256],
+        &[0x0d, 0xbb, 0xa0],
+        transaction_items,
+    );
+    let receipts_rlp = rlp_list(&[receipt_item]);
+
+    let error = build_eth_block_input_with_receipts(&block_rlp, &receipts_rlp)
+        .expect_err("block input should reject receipt gas used");
+
+    assert!(matches!(error, EthBlockInputError::GasUsedMismatch));
+}
+
+#[test]
 fn rejects_transaction_root_mismatches() {
     let block_rlp =
         sample_block_rlp_with_transactions([0x55; 32], vec![rlp_list(&[rlp_bytes(&[1])])]);
@@ -375,10 +396,27 @@ fn sample_block_rlp_with_transactions_receipts_and_logs_bloom(
     logs_bloom: [u8; 256],
     transaction_items: Vec<Vec<u8>>,
 ) -> Vec<u8> {
+    sample_block_rlp_with_transactions_receipts_logs_bloom_and_gas_used(
+        transactions_root,
+        receipts_root,
+        logs_bloom,
+        &[0x52, 0x08],
+        transaction_items,
+    )
+}
+
+fn sample_block_rlp_with_transactions_receipts_logs_bloom_and_gas_used(
+    transactions_root: [u8; 32],
+    receipts_root: [u8; 32],
+    logs_bloom: [u8; 256],
+    gas_used: &[u8],
+    transaction_items: Vec<Vec<u8>>,
+) -> Vec<u8> {
     let header_rlp = rlp_list(&legacy_header_items_with_receipts(
         transactions_root,
         receipts_root,
         logs_bloom,
+        gas_used,
         None,
     ));
     let transactions = rlp_list(&transaction_items);
@@ -403,13 +441,20 @@ fn legacy_header_items(
     transactions_root: [u8; 32],
     withdrawals_root: Option<[u8; 32]>,
 ) -> Vec<Vec<u8>> {
-    legacy_header_items_with_receipts(transactions_root, [0x66; 32], [0x77; 256], withdrawals_root)
+    legacy_header_items_with_receipts(
+        transactions_root,
+        [0x66; 32],
+        [0x77; 256],
+        &[0x0d, 0xbb, 0xa0],
+        withdrawals_root,
+    )
 }
 
 fn legacy_header_items_with_receipts(
     transactions_root: [u8; 32],
     receipts_root: [u8; 32],
     logs_bloom: [u8; 256],
+    gas_used: &[u8],
     withdrawals_root: Option<[u8; 32]>,
 ) -> Vec<Vec<u8>> {
     let mut items = vec![
@@ -425,7 +470,7 @@ fn legacy_header_items_with_receipts(
         rlp_bytes(&[1]),
         rlp_bytes(&[2]),
         rlp_bytes(&[0x0f, 0x42, 0x40]),
-        rlp_bytes(&[0x0d, 0xbb, 0xa0]),
+        rlp_bytes(gas_used),
         rlp_bytes(&[0x65]),
         rlp_bytes(b"lzvm"),
         rlp_bytes(&[0xaa; 32]),

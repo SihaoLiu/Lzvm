@@ -989,6 +989,7 @@ fn sample_block_rlp_with_receipts_root(receipts_root: [u8; 32]) -> Vec<u8> {
         hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
         receipts_root,
         [0; 256],
+        &[0x52, 0x08],
         None,
         b"lzvm",
     ));
@@ -1017,6 +1018,7 @@ fn legacy_header_items(
         transactions_root,
         [0x66; 32],
         [0x77; 256],
+        &[0x0d, 0xbb, 0xa0],
         withdrawals_root,
         extra_data,
     )
@@ -1026,6 +1028,7 @@ fn legacy_header_items_with_receipts_and_logs_bloom(
     transactions_root: [u8; 32],
     receipts_root: [u8; 32],
     logs_bloom: [u8; 256],
+    gas_used: &[u8],
     withdrawals_root: Option<[u8; 32]>,
     extra_data: &[u8],
 ) -> Vec<Vec<u8>> {
@@ -1042,7 +1045,7 @@ fn legacy_header_items_with_receipts_and_logs_bloom(
         rlp_bytes(&[1]),
         rlp_bytes(&[2]),
         rlp_bytes(&[0x0f, 0x42, 0x40]),
-        rlp_bytes(&[0x0d, 0xbb, 0xa0]),
+        rlp_bytes(gas_used),
         rlp_bytes(&[0x65]),
         rlp_bytes(extra_data),
         rlp_bytes(&[0xaa; 32]),

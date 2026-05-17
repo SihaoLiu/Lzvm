@@ -623,6 +623,20 @@ pub fn eth_receipts_logs_bloom(receipts: &[EthReceiptRlp]) -> Option<[u8; 256]> 
     Some(bloom)
 }
 
+pub fn eth_receipts_cumulative_gas_used(receipts: &[EthReceiptRlp]) -> Option<u64> {
+    let mut gas_used = 0;
+    for receipt in receipts {
+        match receipt {
+            EthReceiptRlp::Legacy {
+                cumulative_gas_used,
+                ..
+            } => gas_used = *cumulative_gas_used,
+            EthReceiptRlp::Typed { .. } => return None,
+        }
+    }
+    Some(gas_used)
+}
+
 pub fn decode_eth_receipt_rlp(receipt: &RlpItem) -> Result<EthReceiptRlp, EthReceiptError> {
     match receipt {
         RlpItem::List(fields) => decode_legacy_eth_receipt(fields),
