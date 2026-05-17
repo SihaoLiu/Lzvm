@@ -127,6 +127,27 @@ fn validates_pcs_query_plan_segments_from_seeded_inputs() {
 }
 
 #[test]
+fn rejects_seeded_pcs_query_plan_duplicate_material_segments() {
+    let schedule = sample_schedule();
+    let public_hash = [7; 32];
+    let material = material_segment();
+    let witness = witness_segment(0);
+    let query = build_pcs_query_plan_segment(
+        &schedule,
+        public_hash,
+        &material,
+        std::slice::from_ref(&witness),
+    )
+    .expect("query plan should build");
+    let segments = vec![material.clone(), witness, query, material];
+
+    let error = validate_seeded_pcs_query_plan_segments(&schedule, public_hash, &segments)
+        .expect_err("duplicate material segment should be rejected");
+
+    assert_eq!(error.to_string(), "duplicate PCS material manifest segment");
+}
+
+#[test]
 fn rejects_seeded_pcs_query_plan_mismatches() {
     let schedule = sample_schedule();
     let public_hash = [7; 32];
@@ -187,6 +208,38 @@ fn validates_pcs_query_plan_segments_from_transcript_inputs() {
 
     validate_pcs_query_plan_segments(&schedule, [0; 32], &[], &segments)
         .expect("query plan should validate");
+}
+
+#[test]
+fn rejects_transcript_pcs_query_plan_duplicate_material_segments() {
+    let (schedule, mut segments) = transcript_query_plan_segments();
+    let material = segments
+        .iter()
+        .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
+        .expect("material segment should exist")
+        .clone();
+    segments.push(material);
+
+    let error = validate_transcript_pcs_query_plan_segments(&schedule, &[], &segments)
+        .expect_err("duplicate material segment should be rejected");
+
+    assert_eq!(error.to_string(), "duplicate PCS material manifest segment");
+}
+
+#[test]
+fn rejects_transcript_pcs_query_plan_duplicate_nonce_segments() {
+    let (schedule, mut segments) = transcript_query_plan_segments();
+    let nonce = segments
+        .iter()
+        .find(|segment| segment.id == PCS_QUERY_NONCE_SEGMENT_ID)
+        .expect("query nonce segment should exist")
+        .clone();
+    segments.push(nonce);
+
+    let error = validate_transcript_pcs_query_plan_segments(&schedule, &[], &segments)
+        .expect_err("duplicate nonce segment should be rejected");
+
+    assert_eq!(error.to_string(), "duplicate PCS query nonce segment");
 }
 
 #[test]

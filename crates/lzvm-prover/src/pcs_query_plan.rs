@@ -50,7 +50,9 @@ pub enum LoadPcsQueryPlanSegmentError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidatePcsQueryPlanSegmentsError {
     MissingMaterialSegment,
+    DuplicateMaterialSegment,
     MissingNonceSegment,
+    DuplicateNonceSegment,
     QueryPlan(LoadPcsQueryPlanSegmentError),
     Witness(LoadWitnessCommitmentSegmentsError),
     Material(PcsMaterialManifestSegmentError),
@@ -85,7 +87,11 @@ impl fmt::Display for ValidatePcsQueryPlanSegmentsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingMaterialSegment => write!(f, "missing PCS material manifest segment"),
+            Self::DuplicateMaterialSegment => {
+                write!(f, "duplicate PCS material manifest segment")
+            }
             Self::MissingNonceSegment => write!(f, "missing PCS query nonce segment"),
+            Self::DuplicateNonceSegment => write!(f, "duplicate PCS query nonce segment"),
             Self::QueryPlan(error) => write!(f, "{error}"),
             Self::Witness(error) => write!(f, "{error}"),
             Self::Material(error) => write!(f, "invalid PCS material manifest segment: {error}"),
@@ -136,7 +142,9 @@ impl std::error::Error for ValidatePcsQueryPlanSegmentsError {
             Self::UnitValues(error) => Some(error),
             Self::Build(error) => Some(error),
             Self::MissingMaterialSegment
+            | Self::DuplicateMaterialSegment
             | Self::MissingNonceSegment
+            | Self::DuplicateNonceSegment
             | Self::QueryPlanMismatch
             | Self::TranscriptUnitCountMismatch
             | Self::WitnessSegmentIdOverflow
@@ -188,10 +196,7 @@ pub fn validate_seeded_pcs_query_plan_segments(
     public_values_hash: [u8; 32],
     segments: &[ProofSegment],
 ) -> Result<(), ValidatePcsQueryPlanSegmentsError> {
-    let material_segment = segments
-        .iter()
-        .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
-        .ok_or(ValidatePcsQueryPlanSegmentsError::MissingMaterialSegment)?;
+    let material_segment = single_material_manifest_segment(segments)?;
     load_pcs_query_plan_from_segments(segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::QueryPlan)?;
     let query_segment = segments
@@ -230,19 +235,43 @@ pub(crate) fn proof_binding_segments(segments: &[ProofSegment]) -> Vec<ProofSegm
         .collect()
 }
 
+fn single_material_manifest_segment(
+    segments: &[ProofSegment],
+) -> Result<&ProofSegment, ValidatePcsQueryPlanSegmentsError> {
+    let mut matching_segments = segments
+        .iter()
+        .filter(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID);
+    let segment = matching_segments
+        .next()
+        .ok_or(ValidatePcsQueryPlanSegmentsError::MissingMaterialSegment)?;
+    if matching_segments.next().is_some() {
+        return Err(ValidatePcsQueryPlanSegmentsError::DuplicateMaterialSegment);
+    }
+    Ok(segment)
+}
+
+fn single_query_nonce_segment(
+    segments: &[ProofSegment],
+) -> Result<&ProofSegment, ValidatePcsQueryPlanSegmentsError> {
+    let mut matching_segments = segments
+        .iter()
+        .filter(|segment| segment.id == PCS_QUERY_NONCE_SEGMENT_ID);
+    let segment = matching_segments
+        .next()
+        .ok_or(ValidatePcsQueryPlanSegmentsError::MissingNonceSegment)?;
+    if matching_segments.next().is_some() {
+        return Err(ValidatePcsQueryPlanSegmentsError::DuplicateNonceSegment);
+    }
+    Ok(segment)
+}
+
 pub fn validate_transcript_pcs_query_plan_segments(
     schedule: &ProveSchedule,
     public_values: &[Felt],
     segments: &[ProofSegment],
 ) -> Result<(), ValidatePcsQueryPlanSegmentsError> {
-    let material_segment = segments
-        .iter()
-        .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
-        .ok_or(ValidatePcsQueryPlanSegmentsError::MissingMaterialSegment)?;
-    let nonce_segment = segments
-        .iter()
-        .find(|segment| segment.id == PCS_QUERY_NONCE_SEGMENT_ID)
-        .ok_or(ValidatePcsQueryPlanSegmentsError::MissingNonceSegment)?;
+    let material_segment = single_material_manifest_segment(segments)?;
+    let nonce_segment = single_query_nonce_segment(segments)?;
     let query_plan = load_pcs_query_plan_from_segments(segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::QueryPlan)?;
     let query_segment = segments
