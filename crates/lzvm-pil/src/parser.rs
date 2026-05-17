@@ -234,6 +234,10 @@ fn tokenize_pragma_words(
             break;
         }
 
+        if bytes[index..].starts_with(b"//") {
+            break;
+        }
+
         let start = index;
         let quote = bytes[index];
         if matches!(quote, b'"' | b'\'' | b'`') {
