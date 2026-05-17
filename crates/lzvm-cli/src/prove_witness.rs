@@ -96,6 +96,10 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
+    if let Err(error) = prepare_requested_gpu_setup(&plan) {
+        let _ = writeln!(stderr, "prove witness failed: {error}");
+        return 1;
+    }
     let public_inputs_summary = match summarize_public_inputs(plan.inputs.public_inputs.as_deref())
     {
         Ok(summary) => summary,
@@ -344,6 +348,15 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     }
     write_witness_output_summary(stdout, commitments);
     0
+}
+
+fn prepare_requested_gpu_setup(
+    plan: &ProveExecutionPlan,
+) -> Result<(), lzvm_prover::GpuSetupError> {
+    if plan.run_plan.gpu.preallocate {
+        lzvm_prover::prepare_gpu_setup(plan.run_plan.schedule.max_extended_domain_bits as usize)?;
+    }
+    Ok(())
 }
 
 struct ParsedWitnessArgs {
