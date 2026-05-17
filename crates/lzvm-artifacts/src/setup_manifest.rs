@@ -258,7 +258,12 @@ pub fn validate_setup_directory_manifest_file(
     expected: &SetupDirectoryManifest,
 ) -> Result<(), SetupDirectoryManifestError> {
     let path = path.as_ref();
-    if !path.is_file() {
+    if !path
+        .try_exists()
+        .map_err(|error| SetupDirectoryManifestError::Io {
+            message: format!("{}: {error}", path.display()),
+        })?
+    {
         return Ok(());
     }
     let found = read_setup_directory_manifest_file(path)?;
