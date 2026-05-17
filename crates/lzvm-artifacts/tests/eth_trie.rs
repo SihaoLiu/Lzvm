@@ -1,4 +1,6 @@
-use lzvm_artifacts::eth_trie::{empty_transaction_trie_root, empty_trie_root};
+use lzvm_artifacts::eth_trie::{
+    compact_encode_nibbles, empty_transaction_trie_root, empty_trie_root,
+};
 use lzvm_artifacts::rlp::RlpItem;
 
 #[test]
@@ -23,6 +25,21 @@ fn empty_transaction_trie_root_matches_genesis_header_root() {
     };
 
     assert_eq!(empty_transaction_trie_root(), transactions_root.as_slice());
+}
+
+#[test]
+fn compact_encodes_leaf_paths() {
+    assert_eq!(compact_encode_nibbles(&[1, 2, 3], true), vec![0x31, 0x23]);
+    assert_eq!(compact_encode_nibbles(&[15, 1], true), vec![0x20, 0xf1]);
+}
+
+#[test]
+fn compact_encodes_extension_paths() {
+    assert_eq!(compact_encode_nibbles(&[1, 2, 3], false), vec![0x11, 0x23]);
+    assert_eq!(
+        compact_encode_nibbles(&[15, 1, 12, 11], false),
+        vec![0x00, 0xf1, 0xcb]
+    );
 }
 
 fn mainnet_genesis_header_items() -> Vec<RlpItem> {
