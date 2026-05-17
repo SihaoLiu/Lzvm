@@ -215,6 +215,39 @@ fn rejects_receipt_gas_used_mismatches() {
 }
 
 #[test]
+fn rejects_decreasing_receipt_cumulative_gas() {
+    let receipt_items = vec![
+        receipt_item_with_cumulative_gas(&[0x52, 0x08]),
+        receipt_item_with_cumulative_gas(&[0x10]),
+    ];
+    let receipts = receipt_items
+        .iter()
+        .map(|item| parse_rlp(item).expect("receipt item should parse"))
+        .collect::<Vec<_>>();
+    let receipt_build = receipt_trie_build(&receipts);
+    let transaction_items = vec![rlp_list(&[rlp_bytes(&[1])]), rlp_list(&[rlp_bytes(&[2])])];
+    let transaction_rlp_items = transaction_items
+        .iter()
+        .map(|item| parse_rlp(item).expect("transaction item should parse"))
+        .collect::<Vec<_>>();
+    let transaction_build =
+        transaction_trie_build(&transaction_rlp_items).expect("transaction trie should build");
+    let block_rlp = sample_block_rlp_with_transactions_receipts_logs_bloom_and_gas_used(
+        transaction_build.root,
+        receipt_build.root,
+        [0; 256],
+        &[0x10],
+        transaction_items,
+    );
+    let receipts_rlp = rlp_list(&receipt_items);
+
+    let error = build_eth_block_input_with_receipts(&block_rlp, &receipts_rlp)
+        .expect_err("block input should reject decreasing cumulative gas");
+
+    assert!(matches!(error, EthBlockInputError::GasUsedMismatch));
+}
+
+#[test]
 fn rejects_transaction_root_mismatches() {
     let block_rlp =
         sample_block_rlp_with_transactions([0x55; 32], vec![rlp_list(&[rlp_bytes(&[1])])]);
@@ -484,9 +517,13 @@ fn legacy_header_items_with_receipts(
 }
 
 fn receipt_item() -> Vec<u8> {
+    receipt_item_with_cumulative_gas(&[0x52, 0x08])
+}
+
+fn receipt_item_with_cumulative_gas(cumulative_gas_used: &[u8]) -> Vec<u8> {
     rlp_list(&[
         rlp_bytes(&[1]),
-        rlp_bytes(&[0x52, 0x08]),
+        rlp_bytes(cumulative_gas_used),
         rlp_bytes(&[0; 256]),
         rlp_list(&[]),
     ])

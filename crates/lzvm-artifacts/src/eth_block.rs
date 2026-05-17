@@ -637,6 +637,25 @@ pub fn eth_receipts_cumulative_gas_used(receipts: &[EthReceiptRlp]) -> Option<u6
     Some(gas_used)
 }
 
+pub fn eth_receipts_cumulative_gas_is_nondecreasing(receipts: &[EthReceiptRlp]) -> Option<bool> {
+    let mut previous_gas_used = 0;
+    for receipt in receipts {
+        match receipt {
+            EthReceiptRlp::Legacy {
+                cumulative_gas_used,
+                ..
+            } => {
+                if *cumulative_gas_used < previous_gas_used {
+                    return Some(false);
+                }
+                previous_gas_used = *cumulative_gas_used;
+            }
+            EthReceiptRlp::Typed { .. } => return None,
+        }
+    }
+    Some(true)
+}
+
 pub fn decode_eth_receipt_rlp(receipt: &RlpItem) -> Result<EthReceiptRlp, EthReceiptError> {
     match receipt {
         RlpItem::List(fields) => decode_legacy_eth_receipt(fields),

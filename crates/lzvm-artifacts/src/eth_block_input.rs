@@ -5,7 +5,8 @@ use sha2::{Digest, Sha256};
 
 use crate::eth_block::{
     decode_eth_header_rlp, decode_eth_receipts_rlp, decode_eth_transactions_rlp,
-    decode_eth_withdrawals_rlp, eth_header_hash, eth_ommers_hash, eth_receipts_cumulative_gas_used,
+    decode_eth_withdrawals_rlp, eth_header_hash, eth_ommers_hash,
+    eth_receipts_cumulative_gas_is_nondecreasing, eth_receipts_cumulative_gas_used,
     eth_receipts_logs_bloom, keccak256, parse_eth_block_rlp, EthBlockError, EthReceiptError,
     EthTransactionError, EthWithdrawalError,
 };
@@ -534,6 +535,9 @@ fn validate_receipts_against_block(
     let transaction_count = parse_eth_block_rlp(block_rlp)?.transactions.len();
     if receipts.len() != transaction_count {
         return Err(EthBlockInputError::ReceiptCountMismatch);
+    }
+    if let Some(false) = eth_receipts_cumulative_gas_is_nondecreasing(receipts) {
+        return Err(EthBlockInputError::GasUsedMismatch);
     }
     if let Some(receipts_gas_used) = eth_receipts_cumulative_gas_used(receipts) {
         if receipts_gas_used != gas_used {
