@@ -20,6 +20,13 @@ const OPERAND_BOUNDARY_TAG: u8 = 8;
 const OPERAND_PROOF_VALUE_TAG: u8 = 9;
 const OPERAND_OPENING_DENOMINATOR_TAG: u8 = 10;
 
+const U32_BYTES: usize = 4;
+const TAG_BYTES: usize = 1;
+const REFERENCE_BODY_BYTES: usize = U32_BYTES + U32_BYTES;
+const DESTINATION_BYTES: usize = REFERENCE_BODY_BYTES;
+const OPERAND_MIN_BYTES: usize = TAG_BYTES + REFERENCE_BODY_BYTES;
+const OPERATION_MIN_BYTES: usize = TAG_BYTES + DESTINATION_BYTES + U32_BYTES;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct VerifierInfo {
     pub quotient: VerifierCode,
@@ -379,8 +386,8 @@ fn read_verifier_code(reader: &mut Reader<'_>) -> Result<VerifierCode, VerifierI
     let stage = reader.read_optional_u32("stage")?;
     let line = reader.read_string()?;
     let temporary_count = reader.read_u32()?;
-    let operation_count = reader.read_u32()?;
-    let mut operations = Vec::with_capacity(operation_count as usize);
+    let operation_count = read_bounded_count(reader, OPERATION_MIN_BYTES)?;
+    let mut operations = Vec::with_capacity(operation_count);
     for _ in 0..operation_count {
         operations.push(read_verifier_operation(reader)?);
     }
@@ -410,8 +417,8 @@ fn read_verifier_operation(
 ) -> Result<VerifierOperation, VerifierInfoError> {
     let op = read_operation_tag(reader.read_u8()?)?;
     let destination = reader.read_destination()?;
-    let source_count = reader.read_u32()?;
-    let mut sources = Vec::with_capacity(source_count as usize);
+    let source_count = read_bounded_count(reader, OPERAND_MIN_BYTES)?;
+    let mut sources = Vec::with_capacity(source_count);
     for _ in 0..source_count {
         sources.push(reader.read_operand()?);
     }
@@ -567,6 +574,21 @@ fn write_len(out: &mut Vec<u8>, value: usize) -> Result<(), VerifierInfoError> {
     Ok(())
 }
 
+fn read_bounded_count(
+    reader: &mut Reader<'_>,
+    record_min_bytes: usize,
+) -> Result<usize, VerifierInfoError> {
+    let count = u32_to_usize(reader.read_u32()?)?;
+    if count > reader.remaining_len() / record_min_bytes {
+        return Err(VerifierInfoError::LengthOverflow);
+    }
+    Ok(count)
+}
+
+fn u32_to_usize(value: u32) -> Result<usize, VerifierInfoError> {
+    usize::try_from(value).map_err(|_| VerifierInfoError::LengthOverflow)
+}
+
 fn write_u32(out: &mut Vec<u8>, value: u32) {
     out.extend_from_slice(&value.to_le_bytes());
 }
@@ -587,6 +609,10 @@ impl<'a> Reader<'a> {
 
     fn position(&self) -> usize {
         self.offset
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 
     fn read_destination(&mut self) -> Result<VerifierDestination, VerifierInfoError> {
@@ -658,7 +684,7 @@ impl<'a> Reader<'a> {
 
     fn read_string(&mut self) -> Result<String, VerifierInfoError> {
         let count = self.read_u32()?;
-        let count = usize::try_from(count).map_err(|_| VerifierInfoError::LengthOverflow)?;
+        let count = u32_to_usize(count)?;
         let bytes = self.read_exact(count)?;
         std::str::from_utf8(bytes)
             .map(str::to_owned)
