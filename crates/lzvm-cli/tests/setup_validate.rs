@@ -4660,7 +4660,8 @@ fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
         &mut stderr,
     );
 
-    let proof_bytes = fs::read(output_dir.join("proof.bin")).expect("proof output should read");
+    let proof_path = output_dir.join("proof.bin");
+    let proof_bytes = fs::read(&proof_path).expect("proof output should read");
     let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
     let segment = proof
         .segments
@@ -4670,6 +4671,22 @@ fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
     let parsed_cache =
         parse_program_image_cache_segment(&segment.data).expect("cache segment should parse");
     let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("setup path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
+    let verify_stdout_text = String::from_utf8(verify_stdout).expect("stdout should be utf-8");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
@@ -4678,6 +4695,31 @@ fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
         "program_image_cache_constraint_system_digest={}\n",
         format_hash(&expected_cache.constraint_system_digest)
     )));
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert!(verify_stderr.is_empty());
+    assert!(verify_stdout_text.contains("program_image_caches=1\n"));
+    assert!(verify_stdout_text.contains(&format!(
+        "program_image_cache_program_digest={}\n",
+        format_hash(&expected_cache.program_digest)
+    )));
+    assert!(verify_stdout_text.contains(&format!(
+        "program_image_cache_source_image_digest={}\n",
+        format_hash(&expected_cache.source_image_digest)
+    )));
+    assert!(verify_stdout_text.contains(&format!(
+        "program_image_cache_constraint_system_digest={}\n",
+        format_hash(&expected_cache.constraint_system_digest)
+    )));
+    assert!(verify_stdout_text.contains("program_image_cache_trace_rows=1024\n"));
+    assert!(verify_stdout_text.contains("program_image_cache_trace_columns=17\n"));
+    assert!(verify_stdout_text.contains("program_image_cache_blowup_factor=8\n"));
+    assert!(verify_stdout_text.contains("program_image_cache_arity=4\n"));
+    assert!(verify_stdout_text.contains("program_image_cache_gpu_mode=cuda\n"));
     assert_eq!(parsed_cache, expected_cache);
 }
 

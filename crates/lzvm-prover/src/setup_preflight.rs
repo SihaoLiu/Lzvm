@@ -5,6 +5,7 @@ use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, read_key_directory_catalog, KeyDirectoryCatalog,
     KeyDirectoryError,
 };
+use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
 use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact, ProofArtifactError};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValues, PublicValuesError};
 use lzvm_artifacts::setup_manifest::{
@@ -55,6 +56,7 @@ pub struct SetupPreflightReport {
     pub public_values_hash: [u8; 32],
     pub public_value_field_count: usize,
     pub program_image_cache_count: usize,
+    pub program_image_caches: Vec<ProgramImageCommitmentCache>,
     pub eth_block_input_count: usize,
     pub eth_block_input_hashes: Vec<[u8; 32]>,
 }
@@ -205,6 +207,7 @@ pub fn validate_setup_preflight_hashes(
         public_values_hash,
         public_value_field_count,
         program_image_cache_count,
+        program_image_caches,
         eth_block_input_count,
         eth_block_input_hashes,
     } = validate_proof_public_values(proof, public_values).map_err(SetupPreflightError::Proof)?;
@@ -216,6 +219,7 @@ pub fn validate_setup_preflight_hashes(
         public_values_hash,
         public_value_field_count,
         program_image_cache_count,
+        program_image_caches,
         eth_block_input_count,
         eth_block_input_hashes,
     })

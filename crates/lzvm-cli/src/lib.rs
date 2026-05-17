@@ -625,6 +625,9 @@ fn verify_preflight(
             "program_image_caches={}",
             report.program_image_cache_count
         );
+        for cache in &report.program_image_caches {
+            program_image_cache::write_program_image_cache_fields(stdout, cache);
+        }
     }
     if report.eth_block_input_count > 0 {
         let _ = writeln!(stdout, "eth_block_inputs={}", report.eth_block_input_count);
@@ -859,6 +862,9 @@ fn verify_setup_validation(
             "program_image_caches={}",
             public_report.program_image_cache_count
         );
+        for cache in &public_report.program_image_caches {
+            program_image_cache::write_program_image_cache_fields(stdout, cache);
+        }
     }
     if public_report.eth_block_input_count > 0 {
         let _ = writeln!(

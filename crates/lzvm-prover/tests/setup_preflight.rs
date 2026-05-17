@@ -100,6 +100,7 @@ fn validates_setup_preflight_hashes() {
                 .expect("digest should compute"),
             public_value_field_count: 5,
             program_image_cache_count: 0,
+            program_image_caches: Vec::new(),
             eth_block_input_count: 0,
             eth_block_input_hashes: Vec::new(),
         }

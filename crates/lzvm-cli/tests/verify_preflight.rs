@@ -273,8 +273,26 @@ fn verifies_preflight_reports_program_image_cache_segments() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nsegments=2\npublic_values=2\npublic_values_hash={}\npublic_value_fields=5\nprogram_image_caches=1\n",
-            to_hex(&public_values_hash)
+            concat!(
+                "status=ok\n",
+                "segments=2\n",
+                "public_values=2\n",
+                "public_values_hash={}\n",
+                "public_value_fields=5\n",
+                "program_image_caches=1\n",
+                "program_image_cache_program_digest={}\n",
+                "program_image_cache_source_image_digest={}\n",
+                "program_image_cache_constraint_system_digest={}\n",
+                "program_image_cache_trace_rows=1024\n",
+                "program_image_cache_trace_columns=17\n",
+                "program_image_cache_blowup_factor=8\n",
+                "program_image_cache_arity=4\n",
+                "program_image_cache_gpu_mode=cuda\n",
+            ),
+            to_hex(&public_values_hash),
+            to_hex(&sample_hash(0x11)),
+            to_hex(&sample_hash(0x22)),
+            to_hex(&sample_hash(0x33))
         )
     );
     assert!(stderr.is_empty());

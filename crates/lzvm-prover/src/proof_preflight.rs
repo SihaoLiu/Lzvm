@@ -8,6 +8,7 @@ use lzvm_artifacts::eth_block_input_segment::{
 use lzvm_artifacts::eth_block_public_values::{
     validate_eth_block_public_values, EthBlockPublicValuesError,
 };
+use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
 use lzvm_artifacts::program_image_segment::{
     parse_program_image_cache_segment, ProgramImageCacheSegmentError,
     PROGRAM_IMAGE_CACHE_SEGMENT_ID,
@@ -27,6 +28,7 @@ pub struct ProofPreflightReport {
     pub public_values_hash: [u8; 32],
     pub public_value_field_count: usize,
     pub program_image_cache_count: usize,
+    pub program_image_caches: Vec<ProgramImageCommitmentCache>,
     pub eth_block_input_count: usize,
     pub eth_block_input_hashes: Vec<[u8; 32]>,
 }
@@ -159,16 +161,17 @@ pub fn validate_proof_public_values(
     }
     let public_value_fields =
         public_values_as_fields(public_values).map_err(ProofPreflightError::PublicValuesField)?;
-    let mut program_image_cache_count = 0;
+    let mut program_image_caches = Vec::new();
     for segment in proof
         .segments
         .iter()
         .filter(|segment| segment.id == PROGRAM_IMAGE_CACHE_SEGMENT_ID)
     {
-        parse_program_image_cache_segment(&segment.data)
+        let cache = parse_program_image_cache_segment(&segment.data)
             .map_err(ProofPreflightError::ProgramImageCache)?;
-        program_image_cache_count += 1;
+        program_image_caches.push(cache);
     }
+    let program_image_cache_count = program_image_caches.len();
     let mut eth_block_input_hashes = Vec::new();
     let eth_block_input_count = proof
         .segments
@@ -196,6 +199,7 @@ pub fn validate_proof_public_values(
         public_values_hash: digest,
         public_value_field_count: public_value_fields.len(),
         program_image_cache_count,
+        program_image_caches,
         eth_block_input_count,
         eth_block_input_hashes,
     })

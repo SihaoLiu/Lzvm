@@ -150,6 +150,7 @@ fn validates_proof_public_value_preflight_hashes() {
                 .expect("digest should compute"),
             public_value_field_count: 1,
             program_image_cache_count: 0,
+            program_image_caches: Vec::new(),
             eth_block_input_count: 0,
             eth_block_input_hashes: Vec::new(),
         }
