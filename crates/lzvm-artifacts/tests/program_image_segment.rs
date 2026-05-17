@@ -1,7 +1,8 @@
 use lzvm_artifacts::program_image::{ProgramImageCommitmentCache, ProgramImageGpuMode};
 use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, parse_program_image_cache_segment,
-    ProgramImageCacheSegmentError, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+    program_image_cache_segment_digest, ProgramImageCacheSegmentError,
+    PROGRAM_IMAGE_CACHE_SEGMENT_ID,
 };
 
 fn sample_cache() -> ProgramImageCommitmentCache {
@@ -30,6 +31,17 @@ fn encodes_and_parses_program_image_cache_segments() {
 }
 
 #[test]
+fn computes_program_image_cache_segment_digest() {
+    let encoded =
+        encode_program_image_cache_segment(&sample_cache()).expect("segment should encode");
+
+    assert_eq!(
+        to_hex(&program_image_cache_segment_digest(&encoded)),
+        "5b49502fb9787fe9214bf093e6755c185c73f5e39a7b0bef5841f1f4b107d880"
+    );
+}
+
+#[test]
 fn rejects_program_image_cache_segments_with_bad_magic() {
     let mut encoded =
         encode_program_image_cache_segment(&sample_cache()).expect("segment should encode");
@@ -50,4 +62,14 @@ fn rejects_truncated_program_image_cache_segments() {
             available: 4
         })
     );
+}
+
+fn to_hex(hash: &[u8; 32]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(64);
+    for byte in hash {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
 }

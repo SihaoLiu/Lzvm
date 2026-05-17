@@ -1,6 +1,9 @@
 use std::io::Write;
 
 use lzvm_artifacts::program_image::{ProgramImageCommitmentCache, ProgramImageGpuMode};
+use lzvm_artifacts::program_image_segment::{
+    encode_program_image_cache_segment, program_image_cache_segment_digest,
+};
 use lzvm_prover::ProveProgramImageCache;
 
 use crate::prove_plan::format_hash;
@@ -17,6 +20,13 @@ pub(crate) fn write_program_image_cache_fields(
     stdout: &mut dyn Write,
     cache: &ProgramImageCommitmentCache,
 ) {
+    if let Ok(segment) = encode_program_image_cache_segment(cache) {
+        let _ = writeln!(
+            stdout,
+            "program_image_cache_segment_hash={}",
+            format_hash(&program_image_cache_segment_digest(&segment))
+        );
+    }
     let _ = writeln!(
         stdout,
         "program_image_cache_program_digest={}",

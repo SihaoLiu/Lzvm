@@ -4757,6 +4757,9 @@ fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
     );
     assert!(verify_stderr.is_empty());
     assert!(verify_stdout_text.contains("program_image_caches=1\n"));
+    assert!(verify_stdout_text.contains(
+        "program_image_cache_segment_hash=f42614ba128d6a56d9d2df9b73c1c44aa3898eab8a02c5e99078918d4be1545b\n"
+    ));
     assert!(verify_stdout_text.contains(&format!(
         "program_image_cache_program_digest={}\n",
         format_hash(&expected_cache.program_digest)

@@ -280,6 +280,7 @@ fn verifies_preflight_reports_program_image_cache_segments() {
                 "public_values_hash={}\n",
                 "public_value_fields=5\n",
                 "program_image_caches=1\n",
+                "program_image_cache_segment_hash=fe67425635287707deccb4174bdf1e9296a954b9cbf378c98c6b339124a82230\n",
                 "program_image_cache_program_digest={}\n",
                 "program_image_cache_source_image_digest={}\n",
                 "program_image_cache_constraint_system_digest={}\n",

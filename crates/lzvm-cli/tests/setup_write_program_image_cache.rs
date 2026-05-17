@@ -93,7 +93,7 @@ fn writes_program_image_commitment_cache_from_cli_inputs() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nbytes_written={byte_count}\noutput={}\nprogram_image_cache={}\nprogram_image_cache_program_digest={}\nprogram_image_cache_source_image_digest={}\nprogram_image_cache_constraint_system_digest={}\nprogram_image_cache_tree_root=11,12,13,14\nprogram_image_cache_trace_rows=1024\nprogram_image_cache_trace_columns=17\nprogram_image_cache_blowup_factor=8\nprogram_image_cache_arity=4\nprogram_image_cache_gpu_mode=cuda\n",
+            "status=ok\nbytes_written={byte_count}\noutput={}\nprogram_image_cache={}\nprogram_image_cache_segment_hash=f42614ba128d6a56d9d2df9b73c1c44aa3898eab8a02c5e99078918d4be1545b\nprogram_image_cache_program_digest={}\nprogram_image_cache_source_image_digest={}\nprogram_image_cache_constraint_system_digest={}\nprogram_image_cache_tree_root=11,12,13,14\nprogram_image_cache_trace_rows=1024\nprogram_image_cache_trace_columns=17\nprogram_image_cache_blowup_factor=8\nprogram_image_cache_arity=4\nprogram_image_cache_gpu_mode=cuda\n",
             output_path.display(),
             output_path.display(),
             format_hash(&cache.program_digest),

@@ -5,6 +5,7 @@ use crate::program_image::{
     validate_program_image_commitment_cache, ProgramImageCommitmentCache,
     ProgramImageCommitmentCacheError, PROGRAM_IMAGE_CACHE_PAYLOAD_BYTES,
 };
+use sha2::{Digest, Sha256};
 
 pub const PROGRAM_IMAGE_CACHE_SEGMENT_ID: u32 = 10_010;
 
@@ -62,6 +63,10 @@ pub fn encode_program_image_cache_segment(
     out.extend_from_slice(&PROGRAM_IMAGE_CACHE_SEGMENT_VERSION.to_le_bytes());
     out.extend_from_slice(&encode_program_image_commitment_cache_payload(value));
     Ok(out)
+}
+
+pub fn program_image_cache_segment_digest(bytes: &[u8]) -> [u8; 32] {
+    Sha256::digest(bytes).into()
 }
 
 pub fn parse_program_image_cache_segment(
