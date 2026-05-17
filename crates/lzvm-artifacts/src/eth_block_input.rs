@@ -405,6 +405,15 @@ pub fn encode_eth_block_input(value: &EthBlockInput) -> Result<Vec<u8>, EthBlock
             root,
             &withdrawals.hash_preimages,
         )?;
+        let expected = validated_input
+            .withdrawals
+            .as_ref()
+            .expect("withdrawal root pairing checked");
+        validate_canonical_preimages(
+            EthBlockInputTrie::Withdrawals,
+            &withdrawals.hash_preimages,
+            &expected.hash_preimages,
+        )?;
     }
     if let Some(receipts) = &value.receipts {
         validate_preimages(
@@ -564,6 +573,15 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
         (Some(root), Some(preimages)) => {
             let hash_preimages =
                 parse_validated_preimages(EthBlockInputTrie::Withdrawals, root, &preimages)?;
+            let expected = validated_input
+                .withdrawals
+                .as_ref()
+                .expect("withdrawal root pairing checked");
+            validate_canonical_preimages(
+                EthBlockInputTrie::Withdrawals,
+                &hash_preimages,
+                &expected.hash_preimages,
+            )?;
             Some(IndexedTrieBuild {
                 root,
                 hash_preimages,

@@ -10,6 +10,7 @@ const ETH_BLOCK_INPUT_KIND: [u8; 4] = *b"ethi";
 const ETH_BLOCK_INPUT_VERSION: u32 = 1;
 const METADATA_SECTION_ID: u32 = 1;
 const TRANSACTION_PREIMAGES_SECTION_ID: u32 = 3;
+const WITHDRAWAL_PREIMAGES_SECTION_ID: u32 = 4;
 const RECEIPT_PREIMAGES_SECTION_ID: u32 = 5;
 const RECEIPTS_RLP_SECTION_ID: u32 = 6;
 
@@ -669,6 +670,32 @@ fn rejects_encoding_withdrawal_preimage_hash_mismatches() {
 }
 
 #[test]
+fn rejects_encoding_extra_withdrawal_preimages() {
+    let block_rlp = sample_block_rlp_with_withdrawals(
+        hex32("51c445cba96d0dfd446eec8b2b94f104608cf8443a92f7f87c76a383d6687300"),
+        vec![withdrawal_item()],
+    );
+    let mut input = build_eth_block_input(&block_rlp).expect("block input should build");
+    input
+        .withdrawals
+        .as_mut()
+        .expect("withdrawals should exist")
+        .hash_preimages
+        .push(TrieHashPreimage {
+            hash: empty_trie_root(),
+            rlp: vec![0x80],
+        });
+
+    let error =
+        encode_eth_block_input(&input).expect_err("block input should reject trie preimages");
+
+    assert_eq!(
+        error.to_string(),
+        "ETH block input withdrawals trie preimages mismatch"
+    );
+}
+
+#[test]
 fn rejects_encoding_withdrawal_trie_root_mismatches() {
     let block_rlp = sample_block_rlp_with_withdrawals(
         hex32("51c445cba96d0dfd446eec8b2b94f104608cf8443a92f7f87c76a383d6687300"),
@@ -799,6 +826,42 @@ fn rejects_extra_receipt_preimages() {
     assert_eq!(
         error.to_string(),
         "ETH block input receipts trie preimages mismatch"
+    );
+}
+
+#[test]
+fn rejects_extra_withdrawal_preimages() {
+    let block_rlp = sample_block_rlp_with_withdrawals(
+        hex32("51c445cba96d0dfd446eec8b2b94f104608cf8443a92f7f87c76a383d6687300"),
+        vec![withdrawal_item()],
+    );
+    let input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let encoded = encode_eth_block_input(&input).expect("block input should encode");
+    let mut file = parse_sectioned_file(&encoded, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION)
+        .expect("sectioned input should parse");
+    let withdrawal_preimages = file
+        .sections
+        .iter_mut()
+        .find(|section| section.id == WITHDRAWAL_PREIMAGES_SECTION_ID)
+        .expect("withdrawal preimage section should exist");
+    let mut preimages = input
+        .withdrawals
+        .as_ref()
+        .expect("withdrawals should exist")
+        .hash_preimages
+        .clone();
+    preimages.push(TrieHashPreimage {
+        hash: empty_trie_root(),
+        rlp: vec![0x80],
+    });
+    withdrawal_preimages.data = encode_hash_preimages(&preimages);
+    let encoded = encode_sectioned_file(&file).expect("sectioned input should encode");
+
+    let error = parse_eth_block_input(&encoded).expect_err("block input should fail");
+
+    assert_eq!(
+        error.to_string(),
+        "ETH block input withdrawals trie preimages mismatch"
     );
 }
 
