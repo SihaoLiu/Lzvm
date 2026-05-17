@@ -214,6 +214,8 @@ fn write_input_summary(
         input.transactions.hash_preimages.len()
     );
     let (legacy_transactions, typed_transactions) = transaction_kind_counts(input);
+    let transaction_count = legacy_transactions + typed_transactions;
+    let _ = writeln!(stdout, "transaction_count={transaction_count}");
     let _ = writeln!(stdout, "legacy_transactions={legacy_transactions}");
     let _ = writeln!(stdout, "typed_transactions={typed_transactions}");
     if let Some(receipts) = &input.receipts {
