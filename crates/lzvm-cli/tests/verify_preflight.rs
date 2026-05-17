@@ -17,6 +17,16 @@ fn sample_hash(byte: u8) -> [u8; 32] {
     [byte; 32]
 }
 
+fn to_hex(hash: &[u8; 32]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(64);
+    for byte in hash {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
         "lzvm-cli-verify-preflight-{}-{name}",
@@ -95,6 +105,7 @@ fn write_fixture_pair(
 #[test]
 fn verifies_preflight_reports_program_image_cache_segments() {
     let values = sample_public_values();
+    let public_values_hash = public_values_digest(&values).expect("digest should compute");
     let mut proof = sample_proof(&values);
     proof.segments.push(ProofSegment {
         id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
@@ -120,7 +131,10 @@ fn verifies_preflight_reports_program_image_cache_segments() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nsegments=2\npublic_values=2\npublic_value_fields=5\nprogram_image_caches=1\n"
+        format!(
+            "status=ok\nsegments=2\npublic_values=2\npublic_values_hash={}\npublic_value_fields=5\nprogram_image_caches=1\n",
+            to_hex(&public_values_hash)
+        )
     );
     assert!(stderr.is_empty());
 }
@@ -128,6 +142,7 @@ fn verifies_preflight_reports_program_image_cache_segments() {
 #[test]
 fn verifies_proof_artifact_preflight() {
     let values = sample_public_values();
+    let public_values_hash = public_values_digest(&values).expect("digest should compute");
     let proof = sample_proof(&values);
     let (dir, proof_path, public_path) = write_fixture_pair("valid", &proof, &values);
 
@@ -147,7 +162,10 @@ fn verifies_proof_artifact_preflight() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nsegments=1\npublic_values=2\npublic_value_fields=5\n"
+        format!(
+            "status=ok\nsegments=1\npublic_values=2\npublic_values_hash={}\npublic_value_fields=5\n",
+            to_hex(&public_values_hash)
+        )
     );
     assert!(stderr.is_empty());
 
@@ -163,6 +181,7 @@ fn verifies_proof_artifact_preflight() {
 #[test]
 fn verifies_proof_artifact_preflight_with_binary_public_values() {
     let values = sample_public_values();
+    let public_values_hash = public_values_digest(&values).expect("digest should compute");
     let proof = sample_proof(&values);
     let dir = temp_dir("valid-bin");
     let _ = fs::remove_dir_all(&dir);
@@ -194,7 +213,10 @@ fn verifies_proof_artifact_preflight_with_binary_public_values() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nsegments=1\npublic_values=2\npublic_value_fields=5\n"
+        format!(
+            "status=ok\nsegments=1\npublic_values=2\npublic_values_hash={}\npublic_value_fields=5\n",
+            to_hex(&public_values_hash)
+        )
     );
     assert!(stderr.is_empty());
 }

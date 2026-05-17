@@ -606,6 +606,11 @@ fn verify_preflight(
     let _ = writeln!(stdout, "public_values={}", report.public_value_count);
     let _ = writeln!(
         stdout,
+        "public_values_hash={}",
+        prove_plan::format_hash(&report.public_values_hash)
+    );
+    let _ = writeln!(
+        stdout,
         "public_value_fields={}",
         report.public_value_field_count
     );

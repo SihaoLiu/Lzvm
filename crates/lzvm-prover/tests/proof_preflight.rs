@@ -146,6 +146,8 @@ fn validates_proof_public_value_preflight_hashes() {
         ProofPreflightReport {
             segment_count: 1,
             public_value_count: 1,
+            public_values_hash: public_values_digest(&public_values)
+                .expect("digest should compute"),
             public_value_field_count: 1,
             program_image_cache_count: 0,
             eth_block_input_count: 0,

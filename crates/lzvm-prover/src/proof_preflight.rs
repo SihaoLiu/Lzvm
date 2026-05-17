@@ -24,6 +24,7 @@ use lzvm_field::{Felt, FieldError};
 pub struct ProofPreflightReport {
     pub segment_count: usize,
     pub public_value_count: usize,
+    pub public_values_hash: [u8; 32],
     pub public_value_field_count: usize,
     pub program_image_cache_count: usize,
     pub eth_block_input_count: usize,
@@ -189,6 +190,7 @@ pub fn validate_proof_public_values(
     Ok(ProofPreflightReport {
         segment_count: proof.segments.len(),
         public_value_count: public_values.values.len(),
+        public_values_hash: digest,
         public_value_field_count: public_value_fields.len(),
         program_image_cache_count,
         eth_block_input_count,

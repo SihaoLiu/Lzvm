@@ -200,6 +200,7 @@ pub fn validate_setup_preflight_hashes(
     let ProofPreflightReport {
         segment_count,
         public_value_count,
+        public_values_hash: _,
         public_value_field_count,
         program_image_cache_count,
         eth_block_input_count,
