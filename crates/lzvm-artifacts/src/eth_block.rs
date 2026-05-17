@@ -1,4 +1,5 @@
-use crate::rlp::{parse_rlp, RlpError, RlpItem};
+use crate::rlp::{encode_rlp, parse_rlp, RlpError, RlpItem};
+use sha3::{Digest, Keccak256};
 use std::fmt;
 
 const BASE_HEADER_FIELD_COUNT: usize = 15;
@@ -310,6 +311,14 @@ pub fn decode_eth_transactions_rlp(
         .iter()
         .map(decode_eth_transaction_rlp)
         .collect()
+}
+
+pub fn keccak256(bytes: &[u8]) -> [u8; 32] {
+    Keccak256::digest(bytes).into()
+}
+
+pub fn eth_header_hash(header: &[RlpItem]) -> [u8; 32] {
+    keccak256(&encode_rlp(&RlpItem::List(header.to_vec())))
 }
 
 fn take_list(item: RlpItem, error: EthBlockError) -> Result<Vec<RlpItem>, EthBlockError> {

@@ -1,7 +1,7 @@
 use lzvm_artifacts::eth_block::{
     decode_eth_header_rlp, decode_eth_transaction_rlp, decode_eth_transactions_rlp,
-    parse_eth_block_rlp, EthBlockError, EthBlockRlp, EthTransactionError, EthTransactionRlp,
-    HeaderField,
+    eth_header_hash, keccak256, parse_eth_block_rlp, EthBlockError, EthBlockRlp,
+    EthTransactionError, EthTransactionRlp, HeaderField,
 };
 use lzvm_artifacts::rlp::RlpItem;
 
@@ -167,6 +167,28 @@ fn rejects_noncanonical_header_quantities() {
 }
 
 #[test]
+fn hashes_with_keccak_256() {
+    assert_eq!(
+        keccak256(&[]),
+        hex32("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")
+    );
+}
+
+#[test]
+fn hashes_mainnet_genesis_header() {
+    let header_rlp = rlp_list(&mainnet_genesis_header_items());
+    let header = match lzvm_artifacts::rlp::parse_rlp(&header_rlp).expect("header should parse") {
+        RlpItem::List(header) => header,
+        RlpItem::Bytes(_) => panic!("header should be a list"),
+    };
+
+    assert_eq!(
+        eth_header_hash(&header),
+        hex32("d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3")
+    );
+}
+
+#[test]
 fn decodes_legacy_transactions_as_field_lists() {
     let transaction = RlpItem::List(vec![RlpItem::Bytes(vec![1]), RlpItem::Bytes(vec![2])]);
 
@@ -270,6 +292,36 @@ fn legacy_header_items() -> Vec<Vec<u8>> {
     ]
 }
 
+fn mainnet_genesis_header_items() -> Vec<Vec<u8>> {
+    vec![
+        rlp_bytes(&[0; 32]),
+        rlp_bytes(&hex32(
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )),
+        rlp_bytes(&[0; 20]),
+        rlp_bytes(&hex32(
+            "d7f8974fb5ac78d9ac099b9ad5018bedc2ce0a72dad1827a1709da30580f0544",
+        )),
+        rlp_bytes(&hex32(
+            "56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+        )),
+        rlp_bytes(&hex32(
+            "56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+        )),
+        rlp_bytes(&[0; 256]),
+        rlp_bytes(&[0x04, 0x00, 0x00, 0x00, 0x00]),
+        rlp_bytes(&[]),
+        rlp_bytes(&[0x13, 0x88]),
+        rlp_bytes(&[]),
+        rlp_bytes(&[]),
+        rlp_bytes(&hex_bytes(
+            "11bbe8db4e347b4e8c937c1c8370e4b5ed33adb3db69cbdb7a38e1e50b1b82fa",
+        )),
+        rlp_bytes(&[0; 32]),
+        rlp_bytes(&[0, 0, 0, 0, 0, 0, 0, 0x42]),
+    ]
+}
+
 fn rlp_bytes(payload: &[u8]) -> Vec<u8> {
     if payload.len() == 1 && payload[0] <= 0x7f {
         return vec![payload[0]];
@@ -304,4 +356,28 @@ fn length_bytes(mut value: usize) -> Vec<u8> {
     }
     bytes.reverse();
     bytes
+}
+
+fn hex32(value: &str) -> [u8; 32] {
+    hex_bytes(value)
+        .try_into()
+        .expect("hex value should have 32 bytes")
+}
+
+fn hex_bytes(value: &str) -> Vec<u8> {
+    assert!(value.len().is_multiple_of(2));
+    value
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| (hex_value(pair[0]) << 4) | hex_value(pair[1]))
+        .collect()
+}
+
+fn hex_value(value: u8) -> u8 {
+    match value {
+        b'0'..=b'9' => value - b'0',
+        b'a'..=b'f' => value - b'a' + 10,
+        b'A'..=b'F' => value - b'A' + 10,
+        _ => panic!("invalid hex digit"),
+    }
 }
