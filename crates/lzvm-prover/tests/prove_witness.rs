@@ -45,6 +45,7 @@ use lzvm_artifacts::setup_info::{
     EvaluationMapEntry, FriStep, StageValue, StarkStruct, UnitSetupInfo,
 };
 use lzvm_artifacts::trace_bundle::{TraceBundle, TraceBundleUnit};
+use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
 use lzvm_artifacts::witness_opening_segment::{
@@ -1088,6 +1089,24 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
         .segments
         .iter()
         .any(|segment| { segment.id == CONTRIBUTION_SEGMENT_ID }));
+    let unit_values_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == UNIT_VALUES_SEGMENT_ID)
+        .expect("unit values segment should exist");
+    let unit_values =
+        parse_unit_values_segment(&unit_values_segment.data).expect("unit values should parse");
+    assert_eq!(unit_values.units.len(), 2);
+    assert_eq!(unit_values.units[0].unit_index, 0);
+    assert_eq!(unit_values.units[1].unit_index, 1);
+    assert_eq!(
+        unit_values.units[0].values,
+        vec![901, 1001, 1002, 1003, 902]
+    );
+    assert_eq!(
+        unit_values.units[1].values,
+        vec![901, 1001, 1002, 1003, 902]
+    );
     let expected_entries = outputs
         .iter()
         .map(|output| {

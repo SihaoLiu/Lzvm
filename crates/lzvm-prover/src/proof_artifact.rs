@@ -507,6 +507,8 @@ pub fn build_witness_proof_artifact_for_all_units(
     let binding_segments =
         build_proof_binding_segments(request.program_image_cache, request.eth_block_input)?;
     let binding_segments_slice = binding_segments.as_slice();
+    let proof_unit_values =
+        collect_proof_unit_values(request.schedule, request.outputs, request.unit_values)?;
     let witness_outputs = request
         .outputs
         .iter()
@@ -523,6 +525,7 @@ pub fn build_witness_proof_artifact_for_all_units(
             public_values_hash,
             &witness_outputs,
             binding_segments_slice,
+            &proof_unit_values,
         )?
     } else if binding_segments_slice.is_empty() {
         build_witness_proof_artifact(
@@ -532,7 +535,7 @@ pub fn build_witness_proof_artifact_for_all_units(
             &witness_outputs,
             &request.auxiliary_inputs.proof_values,
             &request.auxiliary_inputs.group_values,
-            request.unit_values,
+            &proof_unit_values,
         )?
     } else {
         build_witness_proof_artifact_with_bindings(
@@ -543,7 +546,7 @@ pub fn build_witness_proof_artifact_for_all_units(
             ProofArtifactInputs {
                 proof_values: &request.auxiliary_inputs.proof_values,
                 group_values: &request.auxiliary_inputs.group_values,
-                unit_values: request.unit_values,
+                unit_values: &proof_unit_values,
                 binding_segments: binding_segments_slice,
             },
         )?
@@ -554,8 +557,7 @@ pub fn build_witness_proof_artifact_for_all_units(
         .iter()
         .map(|output| {
             let unit_index = output.commitments().unit_index();
-            let packed_unit_values = request
-                .unit_values
+            let packed_unit_values = proof_unit_values
                 .iter()
                 .find(|values| values.unit_index == unit_index)
                 .map(|values| values.packed_values.as_slice())
@@ -736,6 +738,7 @@ fn build_witness_transcript_proof_artifact_for_all_units(
     public_values_hash: [u8; 32],
     witness_outputs: &[&ProveWitnessCommitments],
     binding_segments: &[ProofSegment],
+    unit_values: &[ProveUnitValues],
 ) -> Result<ProofArtifact, String> {
     let material_segment = build_pcs_material_manifest_segment(request.schedule)
         .map_err(|error| format!("build material manifest segment failed: {error}"))?;
@@ -769,8 +772,7 @@ fn build_witness_transcript_proof_artifact_for_all_units(
         .map(|output| {
             let unit_index = output.commitments().unit_index();
             let mut inputs = output.auxiliary_inputs().clone();
-            if let Some(values) = request
-                .unit_values
+            if let Some(values) = unit_values
                 .iter()
                 .find(|values| values.unit_index == unit_index)
             {
@@ -862,9 +864,8 @@ fn build_witness_transcript_proof_artifact_for_all_units(
         &request.auxiliary_inputs.group_values,
     )
     .map_err(|error| format!("build group values segment failed: {error}"))?;
-    let unit_values_segment =
-        build_unit_values_segment_from_packed_values_batch(request.unit_values)
-            .map_err(|error| format!("build unit values segment failed: {error}"))?;
+    let unit_values_segment = build_unit_values_segment_from_packed_values_batch(unit_values)
+        .map_err(|error| format!("build unit values segment failed: {error}"))?;
 
     let mut segments = vec![
         material_segment,
@@ -891,4 +892,32 @@ fn build_witness_transcript_proof_artifact_for_all_units(
         public_values_hash,
         segments,
     })
+}
+
+fn collect_proof_unit_values(
+    schedule: &ProveSchedule,
+    outputs: &[ProveWitnessTraceCommitments],
+    explicit_values: &[ProveUnitValues],
+) -> Result<Vec<ProveUnitValues>, String> {
+    if !explicit_values.is_empty() {
+        return Ok(explicit_values.to_vec());
+    }
+
+    let mut values = Vec::with_capacity(outputs.len());
+    for output in outputs {
+        let unit_index = output.commitments().unit_index();
+        let unit = schedule
+            .units
+            .get(unit_index)
+            .ok_or_else(|| format!("unit values segment unit index out of range: {unit_index}"))?;
+        let packed_values = output.auxiliary_inputs().unit_values.clone();
+        if !packed_values.is_empty() || !unit.unit_value_map.is_empty() {
+            values.push(ProveUnitValues {
+                unit_index,
+                unit_value_map: unit.unit_value_map.clone(),
+                packed_values,
+            });
+        }
+    }
+    Ok(values)
 }
