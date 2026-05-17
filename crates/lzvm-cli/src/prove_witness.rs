@@ -603,7 +603,15 @@ fn prepare_eth_block_public_inputs(
             generated: false,
         });
     };
-    if inputs.public_inputs.is_some() {
+    if let Some(public_inputs) = &inputs.public_inputs {
+        let public_values = read_public_values_file(public_inputs).map_err(|error| {
+            format!(
+                "read public inputs failed: {}: {error}",
+                public_inputs.display()
+            )
+        })?;
+        validate_eth_block_public_values(&summary.input, &public_values)
+            .map_err(|error| error.to_string())?;
         return Ok(PreparedPublicInputs {
             inputs,
             generated: false,

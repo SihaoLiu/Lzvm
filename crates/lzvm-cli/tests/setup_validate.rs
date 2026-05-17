@@ -4781,6 +4781,68 @@ fn prove_witness_generates_eth_block_public_values_when_missing() {
 }
 
 #[test]
+fn prove_witness_rejects_mismatched_eth_block_public_values_before_witness_loading() {
+    let dir = temp_dir("prove-witness-eth-public-values-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let output_dir = dir.join("proof-out");
+    let witness_library = dir.join("missing-witness.so");
+    let guest_image = dir.join("guest.elf");
+    let block_input_path = dir.join("block.input");
+    let public_values_path = dir.join("mismatched-public-values.bin");
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let other_block_input =
+        build_eth_block_input(&sample_block_rlp_variant()).expect("block input should build");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(
+        &block_input_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values_from_eth_block_input(
+            setup_hash,
+            &other_block_input,
+        ))
+        .expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove witness failed: ETH block public value mismatch: eth_block_hash_u32_be\n"
+    );
+}
+
+#[test]
 fn writes_eth_block_public_values_from_setup_directory() {
     let dir = temp_dir("eth-block-public-values-setup-dir");
     let _ = fs::remove_dir_all(&dir);
