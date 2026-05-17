@@ -96,6 +96,8 @@ pub(crate) fn parse_run_args(
     let mut minimal_memory = false;
     let mut gpu = GpuRunOptions::default();
     let mut gpu_streams_used = false;
+    let mut witness_thread_pools_used = false;
+    let mut stored_witnesses_used = false;
     let mut input_data = None;
     let mut program_image_cache = None;
     let mut pass_selection = None;
@@ -138,10 +140,20 @@ pub(crate) fn parse_run_args(
             }
             "--witness-thread-pools" => {
                 index += 1;
+                if std::mem::replace(&mut witness_thread_pools_used, true) {
+                    return Err(ParseError::Invalid(
+                        "duplicate --witness-thread-pools option".to_owned(),
+                    ));
+                }
                 gpu.witness_thread_pools = parse_usize(args.get(index), "--witness-thread-pools")?;
             }
             "--stored-witnesses" => {
                 index += 1;
+                if std::mem::replace(&mut stored_witnesses_used, true) {
+                    return Err(ParseError::Invalid(
+                        "duplicate --stored-witnesses option".to_owned(),
+                    ));
+                }
                 gpu.max_stored_witnesses = parse_usize(args.get(index), "--stored-witnesses")?;
             }
             "--partitions" => {
@@ -520,6 +532,24 @@ mod tests {
             result,
             Err(ParseError::Invalid(message)) if message == "duplicate --gpu-streams option"
         ));
+    }
+
+    #[test]
+    fn rejects_duplicate_witness_gpu_resource_options() {
+        for (option, expected) in [
+            (
+                "--witness-thread-pools",
+                "duplicate --witness-thread-pools option",
+            ),
+            ("--stored-witnesses", "duplicate --stored-witnesses option"),
+        ] {
+            let result = parse_run_args(&[option, "2", option, "4", "setup-dir", "out-dir"], 2, 2);
+
+            assert!(
+                matches!(result, Err(ParseError::Invalid(message)) if message == expected),
+                "{option}"
+            );
+        }
     }
 
     #[test]
