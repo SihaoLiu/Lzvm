@@ -101,7 +101,7 @@ fn ignores_visibility_modifiers_that_do_not_start_include_directives() {
 }
 
 #[test]
-fn rejects_template_include_paths() {
+fn rejects_dynamic_template_include_paths() {
     let source = source("include `dynamic/${name}.pil`;");
 
     let error = parse_include_directives(&source).expect_err("template path should fail");
@@ -110,6 +110,28 @@ fn rejects_template_include_paths() {
         error,
         ParseError::TemplatePath { source_name, .. } if source_name == "main.pil"
     ));
+}
+
+#[test]
+fn parses_template_include_paths_with_constant_expressions() {
+    let source = source("include `lib/${1 + 1}.pil`;\ninclude `plain.pil`;");
+
+    let directives = parse_include_directives(&source).expect("directives should parse");
+
+    assert_eq!(directives.len(), 2);
+    assert_eq!(directives[0].file, "lib/2.pil");
+    assert_eq!(directives[1].file, "plain.pil");
+}
+
+#[test]
+fn parses_template_include_paths_with_short_circuit_expressions() {
+    let source = source("include `lib/${0 && name}.pil`;\ninclude `alt/${1 || name}.pil`;");
+
+    let directives = parse_include_directives(&source).expect("directives should parse");
+
+    assert_eq!(directives.len(), 2);
+    assert_eq!(directives[0].file, "lib/0.pil");
+    assert_eq!(directives[1].file, "alt/1.pil");
 }
 
 #[test]

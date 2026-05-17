@@ -10,6 +10,7 @@ pub use types::*;
 
 use crate::{lex_source, SourceFile, Token, TokenKind};
 use declarations::{include_header, parse_named_statement};
+use expressions::parse_expression_tokens;
 
 const DEFAULT_CHALLENGE_STAGE: u32 = 2;
 const DEFAULT_VALUE_STAGE: u32 = 1;
@@ -54,22 +55,7 @@ pub fn parse_include_directives(source: &SourceFile) -> Result<Vec<IncludeDirect
                 start: tokens[header.directive_index].end,
             });
         };
-        let file = match path_token.kind {
-            TokenKind::StringLiteral => path_token.lexeme.clone(),
-            TokenKind::TemplateLiteral => {
-                return Err(ParseError::TemplatePath {
-                    source_name: source.source_name.clone(),
-                    start: path_token.start,
-                    end: path_token.end,
-                });
-            }
-            _ => {
-                return Err(ParseError::ExpectedPath {
-                    source_name: source.source_name.clone(),
-                    start: path_token.start,
-                });
-            }
-        };
+        let file = resolve_include_path(source, path_token)?;
 
         let terminator_index = path_index + 1;
         let Some(terminator) = tokens.get(terminator_index) else {
@@ -97,6 +83,287 @@ pub fn parse_include_directives(source: &SourceFile) -> Result<Vec<IncludeDirect
     }
 
     Ok(directives)
+}
+
+fn resolve_include_path(source: &SourceFile, token: &Token) -> Result<String, ParseError> {
+    match token.kind {
+        TokenKind::StringLiteral => Ok(token.lexeme.clone()),
+        TokenKind::TemplateLiteral => {
+            evaluate_template_include_path(source, token.start, token.end, &token.lexeme)
+        }
+        _ => Err(ParseError::ExpectedPath {
+            source_name: source.source_name.clone(),
+            start: token.start,
+        }),
+    }
+}
+
+fn evaluate_template_include_path(
+    source: &SourceFile,
+    start: usize,
+    end: usize,
+    template: &str,
+) -> Result<String, ParseError> {
+    let mut resolved = String::new();
+    let mut cursor = 0;
+
+    while let Some(relative_start) = template[cursor..].find("${") {
+        let segment_start = cursor + relative_start;
+        resolved.push_str(&template[cursor..segment_start]);
+
+        let expression_start = segment_start + 2;
+        let Some(relative_end) = template[expression_start..].find('}') else {
+            return Err(ParseError::TemplatePath {
+                source_name: source.source_name.clone(),
+                start,
+                end,
+            });
+        };
+        let expression_end = expression_start + relative_end;
+        let expression = &template[expression_start..expression_end];
+        let evaluated = evaluate_template_expression(source, expression).map_err(|_| {
+            ParseError::TemplatePath {
+                source_name: source.source_name.clone(),
+                start,
+                end,
+            }
+        })?;
+        resolved.push_str(&evaluated);
+        cursor = expression_end + 1;
+    }
+
+    resolved.push_str(&template[cursor..]);
+    Ok(resolved)
+}
+
+fn evaluate_template_expression(source: &SourceFile, expression: &str) -> Result<String, ()> {
+    let expression_source = SourceFile {
+        contents: expression.to_owned(),
+        file_dir: source.file_dir.clone(),
+        full_path: source.full_path.clone(),
+        source_name: source.source_name.clone(),
+    };
+    let tokens = lex_source(&expression_source.contents).map_err(|_| ())?;
+    let (parsed, next_index) =
+        parse_expression_tokens(&tokens, 0, tokens.len(), &expression_source).map_err(|_| ())?;
+    if next_index != tokens.len() {
+        return Err(());
+    }
+    evaluate_template_expression_value(&parsed)
+        .map(TemplateValue::into_string)
+        .ok_or(())
+}
+
+#[derive(Debug, Clone)]
+enum TemplateValue {
+    Integer(i128),
+    Boolean(bool),
+    String(String),
+}
+
+impl TemplateValue {
+    fn into_string(self) -> String {
+        match self {
+            Self::Integer(value) => value.to_string(),
+            Self::Boolean(value) => value.to_string(),
+            Self::String(value) => value,
+        }
+    }
+
+    fn as_integer(&self) -> Option<i128> {
+        match self {
+            Self::Integer(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    fn truthy(&self) -> bool {
+        match self {
+            Self::Integer(value) => *value != 0,
+            Self::Boolean(value) => *value,
+            Self::String(value) => !value.is_empty(),
+        }
+    }
+}
+
+fn evaluate_template_expression_value(expression: &Expression) -> Option<TemplateValue> {
+    match &expression.kind {
+        ExpressionKind::Integer(value) => parse_decimal_integer(value)
+            .ok()
+            .map(TemplateValue::Integer),
+        ExpressionKind::HexInteger(value) => {
+            parse_hex_integer(value).ok().map(TemplateValue::Integer)
+        }
+        ExpressionKind::StringLiteral(value) | ExpressionKind::TemplateLiteral(value) => {
+            Some(TemplateValue::String(value.clone()))
+        }
+        ExpressionKind::Group(inner) => evaluate_template_expression_value(inner),
+        ExpressionKind::Unary { op, expr } => {
+            let value = evaluate_template_expression_value(expr)?;
+            match op {
+                UnaryOperator::Plus => value.as_integer().map(TemplateValue::Integer),
+                UnaryOperator::Minus => value
+                    .as_integer()
+                    .and_then(|value| value.checked_neg())
+                    .map(TemplateValue::Integer),
+                UnaryOperator::Not => Some(TemplateValue::Boolean(!value.truthy())),
+                UnaryOperator::Increment | UnaryOperator::Decrement => None,
+            }
+        }
+        ExpressionKind::Binary { op, left, right } => {
+            let lhs = evaluate_template_expression_value(left)?;
+            match op {
+                BinaryOperator::LogicalAnd => {
+                    if lhs.truthy() {
+                        let rhs = evaluate_template_expression_value(right)?;
+                        Some(rhs)
+                    } else {
+                        Some(lhs)
+                    }
+                }
+                BinaryOperator::LogicalOr => {
+                    if lhs.truthy() {
+                        Some(lhs)
+                    } else {
+                        let rhs = evaluate_template_expression_value(right)?;
+                        Some(rhs)
+                    }
+                }
+                _ => {
+                    let rhs = evaluate_template_expression_value(right)?;
+                    evaluate_template_binary(*op, lhs, rhs)
+                }
+            }
+        }
+        _ => None,
+    }
+}
+
+fn evaluate_template_binary(
+    op: BinaryOperator,
+    lhs: TemplateValue,
+    rhs: TemplateValue,
+) -> Option<TemplateValue> {
+    match op {
+        BinaryOperator::Add => match (lhs, rhs) {
+            (TemplateValue::Integer(lhs), TemplateValue::Integer(rhs)) => {
+                lhs.checked_add(rhs).map(TemplateValue::Integer)
+            }
+            (lhs, rhs) => Some(TemplateValue::String(format!(
+                "{}{}",
+                lhs.into_string(),
+                rhs.into_string()
+            ))),
+        },
+        BinaryOperator::Subtract => binary_integer_op(lhs, rhs, i128::checked_sub),
+        BinaryOperator::Multiply => binary_integer_op(lhs, rhs, i128::checked_mul),
+        BinaryOperator::Divide | BinaryOperator::Backslash => binary_integer_div(lhs, rhs),
+        BinaryOperator::Modulo => binary_integer_mod(lhs, rhs),
+        BinaryOperator::Power => binary_integer_pow(lhs, rhs),
+        BinaryOperator::ShiftLeft => binary_integer_shift(lhs, rhs, true),
+        BinaryOperator::ShiftRight => binary_integer_shift(lhs, rhs, false),
+        BinaryOperator::BitAnd => binary_integer_bitwise(lhs, rhs, |a, b| a & b),
+        BinaryOperator::BitXor => binary_integer_bitwise(lhs, rhs, |a, b| a ^ b),
+        BinaryOperator::BitOr => binary_integer_bitwise(lhs, rhs, |a, b| a | b),
+        BinaryOperator::Less => binary_integer_cmp(lhs, rhs, |a, b| a < b),
+        BinaryOperator::LessEqual => binary_integer_cmp(lhs, rhs, |a, b| a <= b),
+        BinaryOperator::Greater => binary_integer_cmp(lhs, rhs, |a, b| a > b),
+        BinaryOperator::GreaterEqual => binary_integer_cmp(lhs, rhs, |a, b| a >= b),
+        BinaryOperator::EqualEqual | BinaryOperator::TripleEqual => binary_value_eq(lhs, rhs),
+        BinaryOperator::NotEqual => binary_value_ne(lhs, rhs),
+        _ => None,
+    }
+}
+
+fn binary_integer_op(
+    lhs: TemplateValue,
+    rhs: TemplateValue,
+    op: impl Fn(i128, i128) -> Option<i128>,
+) -> Option<TemplateValue> {
+    Some(TemplateValue::Integer(op(
+        lhs.as_integer()?,
+        rhs.as_integer()?,
+    )?))
+}
+
+fn binary_integer_div(lhs: TemplateValue, rhs: TemplateValue) -> Option<TemplateValue> {
+    let lhs = lhs.as_integer()?;
+    let rhs = rhs.as_integer()?;
+    (rhs != 0).then(|| TemplateValue::Integer(lhs / rhs))
+}
+
+fn binary_integer_mod(lhs: TemplateValue, rhs: TemplateValue) -> Option<TemplateValue> {
+    let lhs = lhs.as_integer()?;
+    let rhs = rhs.as_integer()?;
+    (rhs != 0).then(|| TemplateValue::Integer(lhs % rhs))
+}
+
+fn binary_integer_pow(lhs: TemplateValue, rhs: TemplateValue) -> Option<TemplateValue> {
+    let lhs = lhs.as_integer()?;
+    let rhs = rhs.as_integer()?;
+    let exponent = u32::try_from(rhs).ok()?;
+    lhs.checked_pow(exponent).map(TemplateValue::Integer)
+}
+
+fn binary_integer_shift(
+    lhs: TemplateValue,
+    rhs: TemplateValue,
+    left: bool,
+) -> Option<TemplateValue> {
+    let lhs = lhs.as_integer()?;
+    let rhs = u32::try_from(rhs.as_integer()?).ok()?;
+    if left {
+        lhs.checked_shl(rhs).map(TemplateValue::Integer)
+    } else {
+        lhs.checked_shr(rhs).map(TemplateValue::Integer)
+    }
+}
+
+fn binary_integer_bitwise(
+    lhs: TemplateValue,
+    rhs: TemplateValue,
+    op: impl Fn(i128, i128) -> i128,
+) -> Option<TemplateValue> {
+    Some(TemplateValue::Integer(op(
+        lhs.as_integer()?,
+        rhs.as_integer()?,
+    )))
+}
+
+fn binary_integer_cmp(
+    lhs: TemplateValue,
+    rhs: TemplateValue,
+    op: impl Fn(i128, i128) -> bool,
+) -> Option<TemplateValue> {
+    Some(TemplateValue::Boolean(op(
+        lhs.as_integer()?,
+        rhs.as_integer()?,
+    )))
+}
+
+fn binary_value_eq(lhs: TemplateValue, rhs: TemplateValue) -> Option<TemplateValue> {
+    Some(TemplateValue::Boolean(match (lhs, rhs) {
+        (TemplateValue::Integer(lhs), TemplateValue::Integer(rhs)) => lhs == rhs,
+        (TemplateValue::Boolean(lhs), TemplateValue::Boolean(rhs)) => lhs == rhs,
+        (TemplateValue::String(lhs), TemplateValue::String(rhs)) => lhs == rhs,
+        _ => false,
+    }))
+}
+
+fn binary_value_ne(lhs: TemplateValue, rhs: TemplateValue) -> Option<TemplateValue> {
+    binary_value_eq(lhs, rhs).map(|value| match value {
+        TemplateValue::Boolean(value) => TemplateValue::Boolean(!value),
+        other => other,
+    })
+}
+
+fn parse_decimal_integer(value: &str) -> Result<i128, ()> {
+    value.parse::<i128>().map_err(|_| ())
+}
+
+fn parse_hex_integer(value: &str) -> Result<i128, ()> {
+    let digits = value.strip_prefix("0x").ok_or(())?;
+    i128::from_str_radix(digits, 16).map_err(|_| ())
 }
 
 pub fn parse_use_directives(source: &SourceFile) -> Result<Vec<UseDirective>, ParseError> {

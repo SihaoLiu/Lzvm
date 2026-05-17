@@ -180,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_template_include_paths_until_expression_lowering_exists() {
+    fn rejects_dynamic_template_include_paths() {
         let source = source("main.pil", "include `dynamic/${name}.pil`;");
 
         let error =
@@ -191,6 +191,32 @@ mod tests {
             SourceGraphError::Parse(ParseError::TemplatePath { source_name, .. })
                 if source_name == "main.pil"
         ));
+    }
+
+    #[test]
+    fn loads_constant_template_include_paths() {
+        let root = case_dir("template-include");
+        write_file(&root, "main.pil", "include `lib/${1 + 1}.pil`;");
+        write_file(&root, "lib/2.pil", "constant B = 1;");
+        let mut graph_loader = SourceGraphLoader::new(SourceLoaderConfig {
+            working_dir: root,
+            ..SourceLoaderConfig::default()
+        });
+
+        let graph = graph_loader
+            .load_main("main.pil")
+            .expect("graph should load");
+
+        assert_eq!(
+            graph
+                .sources
+                .iter()
+                .map(|source| source.source_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["main.pil", "lib/2.pil"]
+        );
+        assert_eq!(graph.edges.len(), 1);
+        assert_eq!(graph.edges[0].request, "lib/2.pil");
     }
 
     #[test]
