@@ -302,3 +302,40 @@ fn resolves_fixed_file_pragmas_with_template_parameters() {
 
     fs::remove_dir_all(&root).expect("case directory should be removed");
 }
+
+#[test]
+fn resolves_fixed_file_pragmas_with_uppercase_hex_template_parameters() {
+    let root = case_dir("fixed-file-uppercase-hex-params");
+    write_file(
+        &root,
+        "main.pil",
+        "airtemplate Table(const int RC = 0X10) {\n\
+             #pragma extern_fixed_file `${RC}.bin`\n\
+         }\n\
+         airgroup GroupA {\n\
+             Table();\n\
+             Table(RC: 0X20) alias Second;\n\
+         }",
+    );
+    let mut loader = SourceProgramLoader::new(SourceLoaderConfig {
+        working_dir: root.clone(),
+        ..SourceLoaderConfig::default()
+    });
+
+    let program = loader
+        .load_main("main.pil")
+        .expect("source program should load");
+    let fixed_files = program
+        .resolved_fixed_file_pragmas()
+        .expect("fixed-file pragmas should resolve");
+
+    assert_eq!(
+        fixed_files
+            .iter()
+            .map(|fixed_file| fixed_file.path.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("16.bin"), Some("32.bin")]
+    );
+
+    fs::remove_dir_all(&root).expect("case directory should be removed");
+}

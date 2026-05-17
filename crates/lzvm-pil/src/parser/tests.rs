@@ -127,6 +127,16 @@ fn parses_template_include_paths_with_constant_expressions() {
 }
 
 #[test]
+fn parses_template_include_paths_with_uppercase_hex_expressions() {
+    let source = source("include `lib/${0X10 + 1}.pil`;");
+
+    let directives = parse_include_directives(&source).expect("directives should parse");
+
+    assert_eq!(directives.len(), 1);
+    assert_eq!(directives[0].file, "lib/17.pil");
+}
+
+#[test]
 fn parses_template_include_paths_with_short_circuit_expressions() {
     let source = source("include `lib/${0 && name}.pil`;\ninclude `alt/${1 || name}.pil`;");
 

@@ -289,6 +289,7 @@ fn fixed_file_template_value_from_expression(
             .map(FixedFileTemplateValue::Integer),
         ExpressionKind::HexInteger(value) => value
             .strip_prefix("0x")
+            .or_else(|| value.strip_prefix("0X"))
             .and_then(|digits| i128::from_str_radix(digits, 16).ok())
             .map(FixedFileTemplateValue::Integer),
         ExpressionKind::StringLiteral(value) | ExpressionKind::TemplateLiteral(value) => {

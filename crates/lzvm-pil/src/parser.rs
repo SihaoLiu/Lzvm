@@ -643,7 +643,10 @@ fn parse_decimal_integer(value: &str) -> Result<i128, ()> {
 }
 
 fn parse_hex_integer(value: &str) -> Result<i128, ()> {
-    let digits = value.strip_prefix("0x").ok_or(())?;
+    let digits = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+        .ok_or(())?;
     i128::from_str_radix(digits, 16).map_err(|_| ())
 }
 

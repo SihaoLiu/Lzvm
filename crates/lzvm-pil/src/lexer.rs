@@ -366,7 +366,7 @@ fn scan_number(input: &str, index: usize) -> Result<(Token, usize), LexError> {
     let bytes = input.as_bytes();
     let mut end = index;
     let mut kind = TokenKind::Integer;
-    if starts_with(input, index, "0x")
+    if (starts_with(input, index, "0x") || starts_with(input, index, "0X"))
         && bytes
             .get(index + 2)
             .is_some_and(|byte| byte.is_ascii_hexdigit())
@@ -627,6 +627,14 @@ mod tests {
         assert_eq!(tokens[8].lexeme, "123456");
         assert_eq!(tokens[12].lexeme, "abc");
         assert_eq!(tokens[13].lexeme, "x + y");
+    }
+
+    #[test]
+    fn tokenizes_uppercase_hex_integer_prefixes() {
+        let tokens = lex_source("const N = 0X1f_FF;").expect("lexing should work");
+
+        assert_eq!(tokens[3].kind, TokenKind::HexInteger);
+        assert_eq!(tokens[3].lexeme, "0X1fFF");
     }
 
     #[test]
