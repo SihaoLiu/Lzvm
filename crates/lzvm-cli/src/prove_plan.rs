@@ -102,6 +102,9 @@ pub(crate) fn parse_run_args(
     let mut program_image_cache = None;
     let mut pass_selection = None;
     let mut partition_option_used = false;
+    let mut partition_count_used = false;
+    let mut partition_ids_used = false;
+    let mut worker_index_used = false;
     let mut partition_count = 1_usize;
     let mut partition_ids = vec![0_u32];
     let mut worker_index = 0_usize;
@@ -159,16 +162,29 @@ pub(crate) fn parse_run_args(
             "--partitions" => {
                 index += 1;
                 partition_option_used = true;
+                if std::mem::replace(&mut partition_count_used, true) {
+                    return Err(ParseError::Invalid(
+                        "duplicate --partitions option".to_owned(),
+                    ));
+                }
                 partition_count = parse_usize(args.get(index), "--partitions")?;
             }
             "--partition-ids" => {
                 index += 1;
                 partition_option_used = true;
+                if std::mem::replace(&mut partition_ids_used, true) {
+                    return Err(ParseError::Invalid(
+                        "duplicate --partition-ids option".to_owned(),
+                    ));
+                }
                 partition_ids = parse_partition_ids(args.get(index))?;
             }
             "--worker" => {
                 index += 1;
                 partition_option_used = true;
+                if std::mem::replace(&mut worker_index_used, true) {
+                    return Err(ParseError::Invalid("duplicate --worker option".to_owned()));
+                }
                 worker_index = parse_usize(args.get(index), "--worker")?;
             }
             "--input-data" => {
@@ -544,6 +560,31 @@ mod tests {
             ("--stored-witnesses", "duplicate --stored-witnesses option"),
         ] {
             let result = parse_run_args(&[option, "2", option, "4", "setup-dir", "out-dir"], 2, 2);
+
+            assert!(
+                matches!(result, Err(ParseError::Invalid(message)) if message == expected),
+                "{option}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_duplicate_partition_value_options() {
+        for (option, first, second, expected) in [
+            ("--partitions", "2", "4", "duplicate --partitions option"),
+            (
+                "--partition-ids",
+                "0",
+                "1",
+                "duplicate --partition-ids option",
+            ),
+            ("--worker", "0", "1", "duplicate --worker option"),
+        ] {
+            let result = parse_run_args(
+                &[option, first, option, second, "setup-dir", "out-dir"],
+                2,
+                2,
+            );
 
             assert!(
                 matches!(result, Err(ParseError::Invalid(message)) if message == expected),
