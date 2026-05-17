@@ -146,6 +146,7 @@ fn validates_proof_public_value_preflight_hashes() {
         ProofPreflightReport {
             segment_count: 1,
             public_value_count: 1,
+            program_image_cache_count: 0,
             eth_block_input_count: 0,
         }
     );

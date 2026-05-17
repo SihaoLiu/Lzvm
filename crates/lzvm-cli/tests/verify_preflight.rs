@@ -1,6 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use lzvm_artifacts::program_image::{ProgramImageCommitmentCache, ProgramImageGpuMode};
+use lzvm_artifacts::program_image_segment::{
+    encode_program_image_cache_segment, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+};
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{
     encode_public_values, public_values_digest, PublicValueEntry, PublicValues,
@@ -53,6 +57,20 @@ fn sample_proof(public_values: &PublicValues) -> ProofArtifact {
     }
 }
 
+fn sample_program_image_cache() -> ProgramImageCommitmentCache {
+    ProgramImageCommitmentCache {
+        program_digest: [0x11; 32],
+        source_image_digest: [0x22; 32],
+        constraint_system_digest: [0x33; 32],
+        tree_root: [1, 2, 3, 4],
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cuda,
+    }
+}
+
 fn write_fixture_pair(
     name: &str,
     proof: &ProofArtifact,
@@ -71,6 +89,39 @@ fn write_fixture_pair(
         encode_public_values(values).expect("public values should encode"),
     );
     (dir, proof_path, public_path)
+}
+
+#[test]
+fn verifies_preflight_reports_program_image_cache_segments() {
+    let values = sample_public_values();
+    let mut proof = sample_proof(&values);
+    proof.segments.push(ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: encode_program_image_cache_segment(&sample_program_image_cache())
+            .expect("program image cache segment should encode"),
+    });
+    let (dir, proof_path, public_path) = write_fixture_pair("program-image-cache", &proof, &values);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "preflight",
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_path.to_str().expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        "status=ok\nsegments=2\npublic_values=2\nprogram_image_caches=1\n"
+    );
+    assert!(stderr.is_empty());
 }
 
 #[test]

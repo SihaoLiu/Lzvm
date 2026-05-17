@@ -24,6 +24,7 @@ use lzvm_field::{Felt, FieldError};
 pub struct ProofPreflightReport {
     pub segment_count: usize,
     pub public_value_count: usize,
+    pub program_image_cache_count: usize,
     pub eth_block_input_count: usize,
 }
 
@@ -150,6 +151,7 @@ pub fn validate_proof_public_values(
     if proof.public_values_hash != digest {
         return Err(ProofPreflightError::PublicValuesHashMismatch);
     }
+    let mut program_image_cache_count = 0;
     for segment in proof
         .segments
         .iter()
@@ -157,6 +159,7 @@ pub fn validate_proof_public_values(
     {
         parse_program_image_cache_segment(&segment.data)
             .map_err(ProofPreflightError::ProgramImageCache)?;
+        program_image_cache_count += 1;
     }
     let eth_block_input_count = proof
         .segments
@@ -180,6 +183,7 @@ pub fn validate_proof_public_values(
     Ok(ProofPreflightReport {
         segment_count: proof.segments.len(),
         public_value_count: public_values.values.len(),
+        program_image_cache_count,
         eth_block_input_count,
     })
 }
