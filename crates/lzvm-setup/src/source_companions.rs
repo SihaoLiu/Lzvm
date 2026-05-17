@@ -120,11 +120,7 @@ pub fn write_source_companions(
 
     let archive_output_path = request.setup_dir.join(SOURCE_PROGRAM_ARCHIVE_FILE);
     let manifest_output_path = request.setup_dir.join(SOURCE_FIXED_FILE_MANIFEST_FILE);
-    let refresh_manifest = request.refresh_setup_directory_manifest
-        || request
-            .setup_dir
-            .join(SETUP_DIRECTORY_MANIFEST_FILE)
-            .is_file();
+    let refresh_manifest = should_refresh_setup_directory_manifest(request)?;
     let archive_snapshot = if refresh_manifest {
         read_optional_file(&archive_output_path)?
     } else {
@@ -195,6 +191,29 @@ pub fn write_source_companions(
             entry_count: manifest.entries.len(),
         },
     })
+}
+
+fn should_refresh_setup_directory_manifest(
+    request: &SourceCompanionWriteRequest,
+) -> Result<bool, SourceCompanionWriteError> {
+    if request.refresh_setup_directory_manifest {
+        return Ok(true);
+    }
+    let path = request.setup_dir.join(SETUP_DIRECTORY_MANIFEST_FILE);
+    match std::fs::metadata(&path) {
+        Ok(metadata) if metadata.is_file() => Ok(true),
+        Ok(_) => Err(SourceCompanionWriteError::Setup(SetupError::Io {
+            role: "inspect setup directory manifest",
+            path,
+            message: "not a file".to_owned(),
+        })),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(SourceCompanionWriteError::Setup(SetupError::Io {
+            role: "inspect setup directory manifest",
+            path,
+            message: error.to_string(),
+        })),
+    }
 }
 
 fn read_optional_file(path: &Path) -> Result<Option<Vec<u8>>, SourceCompanionWriteError> {

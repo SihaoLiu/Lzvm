@@ -1,13 +1,16 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use lzvm_artifacts::setup_manifest::SETUP_DIRECTORY_MANIFEST_FILE;
 use lzvm_artifacts::source_fixed_file_manifest::{
     read_source_fixed_file_manifest_file, SOURCE_FIXED_FILE_MANIFEST_FILE,
 };
 use lzvm_artifacts::source_program::{
     read_source_program_archive_file, SOURCE_PROGRAM_ARCHIVE_FILE,
 };
-use lzvm_setup::{write_source_companions, SourceCompanionWriteRequest};
+use lzvm_setup::{
+    write_source_companions, SetupError, SourceCompanionWriteError, SourceCompanionWriteRequest,
+};
 
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
@@ -69,5 +72,38 @@ fn writes_source_companions_to_setup_directory_defaults() {
     assert_eq!(archive.edges.len(), 1);
     assert_eq!(manifest.entries.len(), 2);
 
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_setup_manifest_directory_markers() {
+    let dir = temp_dir("manifest-directory");
+    let _ = fs::remove_dir_all(&dir);
+    let setup_dir = dir.join("setup");
+    let main_path = dir.join("main.pil");
+    write_file(
+        &main_path,
+        "airtemplate Main() {\n\
+             col fixed one = [1];\n\
+         }\n\
+         airgroup Main { Main(); }",
+    );
+    fs::create_dir_all(setup_dir.join(SETUP_DIRECTORY_MANIFEST_FILE))
+        .expect("manifest directory should be created");
+
+    let error = write_source_companions(&SourceCompanionWriteRequest {
+        working_dir: dir.clone(),
+        include_paths: Vec::new(),
+        include_path_first: false,
+        refresh_setup_directory_manifest: false,
+        main_file: main_path,
+        setup_dir,
+    })
+    .expect_err("manifest directory should be rejected");
+
+    assert!(matches!(
+        error,
+        SourceCompanionWriteError::Setup(SetupError::Io { .. })
+    ));
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
