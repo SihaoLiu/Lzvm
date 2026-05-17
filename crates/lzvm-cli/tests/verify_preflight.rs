@@ -26,10 +26,10 @@ fn sample_hash(byte: u8) -> [u8; 32] {
     [byte; 32]
 }
 
-fn to_hex(hash: &[u8; 32]) -> String {
+fn to_hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(64);
-    for byte in hash {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
         out.push(HEX[(byte >> 4) as usize] as char);
         out.push(HEX[(byte & 0x0f) as usize] as char);
     }
@@ -276,10 +276,11 @@ fn verifies_preflight_reports_eth_block_input_digest() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_ommers_hash={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\neth_withdrawals=absent\n",
+            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_ommers_hash={}\neth_logs_bloom={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\neth_withdrawals=absent\n",
             to_hex(&public_values_hash),
             to_hex(&eth_block_input_hash),
             to_hex(&block_input.ommers_hash),
+            to_hex(&block_input.logs_bloom),
             block_input.transactions.hash_preimages.len(),
             receipt_build.hash_preimages.len()
         )
@@ -327,10 +328,11 @@ fn verifies_preflight_reports_eth_block_withdrawals() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_ommers_hash={}\neth_transaction_trie_preimages={}\neth_transaction_count=0\neth_legacy_transactions=0\neth_typed_transactions=0\neth_receipts=absent\neth_withdrawals=present\neth_withdrawal_count=1\neth_withdrawal_trie_preimages={}\n",
+            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_ommers_hash={}\neth_logs_bloom={}\neth_transaction_trie_preimages={}\neth_transaction_count=0\neth_legacy_transactions=0\neth_typed_transactions=0\neth_receipts=absent\neth_withdrawals=present\neth_withdrawal_count=1\neth_withdrawal_trie_preimages={}\n",
             to_hex(&public_values_hash),
             to_hex(&eth_block_input_hash),
             to_hex(&block_input.ommers_hash),
+            to_hex(&block_input.logs_bloom),
             block_input.transactions.hash_preimages.len(),
             withdrawal_build.hash_preimages.len()
         )

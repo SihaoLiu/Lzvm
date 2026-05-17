@@ -657,6 +657,9 @@ fn verify_preflight(
                     prove_plan::format_hash(ommers_hash)
                 );
             }
+            if let Some(logs_bloom) = report.eth_block_input_logs_blooms.get(index) {
+                let _ = writeln!(stdout, "eth_logs_bloom={}", format_bytes_hex(logs_bloom));
+            }
             write_eth_transaction_preimage_summary(
                 stdout,
                 report
@@ -1223,6 +1226,16 @@ fn write_eth_transaction_preimage_summary(
         stdout,
         "eth_transaction_trie_preimages={transaction_preimage_count}"
     );
+}
+
+fn format_bytes_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
 }
 
 fn write_eth_transaction_kind_summary(

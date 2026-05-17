@@ -171,6 +171,7 @@ fn validates_proof_public_value_preflight_hashes() {
             eth_block_input_count: 0,
             eth_block_input_hashes: Vec::new(),
             eth_block_input_ommers_hashes: Vec::new(),
+            eth_block_input_logs_blooms: Vec::new(),
             eth_block_input_transaction_preimage_counts: Vec::new(),
             eth_block_input_legacy_transaction_counts: Vec::new(),
             eth_block_input_typed_transaction_counts: Vec::new(),
