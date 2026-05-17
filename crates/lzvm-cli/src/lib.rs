@@ -640,11 +640,19 @@ fn verify_preflight(
     }
     if report.eth_block_input_count > 0 {
         let _ = writeln!(stdout, "eth_block_inputs={}", report.eth_block_input_count);
-        for hash in &report.eth_block_input_hashes {
+        for (index, hash) in report.eth_block_input_hashes.iter().enumerate() {
             let _ = writeln!(
                 stdout,
                 "eth_block_input_hash={}",
                 prove_plan::format_hash(hash)
+            );
+            write_eth_receipt_preimage_summary(
+                stdout,
+                report
+                    .eth_block_input_receipt_preimage_counts
+                    .get(index)
+                    .copied()
+                    .unwrap_or(None),
             );
         }
     }
@@ -931,12 +939,22 @@ fn verify_setup_validation(
             "eth_block_inputs={}",
             public_report.eth_block_input_count
         );
-        for hash in &public_report.eth_block_input_hashes {
+        for (index, hash) in public_report.eth_block_input_hashes.iter().enumerate() {
             let _ = writeln!(
                 stdout,
                 "eth_block_input_hash={}",
                 prove_plan::format_hash(hash)
             );
+            if eth_block_input_binding.is_none() {
+                write_eth_receipt_preimage_summary(
+                    stdout,
+                    public_report
+                        .eth_block_input_receipt_preimage_counts
+                        .get(index)
+                        .copied()
+                        .unwrap_or(None),
+                );
+            }
         }
     }
     if let Some(binding) = eth_block_input_binding {
@@ -948,15 +966,7 @@ fn verify_setup_validation(
             );
         }
         let _ = writeln!(stdout, "eth_block_input_match=ok");
-        match binding.receipt_preimage_count {
-            Some(count) => {
-                let _ = writeln!(stdout, "eth_receipts=present");
-                let _ = writeln!(stdout, "eth_receipt_trie_preimages={count}");
-            }
-            None => {
-                let _ = writeln!(stdout, "eth_receipts=absent");
-            }
-        }
+        write_eth_receipt_preimage_summary(stdout, binding.receipt_preimage_count);
     }
     if program_image_cache_matched {
         let _ = writeln!(stdout, "program_image_cache_match=ok");
@@ -1015,6 +1025,21 @@ fn verify_eth_block_input_binding(
         hash: input_hash,
         receipt_preimage_count,
     })
+}
+
+fn write_eth_receipt_preimage_summary(
+    stdout: &mut dyn Write,
+    receipt_preimage_count: Option<usize>,
+) {
+    match receipt_preimage_count {
+        Some(count) => {
+            let _ = writeln!(stdout, "eth_receipts=present");
+            let _ = writeln!(stdout, "eth_receipt_trie_preimages={count}");
+        }
+        None => {
+            let _ = writeln!(stdout, "eth_receipts=absent");
+        }
+    }
 }
 
 fn validate_setup_directory(

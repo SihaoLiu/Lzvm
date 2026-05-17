@@ -1,11 +1,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use lzvm_artifacts::eth_block_input::{build_eth_block_input, eth_block_input_bytes_digest};
+use lzvm_artifacts::eth_block_input::{
+    build_eth_block_input_with_receipts, eth_block_input_bytes_digest,
+};
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
+use lzvm_artifacts::eth_trie::receipt_trie_build;
 use lzvm_artifacts::program_image::{ProgramImageCommitmentCache, ProgramImageGpuMode};
 use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
@@ -14,6 +17,7 @@ use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{
     encode_public_values, public_values_digest, PublicValueEntry, PublicValues,
 };
+use lzvm_artifacts::rlp::parse_rlp;
 use lzvm_cli::run_cli;
 use lzvm_field::MODULUS;
 use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
@@ -87,18 +91,19 @@ fn sample_program_image_cache() -> ProgramImageCommitmentCache {
     }
 }
 
-fn sample_block_rlp() -> Vec<u8> {
-    let header_rlp = rlp_list(&legacy_header_items(
-        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
+fn sample_block_rlp_with_receipts_root(receipts_root: [u8; 32]) -> Vec<u8> {
+    let header_rlp = rlp_list(&legacy_header_items_with_receipts(
+        empty_trie_root(),
+        receipts_root,
         None,
     ));
-    let transactions = rlp_list(&[rlp_list(&[rlp_bytes(&[1])])]);
     let empty_list = rlp_list(&[]);
-    rlp_list(&[header_rlp, transactions, empty_list])
+    rlp_list(&[header_rlp, empty_list.clone(), empty_list])
 }
 
-fn legacy_header_items(
+fn legacy_header_items_with_receipts(
     transactions_root: [u8; 32],
+    receipts_root: [u8; 32],
     withdrawals_root: Option<[u8; 32]>,
 ) -> Vec<Vec<u8>> {
     let mut items = vec![
@@ -109,7 +114,7 @@ fn legacy_header_items(
         rlp_bytes(&[0x33; 20]),
         rlp_bytes(&[0x44; 32]),
         rlp_bytes(&transactions_root),
-        rlp_bytes(&[0x66; 32]),
+        rlp_bytes(&receipts_root),
         rlp_bytes(&[0x77; 256]),
         rlp_bytes(&[1]),
         rlp_bytes(&[2]),
@@ -125,6 +130,19 @@ fn legacy_header_items(
         items.push(rlp_bytes(&root));
     }
     items
+}
+
+fn sample_receipt_item() -> Vec<u8> {
+    rlp_list(&[
+        rlp_bytes(&[1]),
+        rlp_bytes(&[0x52, 0x08]),
+        rlp_bytes(&[0x11; 256]),
+        rlp_list(&[]),
+    ])
+}
+
+fn empty_trie_root() -> [u8; 32] {
+    hex32("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421")
 }
 
 fn rlp_bytes(payload: &[u8]) -> Vec<u8> {
@@ -202,7 +220,13 @@ fn write_fixture_pair(
 
 #[test]
 fn verifies_preflight_reports_eth_block_input_digest() {
-    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let receipt_item = sample_receipt_item();
+    let receipts = vec![parse_rlp(&receipt_item).expect("receipt should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    let receipts_rlp = rlp_list(&[receipt_item]);
+    let block_rlp = sample_block_rlp_with_receipts_root(receipt_build.root);
+    let block_input = build_eth_block_input_with_receipts(&block_rlp, &receipts_rlp)
+        .expect("block input should build");
     let values = public_values_from_eth_block_input(sample_hash(0x44), &block_input);
     let public_values_hash = public_values_digest(&values).expect("digest should compute");
     let segment_data = encode_eth_block_input_segment(&block_input).expect("segment should encode");
@@ -235,9 +259,10 @@ fn verifies_preflight_reports_eth_block_input_digest() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\n",
+            "status=ok\nsegments=1\npublic_values=21\npublic_values_hash={}\npublic_value_fields=170\neth_block_inputs=1\neth_block_input_hash={}\neth_receipts=present\neth_receipt_trie_preimages={}\n",
             to_hex(&public_values_hash),
-            to_hex(&eth_block_input_hash)
+            to_hex(&eth_block_input_hash),
+            receipt_build.hash_preimages.len()
         )
     );
     assert!(stderr.is_empty());
