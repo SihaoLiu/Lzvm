@@ -657,6 +657,9 @@ fn verify_preflight(
                     prove_plan::format_hash(ommers_hash)
                 );
             }
+            if let Some(beneficiary) = report.eth_block_input_beneficiaries.get(index) {
+                let _ = writeln!(stdout, "eth_beneficiary={}", format_bytes_hex(beneficiary));
+            }
             if let Some(logs_bloom) = report.eth_block_input_logs_blooms.get(index) {
                 let _ = writeln!(stdout, "eth_logs_bloom={}", format_bytes_hex(logs_bloom));
             }
@@ -932,6 +935,7 @@ struct VerifySetupValidationCommand<'a> {
 struct EthBlockInputBinding {
     hash: [u8; 32],
     ommers_hash: [u8; 32],
+    beneficiary: [u8; 20],
     logs_bloom: [u8; 256],
     transaction_preimage_count: usize,
     legacy_transaction_count: usize,
@@ -1032,6 +1036,9 @@ fn verify_setup_validation(
                         prove_plan::format_hash(ommers_hash)
                     );
                 }
+                if let Some(beneficiary) = public_report.eth_block_input_beneficiaries.get(index) {
+                    let _ = writeln!(stdout, "eth_beneficiary={}", format_bytes_hex(beneficiary));
+                }
                 if let Some(logs_bloom) = public_report.eth_block_input_logs_blooms.get(index) {
                     let _ = writeln!(stdout, "eth_logs_bloom={}", format_bytes_hex(logs_bloom));
                 }
@@ -1115,6 +1122,11 @@ fn verify_setup_validation(
             stdout,
             "eth_ommers_hash={}",
             prove_plan::format_hash(&binding.ommers_hash)
+        );
+        let _ = writeln!(
+            stdout,
+            "eth_beneficiary={}",
+            format_bytes_hex(&binding.beneficiary)
         );
         let _ = writeln!(
             stdout,
@@ -1216,6 +1228,7 @@ fn verify_eth_block_input_binding(
     Ok(EthBlockInputBinding {
         hash: input_hash,
         ommers_hash: input.ommers_hash,
+        beneficiary: input.beneficiary,
         logs_bloom: input.logs_bloom,
         transaction_preimage_count,
         legacy_transaction_count,
