@@ -3,8 +3,8 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use lzvm_artifacts::eth_block_input::{
-    eth_block_input_bytes_digest, eth_block_input_transaction_kind_counts, parse_eth_block_input,
-    EthBlockInput,
+    eth_block_input_bytes_digest, eth_block_input_receipt_kind_counts,
+    eth_block_input_transaction_kind_counts, parse_eth_block_input, EthBlockInput,
 };
 
 use crate::prove_plan::format_hash;
@@ -35,6 +35,8 @@ pub(crate) struct EthBlockInputSummary {
     pub(crate) legacy_transaction_count: usize,
     pub(crate) typed_transaction_count: usize,
     pub(crate) receipt_preimage_count: Option<usize>,
+    pub(crate) legacy_receipt_count: Option<usize>,
+    pub(crate) typed_receipt_count: Option<usize>,
     pub(crate) withdrawal_preimage_count: Option<usize>,
 }
 
@@ -54,6 +56,7 @@ pub(crate) fn validate_eth_block_input(
     let input = parse_eth_block_input(&bytes)
         .map_err(|error| format!("ETH block input failed: {}: {error}", path.display()))?;
     let (legacy_transaction_count, typed_transaction_count) = transaction_kind_counts(&input)?;
+    let receipt_kind_counts = receipt_kind_counts(&input)?;
 
     Ok(Some(EthBlockInputSummary {
         path: path.clone(),
@@ -83,6 +86,8 @@ pub(crate) fn validate_eth_block_input(
             .receipts
             .as_ref()
             .map(|receipts| receipts.hash_preimages.len()),
+        legacy_receipt_count: receipt_kind_counts.map(|(legacy, _)| legacy),
+        typed_receipt_count: receipt_kind_counts.map(|(_, typed)| typed),
         withdrawal_preimage_count: input
             .withdrawals
             .as_ref()
@@ -168,6 +173,12 @@ pub(crate) fn write_eth_block_input_summary(
         Some(count) => {
             let _ = writeln!(stdout, "eth_receipts=present");
             let _ = writeln!(stdout, "eth_receipt_trie_preimages={count}");
+            if let (Some(legacy_count), Some(typed_count)) =
+                (summary.legacy_receipt_count, summary.typed_receipt_count)
+            {
+                let _ = writeln!(stdout, "eth_legacy_receipts={legacy_count}");
+                let _ = writeln!(stdout, "eth_typed_receipts={typed_count}");
+            }
         }
         None => {
             let _ = writeln!(stdout, "eth_receipts=absent");
@@ -187,6 +198,11 @@ pub(crate) fn write_eth_block_input_summary(
 fn transaction_kind_counts(input: &EthBlockInput) -> Result<(usize, usize), String> {
     eth_block_input_transaction_kind_counts(input)
         .map_err(|error| format!("ETH block input transaction count failed: {error}"))
+}
+
+fn receipt_kind_counts(input: &EthBlockInput) -> Result<Option<(usize, usize)>, String> {
+    eth_block_input_receipt_kind_counts(input)
+        .map_err(|error| format!("ETH block input receipt count failed: {error}"))
 }
 
 fn format_hex(bytes: &[u8]) -> String {
