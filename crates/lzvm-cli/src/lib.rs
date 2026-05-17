@@ -658,18 +658,24 @@ fn verify_preflight(
                     .copied()
                     .unwrap_or(0),
             );
+            let legacy_transaction_count = report
+                .eth_block_input_legacy_transaction_counts
+                .get(index)
+                .copied()
+                .unwrap_or(0);
+            let typed_transaction_count = report
+                .eth_block_input_typed_transaction_counts
+                .get(index)
+                .copied()
+                .unwrap_or(0);
+            write_eth_transaction_count_summary(
+                stdout,
+                legacy_transaction_count + typed_transaction_count,
+            );
             write_eth_transaction_kind_summary(
                 stdout,
-                report
-                    .eth_block_input_legacy_transaction_counts
-                    .get(index)
-                    .copied()
-                    .unwrap_or(0),
-                report
-                    .eth_block_input_typed_transaction_counts
-                    .get(index)
-                    .copied()
-                    .unwrap_or(0),
+                legacy_transaction_count,
+                typed_transaction_count,
             );
             write_eth_receipt_preimage_summary(
                 stdout,
@@ -1184,6 +1190,10 @@ fn write_eth_transaction_kind_summary(
 ) {
     let _ = writeln!(stdout, "eth_legacy_transactions={legacy_transaction_count}");
     let _ = writeln!(stdout, "eth_typed_transactions={typed_transaction_count}");
+}
+
+fn write_eth_transaction_count_summary(stdout: &mut dyn Write, transaction_count: usize) {
+    let _ = writeln!(stdout, "eth_transaction_count={transaction_count}");
 }
 
 fn write_eth_receipt_preimage_summary(
