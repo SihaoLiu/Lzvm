@@ -43,7 +43,7 @@ fn summarizes_binary_block_rlp() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nbytes={}\nheader_fields=15\nblock_hash=fa44ca33c1ab75326fe997089b86b1414f53400af3a59b4d10c16e3f858bfb64\nblock_number=2\ntimestamp=101\ntransactions=1\nlegacy_transactions=1\ntyped_transactions=0\nommers=0\nwithdrawals=absent\nextra_body_fields=0\nextra_header_fields=0\n",
+            "status=ok\nbytes={}\nheader_fields=15\nblock_hash=fa44ca33c1ab75326fe997089b86b1414f53400af3a59b4d10c16e3f858bfb64\nblock_number=2\ntimestamp=101\ntransactions=1\ntransactions_root=5555555555555555555555555555555555555555555555555555555555555555\ncomputed_transactions_root=e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5\ntransactions_root_matches=false\nlegacy_transactions=1\ntyped_transactions=0\nommers=0\nwithdrawals=absent\nextra_body_fields=0\nextra_header_fields=0\n",
             block_rlp.len()
         )
     );
@@ -75,7 +75,7 @@ fn summarizes_typed_transaction_counts() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nbytes={}\nheader_fields=15\nblock_hash=fa44ca33c1ab75326fe997089b86b1414f53400af3a59b4d10c16e3f858bfb64\nblock_number=2\ntimestamp=101\ntransactions=1\nlegacy_transactions=0\ntyped_transactions=1\nommers=0\nwithdrawals=absent\nextra_body_fields=0\nextra_header_fields=0\n",
+            "status=ok\nbytes={}\nheader_fields=15\nblock_hash=fa44ca33c1ab75326fe997089b86b1414f53400af3a59b4d10c16e3f858bfb64\nblock_number=2\ntimestamp=101\ntransactions=1\ntransactions_root=5555555555555555555555555555555555555555555555555555555555555555\ncomputed_transactions_root=8907bc17c6a0854990b43d9949e6288d78df286967e71499f41874ffd3376e2e\ntransactions_root_matches=false\nlegacy_transactions=0\ntyped_transactions=1\nommers=0\nwithdrawals=absent\nextra_body_fields=0\nextra_header_fields=0\n",
             block_rlp.len()
         )
     );
@@ -133,9 +133,10 @@ fn summarizes_mainnet_genesis_block_hash() {
 
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
     assert!(stderr.is_empty());
-    assert!(String::from_utf8(stdout)
-        .expect("stdout should be utf-8")
+    let output = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(output
         .contains("block_hash=d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3\n"));
+    assert!(output.contains("transactions_root_matches=true\n"));
 }
 
 #[test]
