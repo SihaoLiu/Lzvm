@@ -10,6 +10,19 @@ const SETUP_INFO_KIND: [u8; 4] = *b"uinf";
 const SETUP_INFO_VERSION: u32 = 3;
 const SETUP_INFO_SECTION_ID: u32 = 1;
 
+const U32_BYTES: usize = 4;
+const I64_BYTES: usize = 8;
+const FLAG_BYTES: usize = 1;
+const STRING_MIN_BYTES: usize = 1;
+const CONSTANT_COLUMN_MIN_BYTES: usize = STRING_MIN_BYTES + U32_BYTES * 5;
+const BOUNDARY_MIN_BYTES: usize = FLAG_BYTES * 3;
+const FRI_STEP_BYTES: usize = U32_BYTES;
+const COMMITMENT_COLUMN_MIN_BYTES: usize =
+    STRING_MIN_BYTES + U32_BYTES * 5 + FLAG_BYTES + U32_BYTES;
+const STAGE_VALUE_MIN_BYTES: usize = STRING_MIN_BYTES + U32_BYTES + U32_BYTES;
+const EVALUATION_MAP_ENTRY_MIN_BYTES: usize =
+    FLAG_BYTES + U32_BYTES + I64_BYTES + U32_BYTES + FLAG_BYTES;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnitSetupInfo {
     pub n_stages: u32,
@@ -279,8 +292,12 @@ impl From<SectionedError> for SetupInfoError {
 
 impl UnitSetupInfo {
     pub fn stage_commit_widths(&self) -> Result<Vec<u32>, SetupInfoError> {
-        let mut widths = Vec::with_capacity((self.n_stages + 1) as usize);
-        for stage in 1..=self.n_stages + 1 {
+        let stage_count = self
+            .n_stages
+            .checked_add(1)
+            .ok_or(SetupInfoError::LengthOverflow)?;
+        let mut widths = Vec::with_capacity(u32_to_usize(stage_count)?);
+        for stage in 1..=stage_count {
             let name = format!("cm{stage}");
             let width = *self
                 .section_widths
@@ -346,11 +363,11 @@ fn parse_unit_setup_info_section(
     let n_publics = reader.read_optional_u32("n_publics")?;
     let n_constraints = reader.read_optional_u32("n_constraints")?;
     let q_degree = reader.read_u32()?;
-    let challenge_count = reader.read_u32()? as usize;
-    let eval_count = reader.read_u32()? as usize;
+    let challenge_count = u32_to_usize(reader.read_u32()?)?;
+    let eval_count = u32_to_usize(reader.read_u32()?)?;
 
-    let opening_point_count = reader.read_u32()?;
-    let mut opening_points = Vec::with_capacity(opening_point_count as usize);
+    let opening_point_count = read_bounded_count(&mut reader, I64_BYTES)?;
+    let mut opening_points = Vec::with_capacity(opening_point_count);
     for _ in 0..opening_point_count {
         opening_points.push(reader.read_i64()?);
     }
@@ -363,35 +380,31 @@ fn parse_unit_setup_info_section(
         section_widths.insert(name, width);
     }
 
-    let constant_column_count = reader.read_u32()?;
-    let mut constant_columns = Vec::with_capacity(constant_column_count as usize);
-    for index in 0..constant_column_count {
-        let lengths_count = {
-            let name = reader.read_string()?;
-            let stage = reader.read_u32()?;
-            let dimension = reader.read_u32()?;
-            let pols_map_id = reader.read_u32()?;
-            let stage_id = reader.read_u32()?;
-            let lengths_count = reader.read_u32()?;
-            constant_columns.push(ConstantColumn {
-                name,
-                stage,
-                dimension,
-                pols_map_id,
-                stage_id,
-                lengths: Vec::with_capacity(lengths_count as usize),
-            });
-            lengths_count
-        };
+    let constant_column_count = read_bounded_count(&mut reader, CONSTANT_COLUMN_MIN_BYTES)?;
+    let mut constant_columns = Vec::with_capacity(constant_column_count);
+    for _ in 0..constant_column_count {
+        let name = reader.read_string()?;
+        let stage = reader.read_u32()?;
+        let dimension = reader.read_u32()?;
+        let pols_map_id = reader.read_u32()?;
+        let stage_id = reader.read_u32()?;
+        let lengths_count = read_bounded_count(&mut reader, U32_BYTES)?;
+        let mut lengths = Vec::with_capacity(lengths_count);
         for _ in 0..lengths_count {
-            constant_columns[index as usize]
-                .lengths
-                .push(reader.read_u32()?);
+            lengths.push(reader.read_u32()?);
         }
+        constant_columns.push(ConstantColumn {
+            name,
+            stage,
+            dimension,
+            pols_map_id,
+            stage_id,
+            lengths,
+        });
     }
 
-    let boundary_count = reader.read_u32()?;
-    let mut boundaries = Vec::with_capacity(boundary_count as usize);
+    let boundary_count = read_bounded_count(&mut reader, BOUNDARY_MIN_BYTES)?;
+    let mut boundaries = Vec::with_capacity(boundary_count);
     for _ in 0..boundary_count {
         boundaries.push(Boundary {
             name: reader.read_optional_string("boundary_name")?,
@@ -405,8 +418,8 @@ fn parse_unit_setup_info_section(
         let n_bits = reader.read_u32()?;
         let n_bits_ext = reader.read_u32()?;
         let n_queries = reader.read_u32()?;
-        step_count = reader.read_u32()?;
-        let mut steps = Vec::with_capacity(step_count as usize);
+        step_count = read_bounded_count(&mut reader, FRI_STEP_BYTES)?;
+        let mut steps = Vec::with_capacity(step_count);
         for _ in 0..step_count {
             steps.push(FriStep {
                 n_bits: reader.read_u32()?,
@@ -559,64 +572,58 @@ fn default_evaluation_map(count: usize) -> Vec<EvaluationMapEntry> {
 fn read_commitment_columns(
     reader: &mut Reader<'_>,
 ) -> Result<Vec<CommitmentColumn>, SetupInfoError> {
-    let commitment_column_count = reader.read_u32()?;
-    let mut commitment_columns = Vec::with_capacity(commitment_column_count as usize);
-    for index in 0..commitment_column_count {
-        let lengths_count = {
-            let name = reader.read_string()?;
-            let stage = reader.read_u32()?;
-            let dimension = reader.read_u32()?;
-            let pols_map_id = reader.read_u32()?;
-            let stage_id = reader.read_u32()?;
-            let stage_position = reader.read_u32()?;
-            let intermediate = reader.read_bool("commitment_column_intermediate")?;
-            let lengths_count = reader.read_u32()?;
-            commitment_columns.push(CommitmentColumn {
-                name,
-                stage,
-                dimension,
-                pols_map_id,
-                stage_id,
-                stage_position,
-                intermediate,
-                lengths: Vec::with_capacity(lengths_count as usize),
-            });
-            lengths_count
-        };
+    let commitment_column_count = read_bounded_count(reader, COMMITMENT_COLUMN_MIN_BYTES)?;
+    let mut commitment_columns = Vec::with_capacity(commitment_column_count);
+    for _ in 0..commitment_column_count {
+        let name = reader.read_string()?;
+        let stage = reader.read_u32()?;
+        let dimension = reader.read_u32()?;
+        let pols_map_id = reader.read_u32()?;
+        let stage_id = reader.read_u32()?;
+        let stage_position = reader.read_u32()?;
+        let intermediate = reader.read_bool("commitment_column_intermediate")?;
+        let lengths_count = read_bounded_count(reader, U32_BYTES)?;
+        let mut lengths = Vec::with_capacity(lengths_count);
         for _ in 0..lengths_count {
-            commitment_columns[index as usize]
-                .lengths
-                .push(reader.read_u32()?);
+            lengths.push(reader.read_u32()?);
         }
+        commitment_columns.push(CommitmentColumn {
+            name,
+            stage,
+            dimension,
+            pols_map_id,
+            stage_id,
+            stage_position,
+            intermediate,
+            lengths,
+        });
     }
     Ok(commitment_columns)
 }
 
 fn read_stage_values(reader: &mut Reader<'_>) -> Result<Vec<StageValue>, SetupInfoError> {
-    let value_count = reader.read_u32()?;
-    let mut values = Vec::with_capacity(value_count as usize);
-    for index in 0..value_count {
-        let lengths_count = {
-            let name = reader.read_string()?;
-            let stage = reader.read_u32()?;
-            let lengths_count = reader.read_u32()?;
-            values.push(StageValue {
-                name,
-                stage,
-                lengths: Vec::with_capacity(lengths_count as usize),
-            });
-            lengths_count
-        };
+    let value_count = read_bounded_count(reader, STAGE_VALUE_MIN_BYTES)?;
+    let mut values = Vec::with_capacity(value_count);
+    for _ in 0..value_count {
+        let name = reader.read_string()?;
+        let stage = reader.read_u32()?;
+        let lengths_count = read_bounded_count(reader, U32_BYTES)?;
+        let mut lengths = Vec::with_capacity(lengths_count);
         for _ in 0..lengths_count {
-            values[index as usize].lengths.push(reader.read_u32()?);
+            lengths.push(reader.read_u32()?);
         }
+        values.push(StageValue {
+            name,
+            stage,
+            lengths,
+        });
     }
     Ok(values)
 }
 
 fn read_evaluation_map(reader: &mut Reader<'_>) -> Result<Vec<EvaluationMapEntry>, SetupInfoError> {
-    let count = reader.read_u32()?;
-    let mut entries = Vec::with_capacity(count as usize);
+    let count = read_bounded_count(reader, EVALUATION_MAP_ENTRY_MIN_BYTES)?;
+    let mut entries = Vec::with_capacity(count);
     for _ in 0..count {
         let kind = match reader.read_u8()? {
             0 => EvaluationMapKind::Constant,
@@ -680,16 +687,18 @@ fn validate_constant_columns(
     if columns.is_empty() {
         return Ok(());
     }
-    if columns.len() != n_constants as usize {
+    let expected = n_constants;
+    let n_constants = u32_to_usize(n_constants)?;
+    if columns.len() != n_constants {
         return Err(SetupInfoError::ConstantColumnCountMismatch {
-            expected: n_constants,
+            expected,
             found: columns.len(),
         });
     }
 
-    let mut seen = vec![false; n_constants as usize];
+    let mut seen = vec![false; n_constants];
     for (index, column) in columns.iter().enumerate() {
-        let id = column.pols_map_id as usize;
+        let id = u32_to_usize(column.pols_map_id)?;
         if column.stage != 0
             || column.dimension == 0
             || id >= seen.len()
@@ -776,6 +785,21 @@ fn usize_to_u32(value: usize) -> Result<u32, SetupInfoError> {
     u32::try_from(value).map_err(|_| SetupInfoError::LengthOverflow)
 }
 
+fn read_bounded_count(
+    reader: &mut Reader<'_>,
+    record_min_bytes: usize,
+) -> Result<usize, SetupInfoError> {
+    let count = u32_to_usize(reader.read_u32()?)?;
+    if count > reader.remaining_len() / record_min_bytes {
+        return Err(SetupInfoError::LengthOverflow);
+    }
+    Ok(count)
+}
+
+fn u32_to_usize(value: u32) -> Result<usize, SetupInfoError> {
+    usize::try_from(value).map_err(|_| SetupInfoError::LengthOverflow)
+}
+
 fn write_u32(out: &mut Vec<u8>, value: u32) {
     out.extend_from_slice(&value.to_le_bytes());
 }
@@ -852,6 +876,10 @@ impl<'a> Reader<'a> {
 
     fn position(&self) -> usize {
         self.offset
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], SetupInfoError> {

@@ -19,6 +19,17 @@ fn push_i64(out: &mut Vec<u8>, value: i64) {
     out.extend_from_slice(&value.to_le_bytes());
 }
 
+fn setup_info_file(section: Vec<u8>, version: u32) -> Vec<u8> {
+    let mut file = Vec::new();
+    file.extend_from_slice(b"uinf");
+    push_u32(&mut file, version);
+    push_u32(&mut file, 1);
+    push_u32(&mut file, 1);
+    file.extend_from_slice(&(section.len() as u64).to_le_bytes());
+    file.extend_from_slice(&section);
+    file
+}
+
 fn push_string(out: &mut Vec<u8>, value: &str) {
     out.extend_from_slice(value.as_bytes());
     out.push(0);
@@ -62,6 +73,58 @@ fn push_optional_bool(out: &mut Vec<u8>, value: Option<bool>) {
         }
         None => push_u8(out, 0),
     }
+}
+
+fn minimal_header_prefix() -> Vec<u8> {
+    let mut section = Vec::new();
+    push_u32(&mut section, 2);
+    push_u32(&mut section, 0);
+    push_optional_u32(&mut section, None);
+    push_optional_u32(&mut section, None);
+    push_u32(&mut section, 7);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    section
+}
+
+fn push_minimal_section_widths(section: &mut Vec<u8>) {
+    push_u32(section, 3);
+    push_string(section, "cm1");
+    push_u32(section, 1);
+    push_string(section, "cm2");
+    push_u32(section, 1);
+    push_string(section, "cm3");
+    push_u32(section, 1);
+}
+
+fn required_prefix_through_boundaries() -> Vec<u8> {
+    let mut section = minimal_header_prefix();
+    push_u32(&mut section, 0);
+    push_minimal_section_widths(&mut section);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    section
+}
+
+fn push_minimal_stark(section: &mut Vec<u8>) {
+    push_u32(section, 10);
+    push_u32(section, 13);
+    push_u32(section, 1);
+    push_u32(section, 1);
+    push_u32(section, 13);
+    push_u8(section, 0);
+    push_u32(section, 0);
+    push_u32(section, 0);
+    push_u32(section, 2);
+    push_optional_string(section, None);
+    push_optional_u32(section, None);
+    push_optional_bool(section, None);
+}
+
+fn minimal_required_section() -> Vec<u8> {
+    let mut section = required_prefix_through_boundaries();
+    push_minimal_stark(&mut section);
+    section
 }
 
 fn sample_setup_info_binary() -> Vec<u8> {
@@ -347,5 +410,171 @@ fn rejects_invalid_binary_setup_info_magic() {
     assert!(matches!(
         parse_unit_setup_info(&bytes),
         Err(SetupInfoError::InvalidMagic)
+    ));
+}
+
+#[test]
+fn rejects_opening_point_count_that_exceeds_remaining_points() {
+    let mut section = minimal_header_prefix();
+    push_u32(&mut section, 1);
+    let bytes = setup_info_file(section, 3);
+
+    assert!(matches!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_constant_column_count_that_exceeds_remaining_records() {
+    let mut section = minimal_header_prefix();
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    let bytes = setup_info_file(section, 3);
+
+    assert!(matches!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_constant_column_length_count_that_exceeds_remaining_lengths() {
+    let mut section = minimal_header_prefix();
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_string(&mut section, "");
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    let bytes = setup_info_file(section, 3);
+
+    assert!(matches!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_boundary_count_that_exceeds_remaining_boundary_records() {
+    let mut section = minimal_header_prefix();
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    let bytes = setup_info_file(section, 3);
+
+    assert!(matches!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_fri_step_count_that_exceeds_remaining_steps() {
+    let mut section = required_prefix_through_boundaries();
+    push_u32(&mut section, 10);
+    push_u32(&mut section, 13);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 1);
+    let bytes = setup_info_file(section, 3);
+
+    assert!(matches!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_commitment_column_count_that_exceeds_remaining_records() {
+    let mut section = minimal_required_section();
+    push_u32(&mut section, 1);
+    let bytes = setup_info_file(section, 3);
+
+    assert!(matches!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_commitment_column_length_count_that_exceeds_remaining_lengths() {
+    let mut section = minimal_required_section();
+    push_u32(&mut section, 1);
+    push_string(&mut section, "");
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u8(&mut section, 0);
+    push_u32(&mut section, 1);
+    let bytes = setup_info_file(section, 3);
+
+    assert!(matches!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_unit_value_count_that_exceeds_remaining_records() {
+    let mut section = minimal_required_section();
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    let bytes = setup_info_file(section, 3);
+
+    assert!(matches!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_stage_value_length_count_that_exceeds_remaining_lengths() {
+    let mut section = minimal_required_section();
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_string(&mut section, "");
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 1);
+    let bytes = setup_info_file(section, 3);
+
+    assert!(matches!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_group_value_count_that_exceeds_remaining_records() {
+    let mut section = minimal_required_section();
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    let bytes = setup_info_file(section, 3);
+
+    assert!(matches!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_evaluation_map_count_that_exceeds_remaining_records() {
+    let mut section = minimal_required_section();
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    let bytes = setup_info_file(section, 3);
+
+    assert!(matches!(
+        parse_unit_setup_info(&bytes),
+        Err(SetupInfoError::LengthOverflow)
     ));
 }
