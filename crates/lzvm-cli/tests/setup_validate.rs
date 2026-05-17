@@ -7626,6 +7626,174 @@ fn writes_contribution_challenge_segment_from_multiple_proof_artifacts() {
 }
 
 #[test]
+fn rounds_trip_contribution_challenge_through_witness_run() {
+    let dir = temp_dir("round-trip-contribution-challenge");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_proof_group_and_unit_value(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let contribution_output_dir = dir.join("contribution-out");
+    let full_output_dir = dir.join("full-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let unit_values_path = dir.join("unit_values.bin");
+    let proof_values_path = dir.join("proof_values.bin");
+    let group_values_path = dir.join("group_values.bin");
+    let public_values_path = dir.join("public_values.bin");
+    let challenge_segment_path = dir.join("challenge_values_segment.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [23_u8]);
+    write_field_words(&unit_values_path, &[101, 201, 202, 203]);
+    write_field_words(&proof_values_path, &[51, 52, 53]);
+    write_field_words(&group_values_path, &[61, 62, 63]);
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&sample_public_values(setup_hash))
+            .expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--contributions",
+            "--save-outputs",
+            "--unit-values",
+            unit_values_path
+                .to_str()
+                .expect("unit values path should be utf-8"),
+            "--proof-values",
+            proof_values_path
+                .to_str()
+                .expect("proof values path should be utf-8"),
+            "--group-values",
+            group_values_path
+                .to_str()
+                .expect("group values path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            contribution_output_dir
+                .to_str()
+                .expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let contribution_proof_path = contribution_output_dir.join("proof.bin");
+    let contribution_proof = parse_proof_artifact(
+        &fs::read(&contribution_proof_path).expect("contribution proof should read"),
+    )
+    .expect("contribution proof should parse");
+    assert!(contribution_proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == CONTRIBUTION_SEGMENT_ID));
+
+    let mut writer_stdout = Vec::new();
+    let mut writer_stderr = Vec::new();
+    let writer_code = run_cli(
+        &[
+            "prove",
+            "write-contribution-challenges",
+            dir.to_str().expect("setup path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+            challenge_segment_path
+                .to_str()
+                .expect("challenge path should be utf-8"),
+            contribution_proof_path
+                .to_str()
+                .expect("proof path should be utf-8"),
+        ],
+        &mut writer_stdout,
+        &mut writer_stderr,
+    );
+    assert_eq!(
+        writer_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&writer_stderr)
+    );
+    assert!(writer_stderr.is_empty());
+    assert!(challenge_segment_path.exists());
+
+    let mut full_stdout = Vec::new();
+    let mut full_stderr = Vec::new();
+    let full_code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--aggregate",
+            "--save-outputs",
+            "--challenge-values-segment",
+            challenge_segment_path
+                .to_str()
+                .expect("challenge path should be utf-8"),
+            "--unit-values",
+            unit_values_path
+                .to_str()
+                .expect("unit values path should be utf-8"),
+            "--proof-values",
+            proof_values_path
+                .to_str()
+                .expect("proof values path should be utf-8"),
+            "--group-values",
+            group_values_path
+                .to_str()
+                .expect("group values path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            full_output_dir
+                .to_str()
+                .expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut full_stdout,
+        &mut full_stderr,
+    );
+    assert_eq!(full_code, 0, "{}", String::from_utf8_lossy(&full_stderr));
+    assert!(full_stderr.is_empty());
+    let full_proof = parse_proof_artifact(
+        &fs::read(full_output_dir.join("proof.bin")).expect("full proof should read"),
+    )
+    .expect("full proof should parse");
+    assert!(full_proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == CONSTANT_OPENING_SEGMENT_ID));
+    assert!(full_proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == WITNESS_OPENING_SEGMENT_ID));
+    assert!(full_proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn reports_usage_for_missing_setup_directory() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
