@@ -31,6 +31,7 @@ pub(crate) struct EthBlockInputSummary {
     pub(crate) nonce: [u8; 8],
     pub(crate) transactions_root: [u8; 32],
     pub(crate) transaction_preimage_count: usize,
+    pub(crate) receipt_preimage_count: Option<usize>,
     pub(crate) withdrawal_preimage_count: Option<usize>,
 }
 
@@ -72,6 +73,10 @@ pub(crate) fn validate_eth_block_input(
         nonce: input.nonce,
         transactions_root: input.transactions_root,
         transaction_preimage_count: input.transactions.hash_preimages.len(),
+        receipt_preimage_count: input
+            .receipts
+            .as_ref()
+            .map(|receipts| receipts.hash_preimages.len()),
         withdrawal_preimage_count: input
             .withdrawals
             .as_ref()
@@ -143,6 +148,15 @@ pub(crate) fn write_eth_block_input_summary(
         "eth_transaction_trie_preimages={}",
         summary.transaction_preimage_count
     );
+    match summary.receipt_preimage_count {
+        Some(count) => {
+            let _ = writeln!(stdout, "eth_receipts=present");
+            let _ = writeln!(stdout, "eth_receipt_trie_preimages={count}");
+        }
+        None => {
+            let _ = writeln!(stdout, "eth_receipts=absent");
+        }
+    }
     match summary.withdrawal_preimage_count {
         Some(count) => {
             let _ = writeln!(stdout, "eth_withdrawals=present");

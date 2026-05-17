@@ -16,13 +16,14 @@ use lzvm_artifacts::constraint_program::{
 };
 use lzvm_artifacts::contribution_segment::CONTRIBUTION_SEGMENT_ID;
 use lzvm_artifacts::eth_block_input::{
-    build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
-    parse_eth_block_input,
+    build_eth_block_input, build_eth_block_input_with_receipts, encode_eth_block_input,
+    eth_block_input_bytes_digest, parse_eth_block_input,
 };
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, parse_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
+use lzvm_artifacts::eth_trie::receipt_trie_build;
 use lzvm_artifacts::expression_info::{encode_expression_info, ExpressionInfo};
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
@@ -72,6 +73,7 @@ use lzvm_artifacts::proof::{
 use lzvm_artifacts::public_values::{
     encode_public_values, parse_public_values, public_values_digest, PublicValueEntry, PublicValues,
 };
+use lzvm_artifacts::rlp::parse_rlp;
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
 use lzvm_artifacts::setup_info::{encode_unit_setup_info, UnitSetupInfo};
 use lzvm_artifacts::setup_manifest::{
@@ -982,6 +984,17 @@ fn sample_block_rlp_variant() -> Vec<u8> {
     sample_block_rlp_with_extra(b"lzvm-alt")
 }
 
+fn sample_block_rlp_with_receipts_root(receipts_root: [u8; 32]) -> Vec<u8> {
+    let header_rlp = rlp_list(&legacy_header_items_with_receipts(
+        empty_trie_root(),
+        receipts_root,
+        None,
+        b"lzvm",
+    ));
+    let empty_list = rlp_list(&[]);
+    rlp_list(&[header_rlp, empty_list.clone(), empty_list])
+}
+
 fn sample_block_rlp_with_extra(extra_data: &[u8]) -> Vec<u8> {
     let header_rlp = rlp_list(&legacy_header_items(
         hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
@@ -998,6 +1011,15 @@ fn legacy_header_items(
     withdrawals_root: Option<[u8; 32]>,
     extra_data: &[u8],
 ) -> Vec<Vec<u8>> {
+    legacy_header_items_with_receipts(transactions_root, [0x66; 32], withdrawals_root, extra_data)
+}
+
+fn legacy_header_items_with_receipts(
+    transactions_root: [u8; 32],
+    receipts_root: [u8; 32],
+    withdrawals_root: Option<[u8; 32]>,
+    extra_data: &[u8],
+) -> Vec<Vec<u8>> {
     let mut items = vec![
         rlp_bytes(&[0x11; 32]),
         rlp_bytes(&hex32(
@@ -1006,7 +1028,7 @@ fn legacy_header_items(
         rlp_bytes(&[0x33; 20]),
         rlp_bytes(&[0x44; 32]),
         rlp_bytes(&transactions_root),
-        rlp_bytes(&[0x66; 32]),
+        rlp_bytes(&receipts_root),
         rlp_bytes(&[0x77; 256]),
         rlp_bytes(&[1]),
         rlp_bytes(&[2]),
@@ -1022,6 +1044,19 @@ fn legacy_header_items(
         items.push(rlp_bytes(&root));
     }
     items
+}
+
+fn sample_receipt_item() -> Vec<u8> {
+    rlp_list(&[
+        rlp_bytes(&[1]),
+        rlp_bytes(&[0x52, 0x08]),
+        rlp_bytes(&[0x11; 256]),
+        rlp_list(&[]),
+    ])
+}
+
+fn empty_trie_root() -> [u8; 32] {
+    hex32("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421")
 }
 
 fn rlp_bytes(payload: &[u8]) -> Vec<u8> {
@@ -3401,7 +3436,7 @@ fn prove_inputs_generates_eth_block_public_values_when_missing() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nwitness_library_bytes=64\nwitness_library_machine=62\nwitness_library_digest={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs={}\npublic_inputs_hash={}\npublic_input_values=21\npublic_input_fields=170\npublic_inputs_generated=eth_block_input\neth_block_input={}\neth_block_input_bytes={}\neth_block_input_hash={}\neth_block_rlp_bytes={}\neth_block_hash={}\neth_parent_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_difficulty=01\neth_block_number=2\neth_block_timestamp=101\neth_extra_data=6c7a766d\neth_gas_limit=1000000\neth_gas_used=900000\neth_base_fee_per_gas=absent\neth_mix_hash={}\neth_nonce={}\neth_transactions_root={}\neth_transaction_trie_preimages=1\neth_withdrawals=absent\n",
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nwitness_library_bytes=64\nwitness_library_machine=62\nwitness_library_digest={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs={}\npublic_inputs_hash={}\npublic_input_values=21\npublic_input_fields=170\npublic_inputs_generated=eth_block_input\neth_block_input={}\neth_block_input_bytes={}\neth_block_input_hash={}\neth_block_rlp_bytes={}\neth_block_hash={}\neth_parent_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_difficulty=01\neth_block_number=2\neth_block_timestamp=101\neth_extra_data=6c7a766d\neth_gas_limit=1000000\neth_gas_used=900000\neth_base_fee_per_gas=absent\neth_mix_hash={}\neth_nonce={}\neth_transactions_root={}\neth_transaction_trie_preimages=1\neth_receipts=absent\neth_withdrawals=absent\n",
             output_dir.display(),
             witness_library.display(),
             format_hash(&witness_library_info.digest),
@@ -3425,6 +3460,62 @@ fn prove_inputs_generates_eth_block_public_values_when_missing() {
     );
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn prove_inputs_reports_eth_block_receipts_when_present() {
+    let dir = temp_dir("prove-inputs-eth-receipts");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let block_input_path = dir.join("block.input");
+    let receipt_item = sample_receipt_item();
+    let receipts = vec![parse_rlp(&receipt_item).expect("receipt should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    let receipts_rlp = rlp_list(&[receipt_item]);
+    let block_rlp = sample_block_rlp_with_receipts_root(receipt_build.root);
+    let block_input = build_eth_block_input_with_receipts(&block_rlp, &receipts_rlp)
+        .expect("block input should build");
+    write_bytes(&witness_library, sample_witness_library());
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(
+        &block_input_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("public_inputs_generated=eth_block_input\n"));
+    assert!(stdout_text.contains("eth_receipts=present\n"));
+    assert!(stdout_text.contains(&format!(
+        "eth_receipt_trie_preimages={}\n",
+        receipt_build.hash_preimages.len()
+    )));
 }
 
 #[test]
