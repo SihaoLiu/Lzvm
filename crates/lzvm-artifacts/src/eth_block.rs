@@ -47,6 +47,20 @@ pub enum EthTransactionRlp {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EthReceiptRlp {
+    Legacy {
+        status_or_post_state: Vec<u8>,
+        cumulative_gas_used: u64,
+        logs_bloom: Box<[u8; 256]>,
+        logs: Vec<RlpItem>,
+    },
+    Typed {
+        receipt_type: u8,
+        payload: Vec<u8>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EthWithdrawalRlp {
     pub index: u64,
     pub validator_index: u64,
@@ -83,10 +97,47 @@ pub enum WithdrawalField {
     Amount,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceiptField {
+    StatusOrPostState,
+    CumulativeGasUsed,
+    LogsBloom,
+    Logs,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EthTransactionError {
     EmptyTypedTransaction,
     InvalidTransactionType { found: u8 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EthReceiptError {
+    EmptyTypedReceipt,
+    InvalidReceiptType {
+        found: u8,
+    },
+    ExpectedReceiptList,
+    ReceiptFieldCount {
+        found: usize,
+    },
+    ExpectedReceiptFieldBytes {
+        field: ReceiptField,
+    },
+    ReceiptFieldLength {
+        field: ReceiptField,
+        expected: usize,
+        found: usize,
+    },
+    ExpectedLogsList,
+    NonCanonicalReceiptQuantity {
+        field: ReceiptField,
+    },
+    ReceiptQuantityOverflow {
+        field: ReceiptField,
+        max_bytes: usize,
+        found: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,6 +252,46 @@ impl fmt::Display for EthTransactionError {
 
 impl std::error::Error for EthTransactionError {}
 
+impl fmt::Display for EthReceiptError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyTypedReceipt => write!(f, "empty typed receipt envelope"),
+            Self::InvalidReceiptType { found } => {
+                write!(f, "invalid receipt type byte: 0x{found:02x}")
+            }
+            Self::ExpectedReceiptList => write!(f, "expected receipt list"),
+            Self::ReceiptFieldCount { found } => {
+                write!(f, "expected 4 receipt fields, found {found}")
+            }
+            Self::ExpectedReceiptFieldBytes { field } => {
+                write!(f, "expected receipt field {field} to be bytes")
+            }
+            Self::ReceiptFieldLength {
+                field,
+                expected,
+                found,
+            } => write!(
+                f,
+                "expected receipt field {field} to have length {expected}, found {found}"
+            ),
+            Self::ExpectedLogsList => write!(f, "expected receipt logs list"),
+            Self::NonCanonicalReceiptQuantity { field } => {
+                write!(f, "non-canonical quantity in receipt field {field}")
+            }
+            Self::ReceiptQuantityOverflow {
+                field,
+                max_bytes,
+                found,
+            } => write!(
+                f,
+                "receipt field {field} quantity exceeds {max_bytes} bytes, found {found}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for EthReceiptError {}
+
 impl fmt::Display for EthWithdrawalError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -268,6 +359,18 @@ impl fmt::Display for WithdrawalField {
             Self::ValidatorIndex => "validator_index",
             Self::Address => "address",
             Self::Amount => "amount",
+        };
+        f.write_str(name)
+    }
+}
+
+impl fmt::Display for ReceiptField {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            Self::StatusOrPostState => "status_or_post_state",
+            Self::CumulativeGasUsed => "cumulative_gas_used",
+            Self::LogsBloom => "logs_bloom",
+            Self::Logs => "logs",
         };
         f.write_str(name)
     }
@@ -400,6 +503,49 @@ pub fn decode_eth_transactions_rlp(
         .collect()
 }
 
+pub fn decode_eth_receipt_rlp(receipt: &RlpItem) -> Result<EthReceiptRlp, EthReceiptError> {
+    match receipt {
+        RlpItem::List(fields) => decode_legacy_eth_receipt(fields),
+        RlpItem::Bytes(bytes) => {
+            let Some((&receipt_type, payload)) = bytes.split_first() else {
+                return Err(EthReceiptError::EmptyTypedReceipt);
+            };
+            if receipt_type > 0x7f {
+                return Err(EthReceiptError::InvalidReceiptType {
+                    found: receipt_type,
+                });
+            }
+            Ok(EthReceiptRlp::Typed {
+                receipt_type,
+                payload: payload.to_vec(),
+            })
+        }
+    }
+}
+
+pub fn decode_eth_receipts_rlp(
+    receipts: &[RlpItem],
+) -> Result<Vec<EthReceiptRlp>, EthReceiptError> {
+    receipts.iter().map(decode_eth_receipt_rlp).collect()
+}
+
+fn decode_legacy_eth_receipt(fields: &[RlpItem]) -> Result<EthReceiptRlp, EthReceiptError> {
+    if fields.len() != 4 {
+        return Err(EthReceiptError::ReceiptFieldCount {
+            found: fields.len(),
+        });
+    }
+    Ok(EthReceiptRlp::Legacy {
+        status_or_post_state: receipt_bytes(&fields[0], ReceiptField::StatusOrPostState)?.to_vec(),
+        cumulative_gas_used: receipt_quantity_u64(&fields[1], ReceiptField::CumulativeGasUsed)?,
+        logs_bloom: Box::new(receipt_fixed_bytes::<256>(
+            &fields[2],
+            ReceiptField::LogsBloom,
+        )?),
+        logs: receipt_logs(&fields[3])?.to_vec(),
+    })
+}
+
 pub fn decode_eth_withdrawal_rlp(
     withdrawal: &RlpItem,
 ) -> Result<EthWithdrawalRlp, EthWithdrawalError> {
@@ -489,6 +635,59 @@ fn bytes(item: &RlpItem, field: HeaderField) -> Result<&[u8], EthBlockError> {
     match item {
         RlpItem::Bytes(bytes) => Ok(bytes),
         RlpItem::List(_) => Err(EthBlockError::ExpectedHeaderFieldBytes { field }),
+    }
+}
+
+fn receipt_fixed_bytes<const N: usize>(
+    item: &RlpItem,
+    field: ReceiptField,
+) -> Result<[u8; N], EthReceiptError> {
+    let bytes = receipt_bytes(item, field)?;
+    bytes
+        .try_into()
+        .map_err(|_| EthReceiptError::ReceiptFieldLength {
+            field,
+            expected: N,
+            found: bytes.len(),
+        })
+}
+
+fn receipt_quantity_bytes(item: &RlpItem, field: ReceiptField) -> Result<Vec<u8>, EthReceiptError> {
+    let bytes = receipt_bytes(item, field)?;
+    if bytes.first() == Some(&0) {
+        return Err(EthReceiptError::NonCanonicalReceiptQuantity { field });
+    }
+    Ok(bytes.to_vec())
+}
+
+fn receipt_quantity_u64(item: &RlpItem, field: ReceiptField) -> Result<u64, EthReceiptError> {
+    let bytes = receipt_quantity_bytes(item, field)?;
+    if bytes.len() > 8 {
+        return Err(EthReceiptError::ReceiptQuantityOverflow {
+            field,
+            max_bytes: 8,
+            found: bytes.len(),
+        });
+    }
+
+    let mut value = 0_u64;
+    for byte in bytes {
+        value = (value << 8) | u64::from(byte);
+    }
+    Ok(value)
+}
+
+fn receipt_bytes(item: &RlpItem, field: ReceiptField) -> Result<&[u8], EthReceiptError> {
+    match item {
+        RlpItem::Bytes(bytes) => Ok(bytes),
+        RlpItem::List(_) => Err(EthReceiptError::ExpectedReceiptFieldBytes { field }),
+    }
+}
+
+fn receipt_logs(item: &RlpItem) -> Result<&[RlpItem], EthReceiptError> {
+    match item {
+        RlpItem::List(logs) => Ok(logs),
+        RlpItem::Bytes(_) => Err(EthReceiptError::ExpectedLogsList),
     }
 }
 

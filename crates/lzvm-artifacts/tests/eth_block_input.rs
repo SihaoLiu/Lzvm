@@ -92,6 +92,28 @@ fn builds_receipt_eth_block_inputs() {
 }
 
 #[test]
+fn rejects_malformed_receipt_bodies() {
+    let receipt_item = rlp_list(&[
+        rlp_bytes(&[1]),
+        rlp_bytes(&[0x52, 0x08]),
+        rlp_bytes(&[0x11; 256]),
+    ]);
+    let receipts = vec![parse_rlp(&receipt_item).expect("receipt item should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    let block_rlp = sample_block_rlp_with_transactions_and_receipts(
+        empty_trie_root(),
+        receipt_build.root,
+        Vec::new(),
+    );
+    let receipts_rlp = rlp_list(&[receipt_item]);
+
+    let error = build_eth_block_input_with_receipts(&block_rlp, &receipts_rlp)
+        .expect_err("block input should reject malformed receipts");
+
+    assert_eq!(error.to_string(), "expected 4 receipt fields, found 3");
+}
+
+#[test]
 fn rejects_transaction_root_mismatches() {
     let block_rlp =
         sample_block_rlp_with_transactions([0x55; 32], vec![rlp_list(&[rlp_bytes(&[1])])]);

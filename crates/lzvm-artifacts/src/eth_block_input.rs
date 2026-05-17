@@ -4,9 +4,9 @@ use std::fmt;
 use sha2::{Digest, Sha256};
 
 use crate::eth_block::{
-    decode_eth_header_rlp, decode_eth_transactions_rlp, decode_eth_withdrawals_rlp,
-    eth_header_hash, eth_ommers_hash, keccak256, parse_eth_block_rlp, EthBlockError,
-    EthTransactionError, EthWithdrawalError,
+    decode_eth_header_rlp, decode_eth_receipts_rlp, decode_eth_transactions_rlp,
+    decode_eth_withdrawals_rlp, eth_header_hash, eth_ommers_hash, keccak256, parse_eth_block_rlp,
+    EthBlockError, EthReceiptError, EthTransactionError, EthWithdrawalError,
 };
 use crate::eth_trie::{
     receipt_trie_build, transaction_trie_build, withdrawals_trie_build, IndexedTrieBuild,
@@ -63,6 +63,7 @@ pub enum EthBlockInputTrie {
 pub enum EthBlockInputError {
     Block(EthBlockError),
     Transaction(EthTransactionError),
+    Receipt(EthReceiptError),
     Withdrawal(EthWithdrawalError),
     Sectioned(SectionedError),
     MissingMetadata,
@@ -142,6 +143,7 @@ impl fmt::Display for EthBlockInputError {
         match self {
             Self::Block(error) => write!(f, "{error}"),
             Self::Transaction(error) => write!(f, "{error}"),
+            Self::Receipt(error) => write!(f, "{error}"),
             Self::Withdrawal(error) => write!(f, "{error}"),
             Self::Sectioned(error) => write!(f, "ETH block input container error: {error}"),
             Self::MissingMetadata => write!(f, "missing ETH block input metadata"),
@@ -251,6 +253,12 @@ impl From<EthTransactionError> for EthBlockInputError {
     }
 }
 
+impl From<EthReceiptError> for EthBlockInputError {
+    fn from(error: EthReceiptError) -> Self {
+        Self::Receipt(error)
+    }
+}
+
 impl From<EthWithdrawalError> for EthBlockInputError {
     fn from(error: EthWithdrawalError) -> Self {
         Self::Withdrawal(error)
@@ -321,6 +329,7 @@ pub fn build_eth_block_input_with_receipts(
 ) -> Result<EthBlockInput, EthBlockInputError> {
     let mut input = build_eth_block_input(block_rlp)?;
     let receipts = parse_eth_receipts_rlp(receipts_rlp)?;
+    decode_eth_receipts_rlp(&receipts)?;
     let build = receipt_trie_build(&receipts);
     if build.root != input.receipts_root {
         return Err(EthBlockInputError::ReceiptsRootMismatch);

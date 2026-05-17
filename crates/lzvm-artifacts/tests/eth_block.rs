@@ -1,8 +1,10 @@
 use lzvm_artifacts::eth_block::{
-    decode_eth_header_rlp, decode_eth_transaction_rlp, decode_eth_transactions_rlp,
-    decode_eth_withdrawal_rlp, decode_eth_withdrawals_rlp, eth_header_hash, eth_ommers_hash,
-    keccak256, parse_eth_block_rlp, EthBlockError, EthBlockRlp, EthTransactionError,
-    EthTransactionRlp, EthWithdrawalError, EthWithdrawalRlp, HeaderField, WithdrawalField,
+    decode_eth_header_rlp, decode_eth_receipt_rlp, decode_eth_receipts_rlp,
+    decode_eth_transaction_rlp, decode_eth_transactions_rlp, decode_eth_withdrawal_rlp,
+    decode_eth_withdrawals_rlp, eth_header_hash, eth_ommers_hash, keccak256, parse_eth_block_rlp,
+    EthBlockError, EthBlockRlp, EthReceiptError, EthReceiptRlp, EthTransactionError,
+    EthTransactionRlp, EthWithdrawalError, EthWithdrawalRlp, HeaderField, ReceiptField,
+    WithdrawalField,
 };
 use lzvm_artifacts::rlp::RlpItem;
 
@@ -271,6 +273,99 @@ fn rejects_out_of_range_typed_transaction_envelopes() {
 }
 
 #[test]
+fn decodes_legacy_receipts() {
+    let decoded = decode_eth_receipt_rlp(&receipt_item()).expect("receipt should decode");
+
+    assert_eq!(
+        decoded,
+        EthReceiptRlp::Legacy {
+            status_or_post_state: vec![1],
+            cumulative_gas_used: 0x5208,
+            logs_bloom: Box::new([0x11; 256]),
+            logs: vec![log_item()],
+        }
+    );
+}
+
+#[test]
+fn decodes_typed_receipt_envelopes_as_opaque_payloads() {
+    let receipt = RlpItem::Bytes(vec![2, 0xf9, 0x01]);
+
+    let decoded = decode_eth_receipt_rlp(&receipt).expect("receipt should decode");
+
+    assert_eq!(
+        decoded,
+        EthReceiptRlp::Typed {
+            receipt_type: 2,
+            payload: vec![0xf9, 0x01],
+        }
+    );
+}
+
+#[test]
+fn decodes_receipt_lists() {
+    let receipts = vec![receipt_item(), RlpItem::Bytes(vec![3, 0xc0])];
+
+    let decoded = decode_eth_receipts_rlp(&receipts).expect("receipts should decode");
+
+    assert_eq!(decoded.len(), 2);
+    assert!(matches!(decoded[0], EthReceiptRlp::Legacy { .. }));
+    assert!(matches!(
+        decoded[1],
+        EthReceiptRlp::Typed {
+            receipt_type: 3,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn rejects_malformed_receipts() {
+    let error =
+        decode_eth_receipt_rlp(&RlpItem::Bytes(Vec::new())).expect_err("receipt should fail");
+    assert!(matches!(error, EthReceiptError::EmptyTypedReceipt));
+
+    let error =
+        decode_eth_receipt_rlp(&RlpItem::Bytes(vec![0x80])).expect_err("receipt should fail");
+    assert!(matches!(
+        error,
+        EthReceiptError::InvalidReceiptType { found: 0x80 }
+    ));
+
+    let error = decode_eth_receipt_rlp(&RlpItem::List(vec![RlpItem::Bytes(Vec::new()); 3]))
+        .expect_err("receipt should fail");
+    assert!(matches!(
+        error,
+        EthReceiptError::ReceiptFieldCount { found: 3 }
+    ));
+
+    let mut wrong_bloom = match receipt_item() {
+        RlpItem::List(fields) => fields,
+        RlpItem::Bytes(_) => panic!("receipt should be a list"),
+    };
+    wrong_bloom[2] = RlpItem::Bytes(vec![0x11; 255]);
+    let error =
+        decode_eth_receipt_rlp(&RlpItem::List(wrong_bloom)).expect_err("receipt should fail");
+    assert!(matches!(
+        error,
+        EthReceiptError::ReceiptFieldLength {
+            field: ReceiptField::LogsBloom,
+            expected: 256,
+            found: 255,
+        }
+    ));
+
+    let mut wrong_logs = match receipt_item() {
+        RlpItem::List(fields) => fields,
+        RlpItem::Bytes(_) => panic!("receipt should be a list"),
+    };
+    wrong_logs[3] = RlpItem::Bytes(Vec::new());
+    let error =
+        decode_eth_receipt_rlp(&RlpItem::List(wrong_logs)).expect_err("receipt should fail");
+    assert!(matches!(error, EthReceiptError::ExpectedLogsList));
+}
+
+#[test]
 fn decodes_withdrawals() {
     let decoded = decode_eth_withdrawal_rlp(&withdrawal_item()).expect("withdrawal should decode");
 
@@ -363,6 +458,23 @@ fn withdrawal_item() -> RlpItem {
         RlpItem::Bytes(vec![2]),
         RlpItem::Bytes(vec![0x33; 20]),
         RlpItem::Bytes(vec![0x40]),
+    ])
+}
+
+fn receipt_item() -> RlpItem {
+    RlpItem::List(vec![
+        RlpItem::Bytes(vec![1]),
+        RlpItem::Bytes(vec![0x52, 0x08]),
+        RlpItem::Bytes(vec![0x11; 256]),
+        RlpItem::List(vec![log_item()]),
+    ])
+}
+
+fn log_item() -> RlpItem {
+    RlpItem::List(vec![
+        RlpItem::Bytes(vec![0x22; 20]),
+        RlpItem::List(vec![RlpItem::Bytes(vec![0x33; 32])]),
+        RlpItem::Bytes(vec![0x44, 0x55]),
     ])
 }
 
