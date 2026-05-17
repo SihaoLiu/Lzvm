@@ -29,6 +29,7 @@ pub struct ProofSegment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProofArtifactError {
     Sectioned(SectionedError),
+    UnsupportedVersion { found: u32, expected: u32 },
     MissingMetadata,
     DuplicateMetadata,
     InvalidMetadataLength { expected: usize, found: usize },
@@ -43,6 +44,10 @@ impl fmt::Display for ProofArtifactError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Sectioned(error) => write!(f, "proof artifact container error: {error}"),
+            Self::UnsupportedVersion { found, expected } => write!(
+                f,
+                "unsupported proof artifact version {found}, expected {expected}"
+            ),
             Self::MissingMetadata => write!(f, "missing proof artifact metadata"),
             Self::DuplicateMetadata => write!(f, "duplicate proof artifact metadata"),
             Self::InvalidMetadataLength { expected, found } => write!(
@@ -72,6 +77,13 @@ pub fn read_proof_artifact_file(
 pub fn parse_proof_artifact(bytes: &[u8]) -> Result<ProofArtifact, ProofArtifactError> {
     let file = parse_sectioned_file(bytes, PROOF_KIND, PROOF_VERSION)
         .map_err(ProofArtifactError::Sectioned)?;
+    if file.version != PROOF_VERSION {
+        return Err(ProofArtifactError::UnsupportedVersion {
+            found: file.version,
+            expected: PROOF_VERSION,
+        });
+    }
+
     let mut metadata_sections = file
         .sections
         .iter()
@@ -198,6 +210,35 @@ mod tests {
             parse_proof_artifact(&proof_bytes)
                 .expect_err("duplicate metadata section should reject"),
             ProofArtifactError::DuplicateMetadata
+        );
+    }
+
+    #[test]
+    fn rejects_unsupported_proof_artifact_versions() {
+        let metadata = vec![0_u8; METADATA_BYTES];
+        let proof_bytes = encode_sectioned_file(&SectionedFile {
+            kind: PROOF_KIND,
+            version: 0,
+            sections: vec![
+                SectionedSection {
+                    id: METADATA_SECTION_ID,
+                    data: metadata,
+                },
+                SectionedSection {
+                    id: 100,
+                    data: vec![1],
+                },
+            ],
+        })
+        .expect("sectioned proof should encode");
+
+        assert_eq!(
+            parse_proof_artifact(&proof_bytes)
+                .expect_err("unsupported proof artifact version should reject"),
+            ProofArtifactError::UnsupportedVersion {
+                found: 0,
+                expected: PROOF_VERSION,
+            }
         );
     }
 }
