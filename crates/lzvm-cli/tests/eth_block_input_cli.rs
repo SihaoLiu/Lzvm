@@ -124,7 +124,7 @@ fn writes_binary_block_input_artifact_with_receipts() {
     let receipts = vec![parse_rlp(&receipt_item).expect("receipt should parse")];
     let receipt_build = receipt_trie_build(&receipts);
     let receipts_rlp = rlp_list(&[receipt_item]);
-    let block_rlp = sample_empty_block_rlp_with_receipts_root(receipt_build.root);
+    let block_rlp = sample_block_rlp_with_receipts_root(receipt_build.root);
     write_bytes(&block_path, &block_rlp);
     write_bytes(&receipts_path, &receipts_rlp);
 
@@ -419,15 +419,16 @@ fn sample_block_rlp_with_base_fee() -> Vec<u8> {
     rlp_list(&[header_rlp, transactions, empty_list])
 }
 
-fn sample_empty_block_rlp_with_receipts_root(receipts_root: [u8; 32]) -> Vec<u8> {
+fn sample_block_rlp_with_receipts_root(receipts_root: [u8; 32]) -> Vec<u8> {
     let header_rlp = rlp_list(&legacy_header_items_with_receipts_and_logs_bloom(
-        empty_trie_root(),
+        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
         receipts_root,
         [0; 256],
         None,
     ));
+    let transactions = rlp_list(&[rlp_list(&[rlp_bytes(&[1])])]);
     let empty_list = rlp_list(&[]);
-    rlp_list(&[header_rlp, empty_list.clone(), empty_list])
+    rlp_list(&[header_rlp, transactions, empty_list])
 }
 
 fn legacy_header_items(
@@ -481,10 +482,6 @@ fn sample_receipt_item() -> Vec<u8> {
         rlp_bytes(&[0; 256]),
         rlp_list(&[]),
     ])
-}
-
-fn empty_trie_root() -> [u8; 32] {
-    hex32("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421")
 }
 
 fn rlp_bytes(payload: &[u8]) -> Vec<u8> {

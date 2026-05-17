@@ -65,10 +65,11 @@ fn builds_receipt_eth_block_inputs() {
     let receipt_item = receipt_item();
     let receipts = vec![parse_rlp(&receipt_item).expect("receipt item should parse")];
     let receipt_build = receipt_trie_build(&receipts);
+    let transaction_items = vec![rlp_list(&[rlp_bytes(&[1])])];
     let block_rlp = sample_block_rlp_with_transactions_and_receipts(
-        empty_trie_root(),
+        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
         receipt_build.root,
-        Vec::new(),
+        transaction_items,
     );
     let receipts_rlp = rlp_list(&[receipt_item]);
 
@@ -172,6 +173,24 @@ fn rejects_encoded_receipt_logs_bloom_mismatches() {
     let error = parse_eth_block_input(&encoded).expect_err("block input should reject receipts");
 
     assert!(matches!(error, EthBlockInputError::LogsBloomMismatch));
+}
+
+#[test]
+fn rejects_receipt_count_mismatches() {
+    let receipt_item = receipt_item();
+    let receipts = vec![parse_rlp(&receipt_item).expect("receipt item should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    let block_rlp = sample_block_rlp_with_transactions_and_receipts(
+        empty_trie_root(),
+        receipt_build.root,
+        Vec::new(),
+    );
+    let receipts_rlp = rlp_list(&[receipt_item]);
+
+    let error = build_eth_block_input_with_receipts(&block_rlp, &receipts_rlp)
+        .expect_err("block input should reject receipt count");
+
+    assert!(matches!(error, EthBlockInputError::ReceiptCountMismatch));
 }
 
 #[test]

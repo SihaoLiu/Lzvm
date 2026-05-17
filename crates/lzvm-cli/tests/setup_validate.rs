@@ -986,14 +986,15 @@ fn sample_block_rlp_variant() -> Vec<u8> {
 
 fn sample_block_rlp_with_receipts_root(receipts_root: [u8; 32]) -> Vec<u8> {
     let header_rlp = rlp_list(&legacy_header_items_with_receipts_and_logs_bloom(
-        empty_trie_root(),
+        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
         receipts_root,
         [0; 256],
         None,
         b"lzvm",
     ));
+    let transactions = rlp_list(&[rlp_list(&[rlp_bytes(&[1])])]);
     let empty_list = rlp_list(&[]);
-    rlp_list(&[header_rlp, empty_list.clone(), empty_list])
+    rlp_list(&[header_rlp, transactions, empty_list])
 }
 
 fn sample_block_rlp_with_extra(extra_data: &[u8]) -> Vec<u8> {
@@ -1061,10 +1062,6 @@ fn sample_receipt_item() -> Vec<u8> {
         rlp_bytes(&[0; 256]),
         rlp_list(&[]),
     ])
-}
-
-fn empty_trie_root() -> [u8; 32] {
-    hex32("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421")
 }
 
 fn rlp_bytes(payload: &[u8]) -> Vec<u8> {

@@ -92,6 +92,7 @@ pub enum EthBlockInputError {
     BeneficiaryMismatch,
     StateRootMismatch,
     ReceiptsRootMismatch,
+    ReceiptCountMismatch,
     LogsBloomMismatch,
     DifficultyMismatch,
     ExtraDataMismatch,
@@ -179,6 +180,7 @@ impl fmt::Display for EthBlockInputError {
             Self::BeneficiaryMismatch => write!(f, "ETH block input beneficiary mismatch"),
             Self::StateRootMismatch => write!(f, "ETH block input state root mismatch"),
             Self::ReceiptsRootMismatch => write!(f, "ETH block input receipts root mismatch"),
+            Self::ReceiptCountMismatch => write!(f, "ETH block input receipt count mismatch"),
             Self::LogsBloomMismatch => write!(f, "ETH block input logs bloom mismatch"),
             Self::DifficultyMismatch => write!(f, "ETH block input difficulty mismatch"),
             Self::ExtraDataMismatch => write!(f, "ETH block input extra data mismatch"),
@@ -334,11 +336,7 @@ pub fn build_eth_block_input_with_receipts(
     let mut input = build_eth_block_input(block_rlp)?;
     let receipts = parse_eth_receipts_rlp(receipts_rlp)?;
     let decoded_receipts = decode_eth_receipts_rlp(&receipts)?;
-    if let Some(logs_bloom) = eth_receipts_logs_bloom(&decoded_receipts) {
-        if logs_bloom != input.logs_bloom {
-            return Err(EthBlockInputError::LogsBloomMismatch);
-        }
-    }
+    validate_receipts_against_block(block_rlp, &decoded_receipts, input.logs_bloom)?;
     let build = receipt_trie_build(&receipts);
     if build.root != input.receipts_root {
         return Err(EthBlockInputError::ReceiptsRootMismatch);
@@ -453,11 +451,11 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
         Some(bytes) => {
             let parsed_receipts = parse_eth_receipts_rlp(&bytes)?;
             let decoded_receipts = decode_eth_receipts_rlp(&parsed_receipts)?;
-            if let Some(logs_bloom) = eth_receipts_logs_bloom(&decoded_receipts) {
-                if logs_bloom != validated_input.logs_bloom {
-                    return Err(EthBlockInputError::LogsBloomMismatch);
-                }
-            }
+            validate_receipts_against_block(
+                &block_rlp,
+                &decoded_receipts,
+                validated_input.logs_bloom,
+            )?;
             let build = receipt_trie_build(&parsed_receipts);
             if build.root != metadata.receipts_root {
                 return Err(EthBlockInputError::ReceiptsRootMismatch);
@@ -514,6 +512,23 @@ fn parse_eth_receipts_rlp(receipts_rlp: &[u8]) -> Result<Vec<RlpItem>, EthBlockI
         RlpItem::List(receipts) => Ok(receipts),
         RlpItem::Bytes(_) => Err(EthBlockInputError::ExpectedReceiptsList),
     }
+}
+
+fn validate_receipts_against_block(
+    block_rlp: &[u8],
+    receipts: &[crate::eth_block::EthReceiptRlp],
+    logs_bloom: [u8; 256],
+) -> Result<(), EthBlockInputError> {
+    if let Some(receipts_logs_bloom) = eth_receipts_logs_bloom(receipts) {
+        if receipts_logs_bloom != logs_bloom {
+            return Err(EthBlockInputError::LogsBloomMismatch);
+        }
+    }
+    let transaction_count = parse_eth_block_rlp(block_rlp)?.transactions.len();
+    if receipts.len() != transaction_count {
+        return Err(EthBlockInputError::ReceiptCountMismatch);
+    }
+    Ok(())
 }
 
 struct Metadata {
