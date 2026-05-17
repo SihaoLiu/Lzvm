@@ -18,7 +18,7 @@ The goal is to build a native stack with a Rust-first core, C++ integration for 
 - `crates/lzvm-crypto`: native hash primitives for proof-input plumbing and future execution-path integration.
 - `crates/lzvm-artifacts`: native readers, writers, validators, and PCS setup-plan derivation for setup and proving artifacts.
 - `crates/lzvm-setup`: native setup-generation primitives with validated staging, publish behavior, and optional CUDA fixed-column extension plus native tree hashing.
-- `crates/lzvm-prover`: native proof scheduling and preflight planning derived from setup catalogs.
+- `crates/lzvm-prover`: native proof scheduling, witness commitment generation, proof artifact construction, and setup-aware verification.
 - `crates/lzvm-cli`: repository-owned command entry points.
 
 ## Current Commands
@@ -103,6 +103,14 @@ cargo run -p lzvm-cli -- prove inputs [options] <setup-dir> <output-dir> <witnes
 ```
 
 This command derives the native proof run plan, validates witness library, guest image, and optional public-input paths, parses witness and guest image metadata, and prints stable input fingerprints. It is an execution-input preflight check, not a full proof constructor.
+
+Generate native witness commitments and a proof artifact:
+
+```sh
+cargo run -p lzvm-cli -- prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]
+```
+
+This command runs the native witness execution path, commits witness stages, and writes `proof.bin` when public inputs are supplied. Use `--trace-bytes <trace-bin>` for a single-unit run backed by a precomputed trace, `--trace-bundle <bundle-bin>` for bundled traces, and `--all-units` or aggregation options when the output must cover every discovered unit.
 
 Generate a native PCS setup-plan artifact from binary setup metadata:
 
