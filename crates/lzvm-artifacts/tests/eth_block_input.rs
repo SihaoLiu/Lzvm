@@ -6,6 +6,7 @@ use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
 
 const ETH_BLOCK_INPUT_KIND: [u8; 4] = *b"ethi";
 const ETH_BLOCK_INPUT_VERSION: u32 = 1;
+const METADATA_SECTION_ID: u32 = 1;
 const TRANSACTION_PREIMAGES_SECTION_ID: u32 = 3;
 
 #[test]
@@ -142,6 +143,29 @@ fn rejects_missing_transaction_root_preimages() {
             trie: EthBlockInputTrie::Transactions,
         }
     ));
+}
+
+#[test]
+fn rejects_metadata_block_hash_mismatches() {
+    let block_rlp = sample_block_rlp_with_transactions(
+        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
+        vec![rlp_list(&[rlp_bytes(&[1])])],
+    );
+    let input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let encoded = encode_eth_block_input(&input).expect("block input should encode");
+    let mut file = parse_sectioned_file(&encoded, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION)
+        .expect("sectioned input should parse");
+    let metadata = file
+        .sections
+        .iter_mut()
+        .find(|section| section.id == METADATA_SECTION_ID)
+        .expect("metadata section should exist");
+    metadata.data[0] ^= 1;
+    let encoded = encode_sectioned_file(&file).expect("sectioned input should encode");
+
+    let error = parse_eth_block_input(&encoded).expect_err("block input should fail");
+
+    assert!(matches!(error, EthBlockInputError::BlockHashMismatch));
 }
 
 fn sample_block_rlp_with_transactions(

@@ -62,6 +62,9 @@ pub enum EthBlockInputError {
     OmmersHashMismatch,
     MissingWithdrawalsRoot,
     UnexpectedWithdrawalsRoot,
+    BlockHashMismatch,
+    BlockNumberMismatch,
+    TimestampMismatch,
     WithdrawalsRootMismatch,
     InvalidPreimageSection,
     PreimageHashMismatch {
@@ -113,6 +116,9 @@ impl fmt::Display for EthBlockInputError {
             Self::UnexpectedWithdrawalsRoot => {
                 write!(f, "ETH block input has withdrawals root without withdrawals data")
             }
+            Self::BlockHashMismatch => write!(f, "ETH block input block hash mismatch"),
+            Self::BlockNumberMismatch => write!(f, "ETH block input block number mismatch"),
+            Self::TimestampMismatch => write!(f, "ETH block input timestamp mismatch"),
             Self::WithdrawalsRootMismatch => write!(f, "ETH block withdrawals root mismatch"),
             Self::InvalidPreimageSection => write!(f, "invalid ETH trie preimage section"),
             Self::PreimageHashMismatch { trie, index } => {
@@ -265,6 +271,7 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
     let transaction_preimages =
         transaction_preimages.ok_or(EthBlockInputError::MissingTransactionPreimages)?;
     let metadata = parse_metadata(&metadata)?;
+    validate_metadata(&metadata, &block_rlp)?;
     let transaction_hash_preimages = parse_validated_preimages(
         EthBlockInputTrie::Transactions,
         metadata.transactions_root,
@@ -350,6 +357,29 @@ fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
         transactions_root,
         withdrawals_root,
     })
+}
+
+fn validate_metadata(metadata: &Metadata, block_rlp: &[u8]) -> Result<(), EthBlockInputError> {
+    let input = build_eth_block_input(block_rlp)?;
+    if metadata.block_hash != input.block_hash {
+        return Err(EthBlockInputError::BlockHashMismatch);
+    }
+    if metadata.block_number != input.block_number {
+        return Err(EthBlockInputError::BlockNumberMismatch);
+    }
+    if metadata.timestamp != input.timestamp {
+        return Err(EthBlockInputError::TimestampMismatch);
+    }
+    if metadata.ommers_hash != input.ommers_hash {
+        return Err(EthBlockInputError::OmmersHashMismatch);
+    }
+    if metadata.transactions_root != input.transactions_root {
+        return Err(EthBlockInputError::TransactionsRootMismatch);
+    }
+    if metadata.withdrawals_root != input.withdrawals_root {
+        return Err(EthBlockInputError::WithdrawalsRootMismatch);
+    }
+    Ok(())
 }
 
 fn encode_preimages(preimages: &[TrieHashPreimage]) -> Result<Vec<u8>, EthBlockInputError> {
