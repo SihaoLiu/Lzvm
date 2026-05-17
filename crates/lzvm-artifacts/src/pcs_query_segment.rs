@@ -103,15 +103,23 @@ pub fn parse_pcs_query_plan_segment(
     if version != PCS_QUERY_PLAN_VERSION {
         return Err(PcsQueryPlanSegmentError::UnsupportedVersion { version });
     }
-    let unit_count = reader.read_u32()? as usize;
+    let unit_count = usize::try_from(reader.read_u32()?)
+        .map_err(|_| PcsQueryPlanSegmentError::LengthOverflow)?;
     if unit_count == 0 {
         return Err(PcsQueryPlanSegmentError::EmptyUnits);
+    }
+    if unit_count > reader.remaining_len() / UNIT_HEADER_BYTES {
+        return Err(PcsQueryPlanSegmentError::LengthOverflow);
     }
 
     let mut units = Vec::with_capacity(unit_count);
     for _ in 0..unit_count {
         let unit_index = reader.read_u32()?;
-        let query_count = reader.read_u32()? as usize;
+        let query_count = usize::try_from(reader.read_u32()?)
+            .map_err(|_| PcsQueryPlanSegmentError::LengthOverflow)?;
+        if query_count > reader.remaining_len() / QUERY_BYTES {
+            return Err(PcsQueryPlanSegmentError::LengthOverflow);
+        }
         let mut queries = Vec::with_capacity(query_count);
         for _ in 0..query_count {
             queries.push(reader.read_u64()?);
@@ -174,6 +182,10 @@ impl<'a> SegmentReader<'a> {
 
     fn read_u64(&mut self) -> Result<u64, PcsQueryPlanSegmentError> {
         Ok(u64::from_le_bytes(self.read_array::<8>()?))
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 
     fn read_array<const N: usize>(&mut self) -> Result<[u8; N], PcsQueryPlanSegmentError> {
