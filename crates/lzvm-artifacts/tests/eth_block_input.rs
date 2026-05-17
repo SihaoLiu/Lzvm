@@ -633,6 +633,20 @@ fn rejects_encoding_withdrawal_trie_root_mismatches() {
 }
 
 #[test]
+fn rejects_encoding_block_hash_mismatches() {
+    let block_rlp = sample_block_rlp_with_transactions(
+        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
+        vec![rlp_list(&[rlp_bytes(&[1])])],
+    );
+    let mut input = build_eth_block_input(&block_rlp).expect("block input should build");
+    input.block_hash[0] ^= 1;
+
+    let error = encode_eth_block_input(&input).expect_err("block input should reject block hash");
+
+    assert!(matches!(error, EthBlockInputError::BlockHashMismatch));
+}
+
+#[test]
 fn rejects_missing_transaction_root_preimages() {
     let block_rlp = sample_block_rlp_with_transactions(
         hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),

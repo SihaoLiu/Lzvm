@@ -381,6 +381,7 @@ pub fn encode_eth_block_input(value: &EthBlockInput) -> Result<Vec<u8>, EthBlock
         value.withdrawals_root.is_some(),
         value.withdrawals.is_some(),
     )?;
+    validate_input_metadata(value)?;
     validate_trie_roots(value)?;
     validate_preimages(
         EthBlockInputTrie::Transactions,
@@ -694,6 +695,31 @@ fn encode_metadata(value: &EthBlockInput) -> Vec<u8> {
     out.extend_from_slice(&extra_data_len.to_le_bytes());
     out.extend_from_slice(&value.extra_data);
     out
+}
+
+fn validate_input_metadata(value: &EthBlockInput) -> Result<(), EthBlockInputError> {
+    let metadata = Metadata {
+        block_hash: value.block_hash,
+        parent_hash: value.parent_hash,
+        beneficiary: value.beneficiary,
+        state_root: value.state_root,
+        receipts_root: value.receipts_root,
+        logs_bloom: Some(value.logs_bloom),
+        difficulty: Some(value.difficulty),
+        block_number: value.block_number,
+        timestamp: value.timestamp,
+        extra_data: Some(value.extra_data.clone()),
+        gas_limit: value.gas_limit,
+        gas_used: value.gas_used,
+        base_fee_per_gas: value.base_fee_per_gas,
+        mix_hash: value.mix_hash,
+        nonce: value.nonce,
+        ommers_hash: value.ommers_hash,
+        transactions_root: value.transactions_root,
+        withdrawals_root: value.withdrawals_root,
+    };
+    validate_metadata(&metadata, &value.block_rlp)?;
+    Ok(())
 }
 
 fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
