@@ -32,6 +32,18 @@ fn sample_segment() -> PcsMaterialManifestSegment {
     }
 }
 
+fn segment_header(unit_count: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"pms0");
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, unit_count);
+    bytes
+}
+
+fn push_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
 #[test]
 fn encodes_and_parses_pcs_material_manifest_segments() {
     let encoded = encode_pcs_material_manifest_segment(&sample_segment())
@@ -61,5 +73,26 @@ fn rejects_duplicate_pcs_material_manifest_units() {
     assert!(matches!(
         encode_pcs_material_manifest_segment(&segment),
         Err(PcsMaterialManifestSegmentError::DuplicateUnitIndex { unit_index: 0 })
+    ));
+}
+
+#[test]
+fn rejects_truncated_pcs_material_manifest_segments() {
+    let result = parse_pcs_material_manifest_segment(b"pms0\x01\0");
+
+    assert!(matches!(
+        result,
+        Err(PcsMaterialManifestSegmentError::UnexpectedEof {
+            needed: 8,
+            available: 6
+        })
+    ));
+}
+
+#[test]
+fn rejects_unit_count_that_exceeds_remaining_units() {
+    assert!(matches!(
+        parse_pcs_material_manifest_segment(&segment_header(1)),
+        Err(PcsMaterialManifestSegmentError::LengthOverflow)
     ));
 }
