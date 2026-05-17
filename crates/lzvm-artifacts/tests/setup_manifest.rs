@@ -71,6 +71,29 @@ fn parses_legacy_setup_directory_manifests_without_source_fixed_file_counts() {
 }
 
 #[test]
+fn rejects_zero_version_setup_directory_manifests() {
+    let mut payload = Vec::new();
+    for value in [4_u64, 3, 128, 4, 512] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    payload.extend_from_slice(&[0x55; 32]);
+    let bytes = encode_sectioned_file(&SectionedFile {
+        kind: *b"sdmf",
+        version: 0,
+        sections: vec![SectionedSection {
+            id: 1,
+            data: payload,
+        }],
+    })
+    .expect("zero version manifest should encode");
+
+    assert_eq!(
+        parse_setup_directory_manifest(&bytes).expect_err("zero version manifest should reject"),
+        SetupDirectoryManifestError::UnsupportedVersion { found: 0, max: 4 }
+    );
+}
+
+#[test]
 fn parses_legacy_setup_directory_manifests_without_source_program_archive_counts() {
     let mut payload = Vec::new();
     for value in [4_u64, 3, 128, 4, 512, 1, 7] {

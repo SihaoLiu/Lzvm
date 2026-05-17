@@ -38,6 +38,10 @@ pub struct SetupDirectoryManifest {
 pub enum SetupDirectoryManifestError {
     Sectioned(SectionedError),
     Catalog(KeyDirectoryError),
+    UnsupportedVersion {
+        found: u32,
+        max: u32,
+    },
     InvalidSectionCount {
         found: u32,
     },
@@ -78,6 +82,9 @@ impl fmt::Display for SetupDirectoryManifestError {
         match self {
             Self::Sectioned(error) => write!(f, "setup directory manifest container error: {error}"),
             Self::Catalog(error) => write!(f, "{error}"),
+            Self::UnsupportedVersion { found, max } => {
+                write!(f, "unsupported setup directory manifest version {found}, max {max}")
+            }
             Self::InvalidSectionCount { found } => {
                 write!(f, "invalid setup directory manifest section count {found}")
             }
@@ -127,7 +134,8 @@ impl std::error::Error for SetupDirectoryManifestError {
         match self {
             Self::Sectioned(error) => Some(error),
             Self::Catalog(error) => Some(error),
-            Self::InvalidSectionCount { .. }
+            Self::UnsupportedVersion { .. }
+            | Self::InvalidSectionCount { .. }
             | Self::InvalidSectionId { .. }
             | Self::InvalidPayloadLength { .. }
             | Self::EmptyUnits
@@ -283,6 +291,13 @@ pub fn parse_setup_directory_manifest(
         SETUP_DIRECTORY_MANIFEST_KIND,
         SETUP_DIRECTORY_MANIFEST_VERSION,
     )?;
+    if file.version == 0 {
+        return Err(SetupDirectoryManifestError::UnsupportedVersion {
+            found: file.version,
+            max: SETUP_DIRECTORY_MANIFEST_VERSION,
+        });
+    }
+
     if file.sections.len() != 1 {
         return Err(SetupDirectoryManifestError::InvalidSectionCount {
             found: u32::try_from(file.sections.len()).unwrap_or(u32::MAX),
@@ -359,7 +374,7 @@ fn parse_setup_directory_manifest_payload(
     bytes: &[u8],
 ) -> Result<SetupDirectoryManifest, SetupDirectoryManifestError> {
     let expected = match version {
-        0 | 1 => PAYLOAD_V1_BYTES,
+        1 => PAYLOAD_V1_BYTES,
         2 => PAYLOAD_V2_BYTES,
         3 => PAYLOAD_V3_BYTES,
         _ => PAYLOAD_V4_BYTES,
