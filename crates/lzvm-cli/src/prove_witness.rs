@@ -4,17 +4,19 @@ use std::path::Path;
 
 use lzvm_artifacts::challenge_values_segment::parse_challenge_values_segment;
 use lzvm_artifacts::eth_block_input::EthBlockInput;
-use lzvm_artifacts::eth_block_public_values::validate_eth_block_public_values;
+use lzvm_artifacts::eth_block_public_values::{
+    public_values_from_eth_block_input, validate_eth_block_public_values,
+};
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::group_values_segment::GROUP_VALUES_SEGMENT_ID;
-use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
+use lzvm_artifacts::key_directory::{key_directory_catalog_digest, KeyDirectoryCatalog};
 use lzvm_artifacts::pcs_evaluation_segment::{
     parse_pcs_evaluation_segment, PCS_EVALUATION_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_proof_values_segment::PCS_PROOF_VALUES_SEGMENT_ID;
 use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
-use lzvm_artifacts::public_values::read_public_values_file;
+use lzvm_artifacts::public_values::{encode_public_values, read_public_values_file};
 use lzvm_artifacts::trace_bundle::read_trace_bundle_file;
 use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
 use lzvm_field::{Ext3, Felt};
@@ -57,20 +59,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
 
-    let inputs = parsed_inputs(&parsed);
-    let plan = match derive_prove_execution_plan_with_program_image_cache(
-        &catalog,
-        parsed.run_args.request.clone(),
-        inputs,
-        parsed.run_args.program_image_cache.clone(),
-    ) {
-        Ok(plan) => plan,
-        Err(error) => {
-            let _ = writeln!(stderr, "prove witness failed: {error}");
-            return 1;
-        }
-    };
-    if plan.run_plan.options.final_wrap {
+    if parsed.run_args.request.options.final_wrap {
         let _ = writeln!(
             stderr,
             "prove witness failed: final wrap is unsupported by prove witness"
@@ -81,6 +70,27 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         Ok(value) => value,
         Err(message) => {
             let _ = writeln!(stderr, "prove witness failed: {message}");
+            return 1;
+        }
+    };
+    let prepared_public_inputs =
+        match prepare_eth_block_public_inputs(&parsed, &catalog, eth_block_input.as_ref()) {
+            Ok(value) => value,
+            Err(message) => {
+                let _ = writeln!(stderr, "prove witness failed: {message}");
+                return 1;
+            }
+        };
+    let generated_public_inputs = prepared_public_inputs.generated;
+    let plan = match derive_prove_execution_plan_with_program_image_cache(
+        &catalog,
+        parsed.run_args.request.clone(),
+        prepared_public_inputs.inputs,
+        parsed.run_args.program_image_cache.clone(),
+    ) {
+        Ok(plan) => plan,
+        Err(error) => {
+            let _ = writeln!(stderr, "prove witness failed: {error}");
             return 1;
         }
     };
@@ -295,6 +305,9 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     }
 
     write_run_plan_summary(stdout, &plan.run_plan);
+    if generated_public_inputs {
+        let _ = writeln!(stdout, "public_inputs_generated=eth_block_input");
+    }
     if let Some(summary) = &plan.program_image_cache {
         write_program_image_cache_summary(stdout, summary);
     }
@@ -321,6 +334,11 @@ struct ParsedWitnessArgs {
     evaluation_values: Option<std::path::PathBuf>,
     evaluation_values_segment: Option<std::path::PathBuf>,
     eth_block_input: Option<std::path::PathBuf>,
+}
+
+struct PreparedPublicInputs {
+    inputs: ProveExecutionInputArtifacts,
+    generated: bool,
 }
 
 fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
@@ -571,6 +589,55 @@ fn parsed_inputs(parsed: &ParsedWitnessArgs) -> ProveExecutionInputArtifacts {
             .get(public_inputs_index)
             .cloned(),
     }
+}
+
+fn prepare_eth_block_public_inputs(
+    parsed: &ParsedWitnessArgs,
+    catalog: &KeyDirectoryCatalog,
+    eth_block_input: Option<&EthBlockInputSummary>,
+) -> Result<PreparedPublicInputs, String> {
+    let mut inputs = parsed_inputs(parsed);
+    let Some(summary) = eth_block_input else {
+        return Ok(PreparedPublicInputs {
+            inputs,
+            generated: false,
+        });
+    };
+    if inputs.public_inputs.is_some() {
+        return Ok(PreparedPublicInputs {
+            inputs,
+            generated: false,
+        });
+    }
+
+    let setup_hash = key_directory_catalog_digest(catalog)
+        .map_err(|error| format!("derive setup hash failed: {error}"))?;
+    let output_dir = &parsed.run_args.positionals[1];
+    let public_inputs = output_dir.join("eth-block-public-values.bin");
+    let public_values = public_values_from_eth_block_input(setup_hash, &summary.input);
+    let encoded = encode_public_values(&public_values)
+        .map_err(|error| format!("encode ETH block public values failed: {error}"))?;
+    if let Some(parent) = public_inputs.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|error| {
+                format!(
+                    "create public inputs directory failed: {}: {error}",
+                    parent.display()
+                )
+            })?;
+        }
+    }
+    fs::write(&public_inputs, encoded).map_err(|error| {
+        format!(
+            "write ETH block public values failed: {}: {error}",
+            public_inputs.display()
+        )
+    })?;
+    inputs.public_inputs = Some(public_inputs);
+    Ok(PreparedPublicInputs {
+        inputs,
+        generated: true,
+    })
 }
 
 struct WitnessAuxiliaryInputRequest<'a> {
