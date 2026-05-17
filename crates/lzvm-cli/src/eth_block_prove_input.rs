@@ -163,6 +163,8 @@ pub(crate) fn write_eth_block_input_summary(
         "eth_transaction_trie_preimages={}",
         summary.transaction_preimage_count
     );
+    let transaction_count = summary.legacy_transaction_count + summary.typed_transaction_count;
+    let _ = writeln!(stdout, "eth_transaction_count={transaction_count}");
     let _ = writeln!(
         stdout,
         "eth_legacy_transactions={}",
