@@ -47,6 +47,28 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     );
     let _ = writeln!(
         stdout,
+        "source_modules={}",
+        report.source_program_archive.module_count
+    );
+    let _ = writeln!(
+        stdout,
+        "source_fixed_file_pragmas={}",
+        report.source_program_archive.fixed_file_pragma_count
+    );
+    let _ = writeln!(
+        stdout,
+        "source_air_template_fixed_file_pragmas={}",
+        report
+            .source_program_archive
+            .air_template_fixed_file_pragma_count
+    );
+    let _ = writeln!(
+        stdout,
+        "source_air_units={}",
+        report.source_program_archive.air_unit_count
+    );
+    let _ = writeln!(
+        stdout,
         "source_fixed_file_manifest_bytes={}",
         report.source_fixed_file_manifest.bytes_written
     );
