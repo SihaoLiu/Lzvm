@@ -310,6 +310,19 @@ pub struct ConstantDeclaration {
     pub end: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VariableDeclaration {
+    pub type_name: String,
+    pub name: String,
+    pub array_dims: Vec<SourceSpan>,
+    pub array_dim_expressions: Vec<Option<Expression>>,
+    pub initializer: Option<SourceSpan>,
+    pub initializer_expression: Option<Expression>,
+    pub source_name: String,
+    pub start: usize,
+    pub end: usize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueDeclarationKind {
     Challenge,

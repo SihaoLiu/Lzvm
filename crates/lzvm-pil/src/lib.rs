@@ -11,14 +11,15 @@ pub use parser::{
     parse_commit_declarations, parse_constant_declarations, parse_container_declarations,
     parse_expression, parse_function_declarations, parse_include_directives,
     parse_pragma_directives, parse_public_declarations, parse_public_table_declarations,
-    parse_use_directives, parse_value_declarations, AirGroupDeclaration, AirGroupValueDeclaration,
-    AirInstanceDeclaration, AirTemplateDeclaration, BinaryOperator, CallArgument,
-    ColumnDeclaration, ColumnFeature, ColumnInitializer, ColumnInitializerKind, ColumnItem,
-    ColumnKind, CommitDeclaration, ConstantDeclaration, ConstantDeclarationKind,
-    ContainerDeclaration, Expression, ExpressionKind, FunctionDeclaration, FunctionParameter,
-    FunctionStatement, FunctionStatementKind, FunctionVisibility, IncludeDirective, IncludeKind,
-    IncludeVisibility, ParseError, PragmaDirective, PublicDeclaration, PublicTableDeclaration,
-    SourceSpan, UnaryOperator, UseDirective, ValueDeclaration, ValueDeclarationKind,
+    parse_use_directives, parse_value_declarations, parse_variable_declarations,
+    AirGroupDeclaration, AirGroupValueDeclaration, AirInstanceDeclaration, AirTemplateDeclaration,
+    BinaryOperator, CallArgument, ColumnDeclaration, ColumnFeature, ColumnInitializer,
+    ColumnInitializerKind, ColumnItem, ColumnKind, CommitDeclaration, ConstantDeclaration,
+    ConstantDeclarationKind, ContainerDeclaration, Expression, ExpressionKind, FunctionDeclaration,
+    FunctionParameter, FunctionStatement, FunctionStatementKind, FunctionVisibility,
+    IncludeDirective, IncludeKind, IncludeVisibility, ParseError, PragmaDirective,
+    PublicDeclaration, PublicTableDeclaration, SourceSpan, UnaryOperator, UseDirective,
+    ValueDeclaration, ValueDeclarationKind, VariableDeclaration,
 };
 pub use source::{SourceFile, SourceLoadError, SourceLoader, SourceLoaderConfig};
 pub use source_graph::{

@@ -36,7 +36,7 @@ fn loads_source_program_with_declarations_from_graph_sources() {
          const int ROWS = 2**16;\n\
          airtemplate Main(int N = 2**16) { finalize(); }\n\
          airgroup Main { Main(N: 2**16); }\n\
-         function finalize(): int { return 1; }\n\
+         function finalize(): int { int local = 1; return local; }\n\
          col witness main.trace[2];\n\
          challenge stage(3) alpha;\n\
          commit stage(2) public(main.trace) main_commit;\n\
@@ -87,6 +87,9 @@ fn loads_source_program_with_declarations_from_graph_sources() {
     assert_eq!(main.constants[0].kind, ConstantDeclarationKind::Const);
     assert_eq!(main.constants[0].type_name.as_deref(), Some("int"));
     assert_eq!(main.constants[0].name, "ROWS");
+    assert_eq!(main.variables.len(), 1);
+    assert_eq!(main.variables[0].type_name, "int");
+    assert_eq!(main.variables[0].name, "local");
     assert_eq!(main.columns.len(), 1);
     assert_eq!(main.columns[0].kind, ColumnKind::Witness);
     assert_eq!(main.values.len(), 1);
@@ -99,6 +102,7 @@ fn loads_source_program_with_declarations_from_graph_sources() {
     let shared = &program.modules[1];
     assert!(shared.includes.is_empty());
     assert_eq!(shared.constants.len(), 0);
+    assert_eq!(shared.variables.len(), 0);
     assert_eq!(shared.columns.len(), 1);
     assert_eq!(shared.columns[0].kind, ColumnKind::Fixed);
     assert_eq!(shared.values.len(), 1);

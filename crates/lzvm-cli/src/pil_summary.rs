@@ -82,6 +82,7 @@ pub(crate) fn write_summary(stdout: &mut dyn Write, program: &SourceProgram) {
     let mut containers = 0;
     let mut functions = 0;
     let mut constants = 0;
+    let mut variables = 0;
     let mut columns = 0;
     let mut values = 0;
     let mut air_group_values = 0;
@@ -95,6 +96,7 @@ pub(crate) fn write_summary(stdout: &mut dyn Write, program: &SourceProgram) {
         containers += module.containers.len();
         functions += module.functions.len();
         constants += module.constants.len();
+        variables += module.variables.len();
         columns += module.columns.len();
         values += module.values.len();
         air_group_values += module.air_group_values.len();
@@ -112,6 +114,7 @@ pub(crate) fn write_summary(stdout: &mut dyn Write, program: &SourceProgram) {
     let _ = writeln!(stdout, "containers={containers}");
     let _ = writeln!(stdout, "functions={functions}");
     let _ = writeln!(stdout, "constants={constants}");
+    let _ = writeln!(stdout, "variables={variables}");
     let _ = writeln!(stdout, "columns={columns}");
     let _ = writeln!(stdout, "values={values}");
     let _ = writeln!(stdout, "air_group_values={air_group_values}");

@@ -4,9 +4,10 @@ use super::{
     parse_commit_declarations, parse_constant_declarations, parse_container_declarations,
     parse_function_declarations, parse_include_directives, parse_pragma_directives,
     parse_public_declarations, parse_public_table_declarations, parse_use_directives,
-    parse_value_declarations, BinaryOperator, ColumnInitializerKind, ColumnKind,
-    ConstantDeclarationKind, Expression, ExpressionKind, FunctionStatementKind, FunctionVisibility,
-    IncludeKind, IncludeVisibility, ParseError, UnaryOperator, ValueDeclarationKind,
+    parse_value_declarations, parse_variable_declarations, BinaryOperator, ColumnInitializerKind,
+    ColumnKind, ConstantDeclarationKind, Expression, ExpressionKind, FunctionStatementKind,
+    FunctionVisibility, IncludeKind, IncludeVisibility, ParseError, UnaryOperator,
+    ValueDeclarationKind,
 };
 use crate::SourceFile;
 use std::path::PathBuf;
@@ -194,6 +195,68 @@ fn parses_constant_declarations_and_skips_const_parameters() {
         "2",
     );
     assert!(declarations[2].initializer_expression.is_none());
+}
+
+#[test]
+fn parses_variable_declarations_and_skips_signature_types() {
+    let source = source(
+        "function f(expr input): expr {\n\
+           int aux = 200;\n\
+           expr total = input + 1;\n\
+           string label = \"main\";\n\
+           fe scratch[2][3];\n\
+           return total;\n\
+         }",
+    );
+
+    let declarations =
+        parse_variable_declarations(&source).expect("variable declarations should parse");
+
+    assert_eq!(declarations.len(), 4);
+    assert_eq!(declarations[0].type_name, "int");
+    assert_eq!(declarations[0].name, "aux");
+    assert_integer_expression(
+        declarations[0]
+            .initializer_expression
+            .as_ref()
+            .expect("integer initializer expression"),
+        "200",
+    );
+    assert_eq!(declarations[1].type_name, "expr");
+    assert_eq!(declarations[1].name, "total");
+    assert_binary_add_name_plus_one(
+        declarations[1]
+            .initializer_expression
+            .as_ref()
+            .expect("expression initializer"),
+        "input",
+    );
+    assert_eq!(declarations[2].type_name, "string");
+    assert_eq!(declarations[2].name, "label");
+    assert!(matches!(
+        declarations[2]
+            .initializer_expression
+            .as_ref()
+            .expect("string initializer")
+            .kind,
+        ExpressionKind::StringLiteral(ref value) if value == "main"
+    ));
+    assert_eq!(declarations[3].type_name, "fe");
+    assert_eq!(declarations[3].name, "scratch");
+    assert_eq!(declarations[3].array_dims.len(), 2);
+    assert_integer_expression(
+        declarations[3].array_dim_expressions[0]
+            .as_ref()
+            .expect("first dimension expression"),
+        "2",
+    );
+    assert_integer_expression(
+        declarations[3].array_dim_expressions[1]
+            .as_ref()
+            .expect("second dimension expression"),
+        "3",
+    );
+    assert!(declarations[3].initializer_expression.is_none());
 }
 
 #[test]

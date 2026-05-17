@@ -62,7 +62,7 @@ pub fn parse_constant_declarations(
 
     while index < tokens.len() {
         if matches!(tokens[index].kind, TokenKind::Const | TokenKind::Constant)
-            && constant_statement_context(&stack)
+            && declaration_statement_context(&stack)
         {
             let parsed = parse_constant_declaration_at(&tokens, index, source)?;
             index = parsed.next_index;
@@ -70,7 +70,33 @@ pub fn parse_constant_declarations(
             continue;
         }
 
-        update_constant_scan_stack(&mut stack, tokens[index].kind);
+        update_declaration_scan_stack(&mut stack, tokens[index].kind);
+        index += 1;
+    }
+
+    Ok(declarations)
+}
+
+pub fn parse_variable_declarations(
+    source: &SourceFile,
+) -> Result<Vec<VariableDeclaration>, ParseError> {
+    let tokens = lex_source(&source.contents).map_err(|error| ParseError::Lex {
+        source_name: source.source_name.clone(),
+        error,
+    })?;
+    let mut declarations = Vec::new();
+    let mut index = 0;
+    let mut stack = Vec::new();
+
+    while index < tokens.len() {
+        if variable_statement_context(&tokens, index, &stack) {
+            let parsed = parse_variable_declaration_at(&tokens, index, source)?;
+            index = parsed.next_index;
+            declarations.push(parsed.declaration);
+            continue;
+        }
+
+        update_declaration_scan_stack(&mut stack, tokens[index].kind);
         index += 1;
     }
 
@@ -794,7 +820,7 @@ struct ParsedConstantDeclaration {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ParsedConstantArrayDimensions {
+struct ParsedArrayDimensions {
     dims: Vec<SourceSpan>,
     dim_expressions: Vec<Option<Expression>>,
     next_index: usize,
@@ -838,7 +864,7 @@ fn parse_constant_declaration_at(
 
     let (name, after_name) = parse_name_reference(tokens, cursor, source)?;
     cursor = after_name;
-    let array_parse = parse_constant_array_dimensions(tokens, cursor, source)?;
+    let array_parse = parse_array_dimensions(tokens, cursor, source)?;
     cursor = array_parse.next_index;
 
     let (initializer, initializer_expression, next_index, end) = if tokens
@@ -904,11 +930,11 @@ fn constant_type_name(token: &Token) -> Option<String> {
     }
 }
 
-fn parse_constant_array_dimensions(
+fn parse_array_dimensions(
     tokens: &[Token],
     mut cursor: usize,
     source: &SourceFile,
-) -> Result<ParsedConstantArrayDimensions, ParseError> {
+) -> Result<ParsedArrayDimensions, ParseError> {
     let mut array_dims = Vec::new();
     let mut array_dim_expressions = Vec::new();
 
@@ -927,20 +953,134 @@ fn parse_constant_array_dimensions(
         cursor = next;
     }
 
-    Ok(ParsedConstantArrayDimensions {
+    Ok(ParsedArrayDimensions {
         dims: array_dims,
         dim_expressions: array_dim_expressions,
         next_index: cursor,
     })
 }
 
-fn constant_statement_context(stack: &[TokenKind]) -> bool {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedVariableDeclaration {
+    declaration: VariableDeclaration,
+    next_index: usize,
+}
+
+fn parse_variable_declaration_at(
+    tokens: &[Token],
+    index: usize,
+    source: &SourceFile,
+) -> Result<ParsedVariableDeclaration, ParseError> {
+    let type_token = tokens.get(index).ok_or_else(|| ParseError::ExpectedName {
+        source_name: source.source_name.clone(),
+        start: missing_start(tokens, index),
+    })?;
+    let type_name = variable_type_name(type_token).ok_or_else(|| ParseError::ExpectedName {
+        source_name: source.source_name.clone(),
+        start: type_token.start,
+    })?;
+
+    let mut cursor = index + 1;
+    let (name, after_name) = parse_name_reference(tokens, cursor, source)?;
+    cursor = after_name;
+    let array_parse = parse_array_dimensions(tokens, cursor, source)?;
+    cursor = array_parse.next_index;
+
+    let (initializer, initializer_expression, next_index, end) = if tokens
+        .get(cursor)
+        .is_some_and(|token| token.kind == TokenKind::Assign)
+    {
+        let (span, terminator_index) =
+            parse_expression_span_until_terminator(tokens, cursor + 1, source)?;
+        let expression = parse_expression_span_best_effort(tokens, span, source);
+        let terminator =
+            tokens
+                .get(terminator_index)
+                .ok_or_else(|| ParseError::ExpectedTerminator {
+                    source_name: source.source_name.clone(),
+                    start: missing_start(tokens, terminator_index),
+                })?;
+        if terminator.kind != TokenKind::Semicolon {
+            return Err(ParseError::ExpectedTerminator {
+                source_name: source.source_name.clone(),
+                start: terminator.start,
+            });
+        }
+        (Some(span), expression, terminator_index + 1, terminator.end)
+    } else {
+        let terminator = tokens
+            .get(cursor)
+            .ok_or_else(|| ParseError::ExpectedTerminator {
+                source_name: source.source_name.clone(),
+                start: missing_start(tokens, cursor),
+            })?;
+        if terminator.kind != TokenKind::Semicolon {
+            return Err(ParseError::ExpectedTerminator {
+                source_name: source.source_name.clone(),
+                start: terminator.start,
+            });
+        }
+        (None, None, cursor + 1, terminator.end)
+    };
+
+    Ok(ParsedVariableDeclaration {
+        declaration: VariableDeclaration {
+            type_name,
+            name,
+            array_dims: array_parse.dims,
+            array_dim_expressions: array_parse.dim_expressions,
+            initializer,
+            initializer_expression,
+            source_name: source.source_name.clone(),
+            start: type_token.start,
+            end,
+        },
+        next_index,
+    })
+}
+
+fn variable_type_name(token: &Token) -> Option<String> {
+    match token.kind {
+        TokenKind::Expr | TokenKind::Fe | TokenKind::Int | TokenKind::String => {
+            Some(token.lexeme.clone())
+        }
+        _ => None,
+    }
+}
+
+fn declaration_statement_context(stack: &[TokenKind]) -> bool {
     stack
         .iter()
         .all(|kind| !matches!(kind, TokenKind::RParen | TokenKind::RBracket))
 }
 
-fn update_constant_scan_stack(stack: &mut Vec<TokenKind>, kind: TokenKind) {
+fn variable_statement_context(tokens: &[Token], index: usize, stack: &[TokenKind]) -> bool {
+    if !declaration_statement_context(stack) {
+        return false;
+    }
+    if tokens
+        .get(index)
+        .is_none_or(|token| variable_type_name(token).is_none())
+    {
+        return false;
+    }
+    if !tokens
+        .get(index + 1)
+        .is_some_and(|token| token.kind == TokenKind::Identifier)
+    {
+        return false;
+    }
+
+    index == 0
+        || tokens.get(index - 1).is_some_and(|token| {
+            matches!(
+                token.kind,
+                TokenKind::Semicolon | TokenKind::LBrace | TokenKind::RBrace
+            )
+        })
+}
+
+fn update_declaration_scan_stack(stack: &mut Vec<TokenKind>, kind: TokenKind) {
     match kind {
         TokenKind::LParen => stack.push(TokenKind::RParen),
         TokenKind::LBracket => stack.push(TokenKind::RBracket),
