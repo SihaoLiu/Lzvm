@@ -11,21 +11,39 @@ pub fn empty_transaction_trie_root() -> [u8; 32] {
     empty_trie_root()
 }
 
-pub fn transaction_trie_root(transactions: &[RlpItem]) -> Result<[u8; 32], EthTransactionError> {
-    if transactions.is_empty() {
-        return Ok(empty_transaction_trie_root());
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexedTrieBuild {
+    pub root: [u8; 32],
+    pub hash_preimages: Vec<TrieHashPreimage>,
+}
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrieHashPreimage {
+    pub hash: [u8; 32],
+    pub rlp: Vec<u8>,
+}
+
+pub fn transaction_trie_root(transactions: &[RlpItem]) -> Result<[u8; 32], EthTransactionError> {
+    Ok(transaction_trie_build(transactions)?.root)
+}
+
+pub fn transaction_trie_build(
+    transactions: &[RlpItem],
+) -> Result<IndexedTrieBuild, EthTransactionError> {
     let values = transactions
         .iter()
         .map(transaction_value_bytes)
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(indexed_trie_root(&values))
+    Ok(indexed_trie_build(&values))
 }
 
 pub fn withdrawals_trie_root(withdrawals: &[RlpItem]) -> [u8; 32] {
-    indexed_item_trie_root(withdrawals)
+    withdrawals_trie_build(withdrawals).root
+}
+
+pub fn withdrawals_trie_build(withdrawals: &[RlpItem]) -> IndexedTrieBuild {
+    indexed_item_trie_build(withdrawals)
 }
 
 pub fn compact_encode_nibbles(nibbles: &[u8], terminator: bool) -> Vec<u8> {
@@ -88,14 +106,19 @@ fn transaction_value_bytes(transaction: &RlpItem) -> Result<Vec<u8>, EthTransact
     }
 }
 
-fn indexed_item_trie_root(items: &[RlpItem]) -> [u8; 32] {
+fn indexed_item_trie_build(items: &[RlpItem]) -> IndexedTrieBuild {
     let values = items.iter().map(encode_rlp).collect::<Vec<_>>();
-    indexed_trie_root(&values)
+    indexed_trie_build(&values)
 }
 
-fn indexed_trie_root(values: &[Vec<u8>]) -> [u8; 32] {
+fn indexed_trie_build(values: &[Vec<u8>]) -> IndexedTrieBuild {
     if values.is_empty() {
-        return empty_trie_root();
+        let rlp = encode_rlp(&RlpItem::Bytes(Vec::new()));
+        let root = keccak256(&rlp);
+        return IndexedTrieBuild {
+            root,
+            hash_preimages: vec![TrieHashPreimage { hash: root, rlp }],
+        };
     }
 
     let mut entries = Vec::with_capacity(values.len());
@@ -107,7 +130,21 @@ fn indexed_trie_root(values: &[Vec<u8>]) -> [u8; 32] {
     }
     entries.sort_by(|lhs, rhs| lhs.path.cmp(&rhs.path));
 
-    keccak256(&encode_node(&build_node(&entries, 0)))
+    let mut hash_preimages = Vec::new();
+    let root_rlp = encode_node(&build_node(&entries, 0), &mut hash_preimages);
+    let root = keccak256(&root_rlp);
+    hash_preimages.insert(
+        0,
+        TrieHashPreimage {
+            hash: root,
+            rlp: root_rlp,
+        },
+    );
+
+    IndexedTrieBuild {
+        root,
+        hash_preimages,
+    }
 }
 
 fn encode_transaction_index(mut index: usize) -> Vec<u8> {
@@ -191,11 +228,11 @@ fn shared_prefix_len(entries: &[TrieEntry], depth: usize) -> usize {
     len
 }
 
-fn encode_node(node: &TrieNode) -> Vec<u8> {
-    encode_rlp(&node_to_rlp(node))
+fn encode_node(node: &TrieNode, hash_preimages: &mut Vec<TrieHashPreimage>) -> Vec<u8> {
+    encode_rlp(&node_to_rlp(node, hash_preimages))
 }
 
-fn node_to_rlp(node: &TrieNode) -> RlpItem {
+fn node_to_rlp(node: &TrieNode, hash_preimages: &mut Vec<TrieHashPreimage>) -> RlpItem {
     match node {
         TrieNode::Leaf { path, value } => RlpItem::List(vec![
             RlpItem::Bytes(compact_encode_nibbles(path, true)),
@@ -203,13 +240,13 @@ fn node_to_rlp(node: &TrieNode) -> RlpItem {
         ]),
         TrieNode::Extension { path, child } => RlpItem::List(vec![
             RlpItem::Bytes(compact_encode_nibbles(path, false)),
-            child_reference(child),
+            child_reference(child, hash_preimages),
         ]),
         TrieNode::Branch { children, value } => {
             let mut items = Vec::with_capacity(17);
             for child in children {
                 items.push(match child {
-                    Some(child) => child_reference(child),
+                    Some(child) => child_reference(child, hash_preimages),
                     None => RlpItem::Bytes(Vec::new()),
                 });
             }
@@ -219,12 +256,17 @@ fn node_to_rlp(node: &TrieNode) -> RlpItem {
     }
 }
 
-fn child_reference(child: &TrieNode) -> RlpItem {
-    let child_item = node_to_rlp(child);
+fn child_reference(child: &TrieNode, hash_preimages: &mut Vec<TrieHashPreimage>) -> RlpItem {
+    let child_item = node_to_rlp(child, hash_preimages);
     let child_bytes = encode_rlp(&child_item);
     if child_bytes.len() < 32 {
         child_item
     } else {
-        RlpItem::Bytes(keccak256(&child_bytes).to_vec())
+        let hash = keccak256(&child_bytes);
+        hash_preimages.push(TrieHashPreimage {
+            hash,
+            rlp: child_bytes,
+        });
+        RlpItem::Bytes(hash.to_vec())
     }
 }

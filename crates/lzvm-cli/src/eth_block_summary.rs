@@ -5,7 +5,7 @@ use lzvm_artifacts::eth_block::{
     decode_eth_header_rlp, decode_eth_transactions_rlp, decode_eth_withdrawals_rlp,
     eth_header_hash, eth_ommers_hash, parse_eth_block_rlp, EthTransactionRlp,
 };
-use lzvm_artifacts::eth_trie::{transaction_trie_root, withdrawals_trie_root};
+use lzvm_artifacts::eth_trie::{transaction_trie_build, withdrawals_trie_build};
 
 pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
@@ -70,13 +70,14 @@ fn summarize_block(
         .filter(|transaction| matches!(transaction, EthTransactionRlp::Legacy(_)))
         .count();
     let typed_transactions = transactions.len() - legacy_transactions;
-    let computed_transactions_root = match transaction_trie_root(&block.transactions) {
-        Ok(root) => root,
+    let transaction_trie_build = match transaction_trie_build(&block.transactions) {
+        Ok(build) => build,
         Err(error) => {
             let _ = writeln!(stderr, "eth block summary failed: {error}");
             return 1;
         }
     };
+    let computed_transactions_root = transaction_trie_build.root;
     let computed_ommers_hash = eth_ommers_hash(&block.ommers);
     let withdrawals_root_check = match (&block.withdrawals, header.withdrawals_root) {
         (Some(withdrawals), Some(root)) => {
@@ -84,7 +85,7 @@ fn summarize_block(
                 let _ = writeln!(stderr, "eth block summary failed: {error}");
                 return 1;
             }
-            Some((root, withdrawals_trie_root(withdrawals)))
+            Some((root, withdrawals_trie_build(withdrawals)))
         }
         (Some(_), None) => {
             let _ = writeln!(
@@ -122,6 +123,11 @@ fn summarize_block(
         "transactions_root_matches={}",
         header.transactions_root == computed_transactions_root
     );
+    let _ = writeln!(
+        stdout,
+        "transaction_trie_preimages={}",
+        transaction_trie_build.hash_preimages.len()
+    );
     let _ = writeln!(stdout, "legacy_transactions={legacy_transactions}");
     let _ = writeln!(stdout, "typed_transactions={typed_transactions}");
     let _ = writeln!(stdout, "ommers={}", block.ommers.len());
@@ -145,7 +151,8 @@ fn summarize_block(
             "absent"
         }
     );
-    if let Some((withdrawals_root, computed_withdrawals_root)) = withdrawals_root_check {
+    if let Some((withdrawals_root, withdrawals_trie_build)) = withdrawals_root_check {
+        let computed_withdrawals_root = withdrawals_trie_build.root;
         let _ = writeln!(
             stdout,
             "withdrawals_root={}",
@@ -160,6 +167,11 @@ fn summarize_block(
             stdout,
             "withdrawals_root_matches={}",
             withdrawals_root == computed_withdrawals_root
+        );
+        let _ = writeln!(
+            stdout,
+            "withdrawals_trie_preimages={}",
+            withdrawals_trie_build.hash_preimages.len()
         );
     }
     let _ = writeln!(

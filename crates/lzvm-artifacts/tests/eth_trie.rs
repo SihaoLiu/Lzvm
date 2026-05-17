@@ -1,6 +1,6 @@
 use lzvm_artifacts::eth_trie::{
-    compact_encode_nibbles, empty_transaction_trie_root, empty_trie_root, transaction_trie_root,
-    withdrawals_trie_root,
+    compact_encode_nibbles, empty_transaction_trie_root, empty_trie_root, transaction_trie_build,
+    transaction_trie_root, withdrawals_trie_build, withdrawals_trie_root,
 };
 use lzvm_artifacts::rlp::{encode_rlp, RlpItem};
 
@@ -108,6 +108,51 @@ fn computes_single_withdrawal_trie_root() {
         withdrawals_trie_root(&[withdrawal]),
         lzvm_artifacts::eth_block::keccak256(&encode_rlp(&expected_leaf))
     );
+}
+
+#[test]
+fn transaction_trie_build_records_root_preimage() {
+    let transaction = legacy_transaction();
+    let build =
+        transaction_trie_build(std::slice::from_ref(&transaction)).expect("trie should build");
+
+    assert_eq!(
+        build.root,
+        transaction_trie_root(&[transaction]).expect("root should build")
+    );
+    assert!(!build.hash_preimages.is_empty());
+    assert!(build.hash_preimages.iter().any(|preimage| {
+        preimage.hash == build.root
+            && lzvm_artifacts::eth_block::keccak256(&preimage.rlp) == build.root
+    }));
+}
+
+#[test]
+fn transaction_trie_build_records_hashed_child_preimages() {
+    let first = RlpItem::Bytes(vec![1; 40]);
+    let second = RlpItem::Bytes(vec![2; 40]);
+    let build = transaction_trie_build(&[first, second]).expect("trie should build");
+
+    assert!(
+        build.hash_preimages.len() >= 3,
+        "expected root plus hashed child preimages"
+    );
+    for preimage in &build.hash_preimages {
+        assert_eq!(
+            lzvm_artifacts::eth_block::keccak256(&preimage.rlp),
+            preimage.hash
+        );
+    }
+}
+
+#[test]
+fn withdrawals_trie_build_records_empty_root_preimage() {
+    let build = withdrawals_trie_build(&[]);
+
+    assert_eq!(build.root, empty_trie_root());
+    assert_eq!(build.hash_preimages.len(), 1);
+    assert_eq!(build.hash_preimages[0].hash, empty_trie_root());
+    assert_eq!(build.hash_preimages[0].rlp, vec![0x80]);
 }
 
 fn legacy_transaction() -> RlpItem {
