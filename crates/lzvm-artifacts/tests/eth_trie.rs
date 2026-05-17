@@ -1,7 +1,7 @@
 use lzvm_artifacts::eth_trie::{
-    compact_encode_nibbles, empty_transaction_trie_root, empty_trie_root,
+    compact_encode_nibbles, empty_transaction_trie_root, empty_trie_root, transaction_trie_root,
 };
-use lzvm_artifacts::rlp::RlpItem;
+use lzvm_artifacts::rlp::{encode_rlp, RlpItem};
 
 #[test]
 fn computes_empty_trie_root() {
@@ -14,6 +14,10 @@ fn computes_empty_trie_root() {
 #[test]
 fn computes_empty_transaction_trie_root() {
     assert_eq!(empty_transaction_trie_root(), empty_trie_root());
+    assert_eq!(
+        transaction_trie_root(&[]).expect("empty transaction trie should build"),
+        empty_trie_root()
+    );
 }
 
 #[test]
@@ -40,6 +44,63 @@ fn compact_encodes_extension_paths() {
         compact_encode_nibbles(&[15, 1, 12, 11], false),
         vec![0x00, 0xf1, 0xcb]
     );
+}
+
+#[test]
+fn computes_single_legacy_transaction_trie_root() {
+    let transaction = legacy_transaction();
+    let transaction_bytes = encode_rlp(&transaction);
+    let expected_leaf = RlpItem::List(vec![
+        RlpItem::Bytes(compact_encode_nibbles(&[8, 0], true)),
+        RlpItem::Bytes(transaction_bytes),
+    ]);
+
+    assert_eq!(
+        transaction_trie_root(&[transaction]).expect("transaction trie should build"),
+        lzvm_artifacts::eth_block::keccak256(&encode_rlp(&expected_leaf))
+    );
+}
+
+#[test]
+fn computes_typed_transaction_branch_trie_root() {
+    let first = RlpItem::Bytes(vec![1, 0xc0]);
+    let second = RlpItem::Bytes(vec![2, 0xc0]);
+
+    let mut branch = Vec::with_capacity(17);
+    branch.push(RlpItem::List(vec![
+        RlpItem::Bytes(compact_encode_nibbles(&[1], true)),
+        RlpItem::Bytes(vec![2, 0xc0]),
+    ]));
+    for _ in 1..8 {
+        branch.push(RlpItem::Bytes(Vec::new()));
+    }
+    branch.push(RlpItem::List(vec![
+        RlpItem::Bytes(compact_encode_nibbles(&[0], true)),
+        RlpItem::Bytes(vec![1, 0xc0]),
+    ]));
+    for _ in 9..16 {
+        branch.push(RlpItem::Bytes(Vec::new()));
+    }
+    branch.push(RlpItem::Bytes(Vec::new()));
+
+    assert_eq!(
+        transaction_trie_root(&[first, second]).expect("transaction trie should build"),
+        lzvm_artifacts::eth_block::keccak256(&encode_rlp(&RlpItem::List(branch)))
+    );
+}
+
+fn legacy_transaction() -> RlpItem {
+    RlpItem::List(vec![
+        RlpItem::Bytes(Vec::new()),
+        RlpItem::Bytes(vec![1]),
+        RlpItem::Bytes(vec![0x52, 0x08]),
+        RlpItem::Bytes(vec![0x11; 20]),
+        RlpItem::Bytes(Vec::new()),
+        RlpItem::Bytes(Vec::new()),
+        RlpItem::Bytes(vec![0x1b]),
+        RlpItem::Bytes(vec![1]),
+        RlpItem::Bytes(vec![1]),
+    ])
 }
 
 fn mainnet_genesis_header_items() -> Vec<RlpItem> {
