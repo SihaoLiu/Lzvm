@@ -158,6 +158,12 @@ pub enum KeyDirectoryError {
         end: u64,
         source_len: usize,
     },
+    SourceFixedFileManifestUtf8BoundaryMismatch {
+        entry_index: usize,
+        source_name: String,
+        start: u64,
+        end: u64,
+    },
     MissingPath {
         role: &'static str,
         path: PathBuf,
@@ -281,6 +287,15 @@ impl fmt::Display for KeyDirectoryError {
             } => write!(
                 f,
                 "key-directory source fixed-file manifest entry {entry_index} span {start}..{end} exceeds source {source_name} length {source_len}"
+            ),
+            Self::SourceFixedFileManifestUtf8BoundaryMismatch {
+                entry_index,
+                source_name,
+                start,
+                end,
+            } => write!(
+                f,
+                "key-directory source fixed-file manifest entry {entry_index} span {start}..{end} is not on UTF-8 boundary for source {source_name}"
             ),
             Self::MissingPath { role, path } => {
                 write!(f, "missing key-directory {role}: {}", path.display())
@@ -765,18 +780,19 @@ fn validate_source_fixed_file_manifest_archive(
     manifest: &SourceFixedFileManifest,
     archive: &SourceProgramArchive,
 ) -> Result<(), KeyDirectoryError> {
-    let sources: BTreeMap<&str, usize> = archive
+    let sources: BTreeMap<&str, &str> = archive
         .sources
         .iter()
-        .map(|source| (source.source_name.as_str(), source.contents.len()))
+        .map(|source| (source.source_name.as_str(), source.contents.as_str()))
         .collect();
     for (entry_index, entry) in manifest.entries.iter().enumerate() {
-        let Some(source_len) = sources.get(entry.source_name.as_str()).copied() else {
+        let Some(source) = sources.get(entry.source_name.as_str()).copied() else {
             return Err(KeyDirectoryError::SourceFixedFileManifestSourceMismatch {
                 entry_index,
                 source_name: entry.source_name.clone(),
             });
         };
+        let source_len = source.len();
         if entry.end > source_len as u64 {
             return Err(KeyDirectoryError::SourceFixedFileManifestSpanMismatch {
                 entry_index,
@@ -785,6 +801,18 @@ fn validate_source_fixed_file_manifest_archive(
                 end: entry.end,
                 source_len,
             });
+        }
+        if !source.is_char_boundary(entry.start as usize)
+            || !source.is_char_boundary(entry.end as usize)
+        {
+            return Err(
+                KeyDirectoryError::SourceFixedFileManifestUtf8BoundaryMismatch {
+                    entry_index,
+                    source_name: entry.source_name.clone(),
+                    start: entry.start,
+                    end: entry.end,
+                },
+            );
         }
     }
     Ok(())
