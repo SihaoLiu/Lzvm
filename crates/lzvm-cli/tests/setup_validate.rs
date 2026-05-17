@@ -3179,6 +3179,87 @@ fn prints_prove_inputs_for_setup_directory() {
 }
 
 #[test]
+fn prove_inputs_generates_eth_block_public_values_when_missing() {
+    let dir = temp_dir("prove-inputs-eth-public-values");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let expected = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let material_bytes = pcs_material_byte_count(&catalog);
+    let output_dir = dir.join("proof-out");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let block_input_path = dir.join("block.input");
+    let generated_public_values_path = output_dir.join("eth-block-public-values.bin");
+    let witness_library_bytes = sample_witness_library();
+    let witness_library_info =
+        parse_witness_library(&witness_library_bytes).expect("witness library should parse");
+    let guest_image_bytes = sample_guest_image();
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_bytes(&witness_library, &witness_library_bytes);
+    write_bytes(&guest_image, &guest_image_bytes);
+    write_bytes(
+        &block_input_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let generated_bytes =
+        fs::read(&generated_public_values_path).expect("generated public values should read");
+    let generated_public_values =
+        parse_public_values(&generated_bytes).expect("generated public values should parse");
+    assert_eq!(
+        generated_public_values,
+        public_values_from_eth_block_input(setup_hash, &block_input)
+    );
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nwitness_library_bytes=64\nwitness_library_machine=62\nwitness_library_digest={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs={}\npublic_inputs_generated=eth_block_input\neth_block_input={}\neth_block_input_bytes={}\neth_block_rlp_bytes={}\neth_block_hash={}\neth_block_number=2\neth_block_timestamp=101\neth_transactions_root={}\neth_transaction_trie_preimages=1\neth_withdrawals=absent\n",
+            output_dir.display(),
+            witness_library.display(),
+            format_hash(&witness_library_info.digest),
+            guest_image.display(),
+            format_hash(&guest_image_info.digest),
+            generated_public_values_path.display(),
+            block_input_path.display(),
+            encode_eth_block_input(&block_input)
+                .expect("block input should encode")
+                .len(),
+            block_input.block_rlp.len(),
+            format_hash(&block_input.block_hash),
+            format_hash(&block_input.transactions_root)
+        )
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn prints_prove_inputs_for_internal_contribution_pass() {
     let dir = temp_dir("prove-inputs-internal");
     let _ = fs::remove_dir_all(&dir);

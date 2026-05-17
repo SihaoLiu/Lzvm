@@ -2,6 +2,9 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
+use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
+use lzvm_artifacts::key_directory::{key_directory_catalog_digest, KeyDirectoryCatalog};
+use lzvm_artifacts::public_values::encode_public_values;
 use lzvm_artifacts::trace_bundle::{read_trace_bundle_file, TraceBundle};
 use lzvm_prover::{
     derive_prove_execution_plan_with_program_image_cache, ProveExecutionInputArtifacts,
@@ -62,7 +65,15 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
 
-    let inputs = parsed_inputs(&parsed);
+    let public_inputs = match prepare_public_inputs(&parsed, &catalog, eth_block_input.as_ref()) {
+        Ok(public_inputs) => public_inputs,
+        Err(message) => {
+            let _ = writeln!(stderr, "prove inputs failed: {message}");
+            return 1;
+        }
+    };
+    let generated_public_inputs = public_inputs.generated;
+    let inputs = public_inputs.inputs;
     let plan = match derive_prove_execution_plan_with_program_image_cache(
         &catalog,
         parsed.run_args.request,
@@ -131,6 +142,9 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "none".to_owned())
     );
+    if generated_public_inputs {
+        let _ = writeln!(stdout, "public_inputs_generated=eth_block_input");
+    }
     if let Some(summary) = &eth_block_input {
         write_eth_block_input_summary(stdout, summary);
     }
@@ -146,6 +160,11 @@ struct ParsedInputsArgs {
     trace_bytes: Option<PathBuf>,
     trace_bundle: Option<PathBuf>,
     eth_block_input: Option<PathBuf>,
+}
+
+struct PreparedPublicInputs {
+    inputs: ProveExecutionInputArtifacts,
+    generated: bool,
 }
 
 fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
@@ -234,6 +253,56 @@ fn parsed_inputs(parsed: &ParsedInputsArgs) -> ProveExecutionInputArtifacts {
             .get(public_inputs_index)
             .cloned(),
     }
+}
+
+fn prepare_public_inputs(
+    parsed: &ParsedInputsArgs,
+    catalog: &KeyDirectoryCatalog,
+    eth_block_input: Option<&crate::eth_block_prove_input::EthBlockInputSummary>,
+) -> Result<PreparedPublicInputs, String> {
+    let mut inputs = parsed_inputs(parsed);
+    let Some(summary) = eth_block_input else {
+        return Ok(PreparedPublicInputs {
+            inputs,
+            generated: false,
+        });
+    };
+
+    if inputs.public_inputs.is_some() {
+        return Ok(PreparedPublicInputs {
+            inputs,
+            generated: false,
+        });
+    }
+
+    let setup_hash = key_directory_catalog_digest(catalog)
+        .map_err(|error| format!("derive setup hash failed: {error}"))?;
+    let output_dir = &parsed.run_args.positionals[1];
+    let public_inputs = output_dir.join("eth-block-public-values.bin");
+    let public_values = public_values_from_eth_block_input(setup_hash, &summary.input);
+    let encoded = encode_public_values(&public_values)
+        .map_err(|error| format!("encode ETH block public values failed: {error}"))?;
+    if let Some(parent) = public_inputs.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|error| {
+                format!(
+                    "create public inputs directory failed: {}: {error}",
+                    parent.display()
+                )
+            })?;
+        }
+    }
+    fs::write(&public_inputs, encoded).map_err(|error| {
+        format!(
+            "write ETH block public values failed: {}: {error}",
+            public_inputs.display()
+        )
+    })?;
+    inputs.public_inputs = Some(public_inputs);
+    Ok(PreparedPublicInputs {
+        inputs,
+        generated: true,
+    })
 }
 
 fn validate_trace_bytes(path: &Option<PathBuf>) -> Result<Option<u64>, String> {
