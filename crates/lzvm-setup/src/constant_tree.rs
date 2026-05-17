@@ -1,7 +1,9 @@
 use std::path::Path;
 
 #[cfg(feature = "cuda")]
-use lzvm_accel::cuda_setup_init;
+use lzvm_accel::{
+    cuda_poseidon2_width16_device, cuda_poseidon2_width8_device, cuda_setup_init, CudaDeviceBuffer,
+};
 use lzvm_artifacts::constant_tree::{parse_constant_tree_bytes, read_constant_tree_file};
 use lzvm_artifacts::fixed::{
     encode_raw_fixed_columns, read_raw_fixed_column_layout_file, write_raw_fixed_columns_file,
@@ -712,8 +714,7 @@ fn cuda_linear_hashes_arity2(rows: &[Vec<Felt>]) -> Result<Vec<[Felt; HASH_WORDS
             push_felt_words(&mut input, &next);
         }
 
-        let output = lzvm_accel::cuda_poseidon2_width8(&input)
-            .map_err(|error| SetupError::CudaBackend(error.to_string()))?;
+        let output = cuda_poseidon2_width8_device_words(&input)?;
         for (state, chunk) in states.iter_mut().zip(output.chunks_exact(WIDTH)) {
             *state = felt_array_from_words(chunk)?;
         }
@@ -749,8 +750,7 @@ fn cuda_linear_hashes_arity4(rows: &[Vec<Felt>]) -> Result<Vec<[Felt; HASH_WORDS
             push_felt_words(&mut input, &next);
         }
 
-        let output = lzvm_accel::cuda_poseidon2_width16(&input)
-            .map_err(|error| SetupError::CudaBackend(error.to_string()))?;
+        let output = cuda_poseidon2_width16_device_words(&input)?;
         for (state, chunk) in states.iter_mut().zip(output.chunks_exact(WIDTH)) {
             *state = felt_array_from_words(chunk)?;
         }
@@ -789,8 +789,7 @@ fn cuda_parent_hashes_arity2(
         push_felt_words(&mut input, &children[1]);
     }
 
-    let output = lzvm_accel::cuda_poseidon2_width8(&input)
-        .map_err(|error| SetupError::CudaBackend(error.to_string()))?;
+    let output = cuda_poseidon2_width8_device_words(&input)?;
     output
         .chunks_exact(WIDTH)
         .map(digest_from_state_words)
@@ -810,12 +809,51 @@ fn cuda_parent_hashes_arity4(
         }
     }
 
-    let output = lzvm_accel::cuda_poseidon2_width16(&input)
-        .map_err(|error| SetupError::CudaBackend(error.to_string()))?;
+    let output = cuda_poseidon2_width16_device_words(&input)?;
     output
         .chunks_exact(WIDTH)
         .map(digest_from_state_words)
         .collect()
+}
+
+#[cfg(feature = "cuda")]
+type CudaPoseidon2DeviceOp =
+    fn(&CudaDeviceBuffer, &mut CudaDeviceBuffer) -> Result<(), lzvm_accel::AccelError>;
+
+#[cfg(feature = "cuda")]
+fn cuda_poseidon2_width8_device_words(words: &[u64]) -> Result<Vec<u64>, SetupError> {
+    cuda_poseidon2_words_device(words, cuda_poseidon2_width8_device)
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_poseidon2_width16_device_words(words: &[u64]) -> Result<Vec<u64>, SetupError> {
+    cuda_poseidon2_words_device(words, cuda_poseidon2_width16_device)
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_poseidon2_words_device(
+    words: &[u64],
+    operation: CudaPoseidon2DeviceOp,
+) -> Result<Vec<u64>, SetupError> {
+    if words.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let input_buffer = CudaDeviceBuffer::from_u64_words(words).map_err(cuda_backend_error)?;
+    let mut output_buffer = CudaDeviceBuffer::new(
+        words
+            .len()
+            .checked_mul(WORD_BYTES)
+            .ok_or(SetupError::LengthOverflow)?,
+    )
+    .map_err(cuda_backend_error)?;
+    operation(&input_buffer, &mut output_buffer).map_err(cuda_backend_error)?;
+    output_buffer.to_u64_words().map_err(cuda_backend_error)
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_backend_error(error: lzvm_accel::AccelError) -> SetupError {
+    SetupError::CudaBackend(error.to_string())
 }
 
 #[cfg(feature = "cuda")]
@@ -853,5 +891,40 @@ fn digest_from_state_words(words: &[u64]) -> Result<[Felt; HASH_WORDS], SetupErr
 fn append_digest(out: &mut Vec<u8>, digest: [Felt; HASH_WORDS]) {
     for value in digest {
         out.extend_from_slice(&value.to_le_bytes());
+    }
+}
+
+#[cfg(all(test, feature = "cuda"))]
+mod tests {
+    use super::{cuda_poseidon2_width16_device_words, cuda_poseidon2_width8_device_words};
+    use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt};
+
+    #[test]
+    fn device_poseidon2_state_hashes_match_cpu_reference() {
+        let width8_input = (1_u64..=16).collect::<Vec<_>>();
+        let width8_expected = width8_input
+            .chunks_exact(8)
+            .flat_map(|chunk| poseidon2_hash_8(felt_array::<8>(chunk)).map(Felt::to_u64))
+            .collect::<Vec<_>>();
+        let width8_actual = cuda_poseidon2_width8_device_words(&width8_input)
+            .expect("width-8 device hash should run");
+        assert_eq!(width8_actual, width8_expected);
+
+        let width16_input = (17_u64..=48).collect::<Vec<_>>();
+        let width16_expected = width16_input
+            .chunks_exact(16)
+            .flat_map(|chunk| poseidon2_hash_16(felt_array::<16>(chunk)).map(Felt::to_u64))
+            .collect::<Vec<_>>();
+        let width16_actual = cuda_poseidon2_width16_device_words(&width16_input)
+            .expect("width-16 device hash should run");
+        assert_eq!(width16_actual, width16_expected);
+    }
+
+    fn felt_array<const WIDTH: usize>(words: &[u64]) -> [Felt; WIDTH] {
+        let mut values = [Felt::ZERO; WIDTH];
+        for (value, word) in values.iter_mut().zip(words) {
+            *value = Felt::from_u64(*word);
+        }
+        values
     }
 }
