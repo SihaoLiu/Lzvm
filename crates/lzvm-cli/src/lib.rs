@@ -5,9 +5,9 @@ use lzvm_artifacts::challenge_values_segment::{
     encode_challenge_values_segment, ChallengeValuesSegment,
 };
 use lzvm_artifacts::eth_block_input::{
-    eth_block_input_bytes_digest, eth_block_input_receipt_kind_counts,
-    eth_block_input_transaction_kind_counts, eth_block_input_withdrawal_count,
-    parse_eth_block_input,
+    eth_block_input_bytes_digest, eth_block_input_extra_field_counts,
+    eth_block_input_receipt_kind_counts, eth_block_input_transaction_kind_counts,
+    eth_block_input_withdrawal_count, parse_eth_block_input,
 };
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
@@ -1018,6 +1018,8 @@ struct EthBlockInputBinding {
     hash: [u8; 32],
     bytes: usize,
     block_rlp_bytes: usize,
+    extra_header_field_count: usize,
+    extra_body_field_count: usize,
     block_hash: [u8; 32],
     parent_hash: [u8; 32],
     ommers_hash: [u8; 32],
@@ -1311,6 +1313,18 @@ fn verify_setup_validation(
         let _ = writeln!(stdout, "eth_block_input_match=ok");
         let _ = writeln!(stdout, "eth_block_input_bytes={}", binding.bytes);
         let _ = writeln!(stdout, "eth_block_rlp_bytes={}", binding.block_rlp_bytes);
+        if binding.extra_header_field_count > 0 || binding.extra_body_field_count > 0 {
+            let _ = writeln!(
+                stdout,
+                "eth_extra_header_fields={}",
+                binding.extra_header_field_count
+            );
+            let _ = writeln!(
+                stdout,
+                "eth_extra_body_fields={}",
+                binding.extra_body_field_count
+            );
+        }
         let _ = writeln!(
             stdout,
             "eth_block_hash={}",
@@ -1448,6 +1462,9 @@ fn verify_eth_block_input_binding(
     let (legacy_transaction_count, typed_transaction_count) =
         eth_block_input_transaction_kind_counts(&input)
             .map_err(|error| format!("ETH block input transaction count failed: {error}"))?;
+    let (extra_header_field_count, extra_body_field_count) =
+        eth_block_input_extra_field_counts(&input)
+            .map_err(|error| format!("ETH block input extra field count failed: {error}"))?;
     let receipt_preimage_count = input
         .receipts
         .as_ref()
@@ -1482,6 +1499,8 @@ fn verify_eth_block_input_binding(
         hash: input_hash,
         bytes: input_bytes.len(),
         block_rlp_bytes: input.block_rlp.len(),
+        extra_header_field_count,
+        extra_body_field_count,
         block_hash: input.block_hash,
         parent_hash: input.parent_hash,
         ommers_hash: input.ommers_hash,
