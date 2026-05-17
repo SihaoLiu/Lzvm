@@ -36,6 +36,7 @@ pub struct EthBlockInput {
     pub difficulty: [u8; 32],
     pub block_number: u64,
     pub timestamp: u64,
+    pub extra_data: Vec<u8>,
     pub gas_limit: u64,
     pub gas_used: u64,
     pub base_fee_per_gas: Option<[u8; 32]>,
@@ -84,6 +85,11 @@ pub enum EthBlockInputError {
     ReceiptsRootMismatch,
     LogsBloomMismatch,
     DifficultyMismatch,
+    ExtraDataMismatch,
+    ExtraDataOverflow {
+        max_bytes: usize,
+        found: usize,
+    },
     DifficultyOverflow {
         max_bytes: usize,
         found: usize,
@@ -164,6 +170,11 @@ impl fmt::Display for EthBlockInputError {
             Self::ReceiptsRootMismatch => write!(f, "ETH block input receipts root mismatch"),
             Self::LogsBloomMismatch => write!(f, "ETH block input logs bloom mismatch"),
             Self::DifficultyMismatch => write!(f, "ETH block input difficulty mismatch"),
+            Self::ExtraDataMismatch => write!(f, "ETH block input extra data mismatch"),
+            Self::ExtraDataOverflow { max_bytes, found } => write!(
+                f,
+                "ETH block input extra data exceeds {max_bytes} bytes, found {found}"
+            ),
             Self::DifficultyOverflow { max_bytes, found } => write!(
                 f,
                 "ETH block input difficulty exceeds {max_bytes} bytes, found {found}"
@@ -278,6 +289,7 @@ pub fn build_eth_block_input(block_rlp: &[u8]) -> Result<EthBlockInput, EthBlock
         difficulty: difficulty_to_u256_be(&header.difficulty)?,
         block_number: header.number,
         timestamp: header.timestamp,
+        extra_data: checked_extra_data(&header.extra_data)?.to_vec(),
         gas_limit: header.gas_limit,
         gas_used: header.gas_used,
         base_fee_per_gas: header
@@ -391,6 +403,9 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
         difficulty: metadata.difficulty.unwrap_or(validated_input.difficulty),
         block_number: metadata.block_number,
         timestamp: metadata.timestamp,
+        extra_data: metadata
+            .extra_data
+            .unwrap_or_else(|| validated_input.extra_data.clone()),
         gas_limit: metadata.gas_limit,
         gas_used: metadata.gas_used,
         base_fee_per_gas: metadata.base_fee_per_gas,
@@ -414,6 +429,7 @@ struct Metadata {
     difficulty: Option<[u8; 32]>,
     block_number: u64,
     timestamp: u64,
+    extra_data: Option<Vec<u8>>,
     gas_limit: u64,
     gas_used: u64,
     base_fee_per_gas: Option<[u8; 32]>,
@@ -455,6 +471,10 @@ fn encode_metadata(value: &EthBlockInput) -> Vec<u8> {
     }
     out.extend_from_slice(&value.difficulty);
     out.extend_from_slice(&value.logs_bloom);
+    let extra_data_len =
+        u32::try_from(value.extra_data.len()).expect("extra data length should fit u32");
+    out.extend_from_slice(&extra_data_len.to_le_bytes());
+    out.extend_from_slice(&value.extra_data);
     out
 }
 
@@ -498,6 +518,13 @@ fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
     } else {
         Some(reader.read_256_bytes()?)
     };
+    let extra_data = if reader.is_finished() {
+        None
+    } else {
+        let len =
+            usize::try_from(reader.read_u32()?).map_err(|_| EthBlockInputError::LengthOverflow)?;
+        Some(reader.read_exact(len)?.to_vec())
+    };
     reader.finish()?;
 
     Ok(Metadata {
@@ -510,6 +537,7 @@ fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
         difficulty,
         block_number,
         timestamp,
+        extra_data,
         gas_limit,
         gas_used,
         base_fee_per_gas,
@@ -556,6 +584,11 @@ fn validate_metadata(
     }
     if metadata.timestamp != input.timestamp {
         return Err(EthBlockInputError::TimestampMismatch);
+    }
+    if let Some(extra_data) = &metadata.extra_data {
+        if extra_data != &input.extra_data {
+            return Err(EthBlockInputError::ExtraDataMismatch);
+        }
     }
     if metadata.gas_limit != input.gas_limit {
         return Err(EthBlockInputError::GasLimitMismatch);
@@ -732,6 +765,16 @@ fn base_fee_to_u256_be(bytes: &[u8]) -> Result<[u8; 32], EthBlockInputError> {
         max_bytes: 32,
         found,
     })
+}
+
+fn checked_extra_data(bytes: &[u8]) -> Result<&[u8], EthBlockInputError> {
+    if bytes.len() > 32 {
+        return Err(EthBlockInputError::ExtraDataOverflow {
+            max_bytes: 32,
+            found: bytes.len(),
+        });
+    }
+    Ok(bytes)
 }
 
 fn quantity_to_u256_be(

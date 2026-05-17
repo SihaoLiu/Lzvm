@@ -67,6 +67,14 @@ pub fn public_values_from_eth_block_input(
                 elements: u64_u32_le(input.timestamp),
             },
             PublicValueEntry {
+                name: "eth_extra_data_len".to_owned(),
+                elements: vec![input.extra_data.len() as u64],
+            },
+            PublicValueEntry {
+                name: "eth_extra_data_u32_be".to_owned(),
+                elements: padded_32_bytes_u32_be(&input.extra_data),
+            },
+            PublicValueEntry {
                 name: "eth_gas_limit_u32_le".to_owned(),
                 elements: u64_u32_le(input.gas_limit),
             },
@@ -153,6 +161,12 @@ fn bytes_u32_be(bytes: &[u8]) -> Vec<u64> {
             ))
         })
         .collect()
+}
+
+fn padded_32_bytes_u32_be(bytes: &[u8]) -> Vec<u64> {
+    let mut padded = [0_u8; 32];
+    padded[..bytes.len()].copy_from_slice(bytes);
+    bytes_u32_be(&padded)
 }
 
 fn u64_u32_le(value: u64) -> Vec<u64> {

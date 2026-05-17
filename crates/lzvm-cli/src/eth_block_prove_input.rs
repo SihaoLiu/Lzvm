@@ -23,6 +23,7 @@ pub(crate) struct EthBlockInputSummary {
     pub(crate) difficulty: [u8; 32],
     pub(crate) block_number: u64,
     pub(crate) timestamp: u64,
+    pub(crate) extra_data: Vec<u8>,
     pub(crate) gas_limit: u64,
     pub(crate) gas_used: u64,
     pub(crate) base_fee_per_gas: Option<[u8; 32]>,
@@ -63,6 +64,7 @@ pub(crate) fn validate_eth_block_input(
         difficulty: input.difficulty,
         block_number: input.block_number,
         timestamp: input.timestamp,
+        extra_data: input.extra_data.clone(),
         gas_limit: input.gas_limit,
         gas_used: input.gas_used,
         base_fee_per_gas: input.base_fee_per_gas,
@@ -121,6 +123,7 @@ pub(crate) fn write_eth_block_input_summary(
     );
     let _ = writeln!(stdout, "eth_block_number={}", summary.block_number);
     let _ = writeln!(stdout, "eth_block_timestamp={}", summary.timestamp);
+    let _ = writeln!(stdout, "eth_extra_data={}", format_hex(&summary.extra_data));
     let _ = writeln!(stdout, "eth_gas_limit={}", summary.gas_limit);
     let _ = writeln!(stdout, "eth_gas_used={}", summary.gas_used);
     let _ = writeln!(

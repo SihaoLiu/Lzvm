@@ -156,6 +156,7 @@ fn write_input_summary(
     let _ = writeln!(stdout, "difficulty={}", format_u256(&input.difficulty));
     let _ = writeln!(stdout, "block_number={}", input.block_number);
     let _ = writeln!(stdout, "timestamp={}", input.timestamp);
+    let _ = writeln!(stdout, "extra_data={}", format_hex(&input.extra_data));
     let _ = writeln!(stdout, "gas_limit={}", input.gas_limit);
     let _ = writeln!(stdout, "gas_used={}", input.gas_used);
     let _ = writeln!(

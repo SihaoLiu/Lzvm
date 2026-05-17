@@ -355,6 +355,24 @@ fn rejects_logs_bloom_public_values_without_input_segment() {
 }
 
 #[test]
+fn rejects_extra_data_public_values_without_input_segment() {
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash: sample_hash(0x44),
+        values: vec![PublicValueEntry {
+            name: "eth_extra_data_len".to_owned(),
+            elements: vec![4],
+        }],
+    };
+    let proof = sample_proof(&public_values);
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("ETH block public values should require an input segment");
+
+    assert_eq!(error.to_string(), "missing ETH block input proof segment");
+}
+
+#[test]
 fn converts_public_values_to_field_elements_in_entry_order() {
     let public_values = PublicValues {
         schema_version: 1,
