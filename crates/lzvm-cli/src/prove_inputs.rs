@@ -270,6 +270,8 @@ fn prepare_public_inputs(
         });
     };
 
+    let setup_hash = key_directory_catalog_digest(catalog)
+        .map_err(|error| format!("derive setup hash failed: {error}"))?;
     if let Some(public_inputs) = &inputs.public_inputs {
         let public_values = read_public_values_file(public_inputs).map_err(|error| {
             format!(
@@ -277,6 +279,9 @@ fn prepare_public_inputs(
                 public_inputs.display()
             )
         })?;
+        if public_values.setup_hash != setup_hash {
+            return Err("public inputs setup hash mismatch".to_owned());
+        }
         validate_eth_block_public_values(&summary.input, &public_values)
             .map_err(|error| error.to_string())?;
         return Ok(PreparedPublicInputs {
@@ -285,8 +290,6 @@ fn prepare_public_inputs(
         });
     }
 
-    let setup_hash = key_directory_catalog_digest(catalog)
-        .map_err(|error| format!("derive setup hash failed: {error}"))?;
     let output_dir = &parsed.run_args.positionals[1];
     let public_inputs = output_dir.join("eth-block-public-values.bin");
     let public_values = public_values_from_eth_block_input(setup_hash, &summary.input);
