@@ -9,7 +9,8 @@ use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
 use lzvm_artifacts::guest_image::{read_guest_image_file, GuestImageError};
 use lzvm_artifacts::hint_program::HintProgram;
 use lzvm_artifacts::key_directory::{
-    KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry, KeyUnitKind, KeyUnitPaths,
+    key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry,
+    KeyUnitKind, KeyUnitPaths,
 };
 use lzvm_artifacts::metadata_bundle::UnitMetadataBundle;
 use lzvm_artifacts::pcs_material::PcsSetupMaterial;
@@ -17,6 +18,7 @@ use lzvm_artifacts::pcs_plan::derive_pcs_setup_plan;
 use lzvm_artifacts::program_image::{
     encode_program_image_commitment_cache, ProgramImageCommitmentCache, ProgramImageGpuMode,
 };
+use lzvm_artifacts::public_values::{encode_public_values, PublicValueEntry, PublicValues};
 use lzvm_artifacts::setup_info::{
     CommitmentColumn, EvaluationMapEntry, FriStep, StageValue, StarkStruct, UnitSetupInfo,
 };
@@ -290,6 +292,27 @@ fn write_program_image_cache(path: &Path, source_image_digest: [u8; 32]) {
     .expect("cache should be written");
 }
 
+fn sample_public_values(setup_hash: [u8; 32]) -> PublicValues {
+    PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: vec![PublicValueEntry {
+            name: "sample_value".to_owned(),
+            elements: vec![3],
+        }],
+    }
+}
+
+fn write_public_inputs(path: &Path, catalog: &KeyDirectoryCatalog) {
+    let setup_hash = key_directory_catalog_digest(catalog).expect("catalog digest should compute");
+    fs::write(
+        path,
+        encode_public_values(&sample_public_values(setup_hash))
+            .expect("public inputs should encode"),
+    )
+    .expect("public inputs should be written");
+}
+
 fn sample_pcs_material(seed: u8) -> PcsSetupMaterial {
     PcsSetupMaterial {
         plan_digest: [seed; 32],
@@ -547,13 +570,13 @@ fn derives_prove_execution_plan_with_input_artifacts() {
     fs::write(&witness_library, sample_witness_library())
         .expect("witness library should be written");
     fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
-    fs::write(&public_inputs, [3_u8]).expect("public inputs should be written");
 
     let mut unit = sample_unit_with_pcs_material(KeyUnitKind::Basic, 0, 64);
     unit.expression_program.numbers = vec![17, 19, 23];
     unit.metadata.verifier.quotient.expression_id = Some(42);
     let expected_expression_program = unit.expression_program.clone();
     let catalog = sample_catalog(vec![unit]);
+    write_public_inputs(&public_inputs, &catalog);
     let request = ProveRunRequest {
         pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
         options: ProveRunOptions::default_for_output(dir.join("out")),
@@ -633,7 +656,6 @@ fn derives_prove_execution_plan_with_program_image_cache() {
     fs::write(&witness_library, sample_witness_library())
         .expect("witness library should be written");
     fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
-    fs::write(&public_inputs, [3_u8]).expect("public inputs should be written");
     let guest_digest = read_guest_image_file(&guest_image)
         .expect("guest image should parse")
         .digest;
@@ -644,6 +666,7 @@ fn derives_prove_execution_plan_with_program_image_cache() {
         0,
         64,
     )]);
+    write_public_inputs(&public_inputs, &catalog);
     let request = ProveRunRequest {
         pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
         options: ProveRunOptions::default_for_output(dir.join("out")),
@@ -689,7 +712,6 @@ fn rejects_prove_execution_plan_with_program_image_cache_guest_digest_mismatch()
     fs::write(&witness_library, sample_witness_library())
         .expect("witness library should be written");
     fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
-    fs::write(&public_inputs, [3_u8]).expect("public inputs should be written");
     let mut guest_digest = read_guest_image_file(&guest_image)
         .expect("guest image should parse")
         .digest;
@@ -701,6 +723,7 @@ fn rejects_prove_execution_plan_with_program_image_cache_guest_digest_mismatch()
         0,
         64,
     )]);
+    write_public_inputs(&public_inputs, &catalog);
     let request = ProveRunRequest {
         pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
         options: ProveRunOptions::default_for_output(dir.join("out")),

@@ -3126,6 +3126,7 @@ fn prints_prove_inputs_for_setup_directory() {
     let _ = fs::remove_dir_all(&dir);
     write_execution_ready_setup_directory(&dir);
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let expected = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
     let material_bytes = pcs_material_byte_count(&catalog);
     let output_dir = dir.join("proof-out");
@@ -3139,7 +3140,11 @@ fn prints_prove_inputs_for_setup_directory() {
     let guest_image_bytes = sample_guest_image();
     let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
     write_bytes(&guest_image, &guest_image_bytes);
-    write_bytes(&public_inputs, [3_u8]);
+    write_bytes(
+        &public_inputs,
+        encode_public_values(&sample_public_values(setup_hash))
+            .expect("public values should encode"),
+    );
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -3176,6 +3181,100 @@ fn prints_prove_inputs_for_setup_directory() {
         )
     );
     assert!(stderr.is_empty());
+}
+
+#[test]
+fn prove_inputs_rejects_public_values_with_wrong_setup_hash() {
+    let dir = temp_dir("prove-inputs-public-values-setup-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let public_inputs = dir.join("public-inputs.bin");
+    write_bytes(&witness_library, sample_witness_library());
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(
+        &public_inputs,
+        encode_public_values(&sample_public_values([0x99; 32]))
+            .expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_inputs
+                .to_str()
+                .expect("public inputs path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        format!(
+            "prove inputs failed: prove execution plan public inputs setup hash mismatch: {}\n",
+            public_inputs.display()
+        )
+    );
+}
+
+#[test]
+fn prove_inputs_rejects_invalid_public_values() {
+    let dir = temp_dir("prove-inputs-invalid-public-values");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let public_inputs = dir.join("public-inputs.bin");
+    write_bytes(&witness_library, sample_witness_library());
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&public_inputs, [3_u8]);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_inputs
+                .to_str()
+                .expect("public inputs path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        format!(
+            "prove inputs failed: prove execution plan public inputs are invalid: {}: unexpected end of public-values file at 0, needed 4, available 1\n",
+            public_inputs.display()
+        )
+    );
 }
 
 #[test]
@@ -7376,7 +7475,10 @@ fn rejects_prove_witness_proof_output_with_mismatched_public_inputs() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "prove witness failed: public inputs setup hash mismatch\n"
+        format!(
+            "prove witness failed: prove execution plan public inputs setup hash mismatch: {}\n",
+            public_values_path.display()
+        )
     );
 }
 

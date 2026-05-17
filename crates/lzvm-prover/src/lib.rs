@@ -16,6 +16,7 @@ use lzvm_artifacts::program_image::{
     read_program_image_commitment_cache_file, ProgramImageCommitmentCache,
     ProgramImageCommitmentCacheError,
 };
+use lzvm_artifacts::public_values::{read_public_values_file, PublicValuesError};
 use lzvm_artifacts::setup_info::{CommitmentColumn, EvaluationMapEntry, StageValue, UnitSetupInfo};
 use lzvm_artifacts::setup_manifest::SetupDirectoryManifestError;
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
@@ -472,6 +473,13 @@ pub enum ProveExecutionPlanError {
     PublicInputsIsNotFile {
         path: PathBuf,
     },
+    InvalidPublicInputs {
+        path: PathBuf,
+        source: PublicValuesError,
+    },
+    PublicInputsSetupHashMismatch {
+        path: PathBuf,
+    },
     FixedColumnCountTooLarge {
         unit_index: usize,
         fixed_column_count: u32,
@@ -550,6 +558,16 @@ impl fmt::Display for ProveExecutionPlanError {
                 "prove execution plan public inputs are not a file: {}",
                 path.display()
             ),
+            Self::InvalidPublicInputs { path, source } => write!(
+                f,
+                "prove execution plan public inputs are invalid: {}: {source}",
+                path.display()
+            ),
+            Self::PublicInputsSetupHashMismatch { path } => write!(
+                f,
+                "prove execution plan public inputs setup hash mismatch: {}",
+                path.display()
+            ),
             Self::FixedColumnCountTooLarge {
                 unit_index,
                 fixed_column_count,
@@ -574,6 +592,7 @@ impl std::error::Error for ProveExecutionPlanError {
             Self::InvalidWitnessLibrary { source, .. } => Some(source),
             Self::InvalidGuestImage { source, .. } => Some(source),
             Self::InvalidProgramImageCache { source, .. } => Some(source),
+            Self::InvalidPublicInputs { source, .. } => Some(source),
             Self::RunPlan(error) => Some(error),
             Self::MissingPcsMaterial { .. }
             | Self::MissingProgramImageCache { .. }
@@ -750,6 +769,17 @@ pub fn derive_prove_execution_plan_with_program_image_cache(
             |path| ProveExecutionPlanError::MissingPublicInputs { path },
             |path| ProveExecutionPlanError::PublicInputsIsNotFile { path },
         )?;
+        let public_values = read_public_values_file(public_inputs).map_err(|source| {
+            ProveExecutionPlanError::InvalidPublicInputs {
+                path: public_inputs.clone(),
+                source,
+            }
+        })?;
+        if public_values.setup_hash != run_plan.schedule.setup_hash {
+            return Err(ProveExecutionPlanError::PublicInputsSetupHashMismatch {
+                path: public_inputs.clone(),
+            });
+        }
     }
     let program_image_cache = match program_image_cache {
         Some(path) => Some(load_program_image_cache(&path, &guest_image_info)?),
