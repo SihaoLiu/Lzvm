@@ -30,6 +30,7 @@ pub struct ProofSegment {
 pub enum ProofArtifactError {
     Sectioned(SectionedError),
     MissingMetadata,
+    DuplicateMetadata,
     InvalidMetadataLength { expected: usize, found: usize },
     MissingSegments,
     ReservedSegmentId { id: u32 },
@@ -43,6 +44,7 @@ impl fmt::Display for ProofArtifactError {
         match self {
             Self::Sectioned(error) => write!(f, "proof artifact container error: {error}"),
             Self::MissingMetadata => write!(f, "missing proof artifact metadata"),
+            Self::DuplicateMetadata => write!(f, "duplicate proof artifact metadata"),
             Self::InvalidMetadataLength { expected, found } => write!(
                 f,
                 "invalid proof artifact metadata length: expected {expected}, found {found}"
@@ -70,11 +72,16 @@ pub fn read_proof_artifact_file(
 pub fn parse_proof_artifact(bytes: &[u8]) -> Result<ProofArtifact, ProofArtifactError> {
     let file = parse_sectioned_file(bytes, PROOF_KIND, PROOF_VERSION)
         .map_err(ProofArtifactError::Sectioned)?;
-    let metadata = file
+    let mut metadata_sections = file
         .sections
         .iter()
-        .find(|section| section.id == METADATA_SECTION_ID)
+        .filter(|section| section.id == METADATA_SECTION_ID);
+    let metadata = metadata_sections
+        .next()
         .ok_or(ProofArtifactError::MissingMetadata)?;
+    if metadata_sections.next().is_some() {
+        return Err(ProofArtifactError::DuplicateMetadata);
+    }
     if metadata.data.len() != METADATA_BYTES {
         return Err(ProofArtifactError::InvalidMetadataLength {
             expected: METADATA_BYTES,
@@ -153,4 +160,44 @@ pub fn validate_proof_artifact(value: &ProofArtifact) -> Result<(), ProofArtifac
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::sectioned::{encode_sectioned_file, SectionedFile, SectionedSection};
+
+    use super::{
+        parse_proof_artifact, ProofArtifactError, METADATA_BYTES, METADATA_SECTION_ID, PROOF_KIND,
+        PROOF_VERSION,
+    };
+
+    #[test]
+    fn rejects_duplicate_metadata_sections() {
+        let metadata = vec![0_u8; METADATA_BYTES];
+        let proof_bytes = encode_sectioned_file(&SectionedFile {
+            kind: PROOF_KIND,
+            version: PROOF_VERSION,
+            sections: vec![
+                SectionedSection {
+                    id: METADATA_SECTION_ID,
+                    data: metadata.clone(),
+                },
+                SectionedSection {
+                    id: 100,
+                    data: vec![1],
+                },
+                SectionedSection {
+                    id: METADATA_SECTION_ID,
+                    data: metadata,
+                },
+            ],
+        })
+        .expect("sectioned proof should encode");
+
+        assert_eq!(
+            parse_proof_artifact(&proof_bytes)
+                .expect_err("duplicate metadata section should reject"),
+            ProofArtifactError::DuplicateMetadata
+        );
+    }
 }
