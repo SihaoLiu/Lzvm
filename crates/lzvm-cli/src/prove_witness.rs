@@ -62,6 +62,13 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
 
+    if parsed.run_args.request.options.remote_aggregation {
+        let _ = writeln!(
+            stderr,
+            "prove witness failed: remote aggregation is unsupported by prove witness"
+        );
+        return 1;
+    }
     if parsed.run_args.request.options.final_wrap {
         let _ = writeln!(
             stderr,
