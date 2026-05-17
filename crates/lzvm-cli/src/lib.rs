@@ -686,6 +686,9 @@ fn verify_preflight(
             if let Some(timestamp) = report.eth_block_input_timestamps.get(index) {
                 let _ = writeln!(stdout, "eth_block_timestamp={timestamp}");
             }
+            if let Some(extra_data) = report.eth_block_input_extra_data.get(index) {
+                let _ = writeln!(stdout, "eth_extra_data={}", format_bytes_hex(extra_data));
+            }
             write_eth_transaction_preimage_summary(
                 stdout,
                 report
@@ -965,6 +968,7 @@ struct EthBlockInputBinding {
     difficulty: [u8; 32],
     block_number: u64,
     timestamp: u64,
+    extra_data: Vec<u8>,
     transaction_preimage_count: usize,
     legacy_transaction_count: usize,
     typed_transaction_count: usize,
@@ -1093,6 +1097,9 @@ fn verify_setup_validation(
                 if let Some(timestamp) = public_report.eth_block_input_timestamps.get(index) {
                     let _ = writeln!(stdout, "eth_block_timestamp={timestamp}");
                 }
+                if let Some(extra_data) = public_report.eth_block_input_extra_data.get(index) {
+                    let _ = writeln!(stdout, "eth_extra_data={}", format_bytes_hex(extra_data));
+                }
                 write_eth_transaction_preimage_summary(
                     stdout,
                     public_report
@@ -1201,6 +1208,11 @@ fn verify_setup_validation(
         );
         let _ = writeln!(stdout, "eth_block_number={}", binding.block_number);
         let _ = writeln!(stdout, "eth_block_timestamp={}", binding.timestamp);
+        let _ = writeln!(
+            stdout,
+            "eth_extra_data={}",
+            format_bytes_hex(&binding.extra_data)
+        );
         write_eth_transaction_preimage_summary(stdout, binding.transaction_preimage_count);
         write_eth_transaction_count_summary(
             stdout,
@@ -1303,6 +1315,7 @@ fn verify_eth_block_input_binding(
         difficulty: input.difficulty,
         block_number: input.block_number,
         timestamp: input.timestamp,
+        extra_data: input.extra_data,
         transaction_preimage_count,
         legacy_transaction_count,
         typed_transaction_count,

@@ -178,6 +178,7 @@ fn validates_proof_public_value_preflight_hashes() {
             eth_block_input_difficulties: Vec::new(),
             eth_block_input_block_numbers: Vec::new(),
             eth_block_input_timestamps: Vec::new(),
+            eth_block_input_extra_data: Vec::new(),
             eth_block_input_transaction_preimage_counts: Vec::new(),
             eth_block_input_legacy_transaction_counts: Vec::new(),
             eth_block_input_typed_transaction_counts: Vec::new(),
