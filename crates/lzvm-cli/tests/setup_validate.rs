@@ -5174,15 +5174,62 @@ fn prove_witness_rejects_gpu_preallocate_without_cuda() {
 }
 
 #[test]
-fn prove_witness_rejects_minimal_memory() {
+fn runs_prove_witness_commitments_with_minimal_memory() {
     let dir = temp_dir("prove-witness-minimal-memory");
     let _ = fs::remove_dir_all(&dir);
     write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let material_bytes = pcs_material_byte_count(&catalog);
     let output_dir = dir.join("proof-out");
     let guest_image = dir.join("guest.elf");
     let trace_path = dir.join("trace.bin");
     write_bytes(&guest_image, sample_guest_image());
-    write_bytes(&trace_path, sample_trace_bytes(0));
+    let trace_bytes = sample_trace_bytes(0);
+    write_bytes(&trace_path, &trace_bytes);
+
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan {
+            input_data: None,
+            partition_count: 1,
+            partition_ids: vec![0],
+            worker_index: 0,
+        }),
+        options: ProveRunOptions {
+            minimal_memory: true,
+            ..ProveRunOptions::default_for_output(output_dir.clone())
+        },
+        gpu: GpuRunOptions::default(),
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        request,
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image: guest_image.clone(),
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let backend = TraceBytesBackend::new(trace_bytes);
+    let output =
+        run_prove_witness_commitments_with_trace_backend(&plan, 0, Default::default(), &backend)
+            .expect("witness commitments should run");
+    let mut expected_stages = String::new();
+    for commitment in output.commitments().stage_commitments().commitments() {
+        let root = commitment
+            .root()
+            .iter()
+            .map(|value| value.to_u64().to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        expected_stages.push_str(&format!(
+            "stage_{}_root={root}\nstage_{}_tree_bytes={}\n",
+            commitment.stage_index(),
+            commitment.stage_index(),
+            commitment.tree_bytes().len()
+        ));
+    }
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -5202,12 +5249,16 @@ fn prove_witness_rejects_minimal_memory() {
     );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
-    assert_eq!(code, 1);
-    assert!(stdout.is_empty());
+    assert_eq!(code, 0);
     assert_eq!(
-        String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "prove witness failed: minimal memory is unsupported by prove witness\n"
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=true\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash}\nunit_index=0\ninput_bytes=0\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
+            output_dir.display(),
+            expected_stages
+        )
     );
+    assert!(stderr.is_empty());
 }
 
 #[test]
