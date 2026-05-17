@@ -11,6 +11,8 @@ use crate::sectioned::{
 const PUBLIC_VALUES_KIND: [u8; 4] = *b"pval";
 const PUBLIC_VALUES_VERSION: u32 = 1;
 const PUBLIC_VALUES_SECTION_ID: u32 = 1;
+const VALUE_ENTRY_HEADER_BYTES: usize = 4 + 4;
+const ELEMENT_BYTES: usize = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublicValues {
@@ -213,12 +215,18 @@ fn parse_public_values_section(bytes: &[u8]) -> Result<PublicValues, PublicValue
     let mut reader = Reader::new(bytes);
     let schema_version = reader.read_u32()?;
     let setup_hash = reader.read_hash()?;
-    let value_count = reader.read_u32()?;
-    let mut values = Vec::with_capacity(u32_to_usize(value_count)?);
+    let value_count = u32_to_usize(reader.read_u32()?)?;
+    if value_count > reader.remaining_len() / VALUE_ENTRY_HEADER_BYTES {
+        return Err(PublicValuesError::LengthOverflow);
+    }
+    let mut values = Vec::with_capacity(value_count);
     for _ in 0..value_count {
         let name = reader.read_string()?;
-        let element_count = reader.read_u32()?;
-        let mut elements = Vec::with_capacity(u32_to_usize(element_count)?);
+        let element_count = u32_to_usize(reader.read_u32()?)?;
+        if element_count > reader.remaining_len() / ELEMENT_BYTES {
+            return Err(PublicValuesError::LengthOverflow);
+        }
+        let mut elements = Vec::with_capacity(element_count);
         for _ in 0..element_count {
             elements.push(reader.read_u64()?);
         }
@@ -346,6 +354,10 @@ impl<'a> Reader<'a> {
 
     fn position(&self) -> usize {
         self.offset
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], PublicValuesError> {

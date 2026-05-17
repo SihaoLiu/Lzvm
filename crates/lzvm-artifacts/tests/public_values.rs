@@ -6,6 +6,7 @@ use lzvm_artifacts::public_values::{
     read_public_values_binary_file, read_public_values_file, PublicValueEntry, PublicValues,
     PublicValuesError,
 };
+use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedSection};
 
 fn sample_hash(byte: u8) -> [u8; 32] {
     [byte; 32]
@@ -30,6 +31,38 @@ fn sample_public_values() -> PublicValues {
             },
         ],
     }
+}
+
+fn public_values_file(section: Vec<u8>) -> Vec<u8> {
+    encode_sectioned_file(&SectionedFile {
+        kind: *b"pval",
+        version: 1,
+        sections: vec![SectionedSection {
+            id: 1,
+            data: section,
+        }],
+    })
+    .expect("sectioned fixture should encode")
+}
+
+fn section_header(value_count: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    push_u32(&mut bytes, 1);
+    bytes.extend_from_slice(&sample_hash(0x11));
+    push_u32(&mut bytes, value_count);
+    bytes
+}
+
+fn push_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_string(out: &mut Vec<u8>, value: &str) {
+    push_u32(
+        out,
+        u32::try_from(value.len()).expect("fixture string fits u32"),
+    );
+    out.extend_from_slice(value.as_bytes());
 }
 
 #[test]
@@ -105,5 +138,28 @@ fn rejects_public_values_with_duplicate_names() {
     assert!(matches!(
         encode_public_values(&value),
         Err(PublicValuesError::DuplicateName { .. })
+    ));
+}
+
+#[test]
+fn rejects_value_count_that_exceeds_remaining_entry_headers() {
+    let bytes = public_values_file(section_header(1));
+
+    assert!(matches!(
+        parse_public_values(&bytes),
+        Err(PublicValuesError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_element_count_that_exceeds_remaining_elements() {
+    let mut section = section_header(1);
+    push_string(&mut section, "x");
+    push_u32(&mut section, 1);
+    let bytes = public_values_file(section);
+
+    assert!(matches!(
+        parse_public_values(&bytes),
+        Err(PublicValuesError::LengthOverflow)
     ));
 }
