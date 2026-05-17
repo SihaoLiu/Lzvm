@@ -1048,19 +1048,22 @@ fn verify_setup_validation(
                         .copied()
                         .unwrap_or(None),
                 );
-                write_eth_receipt_kind_summary(
-                    stdout,
-                    public_report
-                        .eth_block_input_legacy_receipt_counts
-                        .get(index)
-                        .copied()
-                        .unwrap_or(None),
-                    public_report
-                        .eth_block_input_typed_receipt_counts
-                        .get(index)
-                        .copied()
-                        .unwrap_or(None),
-                );
+                let legacy_receipt_count = public_report
+                    .eth_block_input_legacy_receipt_counts
+                    .get(index)
+                    .copied()
+                    .unwrap_or(None);
+                let typed_receipt_count = public_report
+                    .eth_block_input_typed_receipt_counts
+                    .get(index)
+                    .copied()
+                    .unwrap_or(None);
+                if let (Some(legacy_count), Some(typed_count)) =
+                    (legacy_receipt_count, typed_receipt_count)
+                {
+                    write_eth_receipt_count_summary(stdout, legacy_count + typed_count);
+                }
+                write_eth_receipt_kind_summary(stdout, legacy_receipt_count, typed_receipt_count);
                 write_eth_withdrawal_summary(
                     stdout,
                     public_report
