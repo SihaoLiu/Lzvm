@@ -4,8 +4,8 @@ use std::path::Path;
 
 use lzvm_artifacts::eth_block_input::{
     build_eth_block_input, build_eth_block_input_with_receipts, encode_eth_block_input,
-    eth_block_input_bytes_digest, eth_block_input_transaction_kind_counts, parse_eth_block_input,
-    EthBlockInput,
+    eth_block_input_bytes_digest, eth_block_input_receipt_kind_counts,
+    eth_block_input_transaction_kind_counts, parse_eth_block_input, EthBlockInput,
 };
 
 pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -222,6 +222,12 @@ fn write_input_summary(
             "receipt_trie_preimages={}",
             receipts.hash_preimages.len()
         );
+        if let Some((legacy_receipts, typed_receipts)) = eth_block_input_receipt_kind_counts(input)
+            .expect("ETH block input summary requires validated receipt data")
+        {
+            let _ = writeln!(stdout, "legacy_receipts={legacy_receipts}");
+            let _ = writeln!(stdout, "typed_receipts={typed_receipts}");
+        }
     }
     let _ = writeln!(
         stdout,

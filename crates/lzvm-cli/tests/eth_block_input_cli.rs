@@ -157,7 +157,7 @@ fn writes_binary_block_input_artifact_with_receipts() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=21000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\nlegacy_transactions=1\ntyped_transactions=0\nreceipts=present\nreceipt_trie_preimages={}\nwithdrawals=absent\n",
+            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=21000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\nlegacy_transactions=1\ntyped_transactions=0\nreceipts=present\nreceipt_trie_preimages={}\nlegacy_receipts=1\ntyped_receipts=0\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
             to_hex(&input_hash),
@@ -174,6 +174,45 @@ fn writes_binary_block_input_artifact_with_receipts() {
     );
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn writes_receipt_kind_counts_for_typed_block_input_artifacts() {
+    let dir = temp_dir("typed-receipts");
+    let _ = fs::remove_dir_all(&dir);
+    let block_path = dir.join("block.rlp");
+    let receipts_path = dir.join("receipts.rlp");
+    let output_path = dir.join("block.input");
+    let receipt_item = typed_receipt_item(2);
+    let receipts = vec![parse_rlp(&receipt_item).expect("receipt should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    let receipts_rlp = rlp_list(&[receipt_item]);
+    let block_rlp = sample_block_rlp_with_receipts_root(receipt_build.root);
+    write_bytes(&block_path, &block_rlp);
+    write_bytes(&receipts_path, &receipts_rlp);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-block-input",
+            "--receipts",
+            receipts_path
+                .to_str()
+                .expect("receipts path should be utf-8"),
+            block_path.to_str().expect("block path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("legacy_receipts=0\ntyped_receipts=1\n"));
 }
 
 #[test]
@@ -529,6 +568,12 @@ fn sample_receipt_item() -> Vec<u8> {
         rlp_bytes(&[0; 256]),
         rlp_list(&[]),
     ])
+}
+
+fn typed_receipt_item(receipt_type: u8) -> Vec<u8> {
+    let mut bytes = vec![receipt_type];
+    bytes.extend_from_slice(&sample_receipt_item());
+    rlp_bytes(&bytes)
 }
 
 fn typed_transaction_item() -> Vec<u8> {

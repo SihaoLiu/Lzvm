@@ -8,7 +8,7 @@ use crate::eth_block::{
     decode_eth_withdrawals_rlp, eth_header_hash, eth_ommers_hash,
     eth_receipts_cumulative_gas_is_nondecreasing, eth_receipts_cumulative_gas_used,
     eth_receipts_logs_bloom, keccak256, parse_eth_block_rlp, EthBlockError, EthReceiptError,
-    EthTransactionError, EthTransactionRlp, EthWithdrawalError,
+    EthReceiptRlp, EthTransactionError, EthTransactionRlp, EthWithdrawalError,
 };
 use crate::eth_trie::{
     receipt_trie_build, transaction_trie_build, withdrawals_trie_build, IndexedTrieBuild,
@@ -490,6 +490,21 @@ pub fn eth_block_input_transaction_kind_counts(
         .filter(|transaction| matches!(transaction, EthTransactionRlp::Legacy(_)))
         .count();
     Ok((legacy, transactions.len() - legacy))
+}
+
+pub fn eth_block_input_receipt_kind_counts(
+    input: &EthBlockInput,
+) -> Result<Option<(usize, usize)>, EthBlockInputError> {
+    let Some(receipts_rlp) = &input.receipts_rlp else {
+        return Ok(None);
+    };
+    let receipts = parse_eth_receipts_rlp(receipts_rlp)?;
+    let receipts = decode_eth_receipts_rlp(&receipts)?;
+    let legacy = receipts
+        .iter()
+        .filter(|receipt| matches!(receipt, EthReceiptRlp::Legacy { .. }))
+        .count();
+    Ok(Some((legacy, receipts.len() - legacy)))
 }
 
 pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInputError> {
