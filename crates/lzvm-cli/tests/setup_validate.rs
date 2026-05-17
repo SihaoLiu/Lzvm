@@ -6,6 +6,7 @@ mod fixtures;
 
 use lzvm_artifacts::challenge_values_segment::{
     encode_challenge_values_segment, parse_challenge_values_segment, ChallengeValuesSegment,
+    CHALLENGE_VALUES_SEGMENT_ID,
 };
 use lzvm_artifacts::constant_opening_segment::{
     parse_constant_opening_segment, CONSTANT_OPENING_SEGMENT_ID,
@@ -10448,6 +10449,76 @@ fn verifies_contribution_challenge_from_proof_artifact() {
             expected_challenge.c1.to_u64(),
             expected_challenge.c2.to_u64()
         )
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_verify_contribution_with_unexpected_segment() {
+    let dir = temp_dir("verify-contribution-unexpected-segment");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should parse");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    assert_eq!(catalog.layout.global_info.stage_one_proof_value_count(), 0);
+
+    let entries = sample_contribution_entries(
+        catalog
+            .layout
+            .global_info
+            .lattice_size
+            .expect("lattice size should exist") as usize,
+    );
+    let contribution_segment = build_contribution_segment(&entries)
+        .expect("contribution segment should build")
+        .expect("contribution segment should exist");
+    let proof = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            contribution_segment,
+            ProofSegment {
+                id: CHALLENGE_VALUES_SEGMENT_ID,
+                data: encode_challenge_values_segment(&ChallengeValuesSegment {
+                    values: vec![[1, 2, 3]],
+                })
+                .expect("challenge values segment should encode"),
+            },
+        ],
+    };
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "contribution",
+            dir.to_str().expect("setup path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify contribution failed: unexpected contribution proof segment id 10012\n"
     );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }

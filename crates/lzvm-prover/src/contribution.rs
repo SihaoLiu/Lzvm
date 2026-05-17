@@ -8,6 +8,7 @@ use lzvm_artifacts::contribution_segment::{
 };
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
 use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryError};
+use lzvm_artifacts::pcs_proof_values_segment::PCS_PROOF_VALUES_SEGMENT_ID;
 use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifactError, ProofSegment};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValuesError};
 use lzvm_artifacts::setup_info::StageValue;
@@ -134,6 +135,7 @@ pub enum ContributionChallengeFileError {
     Proof(ProofArtifactError),
     PublicValues(PublicValuesError),
     SetupPreflight(SetupPreflightError),
+    UnexpectedProofSegment { id: u32 },
     PublicValueField(PublicValueFieldError),
     ProofValues(LoadPcsProofValuesSegmentError),
     ProofValuePacking(ProvePcsProofValuesSegmentError),
@@ -300,6 +302,9 @@ impl fmt::Display for ContributionChallengeFileError {
             Self::Proof(error) => write!(f, "{error}"),
             Self::PublicValues(error) => write!(f, "{error}"),
             Self::SetupPreflight(error) => write!(f, "{error}"),
+            Self::UnexpectedProofSegment { id } => {
+                write!(f, "unexpected contribution proof segment id {id}")
+            }
             Self::PublicValueField(error) => write!(f, "{error}"),
             Self::ProofValues(error) => write!(f, "{error}"),
             Self::ProofValuePacking(error) => write!(f, "{error}"),
@@ -323,7 +328,9 @@ impl std::error::Error for ContributionChallengeFileError {
             Self::ProofValues(error) => Some(error),
             Self::ProofValuePacking(error) => Some(error),
             Self::Contribution(error) => Some(error),
-            Self::MissingProofs | Self::ProofValueMismatch { .. } => None,
+            Self::MissingProofs
+            | Self::UnexpectedProofSegment { .. }
+            | Self::ProofValueMismatch { .. } => None,
         }
     }
 }
@@ -560,6 +567,7 @@ pub fn derive_global_challenge_from_files(
     let proof = read_proof_artifact_file(proof_path)?;
     let public_values = read_public_values_file(public_values_path)?;
     let public_report = validate_setup_preflight_hashes(&catalog, &proof, &public_values)?;
+    validate_contribution_proof_segment_ids(&proof.segments)?;
     let public_fields = public_values_as_fields(&public_values)?;
     let proof_values =
         load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)?;
@@ -610,6 +618,7 @@ pub fn derive_global_challenge_from_contribution_proofs(
     for (proof_index, proof_path) in proof_paths.iter().enumerate() {
         let proof = read_proof_artifact_file(proof_path)?;
         let public_report = validate_setup_preflight_hashes(&catalog, &proof, &public_values)?;
+        validate_contribution_proof_segment_ids(&proof.segments)?;
         segment_count = segment_count
             .checked_add(public_report.segment_count)
             .ok_or(ContributionChallengeError::LengthOverflow)?;
@@ -651,6 +660,21 @@ pub fn derive_global_challenge_from_contribution_proofs(
         contribution_count: entries.len(),
         challenge,
     })
+}
+
+fn validate_contribution_proof_segment_ids(
+    segments: &[ProofSegment],
+) -> Result<(), ContributionChallengeFileError> {
+    for segment in segments {
+        if matches!(
+            segment.id,
+            CONTRIBUTION_SEGMENT_ID | PCS_PROOF_VALUES_SEGMENT_ID
+        ) {
+            continue;
+        }
+        return Err(ContributionChallengeFileError::UnexpectedProofSegment { id: segment.id });
+    }
+    Ok(())
 }
 
 fn aggregate_lattice_contributions(
