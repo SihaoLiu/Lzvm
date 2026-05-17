@@ -5,7 +5,7 @@ use lzvm_artifacts::eth_block::{
     decode_eth_header_rlp, decode_eth_transactions_rlp, eth_header_hash, eth_ommers_hash,
     parse_eth_block_rlp, EthTransactionRlp,
 };
-use lzvm_artifacts::eth_trie::transaction_trie_root;
+use lzvm_artifacts::eth_trie::{transaction_trie_root, withdrawals_trie_root};
 
 pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
@@ -78,6 +78,17 @@ fn summarize_block(
         }
     };
     let computed_ommers_hash = eth_ommers_hash(&block.ommers);
+    let withdrawals_root_check = match (&block.withdrawals, header.withdrawals_root) {
+        (Some(withdrawals), Some(root)) => Some((root, withdrawals_trie_root(withdrawals))),
+        (Some(_), None) => {
+            let _ = writeln!(
+                stderr,
+                "eth block summary failed: withdrawals body present without header withdrawals_root"
+            );
+            return 1;
+        }
+        (None, _) => None,
+    };
 
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "bytes={}", bytes.len());
@@ -128,6 +139,23 @@ fn summarize_block(
             "absent"
         }
     );
+    if let Some((withdrawals_root, computed_withdrawals_root)) = withdrawals_root_check {
+        let _ = writeln!(
+            stdout,
+            "withdrawals_root={}",
+            format_hash(&withdrawals_root)
+        );
+        let _ = writeln!(
+            stdout,
+            "computed_withdrawals_root={}",
+            format_hash(&computed_withdrawals_root)
+        );
+        let _ = writeln!(
+            stdout,
+            "withdrawals_root_matches={}",
+            withdrawals_root == computed_withdrawals_root
+        );
+    }
     let _ = writeln!(
         stdout,
         "extra_body_fields={}",

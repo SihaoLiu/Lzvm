@@ -1,5 +1,6 @@
 use lzvm_artifacts::eth_trie::{
     compact_encode_nibbles, empty_transaction_trie_root, empty_trie_root, transaction_trie_root,
+    withdrawals_trie_root,
 };
 use lzvm_artifacts::rlp::{encode_rlp, RlpItem};
 
@@ -18,6 +19,11 @@ fn computes_empty_transaction_trie_root() {
         transaction_trie_root(&[]).expect("empty transaction trie should build"),
         empty_trie_root()
     );
+}
+
+#[test]
+fn computes_empty_withdrawals_trie_root() {
+    assert_eq!(withdrawals_trie_root(&[]), empty_trie_root());
 }
 
 #[test]
@@ -89,6 +95,21 @@ fn computes_typed_transaction_branch_trie_root() {
     );
 }
 
+#[test]
+fn computes_single_withdrawal_trie_root() {
+    let withdrawal = withdrawal();
+    let withdrawal_bytes = encode_rlp(&withdrawal);
+    let expected_leaf = RlpItem::List(vec![
+        RlpItem::Bytes(compact_encode_nibbles(&[8, 0], true)),
+        RlpItem::Bytes(withdrawal_bytes),
+    ]);
+
+    assert_eq!(
+        withdrawals_trie_root(&[withdrawal]),
+        lzvm_artifacts::eth_block::keccak256(&encode_rlp(&expected_leaf))
+    );
+}
+
 fn legacy_transaction() -> RlpItem {
     RlpItem::List(vec![
         RlpItem::Bytes(Vec::new()),
@@ -100,6 +121,15 @@ fn legacy_transaction() -> RlpItem {
         RlpItem::Bytes(vec![0x1b]),
         RlpItem::Bytes(vec![1]),
         RlpItem::Bytes(vec![1]),
+    ])
+}
+
+fn withdrawal() -> RlpItem {
+    RlpItem::List(vec![
+        RlpItem::Bytes(Vec::new()),
+        RlpItem::Bytes(vec![1]),
+        RlpItem::Bytes(vec![0x22; 20]),
+        RlpItem::Bytes(vec![0x40]),
     ])
 }
 

@@ -16,16 +16,16 @@ pub fn transaction_trie_root(transactions: &[RlpItem]) -> Result<[u8; 32], EthTr
         return Ok(empty_transaction_trie_root());
     }
 
-    let mut entries = Vec::with_capacity(transactions.len());
-    for (index, transaction) in transactions.iter().enumerate() {
-        entries.push(TrieEntry {
-            path: bytes_to_nibbles(&encode_transaction_index(index)),
-            value: transaction_value_bytes(transaction)?,
-        });
-    }
-    entries.sort_by(|lhs, rhs| lhs.path.cmp(&rhs.path));
+    let values = transactions
+        .iter()
+        .map(transaction_value_bytes)
+        .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(keccak256(&encode_node(&build_node(&entries, 0))))
+    Ok(indexed_trie_root(&values))
+}
+
+pub fn withdrawals_trie_root(withdrawals: &[RlpItem]) -> [u8; 32] {
+    indexed_item_trie_root(withdrawals)
 }
 
 pub fn compact_encode_nibbles(nibbles: &[u8], terminator: bool) -> Vec<u8> {
@@ -86,6 +86,28 @@ fn transaction_value_bytes(transaction: &RlpItem) -> Result<Vec<u8>, EthTransact
             Ok(bytes)
         }
     }
+}
+
+fn indexed_item_trie_root(items: &[RlpItem]) -> [u8; 32] {
+    let values = items.iter().map(encode_rlp).collect::<Vec<_>>();
+    indexed_trie_root(&values)
+}
+
+fn indexed_trie_root(values: &[Vec<u8>]) -> [u8; 32] {
+    if values.is_empty() {
+        return empty_trie_root();
+    }
+
+    let mut entries = Vec::with_capacity(values.len());
+    for (index, value) in values.iter().enumerate() {
+        entries.push(TrieEntry {
+            path: bytes_to_nibbles(&encode_transaction_index(index)),
+            value: value.clone(),
+        });
+    }
+    entries.sort_by(|lhs, rhs| lhs.path.cmp(&rhs.path));
+
+    keccak256(&encode_node(&build_node(&entries, 0)))
 }
 
 fn encode_transaction_index(mut index: usize) -> Vec<u8> {

@@ -141,6 +141,43 @@ fn summarizes_mainnet_genesis_block_hash() {
 }
 
 #[test]
+fn summarizes_withdrawals_root_check() {
+    let dir = temp_dir("withdrawals");
+    let _ = fs::remove_dir_all(&dir);
+    let block_path = dir.join("block.rlp");
+    let withdrawals_root =
+        hex32("51c445cba96d0dfd446eec8b2b94f104608cf8443a92f7f87c76a383d6687300");
+    let block_rlp =
+        sample_block_rlp_with_withdrawals(vec![withdrawal_item()], withdrawals_root.to_vec());
+    write_bytes(&block_path, &block_rlp);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "block-summary",
+            block_path.to_str().expect("block path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let output = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(output.contains("withdrawals=present\n"));
+    assert!(output.contains(
+        "withdrawals_root=51c445cba96d0dfd446eec8b2b94f104608cf8443a92f7f87c76a383d6687300\n"
+    ));
+    assert!(output.contains(
+        "computed_withdrawals_root=51c445cba96d0dfd446eec8b2b94f104608cf8443a92f7f87c76a383d6687300\n"
+    ));
+    assert!(output.contains("withdrawals_root_matches=true\n"));
+}
+
+#[test]
 fn reports_usage_for_missing_block_summary_input() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -223,6 +260,19 @@ fn sample_block_rlp_with_transactions(transaction_items: Vec<Vec<u8>>) -> Vec<u8
     rlp_list(&[header_rlp, transactions, empty_list])
 }
 
+fn sample_block_rlp_with_withdrawals(
+    withdrawal_items: Vec<Vec<u8>>,
+    withdrawals_root: Vec<u8>,
+) -> Vec<u8> {
+    let mut header = legacy_header_items();
+    header.push(rlp_bytes(&[1]));
+    header.push(rlp_bytes(&withdrawals_root));
+    let header_rlp = rlp_list(&header);
+    let empty_list = rlp_list(&[]);
+    let withdrawals = rlp_list(&withdrawal_items);
+    rlp_list(&[header_rlp, empty_list.clone(), empty_list, withdrawals])
+}
+
 fn sample_mainnet_genesis_block_rlp() -> Vec<u8> {
     let header_rlp = rlp_list(&mainnet_genesis_header_items());
     let empty_list = rlp_list(&[]);
@@ -277,6 +327,15 @@ fn mainnet_genesis_header_items() -> Vec<Vec<u8>> {
         rlp_bytes(&[0; 32]),
         rlp_bytes(&[0, 0, 0, 0, 0, 0, 0, 0x42]),
     ]
+}
+
+fn withdrawal_item() -> Vec<u8> {
+    rlp_list(&[
+        rlp_bytes(&[]),
+        rlp_bytes(&[1]),
+        rlp_bytes(&[0x22; 20]),
+        rlp_bytes(&[0x40]),
+    ])
 }
 
 fn rlp_bytes(payload: &[u8]) -> Vec<u8> {
