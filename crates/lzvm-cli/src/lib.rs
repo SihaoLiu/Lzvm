@@ -851,14 +851,19 @@ struct VerifySetupValidationCommand<'a> {
     program_image_cache: Option<&'a str>,
 }
 
+struct EthBlockInputBinding {
+    hash: [u8; 32],
+    receipt_preimage_count: Option<usize>,
+}
+
 fn verify_setup_validation(
     command: VerifySetupValidationCommand<'_>,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    let eth_block_input_hash = if let Some(path) = command.eth_block_input {
+    let eth_block_input_binding = if let Some(path) = command.eth_block_input {
         match verify_eth_block_input_binding(command.proof_bin, command.public_values_path, path) {
-            Ok(hash) => Some(hash),
+            Ok(binding) => Some(binding),
             Err(message) => {
                 let _ = writeln!(stderr, "{} failed: {message}", command.role);
                 return 1;
@@ -934,15 +939,24 @@ fn verify_setup_validation(
             );
         }
     }
-    if let Some(hash) = eth_block_input_hash {
+    if let Some(binding) = eth_block_input_binding {
         if public_report.eth_block_input_hashes.is_empty() {
             let _ = writeln!(
                 stdout,
                 "eth_block_input_hash={}",
-                prove_plan::format_hash(&hash)
+                prove_plan::format_hash(&binding.hash)
             );
         }
         let _ = writeln!(stdout, "eth_block_input_match=ok");
+        match binding.receipt_preimage_count {
+            Some(count) => {
+                let _ = writeln!(stdout, "eth_receipts=present");
+                let _ = writeln!(stdout, "eth_receipt_trie_preimages={count}");
+            }
+            None => {
+                let _ = writeln!(stdout, "eth_receipts=absent");
+            }
+        }
     }
     if program_image_cache_matched {
         let _ = writeln!(stdout, "program_image_cache_match=ok");
@@ -972,7 +986,7 @@ fn verify_eth_block_input_binding(
     proof_bin: &str,
     public_values_path: &str,
     input_path: &str,
-) -> Result<[u8; 32], String> {
+) -> Result<EthBlockInputBinding, String> {
     let proof = read_proof_artifact_file(proof_bin)
         .map_err(|error| format!("read proof artifact failed: {proof_bin}: {error}"))?;
     let input_bytes = std::fs::read(input_path)
@@ -980,6 +994,10 @@ fn verify_eth_block_input_binding(
     let input_hash = eth_block_input_bytes_digest(&input_bytes);
     let input = parse_eth_block_input(&input_bytes)
         .map_err(|error| format!("ETH block input failed: {input_path}: {error}"))?;
+    let receipt_preimage_count = input
+        .receipts
+        .as_ref()
+        .map(|receipts| receipts.hash_preimages.len());
     let expected = encode_eth_block_input_segment(&input)
         .map_err(|error| format!("encode ETH block input segment failed: {error}"))?;
     let segment = proof
@@ -993,7 +1011,10 @@ fn verify_eth_block_input_binding(
     let public_values = read_public_values_file(public_values_path)
         .map_err(|error| format!("read public-values failed: {public_values_path}: {error}"))?;
     validate_eth_block_public_values(&input, &public_values).map_err(|error| error.to_string())?;
-    Ok(input_hash)
+    Ok(EthBlockInputBinding {
+        hash: input_hash,
+        receipt_preimage_count,
+    })
 }
 
 fn validate_setup_directory(

@@ -4912,8 +4912,13 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     let mismatched_output_dir = dir.join("mismatched-proof-out");
     let mismatched_proof_path = dir.join("mismatched-public-proof.bin");
     let block_input_path = dir.join("block.input");
-    let block_rlp = sample_block_rlp();
-    let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let receipt_item = sample_receipt_item();
+    let receipts = vec![parse_rlp(&receipt_item).expect("receipt should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    let receipts_rlp = rlp_list(&[receipt_item]);
+    let block_rlp = sample_block_rlp_with_receipts_root(receipt_build.root);
+    let block_input = build_eth_block_input_with_receipts(&block_rlp, &receipts_rlp)
+        .expect("block input should build");
     let block_input_bytes =
         encode_eth_block_input(&block_input).expect("block input should encode");
     let block_input_hash = eth_block_input_bytes_digest(&block_input_bytes);
@@ -5096,12 +5101,13 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
         String::from_utf8_lossy(&verify_stderr)
     );
     assert!(verify_stderr.is_empty());
-    assert!(String::from_utf8(verify_stdout)
-        .expect("verify stdout should be utf-8")
-        .contains(&format!(
-            "eth_block_inputs=1\neth_block_input_hash={}\neth_block_input_match=ok\n",
-            format_hash(&block_input_hash)
-        )));
+    let verify_stdout_text =
+        String::from_utf8(verify_stdout).expect("verify stdout should be utf-8");
+    assert!(verify_stdout_text.contains(&format!(
+        "eth_block_inputs=1\neth_block_input_hash={}\neth_block_input_match=ok\neth_receipts=present\neth_receipt_trie_preimages={}\n",
+        format_hash(&block_input_hash),
+        receipt_build.hash_preimages.len()
+    )));
     assert_eq!(mismatch_code, 1);
     assert_eq!(
         String::from_utf8(mismatch_stderr).expect("mismatch stderr should be utf-8"),
@@ -5120,6 +5126,15 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     assert_eq!(parsed_input.block_rlp, block_rlp);
     assert_eq!(parsed_input.block_hash, block_input.block_hash);
     assert_eq!(parsed_input.transactions.hash_preimages.len(), 1);
+    assert_eq!(
+        parsed_input
+            .receipts
+            .as_ref()
+            .expect("receipts should be present")
+            .hash_preimages
+            .len(),
+        receipt_build.hash_preimages.len()
+    );
     assert_eq!(
         parse_eth_block_input(&block_input_bytes)
             .expect("block input should parse")
