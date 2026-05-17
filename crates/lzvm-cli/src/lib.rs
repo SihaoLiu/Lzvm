@@ -25,6 +25,7 @@ use lzvm_setup::{
 
 mod eth_block_input;
 mod eth_block_prove_input;
+mod eth_block_public_values;
 mod eth_block_summary;
 mod pil_archive;
 mod pil_archive_summary;
@@ -46,6 +47,9 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             eth_block_input::run_summary(rest, stdout, stderr)
         }
         ["eth", "write-block-input", rest @ ..] => eth_block_input::run(rest, stdout, stderr),
+        ["eth", "write-block-public-values", rest @ ..] => {
+            eth_block_public_values::run(rest, stdout, stderr)
+        }
         ["pil", "archive", rest @ ..] => pil_archive::run(rest, stdout, stderr),
         ["pil", "archive-summary", rest @ ..] => pil_archive_summary::run(rest, stdout, stderr),
         ["pil", "fixed-file-manifest", rest @ ..] => {

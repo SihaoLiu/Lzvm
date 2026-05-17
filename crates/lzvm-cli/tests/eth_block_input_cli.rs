@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use lzvm_artifacts::eth_block_input::{
     build_eth_block_input, encode_eth_block_input, parse_eth_block_input,
 };
+use lzvm_artifacts::public_values::parse_public_values;
 use lzvm_cli::run_cli;
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -140,6 +141,73 @@ fn summarizes_block_input_artifacts() {
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
+#[test]
+fn writes_block_public_values_from_block_input() {
+    let dir = temp_dir("public-values");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("block.input");
+    let output_path = dir.join("public-values.bin");
+    let setup_hash = [0x44_u8; 32];
+    let setup_hash_hex = to_hex(&setup_hash);
+    let block_rlp = sample_block_rlp();
+    let input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let encoded_input = encode_eth_block_input(&input).expect("block input should encode");
+    write_bytes(&input_path, &encoded_input);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-block-public-values",
+            "--setup-hash",
+            &setup_hash_hex,
+            input_path.to_str().expect("input path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let encoded = fs::read(&output_path).expect("public values should be written");
+    let parsed = parse_public_values(&encoded).expect("public values should parse");
+    assert_eq!(parsed.setup_hash, setup_hash);
+    assert_eq!(parsed.schema_version, 1);
+    assert_eq!(parsed.values.len(), 7);
+    assert_eq!(parsed.values[0].name, "eth_block_hash_u32_be");
+    assert_eq!(parsed.values[0].elements, hash_u32_be(&input.block_hash));
+    assert_eq!(parsed.values[1].name, "eth_block_number_u32_le");
+    assert_eq!(parsed.values[1].elements, u64_u32_le(input.block_number));
+    assert_eq!(parsed.values[2].name, "eth_block_timestamp_u32_le");
+    assert_eq!(parsed.values[2].elements, u64_u32_le(input.timestamp));
+    assert_eq!(parsed.values[3].name, "eth_ommers_hash_u32_be");
+    assert_eq!(parsed.values[3].elements, hash_u32_be(&input.ommers_hash));
+    assert_eq!(parsed.values[4].name, "eth_transactions_root_u32_be");
+    assert_eq!(
+        parsed.values[4].elements,
+        hash_u32_be(&input.transactions_root)
+    );
+    assert_eq!(parsed.values[5].name, "eth_withdrawals_root_present");
+    assert_eq!(parsed.values[5].elements, vec![0]);
+    assert_eq!(parsed.values[6].name, "eth_withdrawals_root_u32_be");
+    assert_eq!(parsed.values[6].elements, vec![0; 8]);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\nvalues=7\nblock_hash={}\nblock_number=2\ntimestamp=101\ntransactions_root={}\nwithdrawals=absent\n",
+            output_path.display(),
+            encoded.len(),
+            setup_hash_hex,
+            to_hex(&input.block_hash),
+            to_hex(&input.transactions_root)
+        )
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
 fn sample_block_rlp() -> Vec<u8> {
     let header_rlp = rlp_list(&legacy_header_items(
         hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
@@ -238,6 +306,21 @@ fn hex_value(value: u8) -> u8 {
         b'A'..=b'F' => value - b'A' + 10,
         _ => panic!("invalid hex digit"),
     }
+}
+
+fn hash_u32_be(bytes: &[u8; 32]) -> Vec<u64> {
+    bytes
+        .chunks_exact(4)
+        .map(|chunk| {
+            u64::from(u32::from_be_bytes(
+                chunk.try_into().expect("chunk has 4 bytes"),
+            ))
+        })
+        .collect()
+}
+
+fn u64_u32_le(value: u64) -> Vec<u64> {
+    vec![value & 0xffff_ffff, value >> 32]
 }
 
 fn to_hex(bytes: &[u8]) -> String {
