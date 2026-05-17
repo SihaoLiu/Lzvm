@@ -25,7 +25,7 @@ use lzvm_artifacts::setup_manifest::{
     build_setup_directory_manifest, validate_setup_directory_manifest_file,
     SetupDirectoryManifestError, SETUP_DIRECTORY_MANIFEST_FILE,
 };
-use lzvm_artifacts::unit_values_segment::UNIT_VALUES_SEGMENT_ID;
+use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
 use lzvm_artifacts::witness_opening_segment::WITNESS_OPENING_SEGMENT_ID;
 use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 
@@ -54,7 +54,8 @@ use crate::pcs_material_manifest::{
     validate_pcs_material_manifest_segments, ValidatePcsMaterialManifestSegmentsError,
 };
 use crate::pcs_query_plan::{
-    uses_transcript_pcs_query_plan_inputs, validate_pcs_query_plan_segments,
+    load_pcs_query_plan_from_segments, uses_transcript_pcs_query_plan_inputs,
+    validate_pcs_query_plan_segments, LoadPcsQueryPlanSegmentError,
     ValidatePcsQueryPlanSegmentsError,
 };
 use crate::proof_preflight::{
@@ -62,6 +63,7 @@ use crate::proof_preflight::{
     ProofPreflightReport, PublicValueFieldError,
 };
 use crate::proof_values::{load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError};
+use crate::unit_values::{load_unit_values_from_segments, LoadUnitValuesSegmentError};
 use crate::witness_commitment::{
     load_witness_commitment_segments, LoadWitnessCommitmentSegmentsError,
 };
@@ -134,6 +136,8 @@ pub enum SetupPreflightError {
     Contribution(ContributionChallengeError),
     ProofValues(LoadPcsProofValuesSegmentError),
     GroupValues(LoadGroupValuesSegmentError),
+    UnitValues(LoadUnitValuesSegmentError),
+    UnitValueQueryPlan(LoadPcsQueryPlanSegmentError),
     UnexpectedProofSegment { id: u32 },
 }
 
@@ -165,6 +169,8 @@ impl fmt::Display for SetupPreflightError {
             Self::Contribution(error) => write!(f, "{error}"),
             Self::ProofValues(error) => write!(f, "{error}"),
             Self::GroupValues(error) => write!(f, "{error}"),
+            Self::UnitValues(error) => write!(f, "{error}"),
+            Self::UnitValueQueryPlan(error) => write!(f, "{error}"),
             Self::UnexpectedProofSegment { id } => {
                 write!(f, "unexpected setup proof segment id {id}")
             }
@@ -202,6 +208,8 @@ impl std::error::Error for SetupPreflightError {
             Self::Contribution(error) => Some(error),
             Self::ProofValues(error) => Some(error),
             Self::GroupValues(error) => Some(error),
+            Self::UnitValues(error) => Some(error),
+            Self::UnitValueQueryPlan(error) => Some(error),
             Self::CatalogHashMismatch | Self::UnexpectedProofSegment { .. } => None,
         }
     }
@@ -393,6 +401,7 @@ pub fn validate_setup_preflight(
         &proof.segments,
     )
     .map_err(SetupPreflightError::PcsQueryPlan)?;
+    validate_optional_unit_value_segments(&schedule, proof)?;
     validate_constant_opening_segments(&schedule.units, &proof.segments)
         .map_err(SetupPreflightError::ConstantOpening)?;
     validate_witness_opening_segments(&schedule.units, &proof.segments)
@@ -440,6 +449,70 @@ pub fn validate_setup_preflight(
     .map_err(SetupPreflightError::PcsFri)?;
 
     Ok(report)
+}
+
+fn validate_optional_unit_value_segments(
+    schedule: &crate::ProveSchedule,
+    proof: &ProofArtifact,
+) -> Result<(), SetupPreflightError> {
+    if !proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == UNIT_VALUES_SEGMENT_ID)
+    {
+        return Ok(());
+    }
+
+    let query_plan = load_pcs_query_plan_from_segments(&proof.segments)
+        .map_err(SetupPreflightError::UnitValueQueryPlan)?;
+    let mut matching_segments = proof
+        .segments
+        .iter()
+        .filter(|segment| segment.id == UNIT_VALUES_SEGMENT_ID);
+    let segment = matching_segments
+        .next()
+        .ok_or(SetupPreflightError::UnitValues(
+            LoadUnitValuesSegmentError::MissingSegment,
+        ))?;
+    if matching_segments.next().is_some() {
+        return Err(SetupPreflightError::UnitValues(
+            LoadUnitValuesSegmentError::DuplicateSegment,
+        ));
+    }
+    let unit_values = parse_unit_values_segment(&segment.data)
+        .map_err(LoadUnitValuesSegmentError::Segment)
+        .map_err(SetupPreflightError::UnitValues)?;
+    for unit_value in unit_values.units {
+        if !query_plan
+            .units
+            .iter()
+            .any(|query_unit| query_unit.unit_index == unit_value.unit_index)
+        {
+            let unit_index = usize::try_from(unit_value.unit_index).map_err(|_| {
+                SetupPreflightError::UnitValues(LoadUnitValuesSegmentError::UnitIndexOverflow {
+                    unit_index: usize::MAX,
+                })
+            })?;
+            return Err(SetupPreflightError::UnitValues(
+                LoadUnitValuesSegmentError::UnexpectedUnit { unit_index },
+            ));
+        }
+        let unit_index = usize::try_from(unit_value.unit_index).map_err(|_| {
+            SetupPreflightError::UnitValues(LoadUnitValuesSegmentError::UnitIndexOverflow {
+                unit_index: usize::MAX,
+            })
+        })?;
+        let unit = schedule
+            .units
+            .get(unit_index)
+            .ok_or(SetupPreflightError::UnitValues(
+                LoadUnitValuesSegmentError::MissingUnit { unit_index },
+            ))?;
+        load_unit_values_from_segments(unit_index, &unit.unit_value_map, &proof.segments)
+            .map(|_| ())
+            .map_err(SetupPreflightError::UnitValues)?;
+    }
+    Ok(())
 }
 
 fn validate_optional_global_value_segments(
