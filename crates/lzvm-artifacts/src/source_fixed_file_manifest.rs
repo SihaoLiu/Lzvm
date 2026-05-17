@@ -335,8 +335,12 @@ fn parse_source_fixed_file_manifest_payload(
     bytes: &[u8],
 ) -> Result<SourceFixedFileManifest, SourceFixedFileManifestError> {
     let mut reader = PayloadReader::new(bytes);
-    let entry_count = usize::try_from(reader.read_u64()?)
-        .map_err(|_| SourceFixedFileManifestError::LengthOverflow)?;
+    let entry_count = reader.read_u64()?;
+    if entry_count > reader.remaining_len() as u64 {
+        return Err(SourceFixedFileManifestError::LengthOverflow);
+    }
+    let entry_count =
+        usize::try_from(entry_count).map_err(|_| SourceFixedFileManifestError::LengthOverflow)?;
     let mut entries = Vec::with_capacity(entry_count);
     for _ in 0..entry_count {
         let source_name = reader.read_string()?;
@@ -454,6 +458,10 @@ impl<'a> PayloadReader<'a> {
                 },
             )
         }
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len().saturating_sub(self.offset)
     }
 
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], SourceFixedFileManifestError> {

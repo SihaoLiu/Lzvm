@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
+use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedSection};
 use lzvm_artifacts::source_fixed_file_manifest::{
     encode_source_fixed_file_manifest, parse_source_fixed_file_manifest,
     read_source_fixed_file_manifest_file, SourceFixedFileManifest, SourceFixedFileManifestEntry,
@@ -114,5 +115,23 @@ fn rejects_invalid_source_fixed_file_manifest_entries() {
     assert!(matches!(
         encode_source_fixed_file_manifest(&manifest),
         Err(SourceFixedFileManifestError::UnexpectedColumn { entry_index: 0 })
+    ));
+}
+
+#[test]
+fn rejects_source_fixed_file_manifest_entry_counts_larger_than_payload() {
+    let bytes = encode_sectioned_file(&SectionedFile {
+        kind: *b"sffm",
+        version: 1,
+        sections: vec![SectionedSection {
+            id: 1,
+            data: u64::MAX.to_le_bytes().to_vec(),
+        }],
+    })
+    .expect("sectioned file should encode");
+
+    assert!(matches!(
+        parse_source_fixed_file_manifest(&bytes),
+        Err(SourceFixedFileManifestError::LengthOverflow)
     ));
 }
