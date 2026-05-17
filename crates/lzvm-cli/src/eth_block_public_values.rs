@@ -4,11 +4,31 @@ use std::path::Path;
 
 use lzvm_artifacts::eth_block_input::parse_eth_block_input;
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
+use lzvm_artifacts::key_directory::key_directory_catalog_digest;
 use lzvm_artifacts::public_values::encode_public_values;
+
+use crate::prove_plan::read_checked_setup_catalog;
 
 pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
         ["--setup-hash", setup_hash, input_path, output_path] => {
+            let setup_hash = match parse_hash_hex(setup_hash) {
+                Ok(hash) => hash,
+                Err(error) => {
+                    let _ = writeln!(stderr, "eth block public values failed: {error}");
+                    return 1;
+                }
+            };
+            write_block_public_values(setup_hash, input_path, output_path, stdout, stderr)
+        }
+        ["--setup-dir", setup_dir, input_path, output_path] => {
+            let setup_hash = match setup_hash_from_directory(setup_dir) {
+                Ok(hash) => hash,
+                Err(message) => {
+                    let _ = writeln!(stderr, "eth block public values failed: {message}");
+                    return 1;
+                }
+            };
             write_block_public_values(setup_hash, input_path, output_path, stdout, stderr)
         }
         _ => write_usage(stderr),
@@ -16,19 +36,12 @@ pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write)
 }
 
 fn write_block_public_values(
-    setup_hash: &str,
+    setup_hash: [u8; 32],
     input_path: &str,
     output_path: &str,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    let setup_hash = match parse_hash_hex(setup_hash) {
-        Ok(hash) => hash,
-        Err(error) => {
-            let _ = writeln!(stderr, "eth block public values failed: {error}");
-            return 1;
-        }
-    };
     let input_bytes = match std::fs::read(input_path) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -100,6 +113,13 @@ fn write_block_public_values(
         }
     );
     0
+}
+
+fn setup_hash_from_directory(setup_dir: &str) -> Result<[u8; 32], String> {
+    let catalog = read_checked_setup_catalog(Path::new(setup_dir))
+        .map_err(|message| format!("read setup directory failed: {setup_dir}: {message}"))?;
+    key_directory_catalog_digest(&catalog)
+        .map_err(|error| format!("derive setup hash failed: {setup_dir}: {error}"))
 }
 
 fn parse_hash_hex(value: &str) -> Result<[u8; 32], HashHexError> {
@@ -182,7 +202,7 @@ impl fmt::Display for HashHexError {
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm eth write-block-public-values --setup-hash <hex32> <block-input> <out-public-values>"
+        "usage: lzvm eth write-block-public-values (--setup-hash <hex32> | --setup-dir <setup-dir>) <block-input> <out-public-values>"
     );
     2
 }

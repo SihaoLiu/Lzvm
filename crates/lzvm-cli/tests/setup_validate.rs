@@ -69,7 +69,7 @@ use lzvm_artifacts::proof::{
     encode_proof_artifact, parse_proof_artifact, ProofArtifact, ProofSegment,
 };
 use lzvm_artifacts::public_values::{
-    encode_public_values, public_values_digest, PublicValueEntry, PublicValues,
+    encode_public_values, parse_public_values, public_values_digest, PublicValueEntry, PublicValues,
 };
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
 use lzvm_artifacts::setup_info::{encode_unit_setup_info, UnitSetupInfo};
@@ -4531,6 +4531,65 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
             .block_hash,
         parsed_input.block_hash
     );
+}
+
+#[test]
+fn writes_eth_block_public_values_from_setup_directory() {
+    let dir = temp_dir("eth-block-public-values-setup-dir");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let setup_hash_hex = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let block_input_path = dir.join("block.input");
+    let public_values_path = dir.join("eth-public-values.bin");
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_bytes(
+        &block_input_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-block-public-values",
+            "--setup-dir",
+            dir.to_str().expect("setup path should be utf-8"),
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let encoded = fs::read(&public_values_path).expect("public values should read");
+    let parsed = parse_public_values(&encoded).expect("public values should parse");
+    assert_eq!(parsed.setup_hash, setup_hash);
+    assert_eq!(
+        parsed,
+        public_values_from_eth_block_input(setup_hash, &block_input)
+    );
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\nvalues=7\nblock_hash={}\nblock_number=2\ntimestamp=101\ntransactions_root={}\nwithdrawals=absent\n",
+            public_values_path.display(),
+            encoded.len(),
+            setup_hash_hex,
+            format_hash(&block_input.block_hash),
+            format_hash(&block_input.transactions_root)
+        )
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]
