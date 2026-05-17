@@ -27,6 +27,7 @@ mod errors;
 mod pcs;
 mod program_image;
 mod reports;
+mod source_fixed_file_manifest;
 mod source_program_archive;
 mod staging;
 
@@ -55,6 +56,11 @@ pub use program_image::{
     ProgramImageCommitmentCacheWriteReport,
 };
 pub use reports::*;
+pub use source_fixed_file_manifest::{
+    source_fixed_file_manifest_from_resolved, write_source_fixed_file_manifest,
+    SourceFixedFileManifestWriteError, SourceFixedFileManifestWriteReport,
+    SourceFixedFileManifestWriteRequest,
+};
 pub use source_program_archive::{
     write_source_program_archive, SourceProgramArchiveWriteError, SourceProgramArchiveWriteReport,
     SourceProgramArchiveWriteRequest,
