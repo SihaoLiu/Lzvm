@@ -232,6 +232,18 @@ fn rejects_eth_block_segments_without_matching_public_values() {
 }
 
 #[test]
+fn rejects_eth_block_public_values_without_input_segment() {
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let public_values = public_values_from_eth_block_input(sample_hash(0x44), &block_input);
+    let proof = sample_proof(&public_values);
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("ETH block public values should require an input segment");
+
+    assert_eq!(error.to_string(), "missing ETH block input proof segment");
+}
+
+#[test]
 fn converts_public_values_to_field_elements_in_entry_order() {
     let public_values = PublicValues {
         schema_version: 1,

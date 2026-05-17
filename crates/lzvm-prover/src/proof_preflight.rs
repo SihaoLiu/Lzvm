@@ -33,6 +33,7 @@ pub enum ProofPreflightError {
     ProgramImageCache(ProgramImageCacheSegmentError),
     EthBlockInput(EthBlockInputError),
     EthBlockPublicValues(EthBlockPublicValuesError),
+    MissingEthBlockInput,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +57,7 @@ impl fmt::Display for ProofPreflightError {
             Self::ProgramImageCache(error) => write!(f, "{error}"),
             Self::EthBlockInput(error) => write!(f, "{error}"),
             Self::EthBlockPublicValues(error) => write!(f, "{error}"),
+            Self::MissingEthBlockInput => write!(f, "missing ETH block input proof segment"),
         }
     }
 }
@@ -85,7 +87,9 @@ impl std::error::Error for ProofPreflightError {
             Self::ProgramImageCache(error) => Some(error),
             Self::EthBlockInput(error) => Some(error),
             Self::EthBlockPublicValues(error) => Some(error),
-            Self::SetupHashMismatch | Self::PublicValuesHashMismatch => None,
+            Self::SetupHashMismatch
+            | Self::PublicValuesHashMismatch
+            | Self::MissingEthBlockInput => None,
         }
     }
 }
@@ -152,6 +156,9 @@ pub fn validate_proof_public_values(
         .iter()
         .filter(|segment| segment.id == ETH_BLOCK_INPUT_SEGMENT_ID)
         .count();
+    if eth_block_input_count == 0 && contains_eth_block_public_values(public_values) {
+        return Err(ProofPreflightError::MissingEthBlockInput);
+    }
     for segment in proof
         .segments
         .iter()
@@ -168,6 +175,26 @@ pub fn validate_proof_public_values(
         public_value_count: public_values.values.len(),
         eth_block_input_count,
     })
+}
+
+fn contains_eth_block_public_values(public_values: &PublicValues) -> bool {
+    public_values
+        .values
+        .iter()
+        .any(|entry| is_eth_block_public_value_name(&entry.name))
+}
+
+fn is_eth_block_public_value_name(name: &str) -> bool {
+    matches!(
+        name,
+        "eth_block_hash_u32_be"
+            | "eth_block_number_u32_le"
+            | "eth_block_timestamp_u32_le"
+            | "eth_ommers_hash_u32_be"
+            | "eth_transactions_root_u32_be"
+            | "eth_withdrawals_root_present"
+            | "eth_withdrawals_root_u32_be"
+    )
 }
 
 pub fn validate_proof_public_values_from_files(
