@@ -178,8 +178,14 @@ fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
     let trace_mode = trace_bytes.is_some() || trace_bundle.is_some();
     let min_positionals = if trace_mode { 3 } else { 4 };
     let max_positionals = if trace_mode { 4 } else { 5 };
+    let run_args = parse_run_args(&filtered, min_positionals, max_positionals)?;
+    if trace_bytes.is_some() && run_args.request.options.aggregate {
+        return Err(ParseError::Invalid(
+            "--trace-bytes requires a single-unit witness run".to_owned(),
+        ));
+    }
     Ok(ParsedInputsArgs {
-        run_args: parse_run_args(&filtered, min_positionals, max_positionals)?,
+        run_args,
         trace_bytes,
         trace_bundle,
     })
@@ -239,4 +245,27 @@ fn write_usage(stderr: &mut dyn Write) -> i32 {
         "usage: lzvm prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>"
     );
     2
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_trace_bytes_with_aggregate_during_parse() {
+        let result = parse_inputs_args(&[
+            "--trace-bytes",
+            "trace.bin",
+            "--aggregate",
+            "setup-dir",
+            "out-dir",
+            "guest.elf",
+        ]);
+
+        assert!(matches!(
+            result,
+            Err(ParseError::Invalid(message))
+                if message == "--trace-bytes requires a single-unit witness run"
+        ));
+    }
 }
