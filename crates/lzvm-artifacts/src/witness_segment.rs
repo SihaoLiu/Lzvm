@@ -113,9 +113,13 @@ pub fn parse_witness_commitment_segment(
     let input_byte_count = reader.read_u64()?;
     let trace_rows = reader.read_u64()?;
     let trace_columns = reader.read_u64()?;
-    let stage_count = reader.read_u32()? as usize;
+    let stage_count = usize::try_from(reader.read_u32()?)
+        .map_err(|_| WitnessCommitmentSegmentError::LengthOverflow)?;
     if stage_count == 0 {
         return Err(WitnessCommitmentSegmentError::EmptyStages);
+    }
+    if stage_count > reader.remaining_len() / STAGE_BYTES {
+        return Err(WitnessCommitmentSegmentError::LengthOverflow);
     }
 
     let mut stages = Vec::with_capacity(stage_count);
@@ -171,6 +175,10 @@ impl<'a> SegmentReader<'a> {
 
     fn read_u64(&mut self) -> Result<u64, WitnessCommitmentSegmentError> {
         Ok(u64::from_le_bytes(self.read_array::<8>()?))
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 
     fn read_array<const N: usize>(&mut self) -> Result<[u8; N], WitnessCommitmentSegmentError> {
