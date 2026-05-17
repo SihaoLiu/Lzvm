@@ -93,8 +93,12 @@ fn writes_program_image_commitment_cache_from_cli_inputs() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nbytes_written={byte_count}\noutput={}\n",
-            output_path.display()
+            "status=ok\nbytes_written={byte_count}\noutput={}\nprogram_image_cache={}\nprogram_image_cache_program_digest={}\nprogram_image_cache_source_image_digest={}\nprogram_image_cache_constraint_system_digest={}\nprogram_image_cache_trace_rows=1024\nprogram_image_cache_trace_columns=17\nprogram_image_cache_blowup_factor=8\nprogram_image_cache_arity=4\nprogram_image_cache_gpu_mode=cuda\n",
+            output_path.display(),
+            output_path.display(),
+            format_hash(&cache.program_digest),
+            format_hash(&cache.source_image_digest),
+            format_hash(&cache.constraint_system_digest)
         )
     );
     assert!(stderr.is_empty());
@@ -127,4 +131,14 @@ fn reports_usage_for_missing_program_image_cache_output_path() {
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "usage: lzvm setup write-program-image-cache [--backend cpu|cuda] <program-bin> <guest-image> <constraint-digest-bin> <root-bin> <trace-rows> <trace-columns> <blowup-factor> <arity> <out-cache>\n"
     );
+}
+
+fn format_hash(hash: &[u8; 32]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(64);
+    for byte in hash {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
 }

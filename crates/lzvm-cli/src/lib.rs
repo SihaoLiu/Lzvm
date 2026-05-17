@@ -9,7 +9,9 @@ use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::eth_block_public_values::validate_eth_block_public_values;
-use lzvm_artifacts::program_image::ProgramImageGpuMode;
+use lzvm_artifacts::program_image::{
+    read_program_image_commitment_cache_file, ProgramImageGpuMode,
+};
 use lzvm_artifacts::proof::read_proof_artifact_file;
 use lzvm_artifacts::public_values::read_public_values_file;
 use lzvm_artifacts::trace_bundle::{encode_trace_bundle, TraceBundle, TraceBundleUnit};
@@ -1020,9 +1022,23 @@ fn write_program_image_cache(
         },
     ) {
         Ok(report) => {
+            let cache = match read_program_image_commitment_cache_file(&report.path) {
+                Ok(cache) => cache,
+                Err(error) => {
+                    let _ = writeln!(stderr, "setup program-image cache write failed: {error}");
+                    return 1;
+                }
+            };
             let _ = writeln!(stdout, "status=ok");
             let _ = writeln!(stdout, "bytes_written={}", report.bytes_written);
             let _ = writeln!(stdout, "output={}", report.path.display());
+            program_image_cache::write_program_image_cache_summary(
+                stdout,
+                &lzvm_prover::ProveProgramImageCache {
+                    path: report.path,
+                    cache,
+                },
+            );
             0
         }
         Err(error) => {
