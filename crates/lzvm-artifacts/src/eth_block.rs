@@ -57,7 +57,19 @@ pub enum EthReceiptRlp {
     Typed {
         receipt_type: u8,
         payload: Vec<u8>,
+        status_or_post_state: Vec<u8>,
+        cumulative_gas_used: u64,
+        logs_bloom: Box<[u8; 256]>,
+        logs: Vec<EthLogRlp>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EthReceiptBodyRlp {
+    status_or_post_state: Vec<u8>,
+    cumulative_gas_used: u64,
+    logs_bloom: [u8; 256],
+    logs: Vec<EthLogRlp>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -614,12 +626,11 @@ pub fn eth_receipts_logs_bloom(receipts: &[EthReceiptRlp]) -> Option<[u8; 256]> 
     let mut bloom = [0_u8; 256];
     for receipt in receipts {
         match receipt {
-            EthReceiptRlp::Legacy { logs_bloom, .. } => {
+            EthReceiptRlp::Legacy { logs_bloom, .. } | EthReceiptRlp::Typed { logs_bloom, .. } => {
                 for (target, source) in bloom.iter_mut().zip(logs_bloom.iter()) {
                     *target |= *source;
                 }
             }
-            EthReceiptRlp::Typed { .. } => return None,
         }
     }
     Some(bloom)
@@ -632,8 +643,11 @@ pub fn eth_receipts_cumulative_gas_used(receipts: &[EthReceiptRlp]) -> Option<u6
             EthReceiptRlp::Legacy {
                 cumulative_gas_used,
                 ..
+            }
+            | EthReceiptRlp::Typed {
+                cumulative_gas_used,
+                ..
             } => gas_used = *cumulative_gas_used,
-            EthReceiptRlp::Typed { .. } => return None,
         }
     }
     Some(gas_used)
@@ -646,13 +660,16 @@ pub fn eth_receipts_cumulative_gas_is_nondecreasing(receipts: &[EthReceiptRlp]) 
             EthReceiptRlp::Legacy {
                 cumulative_gas_used,
                 ..
+            }
+            | EthReceiptRlp::Typed {
+                cumulative_gas_used,
+                ..
             } => {
                 if *cumulative_gas_used < previous_gas_used {
                     return Some(false);
                 }
                 previous_gas_used = *cumulative_gas_used;
             }
-            EthReceiptRlp::Typed { .. } => return None,
         }
     }
     Some(true)
@@ -670,15 +687,18 @@ pub fn decode_eth_receipt_rlp(receipt: &RlpItem) -> Result<EthReceiptRlp, EthRec
                     found: receipt_type,
                 });
             }
-            if !matches!(
-                parse_rlp(payload).map_err(EthReceiptError::Rlp)?,
-                RlpItem::List(_)
-            ) {
-                return Err(EthReceiptError::ExpectedReceiptList);
-            }
+            let fields = match parse_rlp(payload).map_err(EthReceiptError::Rlp)? {
+                RlpItem::List(fields) => fields,
+                RlpItem::Bytes(_) => return Err(EthReceiptError::ExpectedReceiptList),
+            };
+            let body = decode_eth_receipt_body(&fields)?;
             Ok(EthReceiptRlp::Typed {
                 receipt_type,
                 payload: payload.to_vec(),
+                status_or_post_state: body.status_or_post_state,
+                cumulative_gas_used: body.cumulative_gas_used,
+                logs_bloom: Box::new(body.logs_bloom),
+                logs: body.logs,
             })
         }
     }
@@ -691,6 +711,16 @@ pub fn decode_eth_receipts_rlp(
 }
 
 fn decode_legacy_eth_receipt(fields: &[RlpItem]) -> Result<EthReceiptRlp, EthReceiptError> {
+    let body = decode_eth_receipt_body(fields)?;
+    Ok(EthReceiptRlp::Legacy {
+        status_or_post_state: body.status_or_post_state,
+        cumulative_gas_used: body.cumulative_gas_used,
+        logs_bloom: Box::new(body.logs_bloom),
+        logs: body.logs,
+    })
+}
+
+fn decode_eth_receipt_body(fields: &[RlpItem]) -> Result<EthReceiptBodyRlp, EthReceiptError> {
     if fields.len() != 4 {
         return Err(EthReceiptError::ReceiptFieldCount {
             found: fields.len(),
@@ -701,10 +731,10 @@ fn decode_legacy_eth_receipt(fields: &[RlpItem]) -> Result<EthReceiptRlp, EthRec
     if logs_bloom != eth_logs_bloom(&logs) {
         return Err(EthReceiptError::LogsBloomMismatch);
     }
-    Ok(EthReceiptRlp::Legacy {
+    Ok(EthReceiptBodyRlp {
         status_or_post_state: receipt_bytes(&fields[0], ReceiptField::StatusOrPostState)?.to_vec(),
         cumulative_gas_used: receipt_quantity_u64(&fields[1], ReceiptField::CumulativeGasUsed)?,
-        logs_bloom: Box::new(logs_bloom),
+        logs_bloom,
         logs,
     })
 }

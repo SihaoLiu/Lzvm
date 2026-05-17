@@ -2,11 +2,12 @@ use lzvm_artifacts::eth_block::{
     decode_eth_header_rlp, decode_eth_log_rlp, decode_eth_logs_rlp, decode_eth_receipt_rlp,
     decode_eth_receipts_rlp, decode_eth_transaction_rlp, decode_eth_transactions_rlp,
     decode_eth_withdrawal_rlp, decode_eth_withdrawals_rlp, eth_header_hash, eth_logs_bloom,
-    eth_ommers_hash, keccak256, parse_eth_block_rlp, EthBlockError, EthBlockRlp, EthLogError,
-    EthLogRlp, EthReceiptError, EthReceiptRlp, EthTransactionError, EthTransactionRlp,
-    EthWithdrawalError, EthWithdrawalRlp, HeaderField, LogField, ReceiptField, WithdrawalField,
+    eth_ommers_hash, eth_receipts_cumulative_gas_used, eth_receipts_logs_bloom, keccak256,
+    parse_eth_block_rlp, EthBlockError, EthBlockRlp, EthLogError, EthLogRlp, EthReceiptError,
+    EthReceiptRlp, EthTransactionError, EthTransactionRlp, EthWithdrawalError, EthWithdrawalRlp,
+    HeaderField, LogField, ReceiptField, WithdrawalField,
 };
-use lzvm_artifacts::rlp::RlpItem;
+use lzvm_artifacts::rlp::{encode_rlp, RlpItem};
 
 #[test]
 fn parses_block_body_with_transactions_and_ommers() {
@@ -355,8 +356,9 @@ fn rejects_malformed_logs() {
 }
 
 #[test]
-fn decodes_typed_receipt_envelopes_as_opaque_payloads() {
-    let receipt = RlpItem::Bytes(vec![2, 0xc0]);
+fn decodes_typed_receipt_envelopes() {
+    let payload = encode_rlp(&receipt_item());
+    let receipt = typed_receipt_item(2);
 
     let decoded = decode_eth_receipt_rlp(&receipt).expect("receipt should decode");
 
@@ -364,7 +366,11 @@ fn decodes_typed_receipt_envelopes_as_opaque_payloads() {
         decoded,
         EthReceiptRlp::Typed {
             receipt_type: 2,
-            payload: vec![0xc0],
+            payload,
+            status_or_post_state: vec![1],
+            cumulative_gas_used: 0x5208,
+            logs_bloom: Box::new(sample_logs_bloom()),
+            logs: vec![decoded_log_item()],
         }
     );
 }
@@ -378,8 +384,25 @@ fn rejects_malformed_typed_receipt_payloads() {
 }
 
 #[test]
+fn typed_receipts_contribute_to_receipt_summaries() {
+    let mut receipt = vec![2];
+    receipt.extend_from_slice(&encode_rlp(&receipt_item()));
+    let decoded = decode_eth_receipt_rlp(&RlpItem::Bytes(receipt)).expect("receipt should decode");
+
+    assert_eq!(
+        eth_receipts_logs_bloom(std::slice::from_ref(&decoded))
+            .expect("logs bloom should summarize"),
+        sample_logs_bloom()
+    );
+    assert_eq!(
+        eth_receipts_cumulative_gas_used(&[decoded]).expect("gas used should summarize"),
+        0x5208
+    );
+}
+
+#[test]
 fn decodes_receipt_lists() {
-    let receipts = vec![receipt_item(), RlpItem::Bytes(vec![3, 0xc0])];
+    let receipts = vec![receipt_item(), typed_receipt_item(3)];
 
     let decoded = decode_eth_receipts_rlp(&receipts).expect("receipts should decode");
 
@@ -566,6 +589,12 @@ fn receipt_item() -> RlpItem {
         RlpItem::Bytes(sample_logs_bloom().to_vec()),
         RlpItem::List(vec![log_item()]),
     ])
+}
+
+fn typed_receipt_item(receipt_type: u8) -> RlpItem {
+    let mut bytes = vec![receipt_type];
+    bytes.extend_from_slice(&encode_rlp(&receipt_item()));
+    RlpItem::Bytes(bytes)
 }
 
 fn log_item() -> RlpItem {
