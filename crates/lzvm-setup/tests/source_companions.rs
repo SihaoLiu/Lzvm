@@ -45,6 +45,7 @@ fn writes_source_companions_to_setup_directory_defaults() {
         working_dir: dir.clone(),
         include_paths: Vec::new(),
         include_path_first: false,
+        refresh_setup_directory_manifest: false,
         main_file: main_path,
         setup_dir: setup_dir.clone(),
     })

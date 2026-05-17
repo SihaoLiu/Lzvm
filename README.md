@@ -51,10 +51,10 @@ This is the public directory-level setup generation entry point. It reads reposi
 Write source-level setup companion artifacts into a setup directory:
 
 ```sh
-cargo run -p lzvm-cli -- setup write-source-companions [--include-path <dir>] [--include-path-first] <main-file> <setup-dir>
+cargo run -p lzvm-cli -- setup write-source-companions [--include-path <dir>] [--include-path-first] [--refresh-manifest] <main-file> <setup-dir>
 ```
 
-This command loads the source program, records the loaded source graph in the setup directory's source-program archive companion, and records fixed-file pragmas in the setup directory's source fixed-file manifest companion. `setup validate` and setup fingerprints include these companions when present.
+This command loads the source program, records the loaded source graph in the setup directory's source-program archive companion, and records fixed-file pragmas in the setup directory's source fixed-file manifest companion. `setup validate` and setup fingerprints include these companions when present. Pass `--refresh-manifest` to write the setup directory manifest in the same command even when it was not already present.
 
 Check proof and public-value artifact consistency:
 

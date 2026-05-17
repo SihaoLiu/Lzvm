@@ -17,6 +17,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
         include_paths: parsed.include_paths,
         include_path_first: parsed.include_path_first,
+        refresh_setup_directory_manifest: parsed.refresh_manifest,
         main_file: parsed.main_file,
         setup_dir: parsed.setup_dir,
     };
@@ -97,6 +98,7 @@ struct ParsedArgs {
     setup_dir: PathBuf,
     include_paths: Vec<PathBuf>,
     include_path_first: bool,
+    refresh_manifest: bool,
 }
 
 enum ParseError {
@@ -107,6 +109,7 @@ enum ParseError {
 fn parse_args(args: &[&str]) -> Result<ParsedArgs, ParseError> {
     let mut include_paths = Vec::new();
     let mut include_path_first = false;
+    let mut refresh_manifest = false;
     let mut positionals = Vec::new();
     let mut index = 0;
 
@@ -120,6 +123,7 @@ fn parse_args(args: &[&str]) -> Result<ParsedArgs, ParseError> {
                 include_paths.push(PathBuf::from(value));
             }
             "--include-path-first" => include_path_first = true,
+            "--refresh-manifest" => refresh_manifest = true,
             value if value.starts_with("--") => {
                 return Err(ParseError::Invalid(format!("unknown option {value}")));
             }
@@ -137,13 +141,14 @@ fn parse_args(args: &[&str]) -> Result<ParsedArgs, ParseError> {
         setup_dir: setup_dir.clone(),
         include_paths,
         include_path_first,
+        refresh_manifest,
     })
 }
 
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm setup write-source-companions [--include-path <dir>] [--include-path-first] <main-file> <setup-dir>"
+        "usage: lzvm setup write-source-companions [--include-path <dir>] [--include-path-first] [--refresh-manifest] <main-file> <setup-dir>"
     );
     2
 }

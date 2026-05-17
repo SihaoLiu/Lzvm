@@ -27,6 +27,7 @@ pub struct SourceCompanionWriteRequest {
     pub working_dir: PathBuf,
     pub include_paths: Vec<PathBuf>,
     pub include_path_first: bool,
+    pub refresh_setup_directory_manifest: bool,
     pub main_file: PathBuf,
     pub setup_dir: PathBuf,
 }
@@ -119,10 +120,11 @@ pub fn write_source_companions(
 
     let archive_output_path = request.setup_dir.join(SOURCE_PROGRAM_ARCHIVE_FILE);
     let manifest_output_path = request.setup_dir.join(SOURCE_FIXED_FILE_MANIFEST_FILE);
-    let refresh_manifest = request
-        .setup_dir
-        .join(SETUP_DIRECTORY_MANIFEST_FILE)
-        .is_file();
+    let refresh_manifest = request.refresh_setup_directory_manifest
+        || request
+            .setup_dir
+            .join(SETUP_DIRECTORY_MANIFEST_FILE)
+            .is_file();
     let archive_snapshot = if refresh_manifest {
         read_optional_file(&archive_output_path)?
     } else {
