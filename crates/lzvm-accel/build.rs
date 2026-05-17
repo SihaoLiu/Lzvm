@@ -3,6 +3,7 @@ use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-changed=native/cuda_field.cu");
+    println!("cargo:rerun-if-changed=native/cuda_field_constants.cuh");
     println!("cargo:rerun-if-changed=native/cuda_host.cpp");
     println!("cargo:rerun-if-changed=native/cuda_host.hpp");
     println!("cargo:rerun-if-env-changed=LZVM_CUDA_ARCH");
