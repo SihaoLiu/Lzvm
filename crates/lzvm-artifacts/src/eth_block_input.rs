@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fmt;
 
 use crate::eth_block::{
@@ -8,6 +9,7 @@ use crate::eth_block::{
 use crate::eth_trie::{
     transaction_trie_build, withdrawals_trie_build, IndexedTrieBuild, TrieHashPreimage,
 };
+use crate::rlp::{parse_rlp, RlpItem};
 use crate::sectioned::{
     encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
@@ -74,6 +76,10 @@ pub enum EthBlockInputError {
     MissingRootPreimage {
         trie: EthBlockInputTrie,
     },
+    MissingChildPreimage {
+        trie: EthBlockInputTrie,
+        index: usize,
+    },
     UnexpectedTrailingBytes {
         count: usize,
     },
@@ -126,6 +132,9 @@ impl fmt::Display for EthBlockInputError {
             }
             Self::MissingRootPreimage { trie } => {
                 write!(f, "ETH block input {trie} root preimage missing")
+            }
+            Self::MissingChildPreimage { trie, index } => {
+                write!(f, "ETH block input {trie} child preimage missing at {index}")
             }
             Self::UnexpectedTrailingBytes { count } => {
                 write!(f, "unexpected trailing bytes in ETH block input: {count}")
@@ -431,17 +440,91 @@ fn validate_preimages(
     root: [u8; 32],
     preimages: &[TrieHashPreimage],
 ) -> Result<(), EthBlockInputError> {
+    let hashes = preimages
+        .iter()
+        .map(|preimage| preimage.hash)
+        .collect::<BTreeSet<_>>();
     let mut root_found = false;
     for (index, preimage) in preimages.iter().enumerate() {
         if keccak256(&preimage.rlp) != preimage.hash {
             return Err(EthBlockInputError::PreimageHashMismatch { trie, index });
         }
         root_found |= preimage.hash == root;
+        validate_preimage_child_refs(trie, index, &preimage.rlp, &hashes)?;
     }
     if !root_found {
         return Err(EthBlockInputError::MissingRootPreimage { trie });
     }
     Ok(())
+}
+
+fn validate_preimage_child_refs(
+    trie: EthBlockInputTrie,
+    index: usize,
+    rlp: &[u8],
+    hashes: &BTreeSet<[u8; 32]>,
+) -> Result<(), EthBlockInputError> {
+    let item = parse_rlp(rlp).map_err(EthBlockError::from)?;
+    validate_node_child_refs(trie, index, &item, hashes)
+}
+
+fn validate_node_child_refs(
+    trie: EthBlockInputTrie,
+    index: usize,
+    item: &RlpItem,
+    hashes: &BTreeSet<[u8; 32]>,
+) -> Result<(), EthBlockInputError> {
+    let RlpItem::List(items) = item else {
+        return Ok(());
+    };
+
+    match items.as_slice() {
+        [RlpItem::Bytes(path), child] => {
+            if !compact_path_has_terminator(path)? {
+                validate_child_ref(trie, index, child, hashes)?;
+            }
+            Ok(())
+        }
+        items if items.len() == 17 => {
+            for child in &items[..16] {
+                validate_child_ref(trie, index, child, hashes)?;
+            }
+            Ok(())
+        }
+        _ => Err(EthBlockInputError::InvalidPreimageSection),
+    }
+}
+
+fn validate_child_ref(
+    trie: EthBlockInputTrie,
+    index: usize,
+    item: &RlpItem,
+    hashes: &BTreeSet<[u8; 32]>,
+) -> Result<(), EthBlockInputError> {
+    match item {
+        RlpItem::Bytes(bytes) if bytes.is_empty() => Ok(()),
+        RlpItem::Bytes(bytes) if bytes.len() == HASH_BYTES => {
+            let hash: [u8; 32] = bytes.as_slice().try_into().expect("length checked");
+            if hashes.contains(&hash) {
+                Ok(())
+            } else {
+                Err(EthBlockInputError::MissingChildPreimage { trie, index })
+            }
+        }
+        RlpItem::Bytes(_) => Err(EthBlockInputError::InvalidPreimageSection),
+        RlpItem::List(_) => validate_node_child_refs(trie, index, item, hashes),
+    }
+}
+
+fn compact_path_has_terminator(path: &[u8]) -> Result<bool, EthBlockInputError> {
+    let Some(first) = path.first() else {
+        return Err(EthBlockInputError::InvalidPreimageSection);
+    };
+    let flag = first >> 4;
+    if flag > 3 {
+        return Err(EthBlockInputError::InvalidPreimageSection);
+    }
+    Ok(flag & 2 != 0)
 }
 
 struct Reader<'a> {

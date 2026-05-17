@@ -2,6 +2,8 @@ use lzvm_artifacts::eth_block_input::{
     build_eth_block_input, encode_eth_block_input, parse_eth_block_input, EthBlockInputError,
     EthBlockInputTrie,
 };
+use lzvm_artifacts::eth_trie::transaction_trie_build;
+use lzvm_artifacts::rlp::parse_rlp;
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
 
 const ETH_BLOCK_INPUT_KIND: [u8; 4] = *b"ethi";
@@ -143,6 +145,47 @@ fn rejects_missing_transaction_root_preimages() {
             trie: EthBlockInputTrie::Transactions,
         }
     ));
+}
+
+#[test]
+fn rejects_missing_transaction_child_preimages() {
+    let transaction_items = vec![rlp_bytes(&[1; 40]), rlp_bytes(&[2; 40])];
+    let transactions = transaction_items
+        .iter()
+        .map(|item| parse_rlp(item).expect("transaction item should parse"))
+        .collect::<Vec<_>>();
+    let trie = transaction_trie_build(&transactions).expect("transaction trie should build");
+    let block_rlp = sample_block_rlp_with_transactions(trie.root, transaction_items);
+    let input = build_eth_block_input(&block_rlp).expect("block input should build");
+    assert!(
+        input.transactions.hash_preimages.len() > 2,
+        "fixture should contain child preimages"
+    );
+    let encoded = encode_eth_block_input(&input).expect("block input should encode");
+    let mut file = parse_sectioned_file(&encoded, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION)
+        .expect("sectioned input should parse");
+    let transaction_preimages = file
+        .sections
+        .iter_mut()
+        .find(|section| section.id == TRANSACTION_PREIMAGES_SECTION_ID)
+        .expect("transaction preimage section should exist");
+    let retained = input
+        .transactions
+        .hash_preimages
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != 1)
+        .map(|(_, preimage)| (preimage.hash, preimage.rlp.clone()))
+        .collect::<Vec<_>>();
+    transaction_preimages.data = encode_preimage_section(&retained);
+    let encoded = encode_sectioned_file(&file).expect("sectioned input should encode");
+
+    let error = parse_eth_block_input(&encoded).expect_err("block input should fail");
+
+    assert_eq!(
+        error.to_string(),
+        "ETH block input transactions child preimage missing at 0"
+    );
 }
 
 #[test]
