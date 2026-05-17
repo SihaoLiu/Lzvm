@@ -4769,6 +4769,7 @@ fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
         "program_image_cache_constraint_system_digest={}\n",
         format_hash(&expected_cache.constraint_system_digest)
     )));
+    assert!(verify_stdout_text.contains("program_image_cache_tree_root=11,12,13,14\n"));
     assert!(verify_stdout_text.contains("program_image_cache_trace_rows=1024\n"));
     assert!(verify_stdout_text.contains("program_image_cache_trace_columns=17\n"));
     assert!(verify_stdout_text.contains("program_image_cache_blowup_factor=8\n"));

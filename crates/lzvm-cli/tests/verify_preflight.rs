@@ -283,6 +283,7 @@ fn verifies_preflight_reports_program_image_cache_segments() {
                 "program_image_cache_program_digest={}\n",
                 "program_image_cache_source_image_digest={}\n",
                 "program_image_cache_constraint_system_digest={}\n",
+                "program_image_cache_tree_root=1,2,3,4\n",
                 "program_image_cache_trace_rows=1024\n",
                 "program_image_cache_trace_columns=17\n",
                 "program_image_cache_blowup_factor=8\n",

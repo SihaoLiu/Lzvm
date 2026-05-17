@@ -34,6 +34,11 @@ pub(crate) fn write_program_image_cache_fields(
     );
     let _ = writeln!(
         stdout,
+        "program_image_cache_tree_root={}",
+        format_program_image_tree_root(cache.tree_root)
+    );
+    let _ = writeln!(
+        stdout,
         "program_image_cache_trace_rows={}",
         cache.trace_row_count
     );
@@ -64,4 +69,11 @@ fn format_program_image_gpu_mode(mode: ProgramImageGpuMode) -> &'static str {
         ProgramImageGpuMode::Cpu => "cpu",
         ProgramImageGpuMode::Cuda => "cuda",
     }
+}
+
+fn format_program_image_tree_root(root: [u64; 4]) -> String {
+    root.iter()
+        .map(u64::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
 }
