@@ -29,6 +29,20 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     };
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "bytes_written={}", report.bytes_written);
+    let _ = writeln!(stdout, "sources={}", report.source_count);
+    let _ = writeln!(stdout, "edges={}", report.edge_count);
+    let _ = writeln!(stdout, "modules={}", report.module_count);
+    let _ = writeln!(
+        stdout,
+        "fixed_file_pragmas={}",
+        report.fixed_file_pragma_count
+    );
+    let _ = writeln!(
+        stdout,
+        "air_template_fixed_file_pragmas={}",
+        report.air_template_fixed_file_pragma_count
+    );
+    let _ = writeln!(stdout, "air_units={}", report.air_unit_count);
     let _ = writeln!(stdout, "output={}", report.output_path.display());
     0
 }

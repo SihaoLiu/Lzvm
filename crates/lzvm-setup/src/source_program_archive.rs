@@ -22,6 +22,10 @@ pub struct SourceProgramArchiveWriteReport {
     pub bytes_written: u64,
     pub source_count: usize,
     pub edge_count: usize,
+    pub module_count: usize,
+    pub fixed_file_pragma_count: usize,
+    pub air_template_fixed_file_pragma_count: usize,
+    pub air_unit_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +83,18 @@ pub fn write_source_program_archive(
     let program = loader
         .load_main(&request.main_file)
         .map_err(SourceProgramArchiveWriteError::SourceProgram)?;
+    let module_count = program.modules.len();
+    let fixed_file_pragma_count = program
+        .modules
+        .iter()
+        .map(|module| module.fixed_file_pragmas.len())
+        .sum();
+    let air_template_fixed_file_pragma_count = program
+        .modules
+        .iter()
+        .map(|module| module.air_template_fixed_file_pragmas.len())
+        .sum();
+    let air_unit_count = program.air_units().len();
     let archive = build_source_program_archive(&program)
         .map_err(SourceProgramArchiveWriteError::ArchiveBuild)?;
     let bytes = encode_source_program_archive(&archive)
@@ -97,6 +113,10 @@ pub fn write_source_program_archive(
         bytes_written,
         source_count: archive.sources.len(),
         edge_count: archive.edges.len(),
+        module_count,
+        fixed_file_pragma_count,
+        air_template_fixed_file_pragma_count,
+        air_unit_count,
     })
 }
 

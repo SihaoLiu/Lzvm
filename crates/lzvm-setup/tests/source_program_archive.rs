@@ -26,7 +26,13 @@ fn writes_source_program_archives_from_setup_requests() {
     let output_path = dir.join("source-program.bin");
     write_file(
         &main_path,
-        "include \"shared.pil\";\ncontainer air.main;\ncol witness main.trace;",
+        "include \"shared.pil\";\n\
+         container air.main;\n\
+         airtemplate Main() {\n\
+             #pragma output_fixed_file `${AIR_NAME}.fixed`\n\
+         }\n\
+         airgroup Main { Main(); Main() alias Second; }\n\
+         col witness main.trace;",
     );
     write_file(&child_path, "col fixed shared = [1, 2];");
 
@@ -49,6 +55,10 @@ fn writes_source_program_archives_from_setup_requests() {
     assert_eq!(report.bytes_written, bytes_written);
     assert_eq!(report.source_count, 2);
     assert_eq!(report.edge_count, 1);
+    assert_eq!(report.module_count, 2);
+    assert_eq!(report.fixed_file_pragma_count, 1);
+    assert_eq!(report.air_template_fixed_file_pragma_count, 1);
+    assert_eq!(report.air_unit_count, 2);
     assert_eq!(archive.sources.len(), 2);
     assert_eq!(archive.edges.len(), 1);
 

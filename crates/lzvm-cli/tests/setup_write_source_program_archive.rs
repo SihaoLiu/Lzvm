@@ -52,7 +52,7 @@ fn writes_source_program_archive_through_setup_namespace() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nbytes_written={}\noutput={}\n",
+            "status=ok\nbytes_written={}\nsources=2\nedges=1\nmodules=2\nfixed_file_pragmas=0\nair_template_fixed_file_pragmas=0\nair_units=0\noutput={}\n",
             bytes_written,
             output_path.display()
         )

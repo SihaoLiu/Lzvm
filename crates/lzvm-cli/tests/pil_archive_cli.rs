@@ -24,7 +24,15 @@ fn writes_source_program_archive_from_static_sources() {
     let main_path = dir.join("main.pil");
     let child_path = dir.join("shared.pil");
     let output_path = dir.join("source-program.bin");
-    write_file(&main_path, "include \"shared.pil\";\ncontainer air.main;");
+    write_file(
+        &main_path,
+        "include \"shared.pil\";\n\
+         container air.main;\n\
+         airtemplate Main() {\n\
+             #pragma output_fixed_file `${AIR_NAME}.fixed`\n\
+         }\n\
+         airgroup Main { Main(); }",
+    );
     write_file(&child_path, "col fixed shared = [1, 2];");
 
     let mut stdout = Vec::new();
@@ -49,7 +57,7 @@ fn writes_source_program_archive_from_static_sources() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nbytes_written={}\noutput={}\n",
+            "status=ok\nbytes_written={}\nsources=2\nedges=1\nmodules=2\nfixed_file_pragmas=1\nair_template_fixed_file_pragmas=1\nair_units=1\noutput={}\n",
             bytes_written,
             output_path.display()
         )
