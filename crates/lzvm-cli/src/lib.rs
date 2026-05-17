@@ -695,6 +695,13 @@ fn verify_preflight(
             if let Some(gas_used) = report.eth_block_input_gas_used_values.get(index) {
                 let _ = writeln!(stdout, "eth_gas_used={gas_used}");
             }
+            if let Some(base_fee_per_gas) = report.eth_block_input_base_fees_per_gas.get(index) {
+                let _ = writeln!(
+                    stdout,
+                    "eth_base_fee_per_gas={}",
+                    format_optional_u256(base_fee_per_gas.as_ref())
+                );
+            }
             write_eth_transaction_preimage_summary(
                 stdout,
                 report
@@ -977,6 +984,7 @@ struct EthBlockInputBinding {
     extra_data: Vec<u8>,
     gas_limit: u64,
     gas_used: u64,
+    base_fee_per_gas: Option<[u8; 32]>,
     transaction_preimage_count: usize,
     legacy_transaction_count: usize,
     typed_transaction_count: usize,
@@ -1114,6 +1122,15 @@ fn verify_setup_validation(
                 if let Some(gas_used) = public_report.eth_block_input_gas_used_values.get(index) {
                     let _ = writeln!(stdout, "eth_gas_used={gas_used}");
                 }
+                if let Some(base_fee_per_gas) =
+                    public_report.eth_block_input_base_fees_per_gas.get(index)
+                {
+                    let _ = writeln!(
+                        stdout,
+                        "eth_base_fee_per_gas={}",
+                        format_optional_u256(base_fee_per_gas.as_ref())
+                    );
+                }
                 write_eth_transaction_preimage_summary(
                     stdout,
                     public_report
@@ -1229,6 +1246,11 @@ fn verify_setup_validation(
         );
         let _ = writeln!(stdout, "eth_gas_limit={}", binding.gas_limit);
         let _ = writeln!(stdout, "eth_gas_used={}", binding.gas_used);
+        let _ = writeln!(
+            stdout,
+            "eth_base_fee_per_gas={}",
+            format_optional_u256(binding.base_fee_per_gas.as_ref())
+        );
         write_eth_transaction_preimage_summary(stdout, binding.transaction_preimage_count);
         write_eth_transaction_count_summary(
             stdout,
@@ -1334,6 +1356,7 @@ fn verify_eth_block_input_binding(
         extra_data: input.extra_data,
         gas_limit: input.gas_limit,
         gas_used: input.gas_used,
+        base_fee_per_gas: input.base_fee_per_gas,
         transaction_preimage_count,
         legacy_transaction_count,
         typed_transaction_count,
@@ -1369,6 +1392,13 @@ fn format_u256(bytes: &[u8; 32]) -> String {
     match bytes.iter().position(|byte| *byte != 0) {
         Some(index) => format_bytes_hex(&bytes[index..]),
         None => "0".to_owned(),
+    }
+}
+
+fn format_optional_u256(value: Option<&[u8; 32]>) -> String {
+    match value {
+        Some(bytes) => format_u256(bytes),
+        None => "absent".to_owned(),
     }
 }
 
