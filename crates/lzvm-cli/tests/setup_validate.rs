@@ -4701,6 +4701,7 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
     let block_input_bytes =
         encode_eth_block_input(&block_input).expect("block input should encode");
+    let block_input_hash = eth_block_input_bytes_digest(&block_input_bytes);
     let other_block_input =
         build_eth_block_input(&sample_block_rlp_variant()).expect("block input should build");
     let other_block_input_bytes =
@@ -4882,7 +4883,10 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     assert!(verify_stderr.is_empty());
     assert!(String::from_utf8(verify_stdout)
         .expect("verify stdout should be utf-8")
-        .contains("eth_block_inputs=1\neth_block_input_match=ok\n"));
+        .contains(&format!(
+            "eth_block_inputs=1\neth_block_input_hash={}\neth_block_input_match=ok\n",
+            format_hash(&block_input_hash)
+        )));
     assert_eq!(mismatch_code, 1);
     assert_eq!(
         String::from_utf8(mismatch_stderr).expect("mismatch stderr should be utf-8"),

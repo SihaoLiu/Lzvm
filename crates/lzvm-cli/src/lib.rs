@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use lzvm_artifacts::challenge_values_segment::{
     encode_challenge_values_segment, ChallengeValuesSegment,
 };
-use lzvm_artifacts::eth_block_input::parse_eth_block_input;
+use lzvm_artifacts::eth_block_input::{eth_block_input_bytes_digest, parse_eth_block_input};
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
@@ -812,15 +812,17 @@ fn verify_setup_validation(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    if let Some(path) = eth_block_input {
+    let eth_block_input_hash = if let Some(path) = eth_block_input {
         match verify_eth_block_input_binding(proof_bin, public_values_path, path) {
-            Ok(()) => {}
+            Ok(hash) => Some(hash),
             Err(message) => {
                 let _ = writeln!(stderr, "{role} failed: {message}");
                 return 1;
             }
         }
-    }
+    } else {
+        None
+    };
     let public_report =
         match validate_setup_preflight_from_files(setup_dir, proof_bin, public_values_path) {
             Ok(report) => report,
@@ -858,7 +860,12 @@ fn verify_setup_validation(
             public_report.eth_block_input_count
         );
     }
-    if eth_block_input.is_some() {
+    if let Some(hash) = eth_block_input_hash {
+        let _ = writeln!(
+            stdout,
+            "eth_block_input_hash={}",
+            prove_plan::format_hash(&hash)
+        );
         let _ = writeln!(stdout, "eth_block_input_match=ok");
     }
     0
@@ -868,11 +875,12 @@ fn verify_eth_block_input_binding(
     proof_bin: &str,
     public_values_path: &str,
     input_path: &str,
-) -> Result<(), String> {
+) -> Result<[u8; 32], String> {
     let proof = read_proof_artifact_file(proof_bin)
         .map_err(|error| format!("read proof artifact failed: {proof_bin}: {error}"))?;
     let input_bytes = std::fs::read(input_path)
         .map_err(|error| format!("read ETH block input failed: {input_path}: {error}"))?;
+    let input_hash = eth_block_input_bytes_digest(&input_bytes);
     let input = parse_eth_block_input(&input_bytes)
         .map_err(|error| format!("ETH block input failed: {input_path}: {error}"))?;
     let expected = encode_eth_block_input_segment(&input)
@@ -888,7 +896,7 @@ fn verify_eth_block_input_binding(
     let public_values = read_public_values_file(public_values_path)
         .map_err(|error| format!("read public-values failed: {public_values_path}: {error}"))?;
     validate_eth_block_public_values(&input, &public_values).map_err(|error| error.to_string())?;
-    Ok(())
+    Ok(input_hash)
 }
 
 fn validate_setup_directory(
