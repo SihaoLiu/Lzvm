@@ -1,4 +1,4 @@
-use lzvm_artifacts::constant_tree::parse_constant_tree_bytes;
+use lzvm_artifacts::constant_tree::{parse_constant_tree_bytes, ConstantTreeError};
 use lzvm_artifacts::constraint_program::{
     encode_global_constraint_program, encode_regular_constraint_program, ConstraintEntry,
     ConstraintProgram, GlobalConstraintProgram,
@@ -18,8 +18,10 @@ use lzvm_artifacts::key_directory::{
     read_key_directory_layout, validate_key_directory_layout, KeyDirectoryError, KeyUnitKind,
     KeyUnitPaths,
 };
-use lzvm_artifacts::pcs_material::{build_pcs_setup_material, encode_pcs_setup_material};
-use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, encode_pcs_setup_plan};
+use lzvm_artifacts::pcs_material::{
+    build_pcs_setup_material, encode_pcs_setup_material, PcsSetupMaterialError,
+};
+use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, encode_pcs_setup_plan, PcsPlanError};
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
 use lzvm_artifacts::setup_info::{encode_unit_setup_info, UnitSetupInfo};
 use lzvm_artifacts::source_fixed_file_manifest::{
@@ -838,6 +840,50 @@ fn reads_key_directory_catalog_constant_tree_roots_when_present() {
 }
 
 #[test]
+fn rejects_constant_tree_directory_paths() {
+    let dir = temp_dir("catalog-constant-tree-directory");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    fs::create_dir_all(&layout.units[0].constant_tree)
+        .expect("constant tree directory should be created");
+
+    let error = read_key_directory_catalog(&dir).expect_err("catalog should reject directory");
+
+    assert!(matches!(
+        error,
+        KeyDirectoryError::ConstantTree(ConstantTreeError::Io { .. })
+    ));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_pcs_setup_plan_directory_paths() {
+    let dir = temp_dir("catalog-pcs-plan-directory");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    let plan_path = layout.units[0]
+        .pcs_setup_plan()
+        .expect("PCS setup plan path should derive");
+    fs::create_dir_all(&plan_path).expect("PCS setup plan directory should be created");
+
+    let error = read_key_directory_catalog(&dir).expect_err("catalog should reject directory");
+
+    assert!(matches!(
+        error,
+        KeyDirectoryError::PcsPlan(PcsPlanError::Io { .. })
+    ));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn reads_key_directory_catalog_pcs_setup_materials_when_present() {
     let dir = temp_dir("catalog-pcs-material");
     let _ = fs::remove_dir_all(&dir);
@@ -856,6 +902,29 @@ fn reads_key_directory_catalog_pcs_setup_materials_when_present() {
         .units
         .iter()
         .all(|unit| unit.pcs_material_bytes == Some(material_bytes)));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_pcs_setup_material_directory_paths() {
+    let dir = temp_dir("catalog-pcs-material-directory");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    let material_path = layout.units[0]
+        .pcs_setup_material()
+        .expect("PCS setup material path should derive");
+    fs::create_dir_all(&material_path).expect("PCS setup material directory should be created");
+
+    let error = read_key_directory_catalog(&dir).expect_err("catalog should reject directory");
+
+    assert!(matches!(
+        error,
+        KeyDirectoryError::PcsMaterial(PcsSetupMaterialError::Io { .. })
+    ));
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 

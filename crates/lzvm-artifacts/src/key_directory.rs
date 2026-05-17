@@ -701,13 +701,17 @@ fn read_global_info_path(paths: &GlobalKeyPaths) -> Result<GlobalInfo, KeyDirect
     read_global_info_binary_file(&paths.info).map_err(KeyDirectoryError::GlobalInfo)
 }
 
+fn optional_path_exists(path: &Path, role: &'static str) -> Result<bool, KeyDirectoryError> {
+    path.try_exists().map_err(|error| KeyDirectoryError::Io {
+        role,
+        message: error.to_string(),
+    })
+}
+
 fn read_source_fixed_file_manifest_if_present(
     path: &Path,
 ) -> Result<Option<SourceFixedFileManifest>, KeyDirectoryError> {
-    if !path.try_exists().map_err(|error| KeyDirectoryError::Io {
-        role: "source fixed-file manifest",
-        message: error.to_string(),
-    })? {
+    if !optional_path_exists(path, "source fixed-file manifest")? {
         return Ok(None);
     }
     read_source_fixed_file_manifest_file(path)
@@ -718,10 +722,7 @@ fn read_source_fixed_file_manifest_if_present(
 fn read_source_program_archive_if_present(
     path: &Path,
 ) -> Result<Option<SourceProgramArchive>, KeyDirectoryError> {
-    if !path.try_exists().map_err(|error| KeyDirectoryError::Io {
-        role: "source program archive",
-        message: error.to_string(),
-    })? {
+    if !optional_path_exists(path, "source program archive")? {
         return Ok(None);
     }
     read_source_program_archive_file(path)
@@ -900,7 +901,7 @@ fn read_key_unit_catalog_entry(
     }
 
     let (constant_tree_present, constant_tree_bytes, constant_tree_root) =
-        if paths.constant_tree.is_file() {
+        if optional_path_exists(&paths.constant_tree, "constant tree")? {
             let tree = read_constant_tree_file(&paths.constant_tree, &metadata.setup)?;
             let root = tree.root()?;
             if root != verification_key {
@@ -950,7 +951,7 @@ fn validate_pcs_setup_plan_companion(
     let Some(path) = paths.pcs_setup_plan() else {
         return Ok(());
     };
-    if !path.is_file() {
+    if !optional_path_exists(&path, "PCS setup plan")? {
         return Ok(());
     }
     let found = read_pcs_setup_plan_file(&path)?;
@@ -971,7 +972,7 @@ fn read_pcs_setup_material_companion(
     let Some(path) = paths.pcs_setup_material() else {
         return Ok((false, None, None));
     };
-    if !path.is_file() {
+    if !optional_path_exists(&path, "PCS setup material")? {
         return Ok((false, None, None));
     }
 
