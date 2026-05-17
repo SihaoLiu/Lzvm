@@ -3,6 +3,18 @@ use lzvm_artifacts::pcs_proof_values_segment::{
     PcsProofValuesSegmentError,
 };
 
+fn segment_header(value_count: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"pvs0");
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, value_count);
+    bytes
+}
+
+fn push_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
 #[test]
 fn encodes_and_parses_pcs_proof_values_segments() {
     let segment = PcsProofValuesSegment {
@@ -35,7 +47,15 @@ fn rejects_truncated_pcs_proof_values_segments() {
 
     assert!(matches!(
         parse_pcs_proof_values_segment(&bytes),
-        Err(PcsProofValuesSegmentError::UnexpectedEof { .. })
+        Err(PcsProofValuesSegmentError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_value_count_that_exceeds_remaining_extensions() {
+    assert!(matches!(
+        parse_pcs_proof_values_segment(&segment_header(1)),
+        Err(PcsProofValuesSegmentError::LengthOverflow)
     ));
 }
 
