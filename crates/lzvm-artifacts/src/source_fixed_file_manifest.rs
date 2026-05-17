@@ -43,6 +43,10 @@ pub struct SourceFixedFileManifest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceFixedFileManifestError {
     Sectioned(SectionedError),
+    UnsupportedVersion {
+        found: u32,
+        expected: u32,
+    },
     InvalidSectionCount {
         found: u32,
     },
@@ -110,6 +114,10 @@ impl fmt::Display for SourceFixedFileManifestError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Sectioned(error) => write!(f, "source fixed file manifest container error: {error}"),
+            Self::UnsupportedVersion { found, expected } => write!(
+                f,
+                "unsupported source fixed file manifest version {found}, expected {expected}"
+            ),
             Self::InvalidSectionCount { found } => {
                 write!(f, "invalid source fixed file manifest section count {found}")
             }
@@ -188,7 +196,8 @@ impl std::error::Error for SourceFixedFileManifestError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Sectioned(error) => Some(error),
-            Self::InvalidSectionCount { .. }
+            Self::UnsupportedVersion { .. }
+            | Self::InvalidSectionCount { .. }
             | Self::InvalidSectionId { .. }
             | Self::InvalidKind { .. }
             | Self::InvalidBoolean { .. }
@@ -240,6 +249,13 @@ pub fn parse_source_fixed_file_manifest(
         SOURCE_FIXED_FILE_MANIFEST_KIND,
         SOURCE_FIXED_FILE_MANIFEST_VERSION,
     )?;
+    if file.version != SOURCE_FIXED_FILE_MANIFEST_VERSION {
+        return Err(SourceFixedFileManifestError::UnsupportedVersion {
+            found: file.version,
+            expected: SOURCE_FIXED_FILE_MANIFEST_VERSION,
+        });
+    }
+
     if file.sections.len() != 1 {
         return Err(SourceFixedFileManifestError::InvalidSectionCount {
             found: u32::try_from(file.sections.len()).unwrap_or(u32::MAX),

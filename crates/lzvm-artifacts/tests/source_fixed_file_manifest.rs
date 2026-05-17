@@ -61,6 +61,29 @@ fn encodes_and_parses_source_fixed_file_manifests() {
 }
 
 #[test]
+fn rejects_unsupported_source_fixed_file_manifest_versions() {
+    let encoded =
+        encode_source_fixed_file_manifest(&sample_manifest()).expect("manifest should encode");
+    let parsed = lzvm_artifacts::sectioned::parse_sectioned_file(&encoded, *b"sffm", 1)
+        .expect("sectioned manifest should parse");
+    let encoded = encode_sectioned_file(&SectionedFile {
+        kind: *b"sffm",
+        version: 0,
+        sections: parsed.sections,
+    })
+    .expect("sectioned manifest should encode");
+
+    assert_eq!(
+        parse_source_fixed_file_manifest(&encoded)
+            .expect_err("unsupported manifest version should reject"),
+        SourceFixedFileManifestError::UnsupportedVersion {
+            found: 0,
+            expected: 1,
+        }
+    );
+}
+
+#[test]
 fn reads_source_fixed_file_manifests_from_file_paths() {
     let path = temp_file("manifest.bin");
     let _ = fs::remove_file(&path);
