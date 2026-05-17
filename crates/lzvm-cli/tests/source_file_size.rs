@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const MAX_SOURCE_LINES: usize = 1_800;
+const MAX_SOURCE_LINES: usize = 1_300;
 
 #[test]
 fn production_rust_sources_stay_under_size_limit() {
