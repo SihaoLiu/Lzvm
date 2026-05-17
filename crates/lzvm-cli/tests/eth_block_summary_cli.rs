@@ -1,0 +1,203 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use lzvm_cli::run_cli;
+
+fn temp_dir(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "lzvm-eth-block-summary-cli-{}-{name}",
+        std::process::id()
+    ))
+}
+
+fn write_bytes(path: &Path, bytes: impl AsRef<[u8]>) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).expect("parent directory should be created");
+    }
+    fs::write(path, bytes).expect("fixture bytes should be written");
+}
+
+#[test]
+fn summarizes_binary_block_rlp() {
+    let dir = temp_dir("binary");
+    let _ = fs::remove_dir_all(&dir);
+    let block_path = dir.join("block.rlp");
+    let block_rlp = sample_block_rlp();
+    write_bytes(&block_path, &block_rlp);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "block-summary",
+            block_path.to_str().expect("block path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nbytes={}\nheader_fields=15\nblock_number=2\ntimestamp=101\ntransactions=1\nommers=0\nwithdrawals=absent\nextra_body_fields=0\nextra_header_fields=0\n",
+            block_rlp.len()
+        )
+    );
+}
+
+#[test]
+fn summarizes_hex_block_rlp() {
+    let dir = temp_dir("hex");
+    let _ = fs::remove_dir_all(&dir);
+    let block_path = dir.join("block.hex");
+    let block_rlp = sample_block_rlp();
+    write_bytes(&block_path, format!("0x{}\n", to_hex(&block_rlp)));
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "block-summary",
+            "--hex",
+            block_path.to_str().expect("block path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .starts_with("status=ok\n"));
+}
+
+#[test]
+fn reports_usage_for_missing_block_summary_input() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(&["eth", "block-summary"], &mut stdout, &mut stderr);
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "usage: lzvm eth block-summary [--hex] <block-rlp>\n"
+    );
+}
+
+#[test]
+fn rejects_invalid_hex_block_summary_input() {
+    let dir = temp_dir("invalid-hex");
+    let _ = fs::remove_dir_all(&dir);
+    let block_path = dir.join("block.hex");
+    write_bytes(&block_path, b"0xz1");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "block-summary",
+            "--hex",
+            block_path.to_str().expect("block path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "eth block summary failed: invalid hex digit at offset 2: z\n"
+    );
+}
+
+fn sample_block_rlp() -> Vec<u8> {
+    let header_rlp = rlp_list(&legacy_header_items());
+    let transaction = rlp_bytes(&[0x01]);
+    let transactions = rlp_list(&[transaction]);
+    let empty_list = rlp_list(&[]);
+    rlp_list(&[header_rlp, transactions, empty_list])
+}
+
+fn legacy_header_items() -> Vec<Vec<u8>> {
+    vec![
+        rlp_bytes(&[0x11; 32]),
+        rlp_bytes(&[0x22; 32]),
+        rlp_bytes(&[0x33; 20]),
+        rlp_bytes(&[0x44; 32]),
+        rlp_bytes(&[0x55; 32]),
+        rlp_bytes(&[0x66; 32]),
+        rlp_bytes(&[0x77; 256]),
+        rlp_bytes(&[0x01]),
+        rlp_bytes(&[0x02]),
+        rlp_bytes(&[0x0f, 0x42, 0x40]),
+        rlp_bytes(&[0x0d, 0xbb, 0xa0]),
+        rlp_bytes(&[0x65]),
+        rlp_bytes(b"lzvm"),
+        rlp_bytes(&[0xaa; 32]),
+        rlp_bytes(&[0xbb; 8]),
+    ]
+}
+
+fn rlp_bytes(payload: &[u8]) -> Vec<u8> {
+    if payload.len() == 1 && payload[0] <= 0x7f {
+        return vec![payload[0]];
+    }
+    rlp_with_payload(0x80, 0xb7, payload)
+}
+
+fn rlp_list(items: &[Vec<u8>]) -> Vec<u8> {
+    let payload = items.iter().flatten().copied().collect::<Vec<_>>();
+    rlp_with_payload(0xc0, 0xf7, &payload)
+}
+
+fn rlp_with_payload(short_base: u8, long_base: u8, payload: &[u8]) -> Vec<u8> {
+    if payload.len() <= 55 {
+        let mut output = vec![short_base + payload.len() as u8];
+        output.extend_from_slice(payload);
+        return output;
+    }
+
+    let length = length_bytes(payload.len());
+    let mut output = vec![long_base + length.len() as u8];
+    output.extend_from_slice(&length);
+    output.extend_from_slice(payload);
+    output
+}
+
+fn length_bytes(mut value: usize) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    while value > 0 {
+        bytes.push((value & 0xff) as u8);
+        value >>= 8;
+    }
+    bytes.reverse();
+    bytes
+}
+
+fn to_hex(bytes: &[u8]) -> String {
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push(hex_char(byte >> 4));
+        output.push(hex_char(byte & 0x0f));
+    }
+    output
+}
+
+fn hex_char(value: u8) -> char {
+    match value {
+        0..=9 => char::from(b'0' + value),
+        10..=15 => char::from(b'a' + value - 10),
+        _ => unreachable!("hex nybble should be in range"),
+    }
+}
