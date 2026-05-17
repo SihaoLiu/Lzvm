@@ -35,6 +35,7 @@ pub struct ProofPreflightReport {
     pub program_image_cache_hashes: Vec<[u8; 32]>,
     pub eth_block_input_count: usize,
     pub eth_block_input_hashes: Vec<[u8; 32]>,
+    pub eth_block_input_byte_counts: Vec<usize>,
     pub eth_block_input_block_rlp_byte_counts: Vec<usize>,
     pub eth_block_input_block_hashes: Vec<[u8; 32]>,
     pub eth_block_input_parent_hashes: Vec<[u8; 32]>,
@@ -206,6 +207,7 @@ pub fn validate_proof_public_values(
     }
     let program_image_cache_count = program_image_caches.len();
     let mut eth_block_input_hashes = Vec::new();
+    let mut eth_block_input_byte_counts = Vec::new();
     let mut eth_block_input_block_rlp_byte_counts = Vec::new();
     let mut eth_block_input_block_hashes = Vec::new();
     let mut eth_block_input_parent_hashes = Vec::new();
@@ -247,6 +249,7 @@ pub fn validate_proof_public_values(
         .filter(|segment| segment.id == ETH_BLOCK_INPUT_SEGMENT_ID)
     {
         eth_block_input_hashes.push(eth_block_input_bytes_digest(&segment.data));
+        eth_block_input_byte_counts.push(segment.data.len());
         let input = parse_eth_block_input_segment(&segment.data)
             .map_err(ProofPreflightError::EthBlockInput)?;
         eth_block_input_block_rlp_byte_counts.push(input.block_rlp.len());
@@ -309,6 +312,7 @@ pub fn validate_proof_public_values(
         program_image_cache_hashes,
         eth_block_input_count,
         eth_block_input_hashes,
+        eth_block_input_byte_counts,
         eth_block_input_block_rlp_byte_counts,
         eth_block_input_block_hashes,
         eth_block_input_parent_hashes,

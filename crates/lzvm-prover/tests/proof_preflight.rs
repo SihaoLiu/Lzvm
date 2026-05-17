@@ -170,6 +170,7 @@ fn validates_proof_public_value_preflight_hashes() {
             program_image_cache_hashes: Vec::new(),
             eth_block_input_count: 0,
             eth_block_input_hashes: Vec::new(),
+            eth_block_input_byte_counts: Vec::new(),
             eth_block_input_block_rlp_byte_counts: Vec::new(),
             eth_block_input_block_hashes: Vec::new(),
             eth_block_input_parent_hashes: Vec::new(),
@@ -294,6 +295,12 @@ fn counts_eth_block_input_segments() {
         .expect("proof and public values should match");
 
     assert_eq!(report.eth_block_input_count, 1);
+    assert_eq!(
+        report.eth_block_input_byte_counts,
+        vec![encode_eth_block_input_segment(&block_input)
+            .expect("segment should encode")
+            .len()]
+    );
     assert_eq!(
         report.eth_block_input_block_rlp_byte_counts,
         vec![block_input.block_rlp.len()]
