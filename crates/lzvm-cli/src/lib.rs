@@ -677,6 +677,9 @@ fn verify_preflight(
             if let Some(logs_bloom) = report.eth_block_input_logs_blooms.get(index) {
                 let _ = writeln!(stdout, "eth_logs_bloom={}", format_bytes_hex(logs_bloom));
             }
+            if let Some(difficulty) = report.eth_block_input_difficulties.get(index) {
+                let _ = writeln!(stdout, "eth_difficulty={}", format_u256(difficulty));
+            }
             write_eth_transaction_preimage_summary(
                 stdout,
                 report
@@ -953,6 +956,7 @@ struct EthBlockInputBinding {
     state_root: [u8; 32],
     receipts_root: [u8; 32],
     logs_bloom: [u8; 256],
+    difficulty: [u8; 32],
     transaction_preimage_count: usize,
     legacy_transaction_count: usize,
     typed_transaction_count: usize,
@@ -1072,6 +1076,9 @@ fn verify_setup_validation(
                 if let Some(logs_bloom) = public_report.eth_block_input_logs_blooms.get(index) {
                     let _ = writeln!(stdout, "eth_logs_bloom={}", format_bytes_hex(logs_bloom));
                 }
+                if let Some(difficulty) = public_report.eth_block_input_difficulties.get(index) {
+                    let _ = writeln!(stdout, "eth_difficulty={}", format_u256(difficulty));
+                }
                 write_eth_transaction_preimage_summary(
                     stdout,
                     public_report
@@ -1173,6 +1180,11 @@ fn verify_setup_validation(
             "eth_logs_bloom={}",
             format_bytes_hex(&binding.logs_bloom)
         );
+        let _ = writeln!(
+            stdout,
+            "eth_difficulty={}",
+            format_u256(&binding.difficulty)
+        );
         write_eth_transaction_preimage_summary(stdout, binding.transaction_preimage_count);
         write_eth_transaction_count_summary(
             stdout,
@@ -1272,6 +1284,7 @@ fn verify_eth_block_input_binding(
         state_root: input.state_root,
         receipts_root: input.receipts_root,
         logs_bloom: input.logs_bloom,
+        difficulty: input.difficulty,
         transaction_preimage_count,
         legacy_transaction_count,
         typed_transaction_count,
@@ -1301,6 +1314,13 @@ fn format_bytes_hex(bytes: &[u8]) -> String {
         out.push(HEX[(byte & 0x0f) as usize] as char);
     }
     out
+}
+
+fn format_u256(bytes: &[u8; 32]) -> String {
+    match bytes.iter().position(|byte| *byte != 0) {
+        Some(index) => format_bytes_hex(&bytes[index..]),
+        None => "0".to_owned(),
+    }
 }
 
 fn write_eth_transaction_kind_summary(
