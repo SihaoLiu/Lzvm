@@ -910,6 +910,17 @@ fn finish_all_units_witness_run(
     }
 
     write_run_plan_summary(stdout, &plan.run_plan);
+    if let Some(path) = &plan.inputs.public_inputs {
+        let _ = writeln!(stdout, "public_inputs={}", path.display());
+    }
+    if let Some(public_values) = public_values.as_ref() {
+        let _ = writeln!(stdout, "public_input_values={}", public_values.values.len());
+        let _ = writeln!(
+            stdout,
+            "public_input_fields={}",
+            public_values_field_count(public_values)
+        );
+    }
     if let Some(summary) = &plan.program_image_cache {
         write_program_image_cache_summary(stdout, summary);
     }

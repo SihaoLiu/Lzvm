@@ -6147,6 +6147,9 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
 
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
     assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains(&format!("public_inputs={}\n", public_values_path.display())));
+    assert!(stdout_text.contains("public_input_values=1\npublic_input_fields=1\n"));
     let proof_path = output_dir.join("proof.bin");
     let proof_bytes = fs::read(&proof_path).expect("proof output should read");
     let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
