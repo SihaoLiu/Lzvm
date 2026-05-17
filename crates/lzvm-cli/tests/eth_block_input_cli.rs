@@ -5,7 +5,9 @@ use lzvm_artifacts::eth_block_input::{
     build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
     parse_eth_block_input,
 };
+use lzvm_artifacts::eth_trie::receipt_trie_build;
 use lzvm_artifacts::public_values::{parse_public_values, public_values_digest};
+use lzvm_artifacts::rlp::parse_rlp;
 use lzvm_cli::run_cli;
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -107,6 +109,69 @@ fn writes_hex_block_input_artifact() {
     assert!(String::from_utf8(stdout)
         .expect("stdout should be utf-8")
         .starts_with("status=ok\n"));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn writes_binary_block_input_artifact_with_receipts() {
+    let dir = temp_dir("binary-receipts");
+    let _ = fs::remove_dir_all(&dir);
+    let block_path = dir.join("block.rlp");
+    let receipts_path = dir.join("receipts.rlp");
+    let output_path = dir.join("block.input");
+    let receipt_item = sample_receipt_item();
+    let receipts = vec![parse_rlp(&receipt_item).expect("receipt should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    let receipts_rlp = rlp_list(&[receipt_item]);
+    let block_rlp = sample_empty_block_rlp_with_receipts_root(receipt_build.root);
+    write_bytes(&block_path, &block_rlp);
+    write_bytes(&receipts_path, &receipts_rlp);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-block-input",
+            "--receipts",
+            receipts_path
+                .to_str()
+                .expect("receipts path should be utf-8"),
+            block_path.to_str().expect("block path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let encoded = fs::read(&output_path).expect("block input should be written");
+    let input_hash = eth_block_input_bytes_digest(&encoded);
+    let parsed = parse_eth_block_input(&encoded).expect("block input should parse");
+    let parsed_receipts = parsed.receipts.as_ref().expect("receipts should exist");
+    assert_eq!(parsed.block_rlp, block_rlp);
+    assert_eq!(parsed.receipts_root, receipt_build.root);
+    assert_eq!(parsed_receipts.hash_preimages, receipt_build.hash_preimages);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\nreceipts=present\nreceipt_trie_preimages={}\nwithdrawals=absent\n",
+            output_path.display(),
+            encoded.len(),
+            to_hex(&input_hash),
+            to_hex(&parsed.block_hash),
+            to_hex(&parsed.parent_hash),
+            to_hex(&parsed.beneficiary),
+            to_hex(&parsed.state_root),
+            to_hex(&parsed.receipts_root),
+            to_hex(&parsed.mix_hash),
+            to_hex(&parsed.nonce),
+            to_hex(&parsed.transactions_root),
+            parsed_receipts.hash_preimages.len()
+        )
+    );
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
@@ -354,8 +419,26 @@ fn sample_block_rlp_with_base_fee() -> Vec<u8> {
     rlp_list(&[header_rlp, transactions, empty_list])
 }
 
+fn sample_empty_block_rlp_with_receipts_root(receipts_root: [u8; 32]) -> Vec<u8> {
+    let header_rlp = rlp_list(&legacy_header_items_with_receipts(
+        empty_trie_root(),
+        receipts_root,
+        None,
+    ));
+    let empty_list = rlp_list(&[]);
+    rlp_list(&[header_rlp, empty_list.clone(), empty_list])
+}
+
 fn legacy_header_items(
     transactions_root: [u8; 32],
+    withdrawals_root: Option<[u8; 32]>,
+) -> Vec<Vec<u8>> {
+    legacy_header_items_with_receipts(transactions_root, [0x66; 32], withdrawals_root)
+}
+
+fn legacy_header_items_with_receipts(
+    transactions_root: [u8; 32],
+    receipts_root: [u8; 32],
     withdrawals_root: Option<[u8; 32]>,
 ) -> Vec<Vec<u8>> {
     let mut items = vec![
@@ -366,7 +449,7 @@ fn legacy_header_items(
         rlp_bytes(&[0x33; 20]),
         rlp_bytes(&[0x44; 32]),
         rlp_bytes(&transactions_root),
-        rlp_bytes(&[0x66; 32]),
+        rlp_bytes(&receipts_root),
         rlp_bytes(&[0x77; 256]),
         rlp_bytes(&[1]),
         rlp_bytes(&[2]),
@@ -382,6 +465,19 @@ fn legacy_header_items(
         items.push(rlp_bytes(&root));
     }
     items
+}
+
+fn sample_receipt_item() -> Vec<u8> {
+    rlp_list(&[
+        rlp_bytes(&[1]),
+        rlp_bytes(&[0x52, 0x08]),
+        rlp_bytes(&[0x11; 256]),
+        rlp_list(&[]),
+    ])
+}
+
+fn empty_trie_root() -> [u8; 32] {
+    hex32("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421")
 }
 
 fn rlp_bytes(payload: &[u8]) -> Vec<u8> {

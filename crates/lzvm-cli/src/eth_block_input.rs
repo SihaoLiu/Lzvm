@@ -3,18 +3,34 @@ use std::io::Write;
 use std::path::Path;
 
 use lzvm_artifacts::eth_block_input::{
-    build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
-    parse_eth_block_input, EthBlockInput,
+    build_eth_block_input, build_eth_block_input_with_receipts, encode_eth_block_input,
+    eth_block_input_bytes_digest, parse_eth_block_input, EthBlockInput,
 };
 
 pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
         [block_path, output_path] => {
-            write_block_input(block_path, output_path, false, stdout, stderr)
+            write_block_input(block_path, None, output_path, false, stdout, stderr)
         }
         ["--hex", block_path, output_path] => {
-            write_block_input(block_path, output_path, true, stdout, stderr)
+            write_block_input(block_path, None, output_path, true, stdout, stderr)
         }
+        ["--receipts", receipts_path, block_path, output_path] => write_block_input(
+            block_path,
+            Some(receipts_path),
+            output_path,
+            false,
+            stdout,
+            stderr,
+        ),
+        ["--hex", "--receipts", receipts_path, block_path, output_path] => write_block_input(
+            block_path,
+            Some(receipts_path),
+            output_path,
+            true,
+            stdout,
+            stderr,
+        ),
         _ => write_usage(stderr),
     }
 }
@@ -28,6 +44,7 @@ pub(crate) fn run_summary(args: &[&str], stdout: &mut dyn Write, stderr: &mut dy
 
 fn write_block_input(
     block_path: &str,
+    receipts_path: Option<&str>,
     output_path: &str,
     hex_input: bool,
     stdout: &mut dyn Write,
@@ -56,7 +73,25 @@ fn write_block_input(
         raw_bytes
     };
 
-    let input = match build_eth_block_input(&block_rlp) {
+    let receipts_rlp = match receipts_path {
+        Some(path) => match std::fs::read(path) {
+            Ok(bytes) => Some(bytes),
+            Err(error) => {
+                let _ = writeln!(
+                    stderr,
+                    "eth block input failed: read receipts failed: {path}: {error}"
+                );
+                return 1;
+            }
+        },
+        None => None,
+    };
+
+    let input = match receipts_rlp.as_deref() {
+        Some(receipts) => build_eth_block_input_with_receipts(&block_rlp, receipts),
+        None => build_eth_block_input(&block_rlp),
+    };
+    let input = match input {
         Ok(input) => input,
         Err(error) => {
             let _ = writeln!(stderr, "eth block input failed: {error}");
@@ -176,6 +211,14 @@ fn write_input_summary(
         "transaction_trie_preimages={}",
         input.transactions.hash_preimages.len()
     );
+    if let Some(receipts) = &input.receipts {
+        let _ = writeln!(stdout, "receipts=present");
+        let _ = writeln!(
+            stdout,
+            "receipt_trie_preimages={}",
+            receipts.hash_preimages.len()
+        );
+    }
     let _ = writeln!(
         stdout,
         "withdrawals={}",
@@ -305,7 +348,7 @@ impl fmt::Display for HexDecodeError {
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm eth write-block-input [--hex] <block-rlp> <out-input>"
+        "usage: lzvm eth write-block-input [--hex] [--receipts <receipts-rlp>] <block-rlp> <out-input>"
     );
     2
 }
