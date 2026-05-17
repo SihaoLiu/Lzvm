@@ -82,6 +82,7 @@ impl From<PcsEvaluationSegmentError> for ProvePcsEvaluationSegmentError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadPcsEvaluationUnitError {
     MissingSegment,
+    DuplicateSegment,
     MissingUnit {
         unit_index: usize,
     },
@@ -98,6 +99,7 @@ impl fmt::Display for LoadPcsEvaluationUnitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingSegment => write!(f, "missing PCS evaluation segment"),
+            Self::DuplicateSegment => write!(f, "duplicate PCS evaluation segment"),
             Self::MissingUnit { unit_index } => {
                 write!(f, "PCS evaluation segment mismatch for unit {unit_index}")
             }
@@ -116,6 +118,7 @@ impl std::error::Error for LoadPcsEvaluationUnitError {
         match self {
             Self::Segment(error) => Some(error),
             Self::MissingSegment
+            | Self::DuplicateSegment
             | Self::MissingUnit { .. }
             | Self::UnitIndexOverflow
             | Self::ValueCountMismatch { .. } => None,
@@ -128,10 +131,15 @@ pub fn load_pcs_evaluation_unit_from_segments(
     unit: &ProveUnitSchedule,
     segments: &[ProofSegment],
 ) -> Result<PcsEvaluationUnitSegment, LoadPcsEvaluationUnitError> {
-    let segment = segments
+    let mut matching_segments = segments
         .iter()
-        .find(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
+        .filter(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID);
+    let segment = matching_segments
+        .next()
         .ok_or(LoadPcsEvaluationUnitError::MissingSegment)?;
+    if matching_segments.next().is_some() {
+        return Err(LoadPcsEvaluationUnitError::DuplicateSegment);
+    }
     let evaluations =
         parse_pcs_evaluation_segment(&segment.data).map_err(LoadPcsEvaluationUnitError::Segment)?;
     let unit_index_u32 =

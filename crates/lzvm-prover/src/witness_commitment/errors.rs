@@ -246,6 +246,9 @@ pub enum LoadWitnessCommitmentSegmentsError {
     SegmentIdOverflow,
     UnitIndexOverflow,
     MissingSegment,
+    DuplicateSegment {
+        unit_index: usize,
+    },
     Segment {
         unit_index: usize,
         source: WitnessCommitmentSegmentError,
@@ -282,6 +285,12 @@ impl fmt::Display for LoadWitnessCommitmentSegmentsError {
             Self::SegmentIdOverflow => write!(f, "witness commitment segment id overflow"),
             Self::UnitIndexOverflow => write!(f, "witness commitment segment unit index overflow"),
             Self::MissingSegment => write!(f, "missing witness commitment segment"),
+            Self::DuplicateSegment { unit_index } => {
+                write!(
+                    f,
+                    "duplicate witness commitment segment for unit {unit_index}"
+                )
+            }
             Self::Segment { unit_index, source } => write!(
                 f,
                 "invalid witness commitment segment for unit {unit_index}: {source}"
@@ -336,6 +345,7 @@ impl std::error::Error for LoadWitnessCommitmentSegmentsError {
             | Self::SegmentIdOverflow
             | Self::UnitIndexOverflow
             | Self::MissingSegment
+            | Self::DuplicateSegment { .. }
             | Self::UnitMismatch { .. }
             | Self::RowCountMismatch { .. }
             | Self::ColumnCountOverflow

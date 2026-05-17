@@ -17,10 +17,20 @@ pub fn load_witness_commitment_segments(
         .checked_add(unit_count)
         .ok_or(LoadWitnessCommitmentSegmentsError::SegmentIdOverflow)?;
     let mut out = Vec::new();
+    let mut seen_unit_indices = std::collections::BTreeSet::new();
 
     for segment in segments {
         if segment.id < WITNESS_COMMITMENT_SEGMENT_BASE_ID || segment.id >= end_id {
             continue;
+        }
+        let unit_index_u32 = segment
+            .id
+            .checked_sub(WITNESS_COMMITMENT_SEGMENT_BASE_ID)
+            .ok_or(LoadWitnessCommitmentSegmentsError::UnitIndexOverflow)?;
+        let unit_index = usize::try_from(unit_index_u32)
+            .map_err(|_| LoadWitnessCommitmentSegmentsError::UnitIndexOverflow)?;
+        if !seen_unit_indices.insert(unit_index_u32) {
+            return Err(LoadWitnessCommitmentSegmentsError::DuplicateSegment { unit_index });
         }
         validate_witness_commitment_segment(units, segment)?;
         out.push(segment.clone());

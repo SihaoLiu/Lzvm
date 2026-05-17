@@ -32,6 +32,17 @@ fn rejects_missing_pcs_evaluation_segment() {
 }
 
 #[test]
+fn rejects_duplicate_pcs_evaluation_segments() {
+    let segment = pcs_evaluation_proof_segment(vec![evaluation_unit(0, vec![[1, 2, 3]])]);
+
+    let error =
+        load_pcs_evaluation_unit_from_segments(0, &sample_unit(1), &[segment.clone(), segment])
+            .expect_err("duplicate segment should be rejected");
+
+    assert_eq!(error.to_string(), "duplicate PCS evaluation segment");
+}
+
+#[test]
 fn rejects_missing_pcs_evaluation_unit() {
     let segment = pcs_evaluation_proof_segment(vec![evaluation_unit(1, vec![[1, 2, 3]])]);
 
