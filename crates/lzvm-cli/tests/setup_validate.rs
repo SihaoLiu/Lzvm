@@ -9001,6 +9001,7 @@ fn verifies_contribution_challenge_from_proof_artifact() {
 
     let public_fields =
         public_values_as_fields(&public_values).expect("public values should flatten");
+    let public_values_hash = public_values_digest(&public_values).expect("digest should compute");
     let expected_challenge = derive_global_challenge_from_proof_segments(
         &catalog.layout.global_info,
         &public_fields,
@@ -9030,7 +9031,8 @@ fn verifies_contribution_challenge_from_proof_artifact() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nsegments=1\npublic_values=1\npublic_value_fields=1\nproof_values=0\ncontributions=2\ncontribution_challenge={},{},{}\n",
+            "status=ok\nsegments=1\npublic_values=1\npublic_values_hash={}\npublic_value_fields=1\nproof_values=0\ncontributions=2\ncontribution_challenge={},{},{}\n",
+            format_hash(&public_values_hash),
             expected_challenge.c0.to_u64(),
             expected_challenge.c1.to_u64(),
             expected_challenge.c2.to_u64()
@@ -9087,6 +9089,7 @@ fn verifies_contribution_challenge_from_multiple_proof_artifacts() {
 
     let public_fields =
         public_values_as_fields(&public_values).expect("public values should flatten");
+    let public_values_hash = public_values_digest(&public_values).expect("digest should compute");
     let expected_challenge = derive_global_challenge_from_contributions(
         &catalog.layout.global_info,
         &public_fields,
@@ -9117,7 +9120,8 @@ fn verifies_contribution_challenge_from_multiple_proof_artifacts() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nproofs=2\nsegments=2\npublic_values=1\npublic_value_fields=1\nproof_values=0\ncontributions=2\ncontribution_challenge={},{},{}\n",
+            "status=ok\nproofs=2\nsegments=2\npublic_values=1\npublic_values_hash={}\npublic_value_fields=1\nproof_values=0\ncontributions=2\ncontribution_challenge={},{},{}\n",
+            format_hash(&public_values_hash),
             expected_challenge.c0.to_u64(),
             expected_challenge.c1.to_u64(),
             expected_challenge.c2.to_u64()
@@ -9175,6 +9179,7 @@ fn writes_contribution_challenge_segment_from_multiple_proof_artifacts() {
 
     let public_fields =
         public_values_as_fields(&public_values).expect("public values should flatten");
+    let public_values_hash = public_values_digest(&public_values).expect("digest should compute");
     let expected_challenge = derive_global_challenge_from_contributions(
         &catalog.layout.global_info,
         &public_fields,
@@ -9219,7 +9224,8 @@ fn writes_contribution_challenge_segment_from_multiple_proof_artifacts() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nproofs=2\nsegments=2\npublic_values=1\npublic_value_fields=1\nproof_values=0\ncontributions=2\nchallenge_values=1\ncontribution_challenge={},{},{}\nbytes_written={}\noutput={}\n",
+            "status=ok\nproofs=2\nsegments=2\npublic_values=1\npublic_values_hash={}\npublic_value_fields=1\nproof_values=0\ncontributions=2\nchallenge_values=1\ncontribution_challenge={},{},{}\nbytes_written={}\noutput={}\n",
+            format_hash(&public_values_hash),
             expected_challenge.c0.to_u64(),
             expected_challenge.c1.to_u64(),
             expected_challenge.c2.to_u64(),

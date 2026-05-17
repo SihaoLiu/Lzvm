@@ -549,6 +549,11 @@ fn write_contribution_challenge_segment(
     let _ = writeln!(stdout, "public_values={}", report.public_value_count);
     let _ = writeln!(
         stdout,
+        "public_values_hash={}",
+        prove_plan::format_hash(&report.public_values_hash)
+    );
+    let _ = writeln!(
+        stdout,
         "public_value_fields={}",
         report.public_value_field_count
     );
@@ -732,6 +737,11 @@ fn verify_contribution(
     let _ = writeln!(stdout, "public_values={}", report.public_value_count);
     let _ = writeln!(
         stdout,
+        "public_values_hash={}",
+        prove_plan::format_hash(&report.public_values_hash)
+    );
+    let _ = writeln!(
+        stdout,
         "public_value_fields={}",
         report.public_value_field_count
     );
@@ -771,6 +781,11 @@ fn verify_contribution_set(
     let _ = writeln!(stdout, "proofs={}", report.proof_count);
     let _ = writeln!(stdout, "segments={}", report.segment_count);
     let _ = writeln!(stdout, "public_values={}", report.public_value_count);
+    let _ = writeln!(
+        stdout,
+        "public_values_hash={}",
+        prove_plan::format_hash(&report.public_values_hash)
+    );
     let _ = writeln!(
         stdout,
         "public_value_fields={}",

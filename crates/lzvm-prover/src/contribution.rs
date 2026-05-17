@@ -49,6 +49,7 @@ pub struct ContributionChallengeReport {
     pub proof_count: usize,
     pub segment_count: usize,
     pub public_value_count: usize,
+    pub public_values_hash: [u8; 32],
     pub public_value_field_count: usize,
     pub proof_value_count: usize,
     pub contribution_count: usize,
@@ -569,6 +570,7 @@ pub fn derive_global_challenge_from_files(
         proof_count: 1,
         segment_count: public_report.segment_count,
         public_value_count: public_report.public_value_count,
+        public_values_hash: public_report.public_values_hash,
         public_value_field_count: public_report.public_value_field_count,
         proof_value_count: proof_values.len(),
         contribution_count: entries.len(),
@@ -593,6 +595,7 @@ pub fn derive_global_challenge_from_contribution_proofs(
 
     let mut segment_count = 0_usize;
     let mut public_value_count = None;
+    let mut public_values_hash = None;
     let mut proof_value_count = 0_usize;
     let mut packed_proof_values = None::<Vec<Felt>>;
     let mut entries = Vec::new();
@@ -604,6 +607,7 @@ pub fn derive_global_challenge_from_contribution_proofs(
             .checked_add(public_report.segment_count)
             .ok_or(ContributionChallengeError::LengthOverflow)?;
         public_value_count = public_value_count.or(Some(public_report.public_value_count));
+        public_values_hash = public_values_hash.or(Some(public_report.public_values_hash));
 
         let proof_values =
             load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)?;
@@ -634,6 +638,7 @@ pub fn derive_global_challenge_from_contribution_proofs(
         proof_count: proof_paths.len(),
         segment_count,
         public_value_count: public_value_count.unwrap_or(0),
+        public_values_hash: public_values_hash.unwrap_or([0; 32]),
         public_value_field_count: public_fields.len(),
         proof_value_count,
         contribution_count: entries.len(),
