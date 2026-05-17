@@ -41,6 +41,7 @@ pub(crate) struct EthBlockInputSummary {
     pub(crate) receipt_preimage_count: Option<usize>,
     pub(crate) legacy_receipt_count: Option<usize>,
     pub(crate) typed_receipt_count: Option<usize>,
+    pub(crate) withdrawal_root: Option<[u8; 32]>,
     pub(crate) withdrawal_count: Option<usize>,
     pub(crate) withdrawal_preimage_count: Option<usize>,
 }
@@ -100,6 +101,7 @@ pub(crate) fn validate_eth_block_input(
             .map(|receipts| receipts.hash_preimages.len()),
         legacy_receipt_count: receipt_kind_counts.map(|(legacy, _)| legacy),
         typed_receipt_count: receipt_kind_counts.map(|(_, typed)| typed),
+        withdrawal_root: input.withdrawals_root,
         withdrawal_count,
         withdrawal_preimage_count: input
             .withdrawals
@@ -213,6 +215,9 @@ pub(crate) fn write_eth_block_input_summary(
     match summary.withdrawal_preimage_count {
         Some(count) => {
             let _ = writeln!(stdout, "eth_withdrawals=present");
+            if let Some(root) = summary.withdrawal_root {
+                let _ = writeln!(stdout, "eth_withdrawals_root={}", format_hash(&root));
+            }
             if let Some(withdrawal_count) = summary.withdrawal_count {
                 let _ = writeln!(stdout, "eth_withdrawal_count={withdrawal_count}");
             }

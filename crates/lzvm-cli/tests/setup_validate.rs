@@ -3602,7 +3602,10 @@ fn prove_inputs_reports_eth_block_withdrawal_count_when_present() {
     assert!(stderr.is_empty());
     let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
     assert!(stdout_text.contains("public_inputs_generated=eth_block_input\n"));
-    assert!(stdout_text.contains("eth_withdrawals=present\neth_withdrawal_count=1\n"));
+    assert!(stdout_text.contains(&format!(
+        "eth_withdrawals=present\neth_withdrawals_root={}\neth_withdrawal_count=1\n",
+        format_hash(&withdrawal_build.root)
+    )));
     assert!(stdout_text.contains(&format!(
         "eth_withdrawal_trie_preimages={}\n",
         withdrawal_build.hash_preimages.len()
