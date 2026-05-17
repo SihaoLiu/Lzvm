@@ -2,8 +2,8 @@ use std::fmt;
 use std::io::Write;
 
 use lzvm_artifacts::eth_block::{
-    decode_eth_header_rlp, decode_eth_transactions_rlp, eth_header_hash, parse_eth_block_rlp,
-    EthTransactionRlp,
+    decode_eth_header_rlp, decode_eth_transactions_rlp, eth_header_hash, eth_ommers_hash,
+    parse_eth_block_rlp, EthTransactionRlp,
 };
 use lzvm_artifacts::eth_trie::transaction_trie_root;
 
@@ -77,6 +77,7 @@ fn summarize_block(
             return 1;
         }
     };
+    let computed_ommers_hash = eth_ommers_hash(&block.ommers);
 
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "bytes={}", bytes.len());
@@ -107,6 +108,17 @@ fn summarize_block(
     let _ = writeln!(stdout, "legacy_transactions={legacy_transactions}");
     let _ = writeln!(stdout, "typed_transactions={typed_transactions}");
     let _ = writeln!(stdout, "ommers={}", block.ommers.len());
+    let _ = writeln!(stdout, "ommers_hash={}", format_hash(&header.ommers_hash));
+    let _ = writeln!(
+        stdout,
+        "computed_ommers_hash={}",
+        format_hash(&computed_ommers_hash)
+    );
+    let _ = writeln!(
+        stdout,
+        "ommers_hash_matches={}",
+        header.ommers_hash == computed_ommers_hash
+    );
     let _ = writeln!(
         stdout,
         "withdrawals={}",

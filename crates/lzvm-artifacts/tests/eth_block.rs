@@ -1,6 +1,6 @@
 use lzvm_artifacts::eth_block::{
     decode_eth_header_rlp, decode_eth_transaction_rlp, decode_eth_transactions_rlp,
-    eth_header_hash, keccak256, parse_eth_block_rlp, EthBlockError, EthBlockRlp,
+    eth_header_hash, eth_ommers_hash, keccak256, parse_eth_block_rlp, EthBlockError, EthBlockRlp,
     EthTransactionError, EthTransactionRlp, HeaderField,
 };
 use lzvm_artifacts::rlp::RlpItem;
@@ -186,6 +186,21 @@ fn hashes_mainnet_genesis_header() {
         eth_header_hash(&header),
         hex32("d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3")
     );
+}
+
+#[test]
+fn hashes_empty_ommers_list() {
+    assert_eq!(
+        eth_ommers_hash(&[]),
+        hex32("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347")
+    );
+}
+
+#[test]
+fn empty_ommers_hash_matches_mainnet_genesis_header() {
+    let header = decode_header(mainnet_genesis_header_items());
+
+    assert_eq!(eth_ommers_hash(&[]), header.ommers_hash);
 }
 
 #[test]

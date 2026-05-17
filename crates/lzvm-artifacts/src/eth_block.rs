@@ -321,6 +321,10 @@ pub fn eth_header_hash(header: &[RlpItem]) -> [u8; 32] {
     keccak256(&encode_rlp(&RlpItem::List(header.to_vec())))
 }
 
+pub fn eth_ommers_hash(ommers: &[RlpItem]) -> [u8; 32] {
+    keccak256(&encode_rlp(&RlpItem::List(ommers.to_vec())))
+}
+
 fn take_list(item: RlpItem, error: EthBlockError) -> Result<Vec<RlpItem>, EthBlockError> {
     match item {
         RlpItem::List(items) => Ok(items),
