@@ -6,7 +6,8 @@ use lzvm_artifacts::challenge_values_segment::{
 };
 use lzvm_artifacts::eth_block_input::{
     eth_block_input_bytes_digest, eth_block_input_receipt_kind_counts,
-    eth_block_input_transaction_kind_counts, parse_eth_block_input,
+    eth_block_input_transaction_kind_counts, eth_block_input_withdrawal_count,
+    parse_eth_block_input,
 };
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
@@ -917,6 +918,7 @@ struct EthBlockInputBinding {
     receipt_preimage_count: Option<usize>,
     legacy_receipt_count: Option<usize>,
     typed_receipt_count: Option<usize>,
+    withdrawal_count: Option<usize>,
     withdrawal_preimage_count: Option<usize>,
 }
 
@@ -1081,7 +1083,11 @@ fn verify_setup_validation(
             binding.legacy_receipt_count,
             binding.typed_receipt_count,
         );
-        write_eth_withdrawal_summary(stdout, None, binding.withdrawal_preimage_count);
+        write_eth_withdrawal_summary(
+            stdout,
+            binding.withdrawal_count,
+            binding.withdrawal_preimage_count,
+        );
     }
     if program_image_cache_matched {
         let _ = writeln!(stdout, "program_image_cache_match=ok");
@@ -1129,6 +1135,8 @@ fn verify_eth_block_input_binding(
         .map(|receipts| receipts.hash_preimages.len());
     let receipt_kind_counts = eth_block_input_receipt_kind_counts(&input)
         .map_err(|error| format!("ETH block input receipt count failed: {error}"))?;
+    let withdrawal_count = eth_block_input_withdrawal_count(&input)
+        .map_err(|error| format!("ETH block input withdrawal count failed: {error}"))?;
     let withdrawal_preimage_count = input
         .withdrawals
         .as_ref()
@@ -1154,6 +1162,7 @@ fn verify_eth_block_input_binding(
         receipt_preimage_count,
         legacy_receipt_count: receipt_kind_counts.map(|(legacy_count, _)| legacy_count),
         typed_receipt_count: receipt_kind_counts.map(|(_, typed_count)| typed_count),
+        withdrawal_count,
         withdrawal_preimage_count,
     })
 }
