@@ -9,6 +9,7 @@ const HEADER_BYTES: usize = 4 + 4 + 4;
 const UNIT_HEADER_BYTES: usize = 4 + 4;
 const WORD_BYTES: usize = 8;
 const EXTENSION_WORDS: usize = 3;
+const EXTENSION_BYTES: usize = EXTENSION_WORDS * WORD_BYTES;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PcsEvaluationSegment {
@@ -99,15 +100,23 @@ pub fn parse_pcs_evaluation_segment(
     if version != PCS_EVALUATION_VERSION {
         return Err(PcsEvaluationSegmentError::UnsupportedVersion { version });
     }
-    let unit_count = reader.read_u32()? as usize;
+    let unit_count = usize::try_from(reader.read_u32()?)
+        .map_err(|_| PcsEvaluationSegmentError::LengthOverflow)?;
     if unit_count == 0 {
         return Err(PcsEvaluationSegmentError::EmptyUnits);
+    }
+    if unit_count > reader.remaining_len() / UNIT_HEADER_BYTES {
+        return Err(PcsEvaluationSegmentError::LengthOverflow);
     }
 
     let mut units = Vec::with_capacity(unit_count);
     for _ in 0..unit_count {
         let unit_index = reader.read_u32()?;
-        let value_count = reader.read_u32()? as usize;
+        let value_count = usize::try_from(reader.read_u32()?)
+            .map_err(|_| PcsEvaluationSegmentError::LengthOverflow)?;
+        if value_count > reader.remaining_len() / EXTENSION_BYTES {
+            return Err(PcsEvaluationSegmentError::LengthOverflow);
+        }
         let mut values = Vec::with_capacity(value_count);
         for _ in 0..value_count {
             values.push(reader.read_extension()?);
@@ -195,6 +204,10 @@ impl<'a> SegmentReader<'a> {
             *word = self.read_u64()?;
         }
         Ok(value)
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 
     fn read_array<const N: usize>(&mut self) -> Result<[u8; N], PcsEvaluationSegmentError> {

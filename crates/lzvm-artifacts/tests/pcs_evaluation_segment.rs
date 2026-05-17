@@ -18,6 +18,18 @@ fn sample_segment() -> PcsEvaluationSegment {
     }
 }
 
+fn segment_header(unit_count: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"evs0");
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, unit_count);
+    bytes
+}
+
+fn push_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
 #[test]
 fn encodes_and_parses_pcs_evaluation_segments() {
     let encoded =
@@ -76,14 +88,34 @@ fn rejects_duplicate_pcs_evaluation_units() {
 
 #[test]
 fn rejects_truncated_pcs_evaluation_segments() {
-    let result = parse_pcs_evaluation_segment(b"evs0\x01\0\0\0\x01\0\0\0");
+    let result = parse_pcs_evaluation_segment(b"evs0\x01\0");
 
     assert!(matches!(
         result,
         Err(PcsEvaluationSegmentError::UnexpectedEof {
-            needed: 16,
-            available: 12
+            needed: 8,
+            available: 6
         })
+    ));
+}
+
+#[test]
+fn rejects_unit_count_that_exceeds_remaining_unit_headers() {
+    assert!(matches!(
+        parse_pcs_evaluation_segment(&segment_header(1)),
+        Err(PcsEvaluationSegmentError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_value_count_that_exceeds_remaining_extensions() {
+    let mut bytes = segment_header(1);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 1);
+
+    assert!(matches!(
+        parse_pcs_evaluation_segment(&bytes),
+        Err(PcsEvaluationSegmentError::LengthOverflow)
     ));
 }
 
