@@ -26,6 +26,7 @@ mod program_image_cache;
 mod prove_inputs;
 mod prove_plan;
 mod prove_witness;
+mod setup_source_companions;
 
 pub use prove_witness::{build_witness_proof_artifact, build_witness_proof_core_artifact};
 
@@ -250,6 +251,9 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
         }
         ["setup", "write-source-fixed-file-manifest", rest @ ..] => {
             pil_fixed_file_manifest::run(rest, stdout, stderr)
+        }
+        ["setup", "write-source-companions", rest @ ..] => {
+            setup_source_companions::run(rest, stdout, stderr)
         }
         ["setup", "write-verkey-native", setup_info_bin, consttree, out_verkey_bin] => {
             write_verification_key_native(setup_info_bin, consttree, out_verkey_bin, stdout, stderr)

@@ -48,6 +48,14 @@ cargo run -p lzvm-cli -- setup generate-key [--backend cpu|cuda] <setup-dir>
 
 This is the public directory-level setup generation entry point. It reads repository-owned binary setup metadata, fixed-column inputs, expression programs, verifier programs, and global programs, then writes raw fixed-column artifacts, native constant trees, binary verification keys, PCS setup plans, and PCS setup-material companions for every discovered unit. The default backend is `cpu`; `cuda` is available when the CLI is built with the `cuda` feature.
 
+Write source-level setup companion artifacts into a setup directory:
+
+```sh
+cargo run -p lzvm-cli -- setup write-source-companions [--include-path <dir>] [--include-path-first] <main-file> <setup-dir>
+```
+
+This command loads the source program, records the loaded source graph in the setup directory's source-program archive companion, and records fixed-file pragmas in the setup directory's source fixed-file manifest companion. `setup validate` and setup fingerprints include these companions when present.
+
 Check proof and public-value artifact consistency:
 
 ```sh
