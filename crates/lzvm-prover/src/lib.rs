@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -313,6 +314,9 @@ pub enum ProveRunPlanError {
         partition_id: u32,
         partition_count: usize,
     },
+    DuplicatePartitionId {
+        partition_id: u32,
+    },
     WorkerOutOfRange {
         worker_index: usize,
         partition_count: usize,
@@ -340,6 +344,9 @@ impl fmt::Display for ProveRunPlanError {
                 f,
                 "prove run plan partition id {partition_id} is outside partition count {partition_count}"
             ),
+            Self::DuplicatePartitionId { partition_id } => {
+                write!(f, "prove run plan partition id {partition_id} is duplicated")
+            }
             Self::WorkerOutOfRange {
                 worker_index,
                 partition_count,
@@ -899,11 +906,17 @@ fn validate_partition_plan(partitions: &ProvePartitionPlan) -> Result<(), ProveR
             partition_count: partitions.partition_count,
         });
     }
+    let mut seen_partition_ids = BTreeSet::new();
     for partition_id in &partitions.partition_ids {
         if *partition_id as usize >= partitions.partition_count {
             return Err(ProveRunPlanError::PartitionOutOfRange {
                 partition_id: *partition_id,
                 partition_count: partitions.partition_count,
+            });
+        }
+        if !seen_partition_ids.insert(*partition_id) {
+            return Err(ProveRunPlanError::DuplicatePartitionId {
+                partition_id: *partition_id,
             });
         }
     }

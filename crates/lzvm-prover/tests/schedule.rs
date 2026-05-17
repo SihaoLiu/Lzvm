@@ -499,6 +499,26 @@ fn rejects_prove_run_plans_with_invalid_partitions() {
 }
 
 #[test]
+fn rejects_prove_run_plans_with_duplicate_partitions() {
+    let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan {
+            input_data: None,
+            partition_count: 2,
+            partition_ids: vec![1, 1],
+            worker_index: 0,
+        }),
+        options: ProveRunOptions::default_for_output(PathBuf::from("out")),
+        gpu: GpuRunOptions::default(),
+    };
+
+    assert!(matches!(
+        derive_prove_run_plan(&catalog, request),
+        Err(ProveRunPlanError::DuplicatePartitionId { partition_id: 1 })
+    ));
+}
+
+#[test]
 fn rejects_final_wrap_without_aggregation() {
     let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
     let mut options = ProveRunOptions::default_for_output(PathBuf::from("out"));
