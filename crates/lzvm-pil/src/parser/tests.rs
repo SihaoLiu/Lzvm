@@ -2,12 +2,12 @@ use super::{
     parse_air_group_declarations, parse_air_group_value_declarations,
     parse_air_instance_declarations, parse_air_template_declarations, parse_column_declarations,
     parse_commit_declarations, parse_constant_declarations, parse_container_declarations,
-    parse_function_declarations, parse_include_directives, parse_pragma_directives,
-    parse_public_declarations, parse_public_table_declarations, parse_use_directives,
-    parse_value_declarations, parse_variable_declarations, BinaryOperator, ColumnInitializerKind,
-    ColumnKind, ConstantDeclarationKind, Expression, ExpressionKind, FunctionStatementDeclaration,
-    FunctionStatementKind, FunctionVisibility, IncludeKind, IncludeVisibility, ParseError,
-    UnaryOperator, ValueDeclarationKind,
+    parse_fixed_file_pragmas, parse_function_declarations, parse_include_directives,
+    parse_pragma_directives, parse_public_declarations, parse_public_table_declarations,
+    parse_use_directives, parse_value_declarations, parse_variable_declarations, BinaryOperator,
+    ColumnInitializerKind, ColumnKind, ConstantDeclarationKind, Expression, ExpressionKind,
+    FixedFilePragmaKind, FunctionStatementDeclaration, FunctionStatementKind, FunctionVisibility,
+    IncludeKind, IncludeVisibility, ParseError, UnaryOperator, ValueDeclarationKind,
 };
 use crate::SourceFile;
 use std::path::PathBuf;
@@ -171,6 +171,62 @@ fn parses_pragma_directives_with_raw_values() {
         "#pragma arg -I pil,lib"
     );
     assert_eq!(directives[1].value, "feature fast");
+}
+
+#[test]
+fn parses_fixed_file_pragmas_with_typed_values() {
+    let source = source(
+        "#pragma output_fixed_file `${AIR_NAME}.fixed`\n\
+         #pragma extern_fixed_file \"precompiles/hash/src/fixed.bin\"\n\
+         #pragma fixed_load fixed_file_externals.bin 3\n\
+         #pragma fixed_external\n\
+         #pragma arg -I pil,lib",
+    );
+
+    let directives = parse_fixed_file_pragmas(&source).expect("pragmas should parse");
+
+    assert_eq!(directives.len(), 4);
+    assert_eq!(directives[0].kind, FixedFilePragmaKind::OutputFixedFile);
+    assert_eq!(
+        directives[0].path.as_ref().map(|path| path.value.as_str()),
+        Some("${AIR_NAME}.fixed")
+    );
+    assert!(directives[0]
+        .path
+        .as_ref()
+        .is_some_and(|path| path.template));
+
+    assert_eq!(directives[1].kind, FixedFilePragmaKind::ExternFixedFile);
+    assert_eq!(
+        directives[1].path.as_ref().map(|path| path.value.as_str()),
+        Some("precompiles/hash/src/fixed.bin")
+    );
+    assert!(directives[1]
+        .path
+        .as_ref()
+        .is_some_and(|path| !path.template));
+
+    assert_eq!(directives[2].kind, FixedFilePragmaKind::FixedLoad);
+    assert_eq!(
+        directives[2].path.as_ref().map(|path| path.value.as_str()),
+        Some("fixed_file_externals.bin")
+    );
+    assert_eq!(directives[2].column, Some(3));
+    assert_eq!(directives[3].kind, FixedFilePragmaKind::FixedExternal);
+    assert!(directives[3].path.is_none());
+    assert!(directives[3].column.is_none());
+}
+
+#[test]
+fn rejects_fixed_load_with_invalid_column() {
+    let source = source("#pragma fixed_load fixed.bin nope");
+
+    let error = parse_fixed_file_pragmas(&source).expect_err("column should be numeric");
+
+    assert!(matches!(
+        error,
+        ParseError::InvalidPragmaArgument { source_name, .. } if source_name == "main.pil"
+    ));
 }
 
 #[test]

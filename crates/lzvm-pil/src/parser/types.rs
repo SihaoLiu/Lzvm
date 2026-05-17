@@ -17,6 +17,30 @@ pub struct PragmaDirective {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FixedFilePragmaKind {
+    FixedExternal,
+    ExternFixedFile,
+    FixedLoad,
+    OutputFixedFile,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PragmaTextValue {
+    pub value: String,
+    pub template: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixedFilePragma {
+    pub kind: FixedFilePragmaKind,
+    pub path: Option<PragmaTextValue>,
+    pub column: Option<u32>,
+    pub source_name: String,
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IncludeKind {
     Include,
     Require,
@@ -426,6 +450,10 @@ pub enum ParseError {
         source_name: String,
         start: usize,
     },
+    InvalidPragmaArgument {
+        source_name: String,
+        start: usize,
+    },
     ExpectedNumber {
         source_name: String,
         start: usize,
@@ -467,6 +495,9 @@ impl fmt::Display for ParseError {
             }
             Self::ExpectedAlias { source_name, start } => {
                 write!(f, "{source_name}: expected alias at {start}")
+            }
+            Self::InvalidPragmaArgument { source_name, start } => {
+                write!(f, "{source_name}: invalid pragma argument at {start}")
             }
             Self::ExpectedNumber { source_name, start } => {
                 write!(f, "{source_name}: expected number at {start}")

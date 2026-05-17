@@ -2,8 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lzvm_pil::{
-    ColumnKind, ConstantDeclarationKind, FunctionStatementKind, SourceLoaderConfig,
-    SourceProgramLoader, ValueDeclarationKind,
+    ColumnKind, ConstantDeclarationKind, FixedFilePragmaKind, FunctionStatementKind,
+    SourceLoaderConfig, SourceProgramLoader, ValueDeclarationKind,
 };
 
 fn case_dir(name: &str) -> PathBuf {
@@ -31,6 +31,7 @@ fn loads_source_program_with_declarations_from_graph_sources() {
         "main.pil",
         "include \"shared.pil\";\n\
          #pragma arg -I pil,lib\n\
+         #pragma output_fixed_file `${AIR_NAME}.fixed`\n\
          use lib.shared;\n\
          container air.main;\n\
          const int ROWS = 2**16;\n\
@@ -72,8 +73,24 @@ fn loads_source_program_with_declarations_from_graph_sources() {
     assert_eq!(program.graph.edges[0].to, "shared.pil");
 
     let main = &program.modules[0];
-    assert_eq!(main.pragmas.len(), 1);
+    assert_eq!(main.pragmas.len(), 2);
     assert_eq!(main.pragmas[0].value, "arg -I pil,lib");
+    assert_eq!(main.fixed_file_pragmas.len(), 1);
+    assert_eq!(
+        main.fixed_file_pragmas[0].kind,
+        FixedFilePragmaKind::OutputFixedFile
+    );
+    assert_eq!(
+        main.fixed_file_pragmas[0]
+            .path
+            .as_ref()
+            .map(|path| path.value.as_str()),
+        Some("${AIR_NAME}.fixed")
+    );
+    assert!(main.fixed_file_pragmas[0]
+        .path
+        .as_ref()
+        .is_some_and(|path| path.template));
     assert_eq!(main.includes.len(), 1);
     assert_eq!(main.uses.len(), 1);
     assert_eq!(main.containers.len(), 1);

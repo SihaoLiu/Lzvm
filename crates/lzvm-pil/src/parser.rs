@@ -35,6 +35,57 @@ pub fn parse_pragma_directives(source: &SourceFile) -> Result<Vec<PragmaDirectiv
     Ok(directives)
 }
 
+pub fn parse_fixed_file_pragmas(source: &SourceFile) -> Result<Vec<FixedFilePragma>, ParseError> {
+    let tokens = lex_source(&source.contents).map_err(|error| ParseError::Lex {
+        source_name: source.source_name.clone(),
+        error,
+    })?;
+    let mut directives = Vec::new();
+
+    for token in &tokens {
+        if token.kind != TokenKind::Pragma {
+            continue;
+        }
+
+        let words = tokenize_pragma_words(
+            &token.lexeme,
+            token.end.saturating_sub(token.lexeme.len()),
+            &source.source_name,
+        )?;
+        let Some(kind) = words
+            .first()
+            .and_then(|word| parse_fixed_file_pragma_kind(&word.value))
+        else {
+            continue;
+        };
+
+        let path = words.get(1).map(pragma_text_value);
+        let column = match kind {
+            FixedFilePragmaKind::FixedLoad => match words.get(2) {
+                Some(word) => Some(word.value.parse::<u32>().map_err(|_| {
+                    ParseError::InvalidPragmaArgument {
+                        source_name: source.source_name.clone(),
+                        start: word.start,
+                    }
+                })?),
+                None => None,
+            },
+            _ => None,
+        };
+
+        directives.push(FixedFilePragma {
+            kind,
+            path,
+            column,
+            source_name: source.source_name.clone(),
+            start: token.start,
+            end: token.end,
+        });
+    }
+
+    Ok(directives)
+}
+
 pub fn parse_include_directives(source: &SourceFile) -> Result<Vec<IncludeDirective>, ParseError> {
     let tokens = lex_source(&source.contents).map_err(|error| ParseError::Lex {
         source_name: source.source_name.clone(),
@@ -95,6 +146,83 @@ fn resolve_include_path(source: &SourceFile, token: &Token) -> Result<String, Pa
             source_name: source.source_name.clone(),
             start: token.start,
         }),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PragmaWord {
+    value: String,
+    template: bool,
+    start: usize,
+}
+
+fn tokenize_pragma_words(
+    value: &str,
+    base: usize,
+    source_name: &str,
+) -> Result<Vec<PragmaWord>, ParseError> {
+    let mut words = Vec::new();
+    let bytes = value.as_bytes();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+            index += 1;
+        }
+        if index >= bytes.len() {
+            break;
+        }
+
+        let start = index;
+        let quote = bytes[index];
+        if matches!(quote, b'"' | b'\'' | b'`') {
+            index += 1;
+            let content_start = index;
+            while index < bytes.len() && bytes[index] != quote {
+                index += 1;
+            }
+            if index >= bytes.len() {
+                return Err(ParseError::InvalidPragmaArgument {
+                    source_name: source_name.to_owned(),
+                    start: base + start,
+                });
+            }
+            words.push(PragmaWord {
+                value: value[content_start..index].to_owned(),
+                template: quote == b'`',
+                start: base + start,
+            });
+            index += 1;
+            continue;
+        }
+
+        while index < bytes.len() && !bytes[index].is_ascii_whitespace() {
+            index += 1;
+        }
+        words.push(PragmaWord {
+            value: value[start..index].to_owned(),
+            template: false,
+            start: base + start,
+        });
+    }
+
+    Ok(words)
+}
+
+fn parse_fixed_file_pragma_kind(value: &str) -> Option<FixedFilePragmaKind> {
+    match value {
+        "fixed_external" => Some(FixedFilePragmaKind::FixedExternal),
+        "extern_fixed_file" => Some(FixedFilePragmaKind::ExternFixedFile),
+        "fixed_load" => Some(FixedFilePragmaKind::FixedLoad),
+        "output_fixed_file" => Some(FixedFilePragmaKind::OutputFixedFile),
+        _ => None,
+    }
+}
+
+fn pragma_text_value(word: &PragmaWord) -> PragmaTextValue {
+    PragmaTextValue {
+        value: word.value.clone(),
+        template: word.template,
     }
 }
 
