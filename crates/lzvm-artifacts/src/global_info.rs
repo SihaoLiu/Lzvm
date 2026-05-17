@@ -249,6 +249,13 @@ pub fn read_global_info_binary_file(path: impl AsRef<Path>) -> Result<GlobalInfo
 pub fn parse_global_info(bytes: &[u8]) -> Result<GlobalInfo, GlobalInfoError> {
     let file = parse_sectioned_file(bytes, GLOBAL_INFO_KIND, GLOBAL_INFO_VERSION)
         .map_err(GlobalInfoError::from)?;
+    if file.version != GLOBAL_INFO_VERSION {
+        return Err(GlobalInfoError::UnsupportedVersion {
+            found: file.version,
+            max: GLOBAL_INFO_VERSION,
+        });
+    }
+
     if file.sections.len() != 1 {
         return Err(GlobalInfoError::InvalidSectionCount {
             found: u32::try_from(file.sections.len()).unwrap_or(u32::MAX),

@@ -86,6 +86,25 @@ fn encodes_and_parses_global_info_binary() {
 }
 
 #[test]
+fn rejects_unsupported_global_info_file_versions() {
+    let info = fixtures::sample_global_info_fixture();
+    let bytes = encode_global_info(&info).expect("fixture should encode");
+    let parsed = lzvm_artifacts::sectioned::parse_sectioned_file(&bytes, *b"ginf", 1)
+        .expect("sectioned global info should parse");
+    let bytes = encode_sectioned_file(&SectionedFile {
+        kind: *b"ginf",
+        version: 0,
+        sections: parsed.sections,
+    })
+    .expect("sectioned fixture should encode");
+
+    assert!(matches!(
+        parse_global_info(&bytes),
+        Err(GlobalInfoError::UnsupportedVersion { found: 0, max: 1 })
+    ));
+}
+
+#[test]
 fn reads_global_info_from_a_file_path() {
     let info = fixtures::sample_global_info_fixture();
     let bytes = encode_global_info(&info).expect("fixture should encode");
