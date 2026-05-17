@@ -769,6 +769,11 @@ fn verify_preflight(
                     .get(index)
                     .copied()
                     .unwrap_or(None),
+                report
+                    .eth_block_input_receipts_rlp_byte_counts
+                    .get(index)
+                    .copied()
+                    .unwrap_or(None),
             );
             let legacy_receipt_count = report
                 .eth_block_input_legacy_receipt_counts
@@ -1033,6 +1038,7 @@ struct EthBlockInputBinding {
     transaction_preimage_count: usize,
     legacy_transaction_count: usize,
     typed_transaction_count: usize,
+    receipts_rlp_bytes: Option<usize>,
     receipt_preimage_count: Option<usize>,
     legacy_receipt_count: Option<usize>,
     typed_receipt_count: Option<usize>,
@@ -1251,6 +1257,11 @@ fn verify_setup_validation(
                         .get(index)
                         .copied()
                         .unwrap_or(None),
+                    public_report
+                        .eth_block_input_receipts_rlp_byte_counts
+                        .get(index)
+                        .copied()
+                        .unwrap_or(None),
                 );
                 let legacy_receipt_count = public_report
                     .eth_block_input_legacy_receipt_counts
@@ -1375,7 +1386,11 @@ fn verify_setup_validation(
             binding.legacy_transaction_count,
             binding.typed_transaction_count,
         );
-        write_eth_receipt_preimage_summary(stdout, binding.receipt_preimage_count);
+        write_eth_receipt_preimage_summary(
+            stdout,
+            binding.receipt_preimage_count,
+            binding.receipts_rlp_bytes,
+        );
         if let (Some(legacy_count), Some(typed_count)) =
             (binding.legacy_receipt_count, binding.typed_receipt_count)
         {
@@ -1437,6 +1452,10 @@ fn verify_eth_block_input_binding(
         .receipts
         .as_ref()
         .map(|receipts| receipts.hash_preimages.len());
+    let receipts_rlp_bytes = input
+        .receipts_rlp
+        .as_ref()
+        .map(|receipts_rlp| receipts_rlp.len());
     let receipt_kind_counts = eth_block_input_receipt_kind_counts(&input)
         .map_err(|error| format!("ETH block input receipt count failed: {error}"))?;
     let withdrawal_count = eth_block_input_withdrawal_count(&input)
@@ -1483,6 +1502,7 @@ fn verify_eth_block_input_binding(
         transaction_preimage_count,
         legacy_transaction_count,
         typed_transaction_count,
+        receipts_rlp_bytes,
         receipt_preimage_count,
         legacy_receipt_count: receipt_kind_counts.map(|(legacy_count, _)| legacy_count),
         typed_receipt_count: receipt_kind_counts.map(|(_, typed_count)| typed_count),
@@ -1546,10 +1566,14 @@ fn write_eth_receipt_count_summary(stdout: &mut dyn Write, receipt_count: usize)
 fn write_eth_receipt_preimage_summary(
     stdout: &mut dyn Write,
     receipt_preimage_count: Option<usize>,
+    receipts_rlp_bytes: Option<usize>,
 ) {
     match receipt_preimage_count {
         Some(count) => {
             let _ = writeln!(stdout, "eth_receipts=present");
+            if let Some(bytes) = receipts_rlp_bytes {
+                let _ = writeln!(stdout, "eth_receipts_rlp_bytes={bytes}");
+            }
             let _ = writeln!(stdout, "eth_receipt_trie_preimages={count}");
         }
         None => {

@@ -57,6 +57,7 @@ pub struct ProofPreflightReport {
     pub eth_block_input_transaction_preimage_counts: Vec<usize>,
     pub eth_block_input_legacy_transaction_counts: Vec<usize>,
     pub eth_block_input_typed_transaction_counts: Vec<usize>,
+    pub eth_block_input_receipts_rlp_byte_counts: Vec<Option<usize>>,
     pub eth_block_input_receipt_preimage_counts: Vec<Option<usize>>,
     pub eth_block_input_legacy_receipt_counts: Vec<Option<usize>>,
     pub eth_block_input_typed_receipt_counts: Vec<Option<usize>>,
@@ -214,6 +215,7 @@ pub fn validate_proof_public_values(
     let mut eth_block_input_transaction_preimage_counts = Vec::new();
     let mut eth_block_input_legacy_transaction_counts = Vec::new();
     let mut eth_block_input_typed_transaction_counts = Vec::new();
+    let mut eth_block_input_receipts_rlp_byte_counts = Vec::new();
     let mut eth_block_input_receipt_preimage_counts = Vec::new();
     let mut eth_block_input_legacy_receipt_counts = Vec::new();
     let mut eth_block_input_typed_receipt_counts = Vec::new();
@@ -280,6 +282,12 @@ pub fn validate_proof_public_values(
         eth_block_input_transaction_preimage_counts.push(input.transactions.hash_preimages.len());
         eth_block_input_legacy_transaction_counts.push(legacy_transaction_count);
         eth_block_input_typed_transaction_counts.push(typed_transaction_count);
+        eth_block_input_receipts_rlp_byte_counts.push(
+            input
+                .receipts_rlp
+                .as_ref()
+                .map(|receipts_rlp| receipts_rlp.len()),
+        );
         eth_block_input_receipt_preimage_counts.push(
             input
                 .receipts
@@ -334,6 +342,7 @@ pub fn validate_proof_public_values(
         eth_block_input_transaction_preimage_counts,
         eth_block_input_legacy_transaction_counts,
         eth_block_input_typed_transaction_counts,
+        eth_block_input_receipts_rlp_byte_counts,
         eth_block_input_receipt_preimage_counts,
         eth_block_input_legacy_receipt_counts,
         eth_block_input_typed_receipt_counts,

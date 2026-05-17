@@ -37,6 +37,7 @@ pub(crate) struct EthBlockInputSummary {
     pub(crate) transaction_preimage_count: usize,
     pub(crate) legacy_transaction_count: usize,
     pub(crate) typed_transaction_count: usize,
+    pub(crate) receipts_rlp_len: Option<usize>,
     pub(crate) receipt_preimage_count: Option<usize>,
     pub(crate) legacy_receipt_count: Option<usize>,
     pub(crate) typed_receipt_count: Option<usize>,
@@ -89,6 +90,10 @@ pub(crate) fn validate_eth_block_input(
         transaction_preimage_count: input.transactions.hash_preimages.len(),
         legacy_transaction_count,
         typed_transaction_count,
+        receipts_rlp_len: input
+            .receipts_rlp
+            .as_ref()
+            .map(|receipts_rlp| receipts_rlp.len()),
         receipt_preimage_count: input
             .receipts
             .as_ref()
@@ -188,6 +193,9 @@ pub(crate) fn write_eth_block_input_summary(
     match summary.receipt_preimage_count {
         Some(count) => {
             let _ = writeln!(stdout, "eth_receipts=present");
+            if let Some(bytes) = summary.receipts_rlp_len {
+                let _ = writeln!(stdout, "eth_receipts_rlp_bytes={bytes}");
+            }
             let _ = writeln!(stdout, "eth_receipt_trie_preimages={count}");
             if let (Some(legacy_count), Some(typed_count)) =
                 (summary.legacy_receipt_count, summary.typed_receipt_count)

@@ -3545,6 +3545,7 @@ fn prove_inputs_reports_eth_block_receipts_when_present() {
     let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
     assert!(stdout_text.contains("public_inputs_generated=eth_block_input\n"));
     assert!(stdout_text.contains("eth_receipts=present\n"));
+    assert!(stdout_text.contains(&format!("eth_receipts_rlp_bytes={}\n", receipts_rlp.len())));
     assert!(stdout_text.contains(&format!(
         "eth_receipt_trie_preimages={}\n",
         receipt_build.hash_preimages.len()
@@ -5223,7 +5224,7 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     let verify_stdout_text =
         String::from_utf8(verify_stdout).expect("verify stdout should be utf-8");
     assert!(verify_stdout_text.contains(&format!(
-        "eth_block_inputs=1\neth_block_input_hash={}\neth_block_input_match=ok\neth_block_input_bytes={}\neth_block_rlp_bytes={}\neth_block_hash={}\neth_parent_hash={}\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty={}\neth_block_number={}\neth_block_timestamp={}\neth_extra_data={}\neth_gas_limit={}\neth_gas_used={}\neth_base_fee_per_gas={}\neth_mix_hash={}\neth_nonce={}\neth_transactions_root={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\n",
+        "eth_block_inputs=1\neth_block_input_hash={}\neth_block_input_match=ok\neth_block_input_bytes={}\neth_block_rlp_bytes={}\neth_block_hash={}\neth_parent_hash={}\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty={}\neth_block_number={}\neth_block_timestamp={}\neth_extra_data={}\neth_gas_limit={}\neth_gas_used={}\neth_base_fee_per_gas={}\neth_mix_hash={}\neth_nonce={}\neth_transactions_root={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipts_rlp_bytes={}\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\n",
         format_hash(&block_input_hash),
         block_input_bytes.len(),
         block_input.block_rlp.len(),
@@ -5245,6 +5246,7 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
         format_hex(&block_input.nonce),
         format_hash(&block_input.transactions_root),
         block_input.transactions.hash_preimages.len(),
+        receipts_rlp.len(),
         receipt_build.hash_preimages.len()
     )));
     assert_eq!(
@@ -5257,7 +5259,7 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     let preflight_stdout_text =
         String::from_utf8(preflight_stdout).expect("preflight stdout should be utf-8");
     assert!(preflight_stdout_text.contains(&format!(
-        "eth_block_inputs=1\neth_block_input_hash={}\neth_block_input_bytes={}\neth_block_rlp_bytes={}\neth_block_hash={}\neth_parent_hash={}\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty={}\neth_block_number={}\neth_block_timestamp={}\neth_extra_data={}\neth_gas_limit={}\neth_gas_used={}\neth_base_fee_per_gas={}\neth_mix_hash={}\neth_nonce={}\neth_transactions_root={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\n",
+        "eth_block_inputs=1\neth_block_input_hash={}\neth_block_input_bytes={}\neth_block_rlp_bytes={}\neth_block_hash={}\neth_parent_hash={}\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty={}\neth_block_number={}\neth_block_timestamp={}\neth_extra_data={}\neth_gas_limit={}\neth_gas_used={}\neth_base_fee_per_gas={}\neth_mix_hash={}\neth_nonce={}\neth_transactions_root={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipts_rlp_bytes={}\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\n",
         format_hash(&block_input_hash),
         block_input_bytes.len(),
         block_input.block_rlp.len(),
@@ -5279,6 +5281,7 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
         format_hex(&block_input.nonce),
         format_hash(&block_input.transactions_root),
         block_input.transactions.hash_preimages.len(),
+        receipts_rlp.len(),
         receipt_build.hash_preimages.len()
     )));
     assert_eq!(
@@ -5291,7 +5294,7 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     let setup_preflight_stdout_text =
         String::from_utf8(setup_preflight_stdout).expect("setup preflight stdout should be utf-8");
     assert!(setup_preflight_stdout_text.contains(&format!(
-        "eth_block_inputs=1\neth_block_input_hash={}\neth_block_input_bytes={}\neth_block_rlp_bytes={}\neth_block_hash={}\neth_parent_hash={}\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty={}\neth_block_number={}\neth_block_timestamp={}\neth_extra_data={}\neth_gas_limit={}\neth_gas_used={}\neth_base_fee_per_gas={}\neth_mix_hash={}\neth_nonce={}\neth_transactions_root={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\n",
+        "eth_block_inputs=1\neth_block_input_hash={}\neth_block_input_bytes={}\neth_block_rlp_bytes={}\neth_block_hash={}\neth_parent_hash={}\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty={}\neth_block_number={}\neth_block_timestamp={}\neth_extra_data={}\neth_gas_limit={}\neth_gas_used={}\neth_base_fee_per_gas={}\neth_mix_hash={}\neth_nonce={}\neth_transactions_root={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipts_rlp_bytes={}\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\n",
         format_hash(&block_input_hash),
         block_input_bytes.len(),
         block_input.block_rlp.len(),
@@ -5313,6 +5316,7 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
         format_hex(&block_input.nonce),
         format_hash(&block_input.transactions_root),
         block_input.transactions.hash_preimages.len(),
+        receipts_rlp.len(),
         receipt_build.hash_preimages.len()
     )));
     assert_eq!(mismatch_code, 1);

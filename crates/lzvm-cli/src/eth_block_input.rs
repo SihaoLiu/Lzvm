@@ -222,6 +222,9 @@ fn write_input_summary(
     let _ = writeln!(stdout, "typed_transactions={typed_transactions}");
     if let Some(receipts) = &input.receipts {
         let _ = writeln!(stdout, "receipts=present");
+        if let Some(receipts_rlp) = &input.receipts_rlp {
+            let _ = writeln!(stdout, "receipts_rlp_bytes={}", receipts_rlp.len());
+        }
         let _ = writeln!(
             stdout,
             "receipt_trie_preimages={}",
