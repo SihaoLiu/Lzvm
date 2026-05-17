@@ -4,7 +4,8 @@ use std::path::PathBuf;
 
 use lzvm_artifacts::eth_block_input::{
     eth_block_input_bytes_digest, eth_block_input_receipt_kind_counts,
-    eth_block_input_transaction_kind_counts, parse_eth_block_input, EthBlockInput,
+    eth_block_input_transaction_kind_counts, eth_block_input_withdrawal_count,
+    parse_eth_block_input, EthBlockInput,
 };
 
 use crate::prove_plan::format_hash;
@@ -37,6 +38,7 @@ pub(crate) struct EthBlockInputSummary {
     pub(crate) receipt_preimage_count: Option<usize>,
     pub(crate) legacy_receipt_count: Option<usize>,
     pub(crate) typed_receipt_count: Option<usize>,
+    pub(crate) withdrawal_count: Option<usize>,
     pub(crate) withdrawal_preimage_count: Option<usize>,
 }
 
@@ -57,6 +59,7 @@ pub(crate) fn validate_eth_block_input(
         .map_err(|error| format!("ETH block input failed: {}: {error}", path.display()))?;
     let (legacy_transaction_count, typed_transaction_count) = transaction_kind_counts(&input)?;
     let receipt_kind_counts = receipt_kind_counts(&input)?;
+    let withdrawal_count = withdrawal_count(&input)?;
 
     Ok(Some(EthBlockInputSummary {
         path: path.clone(),
@@ -88,6 +91,7 @@ pub(crate) fn validate_eth_block_input(
             .map(|receipts| receipts.hash_preimages.len()),
         legacy_receipt_count: receipt_kind_counts.map(|(legacy, _)| legacy),
         typed_receipt_count: receipt_kind_counts.map(|(_, typed)| typed),
+        withdrawal_count,
         withdrawal_preimage_count: input
             .withdrawals
             .as_ref()
@@ -187,6 +191,9 @@ pub(crate) fn write_eth_block_input_summary(
     match summary.withdrawal_preimage_count {
         Some(count) => {
             let _ = writeln!(stdout, "eth_withdrawals=present");
+            if let Some(withdrawal_count) = summary.withdrawal_count {
+                let _ = writeln!(stdout, "eth_withdrawal_count={withdrawal_count}");
+            }
             let _ = writeln!(stdout, "eth_withdrawal_trie_preimages={count}");
         }
         None => {
@@ -203,6 +210,11 @@ fn transaction_kind_counts(input: &EthBlockInput) -> Result<(usize, usize), Stri
 fn receipt_kind_counts(input: &EthBlockInput) -> Result<Option<(usize, usize)>, String> {
     eth_block_input_receipt_kind_counts(input)
         .map_err(|error| format!("ETH block input receipt count failed: {error}"))
+}
+
+fn withdrawal_count(input: &EthBlockInput) -> Result<Option<usize>, String> {
+    eth_block_input_withdrawal_count(input)
+        .map_err(|error| format!("ETH block input withdrawal count failed: {error}"))
 }
 
 fn format_hex(bytes: &[u8]) -> String {

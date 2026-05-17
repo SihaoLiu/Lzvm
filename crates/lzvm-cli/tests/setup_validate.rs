@@ -23,7 +23,7 @@ use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, parse_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
-use lzvm_artifacts::eth_trie::receipt_trie_build;
+use lzvm_artifacts::eth_trie::{receipt_trie_build, withdrawals_trie_build};
 use lzvm_artifacts::expression_info::{encode_expression_info, ExpressionInfo};
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
@@ -998,6 +998,20 @@ fn sample_block_rlp_with_receipts_root(receipts_root: [u8; 32]) -> Vec<u8> {
     rlp_list(&[header_rlp, transactions, empty_list])
 }
 
+fn sample_block_rlp_with_withdrawals(
+    withdrawals_root: [u8; 32],
+    withdrawal_items: Vec<Vec<u8>>,
+) -> Vec<u8> {
+    let header_rlp = rlp_list(&legacy_header_items(
+        hex32("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"),
+        Some(withdrawals_root),
+        b"lzvm",
+    ));
+    let empty_list = rlp_list(&[]);
+    let withdrawals = rlp_list(&withdrawal_items);
+    rlp_list(&[header_rlp, empty_list.clone(), empty_list, withdrawals])
+}
+
 fn sample_block_rlp_with_extra(extra_data: &[u8]) -> Vec<u8> {
     let header_rlp = rlp_list(&legacy_header_items(
         hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
@@ -1064,6 +1078,15 @@ fn sample_receipt_item() -> Vec<u8> {
         rlp_bytes(&[0x52, 0x08]),
         rlp_bytes(&[0; 256]),
         rlp_list(&[]),
+    ])
+}
+
+fn sample_withdrawal_item() -> Vec<u8> {
+    rlp_list(&[
+        rlp_bytes(&[]),
+        rlp_bytes(&[1]),
+        rlp_bytes(&[0x22; 20]),
+        rlp_bytes(&[0x40]),
     ])
 }
 
@@ -3525,6 +3548,60 @@ fn prove_inputs_reports_eth_block_receipts_when_present() {
         receipt_build.hash_preimages.len()
     )));
     assert!(stdout_text.contains("eth_legacy_receipts=1\neth_typed_receipts=0\n"));
+}
+
+#[test]
+fn prove_inputs_reports_eth_block_withdrawal_count_when_present() {
+    let dir = temp_dir("prove-inputs-eth-withdrawals");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let block_input_path = dir.join("block.input");
+    let withdrawal_item = sample_withdrawal_item();
+    let withdrawals = vec![parse_rlp(&withdrawal_item).expect("withdrawal should parse")];
+    let withdrawal_build = withdrawals_trie_build(&withdrawals);
+    let block_rlp = sample_block_rlp_with_withdrawals(withdrawal_build.root, vec![withdrawal_item]);
+    let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    write_bytes(&witness_library, sample_witness_library());
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(
+        &block_input_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("public_inputs_generated=eth_block_input\n"));
+    assert!(stdout_text.contains("eth_withdrawals=present\neth_withdrawal_count=1\n"));
+    assert!(stdout_text.contains(&format!(
+        "eth_withdrawal_trie_preimages={}\n",
+        withdrawal_build.hash_preimages.len()
+    )));
 }
 
 #[test]
