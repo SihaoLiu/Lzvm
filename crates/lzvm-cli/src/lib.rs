@@ -599,6 +599,11 @@ fn verify_preflight(
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "segments={}", report.segment_count);
     let _ = writeln!(stdout, "public_values={}", report.public_value_count);
+    let _ = writeln!(
+        stdout,
+        "public_value_fields={}",
+        report.public_value_field_count
+    );
     if report.program_image_cache_count > 0 {
         let _ = writeln!(
             stdout,

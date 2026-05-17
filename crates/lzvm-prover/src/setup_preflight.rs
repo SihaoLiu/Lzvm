@@ -52,6 +52,7 @@ pub struct SetupPreflightReport {
     pub unit_count: usize,
     pub segment_count: usize,
     pub public_value_count: usize,
+    pub public_value_field_count: usize,
     pub program_image_cache_count: usize,
     pub eth_block_input_count: usize,
 }
@@ -199,6 +200,7 @@ pub fn validate_setup_preflight_hashes(
     let ProofPreflightReport {
         segment_count,
         public_value_count,
+        public_value_field_count,
         program_image_cache_count,
         eth_block_input_count,
     } = validate_proof_public_values(proof, public_values).map_err(SetupPreflightError::Proof)?;
@@ -207,6 +209,7 @@ pub fn validate_setup_preflight_hashes(
         unit_count: catalog.units.len(),
         segment_count,
         public_value_count,
+        public_value_field_count,
         program_image_cache_count,
         eth_block_input_count,
     })

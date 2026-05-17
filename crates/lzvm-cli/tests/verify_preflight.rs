@@ -120,7 +120,7 @@ fn verifies_preflight_reports_program_image_cache_segments() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nsegments=2\npublic_values=2\nprogram_image_caches=1\n"
+        "status=ok\nsegments=2\npublic_values=2\npublic_value_fields=5\nprogram_image_caches=1\n"
     );
     assert!(stderr.is_empty());
 }
@@ -147,7 +147,7 @@ fn verifies_proof_artifact_preflight() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nsegments=1\npublic_values=2\n"
+        "status=ok\nsegments=1\npublic_values=2\npublic_value_fields=5\n"
     );
     assert!(stderr.is_empty());
 
@@ -155,6 +155,7 @@ fn verifies_proof_artifact_preflight() {
         .expect("file-based preflight should validate");
     assert_eq!(report.segment_count, 1);
     assert_eq!(report.public_value_count, 2);
+    assert_eq!(report.public_value_field_count, 5);
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
@@ -193,7 +194,7 @@ fn verifies_proof_artifact_preflight_with_binary_public_values() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nsegments=1\npublic_values=2\n"
+        "status=ok\nsegments=1\npublic_values=2\npublic_value_fields=5\n"
     );
     assert!(stderr.is_empty());
 }

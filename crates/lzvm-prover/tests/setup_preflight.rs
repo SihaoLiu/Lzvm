@@ -96,6 +96,7 @@ fn validates_setup_preflight_hashes() {
             unit_count: 0,
             segment_count: 1,
             public_value_count: 2,
+            public_value_field_count: 5,
             program_image_cache_count: 0,
             eth_block_input_count: 0,
         }
