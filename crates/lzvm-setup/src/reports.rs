@@ -62,5 +62,7 @@ pub struct SetupDirectorySummaryReport {
     pub fixed_bytes: u64,
     pub pcs_material_unit_count: usize,
     pub pcs_material_bytes: u64,
+    pub source_fixed_file_manifest_present: bool,
+    pub source_fixed_file_manifest_entry_count: usize,
     pub fingerprint: String,
 }

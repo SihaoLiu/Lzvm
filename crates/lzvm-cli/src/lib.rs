@@ -724,6 +724,20 @@ fn validate_setup_directory(
                 report.pcs_material_unit_count
             );
             let _ = writeln!(stdout, "pcs_material_bytes={}", report.pcs_material_bytes);
+            let _ = writeln!(
+                stdout,
+                "source_fixed_file_manifest={}",
+                if report.source_fixed_file_manifest_present {
+                    "present"
+                } else {
+                    "absent"
+                }
+            );
+            let _ = writeln!(
+                stdout,
+                "source_fixed_file_manifest_entries={}",
+                report.source_fixed_file_manifest_entry_count
+            );
             0
         }
         Err(error) => {

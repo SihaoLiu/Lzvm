@@ -70,6 +70,10 @@ use lzvm_artifacts::setup_manifest::{
     encode_setup_directory_manifest, read_setup_directory_manifest_file,
     SETUP_DIRECTORY_MANIFEST_FILE,
 };
+use lzvm_artifacts::source_fixed_file_manifest::{
+    encode_source_fixed_file_manifest, SourceFixedFileManifest, SourceFixedFileManifestEntry,
+    SourceFixedFileManifestKind,
+};
 use lzvm_artifacts::trace_bundle::{encode_trace_bundle, TraceBundle, TraceBundleUnit};
 use lzvm_artifacts::unit_values_segment::{
     encode_unit_values_segment, parse_unit_values_segment, UnitValuesSegment,
@@ -1249,6 +1253,31 @@ fn write_setup_directory(root: &Path) {
     }
 }
 
+fn write_source_fixed_file_manifest(root: &Path) {
+    let layout = read_key_directory_layout(root).expect("layout should parse");
+    let manifest = SourceFixedFileManifest {
+        entries: vec![SourceFixedFileManifestEntry {
+            source_name: "main.pil".to_owned(),
+            kind: SourceFixedFileManifestKind::OutputFixedFile,
+            path: Some("unit-a.fixed".to_owned()),
+            column: None,
+            group_name: "group-a".to_owned(),
+            group_id: 0,
+            unit_id: 0,
+            unit_name: "unit-a".to_owned(),
+            template_name: "Main".to_owned(),
+            virtual_instance: false,
+            start: 10,
+            end: 40,
+        }],
+    };
+    write_bytes(
+        &layout.source_fixed_file_manifest,
+        encode_source_fixed_file_manifest(&manifest)
+            .expect("source fixed-file manifest should encode"),
+    );
+}
+
 fn write_setup_directory_with_fri_quotient(root: &Path) {
     write_global_files(root);
     let layout = read_key_directory_layout(root).expect("layout should parse");
@@ -1978,7 +2007,7 @@ fn validates_a_complete_setup_directory() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\n"
+        "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nsource_fixed_file_manifest=absent\nsource_fixed_file_manifest_entries=0\n"
     );
     assert!(stderr.is_empty());
 
@@ -1988,6 +2017,8 @@ fn validates_a_complete_setup_directory() {
     assert_eq!(report.fixed_bytes, 128);
     assert_eq!(report.pcs_material_unit_count, 0);
     assert_eq!(report.pcs_material_bytes, 0);
+    assert!(!report.source_fixed_file_manifest_present);
+    assert_eq!(report.source_fixed_file_manifest_entry_count, 0);
     assert_eq!(
         report.fingerprint,
         key_directory_catalog_digest_hex(
@@ -1995,6 +2026,39 @@ fn validates_a_complete_setup_directory() {
         )
         .expect("digest should encode")
     );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn reports_source_fixed_file_manifest_status_for_setup_directories() {
+    let dir = temp_dir("source-fixed-file-manifest-summary");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    write_source_fixed_file_manifest(&dir);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "validate",
+            dir.to_str().expect("path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nsource_fixed_file_manifest=present\nsource_fixed_file_manifest_entries=1\n"
+    );
+    assert!(stderr.is_empty());
+
+    let report = summarize_setup_directory(&dir).expect("directory summary should load");
+    assert!(report.source_fixed_file_manifest_present);
+    assert_eq!(report.source_fixed_file_manifest_entry_count, 1);
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
@@ -2017,7 +2081,7 @@ fn validates_generated_key_directory_materials() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\n"
+            "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nsource_fixed_file_manifest=absent\nsource_fixed_file_manifest_entries=0\n"
         )
     );
     assert!(stderr.is_empty());
@@ -2028,6 +2092,8 @@ fn validates_generated_key_directory_materials() {
     assert_eq!(report.fixed_bytes, 128);
     assert_eq!(report.pcs_material_unit_count, 4);
     assert_eq!(report.pcs_material_bytes, material_bytes);
+    assert!(!report.source_fixed_file_manifest_present);
+    assert_eq!(report.source_fixed_file_manifest_entry_count, 0);
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }

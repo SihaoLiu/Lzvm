@@ -77,6 +77,12 @@ pub fn summarize_setup_directory(
     let catalog = read_key_directory_catalog(root)?;
     let manifest = build_setup_directory_manifest(&catalog)?;
     validate_manifest_file_if_present(root, &manifest)?;
+    let source_fixed_file_manifest_present = catalog.source_fixed_file_manifest.is_some();
+    let source_fixed_file_manifest_entry_count = catalog
+        .source_fixed_file_manifest
+        .as_ref()
+        .map(|manifest| manifest.entries.len())
+        .unwrap_or_default();
     Ok(SetupDirectorySummaryReport {
         unit_count: usize::try_from(manifest.unit_count)
             .map_err(|_| SetupDirectoryManifestError::LengthOverflow)?,
@@ -86,6 +92,8 @@ pub fn summarize_setup_directory(
         pcs_material_unit_count: usize::try_from(manifest.pcs_material_unit_count)
             .map_err(|_| SetupDirectoryManifestError::LengthOverflow)?,
         pcs_material_bytes: manifest.pcs_material_byte_count,
+        source_fixed_file_manifest_present,
+        source_fixed_file_manifest_entry_count,
         fingerprint: encode_digest_hex(&manifest.catalog_digest),
     })
 }
