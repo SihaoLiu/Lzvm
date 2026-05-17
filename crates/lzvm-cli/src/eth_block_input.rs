@@ -145,6 +145,8 @@ fn write_input_summary(
         let _ = writeln!(stdout, "block_rlp_bytes={}", input.block_rlp.len());
     }
     let _ = writeln!(stdout, "block_hash={}", format_hash(&input.block_hash));
+    let _ = writeln!(stdout, "parent_hash={}", format_hash(&input.parent_hash));
+    let _ = writeln!(stdout, "beneficiary={}", format_hex(&input.beneficiary));
     let _ = writeln!(stdout, "state_root={}", format_hash(&input.state_root));
     let _ = writeln!(
         stdout,
@@ -234,8 +236,12 @@ fn hex_value(byte: u8) -> Option<u8> {
 }
 
 fn format_hash(hash: &[u8; 32]) -> String {
-    let mut output = String::with_capacity(64);
-    for byte in hash {
+    format_hex(hash)
+}
+
+fn format_hex(bytes: &[u8]) -> String {
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
         output.push(hex_char(byte >> 4));
         output.push(hex_char(byte & 0x0f));
     }

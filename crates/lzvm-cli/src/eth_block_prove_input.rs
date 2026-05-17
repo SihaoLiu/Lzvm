@@ -16,6 +16,8 @@ pub(crate) struct EthBlockInputSummary {
     pub(crate) input: EthBlockInput,
     pub(crate) block_rlp_len: usize,
     pub(crate) block_hash: [u8; 32],
+    pub(crate) parent_hash: [u8; 32],
+    pub(crate) beneficiary: [u8; 20],
     pub(crate) state_root: [u8; 32],
     pub(crate) receipts_root: [u8; 32],
     pub(crate) block_number: u64,
@@ -50,6 +52,8 @@ pub(crate) fn validate_eth_block_input(
         input: input.clone(),
         block_rlp_len: input.block_rlp.len(),
         block_hash: input.block_hash,
+        parent_hash: input.parent_hash,
+        beneficiary: input.beneficiary,
         state_root: input.state_root,
         receipts_root: input.receipts_root,
         block_number: input.block_number,
@@ -84,6 +88,16 @@ pub(crate) fn write_eth_block_input_summary(
     );
     let _ = writeln!(
         stdout,
+        "eth_parent_hash={}",
+        format_hash(&summary.parent_hash)
+    );
+    let _ = writeln!(
+        stdout,
+        "eth_beneficiary={}",
+        format_hex(&summary.beneficiary)
+    );
+    let _ = writeln!(
+        stdout,
         "eth_state_root={}",
         format_hash(&summary.state_root)
     );
@@ -115,4 +129,14 @@ pub(crate) fn write_eth_block_input_summary(
             let _ = writeln!(stdout, "eth_withdrawals=absent");
         }
     }
+}
+
+fn format_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
 }
