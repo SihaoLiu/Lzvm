@@ -1,7 +1,9 @@
 use std::fmt;
 use std::io::Write;
 
-use lzvm_artifacts::eth_block::{decode_eth_header_rlp, parse_eth_block_rlp};
+use lzvm_artifacts::eth_block::{
+    decode_eth_header_rlp, decode_eth_transactions_rlp, parse_eth_block_rlp, EthTransactionRlp,
+};
 
 pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
@@ -54,6 +56,18 @@ fn summarize_block(
             return 1;
         }
     };
+    let transactions = match decode_eth_transactions_rlp(&block.transactions) {
+        Ok(transactions) => transactions,
+        Err(error) => {
+            let _ = writeln!(stderr, "eth block summary failed: {error}");
+            return 1;
+        }
+    };
+    let legacy_transactions = transactions
+        .iter()
+        .filter(|transaction| matches!(transaction, EthTransactionRlp::Legacy(_)))
+        .count();
+    let typed_transactions = transactions.len() - legacy_transactions;
 
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "bytes={}", bytes.len());
@@ -61,6 +75,8 @@ fn summarize_block(
     let _ = writeln!(stdout, "block_number={}", header.number);
     let _ = writeln!(stdout, "timestamp={}", header.timestamp);
     let _ = writeln!(stdout, "transactions={}", block.transactions.len());
+    let _ = writeln!(stdout, "legacy_transactions={legacy_transactions}");
+    let _ = writeln!(stdout, "typed_transactions={typed_transactions}");
     let _ = writeln!(stdout, "ommers={}", block.ommers.len());
     let _ = writeln!(
         stdout,

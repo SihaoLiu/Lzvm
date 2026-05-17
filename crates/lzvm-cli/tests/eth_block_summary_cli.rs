@@ -43,7 +43,39 @@ fn summarizes_binary_block_rlp() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nbytes={}\nheader_fields=15\nblock_number=2\ntimestamp=101\ntransactions=1\nommers=0\nwithdrawals=absent\nextra_body_fields=0\nextra_header_fields=0\n",
+            "status=ok\nbytes={}\nheader_fields=15\nblock_number=2\ntimestamp=101\ntransactions=1\nlegacy_transactions=1\ntyped_transactions=0\nommers=0\nwithdrawals=absent\nextra_body_fields=0\nextra_header_fields=0\n",
+            block_rlp.len()
+        )
+    );
+}
+
+#[test]
+fn summarizes_typed_transaction_counts() {
+    let dir = temp_dir("typed");
+    let _ = fs::remove_dir_all(&dir);
+    let block_path = dir.join("block.rlp");
+    let block_rlp = sample_block_rlp_with_transactions(vec![rlp_bytes(&[2, 0xc0])]);
+    write_bytes(&block_path, &block_rlp);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "block-summary",
+            block_path.to_str().expect("block path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nbytes={}\nheader_fields=15\nblock_number=2\ntimestamp=101\ntransactions=1\nlegacy_transactions=0\ntyped_transactions=1\nommers=0\nwithdrawals=absent\nextra_body_fields=0\nextra_header_fields=0\n",
             block_rlp.len()
         )
     );
@@ -121,10 +153,42 @@ fn rejects_invalid_hex_block_summary_input() {
     );
 }
 
+#[test]
+fn rejects_invalid_transaction_envelopes() {
+    let dir = temp_dir("invalid-transaction");
+    let _ = fs::remove_dir_all(&dir);
+    let block_path = dir.join("block.rlp");
+    let block_rlp = sample_block_rlp_with_transactions(vec![rlp_bytes(&[0x80])]);
+    write_bytes(&block_path, &block_rlp);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "block-summary",
+            block_path.to_str().expect("block path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "eth block summary failed: invalid transaction type byte: 0x80\n"
+    );
+}
+
 fn sample_block_rlp() -> Vec<u8> {
+    sample_block_rlp_with_transactions(vec![rlp_list(&[rlp_bytes(&[0x01])])])
+}
+
+fn sample_block_rlp_with_transactions(transaction_items: Vec<Vec<u8>>) -> Vec<u8> {
     let header_rlp = rlp_list(&legacy_header_items());
-    let transaction = rlp_bytes(&[0x01]);
-    let transactions = rlp_list(&[transaction]);
+    let transactions = rlp_list(&transaction_items);
     let empty_list = rlp_list(&[]);
     rlp_list(&[header_rlp, transactions, empty_list])
 }
