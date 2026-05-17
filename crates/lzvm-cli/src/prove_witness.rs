@@ -25,8 +25,8 @@ use lzvm_prover::{
     run_prove_witness_commitments_for_all_units,
     run_prove_witness_commitments_for_all_units_with_trace_bundle,
     run_prove_witness_commitments_with_trace_backend, ProveExecutionInputArtifacts,
-    ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassRequest, ProveSchedule,
-    ProveWitnessAuxiliaryInputs, ProveWitnessCommitments, ProveWitnessTraceCommitments,
+    ProveExecutionPlan, ProveExecutionUnitArtifacts, ProveSchedule, ProveWitnessAuxiliaryInputs,
+    ProveWitnessCommitments, ProveWitnessTraceCommitments,
 };
 
 use crate::program_image_cache::write_program_image_cache_summary;
@@ -43,14 +43,6 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
-
-    if matches!(
-        &parsed.run_args.request.pass,
-        ProvePassRequest::Internal { .. }
-    ) {
-        let _ = writeln!(stderr, "prove witness failed: internal pass is unsupported");
-        return 1;
-    }
 
     let catalog = match read_checked_setup_catalog(&parsed.run_args.positionals[0]) {
         Ok(catalog) => catalog,
@@ -1065,35 +1057,4 @@ fn write_usage(stderr: &mut dyn Write) -> i32 {
         "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>"
     );
     2
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rejects_internal_pass_for_witness() {
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-
-        let code = run(
-            &[
-                "--internal-contributions",
-                "2",
-                "setup-dir",
-                "out-dir",
-                "witness.so",
-                "guest.elf",
-            ],
-            &mut stdout,
-            &mut stderr,
-        );
-
-        assert_eq!(code, 1);
-        assert!(stdout.is_empty());
-        assert_eq!(
-            String::from_utf8(stderr).expect("stderr should be utf-8"),
-            "prove witness failed: internal pass is unsupported\n"
-        );
-    }
 }
