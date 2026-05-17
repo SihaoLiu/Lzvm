@@ -4,6 +4,7 @@ use std::path::Path;
 
 use lzvm_artifacts::challenge_values_segment::parse_challenge_values_segment;
 use lzvm_artifacts::eth_block_input::EthBlockInput;
+use lzvm_artifacts::eth_block_public_values::validate_eth_block_public_values;
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::group_values_segment::GROUP_VALUES_SEGMENT_ID;
 use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
@@ -720,6 +721,10 @@ fn finish_all_units_witness_run(
             })?),
             None => None,
         };
+    if let (Some(summary), Some(public_values)) = (eth_block_input, public_values.as_ref()) {
+        validate_eth_block_public_values(&summary.input, public_values)
+            .map_err(|error| error.to_string())?;
+    }
     let evaluation_values_segment = match parsed.evaluation_values_segment.as_deref() {
         Some(path) => Some(read_evaluation_values_segment_input(path)?),
         None => None,
@@ -991,6 +996,10 @@ fn build_proof_bytes(
     };
     let public_values = read_public_values_file(public_inputs)
         .map_err(|error| format!("read public inputs failed: {error}"))?;
+    if let Some(input) = request.eth_block_input {
+        validate_eth_block_public_values(input, &public_values)
+            .map_err(|error| error.to_string())?;
+    }
     let unit_index = request.output.commitments().unit_index();
     let unit_values = match request.unit_values_segment_input {
         Some(path) => Some(read_packed_unit_values_segment_for_unit(

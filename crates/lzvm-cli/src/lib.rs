@@ -763,14 +763,6 @@ fn verify_setup_validation(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    let public_report =
-        match validate_setup_preflight_from_files(setup_dir, proof_bin, public_values_path) {
-            Ok(report) => report,
-            Err(error) => {
-                let _ = writeln!(stderr, "{role} failed: {error}");
-                return 1;
-            }
-        };
     if let Some(path) = eth_block_input {
         match verify_eth_block_input_binding(proof_bin, public_values_path, path) {
             Ok(()) => {}
@@ -780,6 +772,14 @@ fn verify_setup_validation(
             }
         }
     }
+    let public_report =
+        match validate_setup_preflight_from_files(setup_dir, proof_bin, public_values_path) {
+            Ok(report) => report,
+            Err(error) => {
+                let _ = writeln!(stderr, "{role} failed: {error}");
+                return 1;
+            }
+        };
 
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "units={}", public_report.unit_count);
