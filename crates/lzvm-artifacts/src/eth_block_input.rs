@@ -32,6 +32,7 @@ pub struct EthBlockInput {
     pub beneficiary: [u8; 20],
     pub state_root: [u8; 32],
     pub receipts_root: [u8; 32],
+    pub logs_bloom: [u8; 256],
     pub difficulty: [u8; 32],
     pub block_number: u64,
     pub timestamp: u64,
@@ -81,6 +82,7 @@ pub enum EthBlockInputError {
     BeneficiaryMismatch,
     StateRootMismatch,
     ReceiptsRootMismatch,
+    LogsBloomMismatch,
     DifficultyMismatch,
     DifficultyOverflow {
         max_bytes: usize,
@@ -160,6 +162,7 @@ impl fmt::Display for EthBlockInputError {
             Self::BeneficiaryMismatch => write!(f, "ETH block input beneficiary mismatch"),
             Self::StateRootMismatch => write!(f, "ETH block input state root mismatch"),
             Self::ReceiptsRootMismatch => write!(f, "ETH block input receipts root mismatch"),
+            Self::LogsBloomMismatch => write!(f, "ETH block input logs bloom mismatch"),
             Self::DifficultyMismatch => write!(f, "ETH block input difficulty mismatch"),
             Self::DifficultyOverflow { max_bytes, found } => write!(
                 f,
@@ -271,6 +274,7 @@ pub fn build_eth_block_input(block_rlp: &[u8]) -> Result<EthBlockInput, EthBlock
         beneficiary: header.beneficiary,
         state_root: header.state_root,
         receipts_root: header.receipts_root,
+        logs_bloom: header.logs_bloom,
         difficulty: difficulty_to_u256_be(&header.difficulty)?,
         block_number: header.number,
         timestamp: header.timestamp,
@@ -383,6 +387,7 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
         beneficiary: metadata.beneficiary,
         state_root: metadata.state_root,
         receipts_root: metadata.receipts_root,
+        logs_bloom: metadata.logs_bloom.unwrap_or(validated_input.logs_bloom),
         difficulty: metadata.difficulty.unwrap_or(validated_input.difficulty),
         block_number: metadata.block_number,
         timestamp: metadata.timestamp,
@@ -405,6 +410,7 @@ struct Metadata {
     beneficiary: [u8; 20],
     state_root: [u8; 32],
     receipts_root: [u8; 32],
+    logs_bloom: Option<[u8; 256]>,
     difficulty: Option<[u8; 32]>,
     block_number: u64,
     timestamp: u64,
@@ -448,6 +454,7 @@ fn encode_metadata(value: &EthBlockInput) -> Vec<u8> {
         None => out.extend_from_slice(&0_u32.to_le_bytes()),
     }
     out.extend_from_slice(&value.difficulty);
+    out.extend_from_slice(&value.logs_bloom);
     out
 }
 
@@ -486,6 +493,11 @@ fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
     } else {
         Some(reader.read_hash()?)
     };
+    let logs_bloom = if reader.is_finished() {
+        None
+    } else {
+        Some(reader.read_256_bytes()?)
+    };
     reader.finish()?;
 
     Ok(Metadata {
@@ -494,6 +506,7 @@ fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
         beneficiary,
         state_root,
         receipts_root,
+        logs_bloom,
         difficulty,
         block_number,
         timestamp,
@@ -527,6 +540,11 @@ fn validate_metadata(
     }
     if metadata.receipts_root != input.receipts_root {
         return Err(EthBlockInputError::ReceiptsRootMismatch);
+    }
+    if let Some(logs_bloom) = metadata.logs_bloom {
+        if logs_bloom != input.logs_bloom {
+            return Err(EthBlockInputError::LogsBloomMismatch);
+        }
     }
     if let Some(difficulty) = metadata.difficulty {
         if difficulty != input.difficulty {
@@ -778,6 +796,13 @@ impl<'a> Reader<'a> {
     fn read_20_bytes(&mut self) -> Result<[u8; 20], EthBlockInputError> {
         Ok(self
             .read_exact(20)?
+            .try_into()
+            .expect("slice length checked"))
+    }
+
+    fn read_256_bytes(&mut self) -> Result<[u8; 256], EthBlockInputError> {
+        Ok(self
+            .read_exact(256)?
             .try_into()
             .expect("slice length checked"))
     }

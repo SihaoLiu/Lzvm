@@ -235,7 +235,7 @@ fn verifies_preflight_reports_eth_block_input_digest() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nsegments=1\npublic_values=18\npublic_values_hash={}\npublic_value_fields=97\neth_block_inputs=1\neth_block_input_hash={}\n",
+            "status=ok\nsegments=1\npublic_values=19\npublic_values_hash={}\npublic_value_fields=161\neth_block_inputs=1\neth_block_input_hash={}\n",
             to_hex(&public_values_hash),
             to_hex(&eth_block_input_hash)
         )

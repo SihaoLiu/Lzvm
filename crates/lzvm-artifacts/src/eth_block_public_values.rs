@@ -51,6 +51,10 @@ pub fn public_values_from_eth_block_input(
                 elements: hash_u32_be(&input.receipts_root),
             },
             PublicValueEntry {
+                name: "eth_logs_bloom_u32_be".to_owned(),
+                elements: bytes_u32_be(&input.logs_bloom),
+            },
+            PublicValueEntry {
                 name: "eth_difficulty_u32_be".to_owned(),
                 elements: hash_u32_be(&input.difficulty),
             },
