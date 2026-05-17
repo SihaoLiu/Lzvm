@@ -5,12 +5,13 @@ use crate::{
     parse_fixed_file_pragmas, parse_function_declarations, parse_include_directives,
     parse_pragma_directives, parse_public_declarations, parse_public_table_declarations,
     parse_use_directives, parse_value_declarations, parse_variable_declarations,
-    resolve_fixed_file_pragma_path, AirGroupDeclaration, AirGroupValueDeclaration,
-    AirInstanceDeclaration, AirTemplateDeclaration, ColumnDeclaration, CommitDeclaration,
-    ConstantDeclaration, ContainerDeclaration, FixedFilePragma, FixedFilePragmaKind,
-    FixedFileTemplateContext, FunctionDeclaration, IncludeKind, IncludeVisibility, ParseError,
-    PragmaDirective, PublicDeclaration, PublicTableDeclaration, SourceFile, SourceGraph,
-    SourceGraphEdge, SourceGraphError, SourceGraphLoader, SourceLoaderConfig, UseDirective,
+    resolve_fixed_file_pragma_path_with_values, AirGroupDeclaration, AirGroupValueDeclaration,
+    AirInstanceDeclaration, AirTemplateDeclaration, CallArgument, ColumnDeclaration,
+    CommitDeclaration, ConstantDeclaration, ContainerDeclaration, Expression, ExpressionKind,
+    FixedFilePragma, FixedFilePragmaKind, FixedFileTemplateContext, FixedFileTemplateValue,
+    FunctionDeclaration, IncludeKind, IncludeVisibility, ParseError, PragmaDirective,
+    PublicDeclaration, PublicTableDeclaration, SourceFile, SourceGraph, SourceGraphEdge,
+    SourceGraphError, SourceGraphLoader, SourceLoaderConfig, UnaryOperator, UseDirective,
     ValueDeclaration, VariableDeclaration,
 };
 use lzvm_artifacts::source_program::{
@@ -29,10 +30,17 @@ pub struct SourceProgram {
 
 impl SourceProgram {
     pub fn air_units(&self) -> Vec<SourceProgramAirUnit> {
+        self.air_unit_entries()
+            .into_iter()
+            .map(|entry| entry.unit)
+            .collect()
+    }
+
+    fn air_unit_entries(&self) -> Vec<SourceProgramAirUnitEntry<'_>> {
         let group_ids = self.air_group_ids();
         let mut unit_counts = BTreeMap::<String, i128>::new();
         let mut virtual_unit_counts = BTreeMap::<String, i128>::new();
-        let mut units = Vec::new();
+        let mut entries = Vec::new();
 
         for module in &self.modules {
             for instance in &module.air_instances {
@@ -50,24 +58,27 @@ impl SourceProgram {
                     *count += 1;
                     unit_id
                 };
-                units.push(SourceProgramAirUnit {
-                    source_name: instance.source_name.clone(),
-                    group_name: instance.air_group.clone(),
-                    group_id,
-                    unit_id,
-                    unit_name: instance
-                        .alias
-                        .clone()
-                        .unwrap_or_else(|| instance.template.clone()),
-                    template_name: instance.template.clone(),
-                    virtual_instance: instance.virtual_instance,
-                    start: instance.start,
-                    end: instance.end,
+                entries.push(SourceProgramAirUnitEntry {
+                    instance,
+                    unit: SourceProgramAirUnit {
+                        source_name: instance.source_name.clone(),
+                        group_name: instance.air_group.clone(),
+                        group_id,
+                        unit_id,
+                        unit_name: instance
+                            .alias
+                            .clone()
+                            .unwrap_or_else(|| instance.template.clone()),
+                        template_name: instance.template.clone(),
+                        virtual_instance: instance.virtual_instance,
+                        start: instance.start,
+                        end: instance.end,
+                    },
                 });
             }
         }
 
-        units
+        entries
     }
 
     pub fn resolved_fixed_file_pragmas(
@@ -78,8 +89,14 @@ impl SourceProgram {
             .iter()
             .map(|module| (module.source_name.as_str(), &module.source))
             .collect::<BTreeMap<_, _>>();
+        let mut templates_by_name = BTreeMap::<&str, &AirTemplateDeclaration>::new();
         let mut pragmas_by_template = BTreeMap::<&str, Vec<&AirTemplateFixedFilePragma>>::new();
         for module in &self.modules {
+            for template in &module.air_templates {
+                templates_by_name
+                    .entry(template.name.as_str())
+                    .or_insert(template);
+            }
             for pragma in &module.air_template_fixed_file_pragmas {
                 pragmas_by_template
                     .entry(pragma.template_name.as_str())
@@ -89,7 +106,8 @@ impl SourceProgram {
         }
 
         let mut resolved = Vec::new();
-        for unit in self.air_units() {
+        for entry in self.air_unit_entries() {
+            let unit = entry.unit;
             let Some(pragmas) = pragmas_by_template.get(unit.template_name.as_str()) else {
                 continue;
             };
@@ -100,11 +118,20 @@ impl SourceProgram {
                 unit_name: unit.unit_name.clone(),
                 template_name: unit.template_name.clone(),
             };
+            let values = fixed_file_template_values(
+                templates_by_name.get(unit.template_name.as_str()).copied(),
+                entry.instance,
+            );
             for scoped in pragmas {
                 let Some(source) = sources_by_name.get(scoped.pragma.source_name.as_str()) else {
                     continue;
                 };
-                let path = resolve_fixed_file_pragma_path(source, &scoped.pragma, &context)?;
+                let path = resolve_fixed_file_pragma_path_with_values(
+                    source,
+                    &scoped.pragma,
+                    &context,
+                    &values,
+                )?;
                 resolved.push(SourceProgramResolvedFixedFilePragma {
                     source_name: scoped.pragma.source_name.clone(),
                     kind: scoped.pragma.kind,
@@ -157,6 +184,11 @@ pub struct SourceProgramAirUnit {
     pub end: usize,
 }
 
+struct SourceProgramAirUnitEntry<'a> {
+    unit: SourceProgramAirUnit,
+    instance: &'a AirInstanceDeclaration,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceProgramResolvedFixedFilePragma {
     pub source_name: String,
@@ -201,6 +233,88 @@ pub struct SourceProgramModule {
 pub struct AirTemplateFixedFilePragma {
     pub template_name: String,
     pub pragma: FixedFilePragma,
+}
+
+fn fixed_file_template_values(
+    template: Option<&AirTemplateDeclaration>,
+    instance: &AirInstanceDeclaration,
+) -> BTreeMap<String, FixedFileTemplateValue> {
+    let Some(template) = template else {
+        return BTreeMap::new();
+    };
+    let mut values = BTreeMap::new();
+    for parameter in &template.parameters {
+        if let Some(value) = parameter
+            .default_expression
+            .as_ref()
+            .and_then(fixed_file_template_value_from_expression)
+        {
+            values.insert(parameter.name.clone(), value);
+        }
+    }
+    if let Some(arguments) = instance.args_expressions.as_ref() {
+        apply_fixed_file_template_call_arguments(template, arguments, &mut values);
+    }
+    values
+}
+
+fn apply_fixed_file_template_call_arguments(
+    template: &AirTemplateDeclaration,
+    arguments: &[CallArgument],
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) {
+    let mut positional_index = 0;
+    for argument in arguments {
+        let Some(value) = fixed_file_template_value_from_expression(&argument.value) else {
+            continue;
+        };
+        if let Some(name) = argument.name.as_ref() {
+            values.insert(name.clone(), value);
+            continue;
+        }
+        if let Some(parameter) = template.parameters.get(positional_index) {
+            values.insert(parameter.name.clone(), value);
+        }
+        positional_index += 1;
+    }
+}
+
+fn fixed_file_template_value_from_expression(
+    expression: &Expression,
+) -> Option<FixedFileTemplateValue> {
+    match &expression.kind {
+        ExpressionKind::Integer(value) => value
+            .parse::<i128>()
+            .ok()
+            .map(FixedFileTemplateValue::Integer),
+        ExpressionKind::HexInteger(value) => value
+            .strip_prefix("0x")
+            .and_then(|digits| i128::from_str_radix(digits, 16).ok())
+            .map(FixedFileTemplateValue::Integer),
+        ExpressionKind::StringLiteral(value) | ExpressionKind::TemplateLiteral(value) => {
+            Some(FixedFileTemplateValue::String(value.clone()))
+        }
+        ExpressionKind::Group(inner) => fixed_file_template_value_from_expression(inner),
+        ExpressionKind::Unary { op, expr } => {
+            let value = fixed_file_template_value_from_expression(expr)?;
+            match (op, value) {
+                (UnaryOperator::Plus, FixedFileTemplateValue::Integer(value)) => {
+                    Some(FixedFileTemplateValue::Integer(value))
+                }
+                (UnaryOperator::Minus, FixedFileTemplateValue::Integer(value)) => {
+                    value.checked_neg().map(FixedFileTemplateValue::Integer)
+                }
+                (UnaryOperator::Not, FixedFileTemplateValue::Integer(value)) => {
+                    Some(FixedFileTemplateValue::Boolean(value == 0))
+                }
+                (UnaryOperator::Not, FixedFileTemplateValue::Boolean(value)) => {
+                    Some(FixedFileTemplateValue::Boolean(!value))
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -265,3 +265,40 @@ fn resolves_template_fixed_file_pragmas_for_air_units() {
 
     fs::remove_dir_all(&root).expect("case directory should be removed");
 }
+
+#[test]
+fn resolves_fixed_file_pragmas_with_template_parameters() {
+    let root = case_dir("fixed-file-params");
+    write_file(
+        &root,
+        "main.pil",
+        "airtemplate Table(const string bin_file = \"default\", const int RC = 2) {\n\
+             #pragma extern_fixed_file `${bin_file}/${RC}.bin`\n\
+         }\n\
+         airgroup GroupA {\n\
+             Table();\n\
+             Table(bin_file: \"override\", RC: 4) alias Second;\n\
+         }",
+    );
+    let mut loader = SourceProgramLoader::new(SourceLoaderConfig {
+        working_dir: root.clone(),
+        ..SourceLoaderConfig::default()
+    });
+
+    let program = loader
+        .load_main("main.pil")
+        .expect("source program should load");
+    let fixed_files = program
+        .resolved_fixed_file_pragmas()
+        .expect("fixed-file pragmas should resolve");
+
+    assert_eq!(
+        fixed_files
+            .iter()
+            .map(|fixed_file| fixed_file.path.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("default/2.bin"), Some("override/4.bin")]
+    );
+
+    fs::remove_dir_all(&root).expect("case directory should be removed");
+}
