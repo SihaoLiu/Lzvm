@@ -113,6 +113,12 @@ fn write_block_public_values(
         public_values_field_count(&public_values)
     );
     let _ = writeln!(stdout, "block_hash={}", format_hash(&input.block_hash));
+    let _ = writeln!(stdout, "state_root={}", format_hash(&input.state_root));
+    let _ = writeln!(
+        stdout,
+        "receipts_root={}",
+        format_hash(&input.receipts_root)
+    );
     let _ = writeln!(stdout, "block_number={}", input.block_number);
     let _ = writeln!(stdout, "timestamp={}", input.timestamp);
     let _ = writeln!(

@@ -28,6 +28,8 @@ const HASH_BYTES: usize = 32;
 pub struct EthBlockInput {
     pub block_rlp: Vec<u8>,
     pub block_hash: [u8; 32],
+    pub state_root: [u8; 32],
+    pub receipts_root: [u8; 32],
     pub block_number: u64,
     pub timestamp: u64,
     pub ommers_hash: [u8; 32],
@@ -67,6 +69,8 @@ pub enum EthBlockInputError {
     MissingWithdrawalsRoot,
     UnexpectedWithdrawalsRoot,
     BlockHashMismatch,
+    StateRootMismatch,
+    ReceiptsRootMismatch,
     BlockNumberMismatch,
     TimestampMismatch,
     WithdrawalsRootMismatch,
@@ -125,6 +129,8 @@ impl fmt::Display for EthBlockInputError {
                 write!(f, "ETH block input has withdrawals root without withdrawals data")
             }
             Self::BlockHashMismatch => write!(f, "ETH block input block hash mismatch"),
+            Self::StateRootMismatch => write!(f, "ETH block input state root mismatch"),
+            Self::ReceiptsRootMismatch => write!(f, "ETH block input receipts root mismatch"),
             Self::BlockNumberMismatch => write!(f, "ETH block input block number mismatch"),
             Self::TimestampMismatch => write!(f, "ETH block input timestamp mismatch"),
             Self::WithdrawalsRootMismatch => write!(f, "ETH block withdrawals root mismatch"),
@@ -215,6 +221,8 @@ pub fn build_eth_block_input(block_rlp: &[u8]) -> Result<EthBlockInput, EthBlock
     Ok(EthBlockInput {
         block_rlp: block_rlp.to_vec(),
         block_hash,
+        state_root: header.state_root,
+        receipts_root: header.receipts_root,
         block_number: header.number,
         timestamp: header.timestamp,
         ommers_hash,
@@ -313,6 +321,8 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
     Ok(EthBlockInput {
         block_rlp,
         block_hash: metadata.block_hash,
+        state_root: metadata.state_root,
+        receipts_root: metadata.receipts_root,
         block_number: metadata.block_number,
         timestamp: metadata.timestamp,
         ommers_hash: metadata.ommers_hash,
@@ -325,6 +335,8 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
 
 struct Metadata {
     block_hash: [u8; 32],
+    state_root: [u8; 32],
+    receipts_root: [u8; 32],
     block_number: u64,
     timestamp: u64,
     ommers_hash: [u8; 32],
@@ -333,8 +345,10 @@ struct Metadata {
 }
 
 fn encode_metadata(value: &EthBlockInput) -> Vec<u8> {
-    let mut out = Vec::with_capacity(HASH_BYTES * 4 + 8 + 8 + 4);
+    let mut out = Vec::with_capacity(HASH_BYTES * 6 + 8 + 8 + 4);
     out.extend_from_slice(&value.block_hash);
+    out.extend_from_slice(&value.state_root);
+    out.extend_from_slice(&value.receipts_root);
     out.extend_from_slice(&value.block_number.to_le_bytes());
     out.extend_from_slice(&value.timestamp.to_le_bytes());
     out.extend_from_slice(&value.ommers_hash);
@@ -352,6 +366,8 @@ fn encode_metadata(value: &EthBlockInput) -> Vec<u8> {
 fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
     let mut reader = Reader::new(bytes);
     let block_hash = reader.read_hash()?;
+    let state_root = reader.read_hash()?;
+    let receipts_root = reader.read_hash()?;
     let block_number = reader.read_u64()?;
     let timestamp = reader.read_u64()?;
     let ommers_hash = reader.read_hash()?;
@@ -366,6 +382,8 @@ fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
 
     Ok(Metadata {
         block_hash,
+        state_root,
+        receipts_root,
         block_number,
         timestamp,
         ommers_hash,
@@ -378,6 +396,12 @@ fn validate_metadata(metadata: &Metadata, block_rlp: &[u8]) -> Result<(), EthBlo
     let input = build_eth_block_input(block_rlp)?;
     if metadata.block_hash != input.block_hash {
         return Err(EthBlockInputError::BlockHashMismatch);
+    }
+    if metadata.state_root != input.state_root {
+        return Err(EthBlockInputError::StateRootMismatch);
+    }
+    if metadata.receipts_root != input.receipts_root {
+        return Err(EthBlockInputError::ReceiptsRootMismatch);
     }
     if metadata.block_number != input.block_number {
         return Err(EthBlockInputError::BlockNumberMismatch);
