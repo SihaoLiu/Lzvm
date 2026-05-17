@@ -848,6 +848,59 @@ fn reads_key_directory_catalog_source_fixed_file_manifest_when_present() {
 }
 
 #[test]
+fn rejects_source_fixed_file_manifest_entries_with_wrong_groups() {
+    let dir = temp_dir("catalog-bad-source-fixed-file-group");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    let mut manifest = sample_source_fixed_file_manifest("unit-a.fixed");
+    manifest.entries[0].group_name = "wrong-group".to_owned();
+    write_source_fixed_file_manifest_fixture(&layout.source_fixed_file_manifest, &manifest);
+
+    let error = read_key_directory_catalog(&dir).expect_err("catalog should reject manifest");
+
+    assert!(matches!(
+        error,
+        KeyDirectoryError::SourceFixedFileManifestGroupMismatch {
+            entry_index: 0,
+            group_id: 0,
+            ..
+        }
+    ));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_source_fixed_file_manifest_entries_with_wrong_units() {
+    let dir = temp_dir("catalog-bad-source-fixed-file-unit");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    let mut manifest = sample_source_fixed_file_manifest("unit-a.fixed");
+    manifest.entries[0].unit_name = "wrong-unit".to_owned();
+    write_source_fixed_file_manifest_fixture(&layout.source_fixed_file_manifest, &manifest);
+
+    let error = read_key_directory_catalog(&dir).expect_err("catalog should reject manifest");
+
+    assert!(matches!(
+        error,
+        KeyDirectoryError::SourceFixedFileManifestUnitMismatch {
+            entry_index: 0,
+            group_id: 0,
+            unit_id: 0,
+            ..
+        }
+    ));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn hashes_key_directory_catalogs_deterministically() {
     let dir = temp_dir("catalog-digest");
     let _ = fs::remove_dir_all(&dir);

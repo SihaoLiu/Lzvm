@@ -129,6 +129,17 @@ pub enum KeyDirectoryError {
     VerificationKey(VerificationKeyError),
     FixedColumns(FixedColumnError),
     SourceFixedFileManifest(SourceFixedFileManifestError),
+    SourceFixedFileManifestGroupMismatch {
+        entry_index: usize,
+        group_id: u64,
+        group_name: String,
+    },
+    SourceFixedFileManifestUnitMismatch {
+        entry_index: usize,
+        group_id: u64,
+        unit_id: u64,
+        unit_name: String,
+    },
     MissingPath {
         role: &'static str,
         path: PathBuf,
@@ -216,6 +227,23 @@ impl fmt::Display for KeyDirectoryError {
             Self::SourceFixedFileManifest(error) => {
                 write!(f, "key-directory source fixed-file manifest error: {error}")
             }
+            Self::SourceFixedFileManifestGroupMismatch {
+                entry_index,
+                group_id,
+                group_name,
+            } => write!(
+                f,
+                "key-directory source fixed-file manifest entry {entry_index} references group {group_id}:{group_name} outside setup layout"
+            ),
+            Self::SourceFixedFileManifestUnitMismatch {
+                entry_index,
+                group_id,
+                unit_id,
+                unit_name,
+            } => write!(
+                f,
+                "key-directory source fixed-file manifest entry {entry_index} references unit {group_id}:{unit_id}:{unit_name} outside setup layout"
+            ),
             Self::MissingPath { role, path } => {
                 write!(f, "missing key-directory {role}: {}", path.display())
             }
@@ -498,6 +526,9 @@ pub fn read_key_directory_catalog_from_layout(
         .map_err(KeyDirectoryError::GlobalHints)?;
     let source_fixed_file_manifest =
         read_source_fixed_file_manifest_if_present(&layout.source_fixed_file_manifest)?;
+    if let Some(manifest) = source_fixed_file_manifest.as_ref() {
+        validate_source_fixed_file_manifest_layout(&layout.global_info, manifest)?;
+    }
     let mut units = Vec::with_capacity(layout.units.len());
     for unit in &layout.units {
         units.push(read_key_unit_catalog_entry(unit)?);
@@ -609,6 +640,59 @@ fn read_source_fixed_file_manifest_if_present(
     read_source_fixed_file_manifest_file(path)
         .map(Some)
         .map_err(KeyDirectoryError::SourceFixedFileManifest)
+}
+
+fn validate_source_fixed_file_manifest_layout(
+    global_info: &GlobalInfo,
+    manifest: &SourceFixedFileManifest,
+) -> Result<(), KeyDirectoryError> {
+    for (entry_index, entry) in manifest.entries.iter().enumerate() {
+        let Some(group_name) = usize::try_from(entry.group_id)
+            .ok()
+            .and_then(|group_id| global_info.air_groups.get(group_id))
+        else {
+            return Err(KeyDirectoryError::SourceFixedFileManifestGroupMismatch {
+                entry_index,
+                group_id: entry.group_id,
+                group_name: entry.group_name.clone(),
+            });
+        };
+        if group_name != &entry.group_name {
+            return Err(KeyDirectoryError::SourceFixedFileManifestGroupMismatch {
+                entry_index,
+                group_id: entry.group_id,
+                group_name: entry.group_name.clone(),
+            });
+        }
+        if entry.virtual_instance {
+            continue;
+        }
+        let Some(unit) = usize::try_from(entry.group_id)
+            .ok()
+            .and_then(|group_id| global_info.airs.get(group_id))
+            .and_then(|group| {
+                usize::try_from(entry.unit_id)
+                    .ok()
+                    .and_then(|unit_id| group.get(unit_id))
+            })
+        else {
+            return Err(KeyDirectoryError::SourceFixedFileManifestUnitMismatch {
+                entry_index,
+                group_id: entry.group_id,
+                unit_id: entry.unit_id,
+                unit_name: entry.unit_name.clone(),
+            });
+        };
+        if unit.name != entry.unit_name {
+            return Err(KeyDirectoryError::SourceFixedFileManifestUnitMismatch {
+                entry_index,
+                group_id: entry.group_id,
+                unit_id: entry.unit_id,
+                unit_name: entry.unit_name.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn read_key_unit_catalog_entry(
