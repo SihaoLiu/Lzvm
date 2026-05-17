@@ -128,6 +128,7 @@ pub enum EthTransactionError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EthReceiptError {
     Log(EthLogError),
+    Rlp(RlpError),
     EmptyTypedReceipt,
     InvalidReceiptType {
         found: u8,
@@ -289,6 +290,7 @@ impl fmt::Display for EthReceiptError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Log(error) => write!(f, "{error}"),
+            Self::Rlp(error) => write!(f, "typed receipt RLP error: {error}"),
             Self::EmptyTypedReceipt => write!(f, "empty typed receipt envelope"),
             Self::InvalidReceiptType { found } => {
                 write!(f, "invalid receipt type byte: 0x{found:02x}")
@@ -667,6 +669,12 @@ pub fn decode_eth_receipt_rlp(receipt: &RlpItem) -> Result<EthReceiptRlp, EthRec
                 return Err(EthReceiptError::InvalidReceiptType {
                     found: receipt_type,
                 });
+            }
+            if !matches!(
+                parse_rlp(payload).map_err(EthReceiptError::Rlp)?,
+                RlpItem::List(_)
+            ) {
+                return Err(EthReceiptError::ExpectedReceiptList);
             }
             Ok(EthReceiptRlp::Typed {
                 receipt_type,

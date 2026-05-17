@@ -356,7 +356,7 @@ fn rejects_malformed_logs() {
 
 #[test]
 fn decodes_typed_receipt_envelopes_as_opaque_payloads() {
-    let receipt = RlpItem::Bytes(vec![2, 0xf9, 0x01]);
+    let receipt = RlpItem::Bytes(vec![2, 0xc0]);
 
     let decoded = decode_eth_receipt_rlp(&receipt).expect("receipt should decode");
 
@@ -364,9 +364,17 @@ fn decodes_typed_receipt_envelopes_as_opaque_payloads() {
         decoded,
         EthReceiptRlp::Typed {
             receipt_type: 2,
-            payload: vec![0xf9, 0x01],
+            payload: vec![0xc0],
         }
     );
+}
+
+#[test]
+fn rejects_malformed_typed_receipt_payloads() {
+    let error = decode_eth_receipt_rlp(&RlpItem::Bytes(vec![2, 0xf9, 0x01]))
+        .expect_err("typed receipt should reject malformed payload");
+
+    assert!(matches!(error, EthReceiptError::Rlp(_)));
 }
 
 #[test]
