@@ -738,6 +738,25 @@ fn validate_setup_directory(
                 "source_fixed_file_manifest_entries={}",
                 report.source_fixed_file_manifest_entry_count
             );
+            let _ = writeln!(
+                stdout,
+                "source_program_archive={}",
+                if report.source_program_archive_present {
+                    "present"
+                } else {
+                    "absent"
+                }
+            );
+            let _ = writeln!(
+                stdout,
+                "source_program_archive_sources={}",
+                report.source_program_archive_source_count
+            );
+            let _ = writeln!(
+                stdout,
+                "source_program_archive_edges={}",
+                report.source_program_archive_edge_count
+            );
             0
         }
         Err(error) => {

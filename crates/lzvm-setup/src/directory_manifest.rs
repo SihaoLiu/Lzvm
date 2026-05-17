@@ -83,6 +83,17 @@ pub fn summarize_setup_directory(
         .as_ref()
         .map(|manifest| manifest.entries.len())
         .unwrap_or_default();
+    let source_program_archive_present = catalog.source_program_archive.is_some();
+    let source_program_archive_source_count = catalog
+        .source_program_archive
+        .as_ref()
+        .map(|archive| archive.sources.len())
+        .unwrap_or_default();
+    let source_program_archive_edge_count = catalog
+        .source_program_archive
+        .as_ref()
+        .map(|archive| archive.edges.len())
+        .unwrap_or_default();
     Ok(SetupDirectorySummaryReport {
         unit_count: usize::try_from(manifest.unit_count)
             .map_err(|_| SetupDirectoryManifestError::LengthOverflow)?,
@@ -94,6 +105,9 @@ pub fn summarize_setup_directory(
         pcs_material_bytes: manifest.pcs_material_byte_count,
         source_fixed_file_manifest_present,
         source_fixed_file_manifest_entry_count,
+        source_program_archive_present,
+        source_program_archive_source_count,
+        source_program_archive_edge_count,
         fingerprint: encode_digest_hex(&manifest.catalog_digest),
     })
 }
