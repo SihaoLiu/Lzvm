@@ -5126,6 +5126,20 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
         &mut verify_stdout,
         &mut verify_stderr,
     );
+    let mut preflight_stdout = Vec::new();
+    let mut preflight_stderr = Vec::new();
+    let preflight_code = run_cli(
+        &[
+            "verify",
+            "preflight",
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut preflight_stdout,
+        &mut preflight_stderr,
+    );
     let mut setup_preflight_stdout = Vec::new();
     let mut setup_preflight_stderr = Vec::new();
     let setup_preflight_code = run_cli(
@@ -5208,6 +5222,21 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
         String::from_utf8(verify_stdout).expect("verify stdout should be utf-8");
     assert!(verify_stdout_text.contains(&format!(
         "eth_block_inputs=1\neth_block_input_hash={}\neth_block_input_match=ok\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipt_trie_preimages={}\neth_legacy_receipts=1\neth_typed_receipts=0\n",
+        format_hash(&block_input_hash),
+        block_input.transactions.hash_preimages.len(),
+        receipt_build.hash_preimages.len()
+    )));
+    assert_eq!(
+        preflight_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&preflight_stderr)
+    );
+    assert!(preflight_stderr.is_empty());
+    let preflight_stdout_text =
+        String::from_utf8(preflight_stdout).expect("preflight stdout should be utf-8");
+    assert!(preflight_stdout_text.contains(&format!(
+        "eth_block_inputs=1\neth_block_input_hash={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\n",
         format_hash(&block_input_hash),
         block_input.transactions.hash_preimages.len(),
         receipt_build.hash_preimages.len()

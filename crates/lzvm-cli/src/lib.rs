@@ -685,19 +685,22 @@ fn verify_preflight(
                     .copied()
                     .unwrap_or(None),
             );
-            write_eth_receipt_kind_summary(
-                stdout,
-                report
-                    .eth_block_input_legacy_receipt_counts
-                    .get(index)
-                    .copied()
-                    .unwrap_or(None),
-                report
-                    .eth_block_input_typed_receipt_counts
-                    .get(index)
-                    .copied()
-                    .unwrap_or(None),
-            );
+            let legacy_receipt_count = report
+                .eth_block_input_legacy_receipt_counts
+                .get(index)
+                .copied()
+                .unwrap_or(None);
+            let typed_receipt_count = report
+                .eth_block_input_typed_receipt_counts
+                .get(index)
+                .copied()
+                .unwrap_or(None);
+            if let (Some(legacy_count), Some(typed_count)) =
+                (legacy_receipt_count, typed_receipt_count)
+            {
+                write_eth_receipt_count_summary(stdout, legacy_count + typed_count);
+            }
+            write_eth_receipt_kind_summary(stdout, legacy_receipt_count, typed_receipt_count);
             write_eth_withdrawal_summary(
                 stdout,
                 report
@@ -1204,6 +1207,10 @@ fn write_eth_transaction_kind_summary(
 
 fn write_eth_transaction_count_summary(stdout: &mut dyn Write, transaction_count: usize) {
     let _ = writeln!(stdout, "eth_transaction_count={transaction_count}");
+}
+
+fn write_eth_receipt_count_summary(stdout: &mut dyn Write, receipt_count: usize) {
+    let _ = writeln!(stdout, "eth_receipt_count={receipt_count}");
 }
 
 fn write_eth_receipt_preimage_summary(
