@@ -3,6 +3,18 @@ use lzvm_artifacts::group_values_segment::{
     GroupValuesSegmentError,
 };
 
+fn segment_header(value_count: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"gvs0");
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, value_count);
+    bytes
+}
+
+fn push_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
 #[test]
 fn round_trips_group_values_segment() {
     let segment = GroupValuesSegment {
@@ -21,4 +33,12 @@ fn rejects_empty_group_values_segment() {
         .expect_err("empty segment should be rejected");
 
     assert_eq!(error, GroupValuesSegmentError::EmptyValues);
+}
+
+#[test]
+fn rejects_value_count_that_exceeds_remaining_extensions() {
+    assert!(matches!(
+        parse_group_values_segment(&segment_header(1)),
+        Err(GroupValuesSegmentError::LengthOverflow)
+    ));
 }
