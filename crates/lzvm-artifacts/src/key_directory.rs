@@ -36,7 +36,7 @@ use crate::verification_key::{
     read_verification_key_binary_file, VerificationKeyError, VerificationKeyRoot,
 };
 use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -151,6 +151,13 @@ pub enum KeyDirectoryError {
         entry_index: usize,
         source_name: String,
     },
+    SourceFixedFileManifestSpanMismatch {
+        entry_index: usize,
+        source_name: String,
+        start: u64,
+        end: u64,
+        source_len: usize,
+    },
     MissingPath {
         role: &'static str,
         path: PathBuf,
@@ -264,6 +271,16 @@ impl fmt::Display for KeyDirectoryError {
             } => write!(
                 f,
                 "key-directory source fixed-file manifest entry {entry_index} references source {source_name} outside source program archive"
+            ),
+            Self::SourceFixedFileManifestSpanMismatch {
+                entry_index,
+                source_name,
+                start,
+                end,
+                source_len,
+            } => write!(
+                f,
+                "key-directory source fixed-file manifest entry {entry_index} span {start}..{end} exceeds source {source_name} length {source_len}"
             ),
             Self::MissingPath { role, path } => {
                 write!(f, "missing key-directory {role}: {}", path.display())
@@ -748,16 +765,25 @@ fn validate_source_fixed_file_manifest_archive(
     manifest: &SourceFixedFileManifest,
     archive: &SourceProgramArchive,
 ) -> Result<(), KeyDirectoryError> {
-    let source_names: BTreeSet<&str> = archive
+    let sources: BTreeMap<&str, usize> = archive
         .sources
         .iter()
-        .map(|source| source.source_name.as_str())
+        .map(|source| (source.source_name.as_str(), source.contents.len()))
         .collect();
     for (entry_index, entry) in manifest.entries.iter().enumerate() {
-        if !source_names.contains(entry.source_name.as_str()) {
+        let Some(source_len) = sources.get(entry.source_name.as_str()).copied() else {
             return Err(KeyDirectoryError::SourceFixedFileManifestSourceMismatch {
                 entry_index,
                 source_name: entry.source_name.clone(),
+            });
+        };
+        if entry.end > source_len as u64 {
+            return Err(KeyDirectoryError::SourceFixedFileManifestSpanMismatch {
+                entry_index,
+                source_name: entry.source_name.clone(),
+                start: entry.start,
+                end: entry.end,
+                source_len,
             });
         }
     }

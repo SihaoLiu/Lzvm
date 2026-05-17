@@ -1289,7 +1289,36 @@ fn write_source_program_archive(root: &Path) {
         sources: vec![
             SourceProgramArchiveSource {
                 source_name: "main.pil".to_owned(),
-                contents: "include \"shared.pil\";".to_owned(),
+                contents:
+                    "include \"shared.pil\";\ncol witness main.trace;\ncol witness aux.trace;"
+                        .to_owned(),
+            },
+            SourceProgramArchiveSource {
+                source_name: "shared.pil".to_owned(),
+                contents: "col fixed shared = [1, 2];".to_owned(),
+            },
+        ],
+        edges: vec![SourceProgramArchiveEdge {
+            from_index: 0,
+            to_index: 1,
+            request: "shared.pil".to_owned(),
+            kind: SourceProgramArchiveIncludeKind::Include,
+            visibility: SourceProgramArchiveIncludeVisibility::Public,
+        }],
+    };
+    write_bytes(
+        &layout.source_program_archive,
+        encode_source_program_archive(&archive).expect("source program archive should encode"),
+    );
+}
+
+fn write_source_program_archive_with_short_manifest_source(root: &Path) {
+    let layout = read_key_directory_layout(root).expect("layout should parse");
+    let archive = SourceProgramArchive {
+        sources: vec![
+            SourceProgramArchiveSource {
+                source_name: "main.pil".to_owned(),
+                contents: "col witness a;".to_owned(),
             },
             SourceProgramArchiveSource {
                 source_name: "shared.pil".to_owned(),
@@ -2177,6 +2206,36 @@ fn rejects_source_fixed_file_manifest_entries_missing_from_source_program_archiv
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "setup validation failed: key-directory source fixed-file manifest entry 0 references source main.pil outside source program archive\n"
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_source_fixed_file_manifest_spans_outside_source_program_archive() {
+    let dir = temp_dir("source-companion-span-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    write_source_fixed_file_manifest(&dir);
+    write_source_program_archive_with_short_manifest_source(&dir);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "validate",
+            dir.to_str().expect("path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "setup validation failed: key-directory source fixed-file manifest entry 0 span 10..40 exceeds source main.pil length 14\n"
     );
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
