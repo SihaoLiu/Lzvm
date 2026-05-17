@@ -2138,6 +2138,77 @@ fn reports_source_program_archive_status_for_setup_directories() {
 }
 
 #[test]
+fn write_source_companions_refreshes_existing_setup_directory_manifest() {
+    let dir = temp_dir("source-companions-refresh-manifest");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let root = dir.to_str().expect("path should be utf-8");
+    run_setup_command(&["setup", "generate-key", root]);
+    let manifest_path = dir.join(SETUP_DIRECTORY_MANIFEST_FILE);
+    let original_manifest =
+        read_setup_directory_manifest_file(&manifest_path).expect("manifest should parse");
+    assert!(!original_manifest.source_program_archive_present);
+    assert!(!original_manifest.source_fixed_file_manifest_present);
+
+    let source_dir = dir.join("source");
+    let main_path = source_dir.join("main.pil");
+    let child_path = source_dir.join("shared.pil");
+    write_bytes(
+        &main_path,
+        "include \"shared.pil\";\n\
+         col witness main.trace;",
+    );
+    write_bytes(&child_path, "col fixed shared = [1, 2];");
+
+    let mut companion_stdout = Vec::new();
+    let mut companion_stderr = Vec::new();
+    let companion_code = run_cli(
+        &[
+            "setup",
+            "write-source-companions",
+            main_path.to_str().expect("main path should be utf-8"),
+            root,
+        ],
+        &mut companion_stdout,
+        &mut companion_stderr,
+    );
+
+    assert_eq!(
+        companion_code,
+        0,
+        "source companion command failed: {}",
+        String::from_utf8_lossy(&companion_stderr)
+    );
+    assert!(companion_stderr.is_empty());
+
+    let mut validate_stdout = Vec::new();
+    let mut validate_stderr = Vec::new();
+    let validate_code = run_cli(
+        &["setup", "validate", root],
+        &mut validate_stdout,
+        &mut validate_stderr,
+    );
+
+    assert_eq!(validate_code, 0);
+    assert!(validate_stderr.is_empty());
+    let refreshed_manifest =
+        read_setup_directory_manifest_file(&manifest_path).expect("manifest should parse");
+    assert!(refreshed_manifest.source_program_archive_present);
+    assert_eq!(refreshed_manifest.source_program_archive_source_count, 2);
+    assert_eq!(refreshed_manifest.source_program_archive_edge_count, 1);
+    assert!(refreshed_manifest.source_fixed_file_manifest_present);
+    assert_eq!(refreshed_manifest.source_fixed_file_manifest_entry_count, 0);
+    let report = summarize_setup_directory(&dir).expect("directory summary should load");
+    assert!(report.source_program_archive_present);
+    assert_eq!(report.source_program_archive_source_count, 2);
+    assert_eq!(report.source_program_archive_edge_count, 1);
+    assert!(report.source_fixed_file_manifest_present);
+    assert_eq!(report.source_fixed_file_manifest_entry_count, 0);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn validates_generated_key_directory_materials() {
     let dir = temp_dir("generated-key-validate");
     let _ = fs::remove_dir_all(&dir);

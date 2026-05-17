@@ -1,6 +1,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
+use lzvm_artifacts::setup_manifest::SETUP_DIRECTORY_MANIFEST_FILE;
 use lzvm_artifacts::source_fixed_file_manifest::{
     encode_source_fixed_file_manifest, SourceFixedFileManifestError,
     SOURCE_FIXED_FILE_MANIFEST_FILE,
@@ -14,8 +15,9 @@ use lzvm_pil::{
 };
 
 use crate::{
-    publish_staging_bytes, source_fixed_file_manifest_from_resolved, write_staging_bytes,
-    SetupError, SourceFixedFileManifestWriteError, SourceFixedFileManifestWriteReport,
+    publish_staging_bytes, source_fixed_file_manifest_from_resolved,
+    write_setup_directory_manifest, write_staging_bytes, SetupDirectorySummaryError, SetupError,
+    SourceFixedFileManifestWriteError, SourceFixedFileManifestWriteReport,
     SourceProgramArchiveWriteReport,
 };
 
@@ -43,6 +45,7 @@ pub enum SourceCompanionWriteError {
     FixedResolve(ParseError),
     FixedManifest(SourceFixedFileManifestWriteError),
     FixedManifestEncode(SourceFixedFileManifestError),
+    Manifest(SetupDirectorySummaryError),
     Setup(SetupError),
 }
 
@@ -55,6 +58,7 @@ impl fmt::Display for SourceCompanionWriteError {
             Self::FixedResolve(error) => write!(f, "{error}"),
             Self::FixedManifest(error) => write!(f, "{error}"),
             Self::FixedManifestEncode(error) => write!(f, "{error}"),
+            Self::Manifest(error) => write!(f, "{error}"),
             Self::Setup(error) => write!(f, "{error}"),
         }
     }
@@ -69,6 +73,7 @@ impl std::error::Error for SourceCompanionWriteError {
             Self::FixedResolve(error) => Some(error),
             Self::FixedManifest(error) => Some(error),
             Self::FixedManifestEncode(error) => Some(error),
+            Self::Manifest(error) => Some(error),
             Self::Setup(error) => Some(error),
         }
     }
@@ -110,6 +115,10 @@ pub fn write_source_companions(
     let manifest_bytes = encode_source_fixed_file_manifest(&manifest)
         .map_err(SourceCompanionWriteError::FixedManifestEncode)?;
 
+    let refresh_manifest = request
+        .setup_dir
+        .join(SETUP_DIRECTORY_MANIFEST_FILE)
+        .is_file();
     let archive_output_path = request.setup_dir.join(SOURCE_PROGRAM_ARCHIVE_FILE);
     let manifest_output_path = request.setup_dir.join(SOURCE_FIXED_FILE_MANIFEST_FILE);
     let archive_staging_path = write_staging_bytes(
@@ -136,6 +145,10 @@ pub fn write_source_companions(
         "publish source fixed-file manifest",
     )
     .map_err(SourceCompanionWriteError::Setup)?;
+    if refresh_manifest {
+        write_setup_directory_manifest(&request.setup_dir)
+            .map_err(SourceCompanionWriteError::Manifest)?;
+    }
 
     Ok(SourceCompanionWriteReport {
         setup_dir: request.setup_dir.clone(),
