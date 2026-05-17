@@ -43,6 +43,7 @@ use crate::ProveSchedule;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadPcsQueryPlanSegmentError {
     MissingSegment,
+    DuplicateSegment,
     Segment(PcsQueryPlanSegmentError),
 }
 
@@ -74,6 +75,7 @@ impl fmt::Display for LoadPcsQueryPlanSegmentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingSegment => write!(f, "missing PCS query plan segment"),
+            Self::DuplicateSegment => write!(f, "duplicate PCS query plan segment"),
             Self::Segment(error) => write!(f, "invalid PCS query plan segment: {error}"),
         }
     }
@@ -117,7 +119,7 @@ impl std::error::Error for LoadPcsQueryPlanSegmentError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Segment(error) => Some(error),
-            Self::MissingSegment => None,
+            Self::MissingSegment | Self::DuplicateSegment => None,
         }
     }
 }
@@ -147,10 +149,15 @@ impl std::error::Error for ValidatePcsQueryPlanSegmentsError {
 pub fn load_pcs_query_plan_from_segments(
     segments: &[ProofSegment],
 ) -> Result<PcsQueryPlanSegment, LoadPcsQueryPlanSegmentError> {
-    let segment = segments
+    let mut matching_segments = segments
         .iter()
-        .find(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID)
+        .filter(|segment| segment.id == PCS_QUERY_PLAN_SEGMENT_ID);
+    let segment = matching_segments
+        .next()
         .ok_or(LoadPcsQueryPlanSegmentError::MissingSegment)?;
+    if matching_segments.next().is_some() {
+        return Err(LoadPcsQueryPlanSegmentError::DuplicateSegment);
+    }
     parse_pcs_query_plan_segment(&segment.data).map_err(LoadPcsQueryPlanSegmentError::Segment)
 }
 

@@ -76,6 +76,19 @@ fn rejects_invalid_pcs_query_plan_segment() {
 }
 
 #[test]
+fn rejects_duplicate_pcs_query_plan_segments() {
+    let segment = pcs_query_plan_proof_segment(vec![PcsQueryPlanUnit {
+        unit_index: 0,
+        queries: vec![1, 3],
+    }]);
+
+    let error = load_pcs_query_plan_from_segments(&[segment.clone(), segment])
+        .expect_err("duplicate query plan segments should reject");
+
+    assert_eq!(error.to_string(), "duplicate PCS query plan segment");
+}
+
+#[test]
 fn validates_seeded_pcs_query_plan_segments() {
     let schedule = sample_schedule();
     let public_hash = [7; 32];

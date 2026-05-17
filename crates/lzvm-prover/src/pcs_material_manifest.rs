@@ -58,6 +58,7 @@ impl From<PcsMaterialManifestSegmentError> for ProvePcsMaterialSegmentError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidatePcsMaterialManifestSegmentsError {
     MissingSegment,
+    DuplicateSegment,
     Segment(PcsMaterialManifestSegmentError),
     UnitCountMismatch,
     UnitIndexOverflow,
@@ -69,6 +70,7 @@ impl fmt::Display for ValidatePcsMaterialManifestSegmentsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingSegment => write!(f, "missing PCS material manifest segment"),
+            Self::DuplicateSegment => write!(f, "duplicate PCS material manifest segment"),
             Self::Segment(error) => write!(f, "invalid PCS material manifest segment: {error}"),
             Self::UnitCountMismatch => write!(f, "PCS material manifest unit count mismatch"),
             Self::UnitIndexOverflow => write!(f, "PCS material manifest unit index overflow"),
@@ -90,6 +92,7 @@ impl std::error::Error for ValidatePcsMaterialManifestSegmentsError {
         match self {
             Self::Segment(error) => Some(error),
             Self::MissingSegment
+            | Self::DuplicateSegment
             | Self::UnitCountMismatch
             | Self::UnitIndexOverflow
             | Self::MissingUnitMaterial { .. }
@@ -102,10 +105,15 @@ pub fn validate_pcs_material_manifest_segments(
     schedule: &ProveSchedule,
     segments: &[ProofSegment],
 ) -> Result<(), ValidatePcsMaterialManifestSegmentsError> {
-    let segment = segments
+    let mut matching_segments = segments
         .iter()
-        .find(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID)
+        .filter(|segment| segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID);
+    let segment = matching_segments
+        .next()
         .ok_or(ValidatePcsMaterialManifestSegmentsError::MissingSegment)?;
+    if matching_segments.next().is_some() {
+        return Err(ValidatePcsMaterialManifestSegmentsError::DuplicateSegment);
+    }
     let manifest = parse_pcs_material_manifest_segment(&segment.data)
         .map_err(ValidatePcsMaterialManifestSegmentsError::Segment)?;
     if manifest.units.len() != schedule.units.len() {

@@ -31,6 +31,17 @@ fn rejects_missing_pcs_material_manifest_segment() {
 }
 
 #[test]
+fn rejects_duplicate_pcs_material_manifest_segments() {
+    let schedule = sample_schedule();
+    let segment = build_pcs_material_manifest_segment(&schedule).expect("segment should build");
+
+    let error = validate_pcs_material_manifest_segments(&schedule, &[segment.clone(), segment])
+        .expect_err("duplicate material manifest segments should reject");
+
+    assert_eq!(error.to_string(), "duplicate PCS material manifest segment");
+}
+
+#[test]
 fn rejects_pcs_material_manifest_mismatches() {
     let schedule = sample_schedule();
     let segment = build_pcs_material_manifest_segment(&schedule).expect("segment should build");
