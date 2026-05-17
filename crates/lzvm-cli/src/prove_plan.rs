@@ -72,6 +72,11 @@ pub(crate) enum ParseError {
 
 fn parse_args(args: &[&str]) -> Result<ParsedProvePlan, ParseError> {
     let parsed = parse_run_args(args, 2, 2)?;
+    if parsed.program_image_cache.is_some() {
+        return Err(ParseError::Invalid(
+            "--program-image-cache is not supported for prove plan".to_owned(),
+        ));
+    }
     Ok(ParsedProvePlan {
         setup_dir: parsed.positionals[0].clone(),
         request: parsed.request,
@@ -393,6 +398,17 @@ mod tests {
             result,
             Err(ParseError::Invalid(message))
                 if message == "missing --program-image-cache value"
+        ));
+    }
+
+    #[test]
+    fn rejects_program_image_cache_option_for_plan_args() {
+        let result = parse_args(&["--program-image-cache", "cache.bin", "setup-dir", "out-dir"]);
+
+        assert!(matches!(
+            result,
+            Err(ParseError::Invalid(message))
+                if message == "--program-image-cache is not supported for prove plan"
         ));
     }
 
