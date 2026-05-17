@@ -5,8 +5,9 @@ use sha2::{Digest, Sha256};
 
 use crate::eth_block::{
     decode_eth_header_rlp, decode_eth_receipts_rlp, decode_eth_transactions_rlp,
-    decode_eth_withdrawals_rlp, eth_header_hash, eth_ommers_hash, keccak256, parse_eth_block_rlp,
-    EthBlockError, EthReceiptError, EthTransactionError, EthWithdrawalError,
+    decode_eth_withdrawals_rlp, eth_header_hash, eth_ommers_hash, eth_receipts_logs_bloom,
+    keccak256, parse_eth_block_rlp, EthBlockError, EthReceiptError, EthTransactionError,
+    EthWithdrawalError,
 };
 use crate::eth_trie::{
     receipt_trie_build, transaction_trie_build, withdrawals_trie_build, IndexedTrieBuild,
@@ -332,7 +333,12 @@ pub fn build_eth_block_input_with_receipts(
 ) -> Result<EthBlockInput, EthBlockInputError> {
     let mut input = build_eth_block_input(block_rlp)?;
     let receipts = parse_eth_receipts_rlp(receipts_rlp)?;
-    decode_eth_receipts_rlp(&receipts)?;
+    let decoded_receipts = decode_eth_receipts_rlp(&receipts)?;
+    if let Some(logs_bloom) = eth_receipts_logs_bloom(&decoded_receipts) {
+        if logs_bloom != input.logs_bloom {
+            return Err(EthBlockInputError::LogsBloomMismatch);
+        }
+    }
     let build = receipt_trie_build(&receipts);
     if build.root != input.receipts_root {
         return Err(EthBlockInputError::ReceiptsRootMismatch);

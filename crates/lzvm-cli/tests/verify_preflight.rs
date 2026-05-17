@@ -115,7 +115,7 @@ fn legacy_header_items_with_receipts(
         rlp_bytes(&[0x44; 32]),
         rlp_bytes(&transactions_root),
         rlp_bytes(&receipts_root),
-        rlp_bytes(&[0x77; 256]),
+        rlp_bytes(&[0; 256]),
         rlp_bytes(&[1]),
         rlp_bytes(&[2]),
         rlp_bytes(&[0x0f, 0x42, 0x40]),

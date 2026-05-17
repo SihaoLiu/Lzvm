@@ -608,6 +608,21 @@ pub fn eth_logs_bloom(logs: &[EthLogRlp]) -> [u8; 256] {
     bloom
 }
 
+pub fn eth_receipts_logs_bloom(receipts: &[EthReceiptRlp]) -> Option<[u8; 256]> {
+    let mut bloom = [0_u8; 256];
+    for receipt in receipts {
+        match receipt {
+            EthReceiptRlp::Legacy { logs_bloom, .. } => {
+                for (target, source) in bloom.iter_mut().zip(logs_bloom.iter()) {
+                    *target |= *source;
+                }
+            }
+            EthReceiptRlp::Typed { .. } => return None,
+        }
+    }
+    Some(bloom)
+}
+
 pub fn decode_eth_receipt_rlp(receipt: &RlpItem) -> Result<EthReceiptRlp, EthReceiptError> {
     match receipt {
         RlpItem::List(fields) => decode_legacy_eth_receipt(fields),

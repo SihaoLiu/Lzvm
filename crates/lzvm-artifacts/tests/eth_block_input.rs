@@ -110,9 +110,10 @@ fn rejects_malformed_receipt_bodies() {
     ]);
     let receipts = vec![parse_rlp(&receipt_item).expect("receipt item should parse")];
     let receipt_build = receipt_trie_build(&receipts);
-    let block_rlp = sample_block_rlp_with_transactions_and_receipts(
+    let block_rlp = sample_block_rlp_with_transactions_receipts_and_logs_bloom(
         empty_trie_root(),
         receipt_build.root,
+        [0x77; 256],
         Vec::new(),
     );
     let receipts_rlp = rlp_list(&[receipt_item]);
@@ -121,6 +122,25 @@ fn rejects_malformed_receipt_bodies() {
         .expect_err("block input should reject malformed receipts");
 
     assert_eq!(error.to_string(), "expected 4 receipt fields, found 3");
+}
+
+#[test]
+fn rejects_block_logs_bloom_mismatches() {
+    let receipt_item = receipt_item();
+    let receipts = vec![parse_rlp(&receipt_item).expect("receipt item should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    let block_rlp = sample_block_rlp_with_transactions_receipts_and_logs_bloom(
+        empty_trie_root(),
+        receipt_build.root,
+        [0x77; 256],
+        Vec::new(),
+    );
+    let receipts_rlp = rlp_list(&[receipt_item]);
+
+    let error = build_eth_block_input_with_receipts(&block_rlp, &receipts_rlp)
+        .expect_err("block input should reject mismatched block logs bloom");
+
+    assert!(matches!(error, EthBlockInputError::LogsBloomMismatch));
 }
 
 #[test]
@@ -291,9 +311,24 @@ fn sample_block_rlp_with_transactions_and_receipts(
     receipts_root: [u8; 32],
     transaction_items: Vec<Vec<u8>>,
 ) -> Vec<u8> {
+    sample_block_rlp_with_transactions_receipts_and_logs_bloom(
+        transactions_root,
+        receipts_root,
+        [0; 256],
+        transaction_items,
+    )
+}
+
+fn sample_block_rlp_with_transactions_receipts_and_logs_bloom(
+    transactions_root: [u8; 32],
+    receipts_root: [u8; 32],
+    logs_bloom: [u8; 256],
+    transaction_items: Vec<Vec<u8>>,
+) -> Vec<u8> {
     let header_rlp = rlp_list(&legacy_header_items_with_receipts(
         transactions_root,
         receipts_root,
+        logs_bloom,
         None,
     ));
     let transactions = rlp_list(&transaction_items);
@@ -318,12 +353,13 @@ fn legacy_header_items(
     transactions_root: [u8; 32],
     withdrawals_root: Option<[u8; 32]>,
 ) -> Vec<Vec<u8>> {
-    legacy_header_items_with_receipts(transactions_root, [0x66; 32], withdrawals_root)
+    legacy_header_items_with_receipts(transactions_root, [0x66; 32], [0x77; 256], withdrawals_root)
 }
 
 fn legacy_header_items_with_receipts(
     transactions_root: [u8; 32],
     receipts_root: [u8; 32],
+    logs_bloom: [u8; 256],
     withdrawals_root: Option<[u8; 32]>,
 ) -> Vec<Vec<u8>> {
     let mut items = vec![
@@ -335,7 +371,7 @@ fn legacy_header_items_with_receipts(
         rlp_bytes(&[0x44; 32]),
         rlp_bytes(&transactions_root),
         rlp_bytes(&receipts_root),
-        rlp_bytes(&[0x77; 256]),
+        rlp_bytes(&logs_bloom),
         rlp_bytes(&[1]),
         rlp_bytes(&[2]),
         rlp_bytes(&[0x0f, 0x42, 0x40]),

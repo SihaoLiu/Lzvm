@@ -420,9 +420,10 @@ fn sample_block_rlp_with_base_fee() -> Vec<u8> {
 }
 
 fn sample_empty_block_rlp_with_receipts_root(receipts_root: [u8; 32]) -> Vec<u8> {
-    let header_rlp = rlp_list(&legacy_header_items_with_receipts(
+    let header_rlp = rlp_list(&legacy_header_items_with_receipts_and_logs_bloom(
         empty_trie_root(),
         receipts_root,
+        [0; 256],
         None,
     ));
     let empty_list = rlp_list(&[]);
@@ -433,12 +434,18 @@ fn legacy_header_items(
     transactions_root: [u8; 32],
     withdrawals_root: Option<[u8; 32]>,
 ) -> Vec<Vec<u8>> {
-    legacy_header_items_with_receipts(transactions_root, [0x66; 32], withdrawals_root)
+    legacy_header_items_with_receipts_and_logs_bloom(
+        transactions_root,
+        [0x66; 32],
+        [0x77; 256],
+        withdrawals_root,
+    )
 }
 
-fn legacy_header_items_with_receipts(
+fn legacy_header_items_with_receipts_and_logs_bloom(
     transactions_root: [u8; 32],
     receipts_root: [u8; 32],
+    logs_bloom: [u8; 256],
     withdrawals_root: Option<[u8; 32]>,
 ) -> Vec<Vec<u8>> {
     let mut items = vec![
@@ -450,7 +457,7 @@ fn legacy_header_items_with_receipts(
         rlp_bytes(&[0x44; 32]),
         rlp_bytes(&transactions_root),
         rlp_bytes(&receipts_root),
-        rlp_bytes(&[0x77; 256]),
+        rlp_bytes(&logs_bloom),
         rlp_bytes(&[1]),
         rlp_bytes(&[2]),
         rlp_bytes(&[0x0f, 0x42, 0x40]),
