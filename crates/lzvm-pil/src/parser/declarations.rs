@@ -1932,7 +1932,10 @@ fn parse_alias_identifier(
             start: missing_start(tokens, index),
         });
     };
-    if alias_token.kind != TokenKind::Identifier {
+    if !matches!(
+        alias_token.kind,
+        TokenKind::Identifier | TokenKind::StringLiteral | TokenKind::TemplateLiteral
+    ) {
         return Err(ParseError::ExpectedAlias {
             source_name: source.source_name.clone(),
             start: alias_token.start,

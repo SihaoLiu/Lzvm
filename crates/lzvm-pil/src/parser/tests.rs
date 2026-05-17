@@ -652,13 +652,15 @@ fn parses_air_instances_from_group_bodies() {
            virtual Range(id: 7) alias Range7;\n\
            Dma();\n\
            localAir(N: 2**16) alias Local;\n\
+           localAir(N: 2**10) alias \"LocalString\";\n\
+           localAir(N: 2**8) alias `Local${name}`;\n\
            for (int i = 0; i < 2; i++) { Helper(); }\n\
          }",
     );
 
     let instances = parse_air_instance_declarations(&source).expect("air instances should parse");
 
-    assert_eq!(instances.len(), 3);
+    assert_eq!(instances.len(), 5);
     assert_eq!(instances[0].air_group, "Main");
     assert!(instances[0].virtual_instance);
     assert_eq!(instances[0].template, "Range");
@@ -688,6 +690,22 @@ fn parses_air_instances_from_group_bodies() {
     assert_eq!(instances[2].template, "localAir");
     assert_eq!(instances[2].alias.as_deref(), Some("Local"));
     let args_expressions = instances[2]
+        .args_expressions
+        .as_ref()
+        .expect("air instance args should be recorded");
+    assert_eq!(args_expressions.len(), 1);
+    assert_eq!(args_expressions[0].name.as_deref(), Some("N"));
+    assert_eq!(instances[3].template, "localAir");
+    assert_eq!(instances[3].alias.as_deref(), Some("LocalString"));
+    let args_expressions = instances[3]
+        .args_expressions
+        .as_ref()
+        .expect("air instance args should be recorded");
+    assert_eq!(args_expressions.len(), 1);
+    assert_eq!(args_expressions[0].name.as_deref(), Some("N"));
+    assert_eq!(instances[4].template, "localAir");
+    assert_eq!(instances[4].alias.as_deref(), Some("Local${name}"));
+    let args_expressions = instances[4]
         .args_expressions
         .as_ref()
         .expect("air instance args should be recorded");
