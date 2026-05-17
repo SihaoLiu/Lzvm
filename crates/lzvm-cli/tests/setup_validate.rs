@@ -3835,6 +3835,44 @@ fn prints_prove_inputs_from_trace_bytes() {
     assert!(stderr.is_empty());
 }
 
+#[cfg(not(feature = "cuda"))]
+#[test]
+fn prove_inputs_rejects_gpu_preallocate_without_cuda() {
+    let dir = temp_dir("prove-inputs-gpu-preallocate-unavailable");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let trace_path = dir.join("trace.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&trace_path, [1_u8, 2, 3, 4]);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            "--gpu-preallocate",
+            "--trace-bytes",
+            trace_path.to_str().expect("trace path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove inputs failed: prover GPU setup is unavailable\n"
+    );
+}
+
 #[test]
 fn prints_prove_inputs_from_trace_bundle() {
     let dir = temp_dir("prove-inputs-trace-bundle");

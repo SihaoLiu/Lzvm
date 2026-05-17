@@ -40,7 +40,8 @@ use crate::eth_block_prove_input::{
 };
 use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{
-    parse_run_args, read_checked_setup_catalog, write_run_plan_summary, ParseError, ParsedRunArgs,
+    parse_run_args, prepare_requested_gpu_setup, read_checked_setup_catalog,
+    write_run_plan_summary, ParseError, ParsedRunArgs,
 };
 
 pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -348,15 +349,6 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     }
     write_witness_output_summary(stdout, commitments);
     0
-}
-
-fn prepare_requested_gpu_setup(
-    plan: &ProveExecutionPlan,
-) -> Result<(), lzvm_prover::GpuSetupError> {
-    if plan.run_plan.gpu.preallocate {
-        lzvm_prover::prepare_gpu_setup(plan.run_plan.schedule.max_extended_domain_bits as usize)?;
-    }
-    Ok(())
 }
 
 struct ParsedWitnessArgs {

@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryCatalog};
 use lzvm_prover::setup_preflight::validate_setup_directory_manifest_if_present;
 use lzvm_prover::{
-    derive_prove_run_plan, GpuRunOptions, ProvePartitionPlan, ProvePassKind, ProvePassRequest,
-    ProveRunOptions, ProveRunPlan, ProveRunRequest,
+    derive_prove_run_plan, GpuRunOptions, ProveExecutionPlan, ProvePartitionPlan, ProvePassKind,
+    ProvePassRequest, ProveRunOptions, ProveRunPlan, ProveRunRequest,
 };
 
 pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -344,6 +344,15 @@ pub(crate) fn write_run_plan_summary(stdout: &mut dyn Write, plan: &ProveRunPlan
         "setup_hash={}",
         format_hash(&plan.schedule.setup_hash)
     );
+}
+
+pub(crate) fn prepare_requested_gpu_setup(
+    plan: &ProveExecutionPlan,
+) -> Result<(), lzvm_prover::GpuSetupError> {
+    if plan.run_plan.gpu.preallocate {
+        lzvm_prover::prepare_gpu_setup(plan.run_plan.schedule.max_extended_domain_bits as usize)?;
+    }
+    Ok(())
 }
 
 pub(crate) fn format_hash(hash: &[u8; 32]) -> String {
