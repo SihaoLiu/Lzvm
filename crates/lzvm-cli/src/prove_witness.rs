@@ -83,13 +83,6 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         );
         return 1;
     }
-    if !parsed.run_args.request.gpu.pack_trace {
-        let _ = writeln!(
-            stderr,
-            "prove witness failed: unpacked trace is unsupported by prove witness"
-        );
-        return 1;
-    }
     let eth_block_input = match validate_eth_block_input(&parsed.eth_block_input) {
         Ok(value) => value,
         Err(message) => {
