@@ -537,6 +537,45 @@ fn validates_required_key_directory_files() {
 }
 
 #[test]
+fn rejects_final_circuit_directory_markers() {
+    let dir = temp_dir("final-circuit-directory-marker");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+
+    let base_layout = read_key_directory_layout(&dir).expect("layout should parse");
+    for unit in &base_layout.units {
+        write_catalog_unit_files(unit);
+    }
+
+    let program_name = &fixtures::sample_key_directory_catalog_global_info().name;
+    let final_circuit_setup = dir
+        .join(program_name)
+        .join("recursivef")
+        .join("recursivef.starkinfo.bin");
+    fs::create_dir_all(&final_circuit_setup).expect("directory marker should be created");
+
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    assert!(
+        layout
+            .units
+            .iter()
+            .any(|unit| unit.kind == KeyUnitKind::FinalCircuit),
+        "final circuit marker should add a unit for validation"
+    );
+
+    let error = validate_key_directory_layout(&layout).expect_err("layout should be rejected");
+    assert!(matches!(
+        error,
+        KeyDirectoryError::MissingPath {
+            role: "unit setup metadata",
+            path,
+        } if path == final_circuit_setup
+    ));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn reports_missing_required_key_directory_files() {
     let dir = temp_dir("missing");
     let _ = fs::remove_dir_all(&dir);

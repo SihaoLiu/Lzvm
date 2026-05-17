@@ -540,7 +540,7 @@ pub fn read_key_directory_layout(
     let root = root.as_ref().to_path_buf();
     let global_paths = GlobalKeyPaths::from_root(&root);
     let global_info = read_global_info_path(&global_paths)?;
-    let units = derive_unit_paths(&root, &global_info);
+    let units = derive_unit_paths(&root, &global_info)?;
 
     Ok(KeyDirectoryLayout {
         source_fixed_file_manifest: root.join(SOURCE_FIXED_FILE_MANIFEST_FILE),
@@ -999,7 +999,10 @@ fn read_pcs_setup_material_companion(
     Ok((true, Some(bytes), Some(found)))
 }
 
-fn derive_unit_paths(root: &Path, global_info: &GlobalInfo) -> Vec<KeyUnitPaths> {
+fn derive_unit_paths(
+    root: &Path,
+    global_info: &GlobalInfo,
+) -> Result<Vec<KeyUnitPaths>, KeyDirectoryError> {
     let mut units = Vec::new();
     let program_root = root.join(&global_info.name);
 
@@ -1079,7 +1082,8 @@ fn derive_unit_paths(root: &Path, global_info: &GlobalInfo) -> Vec<KeyUnitPaths>
     }));
 
     let final_circuit_prefix = program_root.join("recursivef").join("recursivef");
-    if append_suffix(&final_circuit_prefix, ".starkinfo.bin").is_file() {
+    let final_circuit_setup = append_suffix(&final_circuit_prefix, ".starkinfo.bin");
+    if optional_path_exists(&final_circuit_setup, "final circuit setup metadata")? {
         units.push(KeyUnitPaths::from_prefix(KeyUnitPathSpec {
             kind: KeyUnitKind::FinalCircuit,
             group_id: None,
@@ -1093,7 +1097,7 @@ fn derive_unit_paths(root: &Path, global_info: &GlobalInfo) -> Vec<KeyUnitPaths>
         }));
     }
 
-    units
+    Ok(units)
 }
 
 struct KeyUnitPathSpec {
