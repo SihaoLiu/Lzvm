@@ -36,6 +36,29 @@ const OPERAND_CUSTOM_COMMITMENT_TAG: u8 = 11;
 const OPERAND_AIR_GROUP_VALUE_TAG: u8 = 12;
 const OPERAND_AIR_VALUE_TAG: u8 = 13;
 
+const U32_BYTES: usize = 4;
+const TAG_BYTES: usize = 1;
+const FLAG_BYTES: usize = 1;
+const STRING_MIN_BYTES: usize = U32_BYTES;
+const REFERENCE_BODY_BYTES: usize = U32_BYTES + U32_BYTES;
+const DESTINATION_MIN_BYTES: usize = TAG_BYTES + REFERENCE_BODY_BYTES;
+const OPERAND_MIN_BYTES: usize = TAG_BYTES + REFERENCE_BODY_BYTES;
+const HINT_MIN_BYTES: usize = STRING_MIN_BYTES + U32_BYTES;
+const HINT_FIELD_MIN_BYTES: usize = STRING_MIN_BYTES + U32_BYTES;
+const HINT_VALUE_MIN_BYTES: usize = TAG_BYTES + STRING_MIN_BYTES + U32_BYTES;
+const POSITION_BYTES: usize = U32_BYTES;
+const EXPRESSION_MIN_BYTES: usize =
+    U32_BYTES + U32_BYTES + STRING_MIN_BYTES + U32_BYTES + FLAG_BYTES + U32_BYTES;
+const CONSTRAINT_MIN_BYTES: usize = U32_BYTES
+    + TAG_BYTES
+    + FLAG_BYTES
+    + FLAG_BYTES
+    + STRING_MIN_BYTES
+    + FLAG_BYTES
+    + U32_BYTES
+    + U32_BYTES;
+const OPERATION_MIN_BYTES: usize = TAG_BYTES + DESTINATION_MIN_BYTES + U32_BYTES;
+
 pub(super) fn parse_section(bytes: &[u8]) -> Result<ExpressionInfo, ExpressionInfoError> {
     let mut reader = Reader::new(bytes);
     let value = ExpressionInfo {
@@ -58,20 +81,20 @@ pub(super) fn encode_section(value: &ExpressionInfo) -> Result<Vec<u8>, Expressi
     Ok(out)
 }
 fn read_hints(reader: &mut Reader<'_>) -> Result<Vec<HintInfo>, ExpressionInfoError> {
-    let count = reader.read_u32()?;
-    let mut hints = Vec::with_capacity(count as usize);
+    let count = read_bounded_count(reader, HINT_MIN_BYTES)?;
+    let mut hints = Vec::with_capacity(count);
     for _ in 0..count {
         let name = reader.read_string()?;
-        let field_count = reader.read_u32()?;
-        let mut fields = Vec::with_capacity(field_count as usize);
+        let field_count = read_bounded_count(reader, HINT_FIELD_MIN_BYTES)?;
+        let mut fields = Vec::with_capacity(field_count);
         for _ in 0..field_count {
             let name = reader.read_string()?;
-            let value_count = reader.read_u32()?;
-            let mut values = Vec::with_capacity(value_count as usize);
+            let value_count = read_bounded_count(reader, HINT_VALUE_MIN_BYTES)?;
+            let mut values = Vec::with_capacity(value_count);
             for _ in 0..value_count {
                 let payload = reader.read_hint_payload()?;
-                let position_count = reader.read_u32()?;
-                let mut positions = Vec::with_capacity(position_count as usize);
+                let position_count = read_bounded_count(reader, POSITION_BYTES)?;
+                let mut positions = Vec::with_capacity(position_count);
                 for _ in 0..position_count {
                     positions.push(reader.read_u32()?);
                 }
@@ -103,8 +126,8 @@ fn write_hints(out: &mut Vec<u8>, values: &[HintInfo]) -> Result<(), ExpressionI
     Ok(())
 }
 fn read_expressions(reader: &mut Reader<'_>) -> Result<Vec<ExpressionCode>, ExpressionInfoError> {
-    let count = reader.read_u32()?;
-    let mut expressions = Vec::with_capacity(count as usize);
+    let count = read_bounded_count(reader, EXPRESSION_MIN_BYTES)?;
+    let mut expressions = Vec::with_capacity(count);
     for _ in 0..count {
         expressions.push(ExpressionCode {
             expression_id: reader.read_u32()?,
@@ -133,8 +156,8 @@ fn write_expressions(
     Ok(())
 }
 fn read_constraints(reader: &mut Reader<'_>) -> Result<Vec<ConstraintCode>, ExpressionInfoError> {
-    let count = reader.read_u32()?;
-    let mut constraints = Vec::with_capacity(count as usize);
+    let count = read_bounded_count(reader, CONSTRAINT_MIN_BYTES)?;
+    let mut constraints = Vec::with_capacity(count);
     for _ in 0..count {
         constraints.push(ConstraintCode {
             stage: reader.read_u32()?,
@@ -167,13 +190,13 @@ fn write_constraints(
     Ok(())
 }
 fn read_operations(reader: &mut Reader<'_>) -> Result<Vec<CodeOperation>, ExpressionInfoError> {
-    let count = reader.read_u32()?;
-    let mut operations = Vec::with_capacity(count as usize);
+    let count = read_bounded_count(reader, OPERATION_MIN_BYTES)?;
+    let mut operations = Vec::with_capacity(count);
     for _ in 0..count {
         let op = read_operation_tag(reader.read_u8()?)?;
         let destination = reader.read_destination()?;
-        let source_count = reader.read_u32()?;
-        let mut sources = Vec::with_capacity(source_count as usize);
+        let source_count = read_bounded_count(reader, OPERAND_MIN_BYTES)?;
+        let mut sources = Vec::with_capacity(source_count);
         for _ in 0..source_count {
             sources.push(reader.read_operand()?);
         }
@@ -530,6 +553,19 @@ fn write_len(out: &mut Vec<u8>, value: usize) -> Result<(), ExpressionInfoError>
     write_u32(out, value);
     Ok(())
 }
+fn read_bounded_count(
+    reader: &mut Reader<'_>,
+    record_min_bytes: usize,
+) -> Result<usize, ExpressionInfoError> {
+    let count = u32_to_usize(reader.read_u32()?)?;
+    if count > reader.remaining_len() / record_min_bytes {
+        return Err(ExpressionInfoError::LengthOverflow);
+    }
+    Ok(count)
+}
+fn u32_to_usize(value: u32) -> Result<usize, ExpressionInfoError> {
+    usize::try_from(value).map_err(|_| ExpressionInfoError::LengthOverflow)
+}
 fn write_u32(out: &mut Vec<u8>, value: u32) {
     out.extend_from_slice(&value.to_le_bytes());
 }
@@ -551,6 +587,10 @@ impl<'a> Reader<'a> {
 
     fn position(&self) -> usize {
         self.offset
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 
     fn read_optional_expression_destination(
@@ -809,7 +849,7 @@ impl<'a> Reader<'a> {
 
     fn read_string(&mut self) -> Result<String, ExpressionInfoError> {
         let count = self.read_u32()?;
-        let count = usize::try_from(count).map_err(|_| ExpressionInfoError::LengthOverflow)?;
+        let count = u32_to_usize(count)?;
         let bytes = self.read_exact(count)?;
         std::str::from_utf8(bytes)
             .map(str::to_owned)
