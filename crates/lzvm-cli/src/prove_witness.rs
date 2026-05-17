@@ -25,8 +25,8 @@ use lzvm_prover::{
     run_prove_witness_commitments_for_all_units,
     run_prove_witness_commitments_for_all_units_with_trace_bundle,
     run_prove_witness_commitments_with_trace_backend, ProveExecutionInputArtifacts,
-    ProveExecutionPlan, ProveExecutionUnitArtifacts, ProveSchedule, ProveWitnessAuxiliaryInputs,
-    ProveWitnessCommitments, ProveWitnessTraceCommitments,
+    ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassKind, ProveSchedule,
+    ProveWitnessAuxiliaryInputs, ProveWitnessCommitments, ProveWitnessTraceCommitments,
 };
 
 use crate::program_image_cache::write_program_image_cache_summary;
@@ -72,6 +72,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         );
         return 1;
     }
+    let contribution_only = plan.run_plan.pass.kind() == ProvePassKind::Contributions;
     if parsed.evaluation_values_segment.is_some()
         && !(parsed.all_units || plan.run_plan.options.aggregate)
     {
@@ -246,6 +247,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             .as_ref()
             .map(|summary| &summary.cache),
         output: &output,
+        contribution_only,
     };
     let proof_bytes = match build_proof_bytes(&request, plan.run_plan.options.verify_outputs) {
         Ok(proof_bytes) => proof_bytes,
@@ -586,6 +588,7 @@ struct WitnessOutputSaveRequest<'a> {
     unit_values_segment_input: Option<&'a Path>,
     program_image_cache: Option<&'a ProgramImageCommitmentCache>,
     output: &'a ProveWitnessTraceCommitments,
+    contribution_only: bool,
 }
 
 fn save_witness_outputs(
@@ -677,24 +680,27 @@ fn finish_all_units_witness_run(
         Some(path) => Some(read_evaluation_values_segment_input(path)?),
         None => None,
     };
-    let proof = lzvm_prover::build_witness_proof_artifact_for_all_units(
-        &lzvm_prover::WitnessAllUnitsProofRequest {
-            catalog,
-            schedule: &plan.run_plan.schedule,
-            execution_units: &plan.units,
-            gpu_streams: plan.run_plan.gpu.max_streams,
-            public_values: public_values.as_ref(),
-            outputs,
-            auxiliary_inputs,
-            unit_values: &unit_values,
-            evaluation_values_segment: evaluation_values_segment.as_ref(),
-            verify_outputs: plan.run_plan.options.verify_outputs,
-            program_image_cache: plan
-                .program_image_cache
-                .as_ref()
-                .map(|summary| &summary.cache),
-        },
-    )?;
+    let proof_request = lzvm_prover::WitnessAllUnitsProofRequest {
+        catalog,
+        schedule: &plan.run_plan.schedule,
+        execution_units: &plan.units,
+        gpu_streams: plan.run_plan.gpu.max_streams,
+        public_values: public_values.as_ref(),
+        outputs,
+        auxiliary_inputs,
+        unit_values: &unit_values,
+        evaluation_values_segment: evaluation_values_segment.as_ref(),
+        verify_outputs: plan.run_plan.options.verify_outputs,
+        program_image_cache: plan
+            .program_image_cache
+            .as_ref()
+            .map(|summary| &summary.cache),
+    };
+    let proof = if plan.run_plan.pass.kind() == ProvePassKind::Contributions {
+        lzvm_prover::build_witness_contribution_proof_artifact_for_all_units(&proof_request)?
+    } else {
+        lzvm_prover::build_witness_proof_artifact_for_all_units(&proof_request)?
+    };
     let proof_bytes = match proof {
         Some(proof) => Some(
             encode_proof_artifact(&proof)
@@ -725,6 +731,7 @@ fn finish_all_units_witness_run(
                     .as_ref()
                     .map(|summary| &summary.cache),
                 output,
+                contribution_only: plan.run_plan.pass.kind() == ProvePassKind::Contributions,
             };
             save_witness_outputs(&request, &segment)?;
         }
@@ -944,7 +951,21 @@ fn build_proof_bytes(
         )?),
         None => None,
     };
-    let proof =
+    let proof = if request.contribution_only {
+        lzvm_prover::build_witness_contribution_proof_artifact_for_unit(
+            &lzvm_prover::WitnessProofRequest {
+                catalog: request.catalog,
+                schedule: request.schedule,
+                execution_unit: request.execution_unit,
+                gpu_streams: request.gpu_streams,
+                public_values: Some(&public_values),
+                unit_values: unit_values.as_deref(),
+                output: request.output,
+                verify_outputs,
+                program_image_cache: request.program_image_cache,
+            },
+        )?
+    } else {
         lzvm_prover::build_witness_proof_artifact_for_unit(&lzvm_prover::WitnessProofRequest {
             catalog: request.catalog,
             schedule: request.schedule,
@@ -955,7 +976,8 @@ fn build_proof_bytes(
             output: request.output,
             verify_outputs,
             program_image_cache: request.program_image_cache,
-        })?;
+        })?
+    };
     match proof {
         Some(proof) => encode_proof_artifact(&proof)
             .map(Some)

@@ -14,7 +14,7 @@ use crate::contribution::{
 };
 use crate::group_values::build_group_values_segment;
 use crate::proof_values::build_pcs_proof_values_segment_from_packed_values;
-use crate::setup_preflight::validate_setup_preflight;
+use crate::setup_preflight::{validate_setup_preflight, validate_setup_preflight_hashes};
 use crate::unit_values::{
     build_unit_values_segment_from_packed_values,
     build_unit_values_segment_from_packed_values_batch, ProveUnitValues,
@@ -356,6 +356,59 @@ pub fn build_witness_proof_artifact_for_unit(
     Ok(Some(proof))
 }
 
+pub fn build_witness_contribution_proof_artifact_for_unit(
+    request: &WitnessProofRequest<'_>,
+) -> Result<Option<ProofArtifact>, String> {
+    let Some(public_values) = request.public_values else {
+        return Ok(None);
+    };
+    if public_values.setup_hash != request.schedule.setup_hash {
+        return Err("public inputs setup hash mismatch".to_owned());
+    }
+    let public_values_hash = public_values_digest(public_values)
+        .map_err(|error| format!("hash public inputs failed: {error}"))?;
+    let cache_segment = build_program_image_cache_proof_segment(request.program_image_cache)?;
+    let unit_values = request
+        .unit_values
+        .unwrap_or(&request.output.auxiliary_inputs().unit_values);
+    let contribution_source = WitnessContributionSource {
+        output: request.output,
+        packed_unit_values: unit_values,
+    };
+    validate_witness_contribution_sources(
+        request.schedule,
+        std::slice::from_ref(&contribution_source),
+    )?;
+    let contribution_segment = build_witness_contribution_segment(
+        request.catalog,
+        request.schedule,
+        std::slice::from_ref(&contribution_source),
+    )?
+    .ok_or_else(|| "contribution proof has no contribution segment".to_owned())?;
+    let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(
+        &request.catalog.layout.global_info,
+        &request.output.auxiliary_inputs().proof_values,
+    )
+    .map_err(|error| format!("build proof values segment failed: {error}"))?;
+
+    let mut segments = Vec::new();
+    if let Some(proof_values_segment) = proof_values_segment {
+        segments.push(proof_values_segment);
+    }
+    segments.push(contribution_segment);
+    append_program_image_cache_segment(&mut segments, cache_segment);
+    let proof = ProofArtifact {
+        setup_hash: request.schedule.setup_hash,
+        public_values_hash,
+        segments,
+    };
+    if request.verify_outputs {
+        validate_setup_preflight_hashes(request.catalog, &proof, public_values)
+            .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
+    }
+    Ok(Some(proof))
+}
+
 pub struct WitnessAllUnitsProofRequest<'a> {
     pub catalog: &'a KeyDirectoryCatalog,
     pub schedule: &'a ProveSchedule,
@@ -368,6 +421,66 @@ pub struct WitnessAllUnitsProofRequest<'a> {
     pub evaluation_values_segment: Option<&'a ProofSegment>,
     pub verify_outputs: bool,
     pub program_image_cache: Option<&'a ProgramImageCommitmentCache>,
+}
+
+pub fn build_witness_contribution_proof_artifact_for_all_units(
+    request: &WitnessAllUnitsProofRequest<'_>,
+) -> Result<Option<ProofArtifact>, String> {
+    let Some(public_values) = request.public_values else {
+        return Ok(None);
+    };
+    if public_values.setup_hash != request.schedule.setup_hash {
+        return Err("public inputs setup hash mismatch".to_owned());
+    }
+    let public_values_hash = public_values_digest(public_values)
+        .map_err(|error| format!("hash public inputs failed: {error}"))?;
+    let cache_segment = build_program_image_cache_proof_segment(request.program_image_cache)?;
+    let contribution_sources = request
+        .outputs
+        .iter()
+        .map(|output| {
+            let unit_index = output.commitments().unit_index();
+            let packed_unit_values = request
+                .unit_values
+                .iter()
+                .find(|values| values.unit_index == unit_index)
+                .map(|values| values.packed_values.as_slice())
+                .unwrap_or_else(|| output.auxiliary_inputs().unit_values.as_slice());
+            WitnessContributionSource {
+                output,
+                packed_unit_values,
+            }
+        })
+        .collect::<Vec<_>>();
+    validate_witness_contribution_sources(request.schedule, &contribution_sources)?;
+    let contribution_segment = build_witness_contribution_segment(
+        request.catalog,
+        request.schedule,
+        &contribution_sources,
+    )?
+    .ok_or_else(|| "contribution proof has no contribution segment".to_owned())?;
+    let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(
+        &request.catalog.layout.global_info,
+        &request.auxiliary_inputs.proof_values,
+    )
+    .map_err(|error| format!("build proof values segment failed: {error}"))?;
+
+    let mut segments = Vec::new();
+    if let Some(proof_values_segment) = proof_values_segment {
+        segments.push(proof_values_segment);
+    }
+    segments.push(contribution_segment);
+    append_program_image_cache_segment(&mut segments, cache_segment);
+    let proof = ProofArtifact {
+        setup_hash: request.schedule.setup_hash,
+        public_values_hash,
+        segments,
+    };
+    if request.verify_outputs {
+        validate_setup_preflight_hashes(request.catalog, &proof, public_values)
+            .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
+    }
+    Ok(Some(proof))
 }
 
 pub fn build_witness_proof_artifact_for_all_units(
@@ -537,6 +650,26 @@ fn build_witness_contribution_segment(
 
     build_contribution_segment(&entries)
         .map_err(|error| format!("build contribution segment failed: {error}"))
+}
+
+fn validate_witness_contribution_sources(
+    schedule: &ProveSchedule,
+    sources: &[WitnessContributionSource<'_>],
+) -> Result<(), String> {
+    for source in sources {
+        let unit_index = source.output.commitments().unit_index();
+        let unit = schedule
+            .units
+            .get(unit_index)
+            .ok_or_else(|| format!("witness contribution unit index out of range: {unit_index}"))?;
+        if source.packed_unit_values.is_empty() && !unit.unit_value_map.is_empty() {
+            return Err(format!(
+                "missing unit values for contribution unit {unit_index}: expected {}",
+                unit.unit_value_map.len()
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn all_units_transcript_required(

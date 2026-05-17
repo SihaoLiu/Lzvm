@@ -63,10 +63,11 @@ pub use fixed_material::{
 };
 pub use gpu_setup::{prepare_gpu_setup, GpuSetupError};
 pub use proof_artifact::{
-    build_witness_proof_artifact, build_witness_proof_artifact_for_all_units,
-    build_witness_proof_artifact_for_unit, build_witness_proof_artifact_with_bindings,
-    build_witness_proof_core_artifact, ProofArtifactInputs, WitnessAllUnitsProofRequest,
-    WitnessProofRequest,
+    build_witness_contribution_proof_artifact_for_all_units,
+    build_witness_contribution_proof_artifact_for_unit, build_witness_proof_artifact,
+    build_witness_proof_artifact_for_all_units, build_witness_proof_artifact_for_unit,
+    build_witness_proof_artifact_with_bindings, build_witness_proof_core_artifact,
+    ProofArtifactInputs, WitnessAllUnitsProofRequest, WitnessProofRequest,
 };
 pub use prove_fri_opening::{
     build_pcs_fri_opening_segment, build_pcs_fri_opening_segment_from_trace,
