@@ -78,3 +78,16 @@ fn rejects_truncated_section_data() {
         Err(SectionedError::UnexpectedEof { .. })
     ));
 }
+
+#[test]
+fn rejects_section_count_that_exceeds_remaining_section_headers() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"abcd");
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, 1);
+
+    assert!(matches!(
+        parse_sectioned_file(&bytes, *b"abcd", 1),
+        Err(SectionedError::LengthOverflow)
+    ));
+}

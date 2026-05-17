@@ -1,5 +1,7 @@
 use std::fmt;
 
+const SECTION_HEADER_SIZE: usize = 12;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SectionedFile {
     pub kind: [u8; 4],
@@ -88,7 +90,13 @@ pub fn parse_sectioned_file(
     }
 
     let section_count = reader.read_u32()?;
-    let mut sections = Vec::with_capacity(section_count as usize);
+    let section_count =
+        usize::try_from(section_count).map_err(|_| SectionedError::LengthOverflow)?;
+    if section_count > reader.remaining_len() / SECTION_HEADER_SIZE {
+        return Err(SectionedError::LengthOverflow);
+    }
+
+    let mut sections = Vec::with_capacity(section_count);
     for _ in 0..section_count {
         let id = reader.read_u32()?;
         let size = reader.read_u64()?;
@@ -148,6 +156,10 @@ impl<'a> Reader<'a> {
 
     fn position(&self) -> usize {
         self.offset
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], SectionedError> {
