@@ -1,17 +1,33 @@
 use std::fmt;
 use std::path::Path;
 
+use lzvm_artifacts::constant_opening_segment::CONSTANT_OPENING_SEGMENT_ID;
+use lzvm_artifacts::contribution_segment::CONTRIBUTION_SEGMENT_ID;
+use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
+use lzvm_artifacts::group_values_segment::GROUP_VALUES_SEGMENT_ID;
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, read_key_directory_catalog, KeyDirectoryCatalog,
     KeyDirectoryError,
 };
+use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
+use lzvm_artifacts::pcs_fri_segment::PCS_FRI_OPENING_SEGMENT_ID;
+use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
+use lzvm_artifacts::pcs_nonce_segment::PCS_QUERY_NONCE_SEGMENT_ID;
+use lzvm_artifacts::pcs_proof_values_segment::PCS_PROOF_VALUES_SEGMENT_ID;
+use lzvm_artifacts::pcs_query_segment::PCS_QUERY_PLAN_SEGMENT_ID;
 use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
-use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifact, ProofArtifactError};
+use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
+use lzvm_artifacts::proof::{
+    read_proof_artifact_file, ProofArtifact, ProofArtifactError, ProofSegment,
+};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValues, PublicValuesError};
 use lzvm_artifacts::setup_manifest::{
     build_setup_directory_manifest, validate_setup_directory_manifest_file,
     SetupDirectoryManifestError, SETUP_DIRECTORY_MANIFEST_FILE,
 };
+use lzvm_artifacts::unit_values_segment::UNIT_VALUES_SEGMENT_ID;
+use lzvm_artifacts::witness_opening_segment::WITNESS_OPENING_SEGMENT_ID;
+use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 
 use crate::constant_opening::{
     validate_constant_opening_segments, ValidateConstantOpeningSegmentsError,
@@ -109,6 +125,7 @@ pub enum SetupPreflightError {
     GlobalConstraints(ValidateGlobalConstraintProofSegmentsError),
     GlobalHints(ResolveGlobalHintProofSegmentsError),
     PcsFri(ValidateOptionalPcsFriOpeningProofSegmentsError),
+    UnexpectedProofSegment { id: u32 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,6 +153,9 @@ impl fmt::Display for SetupPreflightError {
             Self::GlobalConstraints(error) => write!(f, "{error}"),
             Self::GlobalHints(error) => write!(f, "{error}"),
             Self::PcsFri(error) => write!(f, "{error}"),
+            Self::UnexpectedProofSegment { id } => {
+                write!(f, "unexpected setup proof segment id {id}")
+            }
         }
     }
 }
@@ -167,7 +187,7 @@ impl std::error::Error for SetupPreflightError {
             Self::GlobalConstraints(error) => Some(error),
             Self::GlobalHints(error) => Some(error),
             Self::PcsFri(error) => Some(error),
-            Self::CatalogHashMismatch => None,
+            Self::CatalogHashMismatch | Self::UnexpectedProofSegment { .. } => None,
         }
     }
 }
@@ -328,6 +348,7 @@ pub fn validate_setup_preflight(
 ) -> Result<SetupPreflightReport, SetupPreflightError> {
     let report = validate_setup_preflight_hashes(catalog, proof, public_values)?;
     let schedule = derive_prove_schedule(catalog).map_err(SetupPreflightError::Schedule)?;
+    validate_setup_proof_segment_ids(&proof.segments)?;
     let uses_transcript_inputs = uses_transcript_pcs_query_plan_inputs(&proof.segments);
     let needs_public_fields = uses_transcript_inputs
         || !catalog.global_constraints.entries.is_empty()
@@ -404,6 +425,39 @@ pub fn validate_setup_preflight(
     Ok(report)
 }
 
+fn validate_setup_proof_segment_ids(segments: &[ProofSegment]) -> Result<(), SetupPreflightError> {
+    for segment in segments {
+        if is_setup_proof_segment_id(segment.id) {
+            continue;
+        }
+        return Err(SetupPreflightError::UnexpectedProofSegment { id: segment.id });
+    }
+    Ok(())
+}
+
+fn is_setup_proof_segment_id(id: u32) -> bool {
+    if (WITNESS_COMMITMENT_SEGMENT_BASE_ID..PCS_MATERIAL_MANIFEST_SEGMENT_ID).contains(&id) {
+        return true;
+    }
+
+    matches!(
+        id,
+        PCS_MATERIAL_MANIFEST_SEGMENT_ID
+            | PCS_QUERY_PLAN_SEGMENT_ID
+            | WITNESS_OPENING_SEGMENT_ID
+            | CONSTANT_OPENING_SEGMENT_ID
+            | PCS_FRI_OPENING_SEGMENT_ID
+            | PCS_QUERY_NONCE_SEGMENT_ID
+            | PCS_EVALUATION_SEGMENT_ID
+            | PCS_PROOF_VALUES_SEGMENT_ID
+            | GROUP_VALUES_SEGMENT_ID
+            | UNIT_VALUES_SEGMENT_ID
+            | PROGRAM_IMAGE_CACHE_SEGMENT_ID
+            | CONTRIBUTION_SEGMENT_ID
+            | ETH_BLOCK_INPUT_SEGMENT_ID
+    )
+}
+
 pub fn validate_setup_preflight_from_files(
     setup_dir: impl AsRef<Path>,
     proof_path: impl AsRef<Path>,
@@ -416,4 +470,42 @@ pub fn validate_setup_preflight_from_files(
     let proof = read_proof_artifact_file(proof_path)?;
     let public_values = read_public_values_file(public_values_path)?;
     validate_setup_preflight(&catalog, &proof, &public_values).map_err(Into::into)
+}
+
+#[cfg(test)]
+mod tests {
+    use lzvm_artifacts::challenge_values_segment::CHALLENGE_VALUES_SEGMENT_ID;
+    use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
+    use lzvm_artifacts::proof::ProofSegment;
+    use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
+
+    use super::{validate_setup_proof_segment_ids, SetupPreflightError};
+
+    #[test]
+    fn setup_proof_segment_id_check_rejects_unknown_fixed_segments() {
+        let segments = vec![
+            ProofSegment {
+                id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+                data: vec![1],
+            },
+            ProofSegment {
+                id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+                data: vec![1],
+            },
+            ProofSegment {
+                id: CHALLENGE_VALUES_SEGMENT_ID,
+                data: vec![1],
+            },
+        ];
+
+        let error = validate_setup_proof_segment_ids(&segments)
+            .expect_err("unknown setup proof segment should reject");
+
+        assert_eq!(
+            error,
+            SetupPreflightError::UnexpectedProofSegment {
+                id: CHALLENGE_VALUES_SEGMENT_ID
+            }
+        );
+    }
 }
