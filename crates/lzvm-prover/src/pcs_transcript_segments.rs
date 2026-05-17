@@ -15,7 +15,10 @@ use crate::pcs_evaluation::{
     load_pcs_evaluation_unit_from_segments, validate_pcs_evaluation_units_match_query_units,
     LoadPcsEvaluationUnitError,
 };
-use crate::pcs_fri::{load_pcs_fri_opening_segment_from_segments, LoadPcsFriOpeningSegmentError};
+use crate::pcs_fri::{
+    load_pcs_fri_opening_segment_from_segments, validate_pcs_fri_opening_units_match_query_units,
+    LoadPcsFriOpeningUnitError,
+};
 use crate::pcs_query_plan::checked_proof_binding_segments;
 use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
 use crate::pcs_transcript::{
@@ -36,7 +39,7 @@ pub enum PcsTranscriptProofSegmentsError {
     DuplicateMaterialSegment,
     QueryPlan(LoadPcsQueryPlanSegmentError),
     Material(PcsMaterialManifestSegmentError),
-    Fri(LoadPcsFriOpeningSegmentError),
+    Fri(LoadPcsFriOpeningUnitError),
     Witness(LoadWitnessCommitmentSegmentsError),
     WitnessSegment {
         unit_index: usize,
@@ -148,7 +151,7 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
     let material = parse_pcs_material_manifest_segment(&material_segment.data)
         .map_err(PcsTranscriptProofSegmentsError::Material)?;
     let fri = load_pcs_fri_opening_segment_from_segments(segments)
-        .map_err(PcsTranscriptProofSegmentsError::Fri)?;
+        .map_err(|error| PcsTranscriptProofSegmentsError::Fri(error.into()))?;
     let witness_segments = load_witness_commitment_segments(&schedule.units, segments)
         .map_err(PcsTranscriptProofSegmentsError::Witness)?;
     let binding_segments = checked_proof_binding_segments(segments)
@@ -211,6 +214,8 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
     }
     validate_pcs_evaluation_units_match_query_units(&query_plan.units, segments)
         .map_err(PcsTranscriptProofSegmentsError::Evaluation)?;
+    validate_pcs_fri_opening_units_match_query_units(&query_plan.units, segments)
+        .map_err(PcsTranscriptProofSegmentsError::Fri)?;
     validate_unit_values_units_match_query_units(&query_plan.units, segments)
         .map_err(PcsTranscriptProofSegmentsError::UnitValues)?;
 

@@ -587,6 +587,38 @@ fn rejects_transcript_pcs_query_plan_extra_evaluation_units() {
 }
 
 #[test]
+fn rejects_transcript_pcs_query_plan_extra_fri_opening_units() {
+    let (schedule, mut segments) = transcript_query_plan_segments();
+    let fri_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
+        .expect("FRI opening segment should exist");
+    fri_segment.data = encode_pcs_fri_opening_segment(&PcsFriOpeningSegment {
+        units: vec![
+            PcsFriOpeningUnitSegment {
+                unit_index: 0,
+                layers: Vec::new(),
+                final_polynomial: vec![[12, 13, 14]],
+            },
+            PcsFriOpeningUnitSegment {
+                unit_index: 1,
+                layers: Vec::new(),
+                final_polynomial: vec![[22, 23, 24]],
+            },
+        ],
+    })
+    .expect("FRI opening segment should encode");
+
+    let error = validate_transcript_pcs_query_plan_segments(&schedule, &[], &segments)
+        .expect_err("extra FRI opening unit should be rejected");
+
+    assert_eq!(
+        error.to_string(),
+        "unexpected PCS FRI opening segment unit 1"
+    );
+}
+
+#[test]
 fn rejects_transcript_pcs_query_plan_extra_unit_values_units() {
     let (schedule, mut segments) = transcript_query_plan_segments();
     segments.push(ProofSegment {

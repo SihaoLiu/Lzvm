@@ -12,6 +12,7 @@ use lzvm_artifacts::pcs_fri_segment::{
     parse_pcs_fri_opening_segment, PcsFriOpeningSegment, PcsFriOpeningUnitSegment,
     PCS_FRI_OPENING_SEGMENT_ID,
 };
+use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
 use lzvm_artifacts::proof::ProofSegment;
 pub use merkle::{verify_fri_last_level_root, verify_fri_query_path, PcsFriMerkleError};
 pub use requests::*;
@@ -47,4 +48,22 @@ pub fn load_pcs_fri_opening_unit_from_segments(
         .into_iter()
         .find(|unit| unit.unit_index == unit_index_u32)
         .ok_or(LoadPcsFriOpeningUnitError::MissingUnit { unit_index })
+}
+
+pub(crate) fn validate_pcs_fri_opening_units_match_query_units(
+    query_units: &[PcsQueryPlanUnit],
+    segments: &[ProofSegment],
+) -> Result<(), LoadPcsFriOpeningUnitError> {
+    let opening = load_pcs_fri_opening_segment_from_segments(segments)?;
+    for unit in opening.units {
+        if !query_units
+            .iter()
+            .any(|query_unit| query_unit.unit_index == unit.unit_index)
+        {
+            let unit_index = usize::try_from(unit.unit_index)
+                .map_err(|_| LoadPcsFriOpeningUnitError::UnitIndexOverflow)?;
+            return Err(LoadPcsFriOpeningUnitError::UnexpectedUnit { unit_index });
+        }
+    }
+    Ok(())
 }

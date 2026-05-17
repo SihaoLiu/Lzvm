@@ -35,7 +35,10 @@ use crate::pcs_evaluation::{
     load_pcs_evaluation_unit_from_segments, validate_pcs_evaluation_units_match_query_units,
     LoadPcsEvaluationUnitError,
 };
-use crate::pcs_fri::{load_pcs_fri_opening_unit_from_segments, LoadPcsFriOpeningUnitError};
+use crate::pcs_fri::{
+    load_pcs_fri_opening_unit_from_segments, validate_pcs_fri_opening_units_match_query_units,
+    LoadPcsFriOpeningUnitError,
+};
 use crate::pcs_transcript::PcsTranscriptSegmentInputs;
 use crate::unit_values::{
     load_unit_values_from_segments, validate_unit_values_units_match_query_units,
@@ -272,6 +275,8 @@ fn validate_transcript_query_plan_unit_inputs(
     }
     validate_pcs_evaluation_units_match_query_units(query_units, segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::Evaluation)?;
+    validate_pcs_fri_opening_units_match_query_units(query_units, segments)
+        .map_err(ValidatePcsQueryPlanSegmentsError::Fri)?;
     validate_unit_values_units_match_query_units(query_units, segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
     Ok(())

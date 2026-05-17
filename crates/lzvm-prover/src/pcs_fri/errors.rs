@@ -22,6 +22,7 @@ pub enum LoadPcsFriOpeningUnitError {
     MissingSegment,
     DuplicateSegment,
     MissingUnit { unit_index: usize },
+    UnexpectedUnit { unit_index: usize },
     UnitIndexOverflow,
     Segment(PcsFriOpeningSegmentError),
 }
@@ -99,6 +100,9 @@ impl fmt::Display for LoadPcsFriOpeningUnitError {
             Self::MissingUnit { unit_index } => {
                 write!(f, "PCS FRI opening segment mismatch for unit {unit_index}")
             }
+            Self::UnexpectedUnit { unit_index } => {
+                write!(f, "unexpected PCS FRI opening segment unit {unit_index}")
+            }
             Self::UnitIndexOverflow => write!(f, "PCS FRI opening segment unit index overflow"),
             Self::Segment(error) => write!(f, "invalid PCS FRI opening segment: {error}"),
         }
@@ -112,6 +116,7 @@ impl std::error::Error for LoadPcsFriOpeningUnitError {
             Self::MissingSegment
             | Self::DuplicateSegment
             | Self::MissingUnit { .. }
+            | Self::UnexpectedUnit { .. }
             | Self::UnitIndexOverflow => None,
         }
     }

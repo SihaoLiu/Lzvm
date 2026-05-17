@@ -113,6 +113,40 @@ fn rejects_transcript_challenge_query_unit_mismatches() {
 }
 
 #[test]
+fn rejects_transcript_challenge_extra_fri_opening_units() {
+    let schedule = sample_schedule();
+    let mut segments = transcript_segments(0);
+    let fri_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == PCS_FRI_OPENING_SEGMENT_ID)
+        .expect("FRI opening segment should exist");
+    fri_segment.data = encode_pcs_fri_opening_segment(&PcsFriOpeningSegment {
+        units: vec![
+            PcsFriOpeningUnitSegment {
+                unit_index: 0,
+                layers: Vec::new(),
+                final_polynomial: vec![ext_words(40)],
+            },
+            PcsFriOpeningUnitSegment {
+                unit_index: 1,
+                layers: Vec::new(),
+                final_polynomial: vec![ext_words(50)],
+            },
+        ],
+    })
+    .expect("FRI opening segment should encode");
+
+    let error =
+        derive_pcs_transcript_unit_challenges_from_proof_segments(&schedule, &[], &segments)
+            .expect_err("extra FRI opening unit should be rejected");
+
+    assert_eq!(
+        error.to_string(),
+        "unexpected PCS FRI opening segment unit 1"
+    );
+}
+
+#[test]
 fn rejects_transcript_challenge_extra_unit_values_units() {
     let schedule = sample_schedule();
     let mut segments = transcript_segments(0);
