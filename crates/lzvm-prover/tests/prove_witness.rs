@@ -422,6 +422,28 @@ fn write_public_values(path: &Path, setup_hash: [u8; 32], elements: Vec<u64>) {
     .expect("public values should be written");
 }
 
+fn write_sample_fixed_columns(path: &Path, setup: &UnitSetupInfo, unit_name: &str) {
+    let fixed_columns = FixedColumns {
+        group_name: "group-a".to_owned(),
+        unit_name: unit_name.to_owned(),
+        row_count: 16,
+        columns: vec![
+            FixedColumn {
+                name: "const_0".to_owned(),
+                dimensions: Vec::new(),
+                values: (0..16).map(|row| row + 10).collect(),
+            },
+            FixedColumn {
+                name: "const_1".to_owned(),
+                dimensions: Vec::new(),
+                values: vec![0; 16],
+            },
+        ],
+    };
+    write_raw_fixed_columns_file(path, &fixed_columns, setup)
+        .expect("fixed columns should be written");
+}
+
 fn sample_pcs_material() -> PcsSetupMaterial {
     PcsSetupMaterial {
         plan_digest: [7; 32],
@@ -1180,6 +1202,146 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
         load_contribution_segment_from_segments(&proof.segments)
             .expect("contribution segment should load"),
         expected_entries
+    );
+}
+
+#[test]
+fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
+    let dir = temp_dir("proof-artifact-all-units-fri-output-evals");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [13_u8]).expect("input data should be written");
+
+    let expression_id = 42;
+    let mut first_unit = sample_unit();
+    first_unit.paths.fixed_columns = dir.join("unit.const");
+    first_unit.paths.constant_tree = dir.join("unit.consttree");
+    first_unit.metadata.setup.challenge_count = 4;
+    first_unit.pcs_plan =
+        derive_pcs_setup_plan(&first_unit.metadata.setup).expect("PCS setup plan should derive");
+    first_unit.metadata.verifier.quotient.expression_id = Some(expression_id);
+    first_unit.expression_program = fixed_plus_stage_expression_program(expression_id);
+    write_sample_fixed_columns(
+        &first_unit.paths.fixed_columns,
+        &first_unit.metadata.setup,
+        "unit-a",
+    );
+    let first_tree_bytes = expected_constant_tree_byte_count(&first_unit.metadata.setup)
+        .expect("tree size should derive");
+    fs::write(
+        &first_unit.paths.constant_tree,
+        vec![0_u8; first_tree_bytes],
+    )
+    .expect("first constant tree should be written");
+
+    let mut second_unit = sample_unit();
+    second_unit.paths.unit_id = Some(1);
+    second_unit.paths.unit_name = Some("unit-b".to_owned());
+    second_unit.paths.prefix = "unit-b".into();
+    second_unit.paths.metadata_prefix = Some("unit-b".into());
+    second_unit.paths.program_prefix = Some("unit-b".into());
+    second_unit.paths.verification_key_prefix = "unit-b".into();
+    second_unit.paths.fixed_columns = dir.join("unit-b.const");
+    second_unit.paths.constant_tree = dir.join("unit-b.consttree");
+    second_unit.metadata.setup.challenge_count = 4;
+    second_unit.pcs_plan =
+        derive_pcs_setup_plan(&second_unit.metadata.setup).expect("PCS setup plan should derive");
+    second_unit.metadata.verifier.quotient.expression_id = Some(expression_id);
+    second_unit.expression_program = fixed_plus_stage_expression_program(expression_id);
+    write_sample_fixed_columns(
+        &second_unit.paths.fixed_columns,
+        &second_unit.metadata.setup,
+        "unit-b",
+    );
+    let second_tree_bytes = expected_constant_tree_byte_count(&second_unit.metadata.setup)
+        .expect("tree size should derive");
+    fs::write(
+        &second_unit.paths.constant_tree,
+        vec![0_u8; second_tree_bytes],
+    )
+    .expect("second constant tree should be written");
+
+    let catalog = sample_catalog_units(vec![first_unit, second_unit]);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values_path = dir.join("public.bin");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: vec![PublicValueEntry {
+            name: "sample_public".to_owned(),
+            elements: vec![13],
+        }],
+    };
+    fs::write(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    )
+    .expect("public values should be written");
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: Some(public_values_path),
+        },
+    )
+    .expect("execution plan should derive");
+    let output_auxiliary_inputs = ProveWitnessAuxiliaryInputs {
+        evaluations: vec![Ext3::from_u64s([30, 31, 32]), Ext3::from_u64s([40, 41, 42])],
+        ..ProveWitnessAuxiliaryInputs::default()
+    };
+    let request_auxiliary_inputs = ProveWitnessAuxiliaryInputs::default();
+    let outputs = vec![
+        run_prove_witness_commitments_with_trace(&plan, 0, output_auxiliary_inputs.clone())
+            .expect("first unit should run"),
+        run_prove_witness_commitments_with_trace(&plan, 1, output_auxiliary_inputs.clone())
+            .expect("second unit should run"),
+    ];
+
+    let proof = lzvm_prover::build_witness_proof_artifact_for_all_units(
+        &lzvm_prover::WitnessAllUnitsProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            execution_units: &plan.units,
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            outputs: &outputs,
+            auxiliary_inputs: &request_auxiliary_inputs,
+            unit_values: &[],
+            evaluation_values_segment: None,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+        },
+    )
+    .expect("proof artifact should build")
+    .expect("proof artifact should exist");
+    let proof = parse_proof_artifact(&encode_proof_artifact(&proof).expect("proof should encode"))
+        .expect("proof should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let evaluation_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == PCS_EVALUATION_SEGMENT_ID)
+        .expect("evaluation segment should exist");
+    let evaluations = parse_pcs_evaluation_segment(&evaluation_segment.data)
+        .expect("evaluation segment should parse");
+    assert_eq!(evaluations.units.len(), 2);
+    assert_eq!(evaluations.units[0].unit_index, 0);
+    assert_eq!(evaluations.units[1].unit_index, 1);
+    assert_eq!(
+        evaluations.units[0].values,
+        vec![[30, 31, 32], [40, 41, 42]]
+    );
+    assert_eq!(
+        evaluations.units[1].values,
+        vec![[30, 31, 32], [40, 41, 42]]
     );
 }
 

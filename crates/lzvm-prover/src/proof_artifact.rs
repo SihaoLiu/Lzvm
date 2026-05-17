@@ -511,6 +511,8 @@ pub fn build_witness_proof_artifact_for_all_units(
         collect_global_proof_values(request.outputs, &request.auxiliary_inputs.proof_values)?;
     let group_values =
         collect_global_group_values(request.outputs, &request.auxiliary_inputs.group_values)?;
+    let evaluation_values =
+        collect_all_units_evaluation_values(request.outputs, &request.auxiliary_inputs.evaluations);
     let proof_unit_values =
         collect_proof_unit_values(request.schedule, request.outputs, request.unit_values)?;
     let witness_outputs = request
@@ -521,17 +523,20 @@ pub fn build_witness_proof_artifact_for_all_units(
     let proof = if all_units_transcript_required(
         request.execution_units,
         request.outputs,
-        request.auxiliary_inputs,
+        &evaluation_values,
         request.evaluation_values_segment.is_some(),
     )? {
         build_witness_transcript_proof_artifact_for_all_units(
             request,
             public_values_hash,
             &witness_outputs,
-            binding_segments_slice,
-            &proof_values,
-            &group_values,
-            &proof_unit_values,
+            AllUnitsTranscriptProofInputs {
+                binding_segments: binding_segments_slice,
+                proof_values: &proof_values,
+                group_values: &group_values,
+                evaluation_values: &evaluation_values,
+                unit_values: &proof_unit_values,
+            },
         )?
     } else if binding_segments_slice.is_empty() {
         build_witness_proof_artifact(
@@ -717,7 +722,7 @@ fn validate_witness_contribution_sources(
 fn all_units_transcript_required(
     execution_units: &[ProveExecutionUnitArtifacts],
     outputs: &[ProveWitnessTraceCommitments],
-    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
+    evaluation_values: &[ProvePcsEvaluationValues],
     has_evaluation_segment: bool,
 ) -> Result<bool, String> {
     let mut has_fri_unit = false;
@@ -728,7 +733,10 @@ fn all_units_transcript_required(
             .ok_or_else(|| format!("output unit index out of range: {unit_index}"))?;
         if execution_unit.fri_expression_id.is_some() {
             has_fri_unit = true;
-            if auxiliary_inputs.evaluations.is_empty() && !has_evaluation_segment {
+            let has_unit_evaluations = evaluation_values
+                .iter()
+                .any(|values| values.unit_index == unit_index && !values.values.is_empty());
+            if !has_unit_evaluations && !has_evaluation_segment {
                 return Err(format!(
                     "missing evaluation values for unit {unit_index}: expected {}",
                     execution_unit.expected_evaluation_value_count()
@@ -736,17 +744,14 @@ fn all_units_transcript_required(
             }
         }
     }
-    Ok(has_fri_unit || !auxiliary_inputs.evaluations.is_empty() || has_evaluation_segment)
+    Ok(has_fri_unit || !evaluation_values.is_empty() || has_evaluation_segment)
 }
 
 fn build_witness_transcript_proof_artifact_for_all_units(
     request: &WitnessAllUnitsProofRequest<'_>,
     public_values_hash: [u8; 32],
     witness_outputs: &[&ProveWitnessCommitments],
-    binding_segments: &[ProofSegment],
-    proof_values: &[Felt],
-    group_values: &[Ext3],
-    unit_values: &[ProveUnitValues],
+    proof_inputs: AllUnitsTranscriptProofInputs<'_>,
 ) -> Result<ProofArtifact, String> {
     let material_segment = build_pcs_material_manifest_segment(request.schedule)
         .map_err(|error| format!("build material manifest segment failed: {error}"))?;
@@ -761,38 +766,36 @@ fn build_witness_transcript_proof_artifact_for_all_units(
 
     let evaluation_segment = match request.evaluation_values_segment {
         Some(segment) => segment.clone(),
-        None => {
-            let evaluation_values = request
-                .outputs
-                .iter()
-                .map(|output| ProvePcsEvaluationValues {
-                    unit_index: output.commitments().unit_index(),
-                    values: request.auxiliary_inputs.evaluations.clone(),
-                })
-                .collect::<Vec<_>>();
-            build_pcs_evaluation_segment(request.schedule, &evaluation_values)
-                .map_err(|error| format!("build evaluation segment failed: {error}"))?
-        }
+        None => build_pcs_evaluation_segment(request.schedule, proof_inputs.evaluation_values)
+            .map_err(|error| format!("build evaluation segment failed: {error}"))?,
     };
     let transcript_auxiliary_inputs = request
         .outputs
         .iter()
         .map(|output| {
             let unit_index = output.commitments().unit_index();
-            let mut inputs = output.auxiliary_inputs().clone();
-            if let Some(values) = unit_values
+            let mut auxiliary_inputs = output.auxiliary_inputs().clone();
+            if let Some(values) = proof_inputs
+                .unit_values
                 .iter()
                 .find(|values| values.unit_index == unit_index)
             {
-                inputs.unit_values = values.packed_values.clone();
+                auxiliary_inputs.unit_values = values.packed_values.clone();
             }
-            if !proof_values.is_empty() {
-                inputs.proof_values = proof_values.to_vec();
+            if !proof_inputs.proof_values.is_empty() {
+                auxiliary_inputs.proof_values = proof_inputs.proof_values.to_vec();
             }
-            if !group_values.is_empty() {
-                inputs.group_values = group_values.to_vec();
+            if !proof_inputs.group_values.is_empty() {
+                auxiliary_inputs.group_values = proof_inputs.group_values.to_vec();
             }
-            inputs
+            if let Some(values) = proof_inputs
+                .evaluation_values
+                .iter()
+                .find(|values| values.unit_index == unit_index)
+            {
+                auxiliary_inputs.evaluations = values.values.clone();
+            }
+            auxiliary_inputs
         })
         .collect::<Vec<_>>();
     let transcript_inputs = request
@@ -825,7 +828,7 @@ fn build_witness_transcript_proof_artifact_for_all_units(
                 material_segment: &material_segment,
                 witness_segment,
                 evaluation_segment: &evaluation_segment,
-                binding_segments,
+                binding_segments: proof_inputs.binding_segments,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -870,14 +873,17 @@ fn build_witness_transcript_proof_artifact_for_all_units(
 
     let proof_values_segment = build_pcs_proof_values_segment_from_packed_values(
         &request.catalog.layout.global_info,
-        proof_values,
+        proof_inputs.proof_values,
     )
     .map_err(|error| format!("build proof values segment failed: {error}"))?;
-    let group_values_segment =
-        build_group_values_segment(&request.catalog.layout.global_info, group_values)
-            .map_err(|error| format!("build group values segment failed: {error}"))?;
-    let unit_values_segment = build_unit_values_segment_from_packed_values_batch(unit_values)
-        .map_err(|error| format!("build unit values segment failed: {error}"))?;
+    let group_values_segment = build_group_values_segment(
+        &request.catalog.layout.global_info,
+        proof_inputs.group_values,
+    )
+    .map_err(|error| format!("build group values segment failed: {error}"))?;
+    let unit_values_segment =
+        build_unit_values_segment_from_packed_values_batch(proof_inputs.unit_values)
+            .map_err(|error| format!("build unit values segment failed: {error}"))?;
 
     let mut segments = vec![
         material_segment,
@@ -904,6 +910,14 @@ fn build_witness_transcript_proof_artifact_for_all_units(
         public_values_hash,
         segments,
     })
+}
+
+struct AllUnitsTranscriptProofInputs<'a> {
+    binding_segments: &'a [ProofSegment],
+    proof_values: &'a [Felt],
+    group_values: &'a [Ext3],
+    evaluation_values: &'a [ProvePcsEvaluationValues],
+    unit_values: &'a [ProveUnitValues],
 }
 
 fn collect_global_proof_values(
@@ -962,6 +976,36 @@ fn collect_global_group_values(
     }
 
     Ok(values.map_or_else(Vec::new, ToOwned::to_owned))
+}
+
+fn collect_all_units_evaluation_values(
+    outputs: &[ProveWitnessTraceCommitments],
+    explicit_values: &[Ext3],
+) -> Vec<ProvePcsEvaluationValues> {
+    if !explicit_values.is_empty() {
+        return outputs
+            .iter()
+            .map(|output| ProvePcsEvaluationValues {
+                unit_index: output.commitments().unit_index(),
+                values: explicit_values.to_vec(),
+            })
+            .collect();
+    }
+
+    outputs
+        .iter()
+        .filter_map(|output| {
+            let values = output.auxiliary_inputs().evaluations.clone();
+            if values.is_empty() {
+                None
+            } else {
+                Some(ProvePcsEvaluationValues {
+                    unit_index: output.commitments().unit_index(),
+                    values,
+                })
+            }
+        })
+        .collect()
 }
 
 fn collect_proof_unit_values(
