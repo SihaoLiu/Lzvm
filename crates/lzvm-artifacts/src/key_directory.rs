@@ -147,6 +147,10 @@ pub enum KeyDirectoryError {
         unit_id: u64,
         unit_name: String,
     },
+    SourceFixedFileManifestSourceMismatch {
+        entry_index: usize,
+        source_name: String,
+    },
     MissingPath {
         role: &'static str,
         path: PathBuf,
@@ -253,6 +257,13 @@ impl fmt::Display for KeyDirectoryError {
             } => write!(
                 f,
                 "key-directory source fixed-file manifest entry {entry_index} references unit {group_id}:{unit_id}:{unit_name} outside setup layout"
+            ),
+            Self::SourceFixedFileManifestSourceMismatch {
+                entry_index,
+                source_name,
+            } => write!(
+                f,
+                "key-directory source fixed-file manifest entry {entry_index} references source {source_name} outside source program archive"
             ),
             Self::MissingPath { role, path } => {
                 write!(f, "missing key-directory {role}: {}", path.display())
@@ -548,6 +559,12 @@ pub fn read_key_directory_catalog_from_layout(
     }
     let source_program_archive =
         read_source_program_archive_if_present(&layout.source_program_archive)?;
+    if let (Some(manifest), Some(archive)) = (
+        source_fixed_file_manifest.as_ref(),
+        source_program_archive.as_ref(),
+    ) {
+        validate_source_fixed_file_manifest_archive(manifest, archive)?;
+    }
     let mut units = Vec::with_capacity(layout.units.len());
     for unit in &layout.units {
         units.push(read_key_unit_catalog_entry(unit)?);
@@ -721,6 +738,26 @@ fn validate_source_fixed_file_manifest_layout(
                 group_id: entry.group_id,
                 unit_id: entry.unit_id,
                 unit_name: entry.unit_name.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_source_fixed_file_manifest_archive(
+    manifest: &SourceFixedFileManifest,
+    archive: &SourceProgramArchive,
+) -> Result<(), KeyDirectoryError> {
+    let source_names: BTreeSet<&str> = archive
+        .sources
+        .iter()
+        .map(|source| source.source_name.as_str())
+        .collect();
+    for (entry_index, entry) in manifest.entries.iter().enumerate() {
+        if !source_names.contains(entry.source_name.as_str()) {
+            return Err(KeyDirectoryError::SourceFixedFileManifestSourceMismatch {
+                entry_index,
+                source_name: entry.source_name.clone(),
             });
         }
     }
