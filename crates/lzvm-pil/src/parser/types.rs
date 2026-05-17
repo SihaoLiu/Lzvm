@@ -73,6 +73,7 @@ pub struct AirTemplateDeclaration {
 pub struct AirGroupDeclaration {
     pub name: String,
     pub body: SourceSpan,
+    pub statements: Vec<FunctionStatement>,
     pub source_name: String,
     pub start: usize,
     pub end: usize,

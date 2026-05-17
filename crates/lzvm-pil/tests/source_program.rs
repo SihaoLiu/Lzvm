@@ -79,6 +79,11 @@ fn loads_source_program_with_declarations_from_graph_sources() {
     assert_eq!(main.containers.len(), 1);
     assert_eq!(main.air_templates.len(), 1);
     assert_eq!(main.air_groups.len(), 1);
+    assert_eq!(main.air_groups[0].statements.len(), 1);
+    assert_eq!(
+        main.air_groups[0].statements[0].kind,
+        FunctionStatementKind::Expression
+    );
     assert_eq!(main.air_instances.len(), 1);
     assert_eq!(main.air_instances[0].template, "Main");
     assert_eq!(main.functions.len(), 1);

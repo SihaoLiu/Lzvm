@@ -567,10 +567,35 @@ fn parses_air_group_declarations_with_nested_body_spans() {
         &source.contents[declarations[0].body.start..declarations[0].body.end],
         "{ virtual Range(id: 7) alias Range7; for (int i = 0; i < 2; i++) { commit(i); } }"
     );
+    assert_eq!(declarations[0].statements.len(), 2);
+    assert_eq!(
+        declarations[0].statements[0].kind,
+        FunctionStatementKind::Expression
+    );
+    assert_eq!(
+        declarations[0].statements[1].kind,
+        FunctionStatementKind::For
+    );
+    match declarations[0].statements[1]
+        .header_declaration
+        .as_ref()
+        .expect("group loop header declaration should be recorded")
+    {
+        FunctionStatementDeclaration::Variable(declaration) => {
+            assert_eq!(declaration.type_name, "int");
+            assert_eq!(declaration.name, "i");
+        }
+        other => panic!("unexpected declaration payload: {other:?}"),
+    }
     assert_eq!(declarations[1].name, "Aux");
     assert_eq!(
         &source.contents[declarations[1].body.start..declarations[1].body.end],
         "{ Main(); }"
+    );
+    assert_eq!(declarations[1].statements.len(), 1);
+    assert_eq!(
+        declarations[1].statements[0].kind,
+        FunctionStatementKind::Expression
     );
 }
 

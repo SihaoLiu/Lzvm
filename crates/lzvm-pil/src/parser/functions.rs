@@ -653,6 +653,7 @@ fn function_statement_expression_supported(
             | TokenKind::Expr
             | TokenKind::String
             | TokenKind::Col
+            | TokenKind::Virtual
     ) {
         return false;
     }

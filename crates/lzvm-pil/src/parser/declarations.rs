@@ -1606,10 +1606,12 @@ pub fn parse_air_group_declarations(
             continue;
         }
         let (body, next_index) = parse_required_braced_span(&tokens, after_name, source)?;
+        let statements = parse_function_body_statements(&tokens, body, source)?;
 
         declarations.push(AirGroupDeclaration {
             name,
             body,
+            statements,
             source_name: source.source_name.clone(),
             start,
             end: body.end,
