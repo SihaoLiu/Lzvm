@@ -12,7 +12,7 @@ fn reports_regular_constraint_violations_inside_declared_row_bounds() {
             destination_dimension: 1,
             destination_id: 0,
             first_row: 1,
-            last_row: 2,
+            last_row: 3,
             temp1_count: 1,
             temp3_count: 0,
             ops_count: 1,
@@ -53,6 +53,48 @@ fn reports_regular_constraint_violations_inside_declared_row_bounds() {
 }
 
 #[test]
+fn treats_declared_last_row_as_exclusive() {
+    let program = ConstraintProgram {
+        entries: vec![ConstraintEntry {
+            stage: 1,
+            destination_dimension: 1,
+            destination_id: 0,
+            first_row: 0,
+            last_row: 1,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset: 0,
+            args_count: 8,
+            args_offset: 0,
+            intermediate: false,
+            source_line: "exclusive row residual".to_owned(),
+        }],
+        ops: vec![0],
+        args: vec![1, 0, 0, 0, 0, 8, 0, 0],
+        numbers: vec![10],
+    };
+    let fixed = [felt(10), felt(11)];
+
+    let results = evaluate_regular_constraints(
+        &program,
+        RegularConstraintInputs {
+            domain_size: 2,
+            stage_count: 1,
+            fixed_columns: RegularColumnMatrix {
+                column_count: 1,
+                values: &fixed,
+            },
+            opening_point_offsets: &[0],
+            ..RegularConstraintInputs::default()
+        },
+    )
+    .expect("regular constraint should evaluate");
+
+    assert_eq!(results[0].invalid_rows, Vec::new());
+}
+
+#[test]
 fn evaluates_extension_regular_constraints_from_stage_and_challenges() {
     let program = ConstraintProgram {
         entries: vec![ConstraintEntry {
@@ -60,7 +102,7 @@ fn evaluates_extension_regular_constraints_from_stage_and_challenges() {
             destination_dimension: 3,
             destination_id: 0,
             first_row: 0,
-            last_row: 2,
+            last_row: 3,
             temp1_count: 0,
             temp3_count: 1,
             ops_count: 1,
@@ -117,7 +159,7 @@ fn applies_opening_point_row_offsets_cyclically() {
             destination_dimension: 1,
             destination_id: 0,
             first_row: 1,
-            last_row: 2,
+            last_row: 3,
             temp1_count: 1,
             temp3_count: 0,
             ops_count: 1,

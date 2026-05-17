@@ -367,10 +367,10 @@ fn read_operation_args(
 fn active_rows(
     entry: &ConstraintEntry,
     domain_size: usize,
-) -> Result<std::ops::RangeInclusive<usize>, RegularConstraintEvalError> {
+) -> Result<std::ops::Range<usize>, RegularConstraintEvalError> {
     let first = to_usize(entry.first_row)?;
-    let last = to_usize(entry.last_row)?.min(domain_size - 1);
-    Ok(first.min(domain_size)..=last)
+    let last = to_usize(entry.last_row)?;
+    Ok(first.min(domain_size)..last.min(domain_size))
 }
 
 fn apply_base_op(kind: u16, left: Felt, right: Felt) -> Result<Felt, RegularConstraintEvalError> {
