@@ -1,7 +1,10 @@
 use std::fmt;
 
 #[cfg(feature = "cuda")]
-use lzvm_accel::{cuda_poseidon2_width16_device, cuda_poseidon2_width8_device, CudaDeviceBuffer};
+use lzvm_accel::{
+    cuda_poseidon2_width16_device, cuda_poseidon2_width16_merkle_parent_device,
+    cuda_poseidon2_width8_device, cuda_poseidon2_width8_merkle_parent_device, CudaDeviceBuffer,
+};
 use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt};
 
 pub(crate) const HASH_WORDS: usize = 4;
@@ -119,21 +122,97 @@ pub(crate) fn root_from_digest_level(
     if level.is_empty() {
         return Ok([Felt::ZERO; HASH_WORDS]);
     }
-
-    let mut level = level.to_vec();
-    while level.len() > 1 {
-        let extra_zeros = (arity - (level.len() % arity)) % arity;
-        level.resize(
-            level
-                .len()
-                .checked_add(extra_zeros)
-                .ok_or(MerkleHashError::LengthOverflow)?,
-            [Felt::ZERO; HASH_WORDS],
-        );
-
-        level = parent_hashes(&level, arity)?;
+    if level.len() == 1 {
+        return Ok(level[0]);
     }
-    Ok(level[0])
+
+    #[cfg(feature = "cuda")]
+    {
+        root_from_digest_level_on_cuda(level, arity)
+    }
+
+    #[cfg(not(feature = "cuda"))]
+    {
+        let mut level = level.to_vec();
+        while level.len() > 1 {
+            let extra_zeros = (arity - (level.len() % arity)) % arity;
+            level.resize(
+                level
+                    .len()
+                    .checked_add(extra_zeros)
+                    .ok_or(MerkleHashError::LengthOverflow)?,
+                [Felt::ZERO; HASH_WORDS],
+            );
+
+            level = parent_hashes(&level, arity)?;
+        }
+        Ok(level[0])
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn root_from_digest_level_on_cuda(
+    level: &[[Felt; HASH_WORDS]],
+    arity: usize,
+) -> Result<[Felt; HASH_WORDS], MerkleHashError> {
+    validate_arity(arity)?;
+    if level.is_empty() {
+        return Ok([Felt::ZERO; HASH_WORDS]);
+    }
+    if level.len() == 1 {
+        return Ok(level[0]);
+    }
+
+    let (width, operation): (usize, CudaPoseidon2DeviceOp) = match arity {
+        2 => (8, cuda_poseidon2_width8_merkle_parent_device),
+        4 => (16, cuda_poseidon2_width16_merkle_parent_device),
+        _ => unreachable!("arity is validated"),
+    };
+
+    let input_words = digest_level_as_state_words(level, width)?;
+    let mut current = CudaDeviceBuffer::from_u64_words(&input_words)
+        .map_err(|_| MerkleHashError::LengthOverflow)?;
+    let mut state_count = level.len();
+    while state_count > 1 {
+        let next_state_count = state_count.div_ceil(arity);
+        let next_byte_count = next_state_count
+            .checked_mul(width)
+            .and_then(|word_count| word_count.checked_mul(8))
+            .ok_or(MerkleHashError::LengthOverflow)?;
+        let mut next =
+            CudaDeviceBuffer::new(next_byte_count).map_err(|_| MerkleHashError::LengthOverflow)?;
+        operation(&current, &mut next).map_err(|_| MerkleHashError::LengthOverflow)?;
+        current = next;
+        state_count = next_state_count;
+    }
+
+    let root_state = current
+        .to_u64_words()
+        .map_err(|_| MerkleHashError::LengthOverflow)?;
+    digest_from_state_words(&root_state)
+}
+
+#[cfg(feature = "cuda")]
+fn digest_level_as_state_words(
+    level: &[[Felt; HASH_WORDS]],
+    width: usize,
+) -> Result<Vec<u64>, MerkleHashError> {
+    let mut words = vec![
+        0_u64;
+        level
+            .len()
+            .checked_mul(width)
+            .ok_or(MerkleHashError::LengthOverflow)?
+    ];
+    for (index, digest) in level.iter().enumerate() {
+        let offset = index
+            .checked_mul(width)
+            .ok_or(MerkleHashError::LengthOverflow)?;
+        for (word_index, value) in digest.iter().enumerate() {
+            words[offset + word_index] = value.to_u64();
+        }
+    }
+    Ok(words)
 }
 
 fn validate_arity(arity: usize) -> Result<(), MerkleHashError> {
@@ -386,18 +465,22 @@ fn cuda_poseidon2_words_device(
 }
 
 #[cfg(feature = "cuda")]
+fn digest_from_state_words(words: &[u64]) -> Result<[Felt; HASH_WORDS], MerkleHashError> {
+    let mut digest = [Felt::ZERO; HASH_WORDS];
+    for (slot, word) in digest.iter_mut().zip(words.iter()) {
+        *slot = Felt::from_canonical(*word).map_err(|_| MerkleHashError::LengthOverflow)?;
+    }
+    Ok(digest)
+}
+
+#[cfg(feature = "cuda")]
 fn digests_from_hashed_states(
     states: &[u64],
     state_width: usize,
 ) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
     let mut out = Vec::with_capacity(states.len() / state_width);
     for state in states.chunks_exact(state_width) {
-        out.push([
-            Felt::from_canonical(state[0]).map_err(|_| MerkleHashError::LengthOverflow)?,
-            Felt::from_canonical(state[1]).map_err(|_| MerkleHashError::LengthOverflow)?,
-            Felt::from_canonical(state[2]).map_err(|_| MerkleHashError::LengthOverflow)?,
-            Felt::from_canonical(state[3]).map_err(|_| MerkleHashError::LengthOverflow)?,
-        ]);
+        out.push(digest_from_state_words(state)?);
     }
     Ok(out)
 }
@@ -406,7 +489,7 @@ fn digests_from_hashed_states(
 mod tests {
     use super::{
         cuda_poseidon2_width16_device_words, cuda_poseidon2_width8_device_words, linear_hash,
-        linear_hashes, parent_hash, parent_hashes,
+        linear_hashes, parent_hash, parent_hashes, root_from_digest_level_on_cuda,
     };
     use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt};
 
@@ -470,6 +553,49 @@ mod tests {
         ];
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn cuda_root_from_digest_level_matches_cpu_reference() {
+        let level = vec![
+            digest([1, 2, 3, 4]),
+            digest([5, 6, 7, 8]),
+            digest([9, 10, 11, 12]),
+            digest([13, 14, 15, 16]),
+            digest([17, 18, 19, 20]),
+        ];
+
+        let actual_arity2 =
+            root_from_digest_level_on_cuda(&level, 2).expect("cuda arity-2 root should hash");
+        let expected_arity2 =
+            cpu_root_from_digest_level(&level, 2).expect("cpu arity-2 root should hash");
+        assert_eq!(actual_arity2, expected_arity2);
+
+        let actual_arity4 =
+            root_from_digest_level_on_cuda(&level, 4).expect("cuda arity-4 root should hash");
+        let expected_arity4 =
+            cpu_root_from_digest_level(&level, 4).expect("cpu arity-4 root should hash");
+        assert_eq!(actual_arity4, expected_arity4);
+    }
+
+    fn cpu_root_from_digest_level(
+        level: &[[Felt; 4]],
+        arity: usize,
+    ) -> Result<[Felt; 4], super::MerkleHashError> {
+        if level.is_empty() {
+            return Ok([Felt::ZERO; 4]);
+        }
+
+        let mut level = level.to_vec();
+        while level.len() > 1 {
+            let extra_zeros = (arity - (level.len() % arity)) % arity;
+            level.resize(level.len() + extra_zeros, [Felt::ZERO; 4]);
+            level = level
+                .chunks_exact(arity)
+                .map(|children| parent_hash(children, arity))
+                .collect::<Result<Vec<_>, _>>()?;
+        }
+        Ok(level[0])
     }
 
     fn digest(values: [u64; 4]) -> [Felt; 4] {
