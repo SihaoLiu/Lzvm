@@ -41,6 +41,18 @@ fn encodes_and_parses_pcs_evaluation_segments() {
 }
 
 #[test]
+fn rejects_unsupported_pcs_evaluation_segment_versions() {
+    let mut encoded =
+        encode_pcs_evaluation_segment(&sample_segment()).expect("evaluation segment should encode");
+    encoded[4..8].copy_from_slice(&2_u32.to_le_bytes());
+
+    assert!(matches!(
+        parse_pcs_evaluation_segment(&encoded),
+        Err(PcsEvaluationSegmentError::UnsupportedVersion { version: 2 })
+    ));
+}
+
+#[test]
 fn rejects_empty_pcs_evaluation_segments() {
     let segment = PcsEvaluationSegment { units: Vec::new() };
 

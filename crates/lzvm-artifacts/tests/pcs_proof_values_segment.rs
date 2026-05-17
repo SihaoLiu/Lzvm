@@ -28,6 +28,20 @@ fn encodes_and_parses_pcs_proof_values_segments() {
 }
 
 #[test]
+fn rejects_unsupported_pcs_proof_values_segment_versions() {
+    let segment = PcsProofValuesSegment {
+        values: vec![[1, 2, 3]],
+    };
+    let mut encoded = encode_pcs_proof_values_segment(&segment).expect("segment should encode");
+    encoded[4..8].copy_from_slice(&2_u32.to_le_bytes());
+
+    assert!(matches!(
+        parse_pcs_proof_values_segment(&encoded),
+        Err(PcsProofValuesSegmentError::UnsupportedVersion { version: 2 })
+    ));
+}
+
+#[test]
 fn rejects_empty_pcs_proof_values_segments() {
     let result = encode_pcs_proof_values_segment(&PcsProofValuesSegment { values: Vec::new() });
 

@@ -40,6 +40,17 @@ fn encodes_and_parses_unit_values_segments() {
 }
 
 #[test]
+fn rejects_unsupported_unit_values_segment_versions() {
+    let mut encoded = encode_unit_values_segment(&sample_segment()).expect("segment should encode");
+    encoded[4..8].copy_from_slice(&2_u32.to_le_bytes());
+
+    assert!(matches!(
+        parse_unit_values_segment(&encoded),
+        Err(UnitValuesSegmentError::UnsupportedVersion { version: 2 })
+    ));
+}
+
+#[test]
 fn rejects_empty_unit_values_segments() {
     let segment = UnitValuesSegment { units: Vec::new() };
 

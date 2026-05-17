@@ -17,6 +17,19 @@ fn encodes_and_parses_pcs_query_nonce_segments() {
 }
 
 #[test]
+fn rejects_unsupported_pcs_query_nonce_segment_versions() {
+    let segment = PcsQueryNonceSegment { nonce: 7 };
+    let mut encoded =
+        encode_pcs_query_nonce_segment(&segment).expect("nonce segment should encode");
+    encoded[4..8].copy_from_slice(&2_u32.to_le_bytes());
+
+    assert!(matches!(
+        parse_pcs_query_nonce_segment(&encoded),
+        Err(PcsQueryNonceSegmentError::UnsupportedVersion { version: 2 })
+    ));
+}
+
+#[test]
 fn rejects_truncated_pcs_query_nonce_segments() {
     let result = parse_pcs_query_nonce_segment(b"qns0\x01\0\0\0");
 

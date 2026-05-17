@@ -44,6 +44,18 @@ fn encodes_and_parses_contribution_segments() {
 }
 
 #[test]
+fn rejects_unsupported_contribution_segment_versions() {
+    let mut encoded =
+        encode_contribution_segment(&sample_segment()).expect("segment should encode");
+    encoded[4..8].copy_from_slice(&2_u32.to_le_bytes());
+
+    assert!(matches!(
+        parse_contribution_segment(&encoded),
+        Err(ContributionSegmentError::UnsupportedVersion { version: 2 })
+    ));
+}
+
+#[test]
 fn rejects_empty_contribution_segments() {
     let segment = ContributionSegment {
         entries: Vec::new(),
