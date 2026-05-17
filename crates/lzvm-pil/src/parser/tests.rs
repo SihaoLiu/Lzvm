@@ -518,6 +518,15 @@ fn parses_air_template_declarations_with_params_and_nested_body() {
         &source.contents[declarations[0].body.start..declarations[0].body.end],
         "{ col witness trace; if (N) { return; } }"
     );
+    assert_eq!(declarations[0].statements.len(), 2);
+    assert_eq!(
+        declarations[0].statements[0].kind,
+        FunctionStatementKind::Declaration
+    );
+    assert_eq!(
+        declarations[0].statements[1].kind,
+        FunctionStatementKind::If
+    );
 }
 
 #[test]
@@ -534,6 +543,11 @@ fn parses_parameterless_air_template_declarations() {
     assert_eq!(
         &source.contents[declarations[0].body.start..declarations[0].body.end],
         "{ col witness trace; }"
+    );
+    assert_eq!(declarations[0].statements.len(), 1);
+    assert_eq!(
+        declarations[0].statements[0].kind,
+        FunctionStatementKind::Declaration
     );
 }
 

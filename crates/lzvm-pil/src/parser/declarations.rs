@@ -3,7 +3,7 @@ use super::expressions::{
     parse_expression_list_span_best_effort, parse_expression_range_best_effort,
     parse_expression_span_best_effort,
 };
-use super::functions::parse_function_parameters;
+use super::functions::{parse_function_body_statements, parse_function_parameters};
 use super::*;
 
 pub fn parse_column_declarations(
@@ -1555,12 +1555,14 @@ pub fn parse_air_template_declarations(
             continue;
         }
         let (body, next_index) = parse_required_braced_span(&tokens, after_params, source)?;
+        let statements = parse_function_body_statements(&tokens, body, source)?;
 
         declarations.push(AirTemplateDeclaration {
             name,
             params,
             parameters,
             body,
+            statements,
             source_name: source.source_name.clone(),
             start,
             end: body.end,

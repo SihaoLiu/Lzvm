@@ -63,6 +63,7 @@ pub struct AirTemplateDeclaration {
     pub params: Option<SourceSpan>,
     pub parameters: Vec<FunctionParameter>,
     pub body: SourceSpan,
+    pub statements: Vec<FunctionStatement>,
     pub source_name: String,
     pub start: usize,
     pub end: usize,

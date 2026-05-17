@@ -2,8 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lzvm_pil::{
-    ColumnKind, ConstantDeclarationKind, SourceLoaderConfig, SourceProgramLoader,
-    ValueDeclarationKind,
+    ColumnKind, ConstantDeclarationKind, FunctionStatementKind, SourceLoaderConfig,
+    SourceProgramLoader, ValueDeclarationKind,
 };
 
 fn case_dir(name: &str) -> PathBuf {
@@ -87,6 +87,11 @@ fn loads_source_program_with_declarations_from_graph_sources() {
     assert_eq!(main.constants[0].kind, ConstantDeclarationKind::Const);
     assert_eq!(main.constants[0].type_name.as_deref(), Some("int"));
     assert_eq!(main.constants[0].name, "ROWS");
+    assert_eq!(main.air_templates[0].statements.len(), 1);
+    assert_eq!(
+        main.air_templates[0].statements[0].kind,
+        FunctionStatementKind::Expression
+    );
     assert_eq!(main.variables.len(), 1);
     assert_eq!(main.variables[0].type_name, "int");
     assert_eq!(main.variables[0].name, "local");
