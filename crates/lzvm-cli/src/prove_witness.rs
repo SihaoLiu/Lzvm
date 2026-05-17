@@ -16,7 +16,7 @@ use lzvm_artifacts::pcs_evaluation_segment::{
 use lzvm_artifacts::pcs_proof_values_segment::PCS_PROOF_VALUES_SEGMENT_ID;
 use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
-use lzvm_artifacts::public_values::{encode_public_values, read_public_values_file};
+use lzvm_artifacts::public_values::{encode_public_values, read_public_values_file, PublicValues};
 use lzvm_artifacts::trace_bundle::read_trace_bundle_file;
 use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
 use lzvm_field::{Ext3, Felt};
@@ -91,6 +91,14 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         Ok(plan) => plan,
         Err(error) => {
             let _ = writeln!(stderr, "prove witness failed: {error}");
+            return 1;
+        }
+    };
+    let public_inputs_summary = match summarize_public_inputs(plan.inputs.public_inputs.as_deref())
+    {
+        Ok(summary) => summary,
+        Err(message) => {
+            let _ = writeln!(stderr, "prove witness failed: {message}");
             return 1;
         }
     };
@@ -305,6 +313,13 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     }
 
     write_run_plan_summary(stdout, &plan.run_plan);
+    if let Some(path) = &plan.inputs.public_inputs {
+        let _ = writeln!(stdout, "public_inputs={}", path.display());
+    }
+    if let Some(summary) = &public_inputs_summary {
+        let _ = writeln!(stdout, "public_input_values={}", summary.value_count);
+        let _ = writeln!(stdout, "public_input_fields={}", summary.field_count);
+    }
     if generated_public_inputs {
         let _ = writeln!(stdout, "public_inputs_generated=eth_block_input");
     }
@@ -339,6 +354,31 @@ struct ParsedWitnessArgs {
 struct PreparedPublicInputs {
     inputs: ProveExecutionInputArtifacts,
     generated: bool,
+}
+
+struct PublicInputSummary {
+    value_count: usize,
+    field_count: usize,
+}
+
+fn summarize_public_inputs(path: Option<&Path>) -> Result<Option<PublicInputSummary>, String> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let public_values = read_public_values_file(path)
+        .map_err(|error| format!("read public inputs failed: {}: {error}", path.display()))?;
+    Ok(Some(PublicInputSummary {
+        value_count: public_values.values.len(),
+        field_count: public_values_field_count(&public_values),
+    }))
+}
+
+fn public_values_field_count(public_values: &PublicValues) -> usize {
+    public_values
+        .values
+        .iter()
+        .map(|entry| entry.elements.len())
+        .sum()
 }
 
 fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {

@@ -4511,9 +4511,10 @@ fn writes_prove_witness_proof_without_save_outputs() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data={}\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash_hex}\nunit_index=0\ninput_bytes=1\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data={}\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash_hex}\npublic_inputs={}\npublic_input_values=1\npublic_input_fields=1\nunit_index=0\ninput_bytes=1\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
             input_data.display(),
             output_dir.display(),
+            public_values_path.display(),
             expected_stages
         )
     );
@@ -4887,6 +4888,9 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
         "verify proof failed: ETH block public value mismatch: eth_block_hash_u32_be\n"
     );
     assert!(public_mismatch_stdout.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains(&format!("public_inputs={}\n", public_values_path.display())));
+    assert!(stdout_text.contains("public_input_values=7\npublic_input_fields=37\n"));
     assert_eq!(parsed_input.block_rlp, block_rlp);
     assert_eq!(parsed_input.block_hash, block_input.block_hash);
     assert_eq!(parsed_input.transactions.hash_preimages.len(), 1);
@@ -4967,6 +4971,12 @@ fn prove_witness_generates_eth_block_public_values_when_missing() {
     let parsed_input =
         parse_eth_block_input_segment(&segment.data).expect("block input segment should parse");
     assert_eq!(parsed_input.block_hash, block_input.block_hash);
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains(&format!(
+        "public_inputs={}\n",
+        generated_public_values_path.display()
+    )));
+    assert!(stdout_text.contains("public_input_values=7\npublic_input_fields=37\n"));
 
     let mut verify_stdout = Vec::new();
     let mut verify_stderr = Vec::new();
