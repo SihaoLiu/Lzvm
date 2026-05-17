@@ -45,6 +45,39 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
+fn reserved_term_offset(haystack: &[u8], terms: &[Vec<u8>]) -> Option<usize> {
+    let lower = ascii_lowercase(haystack);
+    terms.iter().find_map(|term| find_bytes(&lower, term))
+}
+
+fn reserved_term_violation(path: &Path, bytes: &[u8], terms: &[Vec<u8>]) -> Option<String> {
+    if !should_scan(path, bytes) {
+        return None;
+    }
+    let path_text = path.to_string_lossy();
+    if let Some(offset) = reserved_term_offset(path_text.as_bytes(), terms) {
+        return Some(format!("{} path byte {offset}", path.display()));
+    }
+    if let Some(offset) = reserved_term_offset(bytes, terms) {
+        return Some(format!("{} at byte {offset}", path.display()));
+    }
+    None
+}
+
+#[test]
+fn tracked_file_paths_avoid_reserved_project_names() {
+    let terms = reserved_terms();
+    let mut path = b"docs/".to_vec();
+    path.extend_from_slice(&terms[0]);
+    path.extend_from_slice(b"/notes.md");
+    let path = PathBuf::from(String::from_utf8(path).expect("path should be utf8"));
+
+    assert!(
+        reserved_term_violation(&path, b"plain text", &terms).is_some(),
+        "reserved project names in tracked paths should be reported"
+    );
+}
+
 #[test]
 fn tracked_text_files_avoid_reserved_project_names() {
     let terms = reserved_terms();
@@ -56,12 +89,8 @@ fn tracked_text_files_avoid_reserved_project_names() {
         if !should_scan(&path, &bytes) {
             continue;
         }
-        let lower = ascii_lowercase(&bytes);
-        for term in &terms {
-            if let Some(offset) = find_bytes(&lower, term) {
-                violations.push(format!("{} at byte {offset}", path.display()));
-                break;
-            }
+        if let Some(violation) = reserved_term_violation(&path, &bytes, &terms) {
+            violations.push(violation);
         }
     }
 
