@@ -412,6 +412,18 @@ pub fn encode_eth_block_input(value: &EthBlockInput) -> Result<Vec<u8>, EthBlock
             value.receipts_root,
             &receipts.hash_preimages,
         )?;
+        let receipts_rlp = value
+            .receipts_rlp
+            .as_deref()
+            .expect("receipt section pairing checked");
+        validate_canonical_receipt_preimages_from_rlp(
+            &value.block_rlp,
+            receipts_rlp,
+            value.logs_bloom,
+            value.gas_used,
+            value.receipts_root,
+            &receipts.hash_preimages,
+        )?;
     }
     let metadata = encode_metadata(value);
     let mut sections = vec![
@@ -533,6 +545,13 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
             if build.root != metadata.receipts_root {
                 return Err(EthBlockInputError::ReceiptsRootMismatch);
             }
+            if let Some(receipts) = &receipts {
+                validate_canonical_preimages(
+                    EthBlockInputTrie::Receipts,
+                    &receipts.hash_preimages,
+                    &build.hash_preimages,
+                )?;
+            }
             Some(bytes)
         }
         None => None,
@@ -626,6 +645,28 @@ fn validate_trie_roots(value: &EthBlockInput) -> Result<(), EthBlockInputError> 
         }
     }
     Ok(())
+}
+
+fn validate_canonical_receipt_preimages_from_rlp(
+    block_rlp: &[u8],
+    receipts_rlp: &[u8],
+    logs_bloom: [u8; 256],
+    gas_used: u64,
+    receipts_root: [u8; 32],
+    hash_preimages: &[TrieHashPreimage],
+) -> Result<(), EthBlockInputError> {
+    let parsed_receipts = parse_eth_receipts_rlp(receipts_rlp)?;
+    let decoded_receipts = decode_eth_receipts_rlp(&parsed_receipts)?;
+    validate_receipts_against_block(block_rlp, &decoded_receipts, logs_bloom, gas_used)?;
+    let build = receipt_trie_build(&parsed_receipts);
+    if build.root != receipts_root {
+        return Err(EthBlockInputError::ReceiptsRootMismatch);
+    }
+    validate_canonical_preimages(
+        EthBlockInputTrie::Receipts,
+        hash_preimages,
+        &build.hash_preimages,
+    )
 }
 
 fn validate_receipts_against_block(
