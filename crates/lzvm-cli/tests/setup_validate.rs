@@ -4028,6 +4028,46 @@ fn prove_inputs_rejects_unpacked_trace() {
 }
 
 #[test]
+fn prove_inputs_rejects_too_few_stored_witnesses() {
+    let dir = temp_dir("prove-inputs-stored-witnesses");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    write_bytes(&witness_library, sample_witness_library());
+    write_bytes(&guest_image, sample_guest_image());
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            "--aggregate",
+            "--stored-witnesses",
+            "1",
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove inputs failed: stored witness limit 1 is lower than required all-unit witness outputs 4\n"
+    );
+}
+
+#[test]
 fn prints_prove_inputs_from_trace_bundle() {
     let dir = temp_dir("prove-inputs-trace-bundle");
     let _ = fs::remove_dir_all(&dir);
@@ -6648,6 +6688,13 @@ fn run_prove_witness_with_aggregate_modifier(
     dir_name: &str,
     modifier: &str,
 ) -> (i32, String, String) {
+    run_prove_witness_with_aggregate_modifiers(dir_name, &[modifier])
+}
+
+fn run_prove_witness_with_aggregate_modifiers(
+    dir_name: &str,
+    modifiers: &[&str],
+) -> (i32, String, String) {
     let dir = temp_dir(dir_name);
     let _ = fs::remove_dir_all(&dir);
     write_execution_ready_setup_directory_with_proof_group_and_unit_value(&dir);
@@ -6674,40 +6721,35 @@ fn run_prove_witness_with_aggregate_modifier(
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
-    let code = run_cli(
-        &[
-            "prove",
-            "witness",
-            "--aggregate",
-            modifier,
-            "--save-outputs",
-            "--unit-values",
-            unit_values_path
-                .to_str()
-                .expect("unit values path should be utf-8"),
-            "--proof-values",
-            proof_values_path
-                .to_str()
-                .expect("proof values path should be utf-8"),
-            "--group-values",
-            group_values_path
-                .to_str()
-                .expect("group values path should be utf-8"),
-            "--input-data",
-            input_data.to_str().expect("input path should be utf-8"),
-            dir.to_str().expect("path should be utf-8"),
-            output_dir.to_str().expect("output path should be utf-8"),
-            witness_library
-                .to_str()
-                .expect("witness path should be utf-8"),
-            guest_image.to_str().expect("guest path should be utf-8"),
-            public_values_path
-                .to_str()
-                .expect("public values path should be utf-8"),
-        ],
-        &mut stdout,
-        &mut stderr,
-    );
+    let mut args = vec!["prove", "witness", "--aggregate"];
+    args.extend_from_slice(modifiers);
+    args.extend_from_slice(&[
+        "--save-outputs",
+        "--unit-values",
+        unit_values_path
+            .to_str()
+            .expect("unit values path should be utf-8"),
+        "--proof-values",
+        proof_values_path
+            .to_str()
+            .expect("proof values path should be utf-8"),
+        "--group-values",
+        group_values_path
+            .to_str()
+            .expect("group values path should be utf-8"),
+        "--input-data",
+        input_data.to_str().expect("input path should be utf-8"),
+        dir.to_str().expect("path should be utf-8"),
+        output_dir.to_str().expect("output path should be utf-8"),
+        witness_library
+            .to_str()
+            .expect("witness path should be utf-8"),
+        guest_image.to_str().expect("guest path should be utf-8"),
+        public_values_path
+            .to_str()
+            .expect("public values path should be utf-8"),
+    ]);
+    let code = run_cli(&args, &mut stdout, &mut stderr);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
     (
         code,
@@ -6741,6 +6783,21 @@ fn rejects_prove_witness_with_remote_aggregation() {
     assert_eq!(
         stderr,
         "prove witness failed: remote aggregation is unsupported by prove witness\n"
+    );
+}
+
+#[test]
+fn rejects_prove_witness_with_too_few_stored_witnesses() {
+    let (code, stdout, stderr) = run_prove_witness_with_aggregate_modifiers(
+        "prove-witness-stored-witnesses",
+        &["--stored-witnesses", "1"],
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        stderr,
+        "prove witness failed: stored witness limit 1 is lower than required all-unit witness outputs 4\n"
     );
 }
 

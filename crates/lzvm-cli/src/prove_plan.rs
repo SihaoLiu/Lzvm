@@ -355,6 +355,18 @@ pub(crate) fn prepare_requested_gpu_setup(
     Ok(())
 }
 
+pub(crate) fn validate_all_unit_stored_witness_limit(
+    limit: usize,
+    required: usize,
+) -> Result<(), String> {
+    if limit < required {
+        return Err(format!(
+            "stored witness limit {limit} is lower than required all-unit witness outputs {required}"
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn format_hash(hash: &[u8; 32]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(64);

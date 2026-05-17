@@ -18,7 +18,7 @@ use crate::eth_block_prove_input::{validate_eth_block_input, write_eth_block_inp
 use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{
     format_hash, parse_run_args, prepare_requested_gpu_setup, read_checked_setup_catalog,
-    write_run_plan_summary, ParseError, ParsedRunArgs,
+    validate_all_unit_stored_witness_limit, write_run_plan_summary, ParseError, ParsedRunArgs,
 };
 
 pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -121,6 +121,15 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     if let Err(error) = prepare_requested_gpu_setup(&plan) {
         let _ = writeln!(stderr, "prove inputs failed: {error}");
         return 1;
+    }
+    if plan.run_plan.options.aggregate {
+        if let Err(error) = validate_all_unit_stored_witness_limit(
+            plan.run_plan.gpu.max_stored_witnesses,
+            plan.units.len(),
+        ) {
+            let _ = writeln!(stderr, "prove inputs failed: {error}");
+            return 1;
+        }
     }
     let public_inputs_summary = match summarize_public_inputs(plan.inputs.public_inputs.as_deref())
     {
