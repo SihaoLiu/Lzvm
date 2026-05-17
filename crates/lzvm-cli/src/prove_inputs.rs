@@ -2,6 +2,7 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
+use lzvm_artifacts::eth_block_input::parse_eth_block_input;
 use lzvm_artifacts::trace_bundle::{read_trace_bundle_file, TraceBundle};
 use lzvm_prover::{
     derive_prove_execution_plan_with_program_image_cache, ProveExecutionInputArtifacts,
@@ -47,6 +48,13 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
     let trace_bundle = match validate_trace_bundle(&parsed.trace_bundle) {
+        Ok(value) => value,
+        Err(message) => {
+            let _ = writeln!(stderr, "prove inputs failed: {message}");
+            return 1;
+        }
+    };
+    let eth_block_input = match validate_eth_block_input(&parsed.eth_block_input) {
         Ok(value) => value,
         Err(message) => {
             let _ = writeln!(stderr, "prove inputs failed: {message}");
@@ -123,6 +131,37 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "none".to_owned())
     );
+    if let Some(summary) = &eth_block_input {
+        let _ = writeln!(stdout, "eth_block_input={}", summary.path.display());
+        let _ = writeln!(stdout, "eth_block_input_bytes={}", summary.byte_len);
+        let _ = writeln!(stdout, "eth_block_rlp_bytes={}", summary.block_rlp_len);
+        let _ = writeln!(
+            stdout,
+            "eth_block_hash={}",
+            format_hash(&summary.block_hash)
+        );
+        let _ = writeln!(stdout, "eth_block_number={}", summary.block_number);
+        let _ = writeln!(stdout, "eth_block_timestamp={}", summary.timestamp);
+        let _ = writeln!(
+            stdout,
+            "eth_transactions_root={}",
+            format_hash(&summary.transactions_root)
+        );
+        let _ = writeln!(
+            stdout,
+            "eth_transaction_trie_preimages={}",
+            summary.transaction_preimage_count
+        );
+        match summary.withdrawal_preimage_count {
+            Some(count) => {
+                let _ = writeln!(stdout, "eth_withdrawals=present");
+                let _ = writeln!(stdout, "eth_withdrawal_trie_preimages={count}");
+            }
+            None => {
+                let _ = writeln!(stdout, "eth_withdrawals=absent");
+            }
+        }
+    }
     if let Some(summary) = &plan.program_image_cache {
         write_program_image_cache_summary(stdout, summary);
     }
@@ -134,11 +173,13 @@ struct ParsedInputsArgs {
     run_args: ParsedRunArgs,
     trace_bytes: Option<PathBuf>,
     trace_bundle: Option<PathBuf>,
+    eth_block_input: Option<PathBuf>,
 }
 
 fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
     let mut trace_bytes = None;
     let mut trace_bundle = None;
+    let mut eth_block_input = None;
     let mut filtered = Vec::with_capacity(args.len());
     let mut index = 0;
     while index < args.len() {
@@ -165,6 +206,17 @@ fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
                     ));
                 }
             }
+            "--eth-block-input" => {
+                index += 1;
+                let value = args.get(index).ok_or_else(|| {
+                    ParseError::Invalid("missing --eth-block-input value".to_owned())
+                })?;
+                if eth_block_input.replace((*value).into()).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --eth-block-input option".to_owned(),
+                    ));
+                }
+            }
             value => filtered.push(value),
         }
         index += 1;
@@ -188,6 +240,7 @@ fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
         run_args,
         trace_bytes,
         trace_bundle,
+        eth_block_input,
     })
 }
 
@@ -239,10 +292,55 @@ fn validate_trace_bundle(
     Ok(Some((path.clone(), bundle, metadata.len())))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EthBlockInputSummary {
+    path: PathBuf,
+    byte_len: u64,
+    block_rlp_len: usize,
+    block_hash: [u8; 32],
+    block_number: u64,
+    timestamp: u64,
+    transactions_root: [u8; 32],
+    transaction_preimage_count: usize,
+    withdrawal_preimage_count: Option<usize>,
+}
+
+fn validate_eth_block_input(
+    path: &Option<PathBuf>,
+) -> Result<Option<EthBlockInputSummary>, String> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("ETH block input is missing: {}: {error}", path.display()))?;
+    if !metadata.is_file() {
+        return Err(format!("ETH block input is not a file: {}", path.display()));
+    }
+    let bytes = fs::read(path)
+        .map_err(|error| format!("ETH block input read failed: {}: {error}", path.display()))?;
+    let input = parse_eth_block_input(&bytes)
+        .map_err(|error| format!("ETH block input failed: {}: {error}", path.display()))?;
+
+    Ok(Some(EthBlockInputSummary {
+        path: path.clone(),
+        byte_len: metadata.len(),
+        block_rlp_len: input.block_rlp.len(),
+        block_hash: input.block_hash,
+        block_number: input.block_number,
+        timestamp: input.timestamp,
+        transactions_root: input.transactions_root,
+        transaction_preimage_count: input.transactions.hash_preimages.len(),
+        withdrawal_preimage_count: input
+            .withdrawals
+            .as_ref()
+            .map(|withdrawals| withdrawals.hash_preimages.len()),
+    }))
+}
+
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>"
+        "usage: lzvm prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --eth-block-input <block-input>\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>"
     );
     2
 }
@@ -250,6 +348,7 @@ fn write_usage(stderr: &mut dyn Write) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lzvm_artifacts::eth_block_input::{build_eth_block_input, encode_eth_block_input};
 
     #[test]
     fn rejects_trace_bytes_with_aggregate_during_parse() {
@@ -267,5 +366,148 @@ mod tests {
             Err(ParseError::Invalid(message))
                 if message == "--trace-bytes requires a single-unit witness run"
         ));
+    }
+
+    #[test]
+    fn parses_eth_block_input_option_for_input_args() {
+        let result = parse_inputs_args(&[
+            "--eth-block-input",
+            "block.input",
+            "setup-dir",
+            "out-dir",
+            "witness.so",
+            "guest.elf",
+        ])
+        .expect("input args should parse");
+
+        assert_eq!(result.eth_block_input, Some(PathBuf::from("block.input")));
+    }
+
+    #[test]
+    fn validates_eth_block_input_artifacts() {
+        let dir = std::env::temp_dir().join(format!(
+            "lzvm-prove-inputs-eth-block-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let input_path = dir.join("block.input");
+        let block_rlp = sample_block_rlp();
+        let input = build_eth_block_input(&block_rlp).expect("block input should build");
+        let encoded = encode_eth_block_input(&input).expect("block input should encode");
+        fs::write(&input_path, &encoded).expect("block input should be written");
+
+        let summary = validate_eth_block_input(&Some(input_path.clone()))
+            .expect("block input should validate")
+            .expect("block input summary should exist");
+
+        assert_eq!(summary.path, input_path);
+        assert_eq!(summary.byte_len, encoded.len() as u64);
+        assert_eq!(summary.block_rlp_len, block_rlp.len());
+        assert_eq!(summary.block_number, 2);
+        assert_eq!(summary.timestamp, 101);
+        assert_eq!(summary.transaction_preimage_count, 1);
+        assert_eq!(summary.withdrawal_preimage_count, None);
+        fs::remove_dir_all(&dir).expect("temp dir should be removed");
+    }
+
+    fn sample_block_rlp() -> Vec<u8> {
+        let header_rlp = rlp_list(&legacy_header_items(
+            hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
+            None,
+        ));
+        let transactions = rlp_list(&[rlp_list(&[rlp_bytes(&[1])])]);
+        let empty_list = rlp_list(&[]);
+        rlp_list(&[header_rlp, transactions, empty_list])
+    }
+
+    fn legacy_header_items(
+        transactions_root: [u8; 32],
+        withdrawals_root: Option<[u8; 32]>,
+    ) -> Vec<Vec<u8>> {
+        let mut items = vec![
+            rlp_bytes(&[0x11; 32]),
+            rlp_bytes(&hex32(
+                "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+            )),
+            rlp_bytes(&[0x33; 20]),
+            rlp_bytes(&[0x44; 32]),
+            rlp_bytes(&transactions_root),
+            rlp_bytes(&[0x66; 32]),
+            rlp_bytes(&[0x77; 256]),
+            rlp_bytes(&[1]),
+            rlp_bytes(&[2]),
+            rlp_bytes(&[0x0f, 0x42, 0x40]),
+            rlp_bytes(&[0x0d, 0xbb, 0xa0]),
+            rlp_bytes(&[0x65]),
+            rlp_bytes(b"lzvm"),
+            rlp_bytes(&[0xaa; 32]),
+            rlp_bytes(&[0xbb; 8]),
+        ];
+        if let Some(root) = withdrawals_root {
+            items.push(rlp_bytes(&[1]));
+            items.push(rlp_bytes(&root));
+        }
+        items
+    }
+
+    fn rlp_bytes(payload: &[u8]) -> Vec<u8> {
+        if payload.len() == 1 && payload[0] <= 0x7f {
+            return vec![payload[0]];
+        }
+        rlp_with_payload(0x80, 0xb7, payload)
+    }
+
+    fn rlp_list(items: &[Vec<u8>]) -> Vec<u8> {
+        let payload = items.iter().flatten().copied().collect::<Vec<_>>();
+        rlp_with_payload(0xc0, 0xf7, &payload)
+    }
+
+    fn rlp_with_payload(short_base: u8, long_base: u8, payload: &[u8]) -> Vec<u8> {
+        if payload.len() <= 55 {
+            let mut output = vec![short_base + payload.len() as u8];
+            output.extend_from_slice(payload);
+            return output;
+        }
+
+        let length = length_bytes(payload.len());
+        let mut output = vec![long_base + length.len() as u8];
+        output.extend_from_slice(&length);
+        output.extend_from_slice(payload);
+        output
+    }
+
+    fn length_bytes(mut value: usize) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        while value > 0 {
+            bytes.push((value & 0xff) as u8);
+            value >>= 8;
+        }
+        bytes.reverse();
+        bytes
+    }
+
+    fn hex32(value: &str) -> [u8; 32] {
+        hex_bytes(value)
+            .try_into()
+            .expect("hex value should have 32 bytes")
+    }
+
+    fn hex_bytes(value: &str) -> Vec<u8> {
+        assert!(value.len().is_multiple_of(2));
+        value
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| (hex_value(pair[0]) << 4) | hex_value(pair[1]))
+            .collect()
+    }
+
+    fn hex_value(value: u8) -> u8 {
+        match value {
+            b'0'..=b'9' => value - b'0',
+            b'a'..=b'f' => value - b'a' + 10,
+            b'A'..=b'F' => value - b'A' + 10,
+            _ => panic!("invalid hex digit"),
+        }
     }
 }
