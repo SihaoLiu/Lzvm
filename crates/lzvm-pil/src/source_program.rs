@@ -1,3 +1,4 @@
+use crate::parser::evaluate_fixed_file_template_value_expression;
 use crate::{
     parse_air_group_declarations, parse_air_group_value_declarations,
     parse_air_instance_declarations, parse_air_template_declarations, parse_column_declarations,
@@ -7,12 +8,11 @@ use crate::{
     parse_use_directives, parse_value_declarations, parse_variable_declarations,
     resolve_fixed_file_pragma_path_with_values, AirGroupDeclaration, AirGroupValueDeclaration,
     AirInstanceDeclaration, AirTemplateDeclaration, CallArgument, ColumnDeclaration,
-    CommitDeclaration, ConstantDeclaration, ContainerDeclaration, Expression, ExpressionKind,
-    FixedFilePragma, FixedFilePragmaKind, FixedFileTemplateContext, FixedFileTemplateValue,
-    FunctionDeclaration, IncludeKind, IncludeVisibility, ParseError, PragmaDirective,
-    PublicDeclaration, PublicTableDeclaration, SourceFile, SourceGraph, SourceGraphEdge,
-    SourceGraphError, SourceGraphLoader, SourceLoaderConfig, UnaryOperator, UseDirective,
-    ValueDeclaration, VariableDeclaration,
+    CommitDeclaration, ConstantDeclaration, ContainerDeclaration, FixedFilePragma,
+    FixedFilePragmaKind, FixedFileTemplateContext, FixedFileTemplateValue, FunctionDeclaration,
+    IncludeKind, IncludeVisibility, ParseError, PragmaDirective, PublicDeclaration,
+    PublicTableDeclaration, SourceFile, SourceGraph, SourceGraphEdge, SourceGraphError,
+    SourceGraphLoader, SourceLoaderConfig, UseDirective, ValueDeclaration, VariableDeclaration,
 };
 use lzvm_artifacts::source_program::{
     read_source_program_archive_file, SourceProgramArchive, SourceProgramArchiveEdge,
@@ -247,7 +247,7 @@ fn fixed_file_template_values(
         if let Some(value) = parameter
             .default_expression
             .as_ref()
-            .and_then(fixed_file_template_value_from_expression)
+            .and_then(evaluate_fixed_file_template_value_expression)
         {
             values.insert(parameter.name.clone(), value);
         }
@@ -265,7 +265,7 @@ fn apply_fixed_file_template_call_arguments(
 ) {
     let mut positional_index = 0;
     for argument in arguments {
-        let Some(value) = fixed_file_template_value_from_expression(&argument.value) else {
+        let Some(value) = evaluate_fixed_file_template_value_expression(&argument.value) else {
             continue;
         };
         if let Some(name) = argument.name.as_ref() {
@@ -276,45 +276,6 @@ fn apply_fixed_file_template_call_arguments(
             values.insert(parameter.name.clone(), value);
         }
         positional_index += 1;
-    }
-}
-
-fn fixed_file_template_value_from_expression(
-    expression: &Expression,
-) -> Option<FixedFileTemplateValue> {
-    match &expression.kind {
-        ExpressionKind::Integer(value) => value
-            .parse::<i128>()
-            .ok()
-            .map(FixedFileTemplateValue::Integer),
-        ExpressionKind::HexInteger(value) => value
-            .strip_prefix("0x")
-            .or_else(|| value.strip_prefix("0X"))
-            .and_then(|digits| i128::from_str_radix(digits, 16).ok())
-            .map(FixedFileTemplateValue::Integer),
-        ExpressionKind::StringLiteral(value) | ExpressionKind::TemplateLiteral(value) => {
-            Some(FixedFileTemplateValue::String(value.clone()))
-        }
-        ExpressionKind::Group(inner) => fixed_file_template_value_from_expression(inner),
-        ExpressionKind::Unary { op, expr } => {
-            let value = fixed_file_template_value_from_expression(expr)?;
-            match (op, value) {
-                (UnaryOperator::Plus, FixedFileTemplateValue::Integer(value)) => {
-                    Some(FixedFileTemplateValue::Integer(value))
-                }
-                (UnaryOperator::Minus, FixedFileTemplateValue::Integer(value)) => {
-                    value.checked_neg().map(FixedFileTemplateValue::Integer)
-                }
-                (UnaryOperator::Not, FixedFileTemplateValue::Integer(value)) => {
-                    Some(FixedFileTemplateValue::Boolean(value == 0))
-                }
-                (UnaryOperator::Not, FixedFileTemplateValue::Boolean(value)) => {
-                    Some(FixedFileTemplateValue::Boolean(!value))
-                }
-                _ => None,
-            }
-        }
-        _ => None,
     }
 }
 

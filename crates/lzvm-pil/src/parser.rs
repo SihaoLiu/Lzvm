@@ -431,11 +431,28 @@ fn evaluate_template_expression(
         .ok_or(())
 }
 
+pub(crate) fn evaluate_fixed_file_template_value_expression(
+    expression: &Expression,
+) -> Option<FixedFileTemplateValue> {
+    evaluate_template_expression_value(expression, &TemplateBindings::default())
+        .map(FixedFileTemplateValue::from)
+}
+
 #[derive(Debug, Clone)]
 enum TemplateValue {
     Integer(i128),
     Boolean(bool),
     String(String),
+}
+
+impl From<TemplateValue> for FixedFileTemplateValue {
+    fn from(value: TemplateValue) -> Self {
+        match value {
+            TemplateValue::Integer(value) => Self::Integer(value),
+            TemplateValue::Boolean(value) => Self::Boolean(value),
+            TemplateValue::String(value) => Self::String(value),
+        }
+    }
 }
 
 impl TemplateValue {
