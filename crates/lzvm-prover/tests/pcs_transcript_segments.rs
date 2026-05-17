@@ -15,6 +15,10 @@ use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::pcs_query_segment::{
     encode_pcs_query_plan_segment, PcsQueryPlanSegment, PcsQueryPlanUnit, PCS_QUERY_PLAN_SEGMENT_ID,
 };
+use lzvm_artifacts::program_image::{ProgramImageCommitmentCache, ProgramImageGpuMode};
+use lzvm_artifacts::program_image_segment::{
+    encode_program_image_cache_segment, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+};
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::witness_segment::{
     encode_witness_commitment_segment, WitnessCommitmentSegment, WitnessCommitmentStageSegment,
@@ -116,6 +120,30 @@ fn rejects_duplicate_transcript_material_segments() {
         .expect_err("duplicate material segment should be rejected");
 
     assert_eq!(error.to_string(), "duplicate PCS material manifest segment");
+}
+
+#[test]
+fn rejects_duplicate_transcript_binding_segments() {
+    let schedule = sample_schedule();
+    let mut segments = transcript_segments(0);
+    let cache_segment = ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: encode_program_image_cache_segment(&sample_program_image_cache())
+            .expect("cache should encode"),
+    };
+    segments.push(cache_segment.clone());
+    segments.push(cache_segment);
+
+    let error = derive_pcs_transcript_challenges_from_proof_segments(&schedule, &[], &segments)
+        .expect_err("duplicate binding segment should be rejected");
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "duplicate proof binding segment id: {}",
+            PROGRAM_IMAGE_CACHE_SEGMENT_ID
+        )
+    );
 }
 
 fn transcript_segments(query_unit_index: u32) -> Vec<ProofSegment> {
@@ -281,4 +309,18 @@ fn root_words(seed: u64) -> [u64; 4] {
 
 fn ext_words(seed: u64) -> [u64; 3] {
     [seed, seed + 1, seed + 2]
+}
+
+fn sample_program_image_cache() -> ProgramImageCommitmentCache {
+    ProgramImageCommitmentCache {
+        program_digest: [1; 32],
+        source_image_digest: [2; 32],
+        constraint_system_digest: [3; 32],
+        tree_root: [4, 5, 6, 7],
+        trace_row_count: 8,
+        trace_column_count: 2,
+        blowup_factor: 2,
+        merkle_tree_arity: 2,
+        gpu_mode: ProgramImageGpuMode::Cuda,
+    }
 }

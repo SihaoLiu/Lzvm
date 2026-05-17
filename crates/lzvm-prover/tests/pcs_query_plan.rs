@@ -195,6 +195,44 @@ fn rejects_seeded_pcs_query_plan_mismatches_with_program_image_cache_segment() {
 }
 
 #[test]
+fn rejects_seeded_pcs_query_plan_duplicate_binding_segments() {
+    let schedule = sample_schedule();
+    let public_hash = [7; 32];
+    let material = material_segment();
+    let witness = witness_segment(0);
+    let cache_segment = ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: encode_program_image_cache_segment(&sample_program_image_cache())
+            .expect("cache should encode"),
+    };
+    let query = build_pcs_query_plan_segment(
+        &schedule,
+        public_hash,
+        &material,
+        std::slice::from_ref(&witness),
+    )
+    .expect("query plan should build");
+    let segments = vec![
+        material,
+        witness,
+        cache_segment.clone(),
+        cache_segment,
+        query,
+    ];
+
+    let error = validate_seeded_pcs_query_plan_segments(&schedule, public_hash, &segments)
+        .expect_err("duplicate binding segment should be rejected");
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "duplicate proof binding segment id: {}",
+            PROGRAM_IMAGE_CACHE_SEGMENT_ID
+        )
+    );
+}
+
+#[test]
 fn validates_transcript_pcs_query_plan_segments() {
     let (schedule, segments) = transcript_query_plan_segments();
 
@@ -240,6 +278,29 @@ fn rejects_transcript_pcs_query_plan_duplicate_nonce_segments() {
         .expect_err("duplicate nonce segment should be rejected");
 
     assert_eq!(error.to_string(), "duplicate PCS query nonce segment");
+}
+
+#[test]
+fn rejects_transcript_pcs_query_plan_duplicate_binding_segments() {
+    let (schedule, mut segments) = transcript_query_plan_segments();
+    let cache_segment = ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: encode_program_image_cache_segment(&sample_program_image_cache())
+            .expect("cache should encode"),
+    };
+    segments.push(cache_segment.clone());
+    segments.push(cache_segment);
+
+    let error = validate_transcript_pcs_query_plan_segments(&schedule, &[], &segments)
+        .expect_err("duplicate binding segment should be rejected");
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "duplicate proof binding segment id: {}",
+            PROGRAM_IMAGE_CACHE_SEGMENT_ID
+        )
+    );
 }
 
 #[test]

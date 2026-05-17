@@ -64,6 +64,9 @@ pub enum ValidatePcsQueryPlanSegmentsError {
     Fri(LoadPcsFriOpeningUnitError),
     UnitValues(LoadUnitValuesSegmentError),
     Build(ProvePcsQueryPlanSegmentError),
+    DuplicateBindingSegment {
+        id: u32,
+    },
     QueryPlanMismatch,
     TranscriptUnitCountMismatch,
     WitnessSegmentIdOverflow,
@@ -103,6 +106,9 @@ impl fmt::Display for ValidatePcsQueryPlanSegmentsError {
             Self::Fri(error) => write!(f, "{error}"),
             Self::UnitValues(error) => write!(f, "{error}"),
             Self::Build(error) => write!(f, "derive PCS query plan segment failed: {error}"),
+            Self::DuplicateBindingSegment { id } => {
+                write!(f, "duplicate proof binding segment id: {id}")
+            }
             Self::QueryPlanMismatch => write!(f, "PCS query plan segment mismatch"),
             Self::TranscriptUnitCountMismatch => {
                 write!(f, "PCS transcript query plan unit count mismatch")
@@ -145,6 +151,7 @@ impl std::error::Error for ValidatePcsQueryPlanSegmentsError {
             | Self::DuplicateMaterialSegment
             | Self::MissingNonceSegment
             | Self::DuplicateNonceSegment
+            | Self::DuplicateBindingSegment { .. }
             | Self::QueryPlanMismatch
             | Self::TranscriptUnitCountMismatch
             | Self::WitnessSegmentIdOverflow
@@ -207,7 +214,8 @@ pub fn validate_seeded_pcs_query_plan_segments(
         ))?;
     let witness_segments = load_witness_commitment_segments(&schedule.units, segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::Witness)?;
-    let binding_segments = proof_binding_segments(segments);
+    let binding_segments = checked_proof_binding_segments(segments)
+        .map_err(|id| ValidatePcsQueryPlanSegmentsError::DuplicateBindingSegment { id })?;
     let expected_segment = build_pcs_query_plan_segment_with_bindings(
         schedule,
         public_values_hash,
@@ -233,6 +241,35 @@ pub(crate) fn proof_binding_segments(segments: &[ProofSegment]) -> Vec<ProofSegm
         })
         .cloned()
         .collect()
+}
+
+pub(crate) fn duplicate_proof_binding_segment_id(segments: &[ProofSegment]) -> Option<u32> {
+    let mut seen = std::collections::BTreeSet::new();
+    for segment in segments
+        .iter()
+        .filter(|segment| is_proof_binding_id(segment.id))
+    {
+        if !seen.insert(segment.id) {
+            return Some(segment.id);
+        }
+    }
+    None
+}
+
+pub(crate) fn checked_proof_binding_segments(
+    segments: &[ProofSegment],
+) -> Result<Vec<ProofSegment>, u32> {
+    if let Some(id) = duplicate_proof_binding_segment_id(segments) {
+        return Err(id);
+    }
+    Ok(proof_binding_segments(segments))
+}
+
+fn is_proof_binding_id(id: u32) -> bool {
+    matches!(
+        id,
+        PROGRAM_IMAGE_CACHE_SEGMENT_ID | ETH_BLOCK_INPUT_SEGMENT_ID
+    )
 }
 
 fn single_material_manifest_segment(
@@ -316,7 +353,8 @@ pub fn validate_transcript_pcs_query_plan_segments(
         .map_err(ValidatePcsQueryPlanSegmentsError::Fri)?;
     let unit_values = load_unit_values_from_segments(unit_index, &unit.unit_value_map, segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
-    let binding_segments = proof_binding_segments(segments);
+    let binding_segments = checked_proof_binding_segments(segments)
+        .map_err(|id| ValidatePcsQueryPlanSegmentsError::DuplicateBindingSegment { id })?;
     let expected_segment = build_pcs_query_plan_segment_from_transcript_segments(
         schedule,
         &witness_segments,

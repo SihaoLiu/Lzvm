@@ -13,7 +13,7 @@ use lzvm_field::{Ext3, Felt};
 
 use crate::pcs_evaluation::{load_pcs_evaluation_unit_from_segments, LoadPcsEvaluationUnitError};
 use crate::pcs_fri::{load_pcs_fri_opening_segment_from_segments, LoadPcsFriOpeningSegmentError};
-use crate::pcs_query_plan::proof_binding_segments;
+use crate::pcs_query_plan::checked_proof_binding_segments;
 use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanSegmentError};
 use crate::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptError, PcsTranscriptSegmentInputs,
@@ -39,6 +39,9 @@ pub enum PcsTranscriptProofSegmentsError {
     Evaluation(LoadPcsEvaluationUnitError),
     UnitValues(LoadUnitValuesSegmentError),
     Transcript(PcsTranscriptError),
+    DuplicateBindingSegment {
+        id: u32,
+    },
     UnitIndexOverflow,
     WitnessSegmentIdOverflow,
     UnitMismatch {
@@ -72,6 +75,9 @@ impl fmt::Display for PcsTranscriptProofSegmentsError {
             Self::Transcript(error) => {
                 write!(f, "derive PCS transcript challenges failed: {error}")
             }
+            Self::DuplicateBindingSegment { id } => {
+                write!(f, "duplicate proof binding segment id: {id}")
+            }
             Self::UnitIndexOverflow => write!(f, "PCS transcript challenge unit index overflow"),
             Self::WitnessSegmentIdOverflow => {
                 write!(f, "PCS transcript challenge witness id overflow")
@@ -96,6 +102,7 @@ impl std::error::Error for PcsTranscriptProofSegmentsError {
             Self::Transcript(error) => Some(error),
             Self::MissingMaterialSegment
             | Self::DuplicateMaterialSegment
+            | Self::DuplicateBindingSegment { .. }
             | Self::UnitIndexOverflow
             | Self::WitnessSegmentIdOverflow
             | Self::UnitMismatch { .. } => None,
@@ -138,7 +145,8 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
         .map_err(PcsTranscriptProofSegmentsError::Fri)?;
     let witness_segments = load_witness_commitment_segments(&schedule.units, segments)
         .map_err(PcsTranscriptProofSegmentsError::Witness)?;
-    let binding_segments = proof_binding_segments(segments);
+    let binding_segments = checked_proof_binding_segments(segments)
+        .map_err(|id| PcsTranscriptProofSegmentsError::DuplicateBindingSegment { id })?;
     let mut units = Vec::new();
 
     for query_unit in &query_plan.units {
