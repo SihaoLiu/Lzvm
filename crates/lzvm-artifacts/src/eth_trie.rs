@@ -38,6 +38,15 @@ pub fn transaction_trie_build(
     Ok(indexed_trie_build(&values))
 }
 
+pub fn receipt_trie_root(receipts: &[RlpItem]) -> [u8; 32] {
+    receipt_trie_build(receipts).root
+}
+
+pub fn receipt_trie_build(receipts: &[RlpItem]) -> IndexedTrieBuild {
+    let values = receipts.iter().map(receipt_value_bytes).collect::<Vec<_>>();
+    indexed_trie_build(&values)
+}
+
 pub fn withdrawals_trie_root(withdrawals: &[RlpItem]) -> [u8; 32] {
     withdrawals_trie_build(withdrawals).root
 }
@@ -103,6 +112,13 @@ fn transaction_value_bytes(transaction: &RlpItem) -> Result<Vec<u8>, EthTransact
             bytes.extend_from_slice(&payload);
             Ok(bytes)
         }
+    }
+}
+
+fn receipt_value_bytes(receipt: &RlpItem) -> Vec<u8> {
+    match receipt {
+        RlpItem::List(_) => encode_rlp(receipt),
+        RlpItem::Bytes(bytes) => bytes.clone(),
     }
 }
 

@@ -1,6 +1,7 @@
 use lzvm_artifacts::eth_trie::{
-    compact_encode_nibbles, empty_transaction_trie_root, empty_trie_root, transaction_trie_build,
-    transaction_trie_root, withdrawals_trie_build, withdrawals_trie_root,
+    compact_encode_nibbles, empty_transaction_trie_root, empty_trie_root, receipt_trie_build,
+    receipt_trie_root, transaction_trie_build, transaction_trie_root, withdrawals_trie_build,
+    withdrawals_trie_root,
 };
 use lzvm_artifacts::rlp::{encode_rlp, RlpItem};
 
@@ -111,6 +112,49 @@ fn computes_single_withdrawal_trie_root() {
 }
 
 #[test]
+fn computes_single_receipt_trie_root() {
+    let receipt = legacy_receipt();
+    let receipt_bytes = encode_rlp(&receipt);
+    let expected_leaf = RlpItem::List(vec![
+        RlpItem::Bytes(compact_encode_nibbles(&[8, 0], true)),
+        RlpItem::Bytes(receipt_bytes),
+    ]);
+
+    assert_eq!(
+        receipt_trie_root(&[receipt]),
+        lzvm_artifacts::eth_block::keccak256(&encode_rlp(&expected_leaf))
+    );
+}
+
+#[test]
+fn computes_typed_receipt_branch_trie_root() {
+    let first = RlpItem::Bytes(vec![1, 0xc0]);
+    let second = RlpItem::Bytes(vec![2, 0xc0]);
+
+    let mut branch = Vec::with_capacity(17);
+    branch.push(RlpItem::List(vec![
+        RlpItem::Bytes(compact_encode_nibbles(&[1], true)),
+        RlpItem::Bytes(vec![2, 0xc0]),
+    ]));
+    for _ in 1..8 {
+        branch.push(RlpItem::Bytes(Vec::new()));
+    }
+    branch.push(RlpItem::List(vec![
+        RlpItem::Bytes(compact_encode_nibbles(&[0], true)),
+        RlpItem::Bytes(vec![1, 0xc0]),
+    ]));
+    for _ in 9..16 {
+        branch.push(RlpItem::Bytes(Vec::new()));
+    }
+    branch.push(RlpItem::Bytes(Vec::new()));
+
+    assert_eq!(
+        receipt_trie_root(&[first, second]),
+        lzvm_artifacts::eth_block::keccak256(&encode_rlp(&RlpItem::List(branch)))
+    );
+}
+
+#[test]
 fn transaction_trie_build_records_root_preimage() {
     let transaction = legacy_transaction();
     let build =
@@ -155,6 +199,16 @@ fn withdrawals_trie_build_records_empty_root_preimage() {
     assert_eq!(build.hash_preimages[0].rlp, vec![0x80]);
 }
 
+#[test]
+fn receipt_trie_build_records_empty_root_preimage() {
+    let build = receipt_trie_build(&[]);
+
+    assert_eq!(build.root, empty_trie_root());
+    assert_eq!(build.hash_preimages.len(), 1);
+    assert_eq!(build.hash_preimages[0].hash, empty_trie_root());
+    assert_eq!(build.hash_preimages[0].rlp, vec![0x80]);
+}
+
 fn legacy_transaction() -> RlpItem {
     RlpItem::List(vec![
         RlpItem::Bytes(Vec::new()),
@@ -166,6 +220,15 @@ fn legacy_transaction() -> RlpItem {
         RlpItem::Bytes(vec![0x1b]),
         RlpItem::Bytes(vec![1]),
         RlpItem::Bytes(vec![1]),
+    ])
+}
+
+fn legacy_receipt() -> RlpItem {
+    RlpItem::List(vec![
+        RlpItem::Bytes(vec![1]),
+        RlpItem::Bytes(vec![0x52, 0x08]),
+        RlpItem::Bytes(vec![0x11; 256]),
+        RlpItem::List(vec![]),
     ])
 }
 
