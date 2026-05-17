@@ -4,10 +4,12 @@ use super::{
     parse_commit_declarations, parse_constant_declarations, parse_container_declarations,
     parse_fixed_file_pragmas, parse_function_declarations, parse_include_directives,
     parse_pragma_directives, parse_public_declarations, parse_public_table_declarations,
-    parse_use_directives, parse_value_declarations, parse_variable_declarations, BinaryOperator,
-    ColumnInitializerKind, ColumnKind, ConstantDeclarationKind, Expression, ExpressionKind,
-    FixedFilePragmaKind, FunctionStatementDeclaration, FunctionStatementKind, FunctionVisibility,
-    IncludeKind, IncludeVisibility, ParseError, UnaryOperator, ValueDeclarationKind,
+    parse_use_directives, parse_value_declarations, parse_variable_declarations,
+    resolve_fixed_file_pragma_path, BinaryOperator, ColumnInitializerKind, ColumnKind,
+    ConstantDeclarationKind, Expression, ExpressionKind, FixedFilePragmaKind,
+    FixedFileTemplateContext, FunctionStatementDeclaration, FunctionStatementKind,
+    FunctionVisibility, IncludeKind, IncludeVisibility, ParseError, UnaryOperator,
+    ValueDeclarationKind,
 };
 use crate::SourceFile;
 use std::path::PathBuf;
@@ -222,6 +224,53 @@ fn rejects_fixed_load_with_invalid_column() {
     let source = source("#pragma fixed_load fixed.bin nope");
 
     let error = parse_fixed_file_pragmas(&source).expect_err("column should be numeric");
+
+    assert!(matches!(
+        error,
+        ParseError::InvalidPragmaArgument { source_name, .. } if source_name == "main.pil"
+    ));
+}
+
+#[test]
+fn resolves_fixed_file_pragma_template_paths() {
+    let source = source(
+        "#pragma output_fixed_file `${AIRGROUP}/${AIRGROUP_ID}/${AIR_ID}/${AIR_NAME}/${AIRTEMPLATE}.fixed`",
+    );
+    let directive = parse_fixed_file_pragmas(&source)
+        .expect("pragma should parse")
+        .pop()
+        .expect("fixed-file pragma should exist");
+
+    let resolved = resolve_fixed_file_pragma_path(
+        &source,
+        &directive,
+        &FixedFileTemplateContext {
+            group_name: "group-a".to_owned(),
+            group_id: 2,
+            unit_id: 7,
+            unit_name: "main".to_owned(),
+            template_name: "MainTemplate".to_owned(),
+        },
+    )
+    .expect("template should resolve");
+
+    assert_eq!(
+        resolved.as_deref(),
+        Some("group-a/2/7/main/MainTemplate.fixed")
+    );
+}
+
+#[test]
+fn rejects_unknown_fixed_file_template_reference() {
+    let source = source("#pragma output_fixed_file `${UNKNOWN}.fixed`");
+    let directive = parse_fixed_file_pragmas(&source)
+        .expect("pragma should parse")
+        .pop()
+        .expect("fixed-file pragma should exist");
+
+    let error =
+        resolve_fixed_file_pragma_path(&source, &directive, &FixedFileTemplateContext::default())
+            .expect_err("unknown template reference should fail");
 
     assert!(matches!(
         error,

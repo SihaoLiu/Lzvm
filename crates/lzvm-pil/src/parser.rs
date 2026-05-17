@@ -8,6 +8,8 @@ pub use expressions::*;
 pub use functions::*;
 pub use types::*;
 
+use std::collections::BTreeMap;
+
 use crate::{lex_source, SourceFile, Token, TokenKind};
 use declarations::{include_header, parse_named_statement};
 use expressions::parse_expression_tokens;
@@ -84,6 +86,26 @@ pub fn parse_fixed_file_pragmas(source: &SourceFile) -> Result<Vec<FixedFilePrag
     }
 
     Ok(directives)
+}
+
+pub fn resolve_fixed_file_pragma_path(
+    source: &SourceFile,
+    pragma: &FixedFilePragma,
+    context: &FixedFileTemplateContext,
+) -> Result<Option<String>, ParseError> {
+    let Some(path) = pragma.path.as_ref() else {
+        return Ok(None);
+    };
+    if !path.template {
+        return Ok(Some(path.value.clone()));
+    }
+
+    evaluate_template_text(source, &path.value, &TemplateBindings::fixed_file(context))
+        .map(Some)
+        .map_err(|_| ParseError::InvalidPragmaArgument {
+            source_name: pragma.source_name.clone(),
+            start: pragma.start,
+        })
 }
 
 pub fn parse_include_directives(source: &SourceFile) -> Result<Vec<IncludeDirective>, ParseError> {
@@ -232,6 +254,20 @@ fn evaluate_template_include_path(
     end: usize,
     template: &str,
 ) -> Result<String, ParseError> {
+    evaluate_template_text(source, template, &TemplateBindings::default()).map_err(|_| {
+        ParseError::TemplatePath {
+            source_name: source.source_name.clone(),
+            start,
+            end,
+        }
+    })
+}
+
+fn evaluate_template_text(
+    source: &SourceFile,
+    template: &str,
+    bindings: &TemplateBindings,
+) -> Result<String, ()> {
     let mut resolved = String::new();
     let mut cursor = 0;
 
@@ -241,21 +277,11 @@ fn evaluate_template_include_path(
 
         let expression_start = segment_start + 2;
         let Some(relative_end) = template[expression_start..].find('}') else {
-            return Err(ParseError::TemplatePath {
-                source_name: source.source_name.clone(),
-                start,
-                end,
-            });
+            return Err(());
         };
         let expression_end = expression_start + relative_end;
         let expression = &template[expression_start..expression_end];
-        let evaluated = evaluate_template_expression(source, expression).map_err(|_| {
-            ParseError::TemplatePath {
-                source_name: source.source_name.clone(),
-                start,
-                end,
-            }
-        })?;
+        let evaluated = evaluate_template_expression(source, expression, bindings)?;
         resolved.push_str(&evaluated);
         cursor = expression_end + 1;
     }
@@ -264,7 +290,44 @@ fn evaluate_template_include_path(
     Ok(resolved)
 }
 
-fn evaluate_template_expression(source: &SourceFile, expression: &str) -> Result<String, ()> {
+#[derive(Debug, Clone, Default)]
+struct TemplateBindings {
+    values: BTreeMap<String, TemplateValue>,
+}
+
+impl TemplateBindings {
+    fn fixed_file(context: &FixedFileTemplateContext) -> Self {
+        let mut values = BTreeMap::new();
+        values.insert(
+            "AIRGROUP".to_owned(),
+            TemplateValue::String(context.group_name.clone()),
+        );
+        values.insert(
+            "AIRGROUP_ID".to_owned(),
+            TemplateValue::Integer(context.group_id),
+        );
+        values.insert("AIR_ID".to_owned(), TemplateValue::Integer(context.unit_id));
+        values.insert(
+            "AIR_NAME".to_owned(),
+            TemplateValue::String(context.unit_name.clone()),
+        );
+        values.insert(
+            "AIRTEMPLATE".to_owned(),
+            TemplateValue::String(context.template_name.clone()),
+        );
+        Self { values }
+    }
+
+    fn get(&self, name: &str) -> Option<TemplateValue> {
+        self.values.get(name).cloned()
+    }
+}
+
+fn evaluate_template_expression(
+    source: &SourceFile,
+    expression: &str,
+    bindings: &TemplateBindings,
+) -> Result<String, ()> {
     let expression_source = SourceFile {
         contents: expression.to_owned(),
         file_dir: source.file_dir.clone(),
@@ -277,7 +340,7 @@ fn evaluate_template_expression(source: &SourceFile, expression: &str) -> Result
     if next_index != tokens.len() {
         return Err(());
     }
-    evaluate_template_expression_value(&parsed)
+    evaluate_template_expression_value(&parsed, bindings)
         .map(TemplateValue::into_string)
         .ok_or(())
 }
@@ -314,7 +377,10 @@ impl TemplateValue {
     }
 }
 
-fn evaluate_template_expression_value(expression: &Expression) -> Option<TemplateValue> {
+fn evaluate_template_expression_value(
+    expression: &Expression,
+    bindings: &TemplateBindings,
+) -> Option<TemplateValue> {
     match &expression.kind {
         ExpressionKind::Integer(value) => parse_decimal_integer(value)
             .ok()
@@ -325,9 +391,10 @@ fn evaluate_template_expression_value(expression: &Expression) -> Option<Templat
         ExpressionKind::StringLiteral(value) | ExpressionKind::TemplateLiteral(value) => {
             Some(TemplateValue::String(value.clone()))
         }
-        ExpressionKind::Group(inner) => evaluate_template_expression_value(inner),
+        ExpressionKind::Name(value) => bindings.get(value),
+        ExpressionKind::Group(inner) => evaluate_template_expression_value(inner, bindings),
         ExpressionKind::Unary { op, expr } => {
-            let value = evaluate_template_expression_value(expr)?;
+            let value = evaluate_template_expression_value(expr, bindings)?;
             match op {
                 UnaryOperator::Plus => value.as_integer().map(TemplateValue::Integer),
                 UnaryOperator::Minus => value
@@ -339,11 +406,11 @@ fn evaluate_template_expression_value(expression: &Expression) -> Option<Templat
             }
         }
         ExpressionKind::Binary { op, left, right } => {
-            let lhs = evaluate_template_expression_value(left)?;
+            let lhs = evaluate_template_expression_value(left, bindings)?;
             match op {
                 BinaryOperator::LogicalAnd => {
                     if lhs.truthy() {
-                        let rhs = evaluate_template_expression_value(right)?;
+                        let rhs = evaluate_template_expression_value(right, bindings)?;
                         Some(rhs)
                     } else {
                         Some(lhs)
@@ -353,12 +420,12 @@ fn evaluate_template_expression_value(expression: &Expression) -> Option<Templat
                     if lhs.truthy() {
                         Some(lhs)
                     } else {
-                        let rhs = evaluate_template_expression_value(right)?;
+                        let rhs = evaluate_template_expression_value(right, bindings)?;
                         Some(rhs)
                     }
                 }
                 _ => {
-                    let rhs = evaluate_template_expression_value(right)?;
+                    let rhs = evaluate_template_expression_value(right, bindings)?;
                     evaluate_template_binary(*op, lhs, rhs)
                 }
             }

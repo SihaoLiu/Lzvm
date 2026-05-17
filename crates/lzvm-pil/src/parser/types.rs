@@ -40,6 +40,27 @@ pub struct FixedFilePragma {
     pub end: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixedFileTemplateContext {
+    pub group_name: String,
+    pub group_id: i128,
+    pub unit_id: i128,
+    pub unit_name: String,
+    pub template_name: String,
+}
+
+impl Default for FixedFileTemplateContext {
+    fn default() -> Self {
+        Self {
+            group_name: String::new(),
+            group_id: -1,
+            unit_id: -1,
+            unit_name: String::new(),
+            template_name: String::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IncludeKind {
     Include,
