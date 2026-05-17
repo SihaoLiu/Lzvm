@@ -572,7 +572,7 @@ pub fn derive_global_challenge_from_files(
         public_value_count: public_report.public_value_count,
         public_values_hash: public_report.public_values_hash,
         public_value_field_count: public_report.public_value_field_count,
-        proof_value_count: proof_values.len(),
+        proof_value_count: packed_proof_values.len(),
         contribution_count: entries.len(),
         challenge,
     })
@@ -617,7 +617,7 @@ pub fn derive_global_challenge_from_contribution_proofs(
                 return Err(ContributionChallengeFileError::ProofValueMismatch { proof_index });
             }
         } else {
-            proof_value_count = proof_values.len();
+            proof_value_count = packed.len();
             packed_proof_values = Some(packed);
         }
 
