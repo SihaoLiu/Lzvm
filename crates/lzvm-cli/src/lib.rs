@@ -692,6 +692,9 @@ fn verify_preflight(
             if let Some(gas_limit) = report.eth_block_input_gas_limits.get(index) {
                 let _ = writeln!(stdout, "eth_gas_limit={gas_limit}");
             }
+            if let Some(gas_used) = report.eth_block_input_gas_used_values.get(index) {
+                let _ = writeln!(stdout, "eth_gas_used={gas_used}");
+            }
             write_eth_transaction_preimage_summary(
                 stdout,
                 report
@@ -973,6 +976,7 @@ struct EthBlockInputBinding {
     timestamp: u64,
     extra_data: Vec<u8>,
     gas_limit: u64,
+    gas_used: u64,
     transaction_preimage_count: usize,
     legacy_transaction_count: usize,
     typed_transaction_count: usize,
@@ -1107,6 +1111,9 @@ fn verify_setup_validation(
                 if let Some(gas_limit) = public_report.eth_block_input_gas_limits.get(index) {
                     let _ = writeln!(stdout, "eth_gas_limit={gas_limit}");
                 }
+                if let Some(gas_used) = public_report.eth_block_input_gas_used_values.get(index) {
+                    let _ = writeln!(stdout, "eth_gas_used={gas_used}");
+                }
                 write_eth_transaction_preimage_summary(
                     stdout,
                     public_report
@@ -1221,6 +1228,7 @@ fn verify_setup_validation(
             format_bytes_hex(&binding.extra_data)
         );
         let _ = writeln!(stdout, "eth_gas_limit={}", binding.gas_limit);
+        let _ = writeln!(stdout, "eth_gas_used={}", binding.gas_used);
         write_eth_transaction_preimage_summary(stdout, binding.transaction_preimage_count);
         write_eth_transaction_count_summary(
             stdout,
@@ -1325,6 +1333,7 @@ fn verify_eth_block_input_binding(
         timestamp: input.timestamp,
         extra_data: input.extra_data,
         gas_limit: input.gas_limit,
+        gas_used: input.gas_used,
         transaction_preimage_count,
         legacy_transaction_count,
         typed_transaction_count,

@@ -114,6 +114,7 @@ fn validates_setup_preflight_hashes() {
             eth_block_input_timestamps: Vec::new(),
             eth_block_input_extra_data: Vec::new(),
             eth_block_input_gas_limits: Vec::new(),
+            eth_block_input_gas_used_values: Vec::new(),
             eth_block_input_transaction_preimage_counts: Vec::new(),
             eth_block_input_legacy_transaction_counts: Vec::new(),
             eth_block_input_typed_transaction_counts: Vec::new(),

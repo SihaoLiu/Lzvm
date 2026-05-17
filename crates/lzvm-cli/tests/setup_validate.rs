@@ -5223,7 +5223,7 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     let verify_stdout_text =
         String::from_utf8(verify_stdout).expect("verify stdout should be utf-8");
     assert!(verify_stdout_text.contains(&format!(
-        "eth_block_inputs=1\neth_block_input_hash={}\neth_block_input_match=ok\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty={}\neth_block_number={}\neth_block_timestamp={}\neth_extra_data={}\neth_gas_limit={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\n",
+        "eth_block_inputs=1\neth_block_input_hash={}\neth_block_input_match=ok\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty={}\neth_block_number={}\neth_block_timestamp={}\neth_extra_data={}\neth_gas_limit={}\neth_gas_used={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\n",
         format_hash(&block_input_hash),
         format_hash(&block_input.ommers_hash),
         format_hex(&block_input.beneficiary),
@@ -5235,6 +5235,7 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
         block_input.timestamp,
         format_hex(&block_input.extra_data),
         block_input.gas_limit,
+        block_input.gas_used,
         block_input.transactions.hash_preimages.len(),
         receipt_build.hash_preimages.len()
     )));
@@ -5248,7 +5249,7 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     let preflight_stdout_text =
         String::from_utf8(preflight_stdout).expect("preflight stdout should be utf-8");
     assert!(preflight_stdout_text.contains(&format!(
-        "eth_block_inputs=1\neth_block_input_hash={}\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty={}\neth_block_number={}\neth_block_timestamp={}\neth_extra_data={}\neth_gas_limit={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\n",
+        "eth_block_inputs=1\neth_block_input_hash={}\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty={}\neth_block_number={}\neth_block_timestamp={}\neth_extra_data={}\neth_gas_limit={}\neth_gas_used={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\n",
         format_hash(&block_input_hash),
         format_hash(&block_input.ommers_hash),
         format_hex(&block_input.beneficiary),
@@ -5260,6 +5261,7 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
         block_input.timestamp,
         format_hex(&block_input.extra_data),
         block_input.gas_limit,
+        block_input.gas_used,
         block_input.transactions.hash_preimages.len(),
         receipt_build.hash_preimages.len()
     )));
@@ -5273,7 +5275,7 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     let setup_preflight_stdout_text =
         String::from_utf8(setup_preflight_stdout).expect("setup preflight stdout should be utf-8");
     assert!(setup_preflight_stdout_text.contains(&format!(
-        "eth_block_inputs=1\neth_block_input_hash={}\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty={}\neth_block_number={}\neth_block_timestamp={}\neth_extra_data={}\neth_gas_limit={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\n",
+        "eth_block_inputs=1\neth_block_input_hash={}\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty={}\neth_block_number={}\neth_block_timestamp={}\neth_extra_data={}\neth_gas_limit={}\neth_gas_used={}\neth_transaction_trie_preimages={}\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=present\neth_receipt_trie_preimages={}\neth_receipt_count=1\neth_legacy_receipts=1\neth_typed_receipts=0\n",
         format_hash(&block_input_hash),
         format_hash(&block_input.ommers_hash),
         format_hex(&block_input.beneficiary),
@@ -5285,6 +5287,7 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
         block_input.timestamp,
         format_hex(&block_input.extra_data),
         block_input.gas_limit,
+        block_input.gas_used,
         block_input.transactions.hash_preimages.len(),
         receipt_build.hash_preimages.len()
     )));
