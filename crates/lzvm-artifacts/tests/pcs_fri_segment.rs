@@ -65,6 +65,18 @@ fn encodes_and_parses_pcs_fri_opening_segments() {
 }
 
 #[test]
+fn rejects_unsupported_pcs_fri_opening_segment_versions() {
+    let mut encoded =
+        encode_pcs_fri_opening_segment(&sample_segment()).expect("FRI segment should encode");
+    encoded[4..8].copy_from_slice(&2_u32.to_le_bytes());
+
+    assert!(matches!(
+        parse_pcs_fri_opening_segment(&encoded),
+        Err(PcsFriOpeningSegmentError::UnsupportedVersion { version: 2 })
+    ));
+}
+
+#[test]
 fn rejects_empty_pcs_fri_opening_segments() {
     let segment = PcsFriOpeningSegment { units: Vec::new() };
 

@@ -41,6 +41,18 @@ fn encodes_and_parses_pcs_query_plan_segments() {
 }
 
 #[test]
+fn rejects_unsupported_pcs_query_plan_segment_versions() {
+    let mut encoded =
+        encode_pcs_query_plan_segment(&sample_segment()).expect("query segment should encode");
+    encoded[4..8].copy_from_slice(&2_u32.to_le_bytes());
+
+    assert!(matches!(
+        parse_pcs_query_plan_segment(&encoded),
+        Err(PcsQueryPlanSegmentError::UnsupportedVersion { version: 2 })
+    ));
+}
+
+#[test]
 fn rejects_empty_pcs_query_plan_segments() {
     let segment = PcsQueryPlanSegment { units: Vec::new() };
 

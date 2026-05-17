@@ -56,6 +56,18 @@ fn encodes_and_parses_pcs_material_manifest_segments() {
 }
 
 #[test]
+fn rejects_unsupported_pcs_material_manifest_segment_versions() {
+    let mut encoded = encode_pcs_material_manifest_segment(&sample_segment())
+        .expect("manifest segment should encode");
+    encoded[4..8].copy_from_slice(&2_u32.to_le_bytes());
+
+    assert!(matches!(
+        parse_pcs_material_manifest_segment(&encoded),
+        Err(PcsMaterialManifestSegmentError::UnsupportedVersion { version: 2 })
+    ));
+}
+
+#[test]
 fn rejects_empty_pcs_material_manifest_segments() {
     let segment = PcsMaterialManifestSegment { units: Vec::new() };
 

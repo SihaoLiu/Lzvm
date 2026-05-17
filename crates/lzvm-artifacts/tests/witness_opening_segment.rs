@@ -54,6 +54,18 @@ fn encodes_and_parses_witness_opening_segments() {
 }
 
 #[test]
+fn rejects_unsupported_witness_opening_segment_versions() {
+    let mut encoded =
+        encode_witness_opening_segment(&sample_segment()).expect("opening segment should encode");
+    encoded[4..8].copy_from_slice(&2_u32.to_le_bytes());
+
+    assert!(matches!(
+        parse_witness_opening_segment(&encoded),
+        Err(WitnessOpeningSegmentError::UnsupportedVersion { version: 2 })
+    ));
+}
+
+#[test]
 fn rejects_empty_witness_opening_segments() {
     let segment = WitnessOpeningSegment { units: Vec::new() };
 

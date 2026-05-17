@@ -51,6 +51,18 @@ fn encodes_and_parses_constant_opening_segments() {
 }
 
 #[test]
+fn rejects_unsupported_constant_opening_segment_versions() {
+    let mut encoded =
+        encode_constant_opening_segment(&sample_segment()).expect("opening segment should encode");
+    encoded[4..8].copy_from_slice(&2_u32.to_le_bytes());
+
+    assert!(matches!(
+        parse_constant_opening_segment(&encoded),
+        Err(ConstantOpeningSegmentError::UnsupportedVersion { version: 2 })
+    ));
+}
+
+#[test]
 fn rejects_empty_constant_opening_segments() {
     let segment = ConstantOpeningSegment { units: Vec::new() };
 

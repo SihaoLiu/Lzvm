@@ -31,6 +31,18 @@ fn encodes_and_parses_program_image_cache_segments() {
 }
 
 #[test]
+fn rejects_unsupported_program_image_cache_segment_versions() {
+    let mut encoded =
+        encode_program_image_cache_segment(&sample_cache()).expect("segment should encode");
+    encoded[4..8].copy_from_slice(&2_u32.to_le_bytes());
+
+    assert_eq!(
+        parse_program_image_cache_segment(&encoded),
+        Err(ProgramImageCacheSegmentError::UnsupportedVersion { version: 2 })
+    );
+}
+
+#[test]
 fn computes_program_image_cache_segment_digest() {
     let encoded =
         encode_program_image_cache_segment(&sample_cache()).expect("segment should encode");
