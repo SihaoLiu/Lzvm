@@ -116,9 +116,13 @@ pub fn parse_contribution_segment(
     if version != CONTRIBUTION_VERSION {
         return Err(ContributionSegmentError::UnsupportedVersion { version });
     }
-    let entry_count = reader.read_u32()? as usize;
+    let entry_count = usize::try_from(reader.read_u32()?)
+        .map_err(|_| ContributionSegmentError::LengthOverflow)?;
     if entry_count == 0 {
         return Err(ContributionSegmentError::EmptyEntries);
+    }
+    if entry_count > reader.remaining_len() / ENTRY_HEADER_BYTES {
+        return Err(ContributionSegmentError::LengthOverflow);
     }
 
     let mut entries = Vec::with_capacity(entry_count);
@@ -130,7 +134,11 @@ pub fn parse_contribution_segment(
             1 => true,
             value => return Err(ContributionSegmentError::InvalidAggregatedFlag { value }),
         };
-        let value_count = reader.read_u32()? as usize;
+        let value_count = usize::try_from(reader.read_u32()?)
+            .map_err(|_| ContributionSegmentError::LengthOverflow)?;
+        if value_count > reader.remaining_len() / WORD_BYTES {
+            return Err(ContributionSegmentError::LengthOverflow);
+        }
         let mut values = Vec::with_capacity(value_count);
         for _ in 0..value_count {
             values.push(reader.read_u64()?);
@@ -210,6 +218,10 @@ impl<'a> SegmentReader<'a> {
 
     fn read_u64(&mut self) -> Result<u64, ContributionSegmentError> {
         Ok(u64::from_le_bytes(self.read_array::<8>()?))
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 
     fn read_array<const N: usize>(&mut self) -> Result<[u8; N], ContributionSegmentError> {

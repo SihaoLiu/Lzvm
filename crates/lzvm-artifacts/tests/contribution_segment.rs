@@ -22,6 +22,18 @@ fn sample_segment() -> ContributionSegment {
     }
 }
 
+fn segment_header(entry_count: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"ctr0");
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, entry_count);
+    bytes
+}
+
+fn push_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
 #[test]
 fn encodes_and_parses_contribution_segments() {
     let encoded = encode_contribution_segment(&sample_segment()).expect("segment should encode");
@@ -100,6 +112,41 @@ fn rejects_invalid_aggregated_flags() {
     assert!(matches!(
         parse_contribution_segment(&encoded),
         Err(ContributionSegmentError::InvalidAggregatedFlag { value: 2 })
+    ));
+}
+
+#[test]
+fn rejects_truncated_contribution_segments() {
+    let result = parse_contribution_segment(b"ctr0\x01\0");
+
+    assert!(matches!(
+        result,
+        Err(ContributionSegmentError::UnexpectedEof {
+            needed: 8,
+            available: 6
+        })
+    ));
+}
+
+#[test]
+fn rejects_entry_count_that_exceeds_remaining_entry_headers() {
+    assert!(matches!(
+        parse_contribution_segment(&segment_header(1)),
+        Err(ContributionSegmentError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_value_count_that_exceeds_remaining_words() {
+    let mut bytes = segment_header(1);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 1);
+
+    assert!(matches!(
+        parse_contribution_segment(&bytes),
+        Err(ContributionSegmentError::LengthOverflow)
     ));
 }
 
