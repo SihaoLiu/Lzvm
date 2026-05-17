@@ -67,6 +67,7 @@ pub struct ProgramImageCommitmentInputs<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProgramImageCommitmentCacheError {
     Sectioned(SectionedError),
+    UnsupportedVersion { found: u32, expected: u32 },
     InvalidSectionCount { found: u32 },
     InvalidSectionId { found: u32 },
     InvalidPayloadLength { expected: usize, found: usize },
@@ -89,6 +90,10 @@ impl fmt::Display for ProgramImageCommitmentCacheError {
                     "program-image commitment cache container error: {error}"
                 )
             }
+            Self::UnsupportedVersion { found, expected } => write!(
+                f,
+                "unsupported program-image commitment cache version {found}, expected {expected}"
+            ),
             Self::InvalidSectionCount { found } => {
                 write!(
                     f,
@@ -180,6 +185,13 @@ pub fn parse_program_image_commitment_cache(
     bytes: &[u8],
 ) -> Result<ProgramImageCommitmentCache, ProgramImageCommitmentCacheError> {
     let file = parse_sectioned_file(bytes, PROGRAM_IMAGE_KIND, PROGRAM_IMAGE_VERSION)?;
+    if file.version != PROGRAM_IMAGE_VERSION {
+        return Err(ProgramImageCommitmentCacheError::UnsupportedVersion {
+            found: file.version,
+            expected: PROGRAM_IMAGE_VERSION,
+        });
+    }
+
     if file.sections.len() != 1 {
         return Err(ProgramImageCommitmentCacheError::InvalidSectionCount {
             found: u32::try_from(file.sections.len()).unwrap_or(u32::MAX),
