@@ -376,6 +376,7 @@ pub fn build_eth_block_input_with_receipts(
 }
 
 pub fn encode_eth_block_input(value: &EthBlockInput) -> Result<Vec<u8>, EthBlockInputError> {
+    validate_receipt_sections(value.receipts.is_some(), value.receipts_rlp.is_some())?;
     let metadata = encode_metadata(value);
     let mut sections = vec![
         SectionedSection {
@@ -453,11 +454,7 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
         transaction_preimages.ok_or(EthBlockInputError::MissingTransactionPreimages)?;
     let metadata = parse_metadata(&metadata)?;
     let validated_input = validate_metadata(&metadata, &block_rlp)?;
-    match (&receipt_preimages, &receipts_rlp) {
-        (None, Some(_)) => return Err(EthBlockInputError::MissingReceiptPreimages),
-        (Some(_), None) => return Err(EthBlockInputError::MissingReceiptsRlp),
-        _ => {}
-    }
+    validate_receipt_sections(receipt_preimages.is_some(), receipts_rlp.is_some())?;
     let transaction_hash_preimages = parse_validated_preimages(
         EthBlockInputTrie::Transactions,
         metadata.transactions_root,
@@ -546,6 +543,17 @@ fn parse_eth_receipts_rlp(receipts_rlp: &[u8]) -> Result<Vec<RlpItem>, EthBlockI
     match parse_rlp(receipts_rlp).map_err(EthBlockError::Rlp)? {
         RlpItem::List(receipts) => Ok(receipts),
         RlpItem::Bytes(_) => Err(EthBlockInputError::ExpectedReceiptsList),
+    }
+}
+
+fn validate_receipt_sections(
+    has_receipt_preimages: bool,
+    has_receipts_rlp: bool,
+) -> Result<(), EthBlockInputError> {
+    match (has_receipt_preimages, has_receipts_rlp) {
+        (false, true) => Err(EthBlockInputError::MissingReceiptPreimages),
+        (true, false) => Err(EthBlockInputError::MissingReceiptsRlp),
+        _ => Ok(()),
     }
 }
 
