@@ -163,9 +163,14 @@ pub(crate) fn parse_run_args(
             }
             "--program-image-cache" => {
                 index += 1;
-                program_image_cache = Some(PathBuf::from(args.get(index).ok_or(
-                    ParseError::Invalid("missing --program-image-cache value".to_owned()),
-                )?));
+                let value = args.get(index).ok_or(ParseError::Invalid(
+                    "missing --program-image-cache value".to_owned(),
+                ))?;
+                if program_image_cache.replace(PathBuf::from(*value)).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --program-image-cache option".to_owned(),
+                    ));
+                }
             }
             value if value.starts_with("--") => {
                 return Err(ParseError::Invalid(format!("unknown option {value}")));

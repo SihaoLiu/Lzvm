@@ -8570,6 +8570,89 @@ fn rejects_prove_witness_with_mismatched_program_image_cache_source_digest() {
 }
 
 #[test]
+fn prove_inputs_rejects_duplicate_program_image_cache() {
+    let dir = temp_dir("prove-inputs-duplicate-program-image-cache");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let program_path = dir.join("program.bin");
+    let other_program_path = dir.join("other-program.bin");
+    let constraint_digest_path = dir.join("constraint.digest");
+    let root_path = dir.join("root.bin");
+    let cache_path = dir.join("program_image.cache");
+    let other_cache_path = dir.join("other-program_image.cache");
+    write_bytes(&witness_library, sample_witness_library());
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&program_path, b"packed-program");
+    write_bytes(&other_program_path, b"other-packed-program");
+    write_bytes(&constraint_digest_path, [0x44_u8; 32]);
+    write_bytes(
+        &root_path,
+        encode_verification_key_binary(&VerificationKeyRoot::FieldElements(vec![11, 12, 13, 14]))
+            .expect("root should encode"),
+    );
+    write_program_image_commitment_cache_file(ProgramImageCommitmentCacheFileRequest {
+        program_path: &program_path,
+        guest_image_path: &guest_image,
+        constraint_digest_path: &constraint_digest_path,
+        root_path: &root_path,
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cuda,
+        output_path: &cache_path,
+    })
+    .expect("cache should write");
+    write_program_image_commitment_cache_file(ProgramImageCommitmentCacheFileRequest {
+        program_path: &other_program_path,
+        guest_image_path: &guest_image,
+        constraint_digest_path: &constraint_digest_path,
+        root_path: &root_path,
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cuda,
+        output_path: &other_cache_path,
+    })
+    .expect("other cache should write");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            "--program-image-cache",
+            other_cache_path
+                .to_str()
+                .expect("cache path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove inputs failed: duplicate --program-image-cache option\n"
+    );
+}
+
+#[test]
 fn rejects_prove_inputs_with_invalid_guest_image() {
     let dir = temp_dir("prove-inputs-invalid-guest");
     let _ = fs::remove_dir_all(&dir);
