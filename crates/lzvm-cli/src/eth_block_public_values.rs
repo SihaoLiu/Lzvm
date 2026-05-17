@@ -5,7 +5,7 @@ use std::path::Path;
 use lzvm_artifacts::eth_block_input::parse_eth_block_input;
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
 use lzvm_artifacts::key_directory::key_directory_catalog_digest;
-use lzvm_artifacts::public_values::encode_public_values;
+use lzvm_artifacts::public_values::{encode_public_values, PublicValues};
 
 use crate::prove_plan::read_checked_setup_catalog;
 
@@ -95,6 +95,11 @@ fn write_block_public_values(
     let _ = writeln!(stdout, "bytes={}", encoded.len());
     let _ = writeln!(stdout, "setup_hash={}", format_hash(&setup_hash));
     let _ = writeln!(stdout, "values={}", public_values.values.len());
+    let _ = writeln!(
+        stdout,
+        "public_value_fields={}",
+        public_values_field_count(&public_values)
+    );
     let _ = writeln!(stdout, "block_hash={}", format_hash(&input.block_hash));
     let _ = writeln!(stdout, "block_number={}", input.block_number);
     let _ = writeln!(stdout, "timestamp={}", input.timestamp);
@@ -113,6 +118,14 @@ fn write_block_public_values(
         }
     );
     0
+}
+
+fn public_values_field_count(public_values: &PublicValues) -> usize {
+    public_values
+        .values
+        .iter()
+        .map(|entry| entry.elements.len())
+        .sum()
 }
 
 fn setup_hash_from_directory(setup_dir: &str) -> Result<[u8; 32], String> {

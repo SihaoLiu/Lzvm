@@ -196,7 +196,7 @@ fn writes_block_public_values_from_block_input() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\nvalues=7\nblock_hash={}\nblock_number=2\ntimestamp=101\ntransactions_root={}\nwithdrawals=absent\n",
+            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\nvalues=7\npublic_value_fields=37\nblock_hash={}\nblock_number=2\ntimestamp=101\ntransactions_root={}\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
             setup_hash_hex,
