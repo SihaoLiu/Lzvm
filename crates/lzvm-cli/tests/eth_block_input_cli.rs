@@ -58,7 +58,7 @@ fn writes_binary_block_input_artifact() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\nblock_number=2\ntimestamp=101\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\nwithdrawals=absent\n",
+            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
             to_hex(&input_hash),
@@ -140,7 +140,7 @@ fn summarizes_block_input_artifacts() {
     assert_eq!(
         stdout_text,
         format!(
-            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_rlp_bytes={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\nblock_number=2\ntimestamp=101\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\nwithdrawals=absent\n",
+            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_rlp_bytes={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\nwithdrawals=absent\n",
             input_path.display(),
             encoded.len(),
             to_hex(&input_hash),
@@ -195,7 +195,7 @@ fn writes_block_public_values_from_block_input() {
         public_values_digest(&parsed).expect("public values digest should compute");
     assert_eq!(parsed.setup_hash, setup_hash);
     assert_eq!(parsed.schema_version, 1);
-    assert_eq!(parsed.values.len(), 17);
+    assert_eq!(parsed.values.len(), 18);
     assert_eq!(parsed.values[0].name, "eth_block_hash_u32_be");
     assert_eq!(parsed.values[0].elements, hash_u32_be(&input.block_hash));
     assert_eq!(parsed.values[1].name, "eth_parent_hash_u32_be");
@@ -206,37 +206,39 @@ fn writes_block_public_values_from_block_input() {
     assert_eq!(parsed.values[3].elements, hash_u32_be(&input.state_root));
     assert_eq!(parsed.values[4].name, "eth_receipts_root_u32_be");
     assert_eq!(parsed.values[4].elements, hash_u32_be(&input.receipts_root));
-    assert_eq!(parsed.values[5].name, "eth_block_number_u32_le");
-    assert_eq!(parsed.values[5].elements, u64_u32_le(input.block_number));
-    assert_eq!(parsed.values[6].name, "eth_block_timestamp_u32_le");
-    assert_eq!(parsed.values[6].elements, u64_u32_le(input.timestamp));
-    assert_eq!(parsed.values[7].name, "eth_gas_limit_u32_le");
-    assert_eq!(parsed.values[7].elements, u64_u32_le(1_000_000));
-    assert_eq!(parsed.values[8].name, "eth_gas_used_u32_le");
-    assert_eq!(parsed.values[8].elements, u64_u32_le(900_000));
-    assert_eq!(parsed.values[9].name, "eth_base_fee_per_gas_present");
-    assert_eq!(parsed.values[9].elements, vec![0]);
-    assert_eq!(parsed.values[10].name, "eth_base_fee_per_gas_u32_be");
-    assert_eq!(parsed.values[10].elements, vec![0; 8]);
-    assert_eq!(parsed.values[11].name, "eth_mix_hash_u32_be");
-    assert_eq!(parsed.values[11].elements, hash_u32_be(&input.mix_hash));
-    assert_eq!(parsed.values[12].name, "eth_nonce_u32_be");
-    assert_eq!(parsed.values[12].elements, bytes_u32_be(&input.nonce));
-    assert_eq!(parsed.values[13].name, "eth_ommers_hash_u32_be");
-    assert_eq!(parsed.values[13].elements, hash_u32_be(&input.ommers_hash));
-    assert_eq!(parsed.values[14].name, "eth_transactions_root_u32_be");
+    assert_eq!(parsed.values[5].name, "eth_difficulty_u32_be");
+    assert_eq!(parsed.values[5].elements, vec![0, 0, 0, 0, 0, 0, 0, 1]);
+    assert_eq!(parsed.values[6].name, "eth_block_number_u32_le");
+    assert_eq!(parsed.values[6].elements, u64_u32_le(input.block_number));
+    assert_eq!(parsed.values[7].name, "eth_block_timestamp_u32_le");
+    assert_eq!(parsed.values[7].elements, u64_u32_le(input.timestamp));
+    assert_eq!(parsed.values[8].name, "eth_gas_limit_u32_le");
+    assert_eq!(parsed.values[8].elements, u64_u32_le(1_000_000));
+    assert_eq!(parsed.values[9].name, "eth_gas_used_u32_le");
+    assert_eq!(parsed.values[9].elements, u64_u32_le(900_000));
+    assert_eq!(parsed.values[10].name, "eth_base_fee_per_gas_present");
+    assert_eq!(parsed.values[10].elements, vec![0]);
+    assert_eq!(parsed.values[11].name, "eth_base_fee_per_gas_u32_be");
+    assert_eq!(parsed.values[11].elements, vec![0; 8]);
+    assert_eq!(parsed.values[12].name, "eth_mix_hash_u32_be");
+    assert_eq!(parsed.values[12].elements, hash_u32_be(&input.mix_hash));
+    assert_eq!(parsed.values[13].name, "eth_nonce_u32_be");
+    assert_eq!(parsed.values[13].elements, bytes_u32_be(&input.nonce));
+    assert_eq!(parsed.values[14].name, "eth_ommers_hash_u32_be");
+    assert_eq!(parsed.values[14].elements, hash_u32_be(&input.ommers_hash));
+    assert_eq!(parsed.values[15].name, "eth_transactions_root_u32_be");
     assert_eq!(
-        parsed.values[14].elements,
+        parsed.values[15].elements,
         hash_u32_be(&input.transactions_root)
     );
-    assert_eq!(parsed.values[15].name, "eth_withdrawals_root_present");
-    assert_eq!(parsed.values[15].elements, vec![0]);
-    assert_eq!(parsed.values[16].name, "eth_withdrawals_root_u32_be");
-    assert_eq!(parsed.values[16].elements, vec![0; 8]);
+    assert_eq!(parsed.values[16].name, "eth_withdrawals_root_present");
+    assert_eq!(parsed.values[16].elements, vec![0]);
+    assert_eq!(parsed.values[17].name, "eth_withdrawals_root_u32_be");
+    assert_eq!(parsed.values[17].elements, vec![0; 8]);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=17\npublic_value_fields=89\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\nblock_number=2\ntimestamp=101\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\nwithdrawals=absent\n",
+            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=18\npublic_value_fields=97\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
             setup_hash_hex,
@@ -289,15 +291,17 @@ fn writes_block_public_values_from_base_fee_block_input() {
     let parsed = parse_public_values(&encoded).expect("public values should parse");
     let public_values_hash =
         public_values_digest(&parsed).expect("public values digest should compute");
-    assert_eq!(parsed.values.len(), 17);
-    assert_eq!(parsed.values[9].name, "eth_base_fee_per_gas_present");
-    assert_eq!(parsed.values[9].elements, vec![1]);
-    assert_eq!(parsed.values[10].name, "eth_base_fee_per_gas_u32_be");
-    assert_eq!(parsed.values[10].elements, vec![0, 0, 0, 0, 0, 0, 0, 100]);
+    assert_eq!(parsed.values.len(), 18);
+    assert_eq!(parsed.values[5].name, "eth_difficulty_u32_be");
+    assert_eq!(parsed.values[5].elements, vec![0, 0, 0, 0, 0, 0, 0, 1]);
+    assert_eq!(parsed.values[10].name, "eth_base_fee_per_gas_present");
+    assert_eq!(parsed.values[10].elements, vec![1]);
+    assert_eq!(parsed.values[11].name, "eth_base_fee_per_gas_u32_be");
+    assert_eq!(parsed.values[11].elements, vec![0, 0, 0, 0, 0, 0, 0, 100]);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=17\npublic_value_fields=89\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\nblock_number=2\ntimestamp=101\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=64\nmix_hash={}\nnonce={}\ntransactions_root={}\nwithdrawals=absent\n",
+            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=18\npublic_value_fields=97\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=64\nmix_hash={}\nnonce={}\ntransactions_root={}\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
             setup_hash_hex,

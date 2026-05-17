@@ -224,6 +224,7 @@ fn is_eth_block_public_value_name(name: &str) -> bool {
             | "eth_beneficiary_u32_be"
             | "eth_state_root_u32_be"
             | "eth_receipts_root_u32_be"
+            | "eth_difficulty_u32_be"
             | "eth_block_number_u32_le"
             | "eth_block_timestamp_u32_le"
             | "eth_gas_limit_u32_le"

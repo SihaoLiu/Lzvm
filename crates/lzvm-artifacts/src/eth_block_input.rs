@@ -32,6 +32,7 @@ pub struct EthBlockInput {
     pub beneficiary: [u8; 20],
     pub state_root: [u8; 32],
     pub receipts_root: [u8; 32],
+    pub difficulty: [u8; 32],
     pub block_number: u64,
     pub timestamp: u64,
     pub gas_limit: u64,
@@ -80,6 +81,11 @@ pub enum EthBlockInputError {
     BeneficiaryMismatch,
     StateRootMismatch,
     ReceiptsRootMismatch,
+    DifficultyMismatch,
+    DifficultyOverflow {
+        max_bytes: usize,
+        found: usize,
+    },
     BlockNumberMismatch,
     TimestampMismatch,
     GasLimitMismatch,
@@ -154,6 +160,11 @@ impl fmt::Display for EthBlockInputError {
             Self::BeneficiaryMismatch => write!(f, "ETH block input beneficiary mismatch"),
             Self::StateRootMismatch => write!(f, "ETH block input state root mismatch"),
             Self::ReceiptsRootMismatch => write!(f, "ETH block input receipts root mismatch"),
+            Self::DifficultyMismatch => write!(f, "ETH block input difficulty mismatch"),
+            Self::DifficultyOverflow { max_bytes, found } => write!(
+                f,
+                "ETH block input difficulty exceeds {max_bytes} bytes, found {found}"
+            ),
             Self::BlockNumberMismatch => write!(f, "ETH block input block number mismatch"),
             Self::TimestampMismatch => write!(f, "ETH block input timestamp mismatch"),
             Self::GasLimitMismatch => write!(f, "ETH block input gas limit mismatch"),
@@ -260,6 +271,7 @@ pub fn build_eth_block_input(block_rlp: &[u8]) -> Result<EthBlockInput, EthBlock
         beneficiary: header.beneficiary,
         state_root: header.state_root,
         receipts_root: header.receipts_root,
+        difficulty: difficulty_to_u256_be(&header.difficulty)?,
         block_number: header.number,
         timestamp: header.timestamp,
         gas_limit: header.gas_limit,
@@ -267,7 +279,7 @@ pub fn build_eth_block_input(block_rlp: &[u8]) -> Result<EthBlockInput, EthBlock
         base_fee_per_gas: header
             .base_fee_per_gas
             .as_deref()
-            .map(quantity_to_u256_be)
+            .map(base_fee_to_u256_be)
             .transpose()?,
         mix_hash: header.mix_hash,
         nonce: header.nonce,
@@ -340,7 +352,7 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
     let transaction_preimages =
         transaction_preimages.ok_or(EthBlockInputError::MissingTransactionPreimages)?;
     let metadata = parse_metadata(&metadata)?;
-    validate_metadata(&metadata, &block_rlp)?;
+    let validated_input = validate_metadata(&metadata, &block_rlp)?;
     let transaction_hash_preimages = parse_validated_preimages(
         EthBlockInputTrie::Transactions,
         metadata.transactions_root,
@@ -371,6 +383,7 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
         beneficiary: metadata.beneficiary,
         state_root: metadata.state_root,
         receipts_root: metadata.receipts_root,
+        difficulty: metadata.difficulty.unwrap_or(validated_input.difficulty),
         block_number: metadata.block_number,
         timestamp: metadata.timestamp,
         gas_limit: metadata.gas_limit,
@@ -392,6 +405,7 @@ struct Metadata {
     beneficiary: [u8; 20],
     state_root: [u8; 32],
     receipts_root: [u8; 32],
+    difficulty: Option<[u8; 32]>,
     block_number: u64,
     timestamp: u64,
     gas_limit: u64,
@@ -433,6 +447,7 @@ fn encode_metadata(value: &EthBlockInput) -> Vec<u8> {
         }
         None => out.extend_from_slice(&0_u32.to_le_bytes()),
     }
+    out.extend_from_slice(&value.difficulty);
     out
 }
 
@@ -466,6 +481,11 @@ fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
             found => return Err(EthBlockInputError::InvalidBaseFeePerGasFlag { found }),
         }
     };
+    let difficulty = if reader.is_finished() {
+        None
+    } else {
+        Some(reader.read_hash()?)
+    };
     reader.finish()?;
 
     Ok(Metadata {
@@ -474,6 +494,7 @@ fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
         beneficiary,
         state_root,
         receipts_root,
+        difficulty,
         block_number,
         timestamp,
         gas_limit,
@@ -487,7 +508,10 @@ fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
     })
 }
 
-fn validate_metadata(metadata: &Metadata, block_rlp: &[u8]) -> Result<(), EthBlockInputError> {
+fn validate_metadata(
+    metadata: &Metadata,
+    block_rlp: &[u8],
+) -> Result<EthBlockInput, EthBlockInputError> {
     let input = build_eth_block_input(block_rlp)?;
     if metadata.block_hash != input.block_hash {
         return Err(EthBlockInputError::BlockHashMismatch);
@@ -503,6 +527,11 @@ fn validate_metadata(metadata: &Metadata, block_rlp: &[u8]) -> Result<(), EthBlo
     }
     if metadata.receipts_root != input.receipts_root {
         return Err(EthBlockInputError::ReceiptsRootMismatch);
+    }
+    if let Some(difficulty) = metadata.difficulty {
+        if difficulty != input.difficulty {
+            return Err(EthBlockInputError::DifficultyMismatch);
+        }
     }
     if metadata.block_number != input.block_number {
         return Err(EthBlockInputError::BlockNumberMismatch);
@@ -534,7 +563,7 @@ fn validate_metadata(metadata: &Metadata, block_rlp: &[u8]) -> Result<(), EthBlo
     if metadata.withdrawals_root != input.withdrawals_root {
         return Err(EthBlockInputError::WithdrawalsRootMismatch);
     }
-    Ok(())
+    Ok(input)
 }
 
 fn encode_preimages(preimages: &[TrieHashPreimage]) -> Result<Vec<u8>, EthBlockInputError> {
@@ -673,12 +702,26 @@ fn compact_path_has_terminator(path: &[u8]) -> Result<bool, EthBlockInputError> 
     Ok(flag & 2 != 0)
 }
 
-fn quantity_to_u256_be(bytes: &[u8]) -> Result<[u8; 32], EthBlockInputError> {
+fn difficulty_to_u256_be(bytes: &[u8]) -> Result<[u8; 32], EthBlockInputError> {
+    quantity_to_u256_be(bytes, |found| EthBlockInputError::DifficultyOverflow {
+        max_bytes: 32,
+        found,
+    })
+}
+
+fn base_fee_to_u256_be(bytes: &[u8]) -> Result<[u8; 32], EthBlockInputError> {
+    quantity_to_u256_be(bytes, |found| EthBlockInputError::BaseFeePerGasOverflow {
+        max_bytes: 32,
+        found,
+    })
+}
+
+fn quantity_to_u256_be(
+    bytes: &[u8],
+    overflow: impl FnOnce(usize) -> EthBlockInputError,
+) -> Result<[u8; 32], EthBlockInputError> {
     if bytes.len() > 32 {
-        return Err(EthBlockInputError::BaseFeePerGasOverflow {
-            max_bytes: 32,
-            found: bytes.len(),
-        });
+        return Err(overflow(bytes.len()));
     }
     let mut out = [0_u8; 32];
     out[32 - bytes.len()..].copy_from_slice(bytes);

@@ -20,6 +20,7 @@ pub(crate) struct EthBlockInputSummary {
     pub(crate) beneficiary: [u8; 20],
     pub(crate) state_root: [u8; 32],
     pub(crate) receipts_root: [u8; 32],
+    pub(crate) difficulty: [u8; 32],
     pub(crate) block_number: u64,
     pub(crate) timestamp: u64,
     pub(crate) gas_limit: u64,
@@ -59,6 +60,7 @@ pub(crate) fn validate_eth_block_input(
         beneficiary: input.beneficiary,
         state_root: input.state_root,
         receipts_root: input.receipts_root,
+        difficulty: input.difficulty,
         block_number: input.block_number,
         timestamp: input.timestamp,
         gas_limit: input.gas_limit,
@@ -111,6 +113,11 @@ pub(crate) fn write_eth_block_input_summary(
         stdout,
         "eth_receipts_root={}",
         format_hash(&summary.receipts_root)
+    );
+    let _ = writeln!(
+        stdout,
+        "eth_difficulty={}",
+        format_u256(&summary.difficulty)
     );
     let _ = writeln!(stdout, "eth_block_number={}", summary.block_number);
     let _ = writeln!(stdout, "eth_block_timestamp={}", summary.timestamp);

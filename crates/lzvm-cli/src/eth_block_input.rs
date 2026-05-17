@@ -153,6 +153,7 @@ fn write_input_summary(
         "receipts_root={}",
         format_hash(&input.receipts_root)
     );
+    let _ = writeln!(stdout, "difficulty={}", format_u256(&input.difficulty));
     let _ = writeln!(stdout, "block_number={}", input.block_number);
     let _ = writeln!(stdout, "timestamp={}", input.timestamp);
     let _ = writeln!(stdout, "gas_limit={}", input.gas_limit);
