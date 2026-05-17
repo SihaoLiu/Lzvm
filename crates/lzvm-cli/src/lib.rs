@@ -589,6 +589,9 @@ fn verify_preflight(
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "segments={}", report.segment_count);
     let _ = writeln!(stdout, "public_values={}", report.public_value_count);
+    if report.eth_block_input_count > 0 {
+        let _ = writeln!(stdout, "eth_block_inputs={}", report.eth_block_input_count);
+    }
     0
 }
 
@@ -714,6 +717,13 @@ fn verify_setup_validation(
     let _ = writeln!(stdout, "units={}", public_report.unit_count);
     let _ = writeln!(stdout, "segments={}", public_report.segment_count);
     let _ = writeln!(stdout, "public_values={}", public_report.public_value_count);
+    if public_report.eth_block_input_count > 0 {
+        let _ = writeln!(
+            stdout,
+            "eth_block_inputs={}",
+            public_report.eth_block_input_count
+        );
+    }
     0
 }
 

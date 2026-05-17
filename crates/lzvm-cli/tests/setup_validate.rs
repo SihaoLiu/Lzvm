@@ -4358,10 +4358,36 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
         .expect("ETH block input segment should be present");
     let parsed_input =
         parse_eth_block_input_segment(&segment.data).expect("block input segment should parse");
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let proof_path = output_dir.join("proof.bin");
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "proof",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
     assert!(stderr.is_empty());
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert!(verify_stderr.is_empty());
+    assert!(String::from_utf8(verify_stdout)
+        .expect("verify stdout should be utf-8")
+        .contains("eth_block_inputs=1\n"));
     assert_eq!(parsed_input.block_rlp, block_rlp);
     assert_eq!(parsed_input.block_hash, block_input.block_hash);
     assert_eq!(parsed_input.transactions.hash_preimages.len(), 1);
