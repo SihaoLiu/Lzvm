@@ -5,13 +5,14 @@ use super::{
     parse_fixed_file_pragmas, parse_function_declarations, parse_include_directives,
     parse_pragma_directives, parse_public_declarations, parse_public_table_declarations,
     parse_use_directives, parse_value_declarations, parse_variable_declarations,
-    resolve_fixed_file_pragma_path, BinaryOperator, ColumnInitializerKind, ColumnKind,
-    ConstantDeclarationKind, Expression, ExpressionKind, FixedFilePragmaKind,
-    FixedFileTemplateContext, FunctionStatementDeclaration, FunctionStatementKind,
-    FunctionVisibility, IncludeKind, IncludeVisibility, ParseError, UnaryOperator,
-    ValueDeclarationKind,
+    resolve_fixed_file_pragma_path, resolve_fixed_file_pragma_path_with_values, BinaryOperator,
+    ColumnInitializerKind, ColumnKind, ConstantDeclarationKind, Expression, ExpressionKind,
+    FixedFilePragmaKind, FixedFileTemplateContext, FixedFileTemplateValue,
+    FunctionStatementDeclaration, FunctionStatementKind, FunctionVisibility, IncludeKind,
+    IncludeVisibility, ParseError, UnaryOperator, ValueDeclarationKind,
 };
 use crate::SourceFile;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 fn source(contents: &str) -> SourceFile {
@@ -276,6 +277,31 @@ fn rejects_unknown_fixed_file_template_reference() {
         error,
         ParseError::InvalidPragmaArgument { source_name, .. } if source_name == "main.pil"
     ));
+}
+
+#[test]
+fn resolves_fixed_file_pragma_template_value_bindings() {
+    let source = source("#pragma extern_fixed_file `${bin_file}/${RC}.bin`");
+    let directive = parse_fixed_file_pragmas(&source)
+        .expect("pragma should parse")
+        .pop()
+        .expect("fixed-file pragma should exist");
+    let mut values = BTreeMap::new();
+    values.insert(
+        "bin_file".to_owned(),
+        FixedFileTemplateValue::String("tables".to_owned()),
+    );
+    values.insert("RC".to_owned(), FixedFileTemplateValue::Integer(4));
+
+    let resolved = resolve_fixed_file_pragma_path_with_values(
+        &source,
+        &directive,
+        &FixedFileTemplateContext::default(),
+        &values,
+    )
+    .expect("template should resolve");
+
+    assert_eq!(resolved.as_deref(), Some("tables/4.bin"));
 }
 
 #[test]

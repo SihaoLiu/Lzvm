@@ -49,6 +49,13 @@ pub struct FixedFileTemplateContext {
     pub template_name: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FixedFileTemplateValue {
+    Integer(i128),
+    Boolean(bool),
+    String(String),
+}
+
 impl Default for FixedFileTemplateContext {
     fn default() -> Self {
         Self {

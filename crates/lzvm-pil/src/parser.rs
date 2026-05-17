@@ -93,6 +93,15 @@ pub fn resolve_fixed_file_pragma_path(
     pragma: &FixedFilePragma,
     context: &FixedFileTemplateContext,
 ) -> Result<Option<String>, ParseError> {
+    resolve_fixed_file_pragma_path_with_values(source, pragma, context, &BTreeMap::new())
+}
+
+pub fn resolve_fixed_file_pragma_path_with_values(
+    source: &SourceFile,
+    pragma: &FixedFilePragma,
+    context: &FixedFileTemplateContext,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<Option<String>, ParseError> {
     let Some(path) = pragma.path.as_ref() else {
         return Ok(None);
     };
@@ -100,12 +109,16 @@ pub fn resolve_fixed_file_pragma_path(
         return Ok(Some(path.value.clone()));
     }
 
-    evaluate_template_text(source, &path.value, &TemplateBindings::fixed_file(context))
-        .map(Some)
-        .map_err(|_| ParseError::InvalidPragmaArgument {
-            source_name: pragma.source_name.clone(),
-            start: pragma.start,
-        })
+    evaluate_template_text(
+        source,
+        &path.value,
+        &TemplateBindings::fixed_file(context, values),
+    )
+    .map(Some)
+    .map_err(|_| ParseError::InvalidPragmaArgument {
+        source_name: pragma.source_name.clone(),
+        start: pragma.start,
+    })
 }
 
 pub fn parse_include_directives(source: &SourceFile) -> Result<Vec<IncludeDirective>, ParseError> {
@@ -296,8 +309,14 @@ struct TemplateBindings {
 }
 
 impl TemplateBindings {
-    fn fixed_file(context: &FixedFileTemplateContext) -> Self {
+    fn fixed_file(
+        context: &FixedFileTemplateContext,
+        bindings: &BTreeMap<String, FixedFileTemplateValue>,
+    ) -> Self {
         let mut values = BTreeMap::new();
+        for (name, value) in bindings {
+            values.insert(name.clone(), TemplateValue::from(value));
+        }
         values.insert(
             "AIRGROUP".to_owned(),
             TemplateValue::String(context.group_name.clone()),
@@ -320,6 +339,16 @@ impl TemplateBindings {
 
     fn get(&self, name: &str) -> Option<TemplateValue> {
         self.values.get(name).cloned()
+    }
+}
+
+impl From<&FixedFileTemplateValue> for TemplateValue {
+    fn from(value: &FixedFileTemplateValue) -> Self {
+        match value {
+            FixedFileTemplateValue::Integer(value) => Self::Integer(*value),
+            FixedFileTemplateValue::Boolean(value) => Self::Boolean(*value),
+            FixedFileTemplateValue::String(value) => Self::String(value.clone()),
+        }
     }
 }
 
