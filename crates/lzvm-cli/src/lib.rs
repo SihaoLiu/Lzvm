@@ -1020,6 +1020,13 @@ fn verify_setup_validation(
                 prove_plan::format_hash(hash)
             );
             if eth_block_input_binding.is_none() {
+                if let Some(ommers_hash) = public_report.eth_block_input_ommers_hashes.get(index) {
+                    let _ = writeln!(
+                        stdout,
+                        "eth_ommers_hash={}",
+                        prove_plan::format_hash(ommers_hash)
+                    );
+                }
                 write_eth_transaction_preimage_summary(
                     stdout,
                     public_report
