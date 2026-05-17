@@ -2,8 +2,8 @@ use std::fmt;
 use std::io::Write;
 
 use lzvm_artifacts::eth_block::{
-    decode_eth_header_rlp, decode_eth_transactions_rlp, eth_header_hash, eth_ommers_hash,
-    parse_eth_block_rlp, EthTransactionRlp,
+    decode_eth_header_rlp, decode_eth_transactions_rlp, decode_eth_withdrawals_rlp,
+    eth_header_hash, eth_ommers_hash, parse_eth_block_rlp, EthTransactionRlp,
 };
 use lzvm_artifacts::eth_trie::{transaction_trie_root, withdrawals_trie_root};
 
@@ -79,7 +79,13 @@ fn summarize_block(
     };
     let computed_ommers_hash = eth_ommers_hash(&block.ommers);
     let withdrawals_root_check = match (&block.withdrawals, header.withdrawals_root) {
-        (Some(withdrawals), Some(root)) => Some((root, withdrawals_trie_root(withdrawals))),
+        (Some(withdrawals), Some(root)) => {
+            if let Err(error) = decode_eth_withdrawals_rlp(withdrawals) {
+                let _ = writeln!(stderr, "eth block summary failed: {error}");
+                return 1;
+            }
+            Some((root, withdrawals_trie_root(withdrawals)))
+        }
         (Some(_), None) => {
             let _ = writeln!(
                 stderr,

@@ -249,6 +249,36 @@ fn rejects_invalid_transaction_envelopes() {
     );
 }
 
+#[test]
+fn rejects_invalid_withdrawals() {
+    let dir = temp_dir("invalid-withdrawal");
+    let _ = fs::remove_dir_all(&dir);
+    let block_path = dir.join("block.rlp");
+    let malformed_withdrawal = rlp_list(&[rlp_bytes(&[]), rlp_bytes(&[]), rlp_bytes(&[])]);
+    let block_rlp = sample_block_rlp_with_withdrawals(vec![malformed_withdrawal], vec![0x55; 32]);
+    write_bytes(&block_path, &block_rlp);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "block-summary",
+            block_path.to_str().expect("block path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "eth block summary failed: expected 4 withdrawal fields, found 3\n"
+    );
+}
+
 fn sample_block_rlp() -> Vec<u8> {
     sample_block_rlp_with_transactions(vec![rlp_list(&[rlp_bytes(&[0x01])])])
 }

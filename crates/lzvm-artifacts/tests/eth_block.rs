@@ -1,7 +1,8 @@
 use lzvm_artifacts::eth_block::{
     decode_eth_header_rlp, decode_eth_transaction_rlp, decode_eth_transactions_rlp,
-    eth_header_hash, eth_ommers_hash, keccak256, parse_eth_block_rlp, EthBlockError, EthBlockRlp,
-    EthTransactionError, EthTransactionRlp, HeaderField,
+    decode_eth_withdrawal_rlp, decode_eth_withdrawals_rlp, eth_header_hash, eth_ommers_hash,
+    keccak256, parse_eth_block_rlp, EthBlockError, EthBlockRlp, EthTransactionError,
+    EthTransactionRlp, EthWithdrawalError, EthWithdrawalRlp, HeaderField, WithdrawalField,
 };
 use lzvm_artifacts::rlp::RlpItem;
 
@@ -269,6 +270,75 @@ fn rejects_out_of_range_typed_transaction_envelopes() {
     ));
 }
 
+#[test]
+fn decodes_withdrawals() {
+    let decoded = decode_eth_withdrawal_rlp(&withdrawal_item()).expect("withdrawal should decode");
+
+    assert_eq!(
+        decoded,
+        EthWithdrawalRlp {
+            index: 1,
+            validator_index: 2,
+            address: [0x33; 20],
+            amount: 0x40,
+        }
+    );
+}
+
+#[test]
+fn decodes_withdrawal_lists() {
+    let withdrawals = vec![withdrawal_item(), withdrawal_item()];
+
+    let decoded = decode_eth_withdrawals_rlp(&withdrawals).expect("withdrawals should decode");
+
+    assert_eq!(decoded.len(), 2);
+    assert_eq!(decoded[0].address, [0x33; 20]);
+}
+
+#[test]
+fn rejects_malformed_withdrawals() {
+    let error =
+        decode_eth_withdrawal_rlp(&RlpItem::Bytes(Vec::new())).expect_err("withdrawal should fail");
+    assert!(matches!(error, EthWithdrawalError::ExpectedWithdrawalList));
+
+    let error = decode_eth_withdrawal_rlp(&RlpItem::List(vec![RlpItem::Bytes(Vec::new()); 3]))
+        .expect_err("withdrawal should fail");
+    assert!(matches!(
+        error,
+        EthWithdrawalError::WithdrawalFieldCount { found: 3 }
+    ));
+
+    let mut wrong_address = match withdrawal_item() {
+        RlpItem::List(fields) => fields,
+        RlpItem::Bytes(_) => panic!("withdrawal should be a list"),
+    };
+    wrong_address[2] = RlpItem::Bytes(vec![0x33; 19]);
+    let error = decode_eth_withdrawal_rlp(&RlpItem::List(wrong_address))
+        .expect_err("withdrawal should fail");
+    assert!(matches!(
+        error,
+        EthWithdrawalError::WithdrawalFieldLength {
+            field: WithdrawalField::Address,
+            expected: 20,
+            found: 19
+        }
+    ));
+
+    let mut noncanonical = match withdrawal_item() {
+        RlpItem::List(fields) => fields,
+        RlpItem::Bytes(_) => panic!("withdrawal should be a list"),
+    };
+    noncanonical[0] = RlpItem::Bytes(vec![0, 1]);
+    let error = decode_eth_withdrawal_rlp(&RlpItem::List(noncanonical))
+        .expect_err("withdrawal should fail");
+    assert!(matches!(
+        error,
+        EthWithdrawalError::NonCanonicalWithdrawalQuantity {
+            field: WithdrawalField::Index
+        }
+    ));
+}
+
 fn decode_header(items: Vec<Vec<u8>>) -> lzvm_artifacts::eth_block::EthHeaderRlp {
     let header_rlp = rlp_list(&items);
     let empty_list = rlp_list(&[]);
@@ -285,6 +355,15 @@ fn decode_header_error(items: Vec<Vec<u8>>) -> EthBlockError {
     let block = parse_eth_block_rlp(&block_rlp).expect("block body should decode");
 
     decode_eth_header_rlp(&block.header).expect_err("header should fail")
+}
+
+fn withdrawal_item() -> RlpItem {
+    RlpItem::List(vec![
+        RlpItem::Bytes(vec![1]),
+        RlpItem::Bytes(vec![2]),
+        RlpItem::Bytes(vec![0x33; 20]),
+        RlpItem::Bytes(vec![0x40]),
+    ])
 }
 
 fn legacy_header_items() -> Vec<Vec<u8>> {

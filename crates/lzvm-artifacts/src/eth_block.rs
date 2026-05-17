@@ -46,6 +46,14 @@ pub enum EthTransactionRlp {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EthWithdrawalRlp {
+    pub index: u64,
+    pub validator_index: u64,
+    pub address: [u8; 20],
+    pub amount: u64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HeaderField {
     ParentHash,
@@ -67,10 +75,42 @@ pub enum HeaderField {
     WithdrawalsRoot,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WithdrawalField {
+    Index,
+    ValidatorIndex,
+    Address,
+    Amount,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EthTransactionError {
     EmptyTypedTransaction,
     InvalidTransactionType { found: u8 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EthWithdrawalError {
+    ExpectedWithdrawalList,
+    WithdrawalFieldCount {
+        found: usize,
+    },
+    ExpectedWithdrawalFieldBytes {
+        field: WithdrawalField,
+    },
+    WithdrawalFieldLength {
+        field: WithdrawalField,
+        expected: usize,
+        found: usize,
+    },
+    NonCanonicalWithdrawalQuantity {
+        field: WithdrawalField,
+    },
+    WithdrawalQuantityOverflow {
+        field: WithdrawalField,
+        max_bytes: usize,
+        found: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -161,6 +201,41 @@ impl fmt::Display for EthTransactionError {
 
 impl std::error::Error for EthTransactionError {}
 
+impl fmt::Display for EthWithdrawalError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ExpectedWithdrawalList => write!(f, "expected withdrawal list"),
+            Self::WithdrawalFieldCount { found } => {
+                write!(f, "expected 4 withdrawal fields, found {found}")
+            }
+            Self::ExpectedWithdrawalFieldBytes { field } => {
+                write!(f, "expected withdrawal field {field} to be bytes")
+            }
+            Self::WithdrawalFieldLength {
+                field,
+                expected,
+                found,
+            } => write!(
+                f,
+                "expected withdrawal field {field} to have length {expected}, found {found}"
+            ),
+            Self::NonCanonicalWithdrawalQuantity { field } => {
+                write!(f, "non-canonical quantity in withdrawal field {field}")
+            }
+            Self::WithdrawalQuantityOverflow {
+                field,
+                max_bytes,
+                found,
+            } => write!(
+                f,
+                "withdrawal field {field} quantity exceeds {max_bytes} bytes, found {found}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for EthWithdrawalError {}
+
 impl fmt::Display for HeaderField {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = match self {
@@ -181,6 +256,18 @@ impl fmt::Display for HeaderField {
             Self::Nonce => "nonce",
             Self::BaseFeePerGas => "base_fee_per_gas",
             Self::WithdrawalsRoot => "withdrawals_root",
+        };
+        f.write_str(name)
+    }
+}
+
+impl fmt::Display for WithdrawalField {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            Self::Index => "index",
+            Self::ValidatorIndex => "validator_index",
+            Self::Address => "address",
+            Self::Amount => "amount",
         };
         f.write_str(name)
     }
@@ -313,6 +400,33 @@ pub fn decode_eth_transactions_rlp(
         .collect()
 }
 
+pub fn decode_eth_withdrawal_rlp(
+    withdrawal: &RlpItem,
+) -> Result<EthWithdrawalRlp, EthWithdrawalError> {
+    let fields = match withdrawal {
+        RlpItem::List(fields) => fields,
+        RlpItem::Bytes(_) => return Err(EthWithdrawalError::ExpectedWithdrawalList),
+    };
+    if fields.len() != 4 {
+        return Err(EthWithdrawalError::WithdrawalFieldCount {
+            found: fields.len(),
+        });
+    }
+
+    Ok(EthWithdrawalRlp {
+        index: withdrawal_quantity_u64(&fields[0], WithdrawalField::Index)?,
+        validator_index: withdrawal_quantity_u64(&fields[1], WithdrawalField::ValidatorIndex)?,
+        address: withdrawal_fixed_bytes::<20>(&fields[2], WithdrawalField::Address)?,
+        amount: withdrawal_quantity_u64(&fields[3], WithdrawalField::Amount)?,
+    })
+}
+
+pub fn decode_eth_withdrawals_rlp(
+    withdrawals: &[RlpItem],
+) -> Result<Vec<EthWithdrawalRlp>, EthWithdrawalError> {
+    withdrawals.iter().map(decode_eth_withdrawal_rlp).collect()
+}
+
 pub fn keccak256(bytes: &[u8]) -> [u8; 32] {
     Keccak256::digest(bytes).into()
 }
@@ -375,5 +489,57 @@ fn bytes(item: &RlpItem, field: HeaderField) -> Result<&[u8], EthBlockError> {
     match item {
         RlpItem::Bytes(bytes) => Ok(bytes),
         RlpItem::List(_) => Err(EthBlockError::ExpectedHeaderFieldBytes { field }),
+    }
+}
+
+fn withdrawal_fixed_bytes<const N: usize>(
+    item: &RlpItem,
+    field: WithdrawalField,
+) -> Result<[u8; N], EthWithdrawalError> {
+    let bytes = withdrawal_bytes(item, field)?;
+    bytes
+        .try_into()
+        .map_err(|_| EthWithdrawalError::WithdrawalFieldLength {
+            field,
+            expected: N,
+            found: bytes.len(),
+        })
+}
+
+fn withdrawal_quantity_bytes(
+    item: &RlpItem,
+    field: WithdrawalField,
+) -> Result<Vec<u8>, EthWithdrawalError> {
+    let bytes = withdrawal_bytes(item, field)?;
+    if bytes.first() == Some(&0) {
+        return Err(EthWithdrawalError::NonCanonicalWithdrawalQuantity { field });
+    }
+    Ok(bytes.to_vec())
+}
+
+fn withdrawal_quantity_u64(
+    item: &RlpItem,
+    field: WithdrawalField,
+) -> Result<u64, EthWithdrawalError> {
+    let bytes = withdrawal_quantity_bytes(item, field)?;
+    if bytes.len() > 8 {
+        return Err(EthWithdrawalError::WithdrawalQuantityOverflow {
+            field,
+            max_bytes: 8,
+            found: bytes.len(),
+        });
+    }
+
+    let mut value = 0_u64;
+    for byte in bytes {
+        value = (value << 8) | u64::from(byte);
+    }
+    Ok(value)
+}
+
+fn withdrawal_bytes(item: &RlpItem, field: WithdrawalField) -> Result<&[u8], EthWithdrawalError> {
+    match item {
+        RlpItem::Bytes(bytes) => Ok(bytes),
+        RlpItem::List(_) => Err(EthWithdrawalError::ExpectedWithdrawalFieldBytes { field }),
     }
 }
