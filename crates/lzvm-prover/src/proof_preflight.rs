@@ -5,6 +5,9 @@ use lzvm_artifacts::eth_block_input::EthBlockInputError;
 use lzvm_artifacts::eth_block_input_segment::{
     parse_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
+use lzvm_artifacts::eth_block_public_values::{
+    validate_eth_block_public_values, EthBlockPublicValuesError,
+};
 use lzvm_artifacts::program_image_segment::{
     parse_program_image_cache_segment, ProgramImageCacheSegmentError,
     PROGRAM_IMAGE_CACHE_SEGMENT_ID,
@@ -29,6 +32,7 @@ pub enum ProofPreflightError {
     PublicValuesHashMismatch,
     ProgramImageCache(ProgramImageCacheSegmentError),
     EthBlockInput(EthBlockInputError),
+    EthBlockPublicValues(EthBlockPublicValuesError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +55,7 @@ impl fmt::Display for ProofPreflightError {
             Self::PublicValuesHashMismatch => write!(f, "public-values hash mismatch"),
             Self::ProgramImageCache(error) => write!(f, "{error}"),
             Self::EthBlockInput(error) => write!(f, "{error}"),
+            Self::EthBlockPublicValues(error) => write!(f, "{error}"),
         }
     }
 }
@@ -79,6 +84,7 @@ impl std::error::Error for ProofPreflightError {
             Self::PublicValuesDigest(error) => Some(error),
             Self::ProgramImageCache(error) => Some(error),
             Self::EthBlockInput(error) => Some(error),
+            Self::EthBlockPublicValues(error) => Some(error),
             Self::SetupHashMismatch | Self::PublicValuesHashMismatch => None,
         }
     }
@@ -151,7 +157,10 @@ pub fn validate_proof_public_values(
         .iter()
         .filter(|segment| segment.id == ETH_BLOCK_INPUT_SEGMENT_ID)
     {
-        parse_eth_block_input_segment(&segment.data).map_err(ProofPreflightError::EthBlockInput)?;
+        let input = parse_eth_block_input_segment(&segment.data)
+            .map_err(ProofPreflightError::EthBlockInput)?;
+        validate_eth_block_public_values(&input, public_values)
+            .map_err(ProofPreflightError::EthBlockPublicValues)?;
     }
 
     Ok(ProofPreflightReport {

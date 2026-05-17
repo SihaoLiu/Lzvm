@@ -2,6 +2,7 @@ use lzvm_artifacts::eth_block_input::build_eth_block_input;
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
+use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
 use lzvm_artifacts::program_image_segment::{
     ProgramImageCacheSegmentError, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
 };
@@ -197,9 +198,9 @@ fn rejects_invalid_program_image_cache_segments() {
 
 #[test]
 fn counts_eth_block_input_segments() {
-    let public_values = sample_public_values();
-    let mut proof = sample_proof(&public_values);
     let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let public_values = public_values_from_eth_block_input(sample_hash(0x44), &block_input);
+    let mut proof = sample_proof(&public_values);
     proof.segments.push(ProofSegment {
         id: ETH_BLOCK_INPUT_SEGMENT_ID,
         data: encode_eth_block_input_segment(&block_input).expect("segment should encode"),
@@ -209,6 +210,25 @@ fn counts_eth_block_input_segments() {
         .expect("proof and public values should match");
 
     assert_eq!(report.eth_block_input_count, 1);
+}
+
+#[test]
+fn rejects_eth_block_segments_without_matching_public_values() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    proof.segments.push(ProofSegment {
+        id: ETH_BLOCK_INPUT_SEGMENT_ID,
+        data: encode_eth_block_input_segment(&block_input).expect("segment should encode"),
+    });
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("ETH block segment should require matching public values");
+
+    assert_eq!(
+        error.to_string(),
+        "missing ETH block public value: eth_block_hash_u32_be"
+    );
 }
 
 #[test]
