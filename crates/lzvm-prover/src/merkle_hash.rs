@@ -1,7 +1,7 @@
 use std::fmt;
 
 #[cfg(feature = "cuda")]
-use lzvm_accel::{cuda_poseidon2_width16, cuda_poseidon2_width8};
+use lzvm_accel::{cuda_poseidon2_width16_device, cuda_poseidon2_width8_device, CudaDeviceBuffer};
 use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt};
 
 pub(crate) const HASH_WORDS: usize = 4;
@@ -229,7 +229,7 @@ fn cuda_linear_hashes_arity2(
             push_felt_words(&mut input, &next);
         }
 
-        let output = cuda_poseidon2_width8(&input).map_err(|_| MerkleHashError::LengthOverflow)?;
+        let output = cuda_poseidon2_width8_device_words(&input)?;
         for (state, chunk) in states.iter_mut().zip(output.chunks_exact(WIDTH)) {
             *state = felt_array_from_words(chunk)?;
         }
@@ -267,7 +267,7 @@ fn cuda_linear_hashes_arity4(
             push_felt_words(&mut input, &next);
         }
 
-        let output = cuda_poseidon2_width16(&input).map_err(|_| MerkleHashError::LengthOverflow)?;
+        let output = cuda_poseidon2_width16_device_words(&input)?;
         for (state, chunk) in states.iter_mut().zip(output.chunks_exact(WIDTH)) {
             *state = felt_array_from_words(chunk)?;
         }
@@ -331,7 +331,7 @@ fn parent_hashes_arity2_cuda(
     for child in children {
         states.extend(child.iter().map(|value| value.to_u64()));
     }
-    let hashed = cuda_poseidon2_width8(&states).map_err(|_| MerkleHashError::LengthOverflow)?;
+    let hashed = cuda_poseidon2_width8_device_words(&states)?;
     digests_from_hashed_states(&hashed, 8)
 }
 
@@ -343,8 +343,46 @@ fn parent_hashes_arity4_cuda(
     for child in children {
         states.extend(child.iter().map(|value| value.to_u64()));
     }
-    let hashed = cuda_poseidon2_width16(&states).map_err(|_| MerkleHashError::LengthOverflow)?;
+    let hashed = cuda_poseidon2_width16_device_words(&states)?;
     digests_from_hashed_states(&hashed, 16)
+}
+
+#[cfg(feature = "cuda")]
+type CudaPoseidon2DeviceOp =
+    fn(&CudaDeviceBuffer, &mut CudaDeviceBuffer) -> Result<(), lzvm_accel::AccelError>;
+
+#[cfg(feature = "cuda")]
+fn cuda_poseidon2_width8_device_words(words: &[u64]) -> Result<Vec<u64>, MerkleHashError> {
+    cuda_poseidon2_words_device(words, cuda_poseidon2_width8_device)
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_poseidon2_width16_device_words(words: &[u64]) -> Result<Vec<u64>, MerkleHashError> {
+    cuda_poseidon2_words_device(words, cuda_poseidon2_width16_device)
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_poseidon2_words_device(
+    words: &[u64],
+    operation: CudaPoseidon2DeviceOp,
+) -> Result<Vec<u64>, MerkleHashError> {
+    if words.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(words).map_err(|_| MerkleHashError::LengthOverflow)?;
+    let mut output_buffer = CudaDeviceBuffer::new(
+        words
+            .len()
+            .checked_mul(8)
+            .ok_or(MerkleHashError::LengthOverflow)?,
+    )
+    .map_err(|_| MerkleHashError::LengthOverflow)?;
+    operation(&input_buffer, &mut output_buffer).map_err(|_| MerkleHashError::LengthOverflow)?;
+    output_buffer
+        .to_u64_words()
+        .map_err(|_| MerkleHashError::LengthOverflow)
 }
 
 #[cfg(feature = "cuda")]
@@ -366,8 +404,32 @@ fn digests_from_hashed_states(
 
 #[cfg(all(test, feature = "cuda"))]
 mod tests {
-    use super::{linear_hash, linear_hashes, parent_hash, parent_hashes};
-    use lzvm_field::Felt;
+    use super::{
+        cuda_poseidon2_width16_device_words, cuda_poseidon2_width8_device_words, linear_hash,
+        linear_hashes, parent_hash, parent_hashes,
+    };
+    use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt};
+
+    #[test]
+    fn device_poseidon2_state_hashes_match_cpu_reference() {
+        let width8_input = (1_u64..=16).collect::<Vec<_>>();
+        let width8_expected = width8_input
+            .chunks_exact(8)
+            .flat_map(|chunk| poseidon2_hash_8(felt_array::<8>(chunk)).map(Felt::to_u64))
+            .collect::<Vec<_>>();
+        let width8_actual = cuda_poseidon2_width8_device_words(&width8_input)
+            .expect("width-8 device hash should run");
+        assert_eq!(width8_actual, width8_expected);
+
+        let width16_input = (17_u64..=48).collect::<Vec<_>>();
+        let width16_expected = width16_input
+            .chunks_exact(16)
+            .flat_map(|chunk| poseidon2_hash_16(felt_array::<16>(chunk)).map(Felt::to_u64))
+            .collect::<Vec<_>>();
+        let width16_actual = cuda_poseidon2_width16_device_words(&width16_input)
+            .expect("width-16 device hash should run");
+        assert_eq!(width16_actual, width16_expected);
+    }
 
     #[test]
     fn cuda_linear_hashes_match_cpu_reference() {
@@ -416,5 +478,13 @@ mod tests {
 
     fn values(values: &[u64]) -> Vec<Felt> {
         values.iter().copied().map(Felt::from_u64).collect()
+    }
+
+    fn felt_array<const WIDTH: usize>(words: &[u64]) -> [Felt; WIDTH] {
+        let mut values = [Felt::ZERO; WIDTH];
+        for (value, word) in values.iter_mut().zip(words) {
+            *value = Felt::from_u64(*word);
+        }
+        values
     }
 }
