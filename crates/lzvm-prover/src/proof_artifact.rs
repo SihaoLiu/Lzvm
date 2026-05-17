@@ -1,3 +1,7 @@
+use lzvm_artifacts::eth_block_input::EthBlockInput;
+use lzvm_artifacts::eth_block_input_segment::{
+    encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
+};
 use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
 use lzvm_artifacts::pcs_nonce_segment::parse_pcs_query_nonce_segment;
 use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
@@ -171,6 +175,7 @@ pub struct WitnessProofRequest<'a> {
     pub output: &'a ProveWitnessTraceCommitments,
     pub verify_outputs: bool,
     pub program_image_cache: Option<&'a ProgramImageCommitmentCache>,
+    pub eth_block_input: Option<&'a EthBlockInput>,
 }
 
 pub fn build_witness_proof_artifact_for_unit(
@@ -184,8 +189,9 @@ pub fn build_witness_proof_artifact_for_unit(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
-    let cache_segment = build_program_image_cache_proof_segment(request.program_image_cache)?;
-    let binding_segments: &[ProofSegment] = cache_segment.as_slice();
+    let binding_segments =
+        build_proof_binding_segments(request.program_image_cache, request.eth_block_input)?;
+    let binding_segments_slice = binding_segments.as_slice();
     let material_segment = build_pcs_material_manifest_segment(request.schedule)
         .map_err(|error| format!("build material manifest segment failed: {error}"))?;
     let commitments = request.output.commitments();
@@ -220,7 +226,7 @@ pub fn build_witness_proof_artifact_for_unit(
                 material_segment: &material_segment,
                 witness_segment: &witness_segment,
                 evaluation_segment: &evaluation_segment,
-                binding_segments,
+                binding_segments: binding_segments_slice,
             }],
         )
         .map_err(|error| format!("build FRI transcript values failed: {error}"))?;
@@ -254,22 +260,23 @@ pub fn build_witness_proof_artifact_for_unit(
             (query_segment, Some(nonce_segment))
         }
         None => {
-            let query_segment = match cache_segment.as_ref() {
-                Some(cache_segment) => build_pcs_query_plan_segment_with_bindings(
-                    request.schedule,
-                    public_values_hash,
-                    &material_segment,
-                    std::slice::from_ref(&witness_segment),
-                    std::slice::from_ref(cache_segment),
-                )
-                .map_err(|error| format!("build query plan segment failed: {error}"))?,
-                None => build_pcs_query_plan_segment(
+            let query_segment = if binding_segments_slice.is_empty() {
+                build_pcs_query_plan_segment(
                     request.schedule,
                     public_values_hash,
                     &material_segment,
                     std::slice::from_ref(&witness_segment),
                 )
-                .map_err(|error| format!("build query plan segment failed: {error}"))?,
+                .map_err(|error| format!("build query plan segment failed: {error}"))?
+            } else {
+                build_pcs_query_plan_segment_with_bindings(
+                    request.schedule,
+                    public_values_hash,
+                    &material_segment,
+                    std::slice::from_ref(&witness_segment),
+                    binding_segments_slice,
+                )
+                .map_err(|error| format!("build query plan segment failed: {error}"))?
             };
             (query_segment, None)
         }
@@ -343,7 +350,7 @@ pub fn build_witness_proof_artifact_for_unit(
     )? {
         segments.push(contribution_segment);
     }
-    append_program_image_cache_segment(&mut segments, cache_segment);
+    append_binding_segments(&mut segments, binding_segments);
     let proof = ProofArtifact {
         setup_hash: request.schedule.setup_hash,
         public_values_hash,
@@ -367,7 +374,8 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
-    let cache_segment = build_program_image_cache_proof_segment(request.program_image_cache)?;
+    let binding_segments =
+        build_proof_binding_segments(request.program_image_cache, request.eth_block_input)?;
     let unit_values = request
         .unit_values
         .unwrap_or(&request.output.auxiliary_inputs().unit_values);
@@ -396,7 +404,7 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
         segments.push(proof_values_segment);
     }
     segments.push(contribution_segment);
-    append_program_image_cache_segment(&mut segments, cache_segment);
+    append_binding_segments(&mut segments, binding_segments);
     let proof = ProofArtifact {
         setup_hash: request.schedule.setup_hash,
         public_values_hash,
@@ -421,6 +429,7 @@ pub struct WitnessAllUnitsProofRequest<'a> {
     pub evaluation_values_segment: Option<&'a ProofSegment>,
     pub verify_outputs: bool,
     pub program_image_cache: Option<&'a ProgramImageCommitmentCache>,
+    pub eth_block_input: Option<&'a EthBlockInput>,
 }
 
 pub fn build_witness_contribution_proof_artifact_for_all_units(
@@ -434,7 +443,8 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
-    let cache_segment = build_program_image_cache_proof_segment(request.program_image_cache)?;
+    let binding_segments =
+        build_proof_binding_segments(request.program_image_cache, request.eth_block_input)?;
     let contribution_sources = request
         .outputs
         .iter()
@@ -470,7 +480,7 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
         segments.push(proof_values_segment);
     }
     segments.push(contribution_segment);
-    append_program_image_cache_segment(&mut segments, cache_segment);
+    append_binding_segments(&mut segments, binding_segments);
     let proof = ProofArtifact {
         setup_hash: request.schedule.setup_hash,
         public_values_hash,
@@ -494,8 +504,9 @@ pub fn build_witness_proof_artifact_for_all_units(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
-    let cache_segment = build_program_image_cache_proof_segment(request.program_image_cache)?;
-    let binding_segments: &[ProofSegment] = cache_segment.as_slice();
+    let binding_segments =
+        build_proof_binding_segments(request.program_image_cache, request.eth_block_input)?;
+    let binding_segments_slice = binding_segments.as_slice();
     let witness_outputs = request
         .outputs
         .iter()
@@ -511,9 +522,9 @@ pub fn build_witness_proof_artifact_for_all_units(
             request,
             public_values_hash,
             &witness_outputs,
-            binding_segments,
+            binding_segments_slice,
         )?
-    } else if binding_segments.is_empty() {
+    } else if binding_segments_slice.is_empty() {
         build_witness_proof_artifact(
             request.catalog,
             request.schedule,
@@ -533,7 +544,7 @@ pub fn build_witness_proof_artifact_for_all_units(
                 proof_values: &request.auxiliary_inputs.proof_values,
                 group_values: &request.auxiliary_inputs.group_values,
                 unit_values: request.unit_values,
-                binding_segments,
+                binding_segments: binding_segments_slice,
             },
         )?
     };
@@ -562,7 +573,7 @@ pub fn build_witness_proof_artifact_for_all_units(
     )? {
         proof.segments.push(contribution_segment);
     }
-    append_program_image_cache_segment(&mut proof.segments, cache_segment);
+    append_binding_segments(&mut proof.segments, binding_segments);
     if request.verify_outputs {
         validate_setup_preflight(request.catalog, &proof, public_values)
             .map_err(|error| format!("verify proof output failed: {error}"))?;
@@ -584,13 +595,36 @@ fn build_program_image_cache_proof_segment(
     }))
 }
 
-fn append_program_image_cache_segment(
-    segments: &mut Vec<ProofSegment>,
-    cache_segment: Option<ProofSegment>,
-) {
-    if let Some(segment) = cache_segment {
+fn build_eth_block_input_proof_segment(
+    input: Option<&EthBlockInput>,
+) -> Result<Option<ProofSegment>, String> {
+    let Some(input) = input else {
+        return Ok(None);
+    };
+    let data = encode_eth_block_input_segment(input)
+        .map_err(|error| format!("build ETH block input segment failed: {error}"))?;
+    Ok(Some(ProofSegment {
+        id: ETH_BLOCK_INPUT_SEGMENT_ID,
+        data,
+    }))
+}
+
+fn build_proof_binding_segments(
+    cache: Option<&ProgramImageCommitmentCache>,
+    eth_block_input: Option<&EthBlockInput>,
+) -> Result<Vec<ProofSegment>, String> {
+    let mut segments = Vec::new();
+    if let Some(segment) = build_program_image_cache_proof_segment(cache)? {
         segments.push(segment);
     }
+    if let Some(segment) = build_eth_block_input_proof_segment(eth_block_input)? {
+        segments.push(segment);
+    }
+    Ok(segments)
+}
+
+fn append_binding_segments(segments: &mut Vec<ProofSegment>, binding_segments: Vec<ProofSegment>) {
+    segments.extend(binding_segments);
 }
 
 struct WitnessContributionSource<'a> {

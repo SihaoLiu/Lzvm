@@ -3,6 +3,7 @@ use std::io::Write;
 use std::path::Path;
 
 use lzvm_artifacts::challenge_values_segment::parse_challenge_values_segment;
+use lzvm_artifacts::eth_block_input::EthBlockInput;
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::group_values_segment::GROUP_VALUES_SEGMENT_ID;
 use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
@@ -258,6 +259,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             .program_image_cache
             .as_ref()
             .map(|summary| &summary.cache),
+        eth_block_input: eth_block_input.as_ref().map(|summary| &summary.input),
         output: &output,
         contribution_only,
     };
@@ -627,6 +629,7 @@ struct WitnessOutputSaveRequest<'a> {
     public_inputs: Option<&'a Path>,
     unit_values_segment_input: Option<&'a Path>,
     program_image_cache: Option<&'a ProgramImageCommitmentCache>,
+    eth_block_input: Option<&'a EthBlockInput>,
     output: &'a ProveWitnessTraceCommitments,
     contribution_only: bool,
 }
@@ -736,6 +739,7 @@ fn finish_all_units_witness_run(
             .program_image_cache
             .as_ref()
             .map(|summary| &summary.cache),
+        eth_block_input: eth_block_input.map(|summary| &summary.input),
     };
     let proof = if plan.run_plan.pass.kind() == ProvePassKind::Contributions {
         lzvm_prover::build_witness_contribution_proof_artifact_for_all_units(&proof_request)?
@@ -771,6 +775,7 @@ fn finish_all_units_witness_run(
                     .program_image_cache
                     .as_ref()
                     .map(|summary| &summary.cache),
+                eth_block_input: eth_block_input.as_ref().map(|summary| &summary.input),
                 output,
                 contribution_only: plan.run_plan.pass.kind() == ProvePassKind::Contributions,
             };
@@ -1007,6 +1012,7 @@ fn build_proof_bytes(
                 output: request.output,
                 verify_outputs,
                 program_image_cache: request.program_image_cache,
+                eth_block_input: request.eth_block_input,
             },
         )?
     } else {
@@ -1020,6 +1026,7 @@ fn build_proof_bytes(
             output: request.output,
             verify_outputs,
             program_image_cache: request.program_image_cache,
+            eth_block_input: request.eth_block_input,
         })?
     };
     match proof {

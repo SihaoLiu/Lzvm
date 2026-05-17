@@ -1,6 +1,10 @@
 use std::fmt;
 use std::path::Path;
 
+use lzvm_artifacts::eth_block_input::EthBlockInputError;
+use lzvm_artifacts::eth_block_input_segment::{
+    parse_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
+};
 use lzvm_artifacts::program_image_segment::{
     parse_program_image_cache_segment, ProgramImageCacheSegmentError,
     PROGRAM_IMAGE_CACHE_SEGMENT_ID,
@@ -23,6 +27,7 @@ pub enum ProofPreflightError {
     PublicValuesDigest(PublicValuesError),
     PublicValuesHashMismatch,
     ProgramImageCache(ProgramImageCacheSegmentError),
+    EthBlockInput(EthBlockInputError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,6 +49,7 @@ impl fmt::Display for ProofPreflightError {
             Self::PublicValuesDigest(error) => write!(f, "{error}"),
             Self::PublicValuesHashMismatch => write!(f, "public-values hash mismatch"),
             Self::ProgramImageCache(error) => write!(f, "{error}"),
+            Self::EthBlockInput(error) => write!(f, "{error}"),
         }
     }
 }
@@ -71,6 +77,7 @@ impl std::error::Error for ProofPreflightError {
         match self {
             Self::PublicValuesDigest(error) => Some(error),
             Self::ProgramImageCache(error) => Some(error),
+            Self::EthBlockInput(error) => Some(error),
             Self::SetupHashMismatch | Self::PublicValuesHashMismatch => None,
         }
     }
@@ -132,6 +139,13 @@ pub fn validate_proof_public_values(
     {
         parse_program_image_cache_segment(&segment.data)
             .map_err(ProofPreflightError::ProgramImageCache)?;
+    }
+    for segment in proof
+        .segments
+        .iter()
+        .filter(|segment| segment.id == ETH_BLOCK_INPUT_SEGMENT_ID)
+    {
+        parse_eth_block_input_segment(&segment.data).map_err(ProofPreflightError::EthBlockInput)?;
     }
 
     Ok(ProofPreflightReport {

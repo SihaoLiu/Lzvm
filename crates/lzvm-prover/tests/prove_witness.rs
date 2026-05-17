@@ -912,6 +912,7 @@ fn builds_witness_proof_artifact_for_unit_in_prover() {
             output: &output,
             verify_outputs: false,
             program_image_cache: None,
+            eth_block_input: None,
         })
         .expect("proof artifact should build")
         .expect("proof artifact should exist");
@@ -1055,6 +1056,7 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
             evaluation_values_segment: None,
             verify_outputs: false,
             program_image_cache: None,
+            eth_block_input: None,
         },
     )
     .expect("proof artifact should build")

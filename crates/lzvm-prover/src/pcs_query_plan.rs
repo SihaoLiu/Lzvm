@@ -12,6 +12,7 @@ pub use build::{
 };
 pub use errors::ProvePcsQueryPlanSegmentError;
 
+use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
 use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
 use lzvm_artifacts::pcs_material_segment::{
     parse_pcs_material_manifest_segment, PcsMaterialManifestSegmentError,
@@ -212,7 +213,12 @@ pub fn validate_seeded_pcs_query_plan_segments(
 pub(crate) fn proof_binding_segments(segments: &[ProofSegment]) -> Vec<ProofSegment> {
     segments
         .iter()
-        .filter(|segment| segment.id == PROGRAM_IMAGE_CACHE_SEGMENT_ID)
+        .filter(|segment| {
+            matches!(
+                segment.id,
+                PROGRAM_IMAGE_CACHE_SEGMENT_ID | ETH_BLOCK_INPUT_SEGMENT_ID
+            )
+        })
         .cloned()
         .collect()
 }
