@@ -1,5 +1,26 @@
+use std::fmt;
+
 use crate::eth_block_input::EthBlockInput;
 use crate::public_values::{PublicValueEntry, PublicValues};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EthBlockPublicValuesError {
+    MissingEntry { name: String },
+    ValueMismatch { name: String },
+}
+
+impl fmt::Display for EthBlockPublicValuesError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingEntry { name } => write!(f, "missing ETH block public value: {name}"),
+            Self::ValueMismatch { name } => {
+                write!(f, "ETH block public value mismatch: {name}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for EthBlockPublicValuesError {}
 
 pub fn public_values_from_eth_block_input(
     setup_hash: [u8; 32],
@@ -43,6 +64,28 @@ pub fn public_values_from_eth_block_input(
             },
         ],
     }
+}
+
+pub fn validate_eth_block_public_values(
+    input: &EthBlockInput,
+    public_values: &PublicValues,
+) -> Result<(), EthBlockPublicValuesError> {
+    let expected = public_values_from_eth_block_input(public_values.setup_hash, input);
+    for expected_entry in expected.values {
+        let entry = public_values
+            .values
+            .iter()
+            .find(|entry| entry.name == expected_entry.name)
+            .ok_or_else(|| EthBlockPublicValuesError::MissingEntry {
+                name: expected_entry.name.clone(),
+            })?;
+        if entry.elements != expected_entry.elements {
+            return Err(EthBlockPublicValuesError::ValueMismatch {
+                name: expected_entry.name,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn hash_u32_be(bytes: &[u8; 32]) -> Vec<u64> {

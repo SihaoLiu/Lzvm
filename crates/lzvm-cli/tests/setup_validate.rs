@@ -21,6 +21,7 @@ use lzvm_artifacts::eth_block_input::{
 use lzvm_artifacts::eth_block_input_segment::{
     parse_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
+use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
 use lzvm_artifacts::expression_info::{encode_expression_info, ExpressionInfo};
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
@@ -4319,6 +4320,8 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     let guest_image = dir.join("guest.elf");
     let input_data = dir.join("input.bin");
     let public_values_path = dir.join("public_values.bin");
+    let mismatched_public_values_path = dir.join("mismatched_public_values.bin");
+    let mismatched_output_dir = dir.join("mismatched-proof-out");
     let block_input_path = dir.join("block.input");
     let block_rlp = sample_block_rlp();
     let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
@@ -4331,10 +4334,16 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     let other_block_input_path = dir.join("other-block.input");
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(&input_data, [7_u8]);
+    let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
     write_bytes(
         &public_values_path,
-        encode_public_values(&sample_public_values(setup_hash))
-            .expect("public values should encode"),
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+    let mismatched_public_values =
+        public_values_from_eth_block_input(setup_hash, &other_block_input);
+    write_bytes(
+        &mismatched_public_values_path,
+        encode_public_values(&mismatched_public_values).expect("public values should encode"),
     );
     write_bytes(&block_input_path, &block_input_bytes);
     write_bytes(&other_block_input_path, &other_block_input_bytes);
@@ -4363,6 +4372,33 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
         ],
         &mut stdout,
         &mut stderr,
+    );
+    let mut public_values_prove_stdout = Vec::new();
+    let mut public_values_prove_stderr = Vec::new();
+    let public_values_prove_code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            mismatched_output_dir
+                .to_str()
+                .expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            mismatched_public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut public_values_prove_stdout,
+        &mut public_values_prove_stderr,
     );
 
     let proof_bytes = fs::read(output_dir.join("proof.bin")).expect("proof output should read");
@@ -4413,10 +4449,39 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
         &mut mismatch_stdout,
         &mut mismatch_stderr,
     );
+    let mut public_mismatch_stdout = Vec::new();
+    let mut public_mismatch_stderr = Vec::new();
+    let mismatched_proof_path = mismatched_output_dir.join("proof.bin");
+    let public_mismatch_code = run_cli(
+        &[
+            "verify",
+            "proof",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            mismatched_proof_path
+                .to_str()
+                .expect("proof path should be utf-8"),
+            mismatched_public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut public_mismatch_stdout,
+        &mut public_mismatch_stderr,
+    );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
     assert!(stderr.is_empty());
+    assert_eq!(
+        public_values_prove_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&public_values_prove_stderr)
+    );
+    assert!(public_values_prove_stderr.is_empty());
     assert_eq!(
         verify_code,
         0,
@@ -4433,6 +4498,12 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
         "verify proof failed: ETH block input proof segment mismatch\n"
     );
     assert!(mismatch_stdout.is_empty());
+    assert_eq!(public_mismatch_code, 1);
+    assert_eq!(
+        String::from_utf8(public_mismatch_stderr).expect("public mismatch stderr should be utf-8"),
+        "verify proof failed: ETH block public value mismatch: eth_block_hash_u32_be\n"
+    );
+    assert!(public_mismatch_stdout.is_empty());
     assert_eq!(parsed_input.block_rlp, block_rlp);
     assert_eq!(parsed_input.block_hash, block_input.block_hash);
     assert_eq!(parsed_input.transactions.hash_preimages.len(), 1);

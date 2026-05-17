@@ -8,8 +8,10 @@ use lzvm_artifacts::eth_block_input::parse_eth_block_input;
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
+use lzvm_artifacts::eth_block_public_values::validate_eth_block_public_values;
 use lzvm_artifacts::program_image::ProgramImageGpuMode;
 use lzvm_artifacts::proof::read_proof_artifact_file;
+use lzvm_artifacts::public_values::read_public_values_file;
 use lzvm_artifacts::trace_bundle::{encode_trace_bundle, TraceBundle, TraceBundleUnit};
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_prover::contribution::{
@@ -770,7 +772,7 @@ fn verify_setup_validation(
             }
         };
     if let Some(path) = eth_block_input {
-        match verify_eth_block_input_binding(proof_bin, path) {
+        match verify_eth_block_input_binding(proof_bin, public_values_path, path) {
             Ok(()) => {}
             Err(message) => {
                 let _ = writeln!(stderr, "{role} failed: {message}");
@@ -796,7 +798,11 @@ fn verify_setup_validation(
     0
 }
 
-fn verify_eth_block_input_binding(proof_bin: &str, input_path: &str) -> Result<(), String> {
+fn verify_eth_block_input_binding(
+    proof_bin: &str,
+    public_values_path: &str,
+    input_path: &str,
+) -> Result<(), String> {
     let proof = read_proof_artifact_file(proof_bin)
         .map_err(|error| format!("read proof artifact failed: {proof_bin}: {error}"))?;
     let input_bytes = std::fs::read(input_path)
@@ -813,6 +819,9 @@ fn verify_eth_block_input_binding(proof_bin: &str, input_path: &str) -> Result<(
     if segment.data != expected {
         return Err("ETH block input proof segment mismatch".to_owned());
     }
+    let public_values = read_public_values_file(public_values_path)
+        .map_err(|error| format!("read public-values failed: {public_values_path}: {error}"))?;
+    validate_eth_block_public_values(&input, &public_values).map_err(|error| error.to_string())?;
     Ok(())
 }
 
