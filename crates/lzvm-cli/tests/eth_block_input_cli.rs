@@ -566,6 +566,10 @@ fn writes_block_public_values_from_withdrawal_block_input() {
         to_hex(&withdrawal_build.root)
     )));
     assert!(stdout_text.contains("withdrawal_count=1\n"));
+    assert!(stdout_text.contains(&format!(
+        "withdrawal_trie_preimages={}\n",
+        withdrawal_build.hash_preimages.len()
+    )));
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }

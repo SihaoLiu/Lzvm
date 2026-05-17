@@ -204,6 +204,13 @@ fn write_block_public_values(
             if let Some(count) = withdrawal_count {
                 let _ = writeln!(stdout, "withdrawal_count={count}");
             }
+            if let Some(withdrawals) = &input.withdrawals {
+                let _ = writeln!(
+                    stdout,
+                    "withdrawal_trie_preimages={}",
+                    withdrawals.hash_preimages.len()
+                );
+            }
         }
         None => {
             let _ = writeln!(stdout, "withdrawals=absent");
