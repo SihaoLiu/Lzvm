@@ -11,6 +11,7 @@ const ETH_BLOCK_INPUT_VERSION: u32 = 1;
 const METADATA_SECTION_ID: u32 = 1;
 const TRANSACTION_PREIMAGES_SECTION_ID: u32 = 3;
 const RECEIPT_PREIMAGES_SECTION_ID: u32 = 5;
+const RECEIPTS_RLP_SECTION_ID: u32 = 6;
 
 #[test]
 fn encodes_and_parses_eth_block_inputs() {
@@ -75,6 +76,7 @@ fn builds_receipt_eth_block_inputs() {
         .expect("block input should build with receipts");
     let input_receipts = input.receipts.as_ref().expect("receipts trie should exist");
 
+    assert_eq!(input.receipts_rlp.as_deref(), Some(receipts_rlp.as_slice()));
     assert_eq!(input.receipts_root, receipt_build.root);
     assert_eq!(input_receipts.root, input.receipts_root);
     assert_eq!(input_receipts.hash_preimages, receipt_build.hash_preimages);
@@ -86,8 +88,16 @@ fn builds_receipt_eth_block_inputs() {
         .sections
         .iter()
         .any(|section| section.id == RECEIPT_PREIMAGES_SECTION_ID));
+    assert!(file
+        .sections
+        .iter()
+        .any(|section| section.id == RECEIPTS_RLP_SECTION_ID));
 
     let parsed = parse_eth_block_input(&encoded).expect("block input should parse");
+    assert_eq!(
+        parsed.receipts_rlp.as_deref(),
+        Some(receipts_rlp.as_slice())
+    );
     assert_eq!(parsed, input);
 }
 

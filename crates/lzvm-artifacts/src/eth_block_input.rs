@@ -24,6 +24,7 @@ const BLOCK_RLP_SECTION_ID: u32 = 2;
 const TRANSACTION_PREIMAGES_SECTION_ID: u32 = 3;
 const WITHDRAWAL_PREIMAGES_SECTION_ID: u32 = 4;
 const RECEIPT_PREIMAGES_SECTION_ID: u32 = 5;
+const RECEIPTS_RLP_SECTION_ID: u32 = 6;
 const HASH_BYTES: usize = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +49,7 @@ pub struct EthBlockInput {
     pub transactions_root: [u8; 32],
     pub withdrawals_root: Option<[u8; 32]>,
     pub transactions: IndexedTrieBuild,
+    pub receipts_rlp: Option<Vec<u8>>,
     pub receipts: Option<IndexedTrieBuild>,
     pub withdrawals: Option<IndexedTrieBuild>,
 }
@@ -318,6 +320,7 @@ pub fn build_eth_block_input(block_rlp: &[u8]) -> Result<EthBlockInput, EthBlock
         transactions_root: header.transactions_root,
         withdrawals_root: header.withdrawals_root,
         transactions,
+        receipts_rlp: None,
         receipts: None,
         withdrawals,
     })
@@ -334,6 +337,7 @@ pub fn build_eth_block_input_with_receipts(
     if build.root != input.receipts_root {
         return Err(EthBlockInputError::ReceiptsRootMismatch);
     }
+    input.receipts_rlp = Some(receipts_rlp.to_vec());
     input.receipts = Some(build);
     Ok(input)
 }
@@ -366,6 +370,12 @@ pub fn encode_eth_block_input(value: &EthBlockInput) -> Result<Vec<u8>, EthBlock
             data: encode_preimages(&receipts.hash_preimages)?,
         });
     }
+    if let Some(receipts_rlp) = &value.receipts_rlp {
+        sections.push(SectionedSection {
+            id: RECEIPTS_RLP_SECTION_ID,
+            data: receipts_rlp.clone(),
+        });
+    }
 
     encode_sectioned_file(&SectionedFile {
         kind: ETH_BLOCK_INPUT_KIND,
@@ -387,6 +397,7 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
     let mut transaction_preimages = None;
     let mut withdrawal_preimages = None;
     let mut receipt_preimages = None;
+    let mut receipts_rlp = None;
 
     for section in file.sections {
         let target = match section.id {
@@ -395,6 +406,7 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
             TRANSACTION_PREIMAGES_SECTION_ID => &mut transaction_preimages,
             WITHDRAWAL_PREIMAGES_SECTION_ID => &mut withdrawal_preimages,
             RECEIPT_PREIMAGES_SECTION_ID => &mut receipt_preimages,
+            RECEIPTS_RLP_SECTION_ID => &mut receipts_rlp,
             _ => continue,
         };
         if target.replace(section.data).is_some() {
@@ -428,6 +440,18 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
                 root: metadata.receipts_root,
                 hash_preimages,
             })
+        }
+        None => None,
+    };
+    let receipts_rlp = match receipts_rlp {
+        Some(bytes) => {
+            let parsed_receipts = parse_eth_receipts_rlp(&bytes)?;
+            decode_eth_receipts_rlp(&parsed_receipts)?;
+            let build = receipt_trie_build(&parsed_receipts);
+            if build.root != metadata.receipts_root {
+                return Err(EthBlockInputError::ReceiptsRootMismatch);
+            }
+            Some(bytes)
         }
         None => None,
     };
@@ -468,6 +492,7 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
         transactions_root: metadata.transactions_root,
         withdrawals_root: metadata.withdrawals_root,
         transactions,
+        receipts_rlp,
         receipts,
         withdrawals,
     })
