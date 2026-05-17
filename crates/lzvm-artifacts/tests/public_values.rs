@@ -57,6 +57,10 @@ fn push_u32(out: &mut Vec<u8>, value: u32) {
     out.extend_from_slice(&value.to_le_bytes());
 }
 
+fn push_u64(out: &mut Vec<u8>, value: u64) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
 fn push_string(out: &mut Vec<u8>, value: &str) {
     push_u32(
         out,
@@ -138,6 +142,35 @@ fn rejects_public_values_with_duplicate_names() {
     assert!(matches!(
         encode_public_values(&value),
         Err(PublicValuesError::DuplicateName { .. })
+    ));
+}
+
+#[test]
+fn rejects_unsupported_public_values_schema_version() {
+    let mut value = sample_public_values();
+    value.schema_version = 2;
+
+    assert!(matches!(
+        encode_public_values(&value),
+        Err(PublicValuesError::UnsupportedSchemaVersion {
+            found: 2,
+            expected: 1
+        })
+    ));
+
+    let mut section = section_header(1);
+    section[0] = 2;
+    push_string(&mut section, "block_number");
+    push_u32(&mut section, 1);
+    push_u64(&mut section, 12_345);
+    let bytes = public_values_file(section);
+
+    assert!(matches!(
+        parse_public_values(&bytes),
+        Err(PublicValuesError::UnsupportedSchemaVersion {
+            found: 2,
+            expected: 1
+        })
     ));
 }
 

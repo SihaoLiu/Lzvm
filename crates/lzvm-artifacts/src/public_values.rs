@@ -10,6 +10,7 @@ use crate::sectioned::{
 
 const PUBLIC_VALUES_KIND: [u8; 4] = *b"pval";
 const PUBLIC_VALUES_VERSION: u32 = 1;
+const PUBLIC_VALUES_SCHEMA_VERSION: u32 = 1;
 const PUBLIC_VALUES_SECTION_ID: u32 = 1;
 const VALUE_ENTRY_HEADER_BYTES: usize = 4 + 4;
 const ELEMENT_BYTES: usize = 8;
@@ -33,6 +34,10 @@ pub enum PublicValuesError {
     UnsupportedVersion {
         found: u32,
         max: u32,
+    },
+    UnsupportedSchemaVersion {
+        found: u32,
+        expected: u32,
     },
     InvalidSectionCount {
         found: u32,
@@ -70,6 +75,12 @@ impl fmt::Display for PublicValuesError {
             Self::InvalidMagic => write!(f, "invalid public-values file magic"),
             Self::UnsupportedVersion { found, max } => {
                 write!(f, "unsupported public-values file version {found}, max {max}")
+            }
+            Self::UnsupportedSchemaVersion { found, expected } => {
+                write!(
+                    f,
+                    "unsupported public-values schema version {found}, expected {expected}"
+                )
             }
             Self::InvalidSectionCount { found } => {
                 write!(f, "invalid public-values section count {found}")
@@ -264,6 +275,13 @@ fn encode_public_values_section(value: &PublicValues) -> Result<Vec<u8>, PublicV
 }
 
 fn validate_public_values(value: &PublicValues) -> Result<(), PublicValuesError> {
+    if value.schema_version != PUBLIC_VALUES_SCHEMA_VERSION {
+        return Err(PublicValuesError::UnsupportedSchemaVersion {
+            found: value.schema_version,
+            expected: PUBLIC_VALUES_SCHEMA_VERSION,
+        });
+    }
+
     let mut names = BTreeSet::new();
     for (index, entry) in value.values.iter().enumerate() {
         if entry.name.is_empty() {
