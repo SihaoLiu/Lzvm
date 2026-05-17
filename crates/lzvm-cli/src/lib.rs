@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use lzvm_artifacts::challenge_values_segment::{
     encode_challenge_values_segment, ChallengeValuesSegment,
 };
-use lzvm_artifacts::eth_block_input::{eth_block_input_bytes_digest, parse_eth_block_input};
+use lzvm_artifacts::eth_block_input::{
+    eth_block_input_bytes_digest, eth_block_input_transaction_kind_counts, parse_eth_block_input,
+};
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
@@ -654,6 +656,19 @@ fn verify_preflight(
                     .copied()
                     .unwrap_or(0),
             );
+            write_eth_transaction_kind_summary(
+                stdout,
+                report
+                    .eth_block_input_legacy_transaction_counts
+                    .get(index)
+                    .copied()
+                    .unwrap_or(0),
+                report
+                    .eth_block_input_typed_transaction_counts
+                    .get(index)
+                    .copied()
+                    .unwrap_or(0),
+            );
             write_eth_receipt_preimage_summary(
                 stdout,
                 report
@@ -878,6 +893,8 @@ struct VerifySetupValidationCommand<'a> {
 struct EthBlockInputBinding {
     hash: [u8; 32],
     transaction_preimage_count: usize,
+    legacy_transaction_count: usize,
+    typed_transaction_count: usize,
     receipt_preimage_count: Option<usize>,
     withdrawal_preimage_count: Option<usize>,
 }
@@ -972,6 +989,19 @@ fn verify_setup_validation(
                         .copied()
                         .unwrap_or(0),
                 );
+                write_eth_transaction_kind_summary(
+                    stdout,
+                    public_report
+                        .eth_block_input_legacy_transaction_counts
+                        .get(index)
+                        .copied()
+                        .unwrap_or(0),
+                    public_report
+                        .eth_block_input_typed_transaction_counts
+                        .get(index)
+                        .copied()
+                        .unwrap_or(0),
+                );
                 write_eth_receipt_preimage_summary(
                     stdout,
                     public_report
@@ -1001,6 +1031,11 @@ fn verify_setup_validation(
         }
         let _ = writeln!(stdout, "eth_block_input_match=ok");
         write_eth_transaction_preimage_summary(stdout, binding.transaction_preimage_count);
+        write_eth_transaction_kind_summary(
+            stdout,
+            binding.legacy_transaction_count,
+            binding.typed_transaction_count,
+        );
         write_eth_receipt_preimage_summary(stdout, binding.receipt_preimage_count);
         write_eth_withdrawal_preimage_summary(stdout, binding.withdrawal_preimage_count);
     }
@@ -1041,6 +1076,9 @@ fn verify_eth_block_input_binding(
     let input = parse_eth_block_input(&input_bytes)
         .map_err(|error| format!("ETH block input failed: {input_path}: {error}"))?;
     let transaction_preimage_count = input.transactions.hash_preimages.len();
+    let (legacy_transaction_count, typed_transaction_count) =
+        eth_block_input_transaction_kind_counts(&input)
+            .map_err(|error| format!("ETH block input transaction count failed: {error}"))?;
     let receipt_preimage_count = input
         .receipts
         .as_ref()
@@ -1065,6 +1103,8 @@ fn verify_eth_block_input_binding(
     Ok(EthBlockInputBinding {
         hash: input_hash,
         transaction_preimage_count,
+        legacy_transaction_count,
+        typed_transaction_count,
         receipt_preimage_count,
         withdrawal_preimage_count,
     })
@@ -1078,6 +1118,15 @@ fn write_eth_transaction_preimage_summary(
         stdout,
         "eth_transaction_trie_preimages={transaction_preimage_count}"
     );
+}
+
+fn write_eth_transaction_kind_summary(
+    stdout: &mut dyn Write,
+    legacy_transaction_count: usize,
+    typed_transaction_count: usize,
+) {
+    let _ = writeln!(stdout, "eth_legacy_transactions={legacy_transaction_count}");
+    let _ = writeln!(stdout, "eth_typed_transactions={typed_transaction_count}");
 }
 
 fn write_eth_receipt_preimage_summary(

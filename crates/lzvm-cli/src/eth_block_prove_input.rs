@@ -2,11 +2,9 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
-use lzvm_artifacts::eth_block::{
-    decode_eth_transactions_rlp, parse_eth_block_rlp, EthTransactionRlp,
-};
 use lzvm_artifacts::eth_block_input::{
-    eth_block_input_bytes_digest, parse_eth_block_input, EthBlockInput,
+    eth_block_input_bytes_digest, eth_block_input_transaction_kind_counts, parse_eth_block_input,
+    EthBlockInput,
 };
 
 use crate::prove_plan::format_hash;
@@ -187,15 +185,8 @@ pub(crate) fn write_eth_block_input_summary(
 }
 
 fn transaction_kind_counts(input: &EthBlockInput) -> Result<(usize, usize), String> {
-    let block = parse_eth_block_rlp(&input.block_rlp)
-        .map_err(|error| format!("ETH block input transaction count failed: {error}"))?;
-    let transactions = decode_eth_transactions_rlp(&block.transactions)
-        .map_err(|error| format!("ETH block input transaction count failed: {error}"))?;
-    let legacy = transactions
-        .iter()
-        .filter(|transaction| matches!(transaction, EthTransactionRlp::Legacy(_)))
-        .count();
-    Ok((legacy, transactions.len() - legacy))
+    eth_block_input_transaction_kind_counts(input)
+        .map_err(|error| format!("ETH block input transaction count failed: {error}"))
 }
 
 fn format_hex(bytes: &[u8]) -> String {

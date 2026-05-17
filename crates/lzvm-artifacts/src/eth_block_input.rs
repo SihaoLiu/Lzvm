@@ -8,7 +8,7 @@ use crate::eth_block::{
     decode_eth_withdrawals_rlp, eth_header_hash, eth_ommers_hash,
     eth_receipts_cumulative_gas_is_nondecreasing, eth_receipts_cumulative_gas_used,
     eth_receipts_logs_bloom, keccak256, parse_eth_block_rlp, EthBlockError, EthReceiptError,
-    EthTransactionError, EthWithdrawalError,
+    EthTransactionError, EthTransactionRlp, EthWithdrawalError,
 };
 use crate::eth_trie::{
     receipt_trie_build, transaction_trie_build, withdrawals_trie_build, IndexedTrieBuild,
@@ -478,6 +478,18 @@ pub fn encode_eth_block_input(value: &EthBlockInput) -> Result<Vec<u8>, EthBlock
 
 pub fn eth_block_input_bytes_digest(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
+}
+
+pub fn eth_block_input_transaction_kind_counts(
+    input: &EthBlockInput,
+) -> Result<(usize, usize), EthBlockInputError> {
+    let block = parse_eth_block_rlp(&input.block_rlp)?;
+    let transactions = decode_eth_transactions_rlp(&block.transactions)?;
+    let legacy = transactions
+        .iter()
+        .filter(|transaction| matches!(transaction, EthTransactionRlp::Legacy(_)))
+        .count();
+    Ok((legacy, transactions.len() - legacy))
 }
 
 pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInputError> {
