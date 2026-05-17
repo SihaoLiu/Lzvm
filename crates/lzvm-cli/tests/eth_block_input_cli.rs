@@ -5,7 +5,7 @@ use lzvm_artifacts::eth_block_input::{
     build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
     parse_eth_block_input,
 };
-use lzvm_artifacts::eth_trie::receipt_trie_build;
+use lzvm_artifacts::eth_trie::{receipt_trie_build, transaction_trie_build};
 use lzvm_artifacts::public_values::{parse_public_values, public_values_digest};
 use lzvm_artifacts::rlp::parse_rlp;
 use lzvm_cli::run_cli;
@@ -60,7 +60,7 @@ fn writes_binary_block_input_artifact() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\nwithdrawals=absent\n",
+            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\nlegacy_transactions=1\ntyped_transactions=0\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
             to_hex(&input_hash),
@@ -157,7 +157,7 @@ fn writes_binary_block_input_artifact_with_receipts() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=21000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\nreceipts=present\nreceipt_trie_preimages={}\nwithdrawals=absent\n",
+            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=21000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\nlegacy_transactions=1\ntyped_transactions=0\nreceipts=present\nreceipt_trie_preimages={}\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
             to_hex(&input_hash),
@@ -174,6 +174,40 @@ fn writes_binary_block_input_artifact_with_receipts() {
     );
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn writes_transaction_kind_counts_for_typed_block_input_artifacts() {
+    let dir = temp_dir("typed");
+    let _ = fs::remove_dir_all(&dir);
+    let block_path = dir.join("block.rlp");
+    let output_path = dir.join("block.input");
+    let transaction_item = typed_transaction_item();
+    let transactions = vec![parse_rlp(&transaction_item).expect("transaction should parse")];
+    let transaction_build =
+        transaction_trie_build(&transactions).expect("transaction trie should build");
+    let block_rlp =
+        sample_block_rlp_with_transaction_items(transaction_build.root, vec![transaction_item]);
+    write_bytes(&block_path, &block_rlp);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-block-input",
+            block_path.to_str().expect("block path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("legacy_transactions=0\ntyped_transactions=1\n"));
 }
 
 #[test]
@@ -205,7 +239,7 @@ fn summarizes_block_input_artifacts() {
     assert_eq!(
         stdout_text,
         format!(
-            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_rlp_bytes={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\nwithdrawals=absent\n",
+            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_rlp_bytes={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\nlegacy_transactions=1\ntyped_transactions=0\nwithdrawals=absent\n",
             input_path.display(),
             encoded.len(),
             to_hex(&input_hash),
@@ -407,6 +441,16 @@ fn sample_block_rlp() -> Vec<u8> {
     rlp_list(&[header_rlp, transactions, empty_list])
 }
 
+fn sample_block_rlp_with_transaction_items(
+    transactions_root: [u8; 32],
+    transaction_items: Vec<Vec<u8>>,
+) -> Vec<u8> {
+    let header_rlp = rlp_list(&legacy_header_items(transactions_root, None));
+    let transactions = rlp_list(&transaction_items);
+    let empty_list = rlp_list(&[]);
+    rlp_list(&[header_rlp, transactions, empty_list])
+}
+
 fn sample_block_rlp_with_base_fee() -> Vec<u8> {
     let mut header_items = legacy_header_items(
         hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
@@ -485,6 +529,10 @@ fn sample_receipt_item() -> Vec<u8> {
         rlp_bytes(&[0; 256]),
         rlp_list(&[]),
     ])
+}
+
+fn typed_transaction_item() -> Vec<u8> {
+    rlp_bytes(&[2, 0xc0])
 }
 
 fn rlp_bytes(payload: &[u8]) -> Vec<u8> {

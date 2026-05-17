@@ -2,6 +2,9 @@ use std::fmt;
 use std::io::Write;
 use std::path::Path;
 
+use lzvm_artifacts::eth_block::{
+    decode_eth_transactions_rlp, parse_eth_block_rlp, EthTransactionRlp,
+};
 use lzvm_artifacts::eth_block_input::{
     build_eth_block_input, build_eth_block_input_with_receipts, encode_eth_block_input,
     eth_block_input_bytes_digest, parse_eth_block_input, EthBlockInput,
@@ -211,6 +214,9 @@ fn write_input_summary(
         "transaction_trie_preimages={}",
         input.transactions.hash_preimages.len()
     );
+    let (legacy_transactions, typed_transactions) = transaction_kind_counts(input);
+    let _ = writeln!(stdout, "legacy_transactions={legacy_transactions}");
+    let _ = writeln!(stdout, "typed_transactions={typed_transactions}");
     if let Some(receipts) = &input.receipts {
         let _ = writeln!(stdout, "receipts=present");
         let _ = writeln!(
@@ -243,6 +249,18 @@ fn write_input_summary(
             withdrawals.hash_preimages.len()
         );
     }
+}
+
+fn transaction_kind_counts(input: &EthBlockInput) -> (usize, usize) {
+    let block = parse_eth_block_rlp(&input.block_rlp)
+        .expect("ETH block input summary requires validated block RLP");
+    let transactions = decode_eth_transactions_rlp(&block.transactions)
+        .expect("ETH block input summary requires validated transactions");
+    let legacy = transactions
+        .iter()
+        .filter(|transaction| matches!(transaction, EthTransactionRlp::Legacy(_)))
+        .count();
+    (legacy, transactions.len() - legacy)
 }
 
 fn decode_hex_bytes(input: &[u8]) -> Result<Vec<u8>, HexDecodeError> {
