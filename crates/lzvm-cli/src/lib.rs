@@ -702,6 +702,9 @@ fn verify_preflight(
                     format_optional_u256(base_fee_per_gas.as_ref())
                 );
             }
+            if let Some(mix_hash) = report.eth_block_input_mix_hashes.get(index) {
+                let _ = writeln!(stdout, "eth_mix_hash={}", prove_plan::format_hash(mix_hash));
+            }
             write_eth_transaction_preimage_summary(
                 stdout,
                 report
@@ -985,6 +988,7 @@ struct EthBlockInputBinding {
     gas_limit: u64,
     gas_used: u64,
     base_fee_per_gas: Option<[u8; 32]>,
+    mix_hash: [u8; 32],
     transaction_preimage_count: usize,
     legacy_transaction_count: usize,
     typed_transaction_count: usize,
@@ -1131,6 +1135,9 @@ fn verify_setup_validation(
                         format_optional_u256(base_fee_per_gas.as_ref())
                     );
                 }
+                if let Some(mix_hash) = public_report.eth_block_input_mix_hashes.get(index) {
+                    let _ = writeln!(stdout, "eth_mix_hash={}", prove_plan::format_hash(mix_hash));
+                }
                 write_eth_transaction_preimage_summary(
                     stdout,
                     public_report
@@ -1251,6 +1258,11 @@ fn verify_setup_validation(
             "eth_base_fee_per_gas={}",
             format_optional_u256(binding.base_fee_per_gas.as_ref())
         );
+        let _ = writeln!(
+            stdout,
+            "eth_mix_hash={}",
+            prove_plan::format_hash(&binding.mix_hash)
+        );
         write_eth_transaction_preimage_summary(stdout, binding.transaction_preimage_count);
         write_eth_transaction_count_summary(
             stdout,
@@ -1357,6 +1369,7 @@ fn verify_eth_block_input_binding(
         gas_limit: input.gas_limit,
         gas_used: input.gas_used,
         base_fee_per_gas: input.base_fee_per_gas,
+        mix_hash: input.mix_hash,
         transaction_preimage_count,
         legacy_transaction_count,
         typed_transaction_count,

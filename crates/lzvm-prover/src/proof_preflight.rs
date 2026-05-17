@@ -47,6 +47,7 @@ pub struct ProofPreflightReport {
     pub eth_block_input_gas_limits: Vec<u64>,
     pub eth_block_input_gas_used_values: Vec<u64>,
     pub eth_block_input_base_fees_per_gas: Vec<Option<[u8; 32]>>,
+    pub eth_block_input_mix_hashes: Vec<[u8; 32]>,
     pub eth_block_input_transaction_preimage_counts: Vec<usize>,
     pub eth_block_input_legacy_transaction_counts: Vec<usize>,
     pub eth_block_input_typed_transaction_counts: Vec<usize>,
@@ -224,6 +225,7 @@ pub fn validate_proof_public_values(
     let mut eth_block_input_gas_limits = Vec::new();
     let mut eth_block_input_gas_used_values = Vec::new();
     let mut eth_block_input_base_fees_per_gas = Vec::new();
+    let mut eth_block_input_mix_hashes = Vec::new();
     if eth_block_input_count == 0 && contains_eth_block_public_values(public_values) {
         return Err(ProofPreflightError::MissingEthBlockInput);
     }
@@ -247,6 +249,7 @@ pub fn validate_proof_public_values(
         eth_block_input_gas_limits.push(input.gas_limit);
         eth_block_input_gas_used_values.push(input.gas_used);
         eth_block_input_base_fees_per_gas.push(input.base_fee_per_gas);
+        eth_block_input_mix_hashes.push(input.mix_hash);
         let (legacy_transaction_count, typed_transaction_count) =
             eth_block_input_transaction_kind_counts(&input)
                 .map_err(ProofPreflightError::EthBlockInput)?;
@@ -300,6 +303,7 @@ pub fn validate_proof_public_values(
         eth_block_input_gas_limits,
         eth_block_input_gas_used_values,
         eth_block_input_base_fees_per_gas,
+        eth_block_input_mix_hashes,
         eth_block_input_transaction_preimage_counts,
         eth_block_input_legacy_transaction_counts,
         eth_block_input_typed_transaction_counts,
