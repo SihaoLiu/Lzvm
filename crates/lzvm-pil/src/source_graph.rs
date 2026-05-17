@@ -280,6 +280,59 @@ mod tests {
     }
 
     #[test]
+    fn require_once_keeps_distinct_local_files_with_include_paths() {
+        let root = case_dir("require-distinct-local");
+        let lib = root.join("lib");
+        fs::create_dir_all(&lib).expect("library directory should be created");
+        write_file(
+            &root,
+            "main.pil",
+            "include \"a/main.pil\";\ninclude \"b/main.pil\";",
+        );
+        write_file(&root, "a/main.pil", "require \"shared.pil\";");
+        write_file(&root, "a/shared.pil", "constant A = 1;");
+        write_file(&root, "b/main.pil", "require \"shared.pil\";");
+        write_file(&root, "b/shared.pil", "constant B = 1;");
+        let mut graph_loader = SourceGraphLoader::new(SourceLoaderConfig {
+            working_dir: root,
+            include_paths: vec![lib],
+            ..SourceLoaderConfig::default()
+        });
+
+        let graph = graph_loader
+            .load_main("main.pil")
+            .expect("graph should load");
+
+        assert_eq!(
+            graph
+                .sources
+                .iter()
+                .map(|source| source.source_name.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "main.pil",
+                "a/main.pil",
+                "a/shared.pil",
+                "b/main.pil",
+                "b/shared.pil"
+            ]
+        );
+        assert_eq!(
+            graph
+                .edges
+                .iter()
+                .map(|edge| (edge.from.as_str(), edge.to.as_str(), edge.kind))
+                .collect::<Vec<_>>(),
+            vec![
+                ("main.pil", "a/main.pil", IncludeKind::Include),
+                ("a/main.pil", "a/shared.pil", IncludeKind::Require),
+                ("main.pil", "b/main.pil", IncludeKind::Include),
+                ("b/main.pil", "b/shared.pil", IncludeKind::Require),
+            ]
+        );
+    }
+
+    #[test]
     fn include_path_order_is_applied_to_graph_edges() {
         let root = case_dir("include-path-order");
         let lib = root.join("lib");

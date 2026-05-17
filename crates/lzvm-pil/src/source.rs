@@ -102,7 +102,7 @@ impl SourceLoader {
         parent_dir: &Path,
     ) -> Result<Option<SourceFile>, SourceLoadError> {
         let file_name = file_name.as_ref();
-        let identity = self.include_identity(file_name, parent_dir);
+        let (identity, _, _, _) = self.resolve_existing(file_name, parent_dir, &[])?;
         if self.loaded_includes.contains(&identity) {
             return Ok(None);
         }
@@ -235,14 +235,6 @@ impl SourceLoader {
         }
 
         path_to_source_name(full_path)
-    }
-
-    fn include_identity(&self, file_name: &Path, parent_dir: &Path) -> PathBuf {
-        if self.config.include_paths.is_empty() {
-            resolve_against(parent_dir, file_name)
-        } else {
-            file_name.to_path_buf()
-        }
     }
 }
 
