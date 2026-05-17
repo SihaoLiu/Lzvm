@@ -61,6 +61,46 @@ fn builds_withdrawals_eth_block_inputs() {
 }
 
 #[test]
+fn rejects_encoding_withdrawals_root_without_preimages() {
+    let block_rlp = sample_block_rlp_with_withdrawals(
+        hex32("51c445cba96d0dfd446eec8b2b94f104608cf8443a92f7f87c76a383d6687300"),
+        vec![withdrawal_item()],
+    );
+    let mut input = build_eth_block_input(&block_rlp).expect("block input should build");
+    input.withdrawals = None;
+
+    let error = encode_eth_block_input(&input).expect_err("block input should reject withdrawals");
+
+    assert!(matches!(
+        error,
+        EthBlockInputError::UnexpectedWithdrawalsRoot
+    ));
+}
+
+#[test]
+fn rejects_encoding_withdrawal_preimages_without_root() {
+    let withdrawal_item = withdrawal_item();
+    let block_rlp = sample_block_rlp_with_withdrawals(
+        hex32("51c445cba96d0dfd446eec8b2b94f104608cf8443a92f7f87c76a383d6687300"),
+        vec![withdrawal_item.clone()],
+    );
+    let withdrawal_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let mut input = build_eth_block_input(&sample_block_rlp_with_transactions(
+        empty_trie_root(),
+        Vec::new(),
+    ))
+    .expect("block input should build");
+    input.withdrawals = withdrawal_input.withdrawals;
+
+    let error = encode_eth_block_input(&input).expect_err("block input should reject withdrawals");
+
+    assert!(matches!(
+        error,
+        EthBlockInputError::UnexpectedWithdrawalsRoot
+    ));
+}
+
+#[test]
 fn builds_receipt_eth_block_inputs() {
     let receipt_item = receipt_item();
     let receipts = vec![parse_rlp(&receipt_item).expect("receipt item should parse")];

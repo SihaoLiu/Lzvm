@@ -377,6 +377,10 @@ pub fn build_eth_block_input_with_receipts(
 
 pub fn encode_eth_block_input(value: &EthBlockInput) -> Result<Vec<u8>, EthBlockInputError> {
     validate_receipt_sections(value.receipts.is_some(), value.receipts_rlp.is_some())?;
+    validate_withdrawal_sections(
+        value.withdrawals_root.is_some(),
+        value.withdrawals.is_some(),
+    )?;
     let metadata = encode_metadata(value);
     let mut sections = vec![
         SectionedSection {
@@ -496,6 +500,10 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
         }
         None => None,
     };
+    validate_withdrawal_sections(
+        metadata.withdrawals_root.is_some(),
+        withdrawal_preimages.is_some(),
+    )?;
     let withdrawals = match (metadata.withdrawals_root, withdrawal_preimages) {
         (Some(root), Some(preimages)) => {
             let hash_preimages =
@@ -505,9 +513,8 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
                 hash_preimages,
             })
         }
-        (Some(_), None) => return Err(EthBlockInputError::UnexpectedWithdrawalsRoot),
-        (None, Some(_)) => return Err(EthBlockInputError::UnexpectedWithdrawalsRoot),
         (None, None) => None,
+        _ => unreachable!("withdrawal section pairing checked"),
     };
 
     Ok(EthBlockInput {
@@ -553,6 +560,16 @@ fn validate_receipt_sections(
     match (has_receipt_preimages, has_receipts_rlp) {
         (false, true) => Err(EthBlockInputError::MissingReceiptPreimages),
         (true, false) => Err(EthBlockInputError::MissingReceiptsRlp),
+        _ => Ok(()),
+    }
+}
+
+fn validate_withdrawal_sections(
+    has_withdrawals_root: bool,
+    has_withdrawal_preimages: bool,
+) -> Result<(), EthBlockInputError> {
+    match (has_withdrawals_root, has_withdrawal_preimages) {
+        (true, false) | (false, true) => Err(EthBlockInputError::UnexpectedWithdrawalsRoot),
         _ => Ok(()),
     }
 }
