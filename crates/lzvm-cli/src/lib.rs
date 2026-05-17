@@ -5,7 +5,8 @@ use lzvm_artifacts::challenge_values_segment::{
     encode_challenge_values_segment, ChallengeValuesSegment,
 };
 use lzvm_artifacts::eth_block_input::{
-    eth_block_input_bytes_digest, eth_block_input_transaction_kind_counts, parse_eth_block_input,
+    eth_block_input_bytes_digest, eth_block_input_receipt_kind_counts,
+    eth_block_input_transaction_kind_counts, parse_eth_block_input,
 };
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
@@ -677,6 +678,19 @@ fn verify_preflight(
                     .copied()
                     .unwrap_or(None),
             );
+            write_eth_receipt_kind_summary(
+                stdout,
+                report
+                    .eth_block_input_legacy_receipt_counts
+                    .get(index)
+                    .copied()
+                    .unwrap_or(None),
+                report
+                    .eth_block_input_typed_receipt_counts
+                    .get(index)
+                    .copied()
+                    .unwrap_or(None),
+            );
             write_eth_withdrawal_preimage_summary(
                 stdout,
                 report
@@ -896,6 +910,8 @@ struct EthBlockInputBinding {
     legacy_transaction_count: usize,
     typed_transaction_count: usize,
     receipt_preimage_count: Option<usize>,
+    legacy_receipt_count: Option<usize>,
+    typed_receipt_count: Option<usize>,
     withdrawal_preimage_count: Option<usize>,
 }
 
@@ -1010,6 +1026,19 @@ fn verify_setup_validation(
                         .copied()
                         .unwrap_or(None),
                 );
+                write_eth_receipt_kind_summary(
+                    stdout,
+                    public_report
+                        .eth_block_input_legacy_receipt_counts
+                        .get(index)
+                        .copied()
+                        .unwrap_or(None),
+                    public_report
+                        .eth_block_input_typed_receipt_counts
+                        .get(index)
+                        .copied()
+                        .unwrap_or(None),
+                );
                 write_eth_withdrawal_preimage_summary(
                     stdout,
                     public_report
@@ -1037,6 +1066,11 @@ fn verify_setup_validation(
             binding.typed_transaction_count,
         );
         write_eth_receipt_preimage_summary(stdout, binding.receipt_preimage_count);
+        write_eth_receipt_kind_summary(
+            stdout,
+            binding.legacy_receipt_count,
+            binding.typed_receipt_count,
+        );
         write_eth_withdrawal_preimage_summary(stdout, binding.withdrawal_preimage_count);
     }
     if program_image_cache_matched {
@@ -1083,6 +1117,8 @@ fn verify_eth_block_input_binding(
         .receipts
         .as_ref()
         .map(|receipts| receipts.hash_preimages.len());
+    let receipt_kind_counts = eth_block_input_receipt_kind_counts(&input)
+        .map_err(|error| format!("ETH block input receipt count failed: {error}"))?;
     let withdrawal_preimage_count = input
         .withdrawals
         .as_ref()
@@ -1106,6 +1142,8 @@ fn verify_eth_block_input_binding(
         legacy_transaction_count,
         typed_transaction_count,
         receipt_preimage_count,
+        legacy_receipt_count: receipt_kind_counts.map(|(legacy_count, _)| legacy_count),
+        typed_receipt_count: receipt_kind_counts.map(|(_, typed_count)| typed_count),
         withdrawal_preimage_count,
     })
 }
@@ -1141,6 +1179,17 @@ fn write_eth_receipt_preimage_summary(
         None => {
             let _ = writeln!(stdout, "eth_receipts=absent");
         }
+    }
+}
+
+fn write_eth_receipt_kind_summary(
+    stdout: &mut dyn Write,
+    legacy_receipt_count: Option<usize>,
+    typed_receipt_count: Option<usize>,
+) {
+    if let (Some(legacy_count), Some(typed_count)) = (legacy_receipt_count, typed_receipt_count) {
+        let _ = writeln!(stdout, "eth_legacy_receipts={legacy_count}");
+        let _ = writeln!(stdout, "eth_typed_receipts={typed_count}");
     }
 }
 

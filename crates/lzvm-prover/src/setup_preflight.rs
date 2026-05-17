@@ -64,6 +64,8 @@ pub struct SetupPreflightReport {
     pub eth_block_input_legacy_transaction_counts: Vec<usize>,
     pub eth_block_input_typed_transaction_counts: Vec<usize>,
     pub eth_block_input_receipt_preimage_counts: Vec<Option<usize>>,
+    pub eth_block_input_legacy_receipt_counts: Vec<Option<usize>>,
+    pub eth_block_input_typed_receipt_counts: Vec<Option<usize>>,
     pub eth_block_input_withdrawal_preimage_counts: Vec<Option<usize>>,
 }
 
@@ -221,6 +223,8 @@ pub fn validate_setup_preflight_hashes(
         eth_block_input_legacy_transaction_counts,
         eth_block_input_typed_transaction_counts,
         eth_block_input_receipt_preimage_counts,
+        eth_block_input_legacy_receipt_counts,
+        eth_block_input_typed_receipt_counts,
         eth_block_input_withdrawal_preimage_counts,
     } = validate_proof_public_values(proof, public_values).map_err(SetupPreflightError::Proof)?;
 
@@ -239,6 +243,8 @@ pub fn validate_setup_preflight_hashes(
         eth_block_input_legacy_transaction_counts,
         eth_block_input_typed_transaction_counts,
         eth_block_input_receipt_preimage_counts,
+        eth_block_input_legacy_receipt_counts,
+        eth_block_input_typed_receipt_counts,
         eth_block_input_withdrawal_preimage_counts,
     })
 }

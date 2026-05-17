@@ -174,6 +174,8 @@ fn validates_proof_public_value_preflight_hashes() {
             eth_block_input_legacy_transaction_counts: Vec::new(),
             eth_block_input_typed_transaction_counts: Vec::new(),
             eth_block_input_receipt_preimage_counts: Vec::new(),
+            eth_block_input_legacy_receipt_counts: Vec::new(),
+            eth_block_input_typed_receipt_counts: Vec::new(),
             eth_block_input_withdrawal_preimage_counts: Vec::new(),
         }
     );
@@ -276,6 +278,8 @@ fn counts_eth_block_input_segments() {
     assert_eq!(report.eth_block_input_legacy_transaction_counts, vec![1]);
     assert_eq!(report.eth_block_input_typed_transaction_counts, vec![0]);
     assert_eq!(report.eth_block_input_receipt_preimage_counts, vec![None]);
+    assert_eq!(report.eth_block_input_legacy_receipt_counts, vec![None]);
+    assert_eq!(report.eth_block_input_typed_receipt_counts, vec![None]);
     assert_eq!(
         report.eth_block_input_withdrawal_preimage_counts,
         vec![None]

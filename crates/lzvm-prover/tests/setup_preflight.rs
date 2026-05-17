@@ -108,6 +108,8 @@ fn validates_setup_preflight_hashes() {
             eth_block_input_legacy_transaction_counts: Vec::new(),
             eth_block_input_typed_transaction_counts: Vec::new(),
             eth_block_input_receipt_preimage_counts: Vec::new(),
+            eth_block_input_legacy_receipt_counts: Vec::new(),
+            eth_block_input_typed_receipt_counts: Vec::new(),
             eth_block_input_withdrawal_preimage_counts: Vec::new(),
         }
     );
