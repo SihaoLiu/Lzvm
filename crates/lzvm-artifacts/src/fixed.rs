@@ -10,6 +10,9 @@ use crate::sectioned::{
 use crate::setup_info::UnitSetupInfo;
 
 const FIELD_WORD_BYTES: u64 = 8;
+const FIELD_WORD_BYTES_USIZE: usize = 8;
+const U32_BYTES: usize = 4;
+const STRING_MIN_BYTES: usize = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FixedColumns {
@@ -387,7 +390,7 @@ pub fn encode_raw_fixed_columns(
             let offset = row_byte_offset(row as u64, layout.column_count, spec.index)?;
             let offset = usize::try_from(offset).map_err(|_| FixedColumnError::LengthOverflow)?;
             let end = offset
-                .checked_add(FIELD_WORD_BYTES as usize)
+                .checked_add(FIELD_WORD_BYTES_USIZE)
                 .ok_or(FixedColumnError::LengthOverflow)?;
             bytes[offset..end].copy_from_slice(&value.to_le_bytes());
         }
@@ -476,9 +479,9 @@ pub fn parse_raw_fixed_columns(
                 .and_then(|offset| offset.checked_add(index))
                 .ok_or(FixedColumnError::LengthOverflow)?;
             let byte_index = word_index
-                .checked_mul(FIELD_WORD_BYTES as usize)
+                .checked_mul(FIELD_WORD_BYTES_USIZE)
                 .ok_or(FixedColumnError::LengthOverflow)?;
-            let word = &bytes[byte_index..byte_index + FIELD_WORD_BYTES as usize];
+            let word = &bytes[byte_index..byte_index + FIELD_WORD_BYTES_USIZE];
             values.push(u64::from_le_bytes(
                 word.try_into().expect("slice length checked"),
             ));
@@ -553,7 +556,7 @@ pub fn read_raw_fixed_row(
     let width =
         usize::try_from(layout.column_count).map_err(|_| FixedColumnError::LengthOverflow)?;
     let byte_count = width
-        .checked_mul(FIELD_WORD_BYTES as usize)
+        .checked_mul(FIELD_WORD_BYTES_USIZE)
         .ok_or(FixedColumnError::LengthOverflow)?;
     let offset = row_byte_offset(row, layout.column_count, 0)?;
     file.seek(SeekFrom::Start(offset))
@@ -567,7 +570,7 @@ pub fn read_raw_fixed_row(
         })?;
 
     let mut values = Vec::with_capacity(width);
-    for chunk in bytes.chunks_exact(FIELD_WORD_BYTES as usize) {
+    for chunk in bytes.chunks_exact(FIELD_WORD_BYTES_USIZE) {
         values.push(u64::from_le_bytes(
             chunk.try_into().expect("slice length checked"),
         ));
@@ -591,7 +594,7 @@ pub fn read_raw_fixed_column(
     let row_count =
         usize::try_from(layout.row_count).map_err(|_| FixedColumnError::LengthOverflow)?;
     let mut values = Vec::with_capacity(row_count);
-    let mut bytes = [0_u8; FIELD_WORD_BYTES as usize];
+    let mut bytes = [0_u8; FIELD_WORD_BYTES_USIZE];
     for row in 0..layout.row_count {
         let offset = row_byte_offset(row, layout.column_count, column_index)?;
         file.seek(SeekFrom::Start(offset))
@@ -613,14 +616,26 @@ fn parse_fixed_columns_section(bytes: &[u8]) -> Result<FixedColumns, FixedColumn
     let group_name = reader.read_string()?;
     let unit_name = reader.read_string()?;
     let row_count = reader.read_u64()?;
-    let column_count = reader.read_u32()?;
     let rows = usize::try_from(row_count).map_err(|_| FixedColumnError::LengthOverflow)?;
-    let mut columns = Vec::with_capacity(column_count as usize);
+    let column_count = u32_to_usize(reader.read_u32()?)?;
+    if column_count > 0 {
+        let row_value_bytes = rows
+            .checked_mul(FIELD_WORD_BYTES_USIZE)
+            .ok_or(FixedColumnError::LengthOverflow)?;
+        let column_min_bytes = STRING_MIN_BYTES
+            .checked_add(U32_BYTES)
+            .and_then(|value| value.checked_add(row_value_bytes))
+            .ok_or(FixedColumnError::LengthOverflow)?;
+        if column_count > reader.remaining_len() / column_min_bytes {
+            return Err(FixedColumnError::LengthOverflow);
+        }
+    }
+    let mut columns = Vec::with_capacity(column_count);
 
     for _ in 0..column_count {
         let name = reader.read_string()?;
-        let dimension_count = reader.read_u32()?;
-        let mut dimensions = Vec::with_capacity(dimension_count as usize);
+        let dimension_count = read_bounded_count(&mut reader, U32_BYTES)?;
+        let mut dimensions = Vec::with_capacity(dimension_count);
         for _ in 0..dimension_count {
             dimensions.push(reader.read_u32()?);
         }
@@ -754,6 +769,21 @@ fn write_string(out: &mut Vec<u8>, value: &str) -> Result<(), FixedColumnError> 
     Ok(())
 }
 
+fn read_bounded_count(
+    reader: &mut Reader<'_>,
+    record_min_bytes: usize,
+) -> Result<usize, FixedColumnError> {
+    let count = u32_to_usize(reader.read_u32()?)?;
+    if count > reader.remaining_len() / record_min_bytes {
+        return Err(FixedColumnError::LengthOverflow);
+    }
+    Ok(count)
+}
+
+fn u32_to_usize(value: u32) -> Result<usize, FixedColumnError> {
+    usize::try_from(value).map_err(|_| FixedColumnError::LengthOverflow)
+}
+
 struct Reader<'a> {
     bytes: &'a [u8],
     offset: usize,
@@ -766,6 +796,10 @@ impl<'a> Reader<'a> {
 
     fn position(&self) -> usize {
         self.offset
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], FixedColumnError> {

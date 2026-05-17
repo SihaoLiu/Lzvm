@@ -54,6 +54,26 @@ fn sample_file() -> Vec<u8> {
     file
 }
 
+fn fixed_columns_file(section: Vec<u8>) -> Vec<u8> {
+    let mut file = Vec::new();
+    file.extend_from_slice(b"cnst");
+    push_u32(&mut file, 1);
+    push_u32(&mut file, 1);
+    push_u32(&mut file, 1);
+    push_u64(&mut file, section.len() as u64);
+    file.extend_from_slice(&section);
+    file
+}
+
+fn fixed_columns_prefix(row_count: u64, column_count: u32) -> Vec<u8> {
+    let mut section = Vec::new();
+    push_string(&mut section, "");
+    push_string(&mut section, "");
+    push_u64(&mut section, row_count);
+    push_u32(&mut section, column_count);
+    section
+}
+
 fn sample_raw_file() -> Vec<u8> {
     let mut bytes = Vec::new();
     for (left, right) in [(1_u64, 10_u64), (2, 20), (3, 30), (4, 40)] {
@@ -341,4 +361,40 @@ fn reads_raw_fixed_columns_from_a_file_path_with_setup() {
 
     assert_eq!(parsed.row_count, 4);
     assert_eq!(parsed.columns[0].values, [1, 2, 3, 4]);
+}
+
+#[test]
+fn rejects_column_count_that_exceeds_remaining_column_records() {
+    let bytes = fixed_columns_file(fixed_columns_prefix(0, 1));
+
+    assert!(matches!(
+        parse_fixed_columns(&bytes),
+        Err(FixedColumnError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_dimension_count_that_exceeds_remaining_dimensions() {
+    let mut section = fixed_columns_prefix(0, 1);
+    push_string(&mut section, "");
+    push_u32(&mut section, 1);
+    let bytes = fixed_columns_file(section);
+
+    assert!(matches!(
+        parse_fixed_columns(&bytes),
+        Err(FixedColumnError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_column_count_that_exceeds_remaining_column_values() {
+    let mut section = fixed_columns_prefix(1, 1);
+    push_string(&mut section, "");
+    push_u32(&mut section, 0);
+    let bytes = fixed_columns_file(section);
+
+    assert!(matches!(
+        parse_fixed_columns(&bytes),
+        Err(FixedColumnError::LengthOverflow)
+    ));
 }
