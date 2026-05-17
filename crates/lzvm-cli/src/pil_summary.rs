@@ -78,6 +78,8 @@ fn parse_args(args: &[&str]) -> Result<ParsedArgs, ParseError> {
 
 pub(crate) fn write_summary(stdout: &mut dyn Write, program: &SourceProgram) {
     let mut includes = 0;
+    let mut fixed_file_pragmas = 0;
+    let mut air_template_fixed_file_pragmas = 0;
     let mut uses = 0;
     let mut containers = 0;
     let mut functions = 0;
@@ -91,6 +93,8 @@ pub(crate) fn write_summary(stdout: &mut dyn Write, program: &SourceProgram) {
     let mut public_tables = 0;
 
     for module in &program.modules {
+        fixed_file_pragmas += module.fixed_file_pragmas.len();
+        air_template_fixed_file_pragmas += module.air_template_fixed_file_pragmas.len();
         includes += module.includes.len();
         uses += module.uses.len();
         containers += module.containers.len();
@@ -109,6 +113,12 @@ pub(crate) fn write_summary(stdout: &mut dyn Write, program: &SourceProgram) {
     let _ = writeln!(stdout, "sources={}", program.graph.sources.len());
     let _ = writeln!(stdout, "edges={}", program.graph.edges.len());
     let _ = writeln!(stdout, "modules={}", program.modules.len());
+    let _ = writeln!(stdout, "fixed_file_pragmas={fixed_file_pragmas}");
+    let _ = writeln!(
+        stdout,
+        "air_template_fixed_file_pragmas={air_template_fixed_file_pragmas}"
+    );
+    let _ = writeln!(stdout, "air_units={}", program.air_units().len());
     let _ = writeln!(stdout, "includes={includes}");
     let _ = writeln!(stdout, "uses={uses}");
     let _ = writeln!(stdout, "containers={containers}");
