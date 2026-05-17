@@ -41,6 +41,7 @@ pub struct ProofPreflightReport {
     pub eth_block_input_receipt_roots: Vec<[u8; 32]>,
     pub eth_block_input_logs_blooms: Vec<[u8; 256]>,
     pub eth_block_input_difficulties: Vec<[u8; 32]>,
+    pub eth_block_input_block_numbers: Vec<u64>,
     pub eth_block_input_transaction_preimage_counts: Vec<usize>,
     pub eth_block_input_legacy_transaction_counts: Vec<usize>,
     pub eth_block_input_typed_transaction_counts: Vec<usize>,
@@ -212,6 +213,7 @@ pub fn validate_proof_public_values(
     let mut eth_block_input_receipt_roots = Vec::new();
     let mut eth_block_input_logs_blooms = Vec::new();
     let mut eth_block_input_difficulties = Vec::new();
+    let mut eth_block_input_block_numbers = Vec::new();
     if eth_block_input_count == 0 && contains_eth_block_public_values(public_values) {
         return Err(ProofPreflightError::MissingEthBlockInput);
     }
@@ -229,6 +231,7 @@ pub fn validate_proof_public_values(
         eth_block_input_receipt_roots.push(input.receipts_root);
         eth_block_input_logs_blooms.push(input.logs_bloom);
         eth_block_input_difficulties.push(input.difficulty);
+        eth_block_input_block_numbers.push(input.block_number);
         let (legacy_transaction_count, typed_transaction_count) =
             eth_block_input_transaction_kind_counts(&input)
                 .map_err(ProofPreflightError::EthBlockInput)?;
@@ -276,6 +279,7 @@ pub fn validate_proof_public_values(
         eth_block_input_receipt_roots,
         eth_block_input_logs_blooms,
         eth_block_input_difficulties,
+        eth_block_input_block_numbers,
         eth_block_input_transaction_preimage_counts,
         eth_block_input_legacy_transaction_counts,
         eth_block_input_typed_transaction_counts,

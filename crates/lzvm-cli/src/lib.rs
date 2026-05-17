@@ -680,6 +680,9 @@ fn verify_preflight(
             if let Some(difficulty) = report.eth_block_input_difficulties.get(index) {
                 let _ = writeln!(stdout, "eth_difficulty={}", format_u256(difficulty));
             }
+            if let Some(block_number) = report.eth_block_input_block_numbers.get(index) {
+                let _ = writeln!(stdout, "eth_block_number={block_number}");
+            }
             write_eth_transaction_preimage_summary(
                 stdout,
                 report
@@ -957,6 +960,7 @@ struct EthBlockInputBinding {
     receipts_root: [u8; 32],
     logs_bloom: [u8; 256],
     difficulty: [u8; 32],
+    block_number: u64,
     transaction_preimage_count: usize,
     legacy_transaction_count: usize,
     typed_transaction_count: usize,
@@ -1079,6 +1083,9 @@ fn verify_setup_validation(
                 if let Some(difficulty) = public_report.eth_block_input_difficulties.get(index) {
                     let _ = writeln!(stdout, "eth_difficulty={}", format_u256(difficulty));
                 }
+                if let Some(block_number) = public_report.eth_block_input_block_numbers.get(index) {
+                    let _ = writeln!(stdout, "eth_block_number={block_number}");
+                }
                 write_eth_transaction_preimage_summary(
                     stdout,
                     public_report
@@ -1185,6 +1192,7 @@ fn verify_setup_validation(
             "eth_difficulty={}",
             format_u256(&binding.difficulty)
         );
+        let _ = writeln!(stdout, "eth_block_number={}", binding.block_number);
         write_eth_transaction_preimage_summary(stdout, binding.transaction_preimage_count);
         write_eth_transaction_count_summary(
             stdout,
@@ -1285,6 +1293,7 @@ fn verify_eth_block_input_binding(
         receipts_root: input.receipts_root,
         logs_bloom: input.logs_bloom,
         difficulty: input.difficulty,
+        block_number: input.block_number,
         transaction_preimage_count,
         legacy_transaction_count,
         typed_transaction_count,

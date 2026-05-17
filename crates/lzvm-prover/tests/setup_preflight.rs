@@ -110,6 +110,7 @@ fn validates_setup_preflight_hashes() {
             eth_block_input_receipt_roots: Vec::new(),
             eth_block_input_logs_blooms: Vec::new(),
             eth_block_input_difficulties: Vec::new(),
+            eth_block_input_block_numbers: Vec::new(),
             eth_block_input_transaction_preimage_counts: Vec::new(),
             eth_block_input_legacy_transaction_counts: Vec::new(),
             eth_block_input_typed_transaction_counts: Vec::new(),
