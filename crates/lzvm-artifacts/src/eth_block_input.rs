@@ -73,6 +73,8 @@ pub enum EthBlockInputError {
     MissingMetadata,
     MissingBlockRlp,
     MissingTransactionPreimages,
+    MissingReceiptPreimages,
+    MissingReceiptsRlp,
     ExpectedReceiptsList,
     DuplicateSection {
         id: u32,
@@ -159,6 +161,8 @@ impl fmt::Display for EthBlockInputError {
             Self::MissingTransactionPreimages => {
                 write!(f, "missing ETH block input transaction preimages")
             }
+            Self::MissingReceiptPreimages => write!(f, "missing ETH block input receipt preimages"),
+            Self::MissingReceiptsRlp => write!(f, "missing ETH block input receipts RLP"),
             Self::ExpectedReceiptsList => write!(f, "expected ETH receipts list"),
             Self::DuplicateSection { id } => write!(f, "duplicate ETH block input section: {id}"),
             Self::InvalidMetadataLength {
@@ -449,6 +453,11 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
         transaction_preimages.ok_or(EthBlockInputError::MissingTransactionPreimages)?;
     let metadata = parse_metadata(&metadata)?;
     let validated_input = validate_metadata(&metadata, &block_rlp)?;
+    match (&receipt_preimages, &receipts_rlp) {
+        (None, Some(_)) => return Err(EthBlockInputError::MissingReceiptPreimages),
+        (Some(_), None) => return Err(EthBlockInputError::MissingReceiptsRlp),
+        _ => {}
+    }
     let transaction_hash_preimages = parse_validated_preimages(
         EthBlockInputTrie::Transactions,
         metadata.transactions_root,

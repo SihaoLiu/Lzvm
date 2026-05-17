@@ -103,6 +103,58 @@ fn builds_receipt_eth_block_inputs() {
 }
 
 #[test]
+fn rejects_receipts_rlp_without_receipt_preimages() {
+    let receipt_item = receipt_item();
+    let receipts = vec![parse_rlp(&receipt_item).expect("receipt item should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    let transaction_items = vec![rlp_list(&[rlp_bytes(&[1])])];
+    let block_rlp = sample_block_rlp_with_transactions_and_receipts(
+        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
+        receipt_build.root,
+        transaction_items,
+    );
+    let receipts_rlp = rlp_list(&[receipt_item]);
+    let input = build_eth_block_input_with_receipts(&block_rlp, &receipts_rlp)
+        .expect("block input should build with receipts");
+    let encoded = encode_eth_block_input(&input).expect("block input should encode");
+    let mut file = parse_sectioned_file(&encoded, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION)
+        .expect("sectioned input should parse");
+    file.sections
+        .retain(|section| section.id != RECEIPT_PREIMAGES_SECTION_ID);
+    let encoded = encode_sectioned_file(&file).expect("sectioned input should encode");
+
+    let error = parse_eth_block_input(&encoded).expect_err("block input should reject receipts");
+
+    assert!(matches!(error, EthBlockInputError::MissingReceiptPreimages));
+}
+
+#[test]
+fn rejects_receipt_preimages_without_receipts_rlp() {
+    let receipt_item = receipt_item();
+    let receipts = vec![parse_rlp(&receipt_item).expect("receipt item should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    let transaction_items = vec![rlp_list(&[rlp_bytes(&[1])])];
+    let block_rlp = sample_block_rlp_with_transactions_and_receipts(
+        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
+        receipt_build.root,
+        transaction_items,
+    );
+    let receipts_rlp = rlp_list(&[receipt_item]);
+    let input = build_eth_block_input_with_receipts(&block_rlp, &receipts_rlp)
+        .expect("block input should build with receipts");
+    let encoded = encode_eth_block_input(&input).expect("block input should encode");
+    let mut file = parse_sectioned_file(&encoded, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION)
+        .expect("sectioned input should parse");
+    file.sections
+        .retain(|section| section.id != RECEIPTS_RLP_SECTION_ID);
+    let encoded = encode_sectioned_file(&file).expect("sectioned input should encode");
+
+    let error = parse_eth_block_input(&encoded).expect_err("block input should reject receipts");
+
+    assert!(matches!(error, EthBlockInputError::MissingReceiptsRlp));
+}
+
+#[test]
 fn rejects_malformed_receipt_bodies() {
     let receipt_item = rlp_list(&[
         rlp_bytes(&[1]),
