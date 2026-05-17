@@ -6,7 +6,9 @@ use lzvm_artifacts::eth_block_public_values::{
     public_values_from_eth_block_input, validate_eth_block_public_values,
 };
 use lzvm_artifacts::key_directory::{key_directory_catalog_digest, KeyDirectoryCatalog};
-use lzvm_artifacts::public_values::{encode_public_values, read_public_values_file, PublicValues};
+use lzvm_artifacts::public_values::{
+    encode_public_values, public_values_digest, read_public_values_file, PublicValues,
+};
 use lzvm_artifacts::trace_bundle::{read_trace_bundle_file, TraceBundle};
 use lzvm_prover::{
     derive_prove_execution_plan_with_program_image_cache, ProveExecutionInputArtifacts,
@@ -153,6 +155,11 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             .unwrap_or_else(|| "none".to_owned())
     );
     if let Some(summary) = &public_inputs_summary {
+        let _ = writeln!(
+            stdout,
+            "public_inputs_hash={}",
+            format_hash(&summary.digest)
+        );
         let _ = writeln!(stdout, "public_input_values={}", summary.value_count);
         let _ = writeln!(stdout, "public_input_fields={}", summary.field_count);
     }
@@ -182,6 +189,7 @@ struct PreparedPublicInputs {
 }
 
 struct PublicInputSummary {
+    digest: [u8; 32],
     value_count: usize,
     field_count: usize,
 }
@@ -192,7 +200,10 @@ fn summarize_public_inputs(path: Option<&Path>) -> Result<Option<PublicInputSumm
     };
     let public_values = read_public_values_file(path)
         .map_err(|error| format!("read public inputs failed: {}: {error}", path.display()))?;
+    let digest = public_values_digest(&public_values)
+        .map_err(|error| format!("digest public inputs failed: {}: {error}", path.display()))?;
     Ok(Some(PublicInputSummary {
+        digest,
         value_count: public_values.values.len(),
         field_count: public_values_field_count(&public_values),
     }))
