@@ -104,6 +104,7 @@ fn validates_setup_preflight_hashes() {
             program_image_cache_hashes: Vec::new(),
             eth_block_input_count: 0,
             eth_block_input_hashes: Vec::new(),
+            eth_block_input_block_hashes: Vec::new(),
             eth_block_input_ommers_hashes: Vec::new(),
             eth_block_input_beneficiaries: Vec::new(),
             eth_block_input_state_roots: Vec::new(),
