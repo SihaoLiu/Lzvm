@@ -18,6 +18,7 @@ use lzvm_setup::{
     SetupDirectorySummaryReport,
 };
 
+mod eth_block_input;
 mod eth_block_summary;
 mod pil_archive;
 mod pil_archive_summary;
@@ -35,6 +36,7 @@ pub use prove_witness::{build_witness_proof_artifact, build_witness_proof_core_a
 pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
         ["eth", "block-summary", rest @ ..] => eth_block_summary::run(rest, stdout, stderr),
+        ["eth", "write-block-input", rest @ ..] => eth_block_input::run(rest, stdout, stderr),
         ["pil", "archive", rest @ ..] => pil_archive::run(rest, stdout, stderr),
         ["pil", "archive-summary", rest @ ..] => pil_archive_summary::run(rest, stdout, stderr),
         ["pil", "fixed-file-manifest", rest @ ..] => {
