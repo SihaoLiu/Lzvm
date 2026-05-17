@@ -518,6 +518,27 @@ fn rejects_encoding_transaction_preimage_hash_mismatches() {
 }
 
 #[test]
+fn rejects_encoding_extra_transaction_preimages() {
+    let block_rlp = sample_block_rlp_with_transactions(
+        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
+        vec![rlp_list(&[rlp_bytes(&[1])])],
+    );
+    let mut input = build_eth_block_input(&block_rlp).expect("block input should build");
+    input.transactions.hash_preimages.push(TrieHashPreimage {
+        hash: empty_trie_root(),
+        rlp: vec![0x80],
+    });
+
+    let error =
+        encode_eth_block_input(&input).expect_err("block input should reject trie preimages");
+
+    assert_eq!(
+        error.to_string(),
+        "ETH block input transactions trie preimages mismatch"
+    );
+}
+
+#[test]
 fn rejects_encoding_transaction_trie_root_mismatches() {
     let block_rlp = sample_block_rlp_with_transactions(
         hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
@@ -672,6 +693,37 @@ fn rejects_missing_transaction_root_preimages() {
             trie: EthBlockInputTrie::Transactions,
         }
     ));
+}
+
+#[test]
+fn rejects_extra_transaction_preimages() {
+    let block_rlp = sample_block_rlp_with_transactions(
+        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
+        vec![rlp_list(&[rlp_bytes(&[1])])],
+    );
+    let input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let encoded = encode_eth_block_input(&input).expect("block input should encode");
+    let mut file = parse_sectioned_file(&encoded, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION)
+        .expect("sectioned input should parse");
+    let transaction_preimages = file
+        .sections
+        .iter_mut()
+        .find(|section| section.id == TRANSACTION_PREIMAGES_SECTION_ID)
+        .expect("transaction preimage section should exist");
+    let mut preimages = input.transactions.hash_preimages.clone();
+    preimages.push(TrieHashPreimage {
+        hash: empty_trie_root(),
+        rlp: vec![0x80],
+    });
+    transaction_preimages.data = encode_hash_preimages(&preimages);
+    let encoded = encode_sectioned_file(&file).expect("sectioned input should encode");
+
+    let error = parse_eth_block_input(&encoded).expect_err("block input should fail");
+
+    assert_eq!(
+        error.to_string(),
+        "ETH block input transactions trie preimages mismatch"
+    );
 }
 
 #[test]

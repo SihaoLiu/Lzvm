@@ -130,6 +130,9 @@ pub enum EthBlockInputError {
         trie: EthBlockInputTrie,
         index: usize,
     },
+    TriePreimagesMismatch {
+        trie: EthBlockInputTrie,
+    },
     MissingRootPreimage {
         trie: EthBlockInputTrie,
     },
@@ -225,6 +228,9 @@ impl fmt::Display for EthBlockInputError {
             Self::InvalidPreimageSection => write!(f, "invalid ETH trie preimage section"),
             Self::PreimageHashMismatch { trie, index } => {
                 write!(f, "ETH block input {trie} preimage hash mismatch at {index}")
+            }
+            Self::TriePreimagesMismatch { trie } => {
+                write!(f, "ETH block input {trie} trie preimages mismatch")
             }
             Self::MissingRootPreimage { trie } => {
                 write!(f, "ETH block input {trie} root preimage missing")
@@ -381,12 +387,17 @@ pub fn encode_eth_block_input(value: &EthBlockInput) -> Result<Vec<u8>, EthBlock
         value.withdrawals_root.is_some(),
         value.withdrawals.is_some(),
     )?;
-    validate_input_metadata(value)?;
+    let validated_input = validate_input_metadata(value)?;
     validate_trie_roots(value)?;
     validate_preimages(
         EthBlockInputTrie::Transactions,
         value.transactions_root,
         &value.transactions.hash_preimages,
+    )?;
+    validate_canonical_preimages(
+        EthBlockInputTrie::Transactions,
+        &value.transactions.hash_preimages,
+        &validated_input.transactions.hash_preimages,
     )?;
     if let (Some(root), Some(withdrawals)) = (value.withdrawals_root, &value.withdrawals) {
         validate_preimages(
@@ -484,6 +495,11 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
         EthBlockInputTrie::Transactions,
         metadata.transactions_root,
         &transaction_preimages,
+    )?;
+    validate_canonical_preimages(
+        EthBlockInputTrie::Transactions,
+        &transaction_hash_preimages,
+        &validated_input.transactions.hash_preimages,
     )?;
     let transactions = IndexedTrieBuild {
         root: metadata.transactions_root,
@@ -697,7 +713,7 @@ fn encode_metadata(value: &EthBlockInput) -> Vec<u8> {
     out
 }
 
-fn validate_input_metadata(value: &EthBlockInput) -> Result<(), EthBlockInputError> {
+fn validate_input_metadata(value: &EthBlockInput) -> Result<EthBlockInput, EthBlockInputError> {
     let metadata = Metadata {
         block_hash: value.block_hash,
         parent_hash: value.parent_hash,
@@ -718,8 +734,7 @@ fn validate_input_metadata(value: &EthBlockInput) -> Result<(), EthBlockInputErr
         transactions_root: value.transactions_root,
         withdrawals_root: value.withdrawals_root,
     };
-    validate_metadata(&metadata, &value.block_rlp)?;
-    Ok(())
+    validate_metadata(&metadata, &value.block_rlp)
 }
 
 fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
@@ -903,6 +918,18 @@ fn parse_validated_preimages(
     let preimages = parse_preimages(bytes)?;
     validate_preimages(trie, root, &preimages)?;
     Ok(preimages)
+}
+
+fn validate_canonical_preimages(
+    trie: EthBlockInputTrie,
+    found: &[TrieHashPreimage],
+    expected: &[TrieHashPreimage],
+) -> Result<(), EthBlockInputError> {
+    if found == expected {
+        Ok(())
+    } else {
+        Err(EthBlockInputError::TriePreimagesMismatch { trie })
+    }
 }
 
 fn validate_preimages(
