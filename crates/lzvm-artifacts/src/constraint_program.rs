@@ -185,6 +185,15 @@ pub fn encode_global_constraint_program(
 fn find_section(bytes: &[u8], section_id: u32) -> Result<Vec<u8>, ConstraintProgramError> {
     let file =
         parse_sectioned_file(bytes, *b"chps", 1).map_err(ConstraintProgramError::Sectioned)?;
+    if file.version != 1 {
+        return Err(ConstraintProgramError::Sectioned(
+            SectionedError::UnsupportedVersion {
+                found: file.version,
+                max: 1,
+            },
+        ));
+    }
+
     file.sections
         .into_iter()
         .find(|section| section.id == section_id)

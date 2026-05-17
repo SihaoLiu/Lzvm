@@ -116,6 +116,15 @@ pub fn read_expression_program_file(
 pub fn parse_expression_program(bytes: &[u8]) -> Result<ExpressionProgram, ExpressionProgramError> {
     let file =
         parse_sectioned_file(bytes, *b"chps", 1).map_err(ExpressionProgramError::Sectioned)?;
+    if file.version != 1 {
+        return Err(ExpressionProgramError::Sectioned(
+            SectionedError::UnsupportedVersion {
+                found: file.version,
+                max: 1,
+            },
+        ));
+    }
+
     let section = file
         .sections
         .iter()

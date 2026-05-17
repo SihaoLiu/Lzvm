@@ -351,6 +351,15 @@ fn parse_hint_program(
     kind: HintSectionKind,
 ) -> Result<HintProgram, HintProgramError> {
     let file = parse_sectioned_file(bytes, *b"chps", 1).map_err(HintProgramError::Sectioned)?;
+    if file.version != 1 {
+        return Err(HintProgramError::Sectioned(
+            SectionedError::UnsupportedVersion {
+                found: file.version,
+                max: 1,
+            },
+        ));
+    }
+
     let section = file
         .sections
         .iter()

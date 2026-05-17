@@ -2,7 +2,9 @@ use lzvm_artifacts::expression_program::{
     encode_expression_program, parse_expression_program, read_expression_program_file,
     ExpressionEntry, ExpressionProgram, ExpressionProgramError,
 };
-use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedSection};
+use lzvm_artifacts::sectioned::{
+    encode_sectioned_file, SectionedError, SectionedFile, SectionedSection,
+};
 use std::fs;
 use std::path::PathBuf;
 
@@ -132,6 +134,19 @@ fn parses_expression_program_sections() {
     let parsed = parse_expression_program(&encoded).expect("fixture should parse");
 
     assert_eq!(parsed, sample_program());
+}
+
+#[test]
+fn rejects_unsupported_expression_program_versions() {
+    let mut encoded = encode_expression_program(&sample_program()).expect("fixture should encode");
+    encoded[4..8].copy_from_slice(&0_u32.to_le_bytes());
+
+    assert!(matches!(
+        parse_expression_program(&encoded),
+        Err(ExpressionProgramError::Sectioned(
+            SectionedError::UnsupportedVersion { found: 0, max: 1 }
+        ))
+    ));
 }
 
 #[test]

@@ -9,7 +9,9 @@ use lzvm_artifacts::hint_program::{
     regular_hint_program_from_expression_info, Hint, HintField, HintOperand, HintProgram,
     HintProgramError, HintValue,
 };
-use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedSection};
+use lzvm_artifacts::sectioned::{
+    encode_sectioned_file, SectionedError, SectionedFile, SectionedSection,
+};
 use std::fs;
 use std::path::PathBuf;
 
@@ -299,6 +301,20 @@ fn parses_regular_hint_sections() {
     let parsed = parse_regular_hint_program(&encoded).expect("fixture should parse");
 
     assert_eq!(parsed, sample_regular_hint_program());
+}
+
+#[test]
+fn rejects_unsupported_hint_program_versions() {
+    let mut encoded =
+        encode_regular_hint_program(&sample_regular_hint_program()).expect("fixture should encode");
+    encoded[4..8].copy_from_slice(&0_u32.to_le_bytes());
+
+    assert!(matches!(
+        parse_regular_hint_program(&encoded),
+        Err(HintProgramError::Sectioned(
+            SectionedError::UnsupportedVersion { found: 0, max: 1 }
+        ))
+    ));
 }
 
 #[test]
