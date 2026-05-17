@@ -26,6 +26,11 @@ use lzvm_artifacts::source_fixed_file_manifest::{
     encode_source_fixed_file_manifest, SourceFixedFileManifest, SourceFixedFileManifestEntry,
     SourceFixedFileManifestKind, SOURCE_FIXED_FILE_MANIFEST_FILE,
 };
+use lzvm_artifacts::source_program::{
+    encode_source_program_archive, SourceProgramArchive, SourceProgramArchiveEdge,
+    SourceProgramArchiveIncludeKind, SourceProgramArchiveIncludeVisibility,
+    SourceProgramArchiveSource, SOURCE_PROGRAM_ARCHIVE_FILE,
+};
 use lzvm_artifacts::verification_key::{encode_verification_key_binary, VerificationKeyRoot};
 use lzvm_artifacts::verifier_info::{encode_verifier_info, VerifierInfo};
 use std::fs;
@@ -398,6 +403,35 @@ fn write_source_fixed_file_manifest_fixture(path: &Path, manifest: &SourceFixedF
         path,
         encode_source_fixed_file_manifest(manifest)
             .expect("source fixed-file manifest should encode"),
+    );
+}
+
+fn sample_source_program_archive(contents: &str) -> SourceProgramArchive {
+    SourceProgramArchive {
+        sources: vec![
+            SourceProgramArchiveSource {
+                source_name: "main.pil".to_owned(),
+                contents: contents.to_owned(),
+            },
+            SourceProgramArchiveSource {
+                source_name: "shared.pil".to_owned(),
+                contents: "col fixed shared = [1, 2];".to_owned(),
+            },
+        ],
+        edges: vec![SourceProgramArchiveEdge {
+            from_index: 0,
+            to_index: 1,
+            request: "shared.pil".to_owned(),
+            kind: SourceProgramArchiveIncludeKind::Include,
+            visibility: SourceProgramArchiveIncludeVisibility::Public,
+        }],
+    }
+}
+
+fn write_source_program_archive_fixture(path: &Path, archive: &SourceProgramArchive) {
+    write_bytes(
+        path,
+        encode_source_program_archive(archive).expect("source program archive should encode"),
     );
 }
 
@@ -848,6 +882,28 @@ fn reads_key_directory_catalog_source_fixed_file_manifest_when_present() {
 }
 
 #[test]
+fn reads_key_directory_catalog_source_program_archive_when_present() {
+    let dir = temp_dir("catalog-source-program-archive");
+    let _ = fs::remove_dir_all(&dir);
+    write_catalog_global_files(&dir);
+    let layout = read_key_directory_layout(&dir).expect("layout should parse");
+    assert_eq!(
+        layout.source_program_archive,
+        dir.join(SOURCE_PROGRAM_ARCHIVE_FILE)
+    );
+    for unit in &layout.units {
+        write_catalog_unit_files(unit);
+    }
+    let expected = sample_source_program_archive("include \"shared.pil\";");
+    write_source_program_archive_fixture(&layout.source_program_archive, &expected);
+
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+
+    assert_eq!(catalog.source_program_archive, Some(expected));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn rejects_source_fixed_file_manifest_entries_with_wrong_groups() {
     let dir = temp_dir("catalog-bad-source-fixed-file-group");
     let _ = fs::remove_dir_all(&dir);
@@ -959,6 +1015,15 @@ fn hashes_key_directory_catalogs_deterministically() {
         Some(sample_source_fixed_file_manifest("changed.fixed"));
     assert_ne!(
         key_directory_catalog_digest(&changed_source_manifest)
+            .expect("changed digest should compute"),
+        digest
+    );
+
+    let mut changed_source_archive = catalog.clone();
+    changed_source_archive.source_program_archive =
+        Some(sample_source_program_archive("changed source"));
+    assert_ne!(
+        key_directory_catalog_digest(&changed_source_archive)
             .expect("changed digest should compute"),
         digest
     );

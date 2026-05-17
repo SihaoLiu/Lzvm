@@ -55,6 +55,7 @@ fn one_unit_layout(root: &Path) -> KeyDirectoryLayout {
             constraints_program: root.join("pilout.globalConstraints.bin"),
         },
         source_fixed_file_manifest: root.join("lzvm.source-fixed-file-manifest"),
+        source_program_archive: root.join("lzvm.source-program-archive"),
         units: vec![KeyUnitPaths {
             kind: KeyUnitKind::Basic,
             group_id: Some(0),

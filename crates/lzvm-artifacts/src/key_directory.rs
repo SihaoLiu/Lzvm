@@ -28,6 +28,10 @@ use crate::source_fixed_file_manifest::{
     encode_source_fixed_file_manifest, read_source_fixed_file_manifest_file,
     SourceFixedFileManifest, SourceFixedFileManifestError, SOURCE_FIXED_FILE_MANIFEST_FILE,
 };
+use crate::source_program::{
+    encode_source_program_archive, read_source_program_archive_file, SourceProgramArchive,
+    SourceProgramArchiveError, SOURCE_PROGRAM_ARCHIVE_FILE,
+};
 use crate::verification_key::{
     read_verification_key_binary_file, VerificationKeyError, VerificationKeyRoot,
 };
@@ -45,6 +49,7 @@ pub struct KeyDirectoryLayout {
     pub global_info: GlobalInfo,
     pub global_paths: GlobalKeyPaths,
     pub source_fixed_file_manifest: PathBuf,
+    pub source_program_archive: PathBuf,
     pub units: Vec<KeyUnitPaths>,
 }
 
@@ -54,6 +59,7 @@ pub struct KeyDirectoryCatalog {
     pub global_constraints: GlobalConstraintProgram,
     pub global_hints: HintProgram,
     pub source_fixed_file_manifest: Option<SourceFixedFileManifest>,
+    pub source_program_archive: Option<SourceProgramArchive>,
     pub units: Vec<KeyUnitCatalogEntry>,
 }
 
@@ -129,6 +135,7 @@ pub enum KeyDirectoryError {
     VerificationKey(VerificationKeyError),
     FixedColumns(FixedColumnError),
     SourceFixedFileManifest(SourceFixedFileManifestError),
+    SourceProgramArchive(SourceProgramArchiveError),
     SourceFixedFileManifestGroupMismatch {
         entry_index: usize,
         group_id: u64,
@@ -226,6 +233,9 @@ impl fmt::Display for KeyDirectoryError {
             Self::FixedColumns(error) => write!(f, "key-directory fixed-column error: {error}"),
             Self::SourceFixedFileManifest(error) => {
                 write!(f, "key-directory source fixed-file manifest error: {error}")
+            }
+            Self::SourceProgramArchive(error) => {
+                write!(f, "key-directory source program archive error: {error}")
             }
             Self::SourceFixedFileManifestGroupMismatch {
                 entry_index,
@@ -349,6 +359,12 @@ impl From<FixedColumnError> for KeyDirectoryError {
 impl From<SourceFixedFileManifestError> for KeyDirectoryError {
     fn from(error: SourceFixedFileManifestError) -> Self {
         Self::SourceFixedFileManifest(error)
+    }
+}
+
+impl From<SourceProgramArchiveError> for KeyDirectoryError {
+    fn from(error: SourceProgramArchiveError) -> Self {
+        Self::SourceProgramArchive(error)
     }
 }
 
@@ -485,6 +501,7 @@ pub fn read_key_directory_layout(
 
     Ok(KeyDirectoryLayout {
         source_fixed_file_manifest: root.join(SOURCE_FIXED_FILE_MANIFEST_FILE),
+        source_program_archive: root.join(SOURCE_PROGRAM_ARCHIVE_FILE),
         root,
         global_info,
         global_paths,
@@ -529,6 +546,8 @@ pub fn read_key_directory_catalog_from_layout(
     if let Some(manifest) = source_fixed_file_manifest.as_ref() {
         validate_source_fixed_file_manifest_layout(&layout.global_info, manifest)?;
     }
+    let source_program_archive =
+        read_source_program_archive_if_present(&layout.source_program_archive)?;
     let mut units = Vec::with_capacity(layout.units.len());
     for unit in &layout.units {
         units.push(read_key_unit_catalog_entry(unit)?);
@@ -539,6 +558,7 @@ pub fn read_key_directory_catalog_from_layout(
         global_constraints,
         global_hints,
         source_fixed_file_manifest,
+        source_program_archive,
         units,
     })
 }
@@ -563,6 +583,7 @@ pub fn key_directory_catalog_digest(
         &mut hasher,
         catalog.source_fixed_file_manifest.as_ref(),
     )?;
+    hash_optional_source_program_archive(&mut hasher, catalog.source_program_archive.as_ref())?;
     hash_u64(&mut hasher, catalog.units.len() as u64);
     for unit in &catalog.units {
         hash_u8(&mut hasher, key_unit_kind_tag(unit.paths.kind));
@@ -640,6 +661,17 @@ fn read_source_fixed_file_manifest_if_present(
     read_source_fixed_file_manifest_file(path)
         .map(Some)
         .map_err(KeyDirectoryError::SourceFixedFileManifest)
+}
+
+fn read_source_program_archive_if_present(
+    path: &Path,
+) -> Result<Option<SourceProgramArchive>, KeyDirectoryError> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+    read_source_program_archive_file(path)
+        .map(Some)
+        .map_err(KeyDirectoryError::SourceProgramArchive)
 }
 
 fn validate_source_fixed_file_manifest_layout(
@@ -1115,6 +1147,21 @@ fn hash_optional_source_fixed_file_manifest(
         Some(value) => {
             hash_bool(hasher, true);
             let bytes = encode_source_fixed_file_manifest(value)?;
+            hash_bytes(hasher, &bytes);
+        }
+        None => hash_bool(hasher, false),
+    }
+    Ok(())
+}
+
+fn hash_optional_source_program_archive(
+    hasher: &mut Sha256,
+    value: Option<&SourceProgramArchive>,
+) -> Result<(), KeyDirectoryError> {
+    match value {
+        Some(value) => {
+            hash_bool(hasher, true);
+            let bytes = encode_source_program_archive(value)?;
             hash_bytes(hasher, &bytes);
         }
         None => hash_bool(hasher, false),

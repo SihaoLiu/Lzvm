@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 const SOURCE_PROGRAM_ARCHIVE_MAGIC: [u8; 4] = *b"spg0";
 const SOURCE_PROGRAM_ARCHIVE_VERSION: u32 = 1;
 
+pub const SOURCE_PROGRAM_ARCHIVE_FILE: &str = "lzvm.source-program-archive";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceProgramArchiveIncludeKind {
     Include = 0,
