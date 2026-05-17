@@ -464,6 +464,8 @@ mod tests {
         assert_eq!(summary.block_number, 2);
         assert_eq!(summary.timestamp, 101);
         assert_eq!(summary.transaction_preimage_count, 1);
+        assert_eq!(summary.legacy_transaction_count, 1);
+        assert_eq!(summary.typed_transaction_count, 0);
         assert_eq!(summary.withdrawal_preimage_count, None);
         fs::remove_dir_all(&dir).expect("temp dir should be removed");
     }
