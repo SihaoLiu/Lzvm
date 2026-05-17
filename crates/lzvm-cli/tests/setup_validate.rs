@@ -2483,6 +2483,60 @@ fn prints_prove_inputs_for_setup_directory() {
 }
 
 #[test]
+fn prints_prove_inputs_for_internal_contribution_pass() {
+    let dir = temp_dir("prove-inputs-internal");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let expected = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let material_bytes = pcs_material_byte_count(&catalog);
+    let output_dir = dir.join("proof-out");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let witness_library_bytes = sample_witness_library();
+    let witness_library_info =
+        parse_witness_library(&witness_library_bytes).expect("witness library should parse");
+    write_bytes(&witness_library, &witness_library_bytes);
+    let guest_image_bytes = sample_guest_image();
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    write_bytes(&guest_image, &guest_image_bytes);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            "--internal-contributions",
+            "3",
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npass=internal\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\ncontribution_count=3\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nwitness_library_bytes=64\nwitness_library_machine=62\nwitness_library_digest={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs=none\n",
+            output_dir.display(),
+            witness_library.display(),
+            format_hash(&witness_library_info.digest),
+            guest_image.display(),
+            format_hash(&guest_image_info.digest)
+        )
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn prints_prove_inputs_from_trace_bytes() {
     let dir = temp_dir("prove-inputs-trace-bytes");
     let _ = fs::remove_dir_all(&dir);

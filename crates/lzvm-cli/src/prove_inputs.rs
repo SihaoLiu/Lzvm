@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use lzvm_artifacts::trace_bundle::{read_trace_bundle_file, TraceBundle};
 use lzvm_prover::{
     derive_prove_execution_plan_with_program_image_cache, ProveExecutionInputArtifacts,
-    ProvePassRequest,
 };
 
 use crate::program_image_cache::write_program_image_cache_summary;
@@ -23,14 +22,6 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
-
-    if matches!(
-        &parsed.run_args.request.pass,
-        ProvePassRequest::Internal { .. }
-    ) {
-        let _ = writeln!(stderr, "prove inputs failed: internal pass is unsupported");
-        return 1;
-    }
 
     let catalog = match read_checked_setup_catalog(&parsed.run_args.positionals[0]) {
         Ok(catalog) => catalog,
@@ -248,35 +239,4 @@ fn write_usage(stderr: &mut dyn Write) -> i32 {
         "usage: lzvm prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>"
     );
     2
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rejects_internal_pass_for_inputs() {
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-
-        let code = run(
-            &[
-                "--internal-contributions",
-                "2",
-                "setup-dir",
-                "out-dir",
-                "witness.so",
-                "guest.elf",
-            ],
-            &mut stdout,
-            &mut stderr,
-        );
-
-        assert_eq!(code, 1);
-        assert!(stdout.is_empty());
-        assert_eq!(
-            String::from_utf8(stderr).expect("stderr should be utf-8"),
-            "prove inputs failed: internal pass is unsupported\n"
-        );
-    }
 }
