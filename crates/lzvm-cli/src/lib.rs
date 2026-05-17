@@ -667,6 +667,13 @@ fn verify_preflight(
                     prove_plan::format_hash(state_root)
                 );
             }
+            if let Some(receipt_root) = report.eth_block_input_receipt_roots.get(index) {
+                let _ = writeln!(
+                    stdout,
+                    "eth_receipts_root={}",
+                    prove_plan::format_hash(receipt_root)
+                );
+            }
             if let Some(logs_bloom) = report.eth_block_input_logs_blooms.get(index) {
                 let _ = writeln!(stdout, "eth_logs_bloom={}", format_bytes_hex(logs_bloom));
             }
@@ -944,6 +951,7 @@ struct EthBlockInputBinding {
     ommers_hash: [u8; 32],
     beneficiary: [u8; 20],
     state_root: [u8; 32],
+    receipts_root: [u8; 32],
     logs_bloom: [u8; 256],
     transaction_preimage_count: usize,
     legacy_transaction_count: usize,
@@ -1054,6 +1062,13 @@ fn verify_setup_validation(
                         prove_plan::format_hash(state_root)
                     );
                 }
+                if let Some(receipt_root) = public_report.eth_block_input_receipt_roots.get(index) {
+                    let _ = writeln!(
+                        stdout,
+                        "eth_receipts_root={}",
+                        prove_plan::format_hash(receipt_root)
+                    );
+                }
                 if let Some(logs_bloom) = public_report.eth_block_input_logs_blooms.get(index) {
                     let _ = writeln!(stdout, "eth_logs_bloom={}", format_bytes_hex(logs_bloom));
                 }
@@ -1147,6 +1162,11 @@ fn verify_setup_validation(
             stdout,
             "eth_state_root={}",
             prove_plan::format_hash(&binding.state_root)
+        );
+        let _ = writeln!(
+            stdout,
+            "eth_receipts_root={}",
+            prove_plan::format_hash(&binding.receipts_root)
         );
         let _ = writeln!(
             stdout,
@@ -1250,6 +1270,7 @@ fn verify_eth_block_input_binding(
         ommers_hash: input.ommers_hash,
         beneficiary: input.beneficiary,
         state_root: input.state_root,
+        receipts_root: input.receipts_root,
         logs_bloom: input.logs_bloom,
         transaction_preimage_count,
         legacy_transaction_count,
