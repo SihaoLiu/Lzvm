@@ -16,9 +16,11 @@ fn sample_manifest() -> SetupDirectoryManifest {
         pcs_material_byte_count: 512,
         source_fixed_file_manifest_present: true,
         source_fixed_file_manifest_entry_count: 7,
+        source_fixed_file_manifest_byte_count: 256,
         source_program_archive_present: true,
         source_program_archive_source_count: 3,
         source_program_archive_edge_count: 2,
+        source_program_archive_byte_count: 1024,
         catalog_digest: [0x55; 32],
     }
 }
@@ -58,9 +60,11 @@ fn parses_legacy_setup_directory_manifests_without_source_fixed_file_counts() {
 
     assert!(!parsed.source_fixed_file_manifest_present);
     assert_eq!(parsed.source_fixed_file_manifest_entry_count, 0);
+    assert_eq!(parsed.source_fixed_file_manifest_byte_count, 0);
     assert!(!parsed.source_program_archive_present);
     assert_eq!(parsed.source_program_archive_source_count, 0);
     assert_eq!(parsed.source_program_archive_edge_count, 0);
+    assert_eq!(parsed.source_program_archive_byte_count, 0);
     assert_eq!(parsed.unit_count, 4);
     assert_eq!(parsed.catalog_digest, [0x55; 32]);
 }
@@ -86,9 +90,41 @@ fn parses_legacy_setup_directory_manifests_without_source_program_archive_counts
 
     assert!(parsed.source_fixed_file_manifest_present);
     assert_eq!(parsed.source_fixed_file_manifest_entry_count, 7);
+    assert_eq!(parsed.source_fixed_file_manifest_byte_count, 0);
     assert!(!parsed.source_program_archive_present);
     assert_eq!(parsed.source_program_archive_source_count, 0);
     assert_eq!(parsed.source_program_archive_edge_count, 0);
+    assert_eq!(parsed.source_program_archive_byte_count, 0);
+    assert_eq!(parsed.unit_count, 4);
+    assert_eq!(parsed.catalog_digest, [0x55; 32]);
+}
+
+#[test]
+fn parses_legacy_setup_directory_manifests_without_source_companion_byte_counts() {
+    let mut payload = Vec::new();
+    for value in [4_u64, 3, 128, 4, 512, 1, 7, 1, 3, 2] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    payload.extend_from_slice(&[0x55; 32]);
+    let bytes = encode_sectioned_file(&SectionedFile {
+        kind: *b"sdmf",
+        version: 3,
+        sections: vec![SectionedSection {
+            id: 1,
+            data: payload,
+        }],
+    })
+    .expect("legacy manifest should encode");
+
+    let parsed = parse_setup_directory_manifest(&bytes).expect("legacy manifest should parse");
+
+    assert!(parsed.source_fixed_file_manifest_present);
+    assert_eq!(parsed.source_fixed_file_manifest_entry_count, 7);
+    assert_eq!(parsed.source_fixed_file_manifest_byte_count, 0);
+    assert!(parsed.source_program_archive_present);
+    assert_eq!(parsed.source_program_archive_source_count, 3);
+    assert_eq!(parsed.source_program_archive_edge_count, 2);
+    assert_eq!(parsed.source_program_archive_byte_count, 0);
     assert_eq!(parsed.unit_count, 4);
     assert_eq!(parsed.catalog_digest, [0x55; 32]);
 }

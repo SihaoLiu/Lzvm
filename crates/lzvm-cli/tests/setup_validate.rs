@@ -2390,11 +2390,21 @@ fn write_source_companions_refreshes_existing_setup_directory_manifest() {
     assert!(validate_stderr.is_empty());
     let refreshed_manifest =
         read_setup_directory_manifest_file(&manifest_path).expect("manifest should parse");
+    let archive_bytes = source_program_archive_bytes(&dir);
+    let fixed_manifest_bytes = source_fixed_file_manifest_bytes(&dir);
     assert!(refreshed_manifest.source_program_archive_present);
     assert_eq!(refreshed_manifest.source_program_archive_source_count, 2);
     assert_eq!(refreshed_manifest.source_program_archive_edge_count, 1);
+    assert_eq!(
+        refreshed_manifest.source_program_archive_byte_count,
+        archive_bytes
+    );
     assert!(refreshed_manifest.source_fixed_file_manifest_present);
     assert_eq!(refreshed_manifest.source_fixed_file_manifest_entry_count, 0);
+    assert_eq!(
+        refreshed_manifest.source_fixed_file_manifest_byte_count,
+        fixed_manifest_bytes
+    );
     let report = summarize_setup_directory(&dir).expect("directory summary should load");
     assert!(report.source_program_archive_present);
     assert_eq!(report.source_program_archive_source_count, 2);
@@ -2454,11 +2464,18 @@ fn write_source_companions_refreshes_setup_directory_manifest_on_request() {
 
     let manifest =
         read_setup_directory_manifest_file(&manifest_path).expect("manifest should parse");
+    let archive_bytes = source_program_archive_bytes(&dir);
+    let fixed_manifest_bytes = source_fixed_file_manifest_bytes(&dir);
     assert!(manifest.source_program_archive_present);
     assert_eq!(manifest.source_program_archive_source_count, 2);
     assert_eq!(manifest.source_program_archive_edge_count, 1);
+    assert_eq!(manifest.source_program_archive_byte_count, archive_bytes);
     assert!(manifest.source_fixed_file_manifest_present);
     assert_eq!(manifest.source_fixed_file_manifest_entry_count, 0);
+    assert_eq!(
+        manifest.source_fixed_file_manifest_byte_count,
+        fixed_manifest_bytes
+    );
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }

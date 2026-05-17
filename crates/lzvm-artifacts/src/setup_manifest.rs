@@ -9,12 +9,13 @@ use crate::sectioned::{
 pub const SETUP_DIRECTORY_MANIFEST_FILE: &str = "lzvm.setup-manifest";
 
 const SETUP_DIRECTORY_MANIFEST_KIND: [u8; 4] = *b"sdmf";
-const SETUP_DIRECTORY_MANIFEST_VERSION: u32 = 3;
+const SETUP_DIRECTORY_MANIFEST_VERSION: u32 = 4;
 const SETUP_DIRECTORY_MANIFEST_SECTION_ID: u32 = 1;
 const DIGEST_BYTES: usize = 32;
 const PAYLOAD_V1_BYTES: usize = 5 * 8 + DIGEST_BYTES;
 const PAYLOAD_V2_BYTES: usize = PAYLOAD_V1_BYTES + 2 * 8;
 const PAYLOAD_V3_BYTES: usize = PAYLOAD_V2_BYTES + 3 * 8;
+const PAYLOAD_V4_BYTES: usize = PAYLOAD_V3_BYTES + 2 * 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SetupDirectoryManifest {
@@ -25,9 +26,11 @@ pub struct SetupDirectoryManifest {
     pub pcs_material_byte_count: u64,
     pub source_fixed_file_manifest_present: bool,
     pub source_fixed_file_manifest_entry_count: u64,
+    pub source_fixed_file_manifest_byte_count: u64,
     pub source_program_archive_present: bool,
     pub source_program_archive_source_count: u64,
     pub source_program_archive_edge_count: u64,
+    pub source_program_archive_byte_count: u64,
     pub catalog_digest: [u8; 32],
 }
 
@@ -157,6 +160,10 @@ pub fn build_setup_directory_manifest(
         .transpose()
         .map_err(|_| SetupDirectoryManifestError::LengthOverflow)?
         .unwrap_or_default();
+    let source_fixed_file_manifest_byte_count = file_len_if_present(
+        source_fixed_file_manifest_present,
+        &catalog.layout.source_fixed_file_manifest,
+    )?;
     let source_program_archive_present = catalog.source_program_archive.is_some();
     let source_program_archive_source_count = catalog
         .source_program_archive
@@ -172,6 +179,10 @@ pub fn build_setup_directory_manifest(
         .transpose()
         .map_err(|_| SetupDirectoryManifestError::LengthOverflow)?
         .unwrap_or_default();
+    let source_program_archive_byte_count = file_len_if_present(
+        source_program_archive_present,
+        &catalog.layout.source_program_archive,
+    )?;
 
     let out = SetupDirectoryManifest {
         unit_count,
@@ -181,13 +192,26 @@ pub fn build_setup_directory_manifest(
         pcs_material_byte_count,
         source_fixed_file_manifest_present,
         source_fixed_file_manifest_entry_count,
+        source_fixed_file_manifest_byte_count,
         source_program_archive_present,
         source_program_archive_source_count,
         source_program_archive_edge_count,
+        source_program_archive_byte_count,
         catalog_digest: key_directory_catalog_digest(catalog)?,
     };
     validate_setup_directory_manifest(&out)?;
     Ok(out)
+}
+
+fn file_len_if_present(present: bool, path: &Path) -> Result<u64, SetupDirectoryManifestError> {
+    if !present {
+        return Ok(0);
+    }
+    Ok(std::fs::metadata(path)
+        .map_err(|error| SetupDirectoryManifestError::Io {
+            message: format!("{}: {error}", path.display()),
+        })?
+        .len())
 }
 
 pub fn read_setup_directory_manifest_file(
@@ -275,7 +299,8 @@ fn parse_setup_directory_manifest_payload(
     let expected = match version {
         0 | 1 => PAYLOAD_V1_BYTES,
         2 => PAYLOAD_V2_BYTES,
-        _ => PAYLOAD_V3_BYTES,
+        3 => PAYLOAD_V3_BYTES,
+        _ => PAYLOAD_V4_BYTES,
     };
     if bytes.len() != expected {
         return Err(SetupDirectoryManifestError::InvalidPayloadLength {
@@ -301,6 +326,11 @@ fn parse_setup_directory_manifest_payload(
         } else {
             0
         },
+        source_fixed_file_manifest_byte_count: if version >= 4 {
+            read_u64(bytes, &mut offset)
+        } else {
+            0
+        },
         source_program_archive_present: if version >= 3 {
             read_u64(bytes, &mut offset) != 0
         } else {
@@ -316,12 +346,17 @@ fn parse_setup_directory_manifest_payload(
         } else {
             0
         },
+        source_program_archive_byte_count: if version >= 4 {
+            read_u64(bytes, &mut offset)
+        } else {
+            0
+        },
         catalog_digest: read_digest(bytes, &mut offset),
     })
 }
 
 fn encode_setup_directory_manifest_payload(value: &SetupDirectoryManifest) -> Vec<u8> {
-    let mut out = Vec::with_capacity(PAYLOAD_V3_BYTES);
+    let mut out = Vec::with_capacity(PAYLOAD_V4_BYTES);
     out.extend_from_slice(&value.unit_count.to_le_bytes());
     out.extend_from_slice(&value.global_constraint_count.to_le_bytes());
     out.extend_from_slice(&value.fixed_byte_count.to_le_bytes());
@@ -329,9 +364,11 @@ fn encode_setup_directory_manifest_payload(value: &SetupDirectoryManifest) -> Ve
     out.extend_from_slice(&value.pcs_material_byte_count.to_le_bytes());
     out.extend_from_slice(&u64::from(value.source_fixed_file_manifest_present).to_le_bytes());
     out.extend_from_slice(&value.source_fixed_file_manifest_entry_count.to_le_bytes());
+    out.extend_from_slice(&value.source_fixed_file_manifest_byte_count.to_le_bytes());
     out.extend_from_slice(&u64::from(value.source_program_archive_present).to_le_bytes());
     out.extend_from_slice(&value.source_program_archive_source_count.to_le_bytes());
     out.extend_from_slice(&value.source_program_archive_edge_count.to_le_bytes());
+    out.extend_from_slice(&value.source_program_archive_byte_count.to_le_bytes());
     out.extend_from_slice(&value.catalog_digest);
     out
 }
