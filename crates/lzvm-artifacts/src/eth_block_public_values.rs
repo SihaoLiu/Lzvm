@@ -51,6 +51,14 @@ pub fn public_values_from_eth_block_input(
                 elements: u64_u32_le(input.timestamp),
             },
             PublicValueEntry {
+                name: "eth_gas_limit_u32_le".to_owned(),
+                elements: u64_u32_le(input.gas_limit),
+            },
+            PublicValueEntry {
+                name: "eth_gas_used_u32_le".to_owned(),
+                elements: u64_u32_le(input.gas_used),
+            },
+            PublicValueEntry {
                 name: "eth_ommers_hash_u32_be".to_owned(),
                 elements: hash_u32_be(&input.ommers_hash),
             },

@@ -32,6 +32,8 @@ pub struct EthBlockInput {
     pub receipts_root: [u8; 32],
     pub block_number: u64,
     pub timestamp: u64,
+    pub gas_limit: u64,
+    pub gas_used: u64,
     pub ommers_hash: [u8; 32],
     pub transactions_root: [u8; 32],
     pub withdrawals_root: Option<[u8; 32]>,
@@ -73,6 +75,8 @@ pub enum EthBlockInputError {
     ReceiptsRootMismatch,
     BlockNumberMismatch,
     TimestampMismatch,
+    GasLimitMismatch,
+    GasUsedMismatch,
     WithdrawalsRootMismatch,
     InvalidPreimageSection,
     PreimageHashMismatch {
@@ -133,6 +137,8 @@ impl fmt::Display for EthBlockInputError {
             Self::ReceiptsRootMismatch => write!(f, "ETH block input receipts root mismatch"),
             Self::BlockNumberMismatch => write!(f, "ETH block input block number mismatch"),
             Self::TimestampMismatch => write!(f, "ETH block input timestamp mismatch"),
+            Self::GasLimitMismatch => write!(f, "ETH block input gas limit mismatch"),
+            Self::GasUsedMismatch => write!(f, "ETH block input gas used mismatch"),
             Self::WithdrawalsRootMismatch => write!(f, "ETH block withdrawals root mismatch"),
             Self::InvalidPreimageSection => write!(f, "invalid ETH trie preimage section"),
             Self::PreimageHashMismatch { trie, index } => {
@@ -225,6 +231,8 @@ pub fn build_eth_block_input(block_rlp: &[u8]) -> Result<EthBlockInput, EthBlock
         receipts_root: header.receipts_root,
         block_number: header.number,
         timestamp: header.timestamp,
+        gas_limit: header.gas_limit,
+        gas_used: header.gas_used,
         ommers_hash,
         transactions_root: header.transactions_root,
         withdrawals_root: header.withdrawals_root,
@@ -325,6 +333,8 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
         receipts_root: metadata.receipts_root,
         block_number: metadata.block_number,
         timestamp: metadata.timestamp,
+        gas_limit: metadata.gas_limit,
+        gas_used: metadata.gas_used,
         ommers_hash: metadata.ommers_hash,
         transactions_root: metadata.transactions_root,
         withdrawals_root: metadata.withdrawals_root,
@@ -339,18 +349,22 @@ struct Metadata {
     receipts_root: [u8; 32],
     block_number: u64,
     timestamp: u64,
+    gas_limit: u64,
+    gas_used: u64,
     ommers_hash: [u8; 32],
     transactions_root: [u8; 32],
     withdrawals_root: Option<[u8; 32]>,
 }
 
 fn encode_metadata(value: &EthBlockInput) -> Vec<u8> {
-    let mut out = Vec::with_capacity(HASH_BYTES * 6 + 8 + 8 + 4);
+    let mut out = Vec::with_capacity(HASH_BYTES * 6 + 8 * 4 + 4);
     out.extend_from_slice(&value.block_hash);
     out.extend_from_slice(&value.state_root);
     out.extend_from_slice(&value.receipts_root);
     out.extend_from_slice(&value.block_number.to_le_bytes());
     out.extend_from_slice(&value.timestamp.to_le_bytes());
+    out.extend_from_slice(&value.gas_limit.to_le_bytes());
+    out.extend_from_slice(&value.gas_used.to_le_bytes());
     out.extend_from_slice(&value.ommers_hash);
     out.extend_from_slice(&value.transactions_root);
     match value.withdrawals_root {
@@ -370,6 +384,8 @@ fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
     let receipts_root = reader.read_hash()?;
     let block_number = reader.read_u64()?;
     let timestamp = reader.read_u64()?;
+    let gas_limit = reader.read_u64()?;
+    let gas_used = reader.read_u64()?;
     let ommers_hash = reader.read_hash()?;
     let transactions_root = reader.read_hash()?;
     let withdrawals_flag = reader.read_u32()?;
@@ -386,6 +402,8 @@ fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
         receipts_root,
         block_number,
         timestamp,
+        gas_limit,
+        gas_used,
         ommers_hash,
         transactions_root,
         withdrawals_root,
@@ -408,6 +426,12 @@ fn validate_metadata(metadata: &Metadata, block_rlp: &[u8]) -> Result<(), EthBlo
     }
     if metadata.timestamp != input.timestamp {
         return Err(EthBlockInputError::TimestampMismatch);
+    }
+    if metadata.gas_limit != input.gas_limit {
+        return Err(EthBlockInputError::GasLimitMismatch);
+    }
+    if metadata.gas_used != input.gas_used {
+        return Err(EthBlockInputError::GasUsedMismatch);
     }
     if metadata.ommers_hash != input.ommers_hash {
         return Err(EthBlockInputError::OmmersHashMismatch);
