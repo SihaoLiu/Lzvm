@@ -3,7 +3,8 @@ use std::io::Write;
 use std::path::Path;
 
 use lzvm_artifacts::eth_block_input::{
-    build_eth_block_input, encode_eth_block_input, parse_eth_block_input, EthBlockInput,
+    build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
+    parse_eth_block_input, EthBlockInput,
 };
 
 pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -92,7 +93,8 @@ fn write_block_input(
         return 1;
     }
 
-    write_input_summary(stdout, output_path, encoded.len(), &input, false);
+    let digest = eth_block_input_bytes_digest(&encoded);
+    write_input_summary(stdout, output_path, encoded.len(), &digest, &input, false);
     0
 }
 
@@ -115,7 +117,15 @@ fn summarize_block_input(input_path: &str, stdout: &mut dyn Write, stderr: &mut 
         }
     };
 
-    write_input_summary(stdout, Path::new(input_path), encoded.len(), &input, true);
+    let digest = eth_block_input_bytes_digest(&encoded);
+    write_input_summary(
+        stdout,
+        Path::new(input_path),
+        encoded.len(),
+        &digest,
+        &input,
+        true,
+    );
     0
 }
 
@@ -123,12 +133,14 @@ fn write_input_summary(
     stdout: &mut dyn Write,
     input_path: &Path,
     encoded_len: usize,
+    digest: &[u8; 32],
     input: &EthBlockInput,
     include_block_rlp_bytes: bool,
 ) {
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "block_input={}", input_path.display());
     let _ = writeln!(stdout, "bytes={encoded_len}");
+    let _ = writeln!(stdout, "block_input_hash={}", format_hash(digest));
     if include_block_rlp_bytes {
         let _ = writeln!(stdout, "block_rlp_bytes={}", input.block_rlp.len());
     }

@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+use sha2::{Digest, Sha256};
+
 use crate::eth_block::{
     decode_eth_header_rlp, decode_eth_transactions_rlp, decode_eth_withdrawals_rlp,
     eth_header_hash, eth_ommers_hash, keccak256, parse_eth_block_rlp, EthBlockError,
@@ -252,6 +254,10 @@ pub fn encode_eth_block_input(value: &EthBlockInput) -> Result<Vec<u8>, EthBlock
         sections,
     })
     .map_err(EthBlockInputError::Sectioned)
+}
+
+pub fn eth_block_input_bytes_digest(bytes: &[u8]) -> [u8; 32] {
+    Sha256::digest(bytes).into()
 }
 
 pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInputError> {

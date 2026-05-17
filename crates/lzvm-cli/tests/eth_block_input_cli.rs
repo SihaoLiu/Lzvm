@@ -2,7 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::eth_block_input::{
-    build_eth_block_input, encode_eth_block_input, parse_eth_block_input,
+    build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
+    parse_eth_block_input,
 };
 use lzvm_artifacts::public_values::{parse_public_values, public_values_digest};
 use lzvm_cli::run_cli;
@@ -46,6 +47,7 @@ fn writes_binary_block_input_artifact() {
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
     assert!(stderr.is_empty());
     let encoded = fs::read(&output_path).expect("block input should be written");
+    let input_hash = eth_block_input_bytes_digest(&encoded);
     assert_eq!(&encoded[..4], b"ethi");
     let parsed = parse_eth_block_input(&encoded).expect("block input should parse");
     assert_eq!(parsed.block_rlp, block_rlp);
@@ -56,9 +58,10 @@ fn writes_binary_block_input_artifact() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nblock_input={}\nbytes={}\nblock_hash={}\nblock_number=2\ntimestamp=101\ntransactions_root={}\ntransaction_trie_preimages=1\nwithdrawals=absent\n",
+            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nblock_number=2\ntimestamp=101\ntransactions_root={}\ntransaction_trie_preimages=1\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
+            to_hex(&input_hash),
             to_hex(&parsed.block_hash),
             to_hex(&parsed.transactions_root)
         )
@@ -110,6 +113,7 @@ fn summarizes_block_input_artifacts() {
     let block_rlp = sample_block_rlp();
     let input = build_eth_block_input(&block_rlp).expect("block input should build");
     let encoded = encode_eth_block_input(&input).expect("block input should encode");
+    let input_hash = eth_block_input_bytes_digest(&encoded);
     write_bytes(&input_path, &encoded);
 
     let mut stdout = Vec::new();
@@ -126,12 +130,14 @@ fn summarizes_block_input_artifacts() {
 
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
     assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
     assert_eq!(
-        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        stdout_text,
         format!(
-            "status=ok\nblock_input={}\nbytes={}\nblock_rlp_bytes={}\nblock_hash={}\nblock_number=2\ntimestamp=101\ntransactions_root={}\ntransaction_trie_preimages=1\nwithdrawals=absent\n",
+            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_rlp_bytes={}\nblock_hash={}\nblock_number=2\ntimestamp=101\ntransactions_root={}\ntransaction_trie_preimages=1\nwithdrawals=absent\n",
             input_path.display(),
             encoded.len(),
+            to_hex(&input_hash),
             block_rlp.len(),
             to_hex(&input.block_hash),
             to_hex(&input.transactions_root)

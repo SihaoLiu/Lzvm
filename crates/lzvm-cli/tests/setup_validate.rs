@@ -16,7 +16,8 @@ use lzvm_artifacts::constraint_program::{
 };
 use lzvm_artifacts::contribution_segment::CONTRIBUTION_SEGMENT_ID;
 use lzvm_artifacts::eth_block_input::{
-    build_eth_block_input, encode_eth_block_input, parse_eth_block_input,
+    build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
+    parse_eth_block_input,
 };
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, parse_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
@@ -3357,12 +3358,12 @@ fn prove_inputs_generates_eth_block_public_values_when_missing() {
     let guest_image_bytes = sample_guest_image();
     let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
     let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let encoded_block_input =
+        encode_eth_block_input(&block_input).expect("block input should encode");
+    let block_input_hash = eth_block_input_bytes_digest(&encoded_block_input);
     write_bytes(&witness_library, &witness_library_bytes);
     write_bytes(&guest_image, &guest_image_bytes);
-    write_bytes(
-        &block_input_path,
-        encode_eth_block_input(&block_input).expect("block input should encode"),
-    );
+    write_bytes(&block_input_path, &encoded_block_input);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -3400,7 +3401,7 @@ fn prove_inputs_generates_eth_block_public_values_when_missing() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nwitness_library_bytes=64\nwitness_library_machine=62\nwitness_library_digest={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs={}\npublic_inputs_hash={}\npublic_input_values=7\npublic_input_fields=37\npublic_inputs_generated=eth_block_input\neth_block_input={}\neth_block_input_bytes={}\neth_block_rlp_bytes={}\neth_block_hash={}\neth_block_number=2\neth_block_timestamp=101\neth_transactions_root={}\neth_transaction_trie_preimages=1\neth_withdrawals=absent\n",
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nwitness_library_bytes=64\nwitness_library_machine=62\nwitness_library_digest={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs={}\npublic_inputs_hash={}\npublic_input_values=7\npublic_input_fields=37\npublic_inputs_generated=eth_block_input\neth_block_input={}\neth_block_input_bytes={}\neth_block_input_hash={}\neth_block_rlp_bytes={}\neth_block_hash={}\neth_block_number=2\neth_block_timestamp=101\neth_transactions_root={}\neth_transaction_trie_preimages=1\neth_withdrawals=absent\n",
             output_dir.display(),
             witness_library.display(),
             format_hash(&witness_library_info.digest),
@@ -3409,9 +3410,8 @@ fn prove_inputs_generates_eth_block_public_values_when_missing() {
             generated_public_values_path.display(),
             format_hash(&generated_public_values_hash),
             block_input_path.display(),
-            encode_eth_block_input(&block_input)
-                .expect("block input should encode")
-                .len(),
+            encoded_block_input.len(),
+            format_hash(&block_input_hash),
             block_input.block_rlp.len(),
             format_hash(&block_input.block_hash),
             format_hash(&block_input.transactions_root)
@@ -4924,12 +4924,12 @@ fn prove_witness_generates_eth_block_public_values_when_missing() {
     let generated_public_values_path = output_dir.join("eth-block-public-values.bin");
     let proof_path = output_dir.join("proof.bin");
     let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let encoded_block_input =
+        encode_eth_block_input(&block_input).expect("block input should encode");
+    let block_input_hash = eth_block_input_bytes_digest(&encoded_block_input);
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(&input_data, [7_u8]);
-    write_bytes(
-        &block_input_path,
-        encode_eth_block_input(&block_input).expect("block input should encode"),
-    );
+    write_bytes(&block_input_path, &encoded_block_input);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -4983,6 +4983,10 @@ fn prove_witness_generates_eth_block_public_values_when_missing() {
         "public_inputs={}\n",
         generated_public_values_path.display()
     )));
+    assert!(stdout_text.contains(&format!(
+        "eth_block_input_hash={}\n",
+        format_hash(&block_input_hash)
+    )));
     assert!(stdout_text.contains("public_input_values=7\npublic_input_fields=37\n"));
 
     let mut verify_stdout = Vec::new();
@@ -5032,13 +5036,13 @@ fn prove_witness_all_units_reports_generated_eth_block_public_values() {
     let block_input_path = dir.join("block.input");
     let generated_public_values_path = output_dir.join("eth-block-public-values.bin");
     let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let encoded_block_input =
+        encode_eth_block_input(&block_input).expect("block input should encode");
+    let block_input_hash = eth_block_input_bytes_digest(&encoded_block_input);
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(&input_data, [7_u8]);
     write_bytes(&bundle_path, sample_trace_bundle_bytes(4, 17));
-    write_bytes(
-        &block_input_path,
-        encode_eth_block_input(&block_input).expect("block input should encode"),
-    );
+    write_bytes(&block_input_path, &encoded_block_input);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -5086,6 +5090,10 @@ fn prove_witness_all_units_reports_generated_eth_block_public_values() {
     )));
     assert!(stdout_text.contains("public_inputs_generated=eth_block_input\n"));
     assert!(stdout_text.contains("eth_block_input="));
+    assert!(stdout_text.contains(&format!(
+        "eth_block_input_hash={}\n",
+        format_hash(&block_input_hash)
+    )));
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 

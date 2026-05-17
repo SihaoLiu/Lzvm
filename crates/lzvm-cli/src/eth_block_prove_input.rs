@@ -2,7 +2,9 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
-use lzvm_artifacts::eth_block_input::{parse_eth_block_input, EthBlockInput};
+use lzvm_artifacts::eth_block_input::{
+    eth_block_input_bytes_digest, parse_eth_block_input, EthBlockInput,
+};
 
 use crate::prove_plan::format_hash;
 
@@ -10,6 +12,7 @@ use crate::prove_plan::format_hash;
 pub(crate) struct EthBlockInputSummary {
     pub(crate) path: PathBuf,
     pub(crate) byte_len: u64,
+    pub(crate) digest: [u8; 32],
     pub(crate) input: EthBlockInput,
     pub(crate) block_rlp_len: usize,
     pub(crate) block_hash: [u8; 32],
@@ -39,6 +42,7 @@ pub(crate) fn validate_eth_block_input(
     Ok(Some(EthBlockInputSummary {
         path: path.clone(),
         byte_len: metadata.len(),
+        digest: eth_block_input_bytes_digest(&bytes),
         input: input.clone(),
         block_rlp_len: input.block_rlp.len(),
         block_hash: input.block_hash,
@@ -59,6 +63,11 @@ pub(crate) fn write_eth_block_input_summary(
 ) {
     let _ = writeln!(stdout, "eth_block_input={}", summary.path.display());
     let _ = writeln!(stdout, "eth_block_input_bytes={}", summary.byte_len);
+    let _ = writeln!(
+        stdout,
+        "eth_block_input_hash={}",
+        format_hash(&summary.digest)
+    );
     let _ = writeln!(stdout, "eth_block_rlp_bytes={}", summary.block_rlp_len);
     let _ = writeln!(
         stdout,
