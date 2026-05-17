@@ -213,7 +213,21 @@ fn tokenize_pragma_words(
         if matches!(quote, b'"' | b'\'' | b'`') {
             index += 1;
             let content_start = index;
-            while index < bytes.len() && bytes[index] != quote {
+            let mut escaped = false;
+            while index < bytes.len() {
+                if escaped {
+                    escaped = false;
+                    index += 1;
+                    continue;
+                }
+                if bytes[index] == b'\\' {
+                    escaped = true;
+                    index += 1;
+                    continue;
+                }
+                if bytes[index] == quote {
+                    break;
+                }
                 index += 1;
             }
             if index >= bytes.len() {

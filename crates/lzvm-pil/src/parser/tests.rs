@@ -221,6 +221,34 @@ fn parses_fixed_file_pragmas_with_typed_values() {
 }
 
 #[test]
+fn parses_fixed_file_pragmas_with_escaped_quoted_paths() {
+    let source = source(
+        "#pragma extern_fixed_file \"path/quote\\\"file.bin\"\n\
+         #pragma output_fixed_file `path/template\\`file.bin`",
+    );
+
+    let directives = parse_fixed_file_pragmas(&source).expect("pragmas should parse");
+
+    assert_eq!(directives.len(), 2);
+    assert_eq!(
+        directives[0].path.as_ref().map(|path| path.value.as_str()),
+        Some("path/quote\\\"file.bin")
+    );
+    assert!(directives[0]
+        .path
+        .as_ref()
+        .is_some_and(|path| !path.template));
+    assert_eq!(
+        directives[1].path.as_ref().map(|path| path.value.as_str()),
+        Some("path/template\\`file.bin")
+    );
+    assert!(directives[1]
+        .path
+        .as_ref()
+        .is_some_and(|path| path.template));
+}
+
+#[test]
 fn rejects_fixed_load_with_invalid_column() {
     let source = source("#pragma fixed_load fixed.bin nope");
 
