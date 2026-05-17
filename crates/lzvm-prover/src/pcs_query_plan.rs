@@ -15,12 +15,12 @@ pub use errors::ProvePcsQueryPlanSegmentError;
 use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
 use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
 use lzvm_artifacts::pcs_material_segment::{
-    parse_pcs_material_manifest_segment, PcsMaterialManifestSegmentError,
-    PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+    parse_pcs_material_manifest_segment, PcsMaterialManifestSegment,
+    PcsMaterialManifestSegmentError, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_nonce_segment::PCS_QUERY_NONCE_SEGMENT_ID;
 use lzvm_artifacts::pcs_query_segment::{
-    parse_pcs_query_plan_segment, PcsQueryPlanSegment, PcsQueryPlanSegmentError,
+    parse_pcs_query_plan_segment, PcsQueryPlanSegment, PcsQueryPlanSegmentError, PcsQueryPlanUnit,
     PCS_QUERY_PLAN_SEGMENT_ID,
 };
 use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
@@ -230,6 +230,43 @@ pub fn validate_seeded_pcs_query_plan_segments(
     Ok(())
 }
 
+fn validate_transcript_query_plan_unit_inputs(
+    schedule: &ProveSchedule,
+    query_units: &[PcsQueryPlanUnit],
+    material: &PcsMaterialManifestSegment,
+    witness_segments: &[ProofSegment],
+    segments: &[ProofSegment],
+) -> Result<(), ValidatePcsQueryPlanSegmentsError> {
+    for query_unit in query_units {
+        let unit_index_u32 = query_unit.unit_index;
+        let unit_index = usize::try_from(unit_index_u32)
+            .map_err(|_| ValidatePcsQueryPlanSegmentsError::UnitIndexOverflow)?;
+        let unit = schedule
+            .units
+            .get(unit_index)
+            .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
+        material
+            .units
+            .iter()
+            .find(|unit| unit.unit_index == unit_index_u32)
+            .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
+        let witness_segment_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
+            .checked_add(unit_index_u32)
+            .ok_or(ValidatePcsQueryPlanSegmentsError::WitnessSegmentIdOverflow)?;
+        witness_segments
+            .iter()
+            .find(|segment| segment.id == witness_segment_id)
+            .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
+        load_pcs_evaluation_unit_from_segments(unit_index, unit, segments)
+            .map_err(ValidatePcsQueryPlanSegmentsError::Evaluation)?;
+        load_pcs_fri_opening_unit_from_segments(unit_index, segments)
+            .map_err(ValidatePcsQueryPlanSegmentsError::Fri)?;
+        load_unit_values_from_segments(unit_index, &unit.unit_value_map, segments)
+            .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
+    }
+    Ok(())
+}
+
 pub(crate) fn proof_binding_segments(segments: &[ProofSegment]) -> Vec<ProofSegment> {
     segments
         .iter()
@@ -377,5 +414,12 @@ pub fn validate_transcript_pcs_query_plan_segments(
     if query_segment.data != expected_segment.data {
         return Err(ValidatePcsQueryPlanSegmentsError::QueryPlanMismatch);
     }
+    validate_transcript_query_plan_unit_inputs(
+        schedule,
+        &query_plan.units,
+        &material,
+        &witness_segments,
+        segments,
+    )?;
     Ok(())
 }
