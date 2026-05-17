@@ -31,11 +31,13 @@ fn loads_source_program_with_declarations_from_graph_sources() {
         "main.pil",
         "include \"shared.pil\";\n\
          #pragma arg -I pil,lib\n\
-         #pragma output_fixed_file `${AIR_NAME}.fixed`\n\
          use lib.shared;\n\
          container air.main;\n\
          const int ROWS = 2**16;\n\
-         airtemplate Main(int N = 2**16) { finalize(); }\n\
+         airtemplate Main(int N = 2**16) {\n\
+             #pragma output_fixed_file `${AIR_NAME}.fixed`\n\
+             finalize();\n\
+         }\n\
          airgroup Main { Main(N: 2**16); }\n\
          function finalize(): int { int local = 1; return local; }\n\
          col witness main.trace[2];\n\
@@ -91,6 +93,15 @@ fn loads_source_program_with_declarations_from_graph_sources() {
         .path
         .as_ref()
         .is_some_and(|path| path.template));
+    assert_eq!(main.air_template_fixed_file_pragmas.len(), 1);
+    assert_eq!(
+        main.air_template_fixed_file_pragmas[0].template_name,
+        "Main"
+    );
+    assert_eq!(
+        main.air_template_fixed_file_pragmas[0].pragma.kind,
+        FixedFilePragmaKind::OutputFixedFile
+    );
     assert_eq!(main.includes.len(), 1);
     assert_eq!(main.uses.len(), 1);
     assert_eq!(main.containers.len(), 1);

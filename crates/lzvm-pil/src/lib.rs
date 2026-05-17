@@ -29,7 +29,7 @@ pub use source_graph::{
     SourceGraphLoader,
 };
 pub use source_program::{
-    build_source_program_archive, SourceProgram, SourceProgramArchiveBuildError,
-    SourceProgramArchiveLoadError, SourceProgramArchiveLoader, SourceProgramError,
-    SourceProgramLoader, SourceProgramModule,
+    build_source_program_archive, AirTemplateFixedFilePragma, SourceProgram,
+    SourceProgramArchiveBuildError, SourceProgramArchiveLoadError, SourceProgramArchiveLoader,
+    SourceProgramError, SourceProgramLoader, SourceProgramModule,
 };

@@ -32,6 +32,7 @@ pub struct SourceProgramModule {
     pub source: SourceFile,
     pub pragmas: Vec<PragmaDirective>,
     pub fixed_file_pragmas: Vec<FixedFilePragma>,
+    pub air_template_fixed_file_pragmas: Vec<AirTemplateFixedFilePragma>,
     pub includes: Vec<crate::IncludeDirective>,
     pub uses: Vec<UseDirective>,
     pub containers: Vec<ContainerDeclaration>,
@@ -47,6 +48,12 @@ pub struct SourceProgramModule {
     pub commits: Vec<CommitDeclaration>,
     pub publics: Vec<PublicDeclaration>,
     pub public_tables: Vec<PublicTableDeclaration>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AirTemplateFixedFilePragma {
+    pub template_name: String,
+    pub pragma: FixedFilePragma,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -198,17 +205,23 @@ pub fn build_source_program_archive(
 }
 
 fn parse_source_module(source: &SourceFile) -> Result<SourceProgramModule, ParseError> {
+    let fixed_file_pragmas = parse_fixed_file_pragmas(source)?;
+    let air_templates = parse_air_template_declarations(source)?;
+    let air_template_fixed_file_pragmas =
+        collect_air_template_fixed_file_pragmas(&air_templates, &fixed_file_pragmas);
+
     Ok(SourceProgramModule {
         source_name: source.source_name.clone(),
         source: source.clone(),
         pragmas: parse_pragma_directives(source)?,
-        fixed_file_pragmas: parse_fixed_file_pragmas(source)?,
+        fixed_file_pragmas,
+        air_template_fixed_file_pragmas,
         includes: parse_include_directives(source)?,
         uses: parse_use_directives(source)?,
         containers: parse_container_declarations(source)?,
         constants: parse_constant_declarations(source)?,
         variables: parse_variable_declarations(source)?,
-        air_templates: parse_air_template_declarations(source)?,
+        air_templates,
         air_groups: parse_air_group_declarations(source)?,
         air_instances: parse_air_instance_declarations(source)?,
         functions: parse_function_declarations(source)?,
@@ -219,6 +232,24 @@ fn parse_source_module(source: &SourceFile) -> Result<SourceProgramModule, Parse
         publics: parse_public_declarations(source)?,
         public_tables: parse_public_table_declarations(source)?,
     })
+}
+
+fn collect_air_template_fixed_file_pragmas(
+    air_templates: &[AirTemplateDeclaration],
+    pragmas: &[FixedFilePragma],
+) -> Vec<AirTemplateFixedFilePragma> {
+    let mut scoped = Vec::new();
+    for template in air_templates {
+        for pragma in pragmas {
+            if pragma.start >= template.body.start && pragma.end <= template.body.end {
+                scoped.push(AirTemplateFixedFilePragma {
+                    template_name: template.name.clone(),
+                    pragma: pragma.clone(),
+                });
+            }
+        }
+    }
+    scoped
 }
 
 fn build_source_program_from_archive(

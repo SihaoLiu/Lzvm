@@ -190,6 +190,10 @@ pub(crate) fn parse_function_body_statements(
     let mut statements = Vec::new();
     let mut cursor = open_index + 1;
     while cursor < close_index {
+        if tokens[cursor].kind == TokenKind::Pragma {
+            cursor += 1;
+            continue;
+        }
         let parsed = parse_function_statement(tokens, cursor, close_index, source)?;
         cursor = parsed.next_index;
         statements.push(parsed.statement);
