@@ -708,6 +708,13 @@ fn verify_preflight(
             if let Some(nonce) = report.eth_block_input_nonces.get(index) {
                 let _ = writeln!(stdout, "eth_nonce={}", format_bytes_hex(nonce));
             }
+            if let Some(transactions_root) = report.eth_block_input_transaction_roots.get(index) {
+                let _ = writeln!(
+                    stdout,
+                    "eth_transactions_root={}",
+                    prove_plan::format_hash(transactions_root)
+                );
+            }
             write_eth_transaction_preimage_summary(
                 stdout,
                 report
@@ -993,6 +1000,7 @@ struct EthBlockInputBinding {
     base_fee_per_gas: Option<[u8; 32]>,
     mix_hash: [u8; 32],
     nonce: [u8; 8],
+    transactions_root: [u8; 32],
     transaction_preimage_count: usize,
     legacy_transaction_count: usize,
     typed_transaction_count: usize,
@@ -1145,6 +1153,15 @@ fn verify_setup_validation(
                 if let Some(nonce) = public_report.eth_block_input_nonces.get(index) {
                     let _ = writeln!(stdout, "eth_nonce={}", format_bytes_hex(nonce));
                 }
+                if let Some(transactions_root) =
+                    public_report.eth_block_input_transaction_roots.get(index)
+                {
+                    let _ = writeln!(
+                        stdout,
+                        "eth_transactions_root={}",
+                        prove_plan::format_hash(transactions_root)
+                    );
+                }
                 write_eth_transaction_preimage_summary(
                     stdout,
                     public_report
@@ -1271,6 +1288,11 @@ fn verify_setup_validation(
             prove_plan::format_hash(&binding.mix_hash)
         );
         let _ = writeln!(stdout, "eth_nonce={}", format_bytes_hex(&binding.nonce));
+        let _ = writeln!(
+            stdout,
+            "eth_transactions_root={}",
+            prove_plan::format_hash(&binding.transactions_root)
+        );
         write_eth_transaction_preimage_summary(stdout, binding.transaction_preimage_count);
         write_eth_transaction_count_summary(
             stdout,
@@ -1379,6 +1401,7 @@ fn verify_eth_block_input_binding(
         base_fee_per_gas: input.base_fee_per_gas,
         mix_hash: input.mix_hash,
         nonce: input.nonce,
+        transactions_root: input.transactions_root,
         transaction_preimage_count,
         legacy_transaction_count,
         typed_transaction_count,
