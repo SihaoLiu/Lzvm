@@ -62,12 +62,13 @@ fn writes_binary_block_input_artifact() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\ntransaction_count=1\nlegacy_transactions=1\ntyped_transactions=0\nwithdrawals=absent\n",
+            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nparent_hash={}\nommers_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\ntransaction_count=1\nlegacy_transactions=1\ntyped_transactions=0\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
             to_hex(&input_hash),
             to_hex(&parsed.block_hash),
             to_hex(&parsed.parent_hash),
+            to_hex(&parsed.ommers_hash),
             to_hex(&parsed.beneficiary),
             to_hex(&parsed.state_root),
             to_hex(&parsed.receipts_root),
@@ -159,12 +160,13 @@ fn writes_binary_block_input_artifact_with_receipts() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=21000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\ntransaction_count=1\nlegacy_transactions=1\ntyped_transactions=0\nreceipts=present\nreceipt_trie_preimages={}\nreceipt_count=1\nlegacy_receipts=1\ntyped_receipts=0\nwithdrawals=absent\n",
+            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\nparent_hash={}\nommers_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=21000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\ntransaction_count=1\nlegacy_transactions=1\ntyped_transactions=0\nreceipts=present\nreceipt_trie_preimages={}\nreceipt_count=1\nlegacy_receipts=1\ntyped_receipts=0\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
             to_hex(&input_hash),
             to_hex(&parsed.block_hash),
             to_hex(&parsed.parent_hash),
+            to_hex(&parsed.ommers_hash),
             to_hex(&parsed.beneficiary),
             to_hex(&parsed.state_root),
             to_hex(&parsed.receipts_root),
@@ -314,13 +316,14 @@ fn summarizes_block_input_artifacts() {
     assert_eq!(
         stdout_text,
         format!(
-            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_rlp_bytes={}\nblock_hash={}\nparent_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\ntransaction_count=1\nlegacy_transactions=1\ntyped_transactions=0\nwithdrawals=absent\n",
+            "status=ok\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_rlp_bytes={}\nblock_hash={}\nparent_hash={}\nommers_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\ntransaction_count=1\nlegacy_transactions=1\ntyped_transactions=0\nwithdrawals=absent\n",
             input_path.display(),
             encoded.len(),
             to_hex(&input_hash),
             block_rlp.len(),
             to_hex(&input.block_hash),
             to_hex(&input.parent_hash),
+            to_hex(&input.ommers_hash),
             to_hex(&input.beneficiary),
             to_hex(&input.state_root),
             to_hex(&input.receipts_root),
