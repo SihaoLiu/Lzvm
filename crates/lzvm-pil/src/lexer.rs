@@ -268,8 +268,20 @@ fn scan_quoted(
     kind: TokenKind,
 ) -> Result<(Token, usize), LexError> {
     let mut cursor = index + 1;
+    let mut escaped = false;
     while cursor < input.len() {
-        if input.as_bytes()[cursor] == quote {
+        let byte = input.as_bytes()[cursor];
+        if escaped {
+            escaped = false;
+            cursor += 1;
+            continue;
+        }
+        if byte == b'\\' {
+            escaped = true;
+            cursor += 1;
+            continue;
+        }
+        if byte == quote {
             let end = cursor + 1;
             return Ok((
                 Token {
@@ -615,6 +627,28 @@ mod tests {
         assert_eq!(tokens[8].lexeme, "123456");
         assert_eq!(tokens[12].lexeme, "abc");
         assert_eq!(tokens[13].lexeme, "x + y");
+    }
+
+    #[test]
+    fn keeps_escaped_delimiters_inside_quoted_literals() {
+        let tokens = lex_source(r#""a\"b" `x\`y`"#).expect("lexing should work");
+
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0].kind, TokenKind::StringLiteral);
+        assert_eq!(tokens[0].lexeme, r#"a\"b"#);
+        assert_eq!(tokens[1].kind, TokenKind::TemplateLiteral);
+        assert_eq!(tokens[1].lexeme, r#"x\`y"#);
+    }
+
+    #[test]
+    fn terminates_quoted_literals_after_escaped_backslashes() {
+        let tokens = lex_source(r#""a\\" b"#).expect("lexing should work");
+
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0].kind, TokenKind::StringLiteral);
+        assert_eq!(tokens[0].lexeme, r#"a\\"#);
+        assert_eq!(tokens[1].kind, TokenKind::Identifier);
+        assert_eq!(tokens[1].lexeme, "b");
     }
 
     #[test]
