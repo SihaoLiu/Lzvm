@@ -498,6 +498,11 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             "--trace-bytes requires a single-unit witness run".to_owned(),
         ));
     }
+    if evaluation_values_segment.is_some() && !(all_units || run_args.request.options.aggregate) {
+        return Err(ParseError::Invalid(
+            "--evaluation-values-segment requires all-units mode".to_owned(),
+        ));
+    }
     Ok(ParsedWitnessArgs {
         run_args,
         all_units,
@@ -1117,6 +1122,24 @@ mod tests {
             result,
             Err(ParseError::Invalid(message))
                 if message == "--trace-bytes requires a single-unit witness run"
+        ));
+    }
+
+    #[test]
+    fn rejects_evaluation_values_segment_without_all_units_during_parse() {
+        let result = parse_witness_args(&[
+            "--evaluation-values-segment",
+            "evaluations.bin",
+            "setup-dir",
+            "out-dir",
+            "witness.so",
+            "guest.elf",
+        ]);
+
+        assert!(matches!(
+            result,
+            Err(ParseError::Invalid(message))
+                if message == "--evaluation-values-segment requires all-units mode"
         ));
     }
 }
