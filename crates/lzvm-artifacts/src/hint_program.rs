@@ -9,6 +9,11 @@ use crate::sectioned::{
     encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
 
+const HINT_MIN_BYTES: usize = 1 + 4;
+const FIELD_MIN_BYTES: usize = 1 + 4;
+const VALUE_MIN_BYTES: usize = 1 + 4;
+const POSITION_BYTES: usize = 4;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HintProgram {
     pub hints: Vec<Hint>,
@@ -376,18 +381,27 @@ fn parse_hint_section(
     kind: HintSectionKind,
 ) -> Result<HintProgram, HintProgramError> {
     let mut reader = Reader::new(bytes);
-    let hint_count = reader.read_u32()?;
-    let mut hints = Vec::with_capacity(hint_count as usize);
+    let hint_count = u32_to_usize(reader.read_u32()?)?;
+    if hint_count > reader.remaining_len() / HINT_MIN_BYTES {
+        return Err(HintProgramError::LengthOverflow);
+    }
+    let mut hints = Vec::with_capacity(hint_count);
 
     for _ in 0..hint_count {
         let name = reader.read_string()?;
-        let field_count = reader.read_u32()?;
-        let mut fields = Vec::with_capacity(field_count as usize);
+        let field_count = u32_to_usize(reader.read_u32()?)?;
+        if field_count > reader.remaining_len() / FIELD_MIN_BYTES {
+            return Err(HintProgramError::LengthOverflow);
+        }
+        let mut fields = Vec::with_capacity(field_count);
 
         for _ in 0..field_count {
             let name = reader.read_string()?;
-            let value_count = reader.read_u32()?;
-            let mut values = Vec::with_capacity(value_count as usize);
+            let value_count = u32_to_usize(reader.read_u32()?)?;
+            if value_count > reader.remaining_len() / VALUE_MIN_BYTES {
+                return Err(HintProgramError::LengthOverflow);
+            }
+            let mut values = Vec::with_capacity(value_count);
 
             for _ in 0..value_count {
                 values.push(read_hint_value(&mut reader, kind)?);
@@ -474,8 +488,11 @@ fn read_hint_value(
         _ => return Err(HintProgramError::UnknownOperand { op }),
     };
 
-    let position_count = reader.read_u32()?;
-    let mut positions = Vec::with_capacity(position_count as usize);
+    let position_count = u32_to_usize(reader.read_u32()?)?;
+    if position_count > reader.remaining_len() / POSITION_BYTES {
+        return Err(HintProgramError::LengthOverflow);
+    }
+    let mut positions = Vec::with_capacity(position_count);
     for _ in 0..position_count {
         positions.push(reader.read_u32()?);
     }
@@ -656,6 +673,10 @@ fn write_string(out: &mut Vec<u8>, value: &str) -> Result<(), HintProgramError> 
     Ok(())
 }
 
+fn u32_to_usize(value: u32) -> Result<usize, HintProgramError> {
+    usize::try_from(value).map_err(|_| HintProgramError::LengthOverflow)
+}
+
 struct Reader<'a> {
     bytes: &'a [u8],
     offset: usize,
@@ -668,6 +689,10 @@ impl<'a> Reader<'a> {
 
     fn position(&self) -> usize {
         self.offset
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], HintProgramError> {

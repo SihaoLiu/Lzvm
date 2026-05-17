@@ -164,6 +164,44 @@ fn truncated_hint_file() -> Vec<u8> {
     wrap_regular_hint_section(section)
 }
 
+fn hint_count_file(hint_count: u32) -> Vec<u8> {
+    let mut section = Vec::new();
+    push_u32(&mut section, hint_count);
+    wrap_regular_hint_section(section)
+}
+
+fn field_count_file(field_count: u32) -> Vec<u8> {
+    let mut section = Vec::new();
+    push_u32(&mut section, 1);
+    push_string(&mut section, "hint");
+    push_u32(&mut section, field_count);
+    wrap_regular_hint_section(section)
+}
+
+fn value_count_file(value_count: u32) -> Vec<u8> {
+    let mut section = Vec::new();
+    push_u32(&mut section, 1);
+    push_string(&mut section, "hint");
+    push_u32(&mut section, 1);
+    push_string(&mut section, "field");
+    push_u32(&mut section, value_count);
+    wrap_regular_hint_section(section)
+}
+
+fn position_count_file(position_count: u32) -> Vec<u8> {
+    let mut section = Vec::new();
+    push_u32(&mut section, 1);
+    push_string(&mut section, "hint");
+    push_u32(&mut section, 1);
+    push_string(&mut section, "field");
+    push_u32(&mut section, 1);
+    push_string(&mut section, "number");
+    push_u32(&mut section, 42);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, position_count);
+    wrap_regular_hint_section(section)
+}
+
 fn regular_hint_file_with_extended_operands() -> Vec<u8> {
     let mut section = Vec::new();
     push_u32(&mut section, 1);
@@ -522,7 +560,39 @@ fn rejects_unknown_hint_operands() {
 fn rejects_truncated_hint_sections() {
     assert!(matches!(
         parse_regular_hint_program(&truncated_hint_file()),
-        Err(HintProgramError::MissingStringTerminator { .. })
+        Err(HintProgramError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_hint_count_that_exceeds_remaining_hint_records() {
+    assert!(matches!(
+        parse_regular_hint_program(&hint_count_file(1)),
+        Err(HintProgramError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_field_count_that_exceeds_remaining_field_records() {
+    assert!(matches!(
+        parse_regular_hint_program(&field_count_file(1)),
+        Err(HintProgramError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_value_count_that_exceeds_remaining_value_records() {
+    assert!(matches!(
+        parse_regular_hint_program(&value_count_file(1)),
+        Err(HintProgramError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_position_count_that_exceeds_remaining_positions() {
+    assert!(matches!(
+        parse_regular_hint_program(&position_count_file(1)),
+        Err(HintProgramError::LengthOverflow)
     ));
 }
 
