@@ -425,7 +425,7 @@ fn writes_block_public_values_from_block_input() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=21\npublic_value_fields=170\nblock_hash={}\nparent_hash={}\nommers_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\nlogs_bloom={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\ntransaction_count=1\nlegacy_transactions=1\ntyped_transactions=0\nwithdrawals=absent\n",
+            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=21\npublic_value_fields=170\nblock_hash={}\nparent_hash={}\nommers_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\nlogs_bloom={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=absent\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\ntransaction_count=1\nlegacy_transactions=1\ntyped_transactions=0\nreceipts=absent\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
             setup_hash_hex,
@@ -496,7 +496,7 @@ fn writes_block_public_values_from_base_fee_block_input() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=21\npublic_value_fields=170\nblock_hash={}\nparent_hash={}\nommers_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\nlogs_bloom={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=64\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\ntransaction_count=1\nlegacy_transactions=1\ntyped_transactions=0\nwithdrawals=absent\n",
+            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=21\npublic_value_fields=170\nblock_hash={}\nparent_hash={}\nommers_hash={}\nbeneficiary={}\nstate_root={}\nreceipts_root={}\nlogs_bloom={}\ndifficulty=01\nblock_number=2\ntimestamp=101\nextra_data=6c7a766d\ngas_limit=1000000\ngas_used=900000\nbase_fee_per_gas=64\nmix_hash={}\nnonce={}\ntransactions_root={}\ntransaction_trie_preimages=1\ntransaction_count=1\nlegacy_transactions=1\ntyped_transactions=0\nreceipts=absent\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
             setup_hash_hex,

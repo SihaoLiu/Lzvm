@@ -175,21 +175,26 @@ fn write_block_public_values(
     let _ = writeln!(stdout, "transaction_count={transaction_count}");
     let _ = writeln!(stdout, "legacy_transactions={legacy_transaction_count}");
     let _ = writeln!(stdout, "typed_transactions={typed_transaction_count}");
-    if let Some(receipts) = &input.receipts {
-        let _ = writeln!(stdout, "receipts=present");
-        if let Some(receipts_rlp) = &input.receipts_rlp {
-            let _ = writeln!(stdout, "receipts_rlp_bytes={}", receipts_rlp.len());
+    match &input.receipts {
+        Some(receipts) => {
+            let _ = writeln!(stdout, "receipts=present");
+            if let Some(receipts_rlp) = &input.receipts_rlp {
+                let _ = writeln!(stdout, "receipts_rlp_bytes={}", receipts_rlp.len());
+            }
+            let _ = writeln!(
+                stdout,
+                "receipt_trie_preimages={}",
+                receipts.hash_preimages.len()
+            );
+            if let Some((legacy_count, typed_count)) = receipt_kind_counts {
+                let receipt_count = legacy_count + typed_count;
+                let _ = writeln!(stdout, "receipt_count={receipt_count}");
+                let _ = writeln!(stdout, "legacy_receipts={legacy_count}");
+                let _ = writeln!(stdout, "typed_receipts={typed_count}");
+            }
         }
-        let _ = writeln!(
-            stdout,
-            "receipt_trie_preimages={}",
-            receipts.hash_preimages.len()
-        );
-        if let Some((legacy_count, typed_count)) = receipt_kind_counts {
-            let receipt_count = legacy_count + typed_count;
-            let _ = writeln!(stdout, "receipt_count={receipt_count}");
-            let _ = writeln!(stdout, "legacy_receipts={legacy_count}");
-            let _ = writeln!(stdout, "typed_receipts={typed_count}");
+        None => {
+            let _ = writeln!(stdout, "receipts=absent");
         }
     }
     match input.withdrawals_root {
