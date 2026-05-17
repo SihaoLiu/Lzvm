@@ -294,6 +294,25 @@ fn rejects_missing_withdrawals_body() {
 }
 
 #[test]
+fn rejects_extra_header_fields() {
+    let mut header_items = legacy_header_items(empty_trie_root(), Some(empty_trie_root()));
+    header_items.push(rlp_bytes(&[0xee]));
+    let header_rlp = rlp_list(&header_items);
+    let empty_list = rlp_list(&[]);
+    let block_rlp = rlp_list(&[
+        header_rlp,
+        empty_list.clone(),
+        empty_list.clone(),
+        empty_list,
+    ]);
+
+    let error = build_eth_block_input(&block_rlp)
+        .expect_err("block input should reject extra header fields");
+
+    assert!(matches!(error, EthBlockInputError::UnsupportedHeaderFields));
+}
+
+#[test]
 fn rejects_preimage_hash_mismatches() {
     let block_rlp = sample_block_rlp_with_transactions(
         hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),

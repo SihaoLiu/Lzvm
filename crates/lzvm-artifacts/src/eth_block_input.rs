@@ -86,6 +86,7 @@ pub enum EthBlockInputError {
     },
     TransactionsRootMismatch,
     OmmersHashMismatch,
+    UnsupportedHeaderFields,
     MissingWithdrawalsRoot,
     UnexpectedWithdrawalsRoot,
     BlockHashMismatch,
@@ -171,6 +172,9 @@ impl fmt::Display for EthBlockInputError {
             }
             Self::TransactionsRootMismatch => write!(f, "ETH block transactions root mismatch"),
             Self::OmmersHashMismatch => write!(f, "ETH block ommers hash mismatch"),
+            Self::UnsupportedHeaderFields => {
+                write!(f, "ETH block input unsupported header fields")
+            }
             Self::MissingWithdrawalsRoot => {
                 write!(f, "ETH block withdrawals body present without withdrawals root")
             }
@@ -280,6 +284,9 @@ pub fn build_eth_block_input(block_rlp: &[u8]) -> Result<EthBlockInput, EthBlock
     let header = decode_eth_header_rlp(&block.header)?;
     if header.gas_used > header.gas_limit {
         return Err(EthBlockInputError::GasUsedExceedsGasLimit);
+    }
+    if !header.extra_header_fields.is_empty() {
+        return Err(EthBlockInputError::UnsupportedHeaderFields);
     }
     let block_hash = eth_header_hash(&block.header);
     let transactions = transaction_trie_build(&block.transactions)?;
