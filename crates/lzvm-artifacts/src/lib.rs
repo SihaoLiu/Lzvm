@@ -31,6 +31,7 @@ pub mod regular_program;
 pub mod sectioned;
 pub mod setup_info;
 pub mod setup_manifest;
+pub mod source_fixed_file_manifest;
 pub mod source_program;
 pub mod trace_bundle;
 pub mod unit_values_segment;
