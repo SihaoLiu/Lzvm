@@ -5,7 +5,7 @@ use std::path::Path;
 use lzvm_artifacts::eth_block_input::parse_eth_block_input;
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
 use lzvm_artifacts::key_directory::key_directory_catalog_digest;
-use lzvm_artifacts::public_values::{encode_public_values, PublicValues};
+use lzvm_artifacts::public_values::{encode_public_values, public_values_digest, PublicValues};
 
 use crate::prove_plan::read_checked_setup_catalog;
 
@@ -60,6 +60,13 @@ fn write_block_public_values(
         }
     };
     let public_values = public_values_from_eth_block_input(setup_hash, &input);
+    let public_values_hash = match public_values_digest(&public_values) {
+        Ok(hash) => hash,
+        Err(error) => {
+            let _ = writeln!(stderr, "eth block public values failed: {error}");
+            return 1;
+        }
+    };
     let encoded = match encode_public_values(&public_values) {
         Ok(encoded) => encoded,
         Err(error) => {
@@ -94,6 +101,11 @@ fn write_block_public_values(
     let _ = writeln!(stdout, "public_values={}", output_path.display());
     let _ = writeln!(stdout, "bytes={}", encoded.len());
     let _ = writeln!(stdout, "setup_hash={}", format_hash(&setup_hash));
+    let _ = writeln!(
+        stdout,
+        "public_values_hash={}",
+        format_hash(&public_values_hash)
+    );
     let _ = writeln!(stdout, "values={}", public_values.values.len());
     let _ = writeln!(
         stdout,

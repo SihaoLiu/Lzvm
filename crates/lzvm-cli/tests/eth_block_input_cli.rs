@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use lzvm_artifacts::eth_block_input::{
     build_eth_block_input, encode_eth_block_input, parse_eth_block_input,
 };
-use lzvm_artifacts::public_values::parse_public_values;
+use lzvm_artifacts::public_values::{parse_public_values, public_values_digest};
 use lzvm_cli::run_cli;
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -173,6 +173,8 @@ fn writes_block_public_values_from_block_input() {
     assert!(stderr.is_empty());
     let encoded = fs::read(&output_path).expect("public values should be written");
     let parsed = parse_public_values(&encoded).expect("public values should parse");
+    let public_values_hash =
+        public_values_digest(&parsed).expect("public values digest should compute");
     assert_eq!(parsed.setup_hash, setup_hash);
     assert_eq!(parsed.schema_version, 1);
     assert_eq!(parsed.values.len(), 7);
@@ -196,10 +198,11 @@ fn writes_block_public_values_from_block_input() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\nvalues=7\npublic_value_fields=37\nblock_hash={}\nblock_number=2\ntimestamp=101\ntransactions_root={}\nwithdrawals=absent\n",
+            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=7\npublic_value_fields=37\nblock_hash={}\nblock_number=2\ntimestamp=101\ntransactions_root={}\nwithdrawals=absent\n",
             output_path.display(),
             encoded.len(),
             setup_hash_hex,
+            to_hex(&public_values_hash),
             to_hex(&input.block_hash),
             to_hex(&input.transactions_root)
         )

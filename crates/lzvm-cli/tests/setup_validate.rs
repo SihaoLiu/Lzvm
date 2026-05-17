@@ -5170,6 +5170,8 @@ fn writes_eth_block_public_values_from_setup_directory() {
     assert!(stderr.is_empty());
     let encoded = fs::read(&public_values_path).expect("public values should read");
     let parsed = parse_public_values(&encoded).expect("public values should parse");
+    let public_values_hash =
+        public_values_digest(&parsed).expect("public values digest should compute");
     assert_eq!(parsed.setup_hash, setup_hash);
     assert_eq!(
         parsed,
@@ -5178,10 +5180,11 @@ fn writes_eth_block_public_values_from_setup_directory() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\nvalues=7\npublic_value_fields=37\nblock_hash={}\nblock_number=2\ntimestamp=101\ntransactions_root={}\nwithdrawals=absent\n",
+            "status=ok\npublic_values={}\nbytes={}\nsetup_hash={}\npublic_values_hash={}\nvalues=7\npublic_value_fields=37\nblock_hash={}\nblock_number=2\ntimestamp=101\ntransactions_root={}\nwithdrawals=absent\n",
             public_values_path.display(),
             encoded.len(),
             setup_hash_hex,
+            format_hash(&public_values_hash),
             format_hash(&block_input.block_hash),
             format_hash(&block_input.transactions_root)
         )
