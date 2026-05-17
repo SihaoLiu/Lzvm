@@ -31,6 +31,7 @@ pub(crate) struct EthBlockInputSummary {
     pub(crate) base_fee_per_gas: Option<[u8; 32]>,
     pub(crate) mix_hash: [u8; 32],
     pub(crate) nonce: [u8; 8],
+    pub(crate) ommers_hash: [u8; 32],
     pub(crate) transactions_root: [u8; 32],
     pub(crate) transaction_preimage_count: usize,
     pub(crate) legacy_transaction_count: usize,
@@ -81,6 +82,7 @@ pub(crate) fn validate_eth_block_input(
         base_fee_per_gas: input.base_fee_per_gas,
         mix_hash: input.mix_hash,
         nonce: input.nonce,
+        ommers_hash: input.ommers_hash,
         transactions_root: input.transactions_root,
         transaction_preimage_count: input.transactions.hash_preimages.len(),
         legacy_transaction_count,
@@ -120,6 +122,11 @@ pub(crate) fn write_eth_block_input_summary(
         stdout,
         "eth_parent_hash={}",
         format_hash(&summary.parent_hash)
+    );
+    let _ = writeln!(
+        stdout,
+        "eth_ommers_hash={}",
+        format_hash(&summary.ommers_hash)
     );
     let _ = writeln!(
         stdout,
