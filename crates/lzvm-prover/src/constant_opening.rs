@@ -7,7 +7,9 @@ use lzvm_artifacts::constant_opening_segment::{
 };
 use lzvm_artifacts::constant_tree::{read_constant_tree_file, ConstantTreeError};
 use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
-use lzvm_artifacts::pcs_query_segment::{parse_pcs_query_plan_segment, PcsQueryPlanSegmentError};
+use lzvm_artifacts::pcs_query_segment::{
+    parse_pcs_query_plan_segment, PcsQueryPlanSegmentError, PcsQueryPlanUnit,
+};
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_field::{Felt, FieldError};
 
@@ -50,6 +52,7 @@ pub enum LoadConstantOpeningUnitError {
     MissingSegment,
     DuplicateSegment,
     MissingUnit { unit_index: usize },
+    UnexpectedUnit { unit_index: usize },
     UnitIndexOverflow,
     Segment(ConstantOpeningSegmentError),
 }
@@ -160,6 +163,9 @@ impl fmt::Display for LoadConstantOpeningUnitError {
             Self::MissingUnit { unit_index } => {
                 write!(f, "constant opening segment mismatch for unit {unit_index}")
             }
+            Self::UnexpectedUnit { unit_index } => {
+                write!(f, "unexpected constant opening segment unit {unit_index}")
+            }
             Self::UnitIndexOverflow => write!(f, "constant opening segment unit index overflow"),
             Self::Segment(error) => write!(f, "invalid constant opening segment: {error}"),
         }
@@ -173,6 +179,7 @@ impl std::error::Error for LoadConstantOpeningUnitError {
             Self::MissingSegment
             | Self::DuplicateSegment
             | Self::MissingUnit { .. }
+            | Self::UnexpectedUnit { .. }
             | Self::UnitIndexOverflow => None,
         }
     }
@@ -256,6 +263,24 @@ pub fn load_constant_opening_unit_from_segments(
         .into_iter()
         .find(|unit| unit.unit_index == unit_index_u32)
         .ok_or(LoadConstantOpeningUnitError::MissingUnit { unit_index })
+}
+
+pub(crate) fn validate_constant_opening_units_match_query_units(
+    query_units: &[PcsQueryPlanUnit],
+    segments: &[ProofSegment],
+) -> Result<(), LoadConstantOpeningUnitError> {
+    let opening = load_constant_opening_segment_from_segments(segments)?;
+    for unit in opening.units {
+        if !query_units
+            .iter()
+            .any(|query_unit| query_unit.unit_index == unit.unit_index)
+        {
+            let unit_index = usize::try_from(unit.unit_index)
+                .map_err(|_| LoadConstantOpeningUnitError::UnitIndexOverflow)?;
+            return Err(LoadConstantOpeningUnitError::UnexpectedUnit { unit_index });
+        }
+    }
+    Ok(())
 }
 
 pub fn validate_constant_opening_segments(

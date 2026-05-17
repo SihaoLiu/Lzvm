@@ -137,6 +137,7 @@ pub enum LoadWitnessOpeningUnitError {
     MissingSegment,
     DuplicateSegment,
     MissingUnit { unit_index: usize },
+    UnexpectedUnit { unit_index: usize },
     UnitIndexOverflow,
     Segment(WitnessOpeningSegmentError),
 }
@@ -195,6 +196,9 @@ impl fmt::Display for LoadWitnessOpeningUnitError {
             Self::MissingUnit { unit_index } => {
                 write!(f, "witness opening segment mismatch for unit {unit_index}")
             }
+            Self::UnexpectedUnit { unit_index } => {
+                write!(f, "unexpected witness opening segment unit {unit_index}")
+            }
             Self::UnitIndexOverflow => write!(f, "witness opening segment unit index overflow"),
             Self::Segment(error) => write!(f, "invalid witness opening segment: {error}"),
         }
@@ -208,6 +212,7 @@ impl std::error::Error for LoadWitnessOpeningUnitError {
             Self::MissingSegment
             | Self::DuplicateSegment
             | Self::MissingUnit { .. }
+            | Self::UnexpectedUnit { .. }
             | Self::UnitIndexOverflow => None,
         }
     }
@@ -303,6 +308,24 @@ pub fn load_witness_opening_unit_from_segments(
         .into_iter()
         .find(|unit| unit.unit_index == unit_index_u32)
         .ok_or(LoadWitnessOpeningUnitError::MissingUnit { unit_index })
+}
+
+pub(crate) fn validate_witness_opening_units_match_query_units(
+    query_units: &[PcsQueryPlanUnit],
+    segments: &[ProofSegment],
+) -> Result<(), LoadWitnessOpeningUnitError> {
+    let opening = load_witness_opening_segment_from_segments(segments)?;
+    for unit in opening.units {
+        if !query_units
+            .iter()
+            .any(|query_unit| query_unit.unit_index == unit.unit_index)
+        {
+            let unit_index = usize::try_from(unit.unit_index)
+                .map_err(|_| LoadWitnessOpeningUnitError::UnitIndexOverflow)?;
+            return Err(LoadWitnessOpeningUnitError::UnexpectedUnit { unit_index });
+        }
+    }
+    Ok(())
 }
 
 pub fn validate_witness_opening_segments(

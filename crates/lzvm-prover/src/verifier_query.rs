@@ -11,7 +11,8 @@ use lzvm_artifacts::witness_opening_segment::WitnessOpeningUnitSegment;
 use lzvm_field::{Ext3, Felt, FieldError, SHIFT};
 
 use crate::constant_opening::{
-    load_constant_opening_segment_from_segments, LoadConstantOpeningSegmentError,
+    load_constant_opening_segment_from_segments, validate_constant_opening_units_match_query_units,
+    LoadConstantOpeningSegmentError, LoadConstantOpeningUnitError,
 };
 use crate::pcs_evaluation::{load_pcs_evaluation_unit_from_segments, LoadPcsEvaluationUnitError};
 use crate::pcs_transcript_segments::PcsTranscriptUnitChallenges;
@@ -21,7 +22,8 @@ use crate::verifier_eval::{
     VerifierOpenedStage,
 };
 use crate::witness_opening::{
-    load_witness_opening_segment_from_segments, LoadWitnessOpeningSegmentError,
+    load_witness_opening_segment_from_segments, validate_witness_opening_units_match_query_units,
+    LoadWitnessOpeningSegmentError, LoadWitnessOpeningUnitError,
 };
 use crate::ProveUnitSchedule;
 
@@ -190,7 +192,9 @@ pub enum VerifierFriQueryOutputValidationError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerifierFriQueryOutputSegmentsError {
     ConstantOpening(LoadConstantOpeningSegmentError),
+    ConstantOpeningUnit(LoadConstantOpeningUnitError),
     WitnessOpening(LoadWitnessOpeningSegmentError),
+    WitnessOpeningUnit(LoadWitnessOpeningUnitError),
     Evaluation(LoadPcsEvaluationUnitError),
     ProofValues(LoadPcsProofValuesSegmentError),
     Validation {
@@ -325,7 +329,9 @@ impl fmt::Display for VerifierFriQueryOutputSegmentsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ConstantOpening(error) => write!(f, "{error}"),
+            Self::ConstantOpeningUnit(error) => write!(f, "{error}"),
             Self::WitnessOpening(error) => write!(f, "{error}"),
+            Self::WitnessOpeningUnit(error) => write!(f, "{error}"),
             Self::Evaluation(error) => write!(f, "{error}"),
             Self::ProofValues(error) => write!(f, "{error}"),
             Self::Validation { unit_index, source } => write!(
@@ -354,7 +360,9 @@ impl std::error::Error for VerifierFriQueryOutputSegmentsError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::ConstantOpening(error) => Some(error),
+            Self::ConstantOpeningUnit(error) => Some(error),
             Self::WitnessOpening(error) => Some(error),
+            Self::WitnessOpeningUnit(error) => Some(error),
             Self::Evaluation(error) => Some(error),
             Self::ProofValues(error) => Some(error),
             Self::Validation { source, .. } => Some(source),
@@ -622,6 +630,10 @@ pub fn validate_verifier_query_outputs_from_segments(
         .map_err(VerifierFriQueryOutputSegmentsError::WitnessOpening)?;
     let proof_values = load_pcs_proof_values_from_segments(request.global_info, request.segments)
         .map_err(VerifierFriQueryOutputSegmentsError::ProofValues)?;
+    validate_constant_opening_units_match_query_units(request.query_units, request.segments)
+        .map_err(VerifierFriQueryOutputSegmentsError::ConstantOpeningUnit)?;
+    validate_witness_opening_units_match_query_units(request.query_units, request.segments)
+        .map_err(VerifierFriQueryOutputSegmentsError::WitnessOpeningUnit)?;
 
     for query_unit in request.query_units {
         let unit_index = usize::try_from(query_unit.unit_index)

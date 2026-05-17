@@ -1,6 +1,6 @@
 use lzvm_artifacts::constant_opening_segment::{
-    encode_constant_opening_segment, ConstantOpeningQuerySegment, ConstantOpeningSegment,
-    ConstantOpeningUnitSegment, CONSTANT_OPENING_SEGMENT_ID,
+    encode_constant_opening_segment, parse_constant_opening_segment, ConstantOpeningQuerySegment,
+    ConstantOpeningSegment, ConstantOpeningUnitSegment, CONSTANT_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
 use lzvm_artifacts::key_directory::KeyUnitKind;
@@ -19,8 +19,9 @@ use lzvm_artifacts::verifier_info::{
     VerifierCode, VerifierDestination, VerifierOperand, VerifierOperation, VerifierOperationKind,
 };
 use lzvm_artifacts::witness_opening_segment::{
-    encode_witness_opening_segment, WitnessOpeningQuerySegment, WitnessOpeningSegment,
-    WitnessOpeningStageSegment, WitnessOpeningUnitSegment, WITNESS_OPENING_SEGMENT_ID,
+    encode_witness_opening_segment, parse_witness_opening_segment, WitnessOpeningQuerySegment,
+    WitnessOpeningSegment, WitnessOpeningStageSegment, WitnessOpeningUnitSegment,
+    WITNESS_OPENING_SEGMENT_ID,
 };
 use lzvm_field::{Ext3, Felt, SHIFT};
 use lzvm_prover::pcs_transcript_segments::PcsTranscriptUnitChallenges;
@@ -615,6 +616,77 @@ fn rejects_verifier_query_output_mismatches_from_proof_segments() {
     assert_eq!(
         error,
         VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index: 0 }
+    );
+}
+
+#[test]
+fn rejects_verifier_query_outputs_extra_constant_opening_units() {
+    let (unit, code, query_unit, fri, challenges, mut segments) =
+        verifier_query_output_segments_fixture(false);
+    let constant_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == CONSTANT_OPENING_SEGMENT_ID)
+        .expect("constant opening segment should exist");
+    let mut opening =
+        parse_constant_opening_segment(&constant_segment.data).expect("opening should parse");
+    let mut extra_unit = opening.units[0].clone();
+    extra_unit.unit_index = 1;
+    opening.units.push(extra_unit);
+    constant_segment.data =
+        encode_constant_opening_segment(&opening).expect("opening should encode");
+    let code_refs = [&code];
+
+    let error =
+        validate_verifier_query_outputs_from_segments(VerifierFriQueryOutputSegmentsRequest {
+            units: &[unit],
+            verifier_codes: &code_refs,
+            global_info: &global_info_without_proof_values(),
+            public_values: &[],
+            query_units: std::slice::from_ref(&query_unit),
+            opening_units: std::slice::from_ref(&fri),
+            transcript_challenges: std::slice::from_ref(&challenges),
+            segments: &segments,
+        })
+        .expect_err("extra constant opening unit should be rejected");
+
+    assert_eq!(
+        error.to_string(),
+        "unexpected constant opening segment unit 1"
+    );
+}
+
+#[test]
+fn rejects_verifier_query_outputs_extra_witness_opening_units() {
+    let (unit, code, query_unit, fri, challenges, mut segments) =
+        verifier_query_output_segments_fixture(false);
+    let witness_segment = segments
+        .iter_mut()
+        .find(|segment| segment.id == WITNESS_OPENING_SEGMENT_ID)
+        .expect("witness opening segment should exist");
+    let mut opening =
+        parse_witness_opening_segment(&witness_segment.data).expect("opening should parse");
+    let mut extra_unit = opening.units[0].clone();
+    extra_unit.unit_index = 1;
+    opening.units.push(extra_unit);
+    witness_segment.data = encode_witness_opening_segment(&opening).expect("opening should encode");
+    let code_refs = [&code];
+
+    let error =
+        validate_verifier_query_outputs_from_segments(VerifierFriQueryOutputSegmentsRequest {
+            units: &[unit],
+            verifier_codes: &code_refs,
+            global_info: &global_info_without_proof_values(),
+            public_values: &[],
+            query_units: std::slice::from_ref(&query_unit),
+            opening_units: std::slice::from_ref(&fri),
+            transcript_challenges: std::slice::from_ref(&challenges),
+            segments: &segments,
+        })
+        .expect_err("extra witness opening unit should be rejected");
+
+    assert_eq!(
+        error.to_string(),
+        "unexpected witness opening segment unit 1"
     );
 }
 
