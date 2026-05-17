@@ -628,6 +628,13 @@ fn verify_preflight(
     }
     if report.eth_block_input_count > 0 {
         let _ = writeln!(stdout, "eth_block_inputs={}", report.eth_block_input_count);
+        for hash in &report.eth_block_input_hashes {
+            let _ = writeln!(
+                stdout,
+                "eth_block_input_hash={}",
+                prove_plan::format_hash(hash)
+            );
+        }
     }
     0
 }
@@ -859,13 +866,22 @@ fn verify_setup_validation(
             "eth_block_inputs={}",
             public_report.eth_block_input_count
         );
+        for hash in &public_report.eth_block_input_hashes {
+            let _ = writeln!(
+                stdout,
+                "eth_block_input_hash={}",
+                prove_plan::format_hash(hash)
+            );
+        }
     }
     if let Some(hash) = eth_block_input_hash {
-        let _ = writeln!(
-            stdout,
-            "eth_block_input_hash={}",
-            prove_plan::format_hash(&hash)
-        );
+        if public_report.eth_block_input_hashes.is_empty() {
+            let _ = writeln!(
+                stdout,
+                "eth_block_input_hash={}",
+                prove_plan::format_hash(&hash)
+            );
+        }
         let _ = writeln!(stdout, "eth_block_input_match=ok");
     }
     0

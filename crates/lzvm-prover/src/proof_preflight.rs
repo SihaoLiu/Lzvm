@@ -1,7 +1,7 @@
 use std::fmt;
 use std::path::Path;
 
-use lzvm_artifacts::eth_block_input::EthBlockInputError;
+use lzvm_artifacts::eth_block_input::{eth_block_input_bytes_digest, EthBlockInputError};
 use lzvm_artifacts::eth_block_input_segment::{
     parse_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
@@ -28,6 +28,7 @@ pub struct ProofPreflightReport {
     pub public_value_field_count: usize,
     pub program_image_cache_count: usize,
     pub eth_block_input_count: usize,
+    pub eth_block_input_hashes: Vec<[u8; 32]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,6 +169,7 @@ pub fn validate_proof_public_values(
             .map_err(ProofPreflightError::ProgramImageCache)?;
         program_image_cache_count += 1;
     }
+    let mut eth_block_input_hashes = Vec::new();
     let eth_block_input_count = proof
         .segments
         .iter()
@@ -181,6 +183,7 @@ pub fn validate_proof_public_values(
         .iter()
         .filter(|segment| segment.id == ETH_BLOCK_INPUT_SEGMENT_ID)
     {
+        eth_block_input_hashes.push(eth_block_input_bytes_digest(&segment.data));
         let input = parse_eth_block_input_segment(&segment.data)
             .map_err(ProofPreflightError::EthBlockInput)?;
         validate_eth_block_public_values(&input, public_values)
@@ -194,6 +197,7 @@ pub fn validate_proof_public_values(
         public_value_field_count: public_value_fields.len(),
         program_image_cache_count,
         eth_block_input_count,
+        eth_block_input_hashes,
     })
 }
 
