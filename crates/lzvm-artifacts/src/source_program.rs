@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 
 const SOURCE_PROGRAM_ARCHIVE_MAGIC: [u8; 4] = *b"spg0";
 const SOURCE_PROGRAM_ARCHIVE_VERSION: u32 = 1;
+const MIN_SOURCE_RECORD_BYTES: usize = 16;
+const MIN_EDGE_RECORD_BYTES: usize = 18;
 
 pub const SOURCE_PROGRAM_ARCHIVE_FILE: &str = "lzvm.source-program-archive";
 
@@ -199,6 +201,12 @@ pub fn parse_source_program_archive(
 
     let source_count = reader.read_u32()? as usize;
     let edge_count = reader.read_u32()? as usize;
+    if source_count == 0 {
+        return Err(SourceProgramArchiveError::EmptySources);
+    }
+    if source_count > reader.remaining_len() / MIN_SOURCE_RECORD_BYTES {
+        return Err(SourceProgramArchiveError::LengthOverflow);
+    }
     let mut sources = Vec::with_capacity(source_count);
     let mut seen_names = BTreeSet::new();
     for index in 0..source_count {
@@ -216,6 +224,9 @@ pub fn parse_source_program_archive(
         });
     }
 
+    if edge_count > reader.remaining_len() / MIN_EDGE_RECORD_BYTES {
+        return Err(SourceProgramArchiveError::LengthOverflow);
+    }
     let mut edges = Vec::with_capacity(edge_count);
     for edge_index in 0..edge_count {
         let from_index = reader.read_u32()?;
@@ -337,6 +348,10 @@ impl<'a> Reader<'a> {
 
     fn position(&self) -> usize {
         self.offset
+    }
+
+    fn remaining_len(&self) -> usize {
+        self.bytes.len().saturating_sub(self.offset)
     }
 
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], SourceProgramArchiveError> {
