@@ -28,6 +28,7 @@ pub mod proof;
 pub mod public_values;
 mod regular_lowering;
 pub mod regular_program;
+pub mod rlp;
 pub mod sectioned;
 pub mod setup_info;
 pub mod setup_manifest;
