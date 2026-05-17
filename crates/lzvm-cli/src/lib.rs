@@ -547,6 +547,11 @@ fn write_contribution_challenge_segment(
     let _ = writeln!(stdout, "proofs={}", report.proof_count);
     let _ = writeln!(stdout, "segments={}", report.segment_count);
     let _ = writeln!(stdout, "public_values={}", report.public_value_count);
+    let _ = writeln!(
+        stdout,
+        "public_value_fields={}",
+        report.public_value_field_count
+    );
     let _ = writeln!(stdout, "proof_values={}", report.proof_value_count);
     let _ = writeln!(stdout, "contributions={}", report.contribution_count);
     let _ = writeln!(stdout, "challenge_values={}", challenge_values.len());
@@ -720,6 +725,11 @@ fn verify_contribution(
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "segments={}", report.segment_count);
     let _ = writeln!(stdout, "public_values={}", report.public_value_count);
+    let _ = writeln!(
+        stdout,
+        "public_value_fields={}",
+        report.public_value_field_count
+    );
     let _ = writeln!(stdout, "proof_values={}", report.proof_value_count);
     let _ = writeln!(stdout, "contributions={}", report.contribution_count);
     let _ = writeln!(
@@ -756,6 +766,11 @@ fn verify_contribution_set(
     let _ = writeln!(stdout, "proofs={}", report.proof_count);
     let _ = writeln!(stdout, "segments={}", report.segment_count);
     let _ = writeln!(stdout, "public_values={}", report.public_value_count);
+    let _ = writeln!(
+        stdout,
+        "public_value_fields={}",
+        report.public_value_field_count
+    );
     let _ = writeln!(stdout, "proof_values={}", report.proof_value_count);
     let _ = writeln!(stdout, "contributions={}", report.contribution_count);
     let _ = writeln!(
