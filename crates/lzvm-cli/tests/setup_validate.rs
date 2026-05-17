@@ -104,7 +104,7 @@ use lzvm_artifacts::witness_segment::{
     WitnessCommitmentStageSegment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 use lzvm_cli::{build_witness_proof_artifact, build_witness_proof_core_artifact, run_cli};
-use lzvm_field::{poseidon2_hash_16, Ext3, Felt};
+use lzvm_field::{poseidon2_hash_16, Ext3, Felt, MODULUS};
 use lzvm_prover::contribution::{
     build_contribution_segment, derive_global_challenge_from_contributions,
     derive_global_challenge_from_proof_segments, ProveContributionEntry,
@@ -3272,6 +3272,64 @@ fn prove_inputs_rejects_invalid_public_values() {
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         format!(
             "prove inputs failed: prove execution plan public inputs are invalid: {}: unexpected end of public-values file at 0, needed 4, available 1\n",
+            public_inputs.display()
+        )
+    );
+}
+
+#[test]
+fn prove_inputs_rejects_noncanonical_public_value_fields() {
+    let dir = temp_dir("prove-inputs-noncanonical-public-values");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let output_dir = dir.join("proof-out");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let public_inputs = dir.join("public-inputs.bin");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: vec![PublicValueEntry {
+            name: "bad_value".to_owned(),
+            elements: vec![MODULUS],
+        }],
+    };
+    write_bytes(&witness_library, sample_witness_library());
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(
+        &public_inputs,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_inputs
+                .to_str()
+                .expect("public inputs path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        format!(
+            "prove inputs failed: prove execution plan public inputs field conversion failed: {}: invalid PCS transcript public value: non-canonical field element: {MODULUS}\n",
             public_inputs.display()
         )
     );

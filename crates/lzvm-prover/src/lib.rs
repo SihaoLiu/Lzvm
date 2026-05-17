@@ -24,6 +24,8 @@ use lzvm_artifacts::witness_library::{
     read_witness_library_file, WitnessLibraryError, WitnessLibraryInfo,
 };
 
+use crate::proof_preflight::{public_values_as_fields, PublicValueFieldError};
+
 pub mod constant_opening;
 pub mod constant_tree_opening;
 pub mod contribution;
@@ -477,6 +479,10 @@ pub enum ProveExecutionPlanError {
         path: PathBuf,
         source: PublicValuesError,
     },
+    PublicInputsFieldConversion {
+        path: PathBuf,
+        source: PublicValueFieldError,
+    },
     PublicInputsSetupHashMismatch {
         path: PathBuf,
     },
@@ -563,6 +569,11 @@ impl fmt::Display for ProveExecutionPlanError {
                 "prove execution plan public inputs are invalid: {}: {source}",
                 path.display()
             ),
+            Self::PublicInputsFieldConversion { path, source } => write!(
+                f,
+                "prove execution plan public inputs field conversion failed: {}: {source}",
+                path.display()
+            ),
             Self::PublicInputsSetupHashMismatch { path } => write!(
                 f,
                 "prove execution plan public inputs setup hash mismatch: {}",
@@ -593,6 +604,7 @@ impl std::error::Error for ProveExecutionPlanError {
             Self::InvalidGuestImage { source, .. } => Some(source),
             Self::InvalidProgramImageCache { source, .. } => Some(source),
             Self::InvalidPublicInputs { source, .. } => Some(source),
+            Self::PublicInputsFieldConversion { source, .. } => Some(source),
             Self::RunPlan(error) => Some(error),
             Self::MissingPcsMaterial { .. }
             | Self::MissingProgramImageCache { .. }
@@ -780,6 +792,12 @@ pub fn derive_prove_execution_plan_with_program_image_cache(
                 path: public_inputs.clone(),
             });
         }
+        public_values_as_fields(&public_values).map_err(|source| {
+            ProveExecutionPlanError::PublicInputsFieldConversion {
+                path: public_inputs.clone(),
+                source,
+            }
+        })?;
     }
     let program_image_cache = match program_image_cache {
         Some(path) => Some(load_program_image_cache(&path, &guest_image_info)?),
