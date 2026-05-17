@@ -70,6 +70,10 @@ pub enum EthBlockInputError {
     Receipt(EthReceiptError),
     Withdrawal(EthWithdrawalError),
     Sectioned(SectionedError),
+    UnsupportedVersion {
+        found: u32,
+        expected: u32,
+    },
     MissingMetadata,
     MissingBlockRlp,
     MissingTransactionPreimages,
@@ -157,6 +161,10 @@ impl fmt::Display for EthBlockInputError {
             Self::Receipt(error) => write!(f, "{error}"),
             Self::Withdrawal(error) => write!(f, "{error}"),
             Self::Sectioned(error) => write!(f, "ETH block input container error: {error}"),
+            Self::UnsupportedVersion { found, expected } => write!(
+                f,
+                "unsupported ETH block input version {found}, expected {expected}"
+            ),
             Self::MissingMetadata => write!(f, "missing ETH block input metadata"),
             Self::MissingBlockRlp => write!(f, "missing ETH block input block RLP"),
             Self::MissingTransactionPreimages => {
@@ -520,6 +528,13 @@ pub fn eth_block_input_extra_field_counts(
 pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInputError> {
     let file = parse_sectioned_file(bytes, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION)
         .map_err(EthBlockInputError::Sectioned)?;
+    if file.version != ETH_BLOCK_INPUT_VERSION {
+        return Err(EthBlockInputError::UnsupportedVersion {
+            found: file.version,
+            expected: ETH_BLOCK_INPUT_VERSION,
+        });
+    }
+
     let mut metadata = None;
     let mut block_rlp = None;
     let mut transaction_preimages = None;
