@@ -3,7 +3,8 @@ use std::io::Write;
 use std::path::Path;
 
 use lzvm_artifacts::eth_block_input::{
-    eth_block_input_receipt_kind_counts, eth_block_input_withdrawal_count, parse_eth_block_input,
+    eth_block_input_receipt_kind_counts, eth_block_input_transaction_kind_counts,
+    eth_block_input_withdrawal_count, parse_eth_block_input,
 };
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
 use lzvm_artifacts::key_directory::key_directory_catalog_digest;
@@ -69,6 +70,13 @@ fn write_block_public_values(
         }
     };
     let receipt_kind_counts = match eth_block_input_receipt_kind_counts(&input) {
+        Ok(counts) => counts,
+        Err(error) => {
+            let _ = writeln!(stderr, "eth block public values failed: {error}");
+            return 1;
+        }
+    };
+    let transaction_kind_counts = match eth_block_input_transaction_kind_counts(&input) {
         Ok(counts) => counts,
         Err(error) => {
             let _ = writeln!(stderr, "eth block public values failed: {error}");
@@ -157,6 +165,16 @@ fn write_block_public_values(
         "transactions_root={}",
         format_hash(&input.transactions_root)
     );
+    let _ = writeln!(
+        stdout,
+        "transaction_trie_preimages={}",
+        input.transactions.hash_preimages.len()
+    );
+    let (legacy_transaction_count, typed_transaction_count) = transaction_kind_counts;
+    let transaction_count = legacy_transaction_count + typed_transaction_count;
+    let _ = writeln!(stdout, "transaction_count={transaction_count}");
+    let _ = writeln!(stdout, "legacy_transactions={legacy_transaction_count}");
+    let _ = writeln!(stdout, "typed_transactions={typed_transaction_count}");
     if let Some(receipts) = &input.receipts {
         let _ = writeln!(stdout, "receipts=present");
         if let Some(receipts_rlp) = &input.receipts_rlp {
