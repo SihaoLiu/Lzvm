@@ -64,6 +64,7 @@ pub enum ProveContributionSegmentError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadContributionSegmentError {
     MissingSegment,
+    DuplicateSegment,
     NonCanonicalValue {
         entry_index: usize,
         index: usize,
@@ -166,6 +167,7 @@ impl fmt::Display for LoadContributionSegmentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingSegment => write!(f, "missing contribution segment"),
+            Self::DuplicateSegment => write!(f, "duplicate contribution segment"),
             Self::NonCanonicalValue {
                 entry_index,
                 index,
@@ -184,7 +186,7 @@ impl std::error::Error for LoadContributionSegmentError {
         match self {
             Self::NonCanonicalValue { source, .. } => Some(source),
             Self::Segment(error) => Some(error),
-            Self::MissingSegment => None,
+            Self::MissingSegment | Self::DuplicateSegment => None,
         }
     }
 }
@@ -407,10 +409,15 @@ pub fn build_contribution_segment(
 pub fn load_contribution_segment_from_segments(
     segments: &[ProofSegment],
 ) -> Result<Vec<ProveContributionEntry>, LoadContributionSegmentError> {
-    let segment = segments
+    let mut matching_segments = segments
         .iter()
-        .find(|segment| segment.id == CONTRIBUTION_SEGMENT_ID)
+        .filter(|segment| segment.id == CONTRIBUTION_SEGMENT_ID);
+    let segment = matching_segments
+        .next()
         .ok_or(LoadContributionSegmentError::MissingSegment)?;
+    if matching_segments.next().is_some() {
+        return Err(LoadContributionSegmentError::DuplicateSegment);
+    }
     let parsed =
         parse_contribution_segment(&segment.data).map_err(LoadContributionSegmentError::Segment)?;
 

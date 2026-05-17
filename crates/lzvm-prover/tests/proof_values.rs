@@ -111,6 +111,22 @@ fn rejects_unexpected_pcs_proof_values_segment() {
 }
 
 #[test]
+fn rejects_duplicate_pcs_proof_values_segments() {
+    let global = sample_global_info(vec![sample_proof_value("extension-value", 2)]);
+    let segment = build_pcs_proof_values_segment_from_packed_values(
+        &global,
+        &[Felt::from_u64(1), Felt::from_u64(2), Felt::from_u64(3)],
+    )
+    .expect("segment should build")
+    .expect("segment should exist");
+
+    let error = load_pcs_proof_values_from_segments(&global, &[segment.clone(), segment])
+        .expect_err("duplicate segments should reject");
+
+    assert_eq!(error.to_string(), "duplicate PCS proof values segment");
+}
+
+#[test]
 fn rejects_loaded_pcs_proof_values_count_mismatch() {
     let global = sample_global_info(vec![
         sample_proof_value("scalar-value", 1),

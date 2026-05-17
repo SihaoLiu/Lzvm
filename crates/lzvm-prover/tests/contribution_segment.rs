@@ -145,6 +145,19 @@ fn round_trips_contribution_segments() {
 }
 
 #[test]
+fn rejects_duplicate_contribution_segments() {
+    let entries = sample_entries();
+    let segment = build_contribution_segment(&entries)
+        .expect("segment should build")
+        .expect("segment should exist");
+
+    let error = load_contribution_segment_from_segments(&[segment.clone(), segment])
+        .expect_err("duplicate contribution segments should reject");
+
+    assert_eq!(error.to_string(), "duplicate contribution segment");
+}
+
+#[test]
 fn rejects_non_canonical_contribution_values() {
     let bytes = encode_contribution_segment(&ContributionSegment {
         entries: vec![ContributionEntry {

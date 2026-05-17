@@ -58,6 +58,7 @@ impl From<PcsProofValuesSegmentError> for ProvePcsProofValuesSegmentError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadPcsProofValuesSegmentError {
     MissingSegment,
+    DuplicateSegment,
     UnexpectedSegment,
     ValueCountMismatch { expected: usize, found: usize },
     StageOneExtensionComponents { index: usize },
@@ -70,6 +71,7 @@ impl fmt::Display for LoadPcsProofValuesSegmentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingSegment => write!(f, "missing PCS proof values segment"),
+            Self::DuplicateSegment => write!(f, "duplicate PCS proof values segment"),
             Self::UnexpectedSegment => write!(f, "unexpected PCS proof values segment"),
             Self::ValueCountMismatch { expected, found } => write!(
                 f,
@@ -97,6 +99,7 @@ impl std::error::Error for LoadPcsProofValuesSegmentError {
             Self::NonCanonicalValue { source, .. } => Some(source),
             Self::Segment(error) => Some(error),
             Self::MissingSegment
+            | Self::DuplicateSegment
             | Self::UnexpectedSegment
             | Self::ValueCountMismatch { .. }
             | Self::StageOneExtensionComponents { .. }
@@ -199,9 +202,13 @@ pub fn load_pcs_proof_values_from_segments(
     segments: &[ProofSegment],
 ) -> Result<Vec<Ext3>, LoadPcsProofValuesSegmentError> {
     let expected_count = global_info.proof_values_map.len();
-    let segment = segments
+    let mut matching_segments = segments
         .iter()
-        .find(|segment| segment.id == PCS_PROOF_VALUES_SEGMENT_ID);
+        .filter(|segment| segment.id == PCS_PROOF_VALUES_SEGMENT_ID);
+    let segment = matching_segments.next();
+    if matching_segments.next().is_some() {
+        return Err(LoadPcsProofValuesSegmentError::DuplicateSegment);
+    }
     if expected_count == 0 {
         if segment.is_some() {
             return Err(LoadPcsProofValuesSegmentError::UnexpectedSegment);
