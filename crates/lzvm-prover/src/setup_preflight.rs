@@ -32,6 +32,10 @@ use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 use crate::constant_opening::{
     validate_constant_opening_segments, ValidateConstantOpeningSegmentsError,
 };
+use crate::contribution::{
+    aggregate_contribution_values, load_contribution_segment_from_segments,
+    ContributionChallengeError,
+};
 use crate::global_constraints::{
     validate_global_constraints_from_proof_segments, ValidateGlobalConstraintProofSegmentsError,
     ValidateGlobalConstraintProofSegmentsRequest,
@@ -125,6 +129,7 @@ pub enum SetupPreflightError {
     GlobalConstraints(ValidateGlobalConstraintProofSegmentsError),
     GlobalHints(ResolveGlobalHintProofSegmentsError),
     PcsFri(ValidateOptionalPcsFriOpeningProofSegmentsError),
+    Contribution(ContributionChallengeError),
     UnexpectedProofSegment { id: u32 },
 }
 
@@ -153,6 +158,7 @@ impl fmt::Display for SetupPreflightError {
             Self::GlobalConstraints(error) => write!(f, "{error}"),
             Self::GlobalHints(error) => write!(f, "{error}"),
             Self::PcsFri(error) => write!(f, "{error}"),
+            Self::Contribution(error) => write!(f, "{error}"),
             Self::UnexpectedProofSegment { id } => {
                 write!(f, "unexpected setup proof segment id {id}")
             }
@@ -187,6 +193,7 @@ impl std::error::Error for SetupPreflightError {
             Self::GlobalConstraints(error) => Some(error),
             Self::GlobalHints(error) => Some(error),
             Self::PcsFri(error) => Some(error),
+            Self::Contribution(error) => Some(error),
             Self::CatalogHashMismatch | Self::UnexpectedProofSegment { .. } => None,
         }
     }
@@ -349,6 +356,7 @@ pub fn validate_setup_preflight(
     let report = validate_setup_preflight_hashes(catalog, proof, public_values)?;
     let schedule = derive_prove_schedule(catalog).map_err(SetupPreflightError::Schedule)?;
     validate_setup_proof_segment_ids(&proof.segments)?;
+    validate_optional_contribution_segment(catalog, proof)?;
     let uses_transcript_inputs = uses_transcript_pcs_query_plan_inputs(&proof.segments);
     let needs_public_fields = uses_transcript_inputs
         || !catalog.global_constraints.entries.is_empty()
@@ -423,6 +431,26 @@ pub fn validate_setup_preflight(
     .map_err(SetupPreflightError::PcsFri)?;
 
     Ok(report)
+}
+
+fn validate_optional_contribution_segment(
+    catalog: &KeyDirectoryCatalog,
+    proof: &ProofArtifact,
+) -> Result<(), SetupPreflightError> {
+    if !proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == CONTRIBUTION_SEGMENT_ID)
+    {
+        return Ok(());
+    }
+
+    let entries = load_contribution_segment_from_segments(&proof.segments)
+        .map_err(ContributionChallengeError::from)
+        .map_err(SetupPreflightError::Contribution)?;
+    aggregate_contribution_values(&catalog.layout.global_info, &entries)
+        .map(|_| ())
+        .map_err(SetupPreflightError::Contribution)
 }
 
 fn validate_setup_proof_segment_ids(segments: &[ProofSegment]) -> Result<(), SetupPreflightError> {
