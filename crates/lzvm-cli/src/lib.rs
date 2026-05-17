@@ -1078,6 +1078,10 @@ fn verify_setup_validation(
         }
         let _ = writeln!(stdout, "eth_block_input_match=ok");
         write_eth_transaction_preimage_summary(stdout, binding.transaction_preimage_count);
+        write_eth_transaction_count_summary(
+            stdout,
+            binding.legacy_transaction_count + binding.typed_transaction_count,
+        );
         write_eth_transaction_kind_summary(
             stdout,
             binding.legacy_transaction_count,
