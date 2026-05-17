@@ -53,6 +53,13 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         );
         return 1;
     }
+    if parsed.run_args.request.options.minimal_memory {
+        let _ = writeln!(
+            stderr,
+            "prove inputs failed: minimal memory is unsupported by prove inputs"
+        );
+        return 1;
+    }
 
     let trace_bytes_len = match validate_trace_bytes(&parsed.trace_bytes) {
         Ok(value) => value,

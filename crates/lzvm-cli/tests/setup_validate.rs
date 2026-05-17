@@ -3913,6 +3913,44 @@ fn prove_inputs_rejects_final_wrap() {
 }
 
 #[test]
+fn prove_inputs_rejects_minimal_memory() {
+    let dir = temp_dir("prove-inputs-minimal-memory");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    write_bytes(&witness_library, sample_witness_library());
+    write_bytes(&guest_image, sample_guest_image());
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            "--minimal-memory",
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove inputs failed: minimal memory is unsupported by prove inputs\n"
+    );
+}
+
+#[test]
 fn prints_prove_inputs_from_trace_bundle() {
     let dir = temp_dir("prove-inputs-trace-bundle");
     let _ = fs::remove_dir_all(&dir);
