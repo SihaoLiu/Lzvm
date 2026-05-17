@@ -228,6 +228,8 @@ fn is_eth_block_public_value_name(name: &str) -> bool {
             | "eth_block_timestamp_u32_le"
             | "eth_gas_limit_u32_le"
             | "eth_gas_used_u32_le"
+            | "eth_base_fee_per_gas_present"
+            | "eth_base_fee_per_gas_u32_be"
             | "eth_mix_hash_u32_be"
             | "eth_nonce_u32_be"
             | "eth_ommers_hash_u32_be"

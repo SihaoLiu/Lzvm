@@ -24,6 +24,7 @@ pub(crate) struct EthBlockInputSummary {
     pub(crate) timestamp: u64,
     pub(crate) gas_limit: u64,
     pub(crate) gas_used: u64,
+    pub(crate) base_fee_per_gas: Option<[u8; 32]>,
     pub(crate) mix_hash: [u8; 32],
     pub(crate) nonce: [u8; 8],
     pub(crate) transactions_root: [u8; 32],
@@ -62,6 +63,7 @@ pub(crate) fn validate_eth_block_input(
         timestamp: input.timestamp,
         gas_limit: input.gas_limit,
         gas_used: input.gas_used,
+        base_fee_per_gas: input.base_fee_per_gas,
         mix_hash: input.mix_hash,
         nonce: input.nonce,
         transactions_root: input.transactions_root,
@@ -114,6 +116,11 @@ pub(crate) fn write_eth_block_input_summary(
     let _ = writeln!(stdout, "eth_block_timestamp={}", summary.timestamp);
     let _ = writeln!(stdout, "eth_gas_limit={}", summary.gas_limit);
     let _ = writeln!(stdout, "eth_gas_used={}", summary.gas_used);
+    let _ = writeln!(
+        stdout,
+        "eth_base_fee_per_gas={}",
+        format_optional_u256(summary.base_fee_per_gas.as_ref())
+    );
     let _ = writeln!(stdout, "eth_mix_hash={}", format_hash(&summary.mix_hash));
     let _ = writeln!(stdout, "eth_nonce={}", format_hex(&summary.nonce));
     let _ = writeln!(
@@ -145,4 +152,19 @@ fn format_hex(bytes: &[u8]) -> String {
         out.push(HEX[(byte & 0x0f) as usize] as char);
     }
     out
+}
+
+fn format_optional_u256(value: Option<&[u8; 32]>) -> String {
+    match value {
+        Some(bytes) => format_u256(bytes),
+        None => "absent".to_owned(),
+    }
+}
+
+fn format_u256(bytes: &[u8; 32]) -> String {
+    let first = bytes.iter().position(|byte| *byte != 0);
+    match first {
+        Some(index) => format_hex(&bytes[index..]),
+        None => "0".to_owned(),
+    }
 }

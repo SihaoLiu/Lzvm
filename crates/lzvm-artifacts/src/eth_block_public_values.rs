@@ -67,6 +67,18 @@ pub fn public_values_from_eth_block_input(
                 elements: u64_u32_le(input.gas_used),
             },
             PublicValueEntry {
+                name: "eth_base_fee_per_gas_present".to_owned(),
+                elements: vec![u64::from(input.base_fee_per_gas.is_some())],
+            },
+            PublicValueEntry {
+                name: "eth_base_fee_per_gas_u32_be".to_owned(),
+                elements: input
+                    .base_fee_per_gas
+                    .as_ref()
+                    .map(hash_u32_be)
+                    .unwrap_or_else(|| vec![0; 8]),
+            },
+            PublicValueEntry {
                 name: "eth_mix_hash_u32_be".to_owned(),
                 elements: hash_u32_be(&input.mix_hash),
             },

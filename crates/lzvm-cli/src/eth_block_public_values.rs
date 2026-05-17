@@ -125,6 +125,11 @@ fn write_block_public_values(
     let _ = writeln!(stdout, "timestamp={}", input.timestamp);
     let _ = writeln!(stdout, "gas_limit={}", input.gas_limit);
     let _ = writeln!(stdout, "gas_used={}", input.gas_used);
+    let _ = writeln!(
+        stdout,
+        "base_fee_per_gas={}",
+        format_optional_u256(input.base_fee_per_gas.as_ref())
+    );
     let _ = writeln!(stdout, "mix_hash={}", format_hash(&input.mix_hash));
     let _ = writeln!(stdout, "nonce={}", format_hex(&input.nonce));
     let _ = writeln!(
@@ -194,6 +199,21 @@ fn hex_value(byte: u8) -> Option<u8> {
 
 fn format_hash(hash: &[u8; 32]) -> String {
     format_hex(hash)
+}
+
+fn format_optional_u256(value: Option<&[u8; 32]>) -> String {
+    match value {
+        Some(bytes) => format_u256(bytes),
+        None => "absent".to_owned(),
+    }
+}
+
+fn format_u256(bytes: &[u8; 32]) -> String {
+    let first = bytes.iter().position(|byte| *byte != 0);
+    match first {
+        Some(index) => format_hex(&bytes[index..]),
+        None => "0".to_owned(),
+    }
 }
 
 fn format_hex(bytes: &[u8]) -> String {

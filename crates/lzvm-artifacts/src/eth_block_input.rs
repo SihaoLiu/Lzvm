@@ -36,6 +36,7 @@ pub struct EthBlockInput {
     pub timestamp: u64,
     pub gas_limit: u64,
     pub gas_used: u64,
+    pub base_fee_per_gas: Option<[u8; 32]>,
     pub mix_hash: [u8; 32],
     pub nonce: [u8; 8],
     pub ommers_hash: [u8; 32],
@@ -83,6 +84,14 @@ pub enum EthBlockInputError {
     TimestampMismatch,
     GasLimitMismatch,
     GasUsedMismatch,
+    BaseFeePerGasMismatch,
+    BaseFeePerGasOverflow {
+        max_bytes: usize,
+        found: usize,
+    },
+    InvalidBaseFeePerGasFlag {
+        found: u32,
+    },
     MixHashMismatch,
     NonceMismatch,
     WithdrawalsRootMismatch,
@@ -149,6 +158,14 @@ impl fmt::Display for EthBlockInputError {
             Self::TimestampMismatch => write!(f, "ETH block input timestamp mismatch"),
             Self::GasLimitMismatch => write!(f, "ETH block input gas limit mismatch"),
             Self::GasUsedMismatch => write!(f, "ETH block input gas used mismatch"),
+            Self::BaseFeePerGasMismatch => write!(f, "ETH block input base fee mismatch"),
+            Self::BaseFeePerGasOverflow { max_bytes, found } => write!(
+                f,
+                "ETH block input base fee exceeds {max_bytes} bytes, found {found}"
+            ),
+            Self::InvalidBaseFeePerGasFlag { found } => {
+                write!(f, "invalid ETH block input base fee flag: {found}")
+            }
             Self::MixHashMismatch => write!(f, "ETH block input mix hash mismatch"),
             Self::NonceMismatch => write!(f, "ETH block input nonce mismatch"),
             Self::WithdrawalsRootMismatch => write!(f, "ETH block withdrawals root mismatch"),
@@ -247,6 +264,11 @@ pub fn build_eth_block_input(block_rlp: &[u8]) -> Result<EthBlockInput, EthBlock
         timestamp: header.timestamp,
         gas_limit: header.gas_limit,
         gas_used: header.gas_used,
+        base_fee_per_gas: header
+            .base_fee_per_gas
+            .as_deref()
+            .map(quantity_to_u256_be)
+            .transpose()?,
         mix_hash: header.mix_hash,
         nonce: header.nonce,
         ommers_hash,
@@ -353,6 +375,7 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
         timestamp: metadata.timestamp,
         gas_limit: metadata.gas_limit,
         gas_used: metadata.gas_used,
+        base_fee_per_gas: metadata.base_fee_per_gas,
         mix_hash: metadata.mix_hash,
         nonce: metadata.nonce,
         ommers_hash: metadata.ommers_hash,
@@ -373,6 +396,7 @@ struct Metadata {
     timestamp: u64,
     gas_limit: u64,
     gas_used: u64,
+    base_fee_per_gas: Option<[u8; 32]>,
     mix_hash: [u8; 32],
     nonce: [u8; 8],
     ommers_hash: [u8; 32],
@@ -402,6 +426,13 @@ fn encode_metadata(value: &EthBlockInput) -> Vec<u8> {
         }
         None => out.extend_from_slice(&0_u32.to_le_bytes()),
     }
+    match value.base_fee_per_gas {
+        Some(value) => {
+            out.extend_from_slice(&1_u32.to_le_bytes());
+            out.extend_from_slice(&value);
+        }
+        None => out.extend_from_slice(&0_u32.to_le_bytes()),
+    }
     out
 }
 
@@ -426,6 +457,15 @@ fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
         1 => Some(reader.read_hash()?),
         found => return Err(EthBlockInputError::InvalidWithdrawalFlag { found }),
     };
+    let base_fee_per_gas = if reader.is_finished() {
+        None
+    } else {
+        match reader.read_u32()? {
+            0 => None,
+            1 => Some(reader.read_hash()?),
+            found => return Err(EthBlockInputError::InvalidBaseFeePerGasFlag { found }),
+        }
+    };
     reader.finish()?;
 
     Ok(Metadata {
@@ -438,6 +478,7 @@ fn parse_metadata(bytes: &[u8]) -> Result<Metadata, EthBlockInputError> {
         timestamp,
         gas_limit,
         gas_used,
+        base_fee_per_gas,
         mix_hash,
         nonce,
         ommers_hash,
@@ -474,6 +515,9 @@ fn validate_metadata(metadata: &Metadata, block_rlp: &[u8]) -> Result<(), EthBlo
     }
     if metadata.gas_used != input.gas_used {
         return Err(EthBlockInputError::GasUsedMismatch);
+    }
+    if metadata.base_fee_per_gas != input.base_fee_per_gas {
+        return Err(EthBlockInputError::BaseFeePerGasMismatch);
     }
     if metadata.mix_hash != input.mix_hash {
         return Err(EthBlockInputError::MixHashMismatch);
@@ -629,6 +673,18 @@ fn compact_path_has_terminator(path: &[u8]) -> Result<bool, EthBlockInputError> 
     Ok(flag & 2 != 0)
 }
 
+fn quantity_to_u256_be(bytes: &[u8]) -> Result<[u8; 32], EthBlockInputError> {
+    if bytes.len() > 32 {
+        return Err(EthBlockInputError::BaseFeePerGasOverflow {
+            max_bytes: 32,
+            found: bytes.len(),
+        });
+    }
+    let mut out = [0_u8; 32];
+    out[32 - bytes.len()..].copy_from_slice(bytes);
+    Ok(out)
+}
+
 struct Reader<'a> {
     bytes: &'a [u8],
     offset: usize,
@@ -646,6 +702,10 @@ impl<'a> Reader<'a> {
             });
         }
         Ok(())
+    }
+
+    fn is_finished(&self) -> bool {
+        self.offset == self.bytes.len()
     }
 
     fn read_exact(&mut self, count: usize) -> Result<&'a [u8], EthBlockInputError> {
