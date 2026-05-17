@@ -303,10 +303,9 @@ fn evaluate_template_text(
         resolved.push_str(&template[cursor..segment_start]);
 
         let expression_start = segment_start + 2;
-        let Some(relative_end) = template[expression_start..].find('}') else {
+        let Some(expression_end) = find_template_expression_end(template, expression_start) else {
             return Err(());
         };
-        let expression_end = expression_start + relative_end;
         let expression = &template[expression_start..expression_end];
         let evaluated = evaluate_template_expression(source, expression, bindings)?;
         resolved.push_str(&evaluated);
@@ -315,6 +314,50 @@ fn evaluate_template_text(
 
     resolved.push_str(&template[cursor..]);
     Ok(resolved)
+}
+
+fn find_template_expression_end(template: &str, start: usize) -> Option<usize> {
+    let bytes = template.as_bytes();
+    let mut index = start;
+    let mut quote = None;
+    let mut escaped = false;
+    let mut brace_depth = 0_usize;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if let Some(delimiter) = quote {
+            if escaped {
+                escaped = false;
+                index += 1;
+                continue;
+            }
+            if byte == b'\\' {
+                escaped = true;
+                index += 1;
+                continue;
+            }
+            if byte == delimiter {
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+
+        match byte {
+            b'"' | b'\'' | b'`' => quote = Some(byte),
+            b'{' => brace_depth += 1,
+            b'}' => {
+                if brace_depth == 0 {
+                    return Some(index);
+                }
+                brace_depth -= 1;
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+
+    None
 }
 
 #[derive(Debug, Clone, Default)]

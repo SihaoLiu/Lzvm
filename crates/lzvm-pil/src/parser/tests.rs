@@ -138,6 +138,16 @@ fn parses_template_include_paths_with_short_circuit_expressions() {
 }
 
 #[test]
+fn parses_template_include_expressions_with_quoted_braces() {
+    let source = source("include `lib/${\"a}b\"}.pil`;");
+
+    let directives = parse_include_directives(&source).expect("directives should parse");
+
+    assert_eq!(directives.len(), 1);
+    assert_eq!(directives[0].file, "lib/a}b.pil");
+}
+
+#[test]
 fn rejects_include_without_path_literal() {
     let source = source("include ;");
 
