@@ -293,6 +293,27 @@ fn rejects_fixed_load_without_column() {
 }
 
 #[test]
+fn rejects_fixed_file_pragmas_with_wrong_argument_counts() {
+    for contents in [
+        "#pragma output_fixed_file",
+        "#pragma extern_fixed_file",
+        "#pragma fixed_external fixed.bin",
+        "#pragma output_fixed_file fixed.bin extra",
+        "#pragma extern_fixed_file fixed.bin extra",
+        "#pragma fixed_load fixed.bin 3 extra",
+    ] {
+        let source = source(contents);
+
+        let error = parse_fixed_file_pragmas(&source).expect_err(contents);
+
+        assert!(matches!(
+            error,
+            ParseError::InvalidPragmaArgument { source_name, .. } if source_name == "main.pil"
+        ));
+    }
+}
+
+#[test]
 fn resolves_fixed_file_pragma_template_paths() {
     let source = source(
         "#pragma output_fixed_file `${AIRGROUP}/${AIRGROUP_ID}/${AIR_ID}/${AIR_NAME}/${AIRTEMPLATE}.fixed`",

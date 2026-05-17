@@ -61,24 +61,21 @@ pub fn parse_fixed_file_pragmas(source: &SourceFile) -> Result<Vec<FixedFilePrag
             continue;
         };
 
+        validate_fixed_file_pragma_word_count(kind, &words, token.end, &source.source_name)?;
         let path = words.get(1).map(pragma_text_value);
-        let column = match kind {
-            FixedFilePragmaKind::FixedLoad => match words.get(2) {
-                Some(word) => Some(word.value.parse::<u32>().map_err(|_| {
-                    ParseError::InvalidPragmaArgument {
-                        source_name: source.source_name.clone(),
-                        start: word.start,
-                    }
-                })?),
-                None => {
-                    return Err(ParseError::InvalidPragmaArgument {
-                        source_name: source.source_name.clone(),
-                        start: token.end,
-                    });
+        let column =
+            match kind {
+                FixedFilePragmaKind::FixedLoad => {
+                    let word = &words[2];
+                    Some(word.value.parse::<u32>().map_err(|_| {
+                        ParseError::InvalidPragmaArgument {
+                            source_name: source.source_name.clone(),
+                            start: word.start,
+                        }
+                    })?)
                 }
-            },
-            _ => None,
-        };
+                _ => None,
+            };
 
         directives.push(FixedFilePragma {
             kind,
@@ -91,6 +88,30 @@ pub fn parse_fixed_file_pragmas(source: &SourceFile) -> Result<Vec<FixedFilePrag
     }
 
     Ok(directives)
+}
+
+fn validate_fixed_file_pragma_word_count(
+    kind: FixedFilePragmaKind,
+    words: &[PragmaWord],
+    pragma_end: usize,
+    source_name: &str,
+) -> Result<(), ParseError> {
+    let expected = match kind {
+        FixedFilePragmaKind::FixedExternal => 1,
+        FixedFilePragmaKind::ExternFixedFile | FixedFilePragmaKind::OutputFixedFile => 2,
+        FixedFilePragmaKind::FixedLoad => 3,
+    };
+    if words.len() == expected {
+        return Ok(());
+    }
+    let start = words
+        .get(expected)
+        .map(|word| word.start)
+        .unwrap_or(pragma_end);
+    Err(ParseError::InvalidPragmaArgument {
+        source_name: source_name.to_owned(),
+        start,
+    })
 }
 
 pub fn resolve_fixed_file_pragma_path(
