@@ -1,5 +1,6 @@
 use std::fmt;
 
+use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::setup_info::StageValue;
 use lzvm_artifacts::unit_values_segment::{
@@ -291,6 +292,38 @@ pub fn load_unit_values_from_segments(
             })
         })
         .collect()
+}
+
+pub(crate) fn validate_unit_values_units_match_query_units(
+    query_units: &[PcsQueryPlanUnit],
+    segments: &[ProofSegment],
+) -> Result<(), LoadUnitValuesSegmentError> {
+    let mut matching_segments = segments
+        .iter()
+        .filter(|segment| segment.id == UNIT_VALUES_SEGMENT_ID);
+    let segment = matching_segments.next();
+    if matching_segments.next().is_some() {
+        return Err(LoadUnitValuesSegmentError::DuplicateSegment);
+    }
+    let Some(segment) = segment else {
+        return Ok(());
+    };
+    let parsed =
+        parse_unit_values_segment(&segment.data).map_err(LoadUnitValuesSegmentError::Segment)?;
+    for unit in parsed.units {
+        if !query_units
+            .iter()
+            .any(|query_unit| query_unit.unit_index == unit.unit_index)
+        {
+            let unit_index = usize::try_from(unit.unit_index).map_err(|_| {
+                LoadUnitValuesSegmentError::UnitIndexOverflow {
+                    unit_index: usize::MAX,
+                }
+            })?;
+            return Err(LoadUnitValuesSegmentError::UnexpectedUnit { unit_index });
+        }
+    }
+    Ok(())
 }
 
 pub fn expected_packed_unit_value_count(

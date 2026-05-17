@@ -21,6 +21,9 @@ use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::ProofSegment;
+use lzvm_artifacts::unit_values_segment::{
+    encode_unit_values_segment, UnitValuesSegment, UnitValuesUnitSegment, UNIT_VALUES_SEGMENT_ID,
+};
 use lzvm_artifacts::witness_segment::{
     encode_witness_commitment_segment, WitnessCommitmentSegment, WitnessCommitmentStageSegment,
     WITNESS_COMMITMENT_SEGMENT_BASE_ID,
@@ -580,6 +583,29 @@ fn rejects_transcript_pcs_query_plan_extra_evaluation_units() {
     assert_eq!(
         error.to_string(),
         "unexpected PCS evaluation segment unit 1"
+    );
+}
+
+#[test]
+fn rejects_transcript_pcs_query_plan_extra_unit_values_units() {
+    let (schedule, mut segments) = transcript_query_plan_segments();
+    segments.push(ProofSegment {
+        id: UNIT_VALUES_SEGMENT_ID,
+        data: encode_unit_values_segment(&UnitValuesSegment {
+            units: vec![UnitValuesUnitSegment {
+                unit_index: 1,
+                values: vec![31],
+            }],
+        })
+        .expect("unit values segment should encode"),
+    });
+
+    let error = validate_transcript_pcs_query_plan_segments(&schedule, &[], &segments)
+        .expect_err("extra unit values unit should be rejected");
+
+    assert_eq!(
+        error.to_string(),
+        "unexpected unit values segment for unit 1"
     );
 }
 

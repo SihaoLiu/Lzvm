@@ -20,6 +20,9 @@ use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::ProofSegment;
+use lzvm_artifacts::unit_values_segment::{
+    encode_unit_values_segment, UnitValuesSegment, UnitValuesUnitSegment, UNIT_VALUES_SEGMENT_ID,
+};
 use lzvm_artifacts::witness_segment::{
     encode_witness_commitment_segment, WitnessCommitmentSegment, WitnessCommitmentStageSegment,
     WITNESS_COMMITMENT_SEGMENT_BASE_ID,
@@ -106,6 +109,31 @@ fn rejects_transcript_challenge_query_unit_mismatches() {
     assert_eq!(
         error,
         PcsTranscriptProofSegmentsError::UnitMismatch { unit_index: 1 }
+    );
+}
+
+#[test]
+fn rejects_transcript_challenge_extra_unit_values_units() {
+    let schedule = sample_schedule();
+    let mut segments = transcript_segments(0);
+    segments.push(ProofSegment {
+        id: UNIT_VALUES_SEGMENT_ID,
+        data: encode_unit_values_segment(&UnitValuesSegment {
+            units: vec![UnitValuesUnitSegment {
+                unit_index: 1,
+                values: vec![31],
+            }],
+        })
+        .expect("unit values segment should encode"),
+    });
+
+    let error =
+        derive_pcs_transcript_unit_challenges_from_proof_segments(&schedule, &[], &segments)
+            .expect_err("extra unit values unit should be rejected");
+
+    assert_eq!(
+        error.to_string(),
+        "unexpected unit values segment for unit 1"
     );
 }
 

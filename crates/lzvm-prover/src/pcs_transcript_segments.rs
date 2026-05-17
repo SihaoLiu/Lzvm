@@ -21,7 +21,10 @@ use crate::pcs_query_plan::{load_pcs_query_plan_from_segments, LoadPcsQueryPlanS
 use crate::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptError, PcsTranscriptSegmentInputs,
 };
-use crate::unit_values::{load_unit_values_from_segments, LoadUnitValuesSegmentError};
+use crate::unit_values::{
+    load_unit_values_from_segments, validate_unit_values_units_match_query_units,
+    LoadUnitValuesSegmentError,
+};
 use crate::witness_commitment::{
     load_witness_commitment_segments, LoadWitnessCommitmentSegmentsError,
 };
@@ -208,6 +211,8 @@ pub fn derive_pcs_transcript_unit_challenges_from_proof_segments(
     }
     validate_pcs_evaluation_units_match_query_units(&query_plan.units, segments)
         .map_err(PcsTranscriptProofSegmentsError::Evaluation)?;
+    validate_unit_values_units_match_query_units(&query_plan.units, segments)
+        .map_err(PcsTranscriptProofSegmentsError::UnitValues)?;
 
     Ok(units)
 }
