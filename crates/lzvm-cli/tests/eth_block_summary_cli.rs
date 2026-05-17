@@ -43,7 +43,7 @@ fn summarizes_binary_block_rlp() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nbytes={}\nheader_fields=15\nblock_number=2\ntimestamp=101\ntransactions=1\nlegacy_transactions=1\ntyped_transactions=0\nommers=0\nwithdrawals=absent\nextra_body_fields=0\nextra_header_fields=0\n",
+            "status=ok\nbytes={}\nheader_fields=15\nblock_hash=fa44ca33c1ab75326fe997089b86b1414f53400af3a59b4d10c16e3f858bfb64\nblock_number=2\ntimestamp=101\ntransactions=1\nlegacy_transactions=1\ntyped_transactions=0\nommers=0\nwithdrawals=absent\nextra_body_fields=0\nextra_header_fields=0\n",
             block_rlp.len()
         )
     );
@@ -75,7 +75,7 @@ fn summarizes_typed_transaction_counts() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nbytes={}\nheader_fields=15\nblock_number=2\ntimestamp=101\ntransactions=1\nlegacy_transactions=0\ntyped_transactions=1\nommers=0\nwithdrawals=absent\nextra_body_fields=0\nextra_header_fields=0\n",
+            "status=ok\nbytes={}\nheader_fields=15\nblock_hash=fa44ca33c1ab75326fe997089b86b1414f53400af3a59b4d10c16e3f858bfb64\nblock_number=2\ntimestamp=101\ntransactions=1\nlegacy_transactions=0\ntyped_transactions=1\nommers=0\nwithdrawals=absent\nextra_body_fields=0\nextra_header_fields=0\n",
             block_rlp.len()
         )
     );
@@ -108,6 +108,34 @@ fn summarizes_hex_block_rlp() {
     assert!(String::from_utf8(stdout)
         .expect("stdout should be utf-8")
         .starts_with("status=ok\n"));
+}
+
+#[test]
+fn summarizes_mainnet_genesis_block_hash() {
+    let dir = temp_dir("genesis");
+    let _ = fs::remove_dir_all(&dir);
+    let block_path = dir.join("block.rlp");
+    let block_rlp = sample_mainnet_genesis_block_rlp();
+    write_bytes(&block_path, &block_rlp);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "block-summary",
+            block_path.to_str().expect("block path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("block_hash=d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3\n"));
 }
 
 #[test]
@@ -193,6 +221,12 @@ fn sample_block_rlp_with_transactions(transaction_items: Vec<Vec<u8>>) -> Vec<u8
     rlp_list(&[header_rlp, transactions, empty_list])
 }
 
+fn sample_mainnet_genesis_block_rlp() -> Vec<u8> {
+    let header_rlp = rlp_list(&mainnet_genesis_header_items());
+    let empty_list = rlp_list(&[]);
+    rlp_list(&[header_rlp, empty_list.clone(), empty_list])
+}
+
 fn legacy_header_items() -> Vec<Vec<u8>> {
     vec![
         rlp_bytes(&[0x11; 32]),
@@ -210,6 +244,36 @@ fn legacy_header_items() -> Vec<Vec<u8>> {
         rlp_bytes(b"lzvm"),
         rlp_bytes(&[0xaa; 32]),
         rlp_bytes(&[0xbb; 8]),
+    ]
+}
+
+fn mainnet_genesis_header_items() -> Vec<Vec<u8>> {
+    vec![
+        rlp_bytes(&[0; 32]),
+        rlp_bytes(&hex32(
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )),
+        rlp_bytes(&[0; 20]),
+        rlp_bytes(&hex32(
+            "d7f8974fb5ac78d9ac099b9ad5018bedc2ce0a72dad1827a1709da30580f0544",
+        )),
+        rlp_bytes(&hex32(
+            "56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+        )),
+        rlp_bytes(&hex32(
+            "56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+        )),
+        rlp_bytes(&[0; 256]),
+        rlp_bytes(&[0x04, 0x00, 0x00, 0x00, 0x00]),
+        rlp_bytes(&[]),
+        rlp_bytes(&[0x13, 0x88]),
+        rlp_bytes(&[]),
+        rlp_bytes(&[]),
+        rlp_bytes(&hex_bytes(
+            "11bbe8db4e347b4e8c937c1c8370e4b5ed33adb3db69cbdb7a38e1e50b1b82fa",
+        )),
+        rlp_bytes(&[0; 32]),
+        rlp_bytes(&[0, 0, 0, 0, 0, 0, 0, 0x42]),
     ]
 }
 
@@ -263,5 +327,29 @@ fn hex_char(value: u8) -> char {
         0..=9 => char::from(b'0' + value),
         10..=15 => char::from(b'a' + value - 10),
         _ => unreachable!("hex nybble should be in range"),
+    }
+}
+
+fn hex32(value: &str) -> [u8; 32] {
+    hex_bytes(value)
+        .try_into()
+        .expect("hex value should have 32 bytes")
+}
+
+fn hex_bytes(value: &str) -> Vec<u8> {
+    assert!(value.len().is_multiple_of(2));
+    value
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| (hex_value(pair[0]) << 4) | hex_value(pair[1]))
+        .collect()
+}
+
+fn hex_value(value: u8) -> u8 {
+    match value {
+        b'0'..=b'9' => value - b'0',
+        b'a'..=b'f' => value - b'a' + 10,
+        b'A'..=b'F' => value - b'A' + 10,
+        _ => panic!("invalid hex digit"),
     }
 }

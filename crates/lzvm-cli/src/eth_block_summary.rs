@@ -2,7 +2,8 @@ use std::fmt;
 use std::io::Write;
 
 use lzvm_artifacts::eth_block::{
-    decode_eth_header_rlp, decode_eth_transactions_rlp, parse_eth_block_rlp, EthTransactionRlp,
+    decode_eth_header_rlp, decode_eth_transactions_rlp, eth_header_hash, parse_eth_block_rlp,
+    EthTransactionRlp,
 };
 
 pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -72,6 +73,11 @@ fn summarize_block(
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "bytes={}", bytes.len());
     let _ = writeln!(stdout, "header_fields={}", block.header.len());
+    let _ = writeln!(
+        stdout,
+        "block_hash={}",
+        format_hash(&eth_header_hash(&block.header))
+    );
     let _ = writeln!(stdout, "block_number={}", header.number);
     let _ = writeln!(stdout, "timestamp={}", header.timestamp);
     let _ = writeln!(stdout, "transactions={}", block.transactions.len());
@@ -139,6 +145,23 @@ fn hex_value(byte: u8) -> Option<u8> {
         b'a'..=b'f' => Some(byte - b'a' + 10),
         b'A'..=b'F' => Some(byte - b'A' + 10),
         _ => None,
+    }
+}
+
+fn format_hash(hash: &[u8; 32]) -> String {
+    let mut output = String::with_capacity(64);
+    for byte in hash {
+        output.push(hex_char(byte >> 4));
+        output.push(hex_char(byte & 0x0f));
+    }
+    output
+}
+
+fn hex_char(value: u8) -> char {
+    match value {
+        0..=9 => char::from(b'0' + value),
+        10..=15 => char::from(b'a' + value - 10),
+        _ => unreachable!("hex nybble should be in range"),
     }
 }
 
