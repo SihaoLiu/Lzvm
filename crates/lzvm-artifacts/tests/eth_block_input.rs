@@ -1,6 +1,12 @@
 use lzvm_artifacts::eth_block_input::{
     build_eth_block_input, encode_eth_block_input, parse_eth_block_input, EthBlockInputError,
+    EthBlockInputTrie,
 };
+use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
+
+const ETH_BLOCK_INPUT_KIND: [u8; 4] = *b"ethi";
+const ETH_BLOCK_INPUT_VERSION: u32 = 1;
+const TRANSACTION_PREIMAGES_SECTION_ID: u32 = 3;
 
 #[test]
 fn encodes_and_parses_eth_block_inputs() {
@@ -78,6 +84,63 @@ fn rejects_missing_withdrawals_body() {
     assert!(matches!(
         error,
         EthBlockInputError::UnexpectedWithdrawalsRoot
+    ));
+}
+
+#[test]
+fn rejects_preimage_hash_mismatches() {
+    let block_rlp = sample_block_rlp_with_transactions(
+        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
+        vec![rlp_list(&[rlp_bytes(&[1])])],
+    );
+    let input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let encoded = encode_eth_block_input(&input).expect("block input should encode");
+    let mut file = parse_sectioned_file(&encoded, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION)
+        .expect("sectioned input should parse");
+    let transaction_preimages = file
+        .sections
+        .iter_mut()
+        .find(|section| section.id == TRANSACTION_PREIMAGES_SECTION_ID)
+        .expect("transaction preimage section should exist");
+    transaction_preimages.data[4] ^= 1;
+    let encoded = encode_sectioned_file(&file).expect("sectioned input should encode");
+
+    let error = parse_eth_block_input(&encoded).expect_err("block input should fail");
+
+    assert!(matches!(
+        error,
+        EthBlockInputError::PreimageHashMismatch {
+            trie: EthBlockInputTrie::Transactions,
+            index: 0,
+        }
+    ));
+}
+
+#[test]
+fn rejects_missing_transaction_root_preimages() {
+    let block_rlp = sample_block_rlp_with_transactions(
+        hex32("e52f61e61ebdce920205cfca55e00c70bf219b45ea432febbf96152313e61db5"),
+        vec![rlp_list(&[rlp_bytes(&[1])])],
+    );
+    let input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let encoded = encode_eth_block_input(&input).expect("block input should encode");
+    let mut file = parse_sectioned_file(&encoded, ETH_BLOCK_INPUT_KIND, ETH_BLOCK_INPUT_VERSION)
+        .expect("sectioned input should parse");
+    let transaction_preimages = file
+        .sections
+        .iter_mut()
+        .find(|section| section.id == TRANSACTION_PREIMAGES_SECTION_ID)
+        .expect("transaction preimage section should exist");
+    transaction_preimages.data = encode_preimage_section(&[(empty_trie_root(), vec![0x80])]);
+    let encoded = encode_sectioned_file(&file).expect("sectioned input should encode");
+
+    let error = parse_eth_block_input(&encoded).expect_err("block input should fail");
+
+    assert!(matches!(
+        error,
+        EthBlockInputError::MissingRootPreimage {
+            trie: EthBlockInputTrie::Transactions,
+        }
     ));
 }
 
@@ -181,6 +244,17 @@ fn length_bytes(mut value: usize) -> Vec<u8> {
     }
     bytes.reverse();
     bytes
+}
+
+fn encode_preimage_section(preimages: &[([u8; 32], Vec<u8>)]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&(preimages.len() as u32).to_le_bytes());
+    for (hash, rlp) in preimages {
+        out.extend_from_slice(hash);
+        out.extend_from_slice(&(rlp.len() as u64).to_le_bytes());
+        out.extend_from_slice(rlp);
+    }
+    out
 }
 
 fn hex32(value: &str) -> [u8; 32] {

@@ -2,8 +2,8 @@ use std::fmt;
 
 use crate::eth_block::{
     decode_eth_header_rlp, decode_eth_transactions_rlp, decode_eth_withdrawals_rlp,
-    eth_header_hash, eth_ommers_hash, parse_eth_block_rlp, EthBlockError, EthTransactionError,
-    EthWithdrawalError,
+    eth_header_hash, eth_ommers_hash, keccak256, parse_eth_block_rlp, EthBlockError,
+    EthTransactionError, EthWithdrawalError,
 };
 use crate::eth_trie::{
     transaction_trie_build, withdrawals_trie_build, IndexedTrieBuild, TrieHashPreimage,
@@ -33,6 +33,12 @@ pub struct EthBlockInput {
     pub withdrawals: Option<IndexedTrieBuild>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EthBlockInputTrie {
+    Transactions,
+    Withdrawals,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EthBlockInputError {
     Block(EthBlockError),
@@ -58,6 +64,13 @@ pub enum EthBlockInputError {
     UnexpectedWithdrawalsRoot,
     WithdrawalsRootMismatch,
     InvalidPreimageSection,
+    PreimageHashMismatch {
+        trie: EthBlockInputTrie,
+        index: usize,
+    },
+    MissingRootPreimage {
+        trie: EthBlockInputTrie,
+    },
     UnexpectedTrailingBytes {
         count: usize,
     },
@@ -102,6 +115,12 @@ impl fmt::Display for EthBlockInputError {
             }
             Self::WithdrawalsRootMismatch => write!(f, "ETH block withdrawals root mismatch"),
             Self::InvalidPreimageSection => write!(f, "invalid ETH trie preimage section"),
+            Self::PreimageHashMismatch { trie, index } => {
+                write!(f, "ETH block input {trie} preimage hash mismatch at {index}")
+            }
+            Self::MissingRootPreimage { trie } => {
+                write!(f, "ETH block input {trie} root preimage missing")
+            }
             Self::UnexpectedTrailingBytes { count } => {
                 write!(f, "unexpected trailing bytes in ETH block input: {count}")
             }
@@ -115,6 +134,16 @@ impl fmt::Display for EthBlockInputError {
             ),
             Self::LengthOverflow => write!(f, "ETH block input length overflow"),
         }
+    }
+}
+
+impl fmt::Display for EthBlockInputTrie {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            Self::Transactions => "transactions",
+            Self::Withdrawals => "withdrawals",
+        };
+        f.write_str(name)
     }
 }
 
@@ -236,15 +265,24 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
     let transaction_preimages =
         transaction_preimages.ok_or(EthBlockInputError::MissingTransactionPreimages)?;
     let metadata = parse_metadata(&metadata)?;
+    let transaction_hash_preimages = parse_validated_preimages(
+        EthBlockInputTrie::Transactions,
+        metadata.transactions_root,
+        &transaction_preimages,
+    )?;
     let transactions = IndexedTrieBuild {
         root: metadata.transactions_root,
-        hash_preimages: parse_preimages(&transaction_preimages)?,
+        hash_preimages: transaction_hash_preimages,
     };
     let withdrawals = match (metadata.withdrawals_root, withdrawal_preimages) {
-        (Some(root), Some(preimages)) => Some(IndexedTrieBuild {
-            root,
-            hash_preimages: parse_preimages(&preimages)?,
-        }),
+        (Some(root), Some(preimages)) => {
+            let hash_preimages =
+                parse_validated_preimages(EthBlockInputTrie::Withdrawals, root, &preimages)?;
+            Some(IndexedTrieBuild {
+                root,
+                hash_preimages,
+            })
+        }
         (Some(_), None) => return Err(EthBlockInputError::UnexpectedWithdrawalsRoot),
         (None, Some(_)) => return Err(EthBlockInputError::UnexpectedWithdrawalsRoot),
         (None, None) => None,
@@ -346,6 +384,34 @@ fn parse_preimages(bytes: &[u8]) -> Result<Vec<TrieHashPreimage>, EthBlockInputE
     }
     reader.finish()?;
     Ok(preimages)
+}
+
+fn parse_validated_preimages(
+    trie: EthBlockInputTrie,
+    root: [u8; 32],
+    bytes: &[u8],
+) -> Result<Vec<TrieHashPreimage>, EthBlockInputError> {
+    let preimages = parse_preimages(bytes)?;
+    validate_preimages(trie, root, &preimages)?;
+    Ok(preimages)
+}
+
+fn validate_preimages(
+    trie: EthBlockInputTrie,
+    root: [u8; 32],
+    preimages: &[TrieHashPreimage],
+) -> Result<(), EthBlockInputError> {
+    let mut root_found = false;
+    for (index, preimage) in preimages.iter().enumerate() {
+        if keccak256(&preimage.rlp) != preimage.hash {
+            return Err(EthBlockInputError::PreimageHashMismatch { trie, index });
+        }
+        root_found |= preimage.hash == root;
+    }
+    if !root_found {
+        return Err(EthBlockInputError::MissingRootPreimage { trie });
+    }
+    Ok(())
 }
 
 struct Reader<'a> {
