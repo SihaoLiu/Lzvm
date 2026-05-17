@@ -1097,6 +1097,11 @@ fn verify_setup_validation(
             binding.typed_transaction_count,
         );
         write_eth_receipt_preimage_summary(stdout, binding.receipt_preimage_count);
+        if let (Some(legacy_count), Some(typed_count)) =
+            (binding.legacy_receipt_count, binding.typed_receipt_count)
+        {
+            write_eth_receipt_count_summary(stdout, legacy_count + typed_count);
+        }
         write_eth_receipt_kind_summary(
             stdout,
             binding.legacy_receipt_count,
