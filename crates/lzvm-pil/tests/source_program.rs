@@ -1,7 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use lzvm_pil::{ColumnKind, SourceLoaderConfig, SourceProgramLoader, ValueDeclarationKind};
+use lzvm_pil::{
+    ColumnKind, ConstantDeclarationKind, SourceLoaderConfig, SourceProgramLoader,
+    ValueDeclarationKind,
+};
 
 fn case_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -30,6 +33,7 @@ fn loads_source_program_with_declarations_from_graph_sources() {
          #pragma arg -I pil,lib\n\
          use lib.shared;\n\
          container air.main;\n\
+         const int ROWS = 2**16;\n\
          airtemplate Main(int N = 2**16) { finalize(); }\n\
          airgroup Main { Main(N: 2**16); }\n\
          function finalize(): int { return 1; }\n\
@@ -79,6 +83,10 @@ fn loads_source_program_with_declarations_from_graph_sources() {
     assert_eq!(main.air_instances[0].template, "Main");
     assert_eq!(main.functions.len(), 1);
     assert_eq!(main.functions[0].name, "finalize");
+    assert_eq!(main.constants.len(), 1);
+    assert_eq!(main.constants[0].kind, ConstantDeclarationKind::Const);
+    assert_eq!(main.constants[0].type_name.as_deref(), Some("int"));
+    assert_eq!(main.constants[0].name, "ROWS");
     assert_eq!(main.columns.len(), 1);
     assert_eq!(main.columns[0].kind, ColumnKind::Witness);
     assert_eq!(main.values.len(), 1);
@@ -90,6 +98,7 @@ fn loads_source_program_with_declarations_from_graph_sources() {
 
     let shared = &program.modules[1];
     assert!(shared.includes.is_empty());
+    assert_eq!(shared.constants.len(), 0);
     assert_eq!(shared.columns.len(), 1);
     assert_eq!(shared.columns[0].kind, ColumnKind::Fixed);
     assert_eq!(shared.values.len(), 1);

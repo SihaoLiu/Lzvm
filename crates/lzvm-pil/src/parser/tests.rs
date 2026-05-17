@@ -1,12 +1,12 @@
 use super::{
     parse_air_group_declarations, parse_air_group_value_declarations,
     parse_air_instance_declarations, parse_air_template_declarations, parse_column_declarations,
-    parse_commit_declarations, parse_container_declarations, parse_function_declarations,
-    parse_include_directives, parse_pragma_directives, parse_public_declarations,
-    parse_public_table_declarations, parse_use_directives, parse_value_declarations,
-    BinaryOperator, ColumnInitializerKind, ColumnKind, Expression, ExpressionKind,
-    FunctionStatementKind, FunctionVisibility, IncludeKind, IncludeVisibility, ParseError,
-    UnaryOperator, ValueDeclarationKind,
+    parse_commit_declarations, parse_constant_declarations, parse_container_declarations,
+    parse_function_declarations, parse_include_directives, parse_pragma_directives,
+    parse_public_declarations, parse_public_table_declarations, parse_use_directives,
+    parse_value_declarations, BinaryOperator, ColumnInitializerKind, ColumnKind,
+    ConstantDeclarationKind, Expression, ExpressionKind, FunctionStatementKind, FunctionVisibility,
+    IncludeKind, IncludeVisibility, ParseError, UnaryOperator, ValueDeclarationKind,
 };
 use crate::SourceFile;
 use std::path::PathBuf;
@@ -148,6 +148,52 @@ fn parses_pragma_directives_with_raw_values() {
         "#pragma arg -I pil,lib"
     );
     assert_eq!(directives[1].value, "feature fast");
+}
+
+#[test]
+fn parses_constant_declarations_and_skips_const_parameters() {
+    let source = source(
+        "constant LEGACY = 4;\n\
+         const int OP_FLAG = 0x00;\n\
+         function f(const expr op = 0) { const expr local[2]; return op; }",
+    );
+
+    let declarations =
+        parse_constant_declarations(&source).expect("constant declarations should parse");
+
+    assert_eq!(declarations.len(), 3);
+    assert_eq!(declarations[0].kind, ConstantDeclarationKind::Constant);
+    assert_eq!(declarations[0].type_name, None);
+    assert_eq!(declarations[0].name, "LEGACY");
+    assert_integer_expression(
+        declarations[0]
+            .initializer_expression
+            .as_ref()
+            .expect("legacy initializer expression"),
+        "4",
+    );
+    assert_eq!(declarations[1].kind, ConstantDeclarationKind::Const);
+    assert_eq!(declarations[1].type_name.as_deref(), Some("int"));
+    assert_eq!(declarations[1].name, "OP_FLAG");
+    assert!(matches!(
+        declarations[1]
+            .initializer_expression
+            .as_ref()
+            .expect("typed initializer expression")
+            .kind,
+        ExpressionKind::HexInteger(ref value) if value == "0x00"
+    ));
+    assert_eq!(declarations[2].kind, ConstantDeclarationKind::Const);
+    assert_eq!(declarations[2].type_name.as_deref(), Some("expr"));
+    assert_eq!(declarations[2].name, "local");
+    assert_eq!(declarations[2].array_dims.len(), 1);
+    assert_integer_expression(
+        declarations[2].array_dim_expressions[0]
+            .as_ref()
+            .expect("array dimension expression"),
+        "2",
+    );
+    assert!(declarations[2].initializer_expression.is_none());
 }
 
 #[test]

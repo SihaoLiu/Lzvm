@@ -49,6 +49,34 @@ pub fn parse_column_declarations(
     Ok(declarations)
 }
 
+pub fn parse_constant_declarations(
+    source: &SourceFile,
+) -> Result<Vec<ConstantDeclaration>, ParseError> {
+    let tokens = lex_source(&source.contents).map_err(|error| ParseError::Lex {
+        source_name: source.source_name.clone(),
+        error,
+    })?;
+    let mut declarations = Vec::new();
+    let mut index = 0;
+    let mut stack = Vec::new();
+
+    while index < tokens.len() {
+        if matches!(tokens[index].kind, TokenKind::Const | TokenKind::Constant)
+            && constant_statement_context(&stack)
+        {
+            let parsed = parse_constant_declaration_at(&tokens, index, source)?;
+            index = parsed.next_index;
+            declarations.push(parsed.declaration);
+            continue;
+        }
+
+        update_constant_scan_stack(&mut stack, tokens[index].kind);
+        index += 1;
+    }
+
+    Ok(declarations)
+}
+
 pub fn parse_value_declarations(source: &SourceFile) -> Result<Vec<ValueDeclaration>, ParseError> {
     let tokens = lex_source(&source.contents).map_err(|error| ParseError::Lex {
         source_name: source.source_name.clone(),
@@ -757,6 +785,173 @@ struct ParsedNameReference {
 struct ParsedColumnFeature {
     feature: ColumnFeature,
     next_index: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedConstantDeclaration {
+    declaration: ConstantDeclaration,
+    next_index: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedConstantArrayDimensions {
+    dims: Vec<SourceSpan>,
+    dim_expressions: Vec<Option<Expression>>,
+    next_index: usize,
+}
+
+fn parse_constant_declaration_at(
+    tokens: &[Token],
+    index: usize,
+    source: &SourceFile,
+) -> Result<ParsedConstantDeclaration, ParseError> {
+    let token = tokens.get(index).ok_or_else(|| ParseError::ExpectedName {
+        source_name: source.source_name.clone(),
+        start: missing_start(tokens, index),
+    })?;
+    let kind = match token.kind {
+        TokenKind::Constant => ConstantDeclarationKind::Constant,
+        TokenKind::Const => ConstantDeclarationKind::Const,
+        _ => {
+            return Err(ParseError::ExpectedName {
+                source_name: source.source_name.clone(),
+                start: token.start,
+            });
+        }
+    };
+
+    let mut cursor = index + 1;
+    let type_name = if kind == ConstantDeclarationKind::Const {
+        let type_token = tokens.get(cursor).ok_or_else(|| ParseError::ExpectedName {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, cursor),
+        })?;
+        let type_name = constant_type_name(type_token).ok_or_else(|| ParseError::ExpectedName {
+            source_name: source.source_name.clone(),
+            start: type_token.start,
+        })?;
+        cursor += 1;
+        Some(type_name)
+    } else {
+        None
+    };
+
+    let (name, after_name) = parse_name_reference(tokens, cursor, source)?;
+    cursor = after_name;
+    let array_parse = parse_constant_array_dimensions(tokens, cursor, source)?;
+    cursor = array_parse.next_index;
+
+    let (initializer, initializer_expression, next_index, end) = if tokens
+        .get(cursor)
+        .is_some_and(|token| token.kind == TokenKind::Assign)
+    {
+        let (span, terminator_index) =
+            parse_expression_span_until_terminator(tokens, cursor + 1, source)?;
+        let expression = parse_expression_span_best_effort(tokens, span, source);
+        let terminator =
+            tokens
+                .get(terminator_index)
+                .ok_or_else(|| ParseError::ExpectedTerminator {
+                    source_name: source.source_name.clone(),
+                    start: missing_start(tokens, terminator_index),
+                })?;
+        if terminator.kind != TokenKind::Semicolon {
+            return Err(ParseError::ExpectedTerminator {
+                source_name: source.source_name.clone(),
+                start: terminator.start,
+            });
+        }
+        (Some(span), expression, terminator_index + 1, terminator.end)
+    } else {
+        let terminator = tokens
+            .get(cursor)
+            .ok_or_else(|| ParseError::ExpectedTerminator {
+                source_name: source.source_name.clone(),
+                start: missing_start(tokens, cursor),
+            })?;
+        if terminator.kind != TokenKind::Semicolon {
+            return Err(ParseError::ExpectedTerminator {
+                source_name: source.source_name.clone(),
+                start: terminator.start,
+            });
+        }
+        (None, None, cursor + 1, terminator.end)
+    };
+
+    Ok(ParsedConstantDeclaration {
+        declaration: ConstantDeclaration {
+            kind,
+            type_name,
+            name,
+            array_dims: array_parse.dims,
+            array_dim_expressions: array_parse.dim_expressions,
+            initializer,
+            initializer_expression,
+            source_name: source.source_name.clone(),
+            start: token.start,
+            end,
+        },
+        next_index,
+    })
+}
+
+fn constant_type_name(token: &Token) -> Option<String> {
+    match token.kind {
+        TokenKind::Expr | TokenKind::Fe | TokenKind::Int | TokenKind::String => {
+            Some(token.lexeme.clone())
+        }
+        _ => None,
+    }
+}
+
+fn parse_constant_array_dimensions(
+    tokens: &[Token],
+    mut cursor: usize,
+    source: &SourceFile,
+) -> Result<ParsedConstantArrayDimensions, ParseError> {
+    let mut array_dims = Vec::new();
+    let mut array_dim_expressions = Vec::new();
+
+    while tokens
+        .get(cursor)
+        .is_some_and(|token| token.kind == TokenKind::LBracket)
+    {
+        let (span, next) = parse_delimited_span(tokens, cursor, source)?;
+        let expression = if cursor + 1 < next.saturating_sub(1) {
+            parse_expression_range_best_effort(tokens, cursor + 1, next - 1, source)
+        } else {
+            None
+        };
+        array_dims.push(span);
+        array_dim_expressions.push(expression);
+        cursor = next;
+    }
+
+    Ok(ParsedConstantArrayDimensions {
+        dims: array_dims,
+        dim_expressions: array_dim_expressions,
+        next_index: cursor,
+    })
+}
+
+fn constant_statement_context(stack: &[TokenKind]) -> bool {
+    stack
+        .iter()
+        .all(|kind| !matches!(kind, TokenKind::RParen | TokenKind::RBracket))
+}
+
+fn update_constant_scan_stack(stack: &mut Vec<TokenKind>, kind: TokenKind) {
+    match kind {
+        TokenKind::LParen => stack.push(TokenKind::RParen),
+        TokenKind::LBracket => stack.push(TokenKind::RBracket),
+        TokenKind::LBrace => stack.push(TokenKind::RBrace),
+        TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+            if stack.last().is_some_and(|expected| *expected == kind) {
+                stack.pop();
+            }
+        }
+        _ => {}
+    }
 }
 
 fn parse_column_header(tokens: &[Token], index: usize) -> Option<ColumnHeader> {

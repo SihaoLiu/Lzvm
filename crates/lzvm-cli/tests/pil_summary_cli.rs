@@ -27,6 +27,7 @@ fn summarizes_source_program_declarations() {
         "include \"shared.pil\";\n\
          use lib.shared;\n\
          container air.main;\n\
+         const int ROWS = 2**16;\n\
          function fold(int value): int { return value; }\n\
          col witness main.trace[2];\n\
          challenge stage(3) alpha;\n\
@@ -58,7 +59,7 @@ fn summarizes_source_program_declarations() {
     assert_eq!(code, 0);
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nsources=2\nedges=1\nmodules=2\nincludes=1\nuses=1\ncontainers=1\nfunctions=1\ncolumns=2\nvalues=2\nair_group_values=1\ncommits=1\npublics=1\npublic_tables=1\n"
+        "status=ok\nsources=2\nedges=1\nmodules=2\nincludes=1\nuses=1\ncontainers=1\nfunctions=1\nconstants=1\ncolumns=2\nvalues=2\nair_group_values=1\ncommits=1\npublics=1\npublic_tables=1\n"
     );
     assert!(stderr.is_empty());
 }
