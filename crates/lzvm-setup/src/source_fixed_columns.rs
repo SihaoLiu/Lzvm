@@ -5,6 +5,7 @@ use lzvm_artifacts::fixed::{
     encode_fixed_columns, encode_raw_fixed_columns, read_fixed_columns_file, FixedColumn,
     FixedColumnError, FixedColumns,
 };
+use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyDirectoryError, KeyUnitKind};
 use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, SetupInfoError, UnitSetupInfo};
 use lzvm_pil::{
@@ -92,6 +93,9 @@ pub enum SourceFixedColumnsDirectoryWriteError {
         role: &'static str,
         unit: KeyUnitKind,
     },
+    SourceAirUnitMismatch {
+        message: String,
+    },
 }
 
 impl fmt::Display for SourceFixedColumnsWriteError {
@@ -160,6 +164,9 @@ impl fmt::Display for SourceFixedColumnsDirectoryWriteError {
             Self::MissingUnitPath { role, unit } => {
                 write!(f, "missing source fixed-column {role} for {unit}")
             }
+            Self::SourceAirUnitMismatch { message } => {
+                write!(f, "source fixed-column AIR unit mismatch: {message}")
+            }
         }
     }
 }
@@ -186,7 +193,7 @@ impl std::error::Error for SourceFixedColumnsDirectoryWriteError {
         match self {
             Self::KeyDirectory(error) => Some(error),
             Self::FixedColumns(error) => Some(error),
-            Self::MissingUnitPath { .. } => None,
+            Self::MissingUnitPath { .. } | Self::SourceAirUnitMismatch { .. } => None,
         }
     }
 }
@@ -254,6 +261,7 @@ pub fn write_fixed_columns_from_source_directory(
     let program = loader
         .load_main(&request.main_file)
         .map_err(SourceFixedColumnsWriteError::SourceProgram)?;
+    validate_source_air_units(&program, &layout.global_info)?;
 
     let mut bytes_written = 0_u64;
     for unit in &layout.units {
@@ -282,6 +290,88 @@ pub fn write_fixed_columns_from_source_directory(
         unit_count: layout.units.len(),
         bytes_written,
     })
+}
+
+fn validate_source_air_units(
+    program: &SourceProgram,
+    global_info: &GlobalInfo,
+) -> Result<(), SourceFixedColumnsDirectoryWriteError> {
+    let expected_unit_count = global_info.airs.iter().map(Vec::len).sum::<usize>();
+    let source_units = program
+        .air_units()
+        .into_iter()
+        .filter(|unit| !unit.virtual_instance)
+        .collect::<Vec<_>>();
+    if source_units.len() != expected_unit_count {
+        return Err(
+            SourceFixedColumnsDirectoryWriteError::SourceAirUnitMismatch {
+                message: format!(
+                    "expected {expected_unit_count} units, found {}",
+                    source_units.len()
+                ),
+            },
+        );
+    }
+
+    for unit in source_units {
+        let group_id = usize::try_from(unit.group_id).map_err(|_| {
+            SourceFixedColumnsDirectoryWriteError::SourceAirUnitMismatch {
+                message: format!("source group id is negative for {}", unit.group_name),
+            }
+        })?;
+        let Some(group_name) = global_info.air_groups.get(group_id) else {
+            return Err(
+                SourceFixedColumnsDirectoryWriteError::SourceAirUnitMismatch {
+                    message: format!(
+                        "source group {}:{} is outside setup metadata",
+                        unit.group_id, unit.group_name
+                    ),
+                },
+            );
+        };
+        if group_name != &unit.group_name {
+            return Err(
+                SourceFixedColumnsDirectoryWriteError::SourceAirUnitMismatch {
+                    message: format!(
+                        "source group {}:{} does not match setup group {group_name}",
+                        unit.group_id, unit.group_name
+                    ),
+                },
+            );
+        }
+
+        let unit_id = usize::try_from(unit.unit_id).map_err(|_| {
+            SourceFixedColumnsDirectoryWriteError::SourceAirUnitMismatch {
+                message: format!("source unit id is negative for {}", unit.unit_name),
+            }
+        })?;
+        let Some(expected_unit) = global_info
+            .airs
+            .get(group_id)
+            .and_then(|group| group.get(unit_id))
+        else {
+            return Err(
+                SourceFixedColumnsDirectoryWriteError::SourceAirUnitMismatch {
+                    message: format!(
+                        "source unit {}:{}:{} is outside setup metadata",
+                        unit.group_id, unit.unit_id, unit.unit_name
+                    ),
+                },
+            );
+        };
+        if expected_unit.name != unit.unit_name {
+            return Err(
+                SourceFixedColumnsDirectoryWriteError::SourceAirUnitMismatch {
+                    message: format!(
+                        "source unit {}:{}:{} does not match setup unit {}",
+                        unit.group_id, unit.unit_id, unit.unit_name, expected_unit.name
+                    ),
+                },
+            );
+        }
+    }
+
+    Ok(())
 }
 
 fn write_fixed_columns_from_source_program(

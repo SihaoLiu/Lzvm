@@ -293,10 +293,30 @@ fn create_key_directory(name: &str) -> (PathBuf, VerificationKeyRoot) {
     (dir, root)
 }
 
+fn sample_source_global_info() -> GlobalInfo {
+    let mut info = fixtures::sample_global_info();
+    info.air_groups = vec!["GroupA".to_owned()];
+    info.airs[0][0].name = "UnitA".to_owned();
+    info
+}
+
 fn create_key_directory_without_fixed_inputs(name: &str) -> PathBuf {
     let dir = temp_dir(name);
     let _ = fs::remove_dir_all(&dir);
-    write_global_files(&dir);
+    fs::create_dir_all(&dir).expect("fixture root should be created");
+    write_global_metadata(
+        &dir.join("pilout.globalInfo.bin"),
+        &sample_source_global_info(),
+    );
+    write_bytes(
+        &dir.join("pilout.globalConstraints.bin"),
+        global_constraint_program_file(&GlobalConstraintProgram {
+            entries: vec![],
+            ops: vec![],
+            args: vec![],
+            numbers: vec![],
+        }),
+    );
 
     let setup = fixtures::sample_setup_info();
     let layout = read_key_directory_layout(&dir).expect("layout should derive");
@@ -855,7 +875,9 @@ fn generate_key_writes_missing_fixed_inputs_from_source_literals() {
     let source_path = dir.join("main.pil");
     write_bytes(
         &source_path,
-        "col fixed main.left = [5, 1];\n\
+        "airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];\n\
          col fixed main.right = [0x9, 9];",
     );
     let layout = read_key_directory_layout(&dir).expect("layout should derive");
@@ -885,9 +907,9 @@ fn generate_key_writes_missing_fixed_inputs_from_source_literals() {
             .expect("setup metadata path should derive");
         let setup =
             read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
-        let left = read_raw_fixed_column_file(&unit.fixed_columns, &setup, "group-a", "unit-a", 0)
+        let left = read_raw_fixed_column_file(&unit.fixed_columns, &setup, "GroupA", "UnitA", 0)
             .expect("left fixed column should read");
-        let right = read_raw_fixed_column_file(&unit.fixed_columns, &setup, "group-a", "unit-a", 1)
+        let right = read_raw_fixed_column_file(&unit.fixed_columns, &setup, "GroupA", "UnitA", 1)
             .expect("right fixed column should read");
         assert_eq!(left, [5, 1]);
         assert_eq!(right, [9, 9]);
@@ -917,6 +939,45 @@ fn generate_key_writes_missing_fixed_inputs_from_source_literals() {
     assert!(stdout.contains(&format!("units={unit_count}\n")));
     assert!(stdout.contains("setup_hash="));
     assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_rejects_source_air_units_that_do_not_match_setup() {
+    let dir = create_key_directory_without_fixed_inputs("generate-key-source-mismatch");
+    let source_path = dir.join("main.pil");
+    write_bytes(
+        &source_path,
+        "airtemplate UnitA() { }\n\
+         airgroup OtherGroup { UnitA(); }\n\
+         col fixed main.left = [5, 1];\n\
+         col fixed main.right = [0x9, 9];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    for unit in &layout.units {
+        assert!(!unit.fixed_columns.is_file());
+        assert!(!unit.constant_tree.is_file());
+    }
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    let stderr = String::from_utf8(stderr).expect("stderr should be utf-8");
+    assert!(stderr.contains("source fixed-column AIR unit mismatch"));
 }
 
 #[test]
