@@ -7,9 +7,13 @@ use crate::expression_info::{
     ExpressionInfo, OperationKind,
 };
 use crate::expression_program::{ExpressionEntry, ExpressionProgram};
+use crate::global_info::GlobalInfo;
 use crate::hint_program::{regular_hint_program_from_expression_info, HintProgramError};
 use crate::regular_program::RegularProgram;
 use crate::setup_info::{StageValue, UnitSetupInfo};
+use crate::verifier_info::{
+    VerifierCode, VerifierInfo, VerifierOperand, VerifierOperation, VerifierOperationKind,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegularProgramLoweringError {
@@ -185,6 +189,91 @@ pub fn regular_program_from_expression_info(
     })
 }
 
+pub fn verifier_program_from_verifier_info(
+    info: &VerifierInfo,
+    setup: &UnitSetupInfo,
+    global: &GlobalInfo,
+) -> Result<ExpressionProgram, RegularProgramLoweringError> {
+    let proof_value_offsets = proof_value_offsets(global)?;
+    let mut numbers = Vec::new();
+    let mut program = ExpressionProgram {
+        max_tmp1: 0,
+        max_tmp3: 0,
+        max_args: 0,
+        max_ops: 0,
+        entries: Vec::with_capacity(2),
+        ops: Vec::new(),
+        args: Vec::new(),
+        numbers: Vec::new(),
+    };
+
+    append_verifier_code_entry(
+        &mut program,
+        &info.quotient,
+        setup,
+        Some(&proof_value_offsets),
+        VerifierEntryDefaults {
+            expression_id: 0,
+            stage: add_u32(setup.n_stages, 1)?,
+            index: 0,
+        },
+        &mut numbers,
+    )?;
+    append_verifier_code_entry(
+        &mut program,
+        &info.query,
+        setup,
+        Some(&proof_value_offsets),
+        VerifierEntryDefaults {
+            expression_id: 1,
+            stage: add_u32(setup.n_stages, 2)?,
+            index: 1,
+        },
+        &mut numbers,
+    )?;
+    program.numbers = numbers;
+
+    Ok(program)
+}
+
+fn append_verifier_code_entry(
+    program: &mut ExpressionProgram,
+    code: &VerifierCode,
+    setup: &UnitSetupInfo,
+    proof_value_offsets: Option<&[u32]>,
+    defaults: VerifierEntryDefaults,
+    numbers: &mut Vec<u64>,
+) -> Result<(), RegularProgramLoweringError> {
+    let expression = ExpressionCode {
+        expression_id: code.expression_id.unwrap_or(defaults.expression_id),
+        stage: code.stage.unwrap_or(defaults.stage),
+        line: code.line.clone(),
+        temporary_count: code.temporary_count,
+        destination: None,
+        operations: code
+            .operations
+            .iter()
+            .map(verifier_operation_to_code_operation)
+            .collect(),
+    };
+    let lowered = lower_code(
+        "verifier",
+        defaults.index,
+        &expression.operations,
+        setup,
+        proof_value_offsets,
+        numbers,
+    )?;
+    append_expression_entry(program, &expression, lowered)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct VerifierEntryDefaults {
+    expression_id: u32,
+    stage: u32,
+    index: usize,
+}
+
 fn append_expression_entry(
     program: &mut ExpressionProgram,
     expression: &ExpressionCode,
@@ -255,7 +344,14 @@ fn lower_expression_code(
     setup: &UnitSetupInfo,
     numbers: &mut Vec<u64>,
 ) -> Result<LoweredCode, RegularProgramLoweringError> {
-    lower_code("expression", index, &expression.operations, setup, numbers)
+    lower_code(
+        "expression",
+        index,
+        &expression.operations,
+        setup,
+        None,
+        numbers,
+    )
 }
 
 fn lower_constraint_code(
@@ -264,7 +360,14 @@ fn lower_constraint_code(
     setup: &UnitSetupInfo,
     numbers: &mut Vec<u64>,
 ) -> Result<LoweredCode, RegularProgramLoweringError> {
-    lower_code("constraint", index, &constraint.operations, setup, numbers)
+    lower_code(
+        "constraint",
+        index,
+        &constraint.operations,
+        setup,
+        None,
+        numbers,
+    )
 }
 
 fn lower_code(
@@ -272,6 +375,7 @@ fn lower_code(
     index: usize,
     operations: &[CodeOperation],
     setup: &UnitSetupInfo,
+    proof_value_offsets: Option<&[u32]>,
     numbers: &mut Vec<u64>,
 ) -> Result<LoweredCode, RegularProgramLoweringError> {
     let Some(last) = operations.last() else {
@@ -283,7 +387,15 @@ fn lower_code(
     let mut args = Vec::with_capacity(operations.len().saturating_mul(8));
 
     for operation in operations {
-        lower_operation(operation, setup, &temporaries, numbers, &mut ops, &mut args)?;
+        lower_operation(
+            operation,
+            setup,
+            proof_value_offsets,
+            &temporaries,
+            numbers,
+            &mut ops,
+            &mut args,
+        )?;
     }
 
     Ok(LoweredCode {
@@ -298,13 +410,22 @@ fn lower_code(
 fn lower_operation(
     operation: &CodeOperation,
     setup: &UnitSetupInfo,
+    proof_value_offsets: Option<&[u32]>,
     temporaries: &TemporaryMap,
     numbers: &mut Vec<u64>,
     ops: &mut Vec<u8>,
     args: &mut Vec<u16>,
 ) -> Result<(), RegularProgramLoweringError> {
     if operation.op == OperationKind::Copy {
-        return lower_copy_operation(operation, setup, temporaries, numbers, ops, args);
+        return lower_copy_operation(
+            operation,
+            setup,
+            proof_value_offsets,
+            temporaries,
+            numbers,
+            ops,
+            args,
+        );
     }
 
     if operation.sources.len() != 2 {
@@ -326,8 +447,20 @@ fn lower_operation(
         OperationKind::Copy => unreachable!("copy operations are lowered before binary operations"),
     };
 
-    let source0 = lower_source(sources[0].1, setup, temporaries, numbers)?;
-    let source1 = lower_source(sources[1].1, setup, temporaries, numbers)?;
+    let source0 = lower_source(
+        sources[0].1,
+        setup,
+        proof_value_offsets,
+        temporaries,
+        numbers,
+    )?;
+    let source1 = lower_source(
+        sources[1].1,
+        setup,
+        proof_value_offsets,
+        temporaries,
+        numbers,
+    )?;
     let shape = operation_shape(destination.dimension, source0.dimension, source1.dimension)?;
     ops.push(shape);
     args.push(kind);
@@ -340,6 +473,7 @@ fn lower_operation(
 fn lower_copy_operation(
     operation: &CodeOperation,
     setup: &UnitSetupInfo,
+    proof_value_offsets: Option<&[u32]>,
     temporaries: &TemporaryMap,
     numbers: &mut Vec<u64>,
     ops: &mut Vec<u8>,
@@ -353,15 +487,30 @@ fn lower_copy_operation(
     }
 
     let destination = lower_destination(&operation.destination, temporaries)?;
-    let source = lower_source(&operation.sources[0], setup, temporaries, numbers)?;
-    let zero = zero_source(setup, numbers)?;
-    let shape = operation_shape(destination.dimension, source.dimension, zero.dimension)?;
+    let source = lower_source(
+        &operation.sources[0],
+        setup,
+        proof_value_offsets,
+        temporaries,
+        numbers,
+    )?;
+    let zero = if destination.dimension == 3 && source.dimension == 1 {
+        zero_extension_source(setup, numbers)?
+    } else {
+        zero_source(setup, numbers)?
+    };
+    let (source0, source1) = if destination.dimension == 3 && source.dimension == 1 {
+        (zero, source)
+    } else {
+        (source, zero)
+    };
+    let shape = operation_shape(destination.dimension, source0.dimension, source1.dimension)?;
 
     ops.push(shape);
     args.push(0);
     args.push(u32_to_u16(destination.argument_offset)?);
-    args.extend(source.fields);
-    args.extend(zero.fields);
+    args.extend(source0.fields);
+    args.extend(source1.fields);
     Ok(())
 }
 
@@ -401,6 +550,7 @@ fn lower_destination(
 fn lower_source(
     operand: &CodeOperand,
     setup: &UnitSetupInfo,
+    proof_value_offsets: Option<&[u32]>,
     temporaries: &TemporaryMap,
     numbers: &mut Vec<u64>,
 ) -> Result<SourceArg, RegularProgramLoweringError> {
@@ -506,6 +656,17 @@ fn lower_source(
                 0,
             ],
         }),
+        CodeOperand::ProofValue { id, dimension, .. } => {
+            let offset = proof_value_offset(proof_value_offsets, *id)?;
+            Ok(SourceArg {
+                dimension: *dimension,
+                fields: [
+                    u32_to_u16(add_u32(base_buffer, 5)?)?,
+                    u32_to_u16(offset)?,
+                    0,
+                ],
+            })
+        }
         CodeOperand::OpeningDenominator {
             id,
             opening,
@@ -560,6 +721,92 @@ fn zero_source(
             0,
         ],
     })
+}
+
+fn zero_extension_source(
+    setup: &UnitSetupInfo,
+    numbers: &mut Vec<u64>,
+) -> Result<SourceArg, RegularProgramLoweringError> {
+    Ok(SourceArg {
+        dimension: 3,
+        fields: [
+            u32_to_u16(add_u32(base_buffer(setup)?, 3)?)?,
+            u32_to_u16(push_extension_number(numbers, 0)?)?,
+            0,
+        ],
+    })
+}
+
+fn verifier_operation_to_code_operation(operation: &VerifierOperation) -> CodeOperation {
+    CodeOperation {
+        op: match operation.op {
+            VerifierOperationKind::Add => OperationKind::Add,
+            VerifierOperationKind::Sub => OperationKind::Sub,
+            VerifierOperationKind::Mul => OperationKind::Mul,
+            VerifierOperationKind::Copy => OperationKind::Copy,
+        },
+        destination: CodeDestination::temporary(
+            operation.destination.temporary_id,
+            operation.destination.dimension,
+        ),
+        sources: operation
+            .sources
+            .iter()
+            .map(verifier_operand_to_code_operand)
+            .collect(),
+    }
+}
+
+fn verifier_operand_to_code_operand(operand: &VerifierOperand) -> CodeOperand {
+    match operand {
+        VerifierOperand::Temporary { id, dimension } => CodeOperand::temporary(*id, *dimension),
+        VerifierOperand::Number { value, dimension } => CodeOperand::number(*value, *dimension),
+        VerifierOperand::Evaluation { id, dimension } => CodeOperand::evaluation(*id, *dimension),
+        VerifierOperand::Challenge {
+            id,
+            stage,
+            stage_id,
+            dimension,
+        } => CodeOperand::challenge(*id, *stage, *stage_id, *dimension),
+        VerifierOperand::Public { id, dimension } => CodeOperand::public(*id, *dimension),
+        VerifierOperand::Constant { id, dimension } => CodeOperand::constant(*id, *dimension),
+        VerifierOperand::Commitment { id, dimension } => CodeOperand::commitment(*id, *dimension),
+        VerifierOperand::BoundaryZerofier { id, dimension } => {
+            CodeOperand::boundary_zerofier(*id, *dimension)
+        }
+        VerifierOperand::ProofValue { id, dimension } => CodeOperand::proof_value(*id, *dimension),
+        VerifierOperand::OpeningDenominator { id, dimension } => {
+            CodeOperand::x_div_x_sub(*id, *dimension)
+        }
+    }
+}
+
+fn proof_value_offsets(global: &GlobalInfo) -> Result<Vec<u32>, RegularProgramLoweringError> {
+    let mut offsets = Vec::with_capacity(global.proof_values_map.len());
+    let mut offset = 0_u32;
+    for value in &global.proof_values_map {
+        offsets.push(offset);
+        let width = if value.stage == 1 { 1 } else { 3 };
+        offset = add_u32(offset, width)?;
+    }
+    Ok(offsets)
+}
+
+fn proof_value_offset(
+    proof_value_offsets: Option<&[u32]>,
+    id: u32,
+) -> Result<u32, RegularProgramLoweringError> {
+    let Some(proof_value_offsets) = proof_value_offsets else {
+        return Ok(id);
+    };
+    let index = usize::try_from(id).map_err(|_| RegularProgramLoweringError::LengthOverflow)?;
+    proof_value_offsets
+        .get(index)
+        .copied()
+        .ok_or(RegularProgramLoweringError::MissingStageValue {
+            source: "proof value",
+            id,
+        })
 }
 
 fn base_buffer(setup: &UnitSetupInfo) -> Result<u32, RegularProgramLoweringError> {

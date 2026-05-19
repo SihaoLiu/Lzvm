@@ -16,7 +16,8 @@ use crate::sectioned::{
 };
 
 pub use crate::regular_lowering::{
-    regular_program_from_expression_info, RegularProgramLoweringError,
+    regular_program_from_expression_info, verifier_program_from_verifier_info,
+    RegularProgramLoweringError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -13,7 +13,7 @@ use lzvm_artifacts::constraint_program::{
 };
 use lzvm_artifacts::expression_info::{encode_expression_info, read_expression_info_binary_file};
 use lzvm_artifacts::expression_program::{
-    encode_expression_program, ExpressionEntry, ExpressionProgram,
+    encode_expression_program, parse_expression_program, ExpressionEntry, ExpressionProgram,
 };
 use lzvm_artifacts::fixed::{
     encode_raw_fixed_columns, read_fixed_columns_file_for_setup, FixedColumn, FixedColumns,
@@ -369,6 +369,46 @@ fn writes_regular_program_without_existing_program_file() {
             regular_program_from_expression_info(&expressions, &setup)
                 .expect("regular program should derive")
         );
+    }
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert_eq!(report.unit_count, layout.units.len());
+}
+
+#[test]
+fn writes_verifier_program_without_existing_program_file() {
+    let dir = create_base_directory_fixture("missing-verifier-program");
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+
+    let mut removed_program_files = 0_usize;
+    for unit in &layout.units {
+        let path = unit
+            .verifier_program()
+            .expect("verifier program path should derive");
+        if path.is_file() {
+            fs::remove_file(path).expect("fixture verifier program should be removed");
+            removed_program_files += 1;
+        }
+    }
+    assert!(removed_program_files > 0);
+
+    let report = write_base_directory(&dir, FixedExtensionBackend::Cpu, true)
+        .expect("base directory should write");
+
+    for unit in &layout.units {
+        let program = parse_expression_program(
+            &fs::read(
+                unit.verifier_program()
+                    .expect("verifier program path should derive"),
+            )
+            .expect("verifier program output should read"),
+        )
+        .expect("verifier program should parse");
+        assert_eq!(program.entries.len(), 2);
+        assert_eq!(program.entries[0].expression_id, 0);
+        assert_eq!(program.entries[1].expression_id, 7);
+        assert_eq!(program.entries[0].destination_dimension, 3);
+        assert_eq!(program.entries[1].destination_dimension, 3);
     }
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");

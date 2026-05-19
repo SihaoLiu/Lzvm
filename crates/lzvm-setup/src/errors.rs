@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use lzvm_artifacts::constant_tree::ConstantTreeError;
 use lzvm_artifacts::expression_info::ExpressionInfoError;
+use lzvm_artifacts::expression_program::ExpressionProgramError;
 use lzvm_artifacts::fixed::FixedColumnError;
 use lzvm_artifacts::global_info::GlobalInfoError;
 use lzvm_artifacts::hint_program::HintProgramError;
@@ -162,6 +163,7 @@ pub enum BaseDirectoryWriteError {
     GlobalInfo(GlobalInfoError),
     SetupInfo(SetupInfoError),
     ExpressionInfo(ExpressionInfoError),
+    ExpressionProgram(ExpressionProgramError),
     VerifierInfo(VerifierInfoError),
     FixedColumns(FixedColumnError),
     HintProgram(HintProgramError),
@@ -180,6 +182,7 @@ impl fmt::Display for BaseDirectoryWriteError {
             Self::GlobalInfo(error) => write!(f, "{error}"),
             Self::SetupInfo(error) => write!(f, "{error}"),
             Self::ExpressionInfo(error) => write!(f, "{error}"),
+            Self::ExpressionProgram(error) => write!(f, "{error}"),
             Self::VerifierInfo(error) => write!(f, "{error}"),
             Self::FixedColumns(error) => write!(f, "{error}"),
             Self::HintProgram(error) => write!(f, "{error}"),
@@ -216,6 +219,12 @@ impl From<SetupInfoError> for BaseDirectoryWriteError {
 impl From<ExpressionInfoError> for BaseDirectoryWriteError {
     fn from(error: ExpressionInfoError) -> Self {
         Self::ExpressionInfo(error)
+    }
+}
+
+impl From<ExpressionProgramError> for BaseDirectoryWriteError {
+    fn from(error: ExpressionProgramError) -> Self {
+        Self::ExpressionProgram(error)
     }
 }
 

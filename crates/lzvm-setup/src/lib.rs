@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use lzvm_artifacts::expression_info::{
     encode_expression_info, read_expression_info_binary_file, ExpressionInfo,
 };
+use lzvm_artifacts::expression_program::{encode_expression_program, read_expression_program_file};
 use lzvm_artifacts::fixed::{read_fixed_columns_file, read_fixed_columns_file_for_setup};
 use lzvm_artifacts::global_info::{encode_global_info, read_global_info_binary_file, GlobalInfo};
 use lzvm_artifacts::key_directory::{
@@ -11,6 +12,7 @@ use lzvm_artifacts::key_directory::{
 };
 use lzvm_artifacts::regular_program::{
     encode_regular_program, read_regular_program_file, regular_program_from_expression_info,
+    verifier_program_from_verifier_info,
 };
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, UnitSetupInfo,
@@ -206,6 +208,9 @@ pub fn write_base_directory_from_layout(
         if let Some(path) = unit.verifier_info_binary() {
             write_verifier_info_binary_for_directory(&path, &verifier)?;
         }
+        if let Some(path) = unit.verifier_program() {
+            write_verifier_program_for_directory(&path, &verifier, &setup, &layout.global_info)?;
+        }
 
         let group_name = unit.group_name.as_deref().unwrap_or("raw");
         let unit_name = unit.unit_name.as_deref().unwrap_or("unit");
@@ -278,7 +283,10 @@ fn validate_base_directory_inputs(
 ) -> Result<(), BaseDirectoryWriteError> {
     let mut seen = BTreeSet::new();
     for required in layout.required_paths() {
-        if required.role == "unit expression program" {
+        if matches!(
+            required.role,
+            "unit expression program" | "unit verifier program"
+        ) {
             continue;
         }
         if matches!(
@@ -391,6 +399,26 @@ fn write_verifier_info_binary_for_directory(
         "publish verifier metadata binary",
         |staging_path| {
             read_verifier_info_binary_file(staging_path)?;
+            Ok(())
+        },
+    )
+}
+
+fn write_verifier_program_for_directory(
+    path: &Path,
+    verifier: &VerifierInfo,
+    setup: &UnitSetupInfo,
+    global: &GlobalInfo,
+) -> Result<u64, BaseDirectoryWriteError> {
+    let program = verifier_program_from_verifier_info(verifier, setup, global)?;
+    let bytes = encode_expression_program(&program)?;
+    write_validated_base_directory_bytes(
+        path,
+        &bytes,
+        "write verifier program staging file",
+        "publish verifier program",
+        |staging_path| {
+            read_expression_program_file(staging_path)?;
             Ok(())
         },
     )

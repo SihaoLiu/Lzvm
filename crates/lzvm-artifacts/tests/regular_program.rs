@@ -9,14 +9,21 @@ use lzvm_artifacts::hint_program::{
 };
 use lzvm_artifacts::regular_program::{
     encode_regular_program, parse_regular_program, read_regular_program_file,
-    regular_program_from_expression_info, RegularProgram,
+    regular_program_from_expression_info, verifier_program_from_verifier_info, RegularProgram,
 };
 use lzvm_artifacts::{
     expression_info::{
         BoundaryKind, CodeDestination, CodeOperand, CodeOperation, ConstraintCode, ExpressionCode,
         ExpressionInfo, OperationKind,
     },
+    global_info::{
+        AggregationType, CurveKind, GlobalAir, GlobalInfo, NamedStageValue, PublicValue,
+    },
     setup_info::{CommitmentColumn, FriStep, StageValue, StarkStruct, UnitSetupInfo},
+    verifier_info::{
+        VerifierCode, VerifierDestination, VerifierInfo, VerifierOperand, VerifierOperation,
+        VerifierOperationKind,
+    },
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -400,6 +407,61 @@ fn lowers_unit_and_group_value_sources() {
     assert_eq!(program.constraints.args, vec![0, 0, 11, 0, 0, 9, 0, 0]);
 }
 
+#[test]
+fn builds_verifier_program_from_verifier_info() {
+    let info = VerifierInfo {
+        quotient: VerifierCode {
+            expression_id: None,
+            stage: None,
+            line: "quotient check".to_owned(),
+            temporary_count: 1,
+            operations: vec![VerifierOperation {
+                op: VerifierOperationKind::Copy,
+                destination: VerifierDestination::temporary(0, 3),
+                sources: vec![VerifierOperand::number(1, 1)],
+            }],
+        },
+        query: VerifierCode {
+            expression_id: Some(9),
+            stage: Some(3),
+            line: "query check".to_owned(),
+            temporary_count: 1,
+            operations: vec![VerifierOperation {
+                op: VerifierOperationKind::Add,
+                destination: VerifierDestination::temporary(0, 3),
+                sources: vec![
+                    VerifierOperand::boundary_zerofier(1, 1),
+                    VerifierOperand::proof_value(1, 3),
+                ],
+            }],
+        },
+    };
+
+    let program = verifier_program_from_verifier_info(
+        &info,
+        &minimal_setup_info(),
+        &global_info_with_values(),
+    )
+    .expect("verifier program should lower");
+
+    assert_eq!(program.max_tmp1, 0);
+    assert_eq!(program.max_tmp3, 1);
+    assert_eq!(program.max_args, 8);
+    assert_eq!(program.max_ops, 1);
+    assert_eq!(program.ops, vec![1, 1]);
+    assert_eq!(
+        program.args,
+        vec![0, 0, 8, 1, 0, 8, 0, 0, 0, 0, 10, 1, 0, 3, 2, 0]
+    );
+    assert_eq!(program.numbers, vec![1, 0, 0, 0]);
+    assert_eq!(program.entries[0].expression_id, 0);
+    assert_eq!(program.entries[0].stage, 2);
+    assert_eq!(program.entries[0].source_line, "quotient check");
+    assert_eq!(program.entries[1].expression_id, 9);
+    assert_eq!(program.entries[1].stage, 3);
+    assert_eq!(program.entries[1].source_line, "query check");
+}
+
 fn minimal_setup_info() -> UnitSetupInfo {
     UnitSetupInfo {
         n_stages: 1,
@@ -430,6 +492,44 @@ fn minimal_setup_info() -> UnitSetupInfo {
             transcript_arity: None,
             merkle_tree_custom: None,
         },
+    }
+}
+
+fn global_info_with_values() -> GlobalInfo {
+    GlobalInfo {
+        name: "sample-program".to_owned(),
+        air_groups: vec!["group-a".to_owned()],
+        airs: vec![vec![GlobalAir {
+            name: "unit-a".to_owned(),
+            num_rows: 4,
+            has_compressor: false,
+        }]],
+        curve: CurveKind::None,
+        lattice_size: Some(4),
+        aggregation_types: vec![Vec::<AggregationType>::new()],
+        n_publics: 1,
+        num_challenges: vec![1],
+        num_proof_values: vec![2],
+        proof_values_map: vec![
+            NamedStageValue {
+                name: "proof-a".to_owned(),
+                stage: 1,
+                id: None,
+                lengths: Vec::new(),
+            },
+            NamedStageValue {
+                name: "proof-b".to_owned(),
+                stage: 2,
+                id: None,
+                lengths: Vec::new(),
+            },
+        ],
+        publics_map: vec![PublicValue {
+            name: "public-a".to_owned(),
+            stage: 1,
+            lengths: Vec::new(),
+        }],
+        transcript_arity: 4,
     }
 }
 
