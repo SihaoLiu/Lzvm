@@ -122,6 +122,7 @@ pub enum SetupPreflightError {
     Catalog(KeyDirectoryError),
     Proof(ProofPreflightError),
     CatalogHashMismatch,
+    ProgramImageCacheSetupHashMismatch,
     SetupDirectoryManifest(SetupDirectoryManifestError),
     Schedule(ProveScheduleError),
     PublicValues(PublicValueFieldError),
@@ -155,6 +156,9 @@ impl fmt::Display for SetupPreflightError {
             Self::Catalog(error) => write!(f, "{error}"),
             Self::Proof(error) => write!(f, "{error}"),
             Self::CatalogHashMismatch => write!(f, "setup catalog fingerprint mismatch"),
+            Self::ProgramImageCacheSetupHashMismatch => {
+                write!(f, "program image cache setup hash mismatch")
+            }
             Self::SetupDirectoryManifest(error) => write!(f, "{error}"),
             Self::Schedule(error) => write!(f, "{error}"),
             Self::PublicValues(error) => write!(f, "{error}"),
@@ -210,7 +214,9 @@ impl std::error::Error for SetupPreflightError {
             Self::GroupValues(error) => Some(error),
             Self::UnitValues(error) => Some(error),
             Self::UnitValueQueryPlan(error) => Some(error),
-            Self::CatalogHashMismatch | Self::UnexpectedProofSegment { .. } => None,
+            Self::CatalogHashMismatch
+            | Self::ProgramImageCacheSetupHashMismatch
+            | Self::UnexpectedProofSegment { .. } => None,
         }
     }
 }
@@ -318,6 +324,13 @@ pub fn validate_setup_preflight_hashes(
         eth_block_input_withdrawal_counts,
         eth_block_input_withdrawal_preimage_counts,
     } = validate_proof_public_values(proof, public_values).map_err(SetupPreflightError::Proof)?;
+
+    if program_image_caches
+        .iter()
+        .any(|cache| cache.constraint_system_digest != catalog_hash)
+    {
+        return Err(SetupPreflightError::ProgramImageCacheSetupHashMismatch);
+    }
 
     Ok(SetupPreflightReport {
         unit_count: catalog.units.len(),

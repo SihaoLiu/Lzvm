@@ -63,7 +63,7 @@ use lzvm_artifacts::pcs_proof_values_segment::{
 };
 use lzvm_artifacts::pcs_query_segment::{parse_pcs_query_plan_segment, PCS_QUERY_PLAN_SEGMENT_ID};
 use lzvm_artifacts::program_image::{
-    read_program_image_commitment_cache_file, ProgramImageGpuMode,
+    read_program_image_commitment_cache_file, ProgramImageCommitmentCache, ProgramImageGpuMode,
 };
 use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, parse_program_image_cache_segment,
@@ -10424,6 +10424,66 @@ fn rejects_setup_aware_verify_preflight_with_mismatched_pcs_query_plan() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "verify setup-preflight failed: PCS query plan segment mismatch\n"
+    );
+}
+
+#[test]
+fn rejects_setup_aware_verify_preflight_with_mismatched_program_image_cache_setup_hash() {
+    let dir = temp_dir("verify-setup-preflight-bad-program-image-cache");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let mut proof = sample_proof_with_material(&public_values, &catalog);
+    let cache = ProgramImageCommitmentCache {
+        program_digest: [0x11; 32],
+        source_image_digest: [0x12; 32],
+        constraint_system_digest: [0x44; 32],
+        tree_root: [11, 12, 13, 14],
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cpu,
+    };
+    proof.segments.push(ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: encode_program_image_cache_segment(&cache).expect("cache segment should encode"),
+    });
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: program image cache setup hash mismatch\n"
     );
 }
 
