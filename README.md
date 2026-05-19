@@ -43,10 +43,10 @@ This command loads the same setup catalog as validation, hashes the parsed globa
 Generate native setup key material for a setup directory:
 
 ```sh
-cargo run -p lzvm-cli -- setup generate-key [--backend cpu|cuda] <setup-dir>
+cargo run -p lzvm-cli -- setup generate-key [--backend cpu|cuda] [--source <main-file>] [--include-path <dir>] [--include-path-first] <setup-dir>
 ```
 
-This is the public directory-level setup generation entry point. It reads repository-owned binary setup, expression, verifier, and global metadata plus fixed-column inputs, then writes expression programs, verifier programs, raw fixed-column artifacts, native constant trees, binary verification keys, PCS setup plans, and PCS setup-material companions for every discovered unit. The default backend is `cpu`; `cuda` is available when the CLI is built with the `cuda` feature.
+This is the public directory-level setup generation entry point. It reads repository-owned binary setup, expression, verifier, and global metadata plus fixed-column inputs, then writes expression programs, verifier programs, raw fixed-column artifacts, native constant trees, binary verification keys, PCS setup plans, and PCS setup-material companions for every discovered unit. When `--source` is supplied, literal fixed-column declarations are materialized into unit fixed-column input paths before key generation continues. The default backend is `cpu`; `cuda` is available when the CLI is built with the `cuda` feature.
 On success, the report includes `setup_hash` and `setup_directory_manifest` so later proof commands can bind to the generated key material without running a separate fingerprint command.
 
 Write source-level setup companion artifacts into a setup directory:

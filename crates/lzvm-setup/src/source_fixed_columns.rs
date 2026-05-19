@@ -5,6 +5,7 @@ use lzvm_artifacts::fixed::{
     encode_fixed_columns, encode_raw_fixed_columns, read_fixed_columns_file, FixedColumn,
     FixedColumnError, FixedColumns,
 };
+use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyDirectoryError, KeyUnitKind};
 use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, SetupInfoError, UnitSetupInfo};
 use lzvm_pil::{
     lex_source, ColumnInitializerKind, ColumnKind, LexError, SourceLoaderConfig, SourceProgram,
@@ -31,6 +32,22 @@ pub struct SourceFixedColumnsWriteReport {
     pub bytes_written: u64,
     pub column_count: usize,
     pub row_count: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceFixedColumnsDirectoryWriteRequest {
+    pub working_dir: PathBuf,
+    pub include_paths: Vec<PathBuf>,
+    pub include_path_first: bool,
+    pub main_file: PathBuf,
+    pub setup_dir: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceFixedColumnsDirectoryWriteReport {
+    pub setup_dir: PathBuf,
+    pub unit_count: usize,
+    pub bytes_written: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +82,16 @@ pub enum SourceFixedColumnsWriteError {
         n_bits: u32,
     },
     Setup(SetupError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SourceFixedColumnsDirectoryWriteError {
+    KeyDirectory(KeyDirectoryError),
+    FixedColumns(SourceFixedColumnsWriteError),
+    MissingUnitPath {
+        role: &'static str,
+        unit: KeyUnitKind,
+    },
 }
 
 impl fmt::Display for SourceFixedColumnsWriteError {
@@ -125,6 +152,18 @@ impl fmt::Display for SourceFixedColumnsWriteError {
     }
 }
 
+impl fmt::Display for SourceFixedColumnsDirectoryWriteError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::KeyDirectory(error) => write!(f, "{error}"),
+            Self::FixedColumns(error) => write!(f, "{error}"),
+            Self::MissingUnitPath { role, unit } => {
+                write!(f, "missing source fixed-column {role} for {unit}")
+            }
+        }
+    }
+}
+
 impl std::error::Error for SourceFixedColumnsWriteError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -138,6 +177,16 @@ impl std::error::Error for SourceFixedColumnsWriteError {
             | Self::UnexpectedSequenceToken { .. }
             | Self::InvalidLiteral { .. }
             | Self::DomainSizeOverflow { .. } => None,
+        }
+    }
+}
+
+impl std::error::Error for SourceFixedColumnsDirectoryWriteError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::KeyDirectory(error) => Some(error),
+            Self::FixedColumns(error) => Some(error),
+            Self::MissingUnitPath { .. } => None,
         }
     }
 }
@@ -160,6 +209,18 @@ impl From<SetupError> for SourceFixedColumnsWriteError {
     }
 }
 
+impl From<KeyDirectoryError> for SourceFixedColumnsDirectoryWriteError {
+    fn from(error: KeyDirectoryError) -> Self {
+        Self::KeyDirectory(error)
+    }
+}
+
+impl From<SourceFixedColumnsWriteError> for SourceFixedColumnsDirectoryWriteError {
+    fn from(error: SourceFixedColumnsWriteError) -> Self {
+        Self::FixedColumns(error)
+    }
+}
+
 pub fn write_fixed_columns_from_source_file(
     request: &SourceFixedColumnsWriteRequest,
 ) -> Result<SourceFixedColumnsWriteReport, SourceFixedColumnsWriteError> {
@@ -172,28 +233,78 @@ pub fn write_fixed_columns_from_source_file(
     let program = loader
         .load_main(&request.main_file)
         .map_err(SourceFixedColumnsWriteError::SourceProgram)?;
-    let columns = fixed_columns_from_source_program(
+    write_fixed_columns_from_source_program(
         &program,
         &setup,
         &request.group_name,
         &request.unit_name,
-    )?;
+        request.output_path.clone(),
+    )
+}
+
+pub fn write_fixed_columns_from_source_directory(
+    request: &SourceFixedColumnsDirectoryWriteRequest,
+) -> Result<SourceFixedColumnsDirectoryWriteReport, SourceFixedColumnsDirectoryWriteError> {
+    let layout = read_key_directory_layout(&request.setup_dir)?;
+    let mut loader = SourceProgramLoader::new(SourceLoaderConfig {
+        working_dir: request.working_dir.clone(),
+        include_paths: request.include_paths.clone(),
+        include_path_first: request.include_path_first,
+    });
+    let program = loader
+        .load_main(&request.main_file)
+        .map_err(SourceFixedColumnsWriteError::SourceProgram)?;
+
+    let mut bytes_written = 0_u64;
+    for unit in &layout.units {
+        let setup_info_path =
+            unit.setup_info()
+                .ok_or(SourceFixedColumnsDirectoryWriteError::MissingUnitPath {
+                    role: "setup metadata path",
+                    unit: unit.kind,
+                })?;
+        let setup = read_unit_setup_info_binary_file(&setup_info_path)
+            .map_err(SourceFixedColumnsWriteError::from)?;
+        let group_name = unit.group_name.as_deref().unwrap_or("raw");
+        let unit_name = unit.unit_name.as_deref().unwrap_or("unit");
+        let report = write_fixed_columns_from_source_program(
+            &program,
+            &setup,
+            group_name,
+            unit_name,
+            unit.fixed_columns.clone(),
+        )?;
+        bytes_written = bytes_written.saturating_add(report.bytes_written);
+    }
+
+    Ok(SourceFixedColumnsDirectoryWriteReport {
+        setup_dir: request.setup_dir.clone(),
+        unit_count: layout.units.len(),
+        bytes_written,
+    })
+}
+
+fn write_fixed_columns_from_source_program(
+    program: &SourceProgram,
+    setup: &UnitSetupInfo,
+    group_name: &str,
+    unit_name: &str,
+    output_path: PathBuf,
+) -> Result<SourceFixedColumnsWriteReport, SourceFixedColumnsWriteError> {
+    let columns = fixed_columns_from_source_program(program, setup, group_name, unit_name)?;
     let bytes = encode_fixed_columns(&columns)?;
-    encode_raw_fixed_columns(&columns, &setup)?;
+    encode_raw_fixed_columns(&columns, setup)?;
     let staging_path = write_staging_bytes(
-        &request.output_path,
+        &output_path,
         &bytes,
         "write source fixed columns staging file",
     )?;
     read_fixed_columns_file(&staging_path)?;
-    let bytes_written = publish_staging_bytes(
-        &staging_path,
-        &request.output_path,
-        "publish source fixed columns",
-    )?;
+    let bytes_written =
+        publish_staging_bytes(&staging_path, &output_path, "publish source fixed columns")?;
 
     Ok(SourceFixedColumnsWriteReport {
-        output_path: request.output_path.clone(),
+        output_path,
         bytes_written,
         column_count: columns.columns.len(),
         row_count: columns.row_count,

@@ -12,7 +12,9 @@ use lzvm_artifacts::expression_info::{
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
-use lzvm_artifacts::fixed::{encode_raw_fixed_columns, FixedColumn, FixedColumns};
+use lzvm_artifacts::fixed::{
+    encode_raw_fixed_columns, read_raw_fixed_column_file, FixedColumn, FixedColumns,
+};
 use lzvm_artifacts::global_info::{encode_global_info, read_global_info_binary_file, GlobalInfo};
 use lzvm_artifacts::hint_program::{
     encode_global_hint_program, read_regular_hint_program_file, HintOperand, HintProgram,
@@ -260,6 +262,18 @@ fn write_unit_files(
     assert_eq!(raw_fixed.len(), expected_len);
 }
 
+fn write_unit_metadata_files(paths: &KeyUnitPaths, setup: &UnitSetupInfo) {
+    if let Some(path) = paths.setup_info_binary() {
+        write_unit_setup_metadata(&path, setup);
+    }
+    if let Some(path) = paths.expression_info_binary() {
+        write_expression_metadata(&path, &fixtures::sample_expression_info_with_hint());
+    }
+    if let Some(path) = paths.verifier_info_binary() {
+        write_verifier_metadata(&path, &fixtures::sample_verifier_info());
+    }
+}
+
 fn create_key_directory(name: &str) -> (PathBuf, VerificationKeyRoot) {
     let dir = temp_dir(name);
     let _ = fs::remove_dir_all(&dir);
@@ -277,6 +291,20 @@ fn create_key_directory(name: &str) -> (PathBuf, VerificationKeyRoot) {
     }
 
     (dir, root)
+}
+
+fn create_key_directory_without_fixed_inputs(name: &str) -> PathBuf {
+    let dir = temp_dir(name);
+    let _ = fs::remove_dir_all(&dir);
+    write_global_files(&dir);
+
+    let setup = fixtures::sample_setup_info();
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    for unit in &layout.units {
+        write_unit_metadata_files(unit, &setup);
+    }
+
+    dir
 }
 
 fn remove_verification_keys(dir: &Path) {
@@ -822,6 +850,71 @@ fn generates_key_directory_outputs_with_public_command() {
 }
 
 #[test]
+fn generate_key_writes_missing_fixed_inputs_from_source_literals() {
+    let dir = create_key_directory_without_fixed_inputs("generate-key-source");
+    let source_path = dir.join("main.pil");
+    write_bytes(
+        &source_path,
+        "col fixed main.left = [5, 1];\n\
+         col fixed main.right = [0x9, 9];",
+    );
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    for unit in &layout.units {
+        assert!(!unit.fixed_columns.is_file());
+    }
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit_count = layout.units.len();
+    for unit in &layout.units {
+        let setup_path = unit
+            .setup_info_binary()
+            .expect("setup metadata path should derive");
+        let setup =
+            read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+        let left = read_raw_fixed_column_file(&unit.fixed_columns, &setup, "group-a", "unit-a", 0)
+            .expect("left fixed column should read");
+        let right = read_raw_fixed_column_file(&unit.fixed_columns, &setup, "group-a", "unit-a", 1)
+            .expect("right fixed column should read");
+        assert_eq!(left, [5, 1]);
+        assert_eq!(right, [9, 9]);
+        assert!(unit.constant_tree.is_file());
+        assert!(unit.verification_key_binary().is_file());
+        assert!(unit
+            .pcs_setup_plan()
+            .expect("PCS plan path should derive")
+            .is_file());
+        assert!(unit
+            .pcs_setup_material()
+            .expect("PCS material path should derive")
+            .is_file());
+    }
+    let manifest_path = dir.join(SETUP_DIRECTORY_MANIFEST_FILE);
+    assert!(manifest_path.is_file());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout.starts_with(&format!("status=ok\nsource_fixed_units={unit_count}\n")));
+    assert!(stdout.contains(&format!("units={unit_count}\n")));
+    assert!(stdout.contains("setup_hash="));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn writes_program_image_cache_from_setup_directory_digest() {
     let (dir, _) = create_key_directory("program-image-cache-setup-dir");
     remove_verification_keys(&dir);
@@ -902,7 +995,7 @@ fn reports_usage_for_missing_generate_key_directory_path() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm setup generate-key [--backend cpu|cuda] <setup-dir>\n"
+        "usage: lzvm setup generate-key [--backend cpu|cuda] [--source <main-file>] [--include-path <dir>] [--include-path-first] <setup-dir>\n"
     );
 }
 

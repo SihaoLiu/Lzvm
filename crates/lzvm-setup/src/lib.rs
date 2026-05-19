@@ -66,7 +66,9 @@ pub use source_companions::{
     SourceCompanionWriteRequest,
 };
 pub use source_fixed_columns::{
-    write_fixed_columns_from_source_file, SourceFixedColumnsWriteError,
+    write_fixed_columns_from_source_directory, write_fixed_columns_from_source_file,
+    SourceFixedColumnsDirectoryWriteError, SourceFixedColumnsDirectoryWriteReport,
+    SourceFixedColumnsDirectoryWriteRequest, SourceFixedColumnsWriteError,
     SourceFixedColumnsWriteReport, SourceFixedColumnsWriteRequest,
 };
 pub use source_fixed_file_manifest::{
