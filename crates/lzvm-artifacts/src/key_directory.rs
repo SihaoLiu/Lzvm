@@ -465,13 +465,13 @@ impl KeyUnitPaths {
     pub fn pcs_setup_plan(&self) -> Option<PathBuf> {
         self.metadata_prefix
             .as_ref()
-            .map(|prefix| append_suffix(prefix, ".pcs-plan"))
+            .map(|_| append_suffix(&self.prefix, ".pcs-plan"))
     }
 
     pub fn pcs_setup_material(&self) -> Option<PathBuf> {
         self.metadata_prefix
             .as_ref()
-            .map(|prefix| append_suffix(prefix, ".pcs-material"))
+            .map(|_| append_suffix(&self.prefix, ".pcs-material"))
     }
 
     pub fn expression_program(&self) -> Option<PathBuf> {

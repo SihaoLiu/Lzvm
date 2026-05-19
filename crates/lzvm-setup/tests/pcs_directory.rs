@@ -86,6 +86,50 @@ fn write_setup_fixture(layout: &KeyDirectoryLayout, setup: &UnitSetupInfo) {
     );
 }
 
+fn shared_metadata_layout(root: &Path) -> KeyDirectoryLayout {
+    let shared_metadata_prefix = root.join("shared").join("recursive");
+    let first_prefix = root.join("first").join("recursive");
+    let second_prefix = root.join("second").join("recursive");
+    KeyDirectoryLayout {
+        root: root.to_path_buf(),
+        global_info: sample_global_info(),
+        global_paths: GlobalKeyPaths {
+            info: root.join("pilout.globalInfo.bin"),
+            constraints_program: root.join("pilout.globalConstraints.bin"),
+        },
+        source_fixed_file_manifest: root.join("lzvm.source-fixed-file-manifest"),
+        source_program_archive: root.join("lzvm.source-program-archive"),
+        units: vec![
+            KeyUnitPaths {
+                kind: KeyUnitKind::RecursiveFirst,
+                group_id: Some(0),
+                unit_id: Some(0),
+                group_name: Some("group-a".to_owned()),
+                unit_name: Some("unit-a".to_owned()),
+                prefix: first_prefix.clone(),
+                metadata_prefix: Some(shared_metadata_prefix.clone()),
+                program_prefix: Some(shared_metadata_prefix.clone()),
+                verification_key_prefix: first_prefix.clone(),
+                fixed_columns: first_prefix.with_extension("const"),
+                constant_tree: first_prefix.with_extension("consttree"),
+            },
+            KeyUnitPaths {
+                kind: KeyUnitKind::RecursiveSecond,
+                group_id: Some(0),
+                unit_id: None,
+                group_name: Some("group-a".to_owned()),
+                unit_name: None,
+                prefix: second_prefix.clone(),
+                metadata_prefix: Some(shared_metadata_prefix),
+                program_prefix: Some(second_prefix.clone()),
+                verification_key_prefix: second_prefix.clone(),
+                fixed_columns: second_prefix.with_extension("const"),
+                constant_tree: second_prefix.with_extension("consttree"),
+            },
+        ],
+    }
+}
+
 #[test]
 fn writes_pcs_plan_and_material_from_layout() {
     let dir = temp_dir("valid");
@@ -206,6 +250,67 @@ fn writes_pcs_plan_and_material_from_files() {
             bytes_written: material_bytes
         }
     );
+}
+
+#[test]
+fn writes_pcs_outputs_per_unit_when_metadata_is_shared() {
+    let dir = temp_dir("shared-metadata");
+    let _ = fs::remove_dir_all(&dir);
+    let layout = shared_metadata_layout(&dir);
+    let setup = sample_base_setup_info();
+    let columns = sample_columns();
+    let fixed = encode_raw_fixed_columns(&columns, &setup).expect("fixed columns should encode");
+    let tree_bytes =
+        build_constant_tree_from_fixed_columns(&columns, &setup).expect("tree should build");
+    let tree = parse_constant_tree_bytes(tree_bytes.clone(), &setup).expect("tree should parse");
+
+    write_setup_fixture(&layout, &setup);
+    for unit in &layout.units {
+        write_bytes(&unit.fixed_columns, &fixed);
+        write_bytes(&unit.constant_tree, &tree_bytes);
+    }
+
+    let plan_report = write_pcs_directory_from_layout(&layout).expect("plans should write");
+    let material_report =
+        write_pcs_material_directory_from_layout(&layout).expect("materials should write");
+    let expected_plan = derive_pcs_setup_plan(&setup).expect("plan should derive");
+    let expected_material =
+        build_pcs_setup_material(&expected_plan, &fixed, &tree).expect("material should build");
+
+    let first_plan = layout.units[0]
+        .pcs_setup_plan()
+        .expect("first PCS plan path should derive");
+    let second_plan = layout.units[1]
+        .pcs_setup_plan()
+        .expect("second PCS plan path should derive");
+    let first_material = layout.units[0]
+        .pcs_setup_material()
+        .expect("first PCS material path should derive");
+    let second_material = layout.units[1]
+        .pcs_setup_material()
+        .expect("second PCS material path should derive");
+    assert_ne!(first_plan, second_plan);
+    assert_ne!(first_material, second_material);
+    assert_eq!(
+        read_pcs_setup_plan_file(&first_plan).expect("first plan should parse"),
+        expected_plan
+    );
+    assert_eq!(
+        read_pcs_setup_plan_file(&second_plan).expect("second plan should parse"),
+        expected_plan
+    );
+    assert_eq!(
+        read_pcs_setup_material_file(&first_material).expect("first material should parse"),
+        expected_material
+    );
+    assert_eq!(
+        read_pcs_setup_material_file(&second_material).expect("second material should parse"),
+        expected_material
+    );
+    assert_eq!(plan_report.unit_count, 2);
+    assert_eq!(material_report.unit_count, 2);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]

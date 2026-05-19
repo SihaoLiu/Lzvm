@@ -518,6 +518,30 @@ fn derives_key_directory_units_from_global_metadata() {
         .to_string_lossy()
         .ends_with(".verifierinfo.bin"));
 
+    let recursive_first = layout
+        .units
+        .iter()
+        .find(|unit| {
+            unit.kind == KeyUnitKind::RecursiveFirst
+                && unit.group_id == Some(0)
+                && unit.unit_id == Some(0)
+        })
+        .expect("recursive-first unit should exist");
+    let recursive_second = layout
+        .units
+        .iter()
+        .find(|unit| unit.kind == KeyUnitKind::RecursiveSecond && unit.group_id == Some(0))
+        .expect("recursive-second unit should exist");
+    assert_eq!(recursive_first.setup_info(), recursive_second.setup_info());
+    assert_ne!(
+        recursive_first
+            .pcs_setup_material()
+            .expect("recursive-first PCS material path should derive"),
+        recursive_second
+            .pcs_setup_material()
+            .expect("recursive-second PCS material path should derive")
+    );
+
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
