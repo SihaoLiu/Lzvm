@@ -67,6 +67,12 @@ pub(super) fn verify_preflight(
             );
         }
     }
+    write_challenge_values_summary(
+        stdout,
+        report.challenge_values_segment_count,
+        &report.challenge_values_segment_byte_counts,
+        &report.challenge_values_value_counts,
+    );
     if report.eth_block_input_count > 0 {
         let _ = writeln!(stdout, "eth_block_inputs={}", report.eth_block_input_count);
         for (index, hash) in report.eth_block_input_hashes.iter().enumerate() {
@@ -561,6 +567,12 @@ fn verify_setup_validation(
             );
         }
     }
+    write_challenge_values_summary(
+        stdout,
+        public_report.challenge_values_segment_count,
+        &public_report.challenge_values_segment_byte_counts,
+        &public_report.challenge_values_value_counts,
+    );
     if public_report.eth_block_input_count > 0 {
         let _ = writeln!(
             stdout,
@@ -1000,6 +1012,22 @@ fn write_eth_extra_field_summary(
     }
     let _ = writeln!(stdout, "eth_extra_header_fields={extra_header_field_count}");
     let _ = writeln!(stdout, "eth_extra_body_fields={extra_body_field_count}");
+}
+
+fn write_challenge_values_summary(
+    stdout: &mut dyn Write,
+    segment_count: usize,
+    segment_byte_counts: &[usize],
+    value_counts: &[usize],
+) {
+    if segment_count == 0 {
+        return;
+    }
+    let _ = writeln!(stdout, "challenge_values_segments={segment_count}");
+    for (byte_count, value_count) in segment_byte_counts.iter().zip(value_counts) {
+        let _ = writeln!(stdout, "challenge_values_segment_bytes={byte_count}");
+        let _ = writeln!(stdout, "challenge_values_count={value_count}");
+    }
 }
 
 fn format_bytes_hex(bytes: &[u8]) -> String {

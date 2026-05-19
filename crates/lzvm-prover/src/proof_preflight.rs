@@ -1,6 +1,9 @@
 use std::fmt;
 use std::path::Path;
 
+use lzvm_artifacts::challenge_values_segment::{
+    parse_challenge_values_segment, ChallengeValuesSegmentError, CHALLENGE_VALUES_SEGMENT_ID,
+};
 use lzvm_artifacts::eth_block_input::{
     eth_block_input_bytes_digest, eth_block_input_extra_field_counts,
     eth_block_input_receipt_kind_counts, eth_block_input_transaction_kind_counts,
@@ -34,6 +37,9 @@ pub struct ProofPreflightReport {
     pub program_image_cache_count: usize,
     pub program_image_caches: Vec<ProgramImageCommitmentCache>,
     pub program_image_cache_hashes: Vec<[u8; 32]>,
+    pub challenge_values_segment_count: usize,
+    pub challenge_values_segment_byte_counts: Vec<usize>,
+    pub challenge_values_value_counts: Vec<usize>,
     pub eth_block_input_count: usize,
     pub eth_block_input_hashes: Vec<[u8; 32]>,
     pub eth_block_input_byte_counts: Vec<usize>,
@@ -76,6 +82,7 @@ pub enum ProofPreflightError {
     PublicValuesHashMismatch,
     PublicValuesField(PublicValueFieldError),
     ProgramImageCache(ProgramImageCacheSegmentError),
+    ChallengeValues(ChallengeValuesSegmentError),
     EthBlockInput(EthBlockInputError),
     EthBlockPublicValues(EthBlockPublicValuesError),
     MissingEthBlockInput,
@@ -102,6 +109,7 @@ impl fmt::Display for ProofPreflightError {
             Self::PublicValuesHashMismatch => write!(f, "public-values hash mismatch"),
             Self::PublicValuesField(error) => write!(f, "{error}"),
             Self::ProgramImageCache(error) => write!(f, "{error}"),
+            Self::ChallengeValues(error) => write!(f, "{error}"),
             Self::EthBlockInput(error) => write!(f, "{error}"),
             Self::EthBlockPublicValues(error) => write!(f, "{error}"),
             Self::MissingEthBlockInput => write!(f, "missing ETH block input proof segment"),
@@ -134,6 +142,7 @@ impl std::error::Error for ProofPreflightError {
             Self::PublicValuesDigest(error) => Some(error),
             Self::PublicValuesField(error) => Some(error),
             Self::ProgramImageCache(error) => Some(error),
+            Self::ChallengeValues(error) => Some(error),
             Self::EthBlockInput(error) => Some(error),
             Self::EthBlockPublicValues(error) => Some(error),
             Self::ProofArtifact(error) => Some(error),
@@ -210,6 +219,19 @@ pub fn validate_proof_public_values(
         program_image_caches.push(cache);
     }
     let program_image_cache_count = program_image_caches.len();
+    let mut challenge_values_segment_byte_counts = Vec::new();
+    let mut challenge_values_value_counts = Vec::new();
+    for segment in proof
+        .segments
+        .iter()
+        .filter(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID)
+    {
+        let challenge_values = parse_challenge_values_segment(&segment.data)
+            .map_err(ProofPreflightError::ChallengeValues)?;
+        challenge_values_segment_byte_counts.push(segment.data.len());
+        challenge_values_value_counts.push(challenge_values.values.len());
+    }
+    let challenge_values_segment_count = challenge_values_value_counts.len();
     let mut eth_block_input_hashes = Vec::new();
     let mut eth_block_input_byte_counts = Vec::new();
     let mut eth_block_input_block_rlp_byte_counts = Vec::new();
@@ -328,6 +350,9 @@ pub fn validate_proof_public_values(
         program_image_cache_count,
         program_image_caches,
         program_image_cache_hashes,
+        challenge_values_segment_count,
+        challenge_values_segment_byte_counts,
+        challenge_values_value_counts,
         eth_block_input_count,
         eth_block_input_hashes,
         eth_block_input_byte_counts,

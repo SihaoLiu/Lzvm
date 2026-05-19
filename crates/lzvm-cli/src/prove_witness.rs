@@ -187,16 +187,18 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                 }
             };
             if let Err(message) = finish_all_units_witness_run(
-                &catalog,
-                &plan,
-                &parsed,
-                &auxiliary_inputs,
-                &outputs,
-                FinishEthBlockInput {
-                    summary: eth_block_input.as_ref(),
-                    generated_public_inputs,
+                FinishAllUnitsWitnessRunRequest {
+                    catalog: &catalog,
+                    plan: &plan,
+                    parsed: &parsed,
+                    auxiliary_inputs: &auxiliary_inputs,
+                    outputs: &outputs,
+                    eth_block_input: FinishEthBlockInput {
+                        summary: eth_block_input.as_ref(),
+                        generated_public_inputs,
+                    },
+                    challenge_values_segment: challenge_values_segment.as_ref(),
                 },
-                challenge_values_segment.as_ref(),
                 stdout,
             ) {
                 let _ = writeln!(stderr, "prove witness failed: {message}");
@@ -259,16 +261,18 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             }
         };
         if let Err(message) = finish_all_units_witness_run(
-            &catalog,
-            &plan,
-            &parsed,
-            &auxiliary_inputs,
-            &outputs,
-            FinishEthBlockInput {
-                summary: eth_block_input.as_ref(),
-                generated_public_inputs,
+            FinishAllUnitsWitnessRunRequest {
+                catalog: &catalog,
+                plan: &plan,
+                parsed: &parsed,
+                auxiliary_inputs: &auxiliary_inputs,
+                outputs: &outputs,
+                eth_block_input: FinishEthBlockInput {
+                    summary: eth_block_input.as_ref(),
+                    generated_public_inputs,
+                },
+                challenge_values_segment: challenge_values_segment.as_ref(),
             },
-            challenge_values_segment.as_ref(),
             stdout,
         ) {
             let _ = writeln!(stderr, "prove witness failed: {message}");
@@ -741,6 +745,16 @@ struct FinishEthBlockInput<'a> {
     generated_public_inputs: bool,
 }
 
+struct FinishAllUnitsWitnessRunRequest<'a> {
+    catalog: &'a KeyDirectoryCatalog,
+    plan: &'a ProveExecutionPlan,
+    parsed: &'a ParsedWitnessArgs,
+    auxiliary_inputs: &'a ProveWitnessAuxiliaryInputs,
+    outputs: &'a [ProveWitnessTraceCommitments],
+    eth_block_input: FinishEthBlockInput<'a>,
+    challenge_values_segment: Option<&'a ProofSegment>,
+}
+
 struct WitnessAuxiliaryInputRequest<'a> {
     global_info: &'a GlobalInfo,
     unit_values_input: Option<&'a Path>,
@@ -870,15 +884,18 @@ fn write_witness_output_summary(stdout: &mut dyn Write, commitments: &ProveWitne
 }
 
 fn finish_all_units_witness_run(
-    catalog: &KeyDirectoryCatalog,
-    plan: &ProveExecutionPlan,
-    parsed: &ParsedWitnessArgs,
-    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
-    outputs: &[ProveWitnessTraceCommitments],
-    eth_block_input: FinishEthBlockInput<'_>,
-    challenge_values_segment: Option<&ProofSegment>,
+    request: FinishAllUnitsWitnessRunRequest<'_>,
     stdout: &mut dyn Write,
 ) -> Result<(), String> {
+    let FinishAllUnitsWitnessRunRequest {
+        catalog,
+        plan,
+        parsed,
+        auxiliary_inputs,
+        outputs,
+        eth_block_input,
+        challenge_values_segment,
+    } = request;
     let unit_values = load_batch_unit_values_inputs(
         &plan.run_plan.schedule,
         parsed.unit_values_segment.as_deref(),

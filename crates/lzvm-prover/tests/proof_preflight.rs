@@ -1,3 +1,7 @@
+use lzvm_artifacts::challenge_values_segment::{
+    encode_challenge_values_segment, ChallengeValuesSegment, ChallengeValuesSegmentError,
+    CHALLENGE_VALUES_SEGMENT_ID,
+};
 use lzvm_artifacts::eth_block_input::build_eth_block_input;
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
@@ -168,6 +172,9 @@ fn validates_proof_public_value_preflight_hashes() {
             program_image_cache_count: 0,
             program_image_caches: Vec::new(),
             program_image_cache_hashes: Vec::new(),
+            challenge_values_segment_count: 0,
+            challenge_values_segment_byte_counts: Vec::new(),
+            challenge_values_value_counts: Vec::new(),
             eth_block_input_count: 0,
             eth_block_input_hashes: Vec::new(),
             eth_block_input_byte_counts: Vec::new(),
@@ -282,6 +289,52 @@ fn reports_program_image_cache_segment_hashes() {
 
     assert_eq!(report.program_image_cache_count, 1);
     assert_eq!(report.program_image_cache_hashes, vec![segment_hash]);
+}
+
+#[test]
+fn reports_challenge_values_segments() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    let segment_data = encode_challenge_values_segment(&ChallengeValuesSegment {
+        values: vec![[1, 2, 3], [4, 5, 6]],
+    })
+    .expect("challenge values segment should encode");
+    let segment_len = segment_data.len();
+    proof.segments.push(ProofSegment {
+        id: CHALLENGE_VALUES_SEGMENT_ID,
+        data: segment_data,
+    });
+
+    let report = validate_proof_public_values(&proof, &public_values)
+        .expect("proof and public values should match");
+
+    assert_eq!(report.challenge_values_segment_count, 1);
+    assert_eq!(
+        report.challenge_values_segment_byte_counts,
+        vec![segment_len]
+    );
+    assert_eq!(report.challenge_values_value_counts, vec![2]);
+}
+
+#[test]
+fn rejects_invalid_challenge_values_segments() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    proof.segments.push(ProofSegment {
+        id: CHALLENGE_VALUES_SEGMENT_ID,
+        data: vec![1],
+    });
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("challenge values segment should parse");
+
+    assert_eq!(
+        error,
+        ProofPreflightError::ChallengeValues(ChallengeValuesSegmentError::UnexpectedEof {
+            needed: 4,
+            available: 1
+        })
+    );
 }
 
 #[test]

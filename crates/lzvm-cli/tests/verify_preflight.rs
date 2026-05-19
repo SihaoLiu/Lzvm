@@ -1,6 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use lzvm_artifacts::challenge_values_segment::{
+    encode_challenge_values_segment, ChallengeValuesSegment, CHALLENGE_VALUES_SEGMENT_ID,
+};
 use lzvm_artifacts::eth_block_input::{
     build_eth_block_input, build_eth_block_input_with_receipts, eth_block_input_bytes_digest,
 };
@@ -498,6 +501,56 @@ fn verifies_preflight_reports_program_image_cache_segments() {
             to_hex(&sample_hash(0x11)),
             to_hex(&sample_hash(0x22)),
             to_hex(&sample_hash(0x33))
+        )
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn verifies_preflight_reports_challenge_values_segments() {
+    let values = sample_public_values();
+    let public_values_hash = public_values_digest(&values).expect("digest should compute");
+    let mut proof = sample_proof(&values);
+    let challenge_values_segment = encode_challenge_values_segment(&ChallengeValuesSegment {
+        values: vec![[1, 2, 3], [4, 5, 6]],
+    })
+    .expect("challenge values segment should encode");
+    proof.segments.push(ProofSegment {
+        id: CHALLENGE_VALUES_SEGMENT_ID,
+        data: challenge_values_segment.clone(),
+    });
+    let (dir, proof_path, public_path) = write_fixture_pair("challenge-values", &proof, &values);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "preflight",
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_path.to_str().expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            concat!(
+                "status=ok\n",
+                "segments=2\n",
+                "public_values=2\n",
+                "public_values_hash={}\n",
+                "public_value_fields=5\n",
+                "challenge_values_segments=1\n",
+                "challenge_values_segment_bytes={}\n",
+                "challenge_values_count=2\n",
+            ),
+            to_hex(&public_values_hash),
+            challenge_values_segment.len()
         )
     );
     assert!(stderr.is_empty());
