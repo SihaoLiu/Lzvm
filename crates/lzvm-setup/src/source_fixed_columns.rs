@@ -690,7 +690,41 @@ fn append_sequence_segment(
         return Ok(());
     }
 
+    if let Some(repeat_index) = top_level_token_index(context, start, end, TokenKind::Colon)? {
+        append_sequence_repeat(values, context, start, repeat_index, end, row_count)?;
+        return Ok(());
+    }
+
     values.push(parse_sequence_expression(context, start, end)?);
+    Ok(())
+}
+
+fn append_sequence_repeat(
+    values: &mut Vec<u64>,
+    context: &SequenceParseContext<'_>,
+    start: usize,
+    repeat_index: usize,
+    end: usize,
+    row_count: usize,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    let value = parse_sequence_expression(context, start, repeat_index)?;
+    let count = parse_sequence_expression(context, repeat_index + 1, end)?;
+    let count =
+        usize::try_from(count).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
+            source_name: context.source_name.to_owned(),
+            source_span: context.source_span,
+            expression: segment_text(context, start, end),
+        })?;
+    for _ in 0..count {
+        if values.len() >= row_count {
+            return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
+                source_name: context.source_name.to_owned(),
+                source_span: context.source_span,
+                expression: segment_text(context, start, end),
+            });
+        }
+        values.push(value);
+    }
     Ok(())
 }
 
@@ -737,7 +771,16 @@ fn top_level_range_index(
     start: usize,
     end: usize,
 ) -> Result<Option<usize>, SourceFixedColumnsWriteError> {
-    let mut range_index = None;
+    top_level_token_index(context, start, end, TokenKind::Range)
+}
+
+fn top_level_token_index(
+    context: &SequenceParseContext<'_>,
+    start: usize,
+    end: usize,
+    kind: TokenKind,
+) -> Result<Option<usize>, SourceFixedColumnsWriteError> {
+    let mut found_index = None;
     let mut stack = Vec::new();
     for index in start..end {
         let token = &context.tokens[index];
@@ -761,8 +804,8 @@ fn top_level_range_index(
                     });
                 }
             }
-            TokenKind::Range if stack.is_empty() => {
-                if range_index.replace(index).is_some() {
+            token_kind if token_kind == kind && stack.is_empty() => {
+                if found_index.replace(index).is_some() {
                     return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
                         source_name: context.source_name.to_owned(),
                         source_span: context.source_span,
@@ -773,7 +816,7 @@ fn top_level_range_index(
             _ => {}
         }
     }
-    Ok(range_index)
+    Ok(found_index)
 }
 
 fn segment_text(context: &SequenceParseContext<'_>, start: usize, end: usize) -> String {
