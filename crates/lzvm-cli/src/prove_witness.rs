@@ -38,10 +38,10 @@ use crate::prove_plan::{
 mod value_inputs;
 
 use value_inputs::{
-    load_batch_unit_values_inputs, read_challenge_values_segment_input,
-    read_evaluation_values_segment_input, read_group_values_segment_input,
-    read_packed_extension_values, read_packed_proof_values_segment,
-    read_packed_unit_values_segment_for_unit, read_packed_values,
+    load_batch_unit_values_inputs, read_challenge_values_proof_segment_input,
+    read_challenge_values_segment_input, read_evaluation_values_segment_input,
+    read_group_values_segment_input, read_packed_extension_values,
+    read_packed_proof_values_segment, read_packed_unit_values_segment_for_unit, read_packed_values,
 };
 
 pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -163,6 +163,16 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         },
         None => None,
     };
+    let challenge_values_segment = match parsed.challenge_values_segment.as_deref() {
+        Some(path) => match read_challenge_values_proof_segment_input(path) {
+            Ok(segment) => Some(segment),
+            Err(message) => {
+                let _ = writeln!(stderr, "prove witness failed: {message}");
+                return 1;
+            }
+        },
+        None => None,
+    };
     if let Some(bundle) = &trace_bundle {
         if parsed.all_units || plan.run_plan.options.aggregate {
             let outputs = match run_prove_witness_commitments_for_all_units_with_trace_bundle(
@@ -186,6 +196,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                     summary: eth_block_input.as_ref(),
                     generated_public_inputs,
                 },
+                challenge_values_segment.as_ref(),
                 stdout,
             ) {
                 let _ = writeln!(stderr, "prove witness failed: {message}");
@@ -257,6 +268,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                 summary: eth_block_input.as_ref(),
                 generated_public_inputs,
             },
+            challenge_values_segment.as_ref(),
             stdout,
         ) {
             let _ = writeln!(stderr, "prove witness failed: {message}");
@@ -301,6 +313,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             .as_ref()
             .map(|summary| &summary.cache),
         eth_block_input: eth_block_input.as_ref().map(|summary| &summary.input),
+        challenge_values_segment: challenge_values_segment.as_ref(),
         output: &output,
         contribution_only,
     };
@@ -786,6 +799,7 @@ struct WitnessOutputSaveRequest<'a> {
     unit_values_segment_input: Option<&'a Path>,
     program_image_cache: Option<&'a ProgramImageCommitmentCache>,
     eth_block_input: Option<&'a EthBlockInput>,
+    challenge_values_segment: Option<&'a ProofSegment>,
     output: &'a ProveWitnessTraceCommitments,
     contribution_only: bool,
 }
@@ -862,6 +876,7 @@ fn finish_all_units_witness_run(
     auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
     outputs: &[ProveWitnessTraceCommitments],
     eth_block_input: FinishEthBlockInput<'_>,
+    challenge_values_segment: Option<&ProofSegment>,
     stdout: &mut dyn Write,
 ) -> Result<(), String> {
     let unit_values = load_batch_unit_values_inputs(
@@ -901,6 +916,7 @@ fn finish_all_units_witness_run(
             .as_ref()
             .map(|summary| &summary.cache),
         eth_block_input: eth_block_input.summary.map(|summary| &summary.input),
+        challenge_values_segment,
     };
     let proof = if plan.run_plan.pass.kind() == ProvePassKind::Contributions {
         lzvm_prover::build_witness_contribution_proof_artifact_for_all_units(&proof_request)?
@@ -937,6 +953,7 @@ fn finish_all_units_witness_run(
                     .as_ref()
                     .map(|summary| &summary.cache),
                 eth_block_input: eth_block_input.summary.map(|summary| &summary.input),
+                challenge_values_segment,
                 output,
                 contribution_only: plan.run_plan.pass.kind() == ProvePassKind::Contributions,
             };
@@ -1050,6 +1067,7 @@ fn build_proof_bytes(
                 verify_outputs,
                 program_image_cache: request.program_image_cache,
                 eth_block_input: request.eth_block_input,
+                challenge_values_segment: request.challenge_values_segment,
             },
         )?
     } else {
@@ -1064,6 +1082,7 @@ fn build_proof_bytes(
             verify_outputs,
             program_image_cache: request.program_image_cache,
             eth_block_input: request.eth_block_input,
+            challenge_values_segment: request.challenge_values_segment,
         })?
     };
     match proof {

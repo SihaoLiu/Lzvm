@@ -1,3 +1,4 @@
+use lzvm_artifacts::challenge_values_segment::CHALLENGE_VALUES_SEGMENT_ID;
 use lzvm_artifacts::eth_block_input::EthBlockInput;
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
@@ -178,6 +179,7 @@ pub struct WitnessProofRequest<'a> {
     pub verify_outputs: bool,
     pub program_image_cache: Option<&'a ProgramImageCommitmentCache>,
     pub eth_block_input: Option<&'a EthBlockInput>,
+    pub challenge_values_segment: Option<&'a ProofSegment>,
 }
 
 pub fn build_witness_proof_artifact_for_unit(
@@ -192,8 +194,11 @@ pub fn build_witness_proof_artifact_for_unit(
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
     validate_eth_block_binding(public_values, request.eth_block_input)?;
-    let binding_segments =
-        build_proof_binding_segments(request.program_image_cache, request.eth_block_input)?;
+    let binding_segments = build_proof_binding_segments(
+        request.program_image_cache,
+        request.eth_block_input,
+        request.challenge_values_segment,
+    )?;
     let binding_segments_slice = binding_segments.as_slice();
     let material_segment = build_pcs_material_manifest_segment(request.schedule)
         .map_err(|error| format!("build material manifest segment failed: {error}"))?;
@@ -378,8 +383,11 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
     validate_eth_block_binding(public_values, request.eth_block_input)?;
-    let binding_segments =
-        build_proof_binding_segments(request.program_image_cache, request.eth_block_input)?;
+    let binding_segments = build_proof_binding_segments(
+        request.program_image_cache,
+        request.eth_block_input,
+        request.challenge_values_segment,
+    )?;
     let unit_values = request
         .unit_values
         .unwrap_or(&request.output.auxiliary_inputs().unit_values);
@@ -434,6 +442,7 @@ pub struct WitnessAllUnitsProofRequest<'a> {
     pub verify_outputs: bool,
     pub program_image_cache: Option<&'a ProgramImageCommitmentCache>,
     pub eth_block_input: Option<&'a EthBlockInput>,
+    pub challenge_values_segment: Option<&'a ProofSegment>,
 }
 
 pub fn build_witness_contribution_proof_artifact_for_all_units(
@@ -448,8 +457,11 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
     validate_eth_block_binding(public_values, request.eth_block_input)?;
-    let binding_segments =
-        build_proof_binding_segments(request.program_image_cache, request.eth_block_input)?;
+    let binding_segments = build_proof_binding_segments(
+        request.program_image_cache,
+        request.eth_block_input,
+        request.challenge_values_segment,
+    )?;
     let contribution_sources = request
         .outputs
         .iter()
@@ -512,8 +524,11 @@ pub fn build_witness_proof_artifact_for_all_units(
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
     validate_eth_block_binding(public_values, request.eth_block_input)?;
-    let binding_segments =
-        build_proof_binding_segments(request.program_image_cache, request.eth_block_input)?;
+    let binding_segments = build_proof_binding_segments(
+        request.program_image_cache,
+        request.eth_block_input,
+        request.challenge_values_segment,
+    )?;
     let binding_segments_slice = binding_segments.as_slice();
     let proof_values =
         collect_global_proof_values(request.outputs, &request.auxiliary_inputs.proof_values)?;
@@ -644,6 +659,7 @@ fn validate_eth_block_binding(
 fn build_proof_binding_segments(
     cache: Option<&ProgramImageCommitmentCache>,
     eth_block_input: Option<&EthBlockInput>,
+    challenge_values_segment: Option<&ProofSegment>,
 ) -> Result<Vec<ProofSegment>, String> {
     let mut segments = Vec::new();
     if let Some(segment) = build_program_image_cache_proof_segment(cache)? {
@@ -651,6 +667,15 @@ fn build_proof_binding_segments(
     }
     if let Some(segment) = build_eth_block_input_proof_segment(eth_block_input)? {
         segments.push(segment);
+    }
+    if let Some(segment) = challenge_values_segment {
+        if segment.id != CHALLENGE_VALUES_SEGMENT_ID {
+            return Err(format!(
+                "challenge values proof segment id mismatch: expected {CHALLENGE_VALUES_SEGMENT_ID}, found {}",
+                segment.id
+            ));
+        }
+        segments.push(segment.clone());
     }
     Ok(segments)
 }

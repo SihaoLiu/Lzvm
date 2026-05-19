@@ -1054,6 +1054,7 @@ fn builds_witness_proof_artifact_for_unit_in_prover() {
             verify_outputs: false,
             program_image_cache: None,
             eth_block_input: None,
+            challenge_values_segment: None,
         })
         .expect("proof artifact should build")
         .expect("proof artifact should exist");
@@ -1146,6 +1147,7 @@ fn rejects_mismatched_eth_block_public_values_in_prover_unit_request() {
             verify_outputs: false,
             program_image_cache: None,
             eth_block_input: Some(&proof_block_input),
+            challenge_values_segment: None,
         })
         .expect_err("mismatched block public values should reject");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -1284,6 +1286,7 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
             verify_outputs: false,
             program_image_cache: None,
             eth_block_input: None,
+            challenge_values_segment: None,
         },
     )
     .expect("proof artifact should build")
@@ -1473,6 +1476,7 @@ fn builds_all_units_contribution_proof_artifact_from_output_proof_values() {
             verify_outputs: false,
             program_image_cache: None,
             eth_block_input: None,
+            challenge_values_segment: None,
         },
     )
     .expect("proof artifact should build")
@@ -1608,6 +1612,7 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
             verify_outputs: false,
             program_image_cache: None,
             eth_block_input: None,
+            challenge_values_segment: None,
         },
     )
     .expect("proof artifact should build")
@@ -1649,6 +1654,7 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
             verify_outputs: false,
             program_image_cache: None,
             eth_block_input: None,
+            challenge_values_segment: None,
         },
     )
     .expect("proof artifact should build from evaluation segment")

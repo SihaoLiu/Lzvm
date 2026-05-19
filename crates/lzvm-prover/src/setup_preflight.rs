@@ -1,6 +1,9 @@
 use std::fmt;
 use std::path::Path;
 
+use lzvm_artifacts::challenge_values_segment::{
+    parse_challenge_values_segment, ChallengeValuesSegmentError, CHALLENGE_VALUES_SEGMENT_ID,
+};
 use lzvm_artifacts::constant_opening_segment::CONSTANT_OPENING_SEGMENT_ID;
 use lzvm_artifacts::contribution_segment::CONTRIBUTION_SEGMENT_ID;
 use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
@@ -135,6 +138,7 @@ pub enum SetupPreflightError {
     GlobalHints(ResolveGlobalHintProofSegmentsError),
     PcsFri(ValidateOptionalPcsFriOpeningProofSegmentsError),
     Contribution(ContributionChallengeError),
+    ChallengeValues(ChallengeValuesSegmentError),
     ProofValues(LoadPcsProofValuesSegmentError),
     GroupValues(LoadGroupValuesSegmentError),
     UnitValues(LoadUnitValuesSegmentError),
@@ -171,6 +175,7 @@ impl fmt::Display for SetupPreflightError {
             Self::GlobalHints(error) => write!(f, "{error}"),
             Self::PcsFri(error) => write!(f, "{error}"),
             Self::Contribution(error) => write!(f, "{error}"),
+            Self::ChallengeValues(error) => write!(f, "{error}"),
             Self::ProofValues(error) => write!(f, "{error}"),
             Self::GroupValues(error) => write!(f, "{error}"),
             Self::UnitValues(error) => write!(f, "{error}"),
@@ -210,6 +215,7 @@ impl std::error::Error for SetupPreflightError {
             Self::GlobalHints(error) => Some(error),
             Self::PcsFri(error) => Some(error),
             Self::Contribution(error) => Some(error),
+            Self::ChallengeValues(error) => Some(error),
             Self::ProofValues(error) => Some(error),
             Self::GroupValues(error) => Some(error),
             Self::UnitValues(error) => Some(error),
@@ -386,6 +392,7 @@ pub fn validate_setup_preflight(
     let schedule = derive_prove_schedule(catalog).map_err(SetupPreflightError::Schedule)?;
     validate_setup_proof_segment_ids(&proof.segments)?;
     validate_optional_contribution_segment(catalog, proof)?;
+    validate_optional_challenge_values_segment(proof)?;
     validate_optional_global_value_segments(catalog, proof)?;
     let uses_transcript_inputs = uses_transcript_pcs_query_plan_inputs(&proof.segments);
     let needs_public_fields = uses_transcript_inputs
@@ -575,6 +582,21 @@ fn validate_optional_contribution_segment(
         .map_err(SetupPreflightError::Contribution)
 }
 
+fn validate_optional_challenge_values_segment(
+    proof: &ProofArtifact,
+) -> Result<(), SetupPreflightError> {
+    if let Some(segment) = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID)
+    {
+        parse_challenge_values_segment(&segment.data)
+            .map(|_| ())
+            .map_err(SetupPreflightError::ChallengeValues)?;
+    }
+    Ok(())
+}
+
 fn validate_setup_proof_segment_ids(segments: &[ProofSegment]) -> Result<(), SetupPreflightError> {
     for segment in segments {
         if is_setup_proof_segment_id(segment.id) {
@@ -601,6 +623,7 @@ fn is_setup_proof_segment_id(id: u32) -> bool {
             | PCS_EVALUATION_SEGMENT_ID
             | PCS_PROOF_VALUES_SEGMENT_ID
             | GROUP_VALUES_SEGMENT_ID
+            | CHALLENGE_VALUES_SEGMENT_ID
             | UNIT_VALUES_SEGMENT_ID
             | PROGRAM_IMAGE_CACHE_SEGMENT_ID
             | CONTRIBUTION_SEGMENT_ID
@@ -624,15 +647,21 @@ pub fn validate_setup_preflight_from_files(
 
 #[cfg(test)]
 mod tests {
-    use lzvm_artifacts::challenge_values_segment::CHALLENGE_VALUES_SEGMENT_ID;
+    use lzvm_artifacts::challenge_values_segment::{
+        encode_challenge_values_segment, ChallengeValuesSegment, ChallengeValuesSegmentError,
+        CHALLENGE_VALUES_SEGMENT_ID,
+    };
     use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
-    use lzvm_artifacts::proof::ProofSegment;
+    use lzvm_artifacts::proof::{ProofArtifact, ProofSegment};
     use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 
-    use super::{validate_setup_proof_segment_ids, SetupPreflightError};
+    use super::{
+        validate_optional_challenge_values_segment, validate_setup_proof_segment_ids,
+        SetupPreflightError,
+    };
 
     #[test]
-    fn setup_proof_segment_id_check_rejects_unknown_fixed_segments() {
+    fn setup_proof_segment_id_check_accepts_challenge_values_segment() {
         let segments = vec![
             ProofSegment {
                 id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
@@ -648,14 +677,63 @@ mod tests {
             },
         ];
 
+        validate_setup_proof_segment_ids(&segments).expect("setup proof segments should validate");
+    }
+
+    #[test]
+    fn setup_proof_segment_id_check_rejects_unknown_fixed_segments() {
+        let unknown_fixed_segment_id = 10_099;
+        let segments = vec![ProofSegment {
+            id: unknown_fixed_segment_id,
+            data: vec![1],
+        }];
+
         let error = validate_setup_proof_segment_ids(&segments)
             .expect_err("unknown setup proof segment should reject");
 
         assert_eq!(
             error,
             SetupPreflightError::UnexpectedProofSegment {
-                id: CHALLENGE_VALUES_SEGMENT_ID
+                id: unknown_fixed_segment_id
             }
+        );
+    }
+
+    #[test]
+    fn challenge_values_preflight_accepts_encoded_segment() {
+        let proof = ProofArtifact {
+            setup_hash: [0; 32],
+            public_values_hash: [0; 32],
+            segments: vec![ProofSegment {
+                id: CHALLENGE_VALUES_SEGMENT_ID,
+                data: encode_challenge_values_segment(&ChallengeValuesSegment {
+                    values: vec![[1, 2, 3]],
+                })
+                .expect("challenge values segment should encode"),
+            }],
+        };
+
+        validate_optional_challenge_values_segment(&proof)
+            .expect("challenge values segment should validate");
+    }
+
+    #[test]
+    fn challenge_values_preflight_rejects_invalid_segment() {
+        let proof = ProofArtifact {
+            setup_hash: [0; 32],
+            public_values_hash: [0; 32],
+            segments: vec![ProofSegment {
+                id: CHALLENGE_VALUES_SEGMENT_ID,
+                data: vec![0, 1, 2, 3],
+            }],
+        };
+
+        let error = validate_optional_challenge_values_segment(&proof)
+            .expect_err("invalid challenge values segment should reject");
+
+        assert_eq!(
+            error,
+            SetupPreflightError::ChallengeValues(ChallengeValuesSegmentError::InvalidMagic)
         );
     }
 }

@@ -1,3 +1,6 @@
+use lzvm_artifacts::challenge_values_segment::{
+    encode_challenge_values_segment, ChallengeValuesSegment, CHALLENGE_VALUES_SEGMENT_ID,
+};
 use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_evaluation_segment::{
     encode_pcs_evaluation_segment, PcsEvaluationSegment, PcsEvaluationUnitSegment,
@@ -198,6 +201,28 @@ fn rejects_seeded_pcs_query_plan_mismatches_with_program_image_cache_segment() {
 }
 
 #[test]
+fn rejects_seeded_pcs_query_plan_mismatches_with_challenge_values_segment() {
+    let schedule = sample_schedule();
+    let public_hash = [7; 32];
+    let material = material_segment();
+    let witness = witness_segment(0);
+    let challenge_segment = challenge_values_segment([1, 2, 3]);
+    let query = build_pcs_query_plan_segment(
+        &schedule,
+        public_hash,
+        &material,
+        std::slice::from_ref(&witness),
+    )
+    .expect("query plan should build");
+    let segments = vec![material, witness, challenge_segment, query];
+
+    let error = validate_seeded_pcs_query_plan_segments(&schedule, public_hash, &segments)
+        .expect_err("query plan mismatch should be rejected");
+
+    assert_eq!(error, ValidatePcsQueryPlanSegmentsError::QueryPlanMismatch);
+}
+
+#[test]
 fn rejects_seeded_pcs_query_plan_duplicate_binding_segments() {
     let schedule = sample_schedule();
     let public_hash = [7; 32];
@@ -231,6 +256,40 @@ fn rejects_seeded_pcs_query_plan_duplicate_binding_segments() {
         format!(
             "duplicate proof binding segment id: {}",
             PROGRAM_IMAGE_CACHE_SEGMENT_ID
+        )
+    );
+}
+
+#[test]
+fn rejects_seeded_pcs_query_plan_duplicate_challenge_values_segments() {
+    let schedule = sample_schedule();
+    let public_hash = [7; 32];
+    let material = material_segment();
+    let witness = witness_segment(0);
+    let challenge_segment = challenge_values_segment([1, 2, 3]);
+    let query = build_pcs_query_plan_segment(
+        &schedule,
+        public_hash,
+        &material,
+        std::slice::from_ref(&witness),
+    )
+    .expect("query plan should build");
+    let segments = vec![
+        material,
+        witness,
+        challenge_segment.clone(),
+        challenge_segment,
+        query,
+    ];
+
+    let error = validate_seeded_pcs_query_plan_segments(&schedule, public_hash, &segments)
+        .expect_err("duplicate binding segment should be rejected");
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "duplicate proof binding segment id: {}",
+            CHALLENGE_VALUES_SEGMENT_ID
         )
     );
 }
@@ -557,6 +616,97 @@ fn rejects_transcript_pcs_query_plan_mismatches_with_program_image_cache_segment
 }
 
 #[test]
+fn rejects_transcript_pcs_query_plan_mismatches_with_challenge_values_segment() {
+    let mut schedule = sample_schedule();
+    schedule.units[0].evaluation_value_count = 1;
+    schedule.units[0].transcript_evaluation_challenge_draws = 1;
+    schedule.units[0].query_count = 8;
+    schedule.units[0].extended_domain_size = 1024;
+    schedule.total_query_count = 8;
+    schedule.max_extended_domain_bits = 10;
+    let material = material_unit(0);
+    let witness = witness_commitment(0);
+    let witness_segment = witness_segment(0);
+    let evaluations = PcsEvaluationUnitSegment {
+        unit_index: 0,
+        values: vec![[9, 10, 11]],
+    };
+    let fri = PcsFriOpeningUnitSegment {
+        unit_index: 0,
+        layers: Vec::new(),
+        final_polynomial: vec![[12, 13, 14]],
+    };
+    let good_challenge_segment = challenge_values_segment([1, 2, 3]);
+    let bad_challenge_segment = challenge_values_segment([4, 5, 6]);
+    let transcript_input = PcsTranscriptSegmentInputs {
+        unit_index: 0,
+        unit: &schedule.units[0],
+        material: &material,
+        public_values: &[],
+        unit_values: &[],
+        witness: &witness,
+        evaluations: &evaluations,
+        fri: &fri,
+        root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
+        evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: std::slice::from_ref(&good_challenge_segment),
+    };
+    let nonce_segment =
+        build_pcs_query_nonce_segment_from_transcript_segments(&schedule, transcript_input)
+            .expect("query nonce should build");
+    let transcript_input = PcsTranscriptSegmentInputs {
+        unit_index: 0,
+        unit: &schedule.units[0],
+        material: &material,
+        public_values: &[],
+        unit_values: &[],
+        witness: &witness,
+        evaluations: &evaluations,
+        fri: &fri,
+        root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
+        evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: std::slice::from_ref(&good_challenge_segment),
+    };
+    let query = build_pcs_query_plan_segment_from_transcript_segments(
+        &schedule,
+        std::slice::from_ref(&witness_segment),
+        transcript_input,
+        &nonce_segment,
+    )
+    .expect("query plan should build");
+    let segments = vec![
+        ProofSegment {
+            id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+            data: encode_pcs_material_manifest_segment(&PcsMaterialManifestSegment {
+                units: vec![material],
+            })
+            .expect("material segment should encode"),
+        },
+        witness_segment,
+        bad_challenge_segment,
+        ProofSegment {
+            id: PCS_EVALUATION_SEGMENT_ID,
+            data: encode_pcs_evaluation_segment(&PcsEvaluationSegment {
+                units: vec![evaluations],
+            })
+            .expect("evaluation segment should encode"),
+        },
+        ProofSegment {
+            id: PCS_FRI_OPENING_SEGMENT_ID,
+            data: encode_pcs_fri_opening_segment(&PcsFriOpeningSegment { units: vec![fri] })
+                .expect("FRI opening segment should encode"),
+        },
+        nonce_segment,
+        query,
+    ];
+
+    let error = validate_transcript_pcs_query_plan_segments(&schedule, &[], &segments)
+        .expect_err("query plan mismatch should be rejected");
+
+    assert_eq!(error, ValidatePcsQueryPlanSegmentsError::QueryPlanMismatch);
+}
+
+#[test]
 fn rejects_transcript_pcs_query_plan_extra_evaluation_units() {
     let (schedule, mut segments) = transcript_query_plan_segments();
     let evaluation_segment = segments
@@ -803,6 +953,16 @@ fn sample_program_image_cache_variant() -> ProgramImageCommitmentCache {
         blowup_factor: 8,
         merkle_tree_arity: 4,
         gpu_mode: ProgramImageGpuMode::Cuda,
+    }
+}
+
+fn challenge_values_segment(values: [u64; 3]) -> ProofSegment {
+    ProofSegment {
+        id: CHALLENGE_VALUES_SEGMENT_ID,
+        data: encode_challenge_values_segment(&ChallengeValuesSegment {
+            values: vec![values],
+        })
+        .expect("challenge values segment should encode"),
     }
 }
 

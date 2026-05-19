@@ -8816,15 +8816,13 @@ fn passes_challenge_values_segment_to_witness_regular_constraints() {
     let guest_image = dir.join("guest.elf");
     let input_data = dir.join("input.bin");
     let challenge_values_segment_path = dir.join("challenge_values_segment.bin");
+    let challenge_values_segment = encode_challenge_values_segment(&ChallengeValuesSegment {
+        values: vec![[14, 52, 53]],
+    })
+    .expect("challenge values segment should encode");
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(&input_data, [13_u8]);
-    write_bytes(
-        &challenge_values_segment_path,
-        encode_challenge_values_segment(&ChallengeValuesSegment {
-            values: vec![[14, 52, 53]],
-        })
-        .expect("challenge values segment should encode"),
-    );
+    write_bytes(&challenge_values_segment_path, &challenge_values_segment);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values = sample_public_values(setup_hash);
     let public_values_path = dir.join("public_values.bin");
@@ -8859,10 +8857,18 @@ fn passes_challenge_values_segment_to_witness_regular_constraints() {
         &mut stdout,
         &mut stderr,
     );
+    let proof_bytes = fs::read(output_dir.join("proof.bin")).expect("proof output should read");
+    let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
+    let proof_challenge_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID)
+        .expect("challenge values segment should be embedded");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
     assert!(stderr.is_empty());
+    assert_eq!(proof_challenge_segment.data, challenge_values_segment);
 }
 
 #[test]

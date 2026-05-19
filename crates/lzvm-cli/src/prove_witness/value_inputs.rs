@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::Path;
 
-use lzvm_artifacts::challenge_values_segment::parse_challenge_values_segment;
+use lzvm_artifacts::challenge_values_segment::{
+    parse_challenge_values_segment, CHALLENGE_VALUES_SEGMENT_ID,
+};
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::group_values_segment::GROUP_VALUES_SEGMENT_ID;
 use lzvm_artifacts::pcs_evaluation_segment::{
@@ -67,6 +69,23 @@ pub(super) fn read_challenge_values_segment_input(path: &Path) -> Result<Vec<Ext
             ))
         })
         .collect()
+}
+
+pub(super) fn read_challenge_values_proof_segment_input(
+    path: &Path,
+) -> Result<ProofSegment, String> {
+    let bytes = fs::read(path).map_err(|error| {
+        format!(
+            "read challenge values segment failed: {}: {error}",
+            path.display()
+        )
+    })?;
+    parse_challenge_values_segment(&bytes)
+        .map_err(|error| format!("parse challenge values segment failed: {error}"))?;
+    Ok(ProofSegment {
+        id: CHALLENGE_VALUES_SEGMENT_ID,
+        data: bytes,
+    })
 }
 
 pub(super) fn read_packed_proof_values_segment(
