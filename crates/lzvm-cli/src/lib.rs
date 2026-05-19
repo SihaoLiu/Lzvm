@@ -959,6 +959,12 @@ fn write_key_directory(
                 report.pcs_material.bytes_written
             );
             let _ = writeln!(stdout, "manifest_bytes={}", report.manifest.bytes_written);
+            let _ = writeln!(stdout, "setup_hash={}", report.manifest.fingerprint);
+            let _ = writeln!(
+                stdout,
+                "setup_directory_manifest={}",
+                report.manifest.path.display()
+            );
             0
         }
         Err(error) => {
