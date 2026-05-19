@@ -168,7 +168,7 @@ Generate a sectioned fixed-column source artifact from source declarations:
 cargo run -p lzvm-cli -- setup write-fixed-source [--include-path <dir>] [--include-path-first] <setup-info-bin> <main-file> <group-name> <unit-name> <out-columns-bin>
 ```
 
-This command reads native binary setup metadata and source declarations such as `col fixed name = [1, 2];`, validates the resulting columns against the setup metadata, and publishes a sectioned fixed-column artifact. Supported sequence entries include decimal and hexadecimal integers, static arithmetic expressions, scalar constants declared earlier in the same source module, inclusive ranges, repeat counts, suffix fills, repeated sequence patterns, nested repeats, and additive or multiplicative progressions.
+This command reads native binary setup metadata and source declarations such as `col fixed name = [1, 2];`, validates the resulting columns against the setup metadata, and publishes a sectioned fixed-column artifact. Supported source forms include scalar and statically sized array fixed-column declarations. Supported sequence entries include decimal and hexadecimal integers, static arithmetic expressions, scalar constants loaded with the source program, inclusive ranges, repeat counts, suffix fills, repeated sequence patterns, nested repeats, and additive or multiplicative progressions.
 
 Generate native base fixed-column and constant-tree artifacts in one command:
 
