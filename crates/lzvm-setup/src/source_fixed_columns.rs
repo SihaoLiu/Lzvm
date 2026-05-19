@@ -9,8 +9,10 @@ use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyDirectoryError, KeyUnitKind};
 use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, SetupInfoError, UnitSetupInfo};
 use lzvm_pil::{
-    lex_source, ColumnInitializerKind, ColumnKind, LexError, SourceLoaderConfig, SourceProgram,
-    SourceProgramError, SourceProgramLoader, SourceSpan, Token, TokenKind,
+    evaluate_fixed_file_template_value_expression, lex_source, parse_expression,
+    ColumnInitializerKind, ColumnKind, FixedFileTemplateValue, LexError, ParseError, SourceFile,
+    SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader, SourceSpan, Token,
+    TokenKind,
 };
 
 use crate::{publish_staging_bytes, write_staging_bytes, SetupError};
@@ -61,6 +63,11 @@ pub enum SourceFixedColumnsWriteError {
         source_span: SourceSpan,
         source: LexError,
     },
+    ExpressionParse {
+        source_name: String,
+        source_span: SourceSpan,
+        source: ParseError,
+    },
     UnsupportedInitializer {
         source_name: String,
         column: String,
@@ -78,6 +85,16 @@ pub enum SourceFixedColumnsWriteError {
         source_name: String,
         source_span: SourceSpan,
         literal: String,
+    },
+    UnsupportedExpression {
+        source_name: String,
+        source_span: SourceSpan,
+        expression: String,
+    },
+    IntegerOutOfRange {
+        source_name: String,
+        source_span: SourceSpan,
+        expression: String,
     },
     DomainSizeOverflow {
         n_bits: u32,
@@ -113,6 +130,15 @@ impl fmt::Display for SourceFixedColumnsWriteError {
                 "source fixed-column lexing failed in {source_name} at {}..{}: {source}",
                 source_span.start, source_span.end
             ),
+            Self::ExpressionParse {
+                source_name,
+                source_span,
+                source,
+            } => write!(
+                f,
+                "source fixed-column expression parse failed in {source_name} at {}..{}: {source}",
+                source_span.start, source_span.end
+            ),
             Self::UnsupportedInitializer {
                 source_name,
                 column,
@@ -143,6 +169,24 @@ impl fmt::Display for SourceFixedColumnsWriteError {
             } => write!(
                 f,
                 "invalid fixed-column literal {literal} in {source_name} at {}..{}",
+                source_span.start, source_span.end
+            ),
+            Self::UnsupportedExpression {
+                source_name,
+                source_span,
+                expression,
+            } => write!(
+                f,
+                "unsupported fixed-column expression {expression} in {source_name} at {}..{}",
+                source_span.start, source_span.end
+            ),
+            Self::IntegerOutOfRange {
+                source_name,
+                source_span,
+                expression,
+            } => write!(
+                f,
+                "fixed-column expression {expression} is out of range in {source_name} at {}..{}",
                 source_span.start, source_span.end
             ),
             Self::DomainSizeOverflow { n_bits } => {
@@ -178,11 +222,14 @@ impl std::error::Error for SourceFixedColumnsWriteError {
             Self::SetupInfo(error) => Some(error),
             Self::FixedColumns(error) => Some(error),
             Self::Lex { source, .. } => Some(source),
+            Self::ExpressionParse { source, .. } => Some(source),
             Self::Setup(error) => Some(error),
             Self::UnsupportedInitializer { .. }
             | Self::UnsupportedColumnShape { .. }
             | Self::UnexpectedSequenceToken { .. }
             | Self::InvalidLiteral { .. }
+            | Self::UnsupportedExpression { .. }
+            | Self::IntegerOutOfRange { .. }
             | Self::DomainSizeOverflow { .. } => None,
         }
     }
@@ -475,50 +522,163 @@ fn parse_literal_sequence(
         source_span,
     )?;
     let mut values = Vec::new();
-    if tokens
-        .get(cursor)
-        .is_some_and(|token| token.kind == TokenKind::RBracket)
-    {
-        cursor += 1;
-        expect_end(&tokens, cursor, source_name, source_span)?;
-        return Ok(values);
-    }
-    loop {
-        let token = tokens.get(cursor).ok_or_else(|| {
-            SourceFixedColumnsWriteError::UnexpectedSequenceToken {
-                source_name: source_name.to_owned(),
-                source_span,
-                token: "<end>".to_owned(),
-            }
-        })?;
-        values.push(parse_literal_token(token, source_name, source_span)?);
-        cursor += 1;
 
-        match tokens.get(cursor).map(|token| token.kind) {
-            Some(TokenKind::Comma) => cursor += 1,
-            Some(TokenKind::RBracket) => {
+    let mut segment_start = cursor;
+    let mut stack = Vec::new();
+    while let Some(token) = tokens.get(cursor) {
+        match token.kind {
+            TokenKind::LParen => stack.push(TokenKind::RParen),
+            TokenKind::LBracket => stack.push(TokenKind::RBracket),
+            TokenKind::LBrace => stack.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBrace => {
+                let Some(expected) = stack.pop() else {
+                    return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
+                        source_name: source_name.to_owned(),
+                        source_span,
+                        token: token.lexeme.clone(),
+                    });
+                };
+                if expected != token.kind {
+                    return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
+                        source_name: source_name.to_owned(),
+                        source_span,
+                        token: token.lexeme.clone(),
+                    });
+                }
+            }
+            TokenKind::Comma if stack.is_empty() => {
+                values.push(parse_sequence_expression(
+                    source_name,
+                    source_span,
+                    source,
+                    &tokens,
+                    segment_start,
+                    cursor,
+                )?);
+                segment_start = cursor + 1;
+            }
+            TokenKind::RBracket if stack.is_empty() => {
+                if cursor > segment_start {
+                    values.push(parse_sequence_expression(
+                        source_name,
+                        source_span,
+                        source,
+                        &tokens,
+                        segment_start,
+                        cursor,
+                    )?);
+                } else if !values.is_empty() {
+                    return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
+                        source_name: source_name.to_owned(),
+                        source_span,
+                        token: token.lexeme.clone(),
+                    });
+                }
                 cursor += 1;
                 break;
             }
-            Some(_) => {
-                let token = tokens[cursor].lexeme.clone();
-                return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
-                    source_name: source_name.to_owned(),
-                    source_span,
-                    token,
-                });
+            TokenKind::RBracket => {
+                let Some(expected) = stack.pop() else {
+                    return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
+                        source_name: source_name.to_owned(),
+                        source_span,
+                        token: token.lexeme.clone(),
+                    });
+                };
+                if expected != TokenKind::RBracket {
+                    return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
+                        source_name: source_name.to_owned(),
+                        source_span,
+                        token: token.lexeme.clone(),
+                    });
+                }
             }
-            None => {
-                return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
-                    source_name: source_name.to_owned(),
-                    source_span,
-                    token: "<end>".to_owned(),
-                });
-            }
+            _ => {}
         }
+        cursor += 1;
+    }
+
+    if cursor == tokens.len()
+        && !matches!(
+            tokens.last().map(|token| token.kind),
+            Some(TokenKind::RBracket)
+        )
+    {
+        return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
+            source_name: source_name.to_owned(),
+            source_span,
+            token: "<end>".to_owned(),
+        });
     }
     expect_end(&tokens, cursor, source_name, source_span)?;
     Ok(values)
+}
+
+fn parse_sequence_expression(
+    source_name: &str,
+    source_span: SourceSpan,
+    source: &str,
+    tokens: &[Token],
+    start: usize,
+    end: usize,
+) -> Result<u64, SourceFixedColumnsWriteError> {
+    if start >= end {
+        return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
+            source_name: source_name.to_owned(),
+            source_span,
+            token: ",".to_owned(),
+        });
+    }
+    if end == start + 1 {
+        return parse_literal_token(&tokens[start], source_name, source_span);
+    }
+
+    let start_byte = tokens[start].start;
+    let end_byte = tokens[end - 1].end;
+    let expression_text = &source[start_byte..end_byte];
+    let expression_source = SourceFile {
+        contents: expression_text.to_owned(),
+        file_dir: PathBuf::new(),
+        full_path: PathBuf::from(source_name),
+        source_name: source_name.to_owned(),
+    };
+    let token_count = lex_source(expression_text)
+        .map_err(|source| SourceFixedColumnsWriteError::Lex {
+            source_name: source_name.to_owned(),
+            source_span,
+            source,
+        })?
+        .len();
+    let (expression, next_index) =
+        parse_expression(&expression_source, 0, token_count).map_err(|source| {
+            SourceFixedColumnsWriteError::ExpressionParse {
+                source_name: source_name.to_owned(),
+                source_span,
+                source,
+            }
+        })?;
+    if next_index != token_count {
+        return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
+            source_name: source_name.to_owned(),
+            source_span,
+            expression: expression_text.to_owned(),
+        });
+    }
+
+    match evaluate_fixed_file_template_value_expression(&expression) {
+        Some(FixedFileTemplateValue::Integer(value)) => {
+            u64::try_from(value).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
+                source_name: source_name.to_owned(),
+                source_span,
+                expression: expression_text.to_owned(),
+            })
+        }
+        _ => Err(SourceFixedColumnsWriteError::UnsupportedExpression {
+            source_name: source_name.to_owned(),
+            source_span,
+            expression: expression_text.to_owned(),
+        }),
+    }
 }
 
 fn expect_token(
