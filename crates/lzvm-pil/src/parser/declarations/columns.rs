@@ -259,7 +259,13 @@ fn parse_column_initializer(
         });
     };
     if token.kind == TokenKind::LBracket {
-        let (span, next_index) = parse_delimited_span(tokens, index, source)?;
+        let (mut span, mut next_index) = parse_delimited_span(tokens, index, source)?;
+        if let Some(token) = tokens.get(next_index) {
+            if token.kind == TokenKind::Ellipsis {
+                span.end = token.end;
+                next_index += 1;
+            }
+        }
         let terminator = tokens
             .get(next_index)
             .ok_or_else(|| ParseError::ExpectedTerminator {

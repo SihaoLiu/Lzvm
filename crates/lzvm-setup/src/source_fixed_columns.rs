@@ -642,8 +642,37 @@ fn parse_literal_sequence(
             token: "<end>".to_owned(),
         });
     }
+    if tokens
+        .get(cursor)
+        .is_some_and(|token| token.kind == TokenKind::Ellipsis)
+    {
+        cursor += 1;
+        fill_sequence_pattern(&mut values, row_count, source_name, source_span)?;
+    }
     expect_end(&tokens, cursor, source_name, source_span)?;
     Ok(values)
+}
+
+fn fill_sequence_pattern(
+    values: &mut Vec<u64>,
+    row_count: usize,
+    source_name: &str,
+    source_span: SourceSpan,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    if values.is_empty() {
+        return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
+            source_name: source_name.to_owned(),
+            source_span,
+            token: "...".to_owned(),
+        });
+    }
+    let pattern = values.clone();
+    let mut index = 0_usize;
+    while values.len() < row_count {
+        values.push(pattern[index]);
+        index = (index + 1) % pattern.len();
+    }
+    Ok(())
 }
 
 struct SequenceParseContext<'a> {
