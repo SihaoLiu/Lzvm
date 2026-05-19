@@ -724,7 +724,7 @@ fn append_sequence_segment(
         return Ok(());
     }
 
-    values.push(parse_sequence_expression(context, start, end)?);
+    values.extend(parse_sequence_values(context, start, end, row_count)?);
     Ok(())
 }
 
@@ -736,7 +736,7 @@ fn append_sequence_repeat(
     end: usize,
     row_count: usize,
 ) -> Result<(), SourceFixedColumnsWriteError> {
-    let value = parse_sequence_expression(context, start, repeat_index)?;
+    let repeated_values = parse_sequence_values(context, start, repeat_index, row_count)?;
     let count = parse_sequence_expression(context, repeat_index + 1, end)?;
     let count =
         usize::try_from(count).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
@@ -745,14 +745,16 @@ fn append_sequence_repeat(
             expression: segment_text(context, start, end),
         })?;
     for _ in 0..count {
-        if values.len() >= row_count {
-            return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
-                source_name: context.source_name.to_owned(),
-                source_span: context.source_span,
-                expression: segment_text(context, start, end),
-            });
+        for value in &repeated_values {
+            if values.len() >= row_count {
+                return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
+                    source_name: context.source_name.to_owned(),
+                    source_span: context.source_span,
+                    expression: segment_text(context, start, end),
+                });
+            }
+            values.push(*value);
         }
-        values.push(value);
     }
     Ok(())
 }
@@ -821,6 +823,34 @@ fn parse_range_endpoint(
             expression: segment_text(context, start, end),
         })?;
     Ok((value, count))
+}
+
+fn parse_sequence_values(
+    context: &SequenceParseContext<'_>,
+    start: usize,
+    end: usize,
+    row_count: usize,
+) -> Result<Vec<u64>, SourceFixedColumnsWriteError> {
+    if start < end
+        && context
+            .tokens
+            .get(start)
+            .is_some_and(|token| token.kind == TokenKind::LBracket)
+        && context
+            .tokens
+            .get(end - 1)
+            .is_some_and(|token| token.kind == TokenKind::RBracket)
+    {
+        let source = segment_text(context, start, end);
+        return parse_literal_sequence(
+            context.source_name,
+            context.source_span,
+            &source,
+            row_count,
+        );
+    }
+
+    Ok(vec![parse_sequence_expression(context, start, end)?])
 }
 
 fn top_level_range_index(
