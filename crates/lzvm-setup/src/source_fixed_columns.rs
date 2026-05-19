@@ -1,9 +1,10 @@
+use std::collections::BTreeSet;
 use std::fmt;
 use std::path::PathBuf;
 
 use lzvm_artifacts::fixed::{
-    encode_fixed_columns, encode_raw_fixed_columns, read_fixed_columns_file, FixedColumn,
-    FixedColumnError, FixedColumns,
+    encode_fixed_columns, encode_raw_fixed_columns, raw_fixed_column_layout,
+    read_fixed_columns_file, FixedColumn, FixedColumnError, FixedColumns,
 };
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyDirectoryError, KeyUnitKind};
@@ -459,11 +460,23 @@ fn fixed_columns_from_source_program(
             n_bits: setup.stark.n_bits,
         },
     )?;
+    let expected_columns = raw_fixed_column_layout(setup, group_name, unit_name)?
+        .columns
+        .into_iter()
+        .map(|column| column.name)
+        .collect::<BTreeSet<_>>();
     let mut columns = Vec::new();
 
     for module in &program.modules {
         for declaration in &module.columns {
             if declaration.kind != ColumnKind::Fixed {
+                continue;
+            }
+            if !declaration
+                .items
+                .iter()
+                .any(|item| expected_columns.contains(&item.name))
+            {
                 continue;
             }
             let Some(initializer) = declaration.initializer.as_ref() else {
@@ -472,6 +485,9 @@ fn fixed_columns_from_source_program(
             let Some(item) = declaration.items.first() else {
                 continue;
             };
+            if !expected_columns.contains(&item.name) {
+                continue;
+            }
             if declaration.items.len() != 1 || item.template || !item.array_dims.is_empty() {
                 return Err(SourceFixedColumnsWriteError::UnsupportedColumnShape {
                     source_name: declaration.source_name.clone(),
