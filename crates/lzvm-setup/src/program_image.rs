@@ -2,6 +2,9 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::guest_image::{read_guest_image_file, GuestImageError};
+use lzvm_artifacts::key_directory::{
+    key_directory_catalog_digest, read_key_directory_catalog, KeyDirectoryError,
+};
 use lzvm_artifacts::program_image::{
     build_program_image_commitment_cache, encode_program_image_commitment_cache,
     read_program_image_commitment_cache_file, ProgramImageCommitmentCache,
@@ -33,9 +36,27 @@ pub struct ProgramImageCommitmentCacheFileRequest<'a> {
     pub output_path: &'a Path,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ProgramImageCommitmentCacheForSetupDirectoryRequest<'a> {
+    pub setup_dir: &'a Path,
+    pub program_path: &'a Path,
+    pub guest_image_path: &'a Path,
+    pub root_path: &'a Path,
+    pub trace_row_count: u64,
+    pub trace_column_count: u32,
+    pub blowup_factor: u32,
+    pub merkle_tree_arity: u32,
+    pub gpu_mode: ProgramImageGpuMode,
+    pub output_path: &'a Path,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProgramImageCommitmentCacheWriteError {
     ProgramImage(ProgramImageCommitmentCacheError),
+    KeyDirectory {
+        path: PathBuf,
+        source: KeyDirectoryError,
+    },
     GuestImage {
         path: PathBuf,
         source: GuestImageError,
@@ -63,6 +84,11 @@ impl fmt::Display for ProgramImageCommitmentCacheWriteError {
             Self::ProgramImage(error) => {
                 write!(f, "program-image commitment cache build failed: {error}")
             }
+            Self::KeyDirectory { path, source } => write!(
+                f,
+                "program-image commitment cache setup directory failed at {}: {source}",
+                path.display()
+            ),
             Self::GuestImage { path, source } => write!(
                 f,
                 "program-image commitment cache guest image failed at {}: {source}",
@@ -100,6 +126,7 @@ impl std::error::Error for ProgramImageCommitmentCacheWriteError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::ProgramImage(error) => Some(error),
+            Self::KeyDirectory { source, .. } => Some(source),
             Self::GuestImage { source, .. } => Some(source),
             Self::VerificationKey { source, .. } => Some(source),
             Self::Setup(error) => Some(error),
@@ -127,6 +154,63 @@ pub fn write_program_image_commitment_cache_file(
     let guest_image_path = request.guest_image_path;
     let constraint_digest_path = request.constraint_digest_path;
     let root_path = request.root_path;
+    let constraint_system_digest = read_constraint_digest_file(constraint_digest_path)?;
+    write_program_image_commitment_cache_file_with_digest(
+        program_path,
+        guest_image_path,
+        root_path,
+        constraint_system_digest,
+        request.trace_row_count,
+        request.trace_column_count,
+        request.blowup_factor,
+        request.merkle_tree_arity,
+        request.gpu_mode,
+        request.output_path,
+    )
+}
+
+pub fn write_program_image_commitment_cache_file_for_setup_directory(
+    request: ProgramImageCommitmentCacheForSetupDirectoryRequest<'_>,
+) -> Result<ProgramImageCommitmentCacheWriteReport, ProgramImageCommitmentCacheWriteError> {
+    let catalog = read_key_directory_catalog(request.setup_dir).map_err(|source| {
+        ProgramImageCommitmentCacheWriteError::KeyDirectory {
+            path: request.setup_dir.to_path_buf(),
+            source,
+        }
+    })?;
+    let constraint_system_digest = key_directory_catalog_digest(&catalog).map_err(|source| {
+        ProgramImageCommitmentCacheWriteError::KeyDirectory {
+            path: request.setup_dir.to_path_buf(),
+            source,
+        }
+    })?;
+    write_program_image_commitment_cache_file_with_digest(
+        request.program_path,
+        request.guest_image_path,
+        request.root_path,
+        constraint_system_digest,
+        request.trace_row_count,
+        request.trace_column_count,
+        request.blowup_factor,
+        request.merkle_tree_arity,
+        request.gpu_mode,
+        request.output_path,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_program_image_commitment_cache_file_with_digest(
+    program_path: &Path,
+    guest_image_path: &Path,
+    root_path: &Path,
+    constraint_system_digest: [u8; 32],
+    trace_row_count: u64,
+    trace_column_count: u32,
+    blowup_factor: u32,
+    merkle_tree_arity: u32,
+    gpu_mode: ProgramImageGpuMode,
+    output_path: &Path,
+) -> Result<ProgramImageCommitmentCacheWriteReport, ProgramImageCommitmentCacheWriteError> {
     let program_bytes = read_program_image_input_bytes(program_path, "read program input")?;
     let source_image_info = read_guest_image_file(guest_image_path).map_err(|source| {
         ProgramImageCommitmentCacheWriteError::GuestImage {
@@ -136,7 +220,6 @@ pub fn write_program_image_commitment_cache_file(
     })?;
     let source_image_bytes =
         read_program_image_input_bytes(guest_image_path, "read source image input")?;
-    let constraint_system_digest = read_constraint_digest_file(constraint_digest_path)?;
     let root = read_verification_key_binary_file(root_path).map_err(|source| {
         ProgramImageCommitmentCacheWriteError::VerificationKey {
             path: root_path.to_path_buf(),
@@ -148,14 +231,14 @@ pub fn write_program_image_commitment_cache_file(
         source_image_bytes: &source_image_bytes,
         constraint_system_digest,
         tree_root: verification_key_root_words(root),
-        trace_row_count: request.trace_row_count,
-        trace_column_count: request.trace_column_count,
-        blowup_factor: request.blowup_factor,
-        merkle_tree_arity: request.merkle_tree_arity,
-        gpu_mode: request.gpu_mode,
+        trace_row_count,
+        trace_column_count,
+        blowup_factor,
+        merkle_tree_arity,
+        gpu_mode,
     })?;
     debug_assert_eq!(cache.source_image_digest, source_image_info.digest);
-    write_program_image_commitment_cache(request.output_path, &cache)
+    write_program_image_commitment_cache(output_path, &cache)
 }
 
 pub fn write_program_image_commitment_cache(

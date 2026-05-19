@@ -55,8 +55,9 @@ pub use pcs::{
 };
 pub use program_image::{
     write_program_image_commitment_cache, write_program_image_commitment_cache_file,
-    ProgramImageCommitmentCacheFileRequest, ProgramImageCommitmentCacheWriteError,
-    ProgramImageCommitmentCacheWriteReport,
+    write_program_image_commitment_cache_file_for_setup_directory,
+    ProgramImageCommitmentCacheFileRequest, ProgramImageCommitmentCacheForSetupDirectoryRequest,
+    ProgramImageCommitmentCacheWriteError, ProgramImageCommitmentCacheWriteReport,
 };
 pub use reports::*;
 pub use source_companions::{

@@ -13,7 +13,7 @@ use lzvm_prover::contribution::derive_global_challenge_from_contribution_proofs;
 use lzvm_prover::derive_prove_schedule_from_directory;
 use lzvm_setup::{
     summarize_setup_directory, FixedExtensionBackend, ProgramImageCommitmentCacheFileRequest,
-    SetupDirectorySummaryReport,
+    ProgramImageCommitmentCacheForSetupDirectoryRequest, SetupDirectorySummaryReport,
 };
 
 mod eth_block_input;
@@ -138,6 +138,72 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             )
         }
         ["setup", "write-pcs-material", ..] => write_pcs_material_usage(stderr),
+        ["setup", "write-program-image-cache", "--backend", backend, "--setup-dir", setup_dir, program_bin, guest_image, root_bin, trace_rows, trace_columns, blowup_factor, arity, out_cache] =>
+        {
+            let Some(backend) =
+                parse_fixed_extension_backend(backend, "setup program-image cache write", stderr)
+            else {
+                return 1;
+            };
+            write_program_image_cache(
+                ProgramImageCacheCommand {
+                    program_bin,
+                    guest_image,
+                    digest: ProgramImageCacheDigest::SetupDirectory(setup_dir),
+                    root_bin,
+                    trace_rows,
+                    trace_columns,
+                    blowup_factor,
+                    arity,
+                    gpu_mode: program_image_gpu_mode_from_backend(backend),
+                    out_cache,
+                },
+                stdout,
+                stderr,
+            )
+        }
+        ["setup", "write-program-image-cache", "--setup-dir", setup_dir, "--backend", backend, program_bin, guest_image, root_bin, trace_rows, trace_columns, blowup_factor, arity, out_cache] =>
+        {
+            let Some(backend) =
+                parse_fixed_extension_backend(backend, "setup program-image cache write", stderr)
+            else {
+                return 1;
+            };
+            write_program_image_cache(
+                ProgramImageCacheCommand {
+                    program_bin,
+                    guest_image,
+                    digest: ProgramImageCacheDigest::SetupDirectory(setup_dir),
+                    root_bin,
+                    trace_rows,
+                    trace_columns,
+                    blowup_factor,
+                    arity,
+                    gpu_mode: program_image_gpu_mode_from_backend(backend),
+                    out_cache,
+                },
+                stdout,
+                stderr,
+            )
+        }
+        ["setup", "write-program-image-cache", "--setup-dir", setup_dir, program_bin, guest_image, root_bin, trace_rows, trace_columns, blowup_factor, arity, out_cache] => {
+            write_program_image_cache(
+                ProgramImageCacheCommand {
+                    program_bin,
+                    guest_image,
+                    digest: ProgramImageCacheDigest::SetupDirectory(setup_dir),
+                    root_bin,
+                    trace_rows,
+                    trace_columns,
+                    blowup_factor,
+                    arity,
+                    gpu_mode: ProgramImageGpuMode::Cpu,
+                    out_cache,
+                },
+                stdout,
+                stderr,
+            )
+        }
         ["setup", "write-program-image-cache", "--backend", backend, program_bin, guest_image, constraint_digest_bin, root_bin, trace_rows, trace_columns, blowup_factor, arity, out_cache] =>
         {
             let Some(backend) =
@@ -149,7 +215,7 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
                 ProgramImageCacheCommand {
                     program_bin,
                     guest_image,
-                    constraint_digest_bin,
+                    digest: ProgramImageCacheDigest::File(constraint_digest_bin),
                     root_bin,
                     trace_rows,
                     trace_columns,
@@ -167,7 +233,7 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
                 ProgramImageCacheCommand {
                     program_bin,
                     guest_image,
-                    constraint_digest_bin,
+                    digest: ProgramImageCacheDigest::File(constraint_digest_bin),
                     root_bin,
                     trace_rows,
                     trace_columns,
@@ -734,10 +800,15 @@ fn write_pcs_setup_material(
     }
 }
 
+enum ProgramImageCacheDigest<'a> {
+    File(&'a str),
+    SetupDirectory(&'a str),
+}
+
 struct ProgramImageCacheCommand<'a> {
     program_bin: &'a str,
     guest_image: &'a str,
-    constraint_digest_bin: &'a str,
+    digest: ProgramImageCacheDigest<'a>,
     root_bin: &'a str,
     trace_rows: &'a str,
     trace_columns: &'a str,
@@ -785,20 +856,42 @@ fn write_program_image_cache(
         return 1;
     };
 
-    match lzvm_setup::write_program_image_commitment_cache_file(
-        ProgramImageCommitmentCacheFileRequest {
-            program_path: Path::new(command.program_bin),
-            guest_image_path: Path::new(command.guest_image),
-            constraint_digest_path: Path::new(command.constraint_digest_bin),
-            root_path: Path::new(command.root_bin),
-            trace_row_count: trace_rows,
-            trace_column_count: trace_columns,
-            blowup_factor,
-            merkle_tree_arity: arity,
-            gpu_mode: command.gpu_mode,
-            output_path: Path::new(command.out_cache),
-        },
-    ) {
+    let result = match command.digest {
+        ProgramImageCacheDigest::File(constraint_digest_bin) => {
+            lzvm_setup::write_program_image_commitment_cache_file(
+                ProgramImageCommitmentCacheFileRequest {
+                    program_path: Path::new(command.program_bin),
+                    guest_image_path: Path::new(command.guest_image),
+                    constraint_digest_path: Path::new(constraint_digest_bin),
+                    root_path: Path::new(command.root_bin),
+                    trace_row_count: trace_rows,
+                    trace_column_count: trace_columns,
+                    blowup_factor,
+                    merkle_tree_arity: arity,
+                    gpu_mode: command.gpu_mode,
+                    output_path: Path::new(command.out_cache),
+                },
+            )
+        }
+        ProgramImageCacheDigest::SetupDirectory(setup_dir) => {
+            lzvm_setup::write_program_image_commitment_cache_file_for_setup_directory(
+                ProgramImageCommitmentCacheForSetupDirectoryRequest {
+                    setup_dir: Path::new(setup_dir),
+                    program_path: Path::new(command.program_bin),
+                    guest_image_path: Path::new(command.guest_image),
+                    root_path: Path::new(command.root_bin),
+                    trace_row_count: trace_rows,
+                    trace_column_count: trace_columns,
+                    blowup_factor,
+                    merkle_tree_arity: arity,
+                    gpu_mode: command.gpu_mode,
+                    output_path: Path::new(command.out_cache),
+                },
+            )
+        }
+    };
+
+    match result {
         Ok(report) => {
             let cache = match read_program_image_commitment_cache_file(&report.path) {
                 Ok(cache) => cache,
@@ -1172,7 +1265,7 @@ fn write_pcs_material_usage(stderr: &mut dyn Write) -> i32 {
 fn write_program_image_cache_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm setup write-program-image-cache [--backend cpu|cuda] <program-bin> <guest-image> <constraint-digest-bin> <root-bin> <trace-rows> <trace-columns> <blowup-factor> <arity> <out-cache>"
+        "usage: lzvm setup write-program-image-cache [--backend cpu|cuda] <program-bin> <guest-image> <constraint-digest-bin> <root-bin> <trace-rows> <trace-columns> <blowup-factor> <arity> <out-cache>\n       lzvm setup write-program-image-cache [--backend cpu|cuda] --setup-dir <setup-dir> <program-bin> <guest-image> <root-bin> <trace-rows> <trace-columns> <blowup-factor> <arity> <out-cache>"
     );
     2
 }

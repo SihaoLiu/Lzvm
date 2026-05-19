@@ -149,9 +149,10 @@ Generate a program-image commitment cache for proof input binding:
 
 ```sh
 cargo run -p lzvm-cli -- setup write-program-image-cache [--backend cpu|cuda] <program-bin> <guest-image> <constraint-digest-bin> <root-bin> <trace-rows> <trace-columns> <blowup-factor> <arity> <out-cache>
+cargo run -p lzvm-cli -- setup write-program-image-cache [--backend cpu|cuda] --setup-dir <setup-dir> <program-bin> <guest-image> <root-bin> <trace-rows> <trace-columns> <blowup-factor> <arity> <out-cache>
 ```
 
-The constraint digest input must match the `setup_hash` reported by the setup directory used for proving. Proof input and witness commands reject cache files whose guest-image digest or setup hash no longer matches the current run.
+The first form accepts an explicit 32-byte constraint digest. The second form derives that digest from the setup catalog and should be preferred when the cache is built next to a generated key directory. In both forms the digest must match the `setup_hash` used for proving. Proof input and witness commands reject cache files whose guest-image digest or setup hash no longer matches the current run.
 
 Generate a raw fixed-column artifact from native binary setup metadata and a native binary fixed-column source:
 

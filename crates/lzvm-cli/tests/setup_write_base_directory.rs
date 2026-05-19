@@ -23,6 +23,7 @@ use lzvm_artifacts::key_directory::{
 };
 use lzvm_artifacts::pcs_material::{build_pcs_setup_material, read_pcs_setup_material_file};
 use lzvm_artifacts::pcs_plan::{derive_pcs_setup_plan, read_pcs_setup_plan_file};
+use lzvm_artifacts::program_image::read_program_image_commitment_cache_file;
 use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file, SectionedFile};
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, UnitSetupInfo,
@@ -125,6 +126,21 @@ fn sample_columns() -> FixedColumns {
             },
         ],
     }
+}
+
+fn sample_guest_image() -> Vec<u8> {
+    let mut bytes = vec![0_u8; 64];
+    bytes[0..4].copy_from_slice(b"\x7fELF");
+    bytes[4] = 2;
+    bytes[5] = 1;
+    bytes[6] = 1;
+    bytes[16..18].copy_from_slice(&2_u16.to_le_bytes());
+    bytes[18..20].copy_from_slice(&243_u16.to_le_bytes());
+    bytes[20..24].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[24..32].copy_from_slice(&0x8000_0000_u64.to_le_bytes());
+    bytes[32..40].copy_from_slice(&64_u64.to_le_bytes());
+    bytes[52..54].copy_from_slice(&64_u16.to_le_bytes());
+    bytes
 }
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -802,6 +818,77 @@ fn generates_key_directory_outputs_with_public_command() {
         "setup_directory_manifest={}\n",
         manifest_path.display()
     )));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn writes_program_image_cache_from_setup_directory_digest() {
+    let (dir, _) = create_key_directory("program-image-cache-setup-dir");
+    remove_verification_keys(&dir);
+
+    let mut setup_stdout = Vec::new();
+    let mut setup_stderr = Vec::new();
+    let setup_code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut setup_stdout,
+        &mut setup_stderr,
+    );
+    assert_eq!(setup_code, 0);
+    assert!(setup_stderr.is_empty());
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let root_path = layout.units[0].verification_key_binary();
+    let program_path = dir.join("program.bin");
+    let guest_image_path = dir.join("guest.elf");
+    let output_path = dir.join("program-image-cache.bin");
+    fs::write(&program_path, b"packed-program").expect("program should be written");
+    fs::write(&guest_image_path, sample_guest_image()).expect("guest image should be written");
+
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "write-program-image-cache",
+            "--setup-dir",
+            dir.to_str().expect("directory path should be utf-8"),
+            program_path.to_str().expect("program path should be utf-8"),
+            guest_image_path
+                .to_str()
+                .expect("guest image path should be utf-8"),
+            root_path.to_str().expect("root path should be utf-8"),
+            "1024",
+            "17",
+            "8",
+            "4",
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let cache = read_program_image_commitment_cache_file(&output_path)
+        .expect("program-image cache should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(cache.constraint_system_digest, setup_hash);
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains(&format!(
+            "program_image_cache_constraint_system_digest={}\n",
+            setup_hash
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        )));
     assert!(stderr.is_empty());
 }
 
