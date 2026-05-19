@@ -11,9 +11,9 @@ use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyDirectoryError
 use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, SetupInfoError, UnitSetupInfo};
 use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
-    ColumnInitializerKind, ColumnKind, FixedFileTemplateValue, LexError, ParseError, SourceFile,
-    SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader,
-    SourceProgramModule, SourceSpan, Token, TokenKind,
+    ColumnInitializerKind, ColumnKind, ConstantDeclaration, FixedFileTemplateValue, LexError,
+    ParseError, SourceFile, SourceLoaderConfig, SourceProgram, SourceProgramError,
+    SourceProgramLoader, SourceSpan, Token, TokenKind,
 };
 
 use crate::{publish_staging_bytes, write_staging_bytes, SetupError};
@@ -471,9 +471,9 @@ fn fixed_columns_from_source_program(
         .map(|column| column.name)
         .collect::<BTreeSet<_>>();
     let mut columns = Vec::new();
+    let constant_values = source_fixed_constant_values(program);
 
     for module in &program.modules {
-        let constant_values = source_fixed_constant_values(module);
         for declaration in &module.columns {
             if declaration.kind != ColumnKind::Fixed {
                 continue;
@@ -531,24 +531,46 @@ fn fixed_columns_from_source_program(
 }
 
 fn source_fixed_constant_values(
-    module: &SourceProgramModule,
+    program: &SourceProgram,
 ) -> BTreeMap<String, FixedFileTemplateValue> {
+    let declarations = program
+        .modules
+        .iter()
+        .flat_map(|module| module.constants.iter())
+        .collect::<Vec<_>>();
     let mut values = BTreeMap::new();
-    for declaration in &module.constants {
-        if !declaration.array_dims.is_empty() {
-            continue;
+    let mut resolved = vec![false; declarations.len()];
+
+    loop {
+        let mut progressed = false;
+        for (index, declaration) in declarations.iter().enumerate() {
+            if resolved[index] {
+                continue;
+            }
+            if source_fixed_constant_value(declaration, &mut values).is_some() {
+                resolved[index] = true;
+                progressed = true;
+            }
         }
-        let Some(expression) = declaration.initializer_expression.as_ref() else {
-            continue;
-        };
-        let Some(value) =
-            evaluate_fixed_file_template_value_expression_with_values(expression, &values)
-        else {
-            continue;
-        };
-        values.insert(declaration.name.clone(), value);
+        if !progressed {
+            break;
+        }
     }
+
     values
+}
+
+fn source_fixed_constant_value(
+    declaration: &ConstantDeclaration,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<()> {
+    if !declaration.array_dims.is_empty() || values.contains_key(&declaration.name) {
+        return Some(());
+    }
+    let expression = declaration.initializer_expression.as_ref()?;
+    let value = evaluate_fixed_file_template_value_expression_with_values(expression, values)?;
+    values.insert(declaration.name.clone(), value);
+    Some(())
 }
 
 fn parse_literal_sequence(
