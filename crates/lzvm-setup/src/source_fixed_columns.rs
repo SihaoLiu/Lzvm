@@ -797,7 +797,6 @@ fn append_sequence_add_progression(
                 token: context.tokens[progression_index].lexeme.clone(),
             })?;
     let current = parse_sequence_expression(context, start, progression_index)?;
-    let last = parse_sequence_expression(context, progression_index + 1, end)?;
     let step = i128::from(current) - i128::from(previous);
     let segment = ProgressionSegment {
         context,
@@ -805,7 +804,33 @@ fn append_sequence_add_progression(
         end,
         row_count,
     };
+    if progression_index + 1 == end {
+        return append_add_progression_fill(values, &segment, current, step);
+    }
+    let last = parse_sequence_expression(context, progression_index + 1, end)?;
     append_add_progression_values(values, &segment, current, last, step)
+}
+
+fn append_add_progression_fill(
+    values: &mut Vec<u64>,
+    segment: &ProgressionSegment<'_, '_>,
+    current: u64,
+    step: i128,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    let mut value = i128::from(current);
+    while values.len() < segment.row_count {
+        push_progression_value(values, segment, value)?;
+        if values.len() < segment.row_count {
+            value = value.checked_add(step).ok_or_else(|| {
+                SourceFixedColumnsWriteError::IntegerOutOfRange {
+                    source_name: segment.context.source_name.to_owned(),
+                    source_span: segment.context.source_span,
+                    expression: progression_expression(segment),
+                }
+            })?;
+        }
+    }
+    Ok(())
 }
 
 fn append_add_progression_values(
@@ -860,7 +885,6 @@ fn append_sequence_mul_progression(
                 token: context.tokens[progression_index].lexeme.clone(),
             })?;
     let current = parse_sequence_expression(context, start, progression_index)?;
-    let last = parse_sequence_expression(context, progression_index + 1, end)?;
 
     if previous != 0 && current >= previous && current % previous == 0 {
         let factor = current / previous;
@@ -870,6 +894,10 @@ fn append_sequence_mul_progression(
             end,
             row_count,
         };
+        if progression_index + 1 == end {
+            return append_mul_progression_fill(values, &segment, current, factor);
+        }
+        let last = parse_sequence_expression(context, progression_index + 1, end)?;
         return append_mul_progression_values(values, &segment, current, last, factor);
     }
     if current != 0 && previous > current && previous % current == 0 {
@@ -880,6 +908,10 @@ fn append_sequence_mul_progression(
             end,
             row_count,
         };
+        if progression_index + 1 == end {
+            return append_div_progression_fill(values, &segment, current, divisor);
+        }
+        let last = parse_sequence_expression(context, progression_index + 1, end)?;
         return append_div_progression_values(values, &segment, current, last, divisor);
     }
     Err(SourceFixedColumnsWriteError::UnsupportedExpression {
@@ -887,6 +919,28 @@ fn append_sequence_mul_progression(
         source_span: context.source_span,
         expression: segment_text(context, start, end),
     })
+}
+
+fn append_mul_progression_fill(
+    values: &mut Vec<u64>,
+    segment: &ProgressionSegment<'_, '_>,
+    current: u64,
+    factor: u64,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    let mut value = current;
+    while values.len() < segment.row_count {
+        push_progression_value(values, segment, i128::from(value))?;
+        if values.len() < segment.row_count {
+            value = value.checked_mul(factor).ok_or_else(|| {
+                SourceFixedColumnsWriteError::IntegerOutOfRange {
+                    source_name: segment.context.source_name.to_owned(),
+                    source_span: segment.context.source_span,
+                    expression: progression_expression(segment),
+                }
+            })?;
+        }
+    }
+    Ok(())
 }
 
 fn append_mul_progression_values(
@@ -914,6 +968,25 @@ fn append_mul_progression_values(
         })?;
         if value > last {
             return Err(progression_unsupported(segment));
+        }
+    }
+    Ok(())
+}
+
+fn append_div_progression_fill(
+    values: &mut Vec<u64>,
+    segment: &ProgressionSegment<'_, '_>,
+    current: u64,
+    divisor: u64,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    let mut value = current;
+    while values.len() < segment.row_count {
+        push_progression_value(values, segment, i128::from(value))?;
+        if values.len() < segment.row_count {
+            if !value.is_multiple_of(divisor) {
+                return Err(progression_unsupported(segment));
+            }
+            value /= divisor;
         }
     }
     Ok(())
