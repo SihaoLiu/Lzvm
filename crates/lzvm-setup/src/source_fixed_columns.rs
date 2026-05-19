@@ -682,6 +682,13 @@ struct SequenceParseContext<'a> {
     tokens: &'a [Token],
 }
 
+struct ProgressionSegment<'a, 'b> {
+    context: &'a SequenceParseContext<'b>,
+    start: usize,
+    end: usize,
+    row_count: usize,
+}
+
 fn append_sequence_segment(
     values: &mut Vec<u64>,
     context: &SequenceParseContext<'_>,
@@ -716,6 +723,20 @@ fn append_sequence_segment(
 
     if let Some(range_index) = top_level_range_index(context, start, end)? {
         append_sequence_range(values, context, start, range_index, end, row_count)?;
+        return Ok(());
+    }
+
+    if let Some(progression_index) =
+        top_level_token_index(context, start, end, TokenKind::RangeFill)?
+    {
+        append_sequence_add_progression(values, context, start, progression_index, end, row_count)?;
+        return Ok(());
+    }
+
+    if let Some(progression_index) =
+        top_level_token_index(context, start, end, TokenKind::RangeMulFill)?
+    {
+        append_sequence_mul_progression(values, context, start, progression_index, end, row_count)?;
         return Ok(());
     }
 
@@ -757,6 +778,202 @@ fn append_sequence_repeat(
         }
     }
     Ok(())
+}
+
+fn append_sequence_add_progression(
+    values: &mut Vec<u64>,
+    context: &SequenceParseContext<'_>,
+    start: usize,
+    progression_index: usize,
+    end: usize,
+    row_count: usize,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    let previous =
+        *values
+            .last()
+            .ok_or_else(|| SourceFixedColumnsWriteError::UnexpectedSequenceToken {
+                source_name: context.source_name.to_owned(),
+                source_span: context.source_span,
+                token: context.tokens[progression_index].lexeme.clone(),
+            })?;
+    let current = parse_sequence_expression(context, start, progression_index)?;
+    let last = parse_sequence_expression(context, progression_index + 1, end)?;
+    let step = i128::from(current) - i128::from(previous);
+    let segment = ProgressionSegment {
+        context,
+        start,
+        end,
+        row_count,
+    };
+    append_add_progression_values(values, &segment, current, last, step)
+}
+
+fn append_add_progression_values(
+    values: &mut Vec<u64>,
+    segment: &ProgressionSegment<'_, '_>,
+    current: u64,
+    last: u64,
+    step: i128,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    if (step > 0 && current > last)
+        || (step < 0 && current < last)
+        || (step == 0 && current != last)
+    {
+        return Err(progression_unsupported(segment));
+    }
+
+    let mut value = i128::from(current);
+    let last = i128::from(last);
+    loop {
+        push_progression_value(values, segment, value)?;
+        if value == last {
+            break;
+        }
+        value = value.checked_add(step).ok_or_else(|| {
+            SourceFixedColumnsWriteError::IntegerOutOfRange {
+                source_name: segment.context.source_name.to_owned(),
+                source_span: segment.context.source_span,
+                expression: progression_expression(segment),
+            }
+        })?;
+        if (step > 0 && value > last) || (step < 0 && value < last) {
+            return Err(progression_unsupported(segment));
+        }
+    }
+    Ok(())
+}
+
+fn append_sequence_mul_progression(
+    values: &mut Vec<u64>,
+    context: &SequenceParseContext<'_>,
+    start: usize,
+    progression_index: usize,
+    end: usize,
+    row_count: usize,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    let previous =
+        *values
+            .last()
+            .ok_or_else(|| SourceFixedColumnsWriteError::UnexpectedSequenceToken {
+                source_name: context.source_name.to_owned(),
+                source_span: context.source_span,
+                token: context.tokens[progression_index].lexeme.clone(),
+            })?;
+    let current = parse_sequence_expression(context, start, progression_index)?;
+    let last = parse_sequence_expression(context, progression_index + 1, end)?;
+
+    if previous != 0 && current >= previous && current % previous == 0 {
+        let factor = current / previous;
+        let segment = ProgressionSegment {
+            context,
+            start,
+            end,
+            row_count,
+        };
+        return append_mul_progression_values(values, &segment, current, last, factor);
+    }
+    if current != 0 && previous > current && previous % current == 0 {
+        let divisor = previous / current;
+        let segment = ProgressionSegment {
+            context,
+            start,
+            end,
+            row_count,
+        };
+        return append_div_progression_values(values, &segment, current, last, divisor);
+    }
+    Err(SourceFixedColumnsWriteError::UnsupportedExpression {
+        source_name: context.source_name.to_owned(),
+        source_span: context.source_span,
+        expression: segment_text(context, start, end),
+    })
+}
+
+fn append_mul_progression_values(
+    values: &mut Vec<u64>,
+    segment: &ProgressionSegment<'_, '_>,
+    current: u64,
+    last: u64,
+    factor: u64,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    if factor <= 1 && current != last {
+        return Err(progression_unsupported(segment));
+    }
+    let mut value = current;
+    loop {
+        push_progression_value(values, segment, i128::from(value))?;
+        if value == last {
+            break;
+        }
+        value = value.checked_mul(factor).ok_or_else(|| {
+            SourceFixedColumnsWriteError::IntegerOutOfRange {
+                source_name: segment.context.source_name.to_owned(),
+                source_span: segment.context.source_span,
+                expression: progression_expression(segment),
+            }
+        })?;
+        if value > last {
+            return Err(progression_unsupported(segment));
+        }
+    }
+    Ok(())
+}
+
+fn append_div_progression_values(
+    values: &mut Vec<u64>,
+    segment: &ProgressionSegment<'_, '_>,
+    current: u64,
+    last: u64,
+    divisor: u64,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    if divisor <= 1 && current != last {
+        return Err(progression_unsupported(segment));
+    }
+    let mut value = current;
+    loop {
+        push_progression_value(values, segment, i128::from(value))?;
+        if value == last {
+            break;
+        }
+        if !value.is_multiple_of(divisor) {
+            return Err(progression_unsupported(segment));
+        }
+        value /= divisor;
+        if value < last {
+            return Err(progression_unsupported(segment));
+        }
+    }
+    Ok(())
+}
+
+fn push_progression_value(
+    values: &mut Vec<u64>,
+    segment: &ProgressionSegment<'_, '_>,
+    value: i128,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    if values.len() >= segment.row_count {
+        return Err(progression_unsupported(segment));
+    }
+    let value =
+        u64::try_from(value).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
+            source_name: segment.context.source_name.to_owned(),
+            source_span: segment.context.source_span,
+            expression: progression_expression(segment),
+        })?;
+    values.push(value);
+    Ok(())
+}
+
+fn progression_unsupported(segment: &ProgressionSegment<'_, '_>) -> SourceFixedColumnsWriteError {
+    SourceFixedColumnsWriteError::UnsupportedExpression {
+        source_name: segment.context.source_name.to_owned(),
+        source_span: segment.context.source_span,
+        expression: progression_expression(segment),
+    }
+}
+
+fn progression_expression(segment: &ProgressionSegment<'_, '_>) -> String {
+    segment_text(segment.context, segment.start, segment.end)
 }
 
 fn append_sequence_range(
