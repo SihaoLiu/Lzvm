@@ -6,9 +6,11 @@ use lzvm_artifacts::contribution_segment::{
     encode_contribution_segment, parse_contribution_segment, ContributionEntry,
     ContributionSegment, ContributionSegmentError, CONTRIBUTION_SEGMENT_ID,
 };
+use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
 use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryError};
 use lzvm_artifacts::pcs_proof_values_segment::PCS_PROOF_VALUES_SEGMENT_ID;
+use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
 use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifactError, ProofSegment};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValuesError};
 use lzvm_artifacts::setup_info::StageValue;
@@ -668,7 +670,10 @@ fn validate_contribution_proof_segment_ids(
     for segment in segments {
         if matches!(
             segment.id,
-            CONTRIBUTION_SEGMENT_ID | PCS_PROOF_VALUES_SEGMENT_ID
+            CONTRIBUTION_SEGMENT_ID
+                | PCS_PROOF_VALUES_SEGMENT_ID
+                | PROGRAM_IMAGE_CACHE_SEGMENT_ID
+                | ETH_BLOCK_INPUT_SEGMENT_ID
         ) {
             continue;
         }
@@ -909,4 +914,40 @@ fn raw_contribution_entry(
         aggregated: entry.aggregated,
         values,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
+    use lzvm_artifacts::pcs_proof_values_segment::PCS_PROOF_VALUES_SEGMENT_ID;
+    use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
+    use lzvm_artifacts::proof::ProofSegment;
+
+    use super::validate_contribution_proof_segment_ids;
+    use crate::contribution::CONTRIBUTION_SEGMENT_ID;
+
+    #[test]
+    fn accepts_binding_segments_in_contribution_proof_inputs() {
+        let segments = vec![
+            ProofSegment {
+                id: PCS_PROOF_VALUES_SEGMENT_ID,
+                data: vec![1],
+            },
+            ProofSegment {
+                id: CONTRIBUTION_SEGMENT_ID,
+                data: vec![2],
+            },
+            ProofSegment {
+                id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+                data: vec![3],
+            },
+            ProofSegment {
+                id: ETH_BLOCK_INPUT_SEGMENT_ID,
+                data: vec![4],
+            },
+        ];
+
+        validate_contribution_proof_segment_ids(&segments)
+            .expect("binding segments should be allowed in contribution proofs");
+    }
 }
