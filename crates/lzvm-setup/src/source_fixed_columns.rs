@@ -685,8 +685,104 @@ fn append_sequence_segment(
         return Ok(());
     }
 
+    if let Some(range_index) = top_level_range_index(context, start, end)? {
+        append_sequence_range(values, context, start, range_index, end, row_count)?;
+        return Ok(());
+    }
+
     values.push(parse_sequence_expression(context, start, end)?);
     Ok(())
+}
+
+fn append_sequence_range(
+    values: &mut Vec<u64>,
+    context: &SequenceParseContext<'_>,
+    start: usize,
+    range_index: usize,
+    end: usize,
+    row_count: usize,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    let first = parse_sequence_expression(context, start, range_index)?;
+    let last = parse_sequence_expression(context, range_index + 1, end)?;
+    let ascending = first <= last;
+    let mut value = first;
+    loop {
+        if values.len() >= row_count {
+            return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
+                source_name: context.source_name.to_owned(),
+                source_span: context.source_span,
+                expression: segment_text(context, start, end),
+            });
+        }
+        values.push(value);
+        if value == last {
+            break;
+        }
+        value = if ascending {
+            value.checked_add(1)
+        } else {
+            value.checked_sub(1)
+        }
+        .ok_or_else(|| SourceFixedColumnsWriteError::IntegerOutOfRange {
+            source_name: context.source_name.to_owned(),
+            source_span: context.source_span,
+            expression: segment_text(context, start, end),
+        })?;
+    }
+    Ok(())
+}
+
+fn top_level_range_index(
+    context: &SequenceParseContext<'_>,
+    start: usize,
+    end: usize,
+) -> Result<Option<usize>, SourceFixedColumnsWriteError> {
+    let mut range_index = None;
+    let mut stack = Vec::new();
+    for index in start..end {
+        let token = &context.tokens[index];
+        match token.kind {
+            TokenKind::LParen => stack.push(TokenKind::RParen),
+            TokenKind::LBracket => stack.push(TokenKind::RBracket),
+            TokenKind::LBrace => stack.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                let Some(expected) = stack.pop() else {
+                    return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
+                        source_name: context.source_name.to_owned(),
+                        source_span: context.source_span,
+                        token: token.lexeme.clone(),
+                    });
+                };
+                if expected != token.kind {
+                    return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
+                        source_name: context.source_name.to_owned(),
+                        source_span: context.source_span,
+                        token: token.lexeme.clone(),
+                    });
+                }
+            }
+            TokenKind::Range if stack.is_empty() => {
+                if range_index.replace(index).is_some() {
+                    return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
+                        source_name: context.source_name.to_owned(),
+                        source_span: context.source_span,
+                        token: token.lexeme.clone(),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(range_index)
+}
+
+fn segment_text(context: &SequenceParseContext<'_>, start: usize, end: usize) -> String {
+    if start >= end || end > context.tokens.len() {
+        return String::new();
+    }
+    let start_byte = context.tokens[start].start;
+    let end_byte = context.tokens[end - 1].end;
+    context.source[start_byte..end_byte].to_owned()
 }
 
 fn parse_sequence_expression(
