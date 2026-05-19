@@ -32,7 +32,8 @@ fn tracked_paths() -> Vec<PathBuf> {
 
 fn should_scan_path(path: &Path) -> bool {
     let path = path.to_string_lossy();
-    !path.starts_with("temp/") && !path.starts_with("target/")
+    let ignored_workspace_prefix = [b"te".as_slice(), b"mp/".as_slice()].concat();
+    !path.as_bytes().starts_with(&ignored_workspace_prefix) && !path.starts_with("target/")
 }
 
 fn should_scan_contents(bytes: &[u8]) -> bool {
@@ -68,6 +69,25 @@ fn reserved_term_violation(path: &Path, bytes: &[u8], terms: &[Vec<u8>]) -> Opti
         }
     }
     None
+}
+
+fn ignored_workspace_reference_terms() -> [Vec<u8>; 3] {
+    [
+        [b"te".as_slice(), b"mp/".as_slice()].concat(),
+        [b"te".as_slice(), b"mp\\".as_slice()].concat(),
+        [b"reference_".as_slice(), b"designs".as_slice()].concat(),
+    ]
+}
+
+fn ignored_workspace_reference_violation(
+    path: &Path,
+    bytes: &[u8],
+    terms: &[Vec<u8>],
+) -> Option<String> {
+    if !should_scan_path(path) || !should_scan_contents(bytes) {
+        return None;
+    }
+    reserved_term_offset(bytes, terms).map(|offset| format!("{} at byte {offset}", path.display()))
 }
 
 #[test]
@@ -114,6 +134,39 @@ fn tracked_text_files_avoid_reserved_project_names() {
     assert!(
         violations.is_empty(),
         "reserved project names found:\n{}",
+        violations.join("\n")
+    );
+}
+
+#[test]
+fn ignored_workspace_references_are_reported() {
+    let terms = ignored_workspace_reference_terms();
+    let mut bytes = b"path=".to_vec();
+    bytes.extend_from_slice(&terms[0]);
+    bytes.extend_from_slice(b"fixture");
+
+    assert!(
+        ignored_workspace_reference_violation(Path::new("src/lib.rs"), &bytes, &terms).is_some(),
+        "ignored workspace directory references should be reported"
+    );
+}
+
+#[test]
+fn tracked_text_files_avoid_ignored_workspace_references() {
+    let terms = ignored_workspace_reference_terms();
+    let mut violations = Vec::new();
+    for path in tracked_paths() {
+        let bytes = fs::read(&path).unwrap_or_else(|error| {
+            panic!("tracked file should read: {}: {error}", path.display())
+        });
+        if let Some(violation) = ignored_workspace_reference_violation(&path, &bytes, &terms) {
+            violations.push(violation);
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "ignored workspace directory references found:\n{}",
         violations.join("\n")
     );
 }
