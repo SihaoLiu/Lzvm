@@ -118,6 +118,58 @@ fn writes_hex_block_input_artifact() {
 }
 
 #[test]
+fn writes_hex_block_input_artifact_with_hex_receipts() {
+    let dir = temp_dir("hex-receipts");
+    let _ = fs::remove_dir_all(&dir);
+    let block_path = dir.join("block.hex");
+    let receipts_path = dir.join("receipts.hex");
+    let output_path = dir.join("block.input");
+    let receipt_item = sample_receipt_item();
+    let receipts = vec![parse_rlp(&receipt_item).expect("receipt should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    let receipts_rlp = rlp_list(&[receipt_item]);
+    let block_rlp = sample_block_rlp_with_receipts_root(receipt_build.root);
+    write_bytes(&block_path, format!("0x{}\n", to_hex(&block_rlp)));
+    write_bytes(&receipts_path, format!("0x{}\n", to_hex(&receipts_rlp)));
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-block-input",
+            "--hex",
+            "--receipts",
+            receipts_path
+                .to_str()
+                .expect("receipts path should be utf-8"),
+            block_path.to_str().expect("block path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let encoded = fs::read(&output_path).expect("block input should be written");
+    let parsed = parse_eth_block_input(&encoded).expect("block input should parse");
+    let parsed_receipts = parsed.receipts.as_ref().expect("receipts should exist");
+    assert_eq!(parsed.block_rlp, block_rlp);
+    assert_eq!(
+        parsed.receipts_rlp.as_deref(),
+        Some(receipts_rlp.as_slice())
+    );
+    assert_eq!(parsed.receipts_root, receipt_build.root);
+    assert_eq!(parsed_receipts.hash_preimages, receipt_build.hash_preimages);
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("receipts=present\n"));
+    assert!(stdout_text.contains(&format!("receipts_rlp_bytes={}\n", receipts_rlp.len())));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn writes_binary_block_input_artifact_with_receipts() {
     let dir = temp_dir("binary-receipts");
     let _ = fs::remove_dir_all(&dir);

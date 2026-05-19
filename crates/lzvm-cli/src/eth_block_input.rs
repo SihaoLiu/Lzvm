@@ -76,13 +76,17 @@ fn write_block_input(
     };
 
     let receipts_rlp = match receipts_path {
-        Some(path) => match std::fs::read(path) {
+        Some(path) => match read_input_bytes(path, hex_input) {
             Ok(bytes) => Some(bytes),
-            Err(error) => {
+            Err(InputReadError::Read(error)) => {
                 let _ = writeln!(
                     stderr,
                     "eth block input failed: read receipts failed: {path}: {error}"
                 );
+                return 1;
+            }
+            Err(InputReadError::Hex(error)) => {
+                let _ = writeln!(stderr, "eth block input failed: {error}");
                 return 1;
             }
         },
@@ -133,6 +137,15 @@ fn write_block_input(
     let digest = eth_block_input_bytes_digest(&encoded);
     write_input_summary(stdout, output_path, encoded.len(), &digest, &input, false);
     0
+}
+
+fn read_input_bytes(path: &str, hex_input: bool) -> Result<Vec<u8>, InputReadError> {
+    let bytes = std::fs::read(path).map_err(InputReadError::Read)?;
+    if hex_input {
+        decode_hex_bytes(&bytes).map_err(InputReadError::Hex)
+    } else {
+        Ok(bytes)
+    }
 }
 
 fn summarize_block_input(input_path: &str, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -363,6 +376,11 @@ fn hex_char(value: u8) -> char {
 enum HexDecodeError {
     InvalidDigit { offset: usize, byte: u8 },
     OddDigitCount,
+}
+
+enum InputReadError {
+    Read(std::io::Error),
+    Hex(HexDecodeError),
 }
 
 impl fmt::Display for HexDecodeError {
