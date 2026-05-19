@@ -494,12 +494,18 @@ fn fixed_columns_from_source_program(
             if !expected_columns.contains(&item.name) {
                 continue;
             }
-            if declaration.items.len() != 1 || item.template || !item.array_dims.is_empty() {
+            if declaration.items.len() != 1 || item.template {
                 return Err(SourceFixedColumnsWriteError::UnsupportedColumnShape {
                     source_name: declaration.source_name.clone(),
                     column: item.name.clone(),
                 });
             }
+            let dimensions = source_fixed_column_dimensions(
+                &declaration.source_name,
+                &module.source.contents,
+                item,
+                &constant_values,
+            )?;
             if initializer.kind != ColumnInitializerKind::Sequence {
                 return Err(SourceFixedColumnsWriteError::UnsupportedInitializer {
                     source_name: declaration.source_name.clone(),
@@ -516,7 +522,7 @@ fn fixed_columns_from_source_program(
             )?;
             columns.push(FixedColumn {
                 name: item.name.clone(),
-                dimensions: vec![1],
+                dimensions,
                 values,
             });
         }
@@ -528,6 +534,61 @@ fn fixed_columns_from_source_program(
         row_count,
         columns,
     })
+}
+
+fn source_fixed_column_dimensions(
+    source_name: &str,
+    source: &str,
+    item: &lzvm_pil::ColumnItem,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<Vec<u32>, SourceFixedColumnsWriteError> {
+    if item.array_dims.is_empty() {
+        return Ok(vec![1]);
+    }
+
+    item.array_dim_expressions
+        .iter()
+        .zip(&item.array_dims)
+        .map(|(expression, span)| {
+            let Some(expression) = expression else {
+                return Err(SourceFixedColumnsWriteError::UnsupportedColumnShape {
+                    source_name: source_name.to_owned(),
+                    column: item.name.clone(),
+                });
+            };
+            let expression_text = source_fixed_dimension_expression_text(source, *span);
+            let Some(FixedFileTemplateValue::Integer(value)) =
+                evaluate_fixed_file_template_value_expression_with_values(
+                    expression,
+                    constant_values,
+                )
+            else {
+                return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
+                    source_name: source_name.to_owned(),
+                    source_span: *span,
+                    expression: expression_text,
+                });
+            };
+            u32::try_from(value).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
+                source_name: source_name.to_owned(),
+                source_span: *span,
+                expression: expression_text,
+            })
+        })
+        .collect()
+}
+
+fn source_fixed_dimension_expression_text(source: &str, span: SourceSpan) -> String {
+    if span.start < span.end
+        && source.as_bytes().get(span.start) == Some(&b'[')
+        && source.as_bytes().get(span.end.saturating_sub(1)) == Some(&b']')
+    {
+        return source[span.start + 1..span.end - 1].to_owned();
+    }
+    source
+        .get(span.start..span.end)
+        .unwrap_or_default()
+        .to_owned()
 }
 
 fn source_fixed_constant_values(
