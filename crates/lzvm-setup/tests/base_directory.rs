@@ -375,6 +375,44 @@ fn writes_regular_program_without_existing_program_file() {
     assert_eq!(report.unit_count, layout.units.len());
 }
 
+#[test]
+#[cfg(unix)]
+fn base_directory_metadata_writes_publish_by_replacing_output_paths() {
+    use std::os::unix::fs::symlink;
+
+    let dir = create_base_directory_fixture("metadata-symlink-output");
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let paths = vec![
+        layout.global_paths.info.clone(),
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+        unit.verifier_info_binary()
+            .expect("verifier metadata path should derive"),
+        unit.expression_program()
+            .expect("expression program path should derive"),
+    ];
+
+    for (index, path) in paths.iter().enumerate() {
+        let bytes = fs::read(path).expect("existing output should read");
+        let target = dir.join(format!("symlink-target-{index}.bin"));
+        write_bytes(&target, bytes);
+        fs::remove_file(path).expect("output path should be removable");
+        symlink(&target, path).expect("output symlink should be created");
+    }
+
+    write_base_directory(&dir, FixedExtensionBackend::Cpu, true)
+        .expect("base directory should write");
+
+    for path in &paths {
+        assert!(fs::read_link(path).is_err());
+    }
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
 fn read_constant_tree_file_for_bytes(bytes: Vec<u8>, setup: &UnitSetupInfo) -> VerificationKeyRoot {
     let dir = temp_dir("root");
     let path = dir.join("tree.bin");

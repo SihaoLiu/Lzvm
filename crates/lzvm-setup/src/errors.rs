@@ -173,14 +173,6 @@ pub enum BaseDirectoryWriteError {
     Message { message: String },
 }
 
-impl BaseDirectoryWriteError {
-    pub(crate) fn message(message: impl Into<String>) -> Self {
-        Self::Message {
-            message: message.into(),
-        }
-    }
-}
-
 impl fmt::Display for BaseDirectoryWriteError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

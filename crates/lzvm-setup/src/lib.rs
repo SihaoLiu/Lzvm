@@ -5,12 +5,12 @@ use lzvm_artifacts::expression_info::{
     encode_expression_info, read_expression_info_binary_file, ExpressionInfo,
 };
 use lzvm_artifacts::fixed::{read_fixed_columns_file, read_fixed_columns_file_for_setup};
-use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo};
+use lzvm_artifacts::global_info::{encode_global_info, read_global_info_binary_file, GlobalInfo};
 use lzvm_artifacts::key_directory::{
     read_key_directory_layout, KeyDirectoryError, KeyDirectoryLayout,
 };
 use lzvm_artifacts::regular_program::{
-    encode_regular_program, regular_program_from_expression_info,
+    encode_regular_program, read_regular_program_file, regular_program_from_expression_info,
 };
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, read_unit_setup_info_binary_file, UnitSetupInfo,
@@ -314,13 +314,16 @@ fn write_global_info_binary_for_directory(
     global_info: &GlobalInfo,
 ) -> Result<u64, BaseDirectoryWriteError> {
     let bytes = encode_global_info(global_info)?;
-    std::fs::write(path, &bytes).map_err(|error| {
-        BaseDirectoryWriteError::message(format!(
-            "write global-info binary failed: {}: {error}",
-            path.display()
-        ))
-    })?;
-    Ok(bytes.len() as u64)
+    write_validated_base_directory_bytes(
+        path,
+        &bytes,
+        "write global-info binary staging file",
+        "publish global-info binary",
+        |staging_path| {
+            read_global_info_binary_file(staging_path)?;
+            Ok(())
+        },
+    )
 }
 
 fn write_unit_setup_info_binary_for_directory(
@@ -328,13 +331,16 @@ fn write_unit_setup_info_binary_for_directory(
     setup: &UnitSetupInfo,
 ) -> Result<u64, BaseDirectoryWriteError> {
     let bytes = encode_unit_setup_info(setup)?;
-    std::fs::write(path, &bytes).map_err(|error| {
-        BaseDirectoryWriteError::message(format!(
-            "write setup metadata binary failed: {}: {error}",
-            path.display()
-        ))
-    })?;
-    Ok(bytes.len() as u64)
+    write_validated_base_directory_bytes(
+        path,
+        &bytes,
+        "write setup metadata binary staging file",
+        "publish setup metadata binary",
+        |staging_path| {
+            read_unit_setup_info_binary_file(staging_path)?;
+            Ok(())
+        },
+    )
 }
 
 fn write_expression_info_binary_for_directory(
@@ -342,13 +348,16 @@ fn write_expression_info_binary_for_directory(
     expressions: &ExpressionInfo,
 ) -> Result<u64, BaseDirectoryWriteError> {
     let bytes = encode_expression_info(expressions)?;
-    std::fs::write(path, &bytes).map_err(|error| {
-        BaseDirectoryWriteError::message(format!(
-            "write expression metadata binary failed: {}: {error}",
-            path.display()
-        ))
-    })?;
-    Ok(bytes.len() as u64)
+    write_validated_base_directory_bytes(
+        path,
+        &bytes,
+        "write expression metadata binary staging file",
+        "publish expression metadata binary",
+        |staging_path| {
+            read_expression_info_binary_file(staging_path)?;
+            Ok(())
+        },
+    )
 }
 
 fn write_regular_program_for_directory(
@@ -358,13 +367,16 @@ fn write_regular_program_for_directory(
 ) -> Result<u64, BaseDirectoryWriteError> {
     let program = regular_program_from_expression_info(expressions, setup)?;
     let bytes = encode_regular_program(&program)?;
-    std::fs::write(path, &bytes).map_err(|error| {
-        BaseDirectoryWriteError::message(format!(
-            "write regular program failed: {}: {error}",
-            path.display()
-        ))
-    })?;
-    Ok(bytes.len() as u64)
+    write_validated_base_directory_bytes(
+        path,
+        &bytes,
+        "write regular program staging file",
+        "publish regular program",
+        |staging_path| {
+            read_regular_program_file(staging_path)?;
+            Ok(())
+        },
+    )
 }
 
 fn write_verifier_info_binary_for_directory(
@@ -372,11 +384,26 @@ fn write_verifier_info_binary_for_directory(
     verifier: &VerifierInfo,
 ) -> Result<u64, BaseDirectoryWriteError> {
     let bytes = encode_verifier_info(verifier)?;
-    std::fs::write(path, &bytes).map_err(|error| {
-        BaseDirectoryWriteError::message(format!(
-            "write verifier metadata binary failed: {}: {error}",
-            path.display()
-        ))
-    })?;
-    Ok(bytes.len() as u64)
+    write_validated_base_directory_bytes(
+        path,
+        &bytes,
+        "write verifier metadata binary staging file",
+        "publish verifier metadata binary",
+        |staging_path| {
+            read_verifier_info_binary_file(staging_path)?;
+            Ok(())
+        },
+    )
+}
+
+fn write_validated_base_directory_bytes(
+    path: &Path,
+    bytes: &[u8],
+    write_role: &'static str,
+    publish_role: &'static str,
+    validate: impl FnOnce(&Path) -> Result<(), BaseDirectoryWriteError>,
+) -> Result<u64, BaseDirectoryWriteError> {
+    let staging_path = write_staging_bytes(path, bytes, write_role)?;
+    validate(&staging_path)?;
+    publish_staging_bytes(&staging_path, path, publish_role).map_err(Into::into)
 }
