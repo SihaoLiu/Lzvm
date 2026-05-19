@@ -6,7 +6,8 @@ mod source_program;
 
 pub use lexer::{lex_source, LexError, Token, TokenKind};
 pub use parser::{
-    evaluate_fixed_file_template_value_expression, parse_air_group_declarations,
+    evaluate_fixed_file_template_value_expression,
+    evaluate_fixed_file_template_value_expression_with_values, parse_air_group_declarations,
     parse_air_group_value_declarations, parse_air_instance_declarations,
     parse_air_template_declarations, parse_column_declarations, parse_commit_declarations,
     parse_constant_declarations, parse_container_declarations, parse_expression,

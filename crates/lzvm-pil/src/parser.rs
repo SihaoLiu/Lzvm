@@ -474,7 +474,18 @@ fn evaluate_template_expression(
 pub fn evaluate_fixed_file_template_value_expression(
     expression: &Expression,
 ) -> Option<FixedFileTemplateValue> {
-    evaluate_template_expression_value(expression, &TemplateBindings::default())
+    evaluate_fixed_file_template_value_expression_with_values(expression, &BTreeMap::new())
+}
+
+pub fn evaluate_fixed_file_template_value_expression_with_values(
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<FixedFileTemplateValue> {
+    let values = values
+        .iter()
+        .map(|(name, value)| (name.clone(), TemplateValue::from(value)))
+        .collect();
+    evaluate_template_expression_value(expression, &TemplateBindings { values })
         .map(FixedFileTemplateValue::from)
 }
 

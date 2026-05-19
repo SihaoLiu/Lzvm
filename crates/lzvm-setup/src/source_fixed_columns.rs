@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::PathBuf;
 
@@ -10,10 +10,10 @@ use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyDirectoryError, KeyUnitKind};
 use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, SetupInfoError, UnitSetupInfo};
 use lzvm_pil::{
-    evaluate_fixed_file_template_value_expression, lex_source, parse_expression,
+    evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
     ColumnInitializerKind, ColumnKind, FixedFileTemplateValue, LexError, ParseError, SourceFile,
-    SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader, SourceSpan, Token,
-    TokenKind,
+    SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader,
+    SourceProgramModule, SourceSpan, Token, TokenKind,
 };
 
 use crate::{publish_staging_bytes, write_staging_bytes, SetupError};
@@ -473,6 +473,7 @@ fn fixed_columns_from_source_program(
     let mut columns = Vec::new();
 
     for module in &program.modules {
+        let constant_values = source_fixed_constant_values(module);
         for declaration in &module.columns {
             if declaration.kind != ColumnKind::Fixed {
                 continue;
@@ -511,6 +512,7 @@ fn fixed_columns_from_source_program(
                 initializer.span,
                 source,
                 row_count_usize,
+                &constant_values,
             )?;
             columns.push(FixedColumn {
                 name: item.name.clone(),
@@ -528,11 +530,33 @@ fn fixed_columns_from_source_program(
     })
 }
 
+fn source_fixed_constant_values(
+    module: &SourceProgramModule,
+) -> BTreeMap<String, FixedFileTemplateValue> {
+    let mut values = BTreeMap::new();
+    for declaration in &module.constants {
+        if !declaration.array_dims.is_empty() {
+            continue;
+        }
+        let Some(expression) = declaration.initializer_expression.as_ref() else {
+            continue;
+        };
+        let Some(value) =
+            evaluate_fixed_file_template_value_expression_with_values(expression, &values)
+        else {
+            continue;
+        };
+        values.insert(declaration.name.clone(), value);
+    }
+    values
+}
+
 fn parse_literal_sequence(
     source_name: &str,
     source_span: SourceSpan,
     source: &str,
     row_count: usize,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<Vec<u64>, SourceFixedColumnsWriteError> {
     let tokens = lex_source(source).map_err(|source| SourceFixedColumnsWriteError::Lex {
         source_name: source_name.to_owned(),
@@ -552,6 +576,7 @@ fn parse_literal_sequence(
         source_span,
         source,
         tokens: &tokens,
+        constant_values,
     };
     let mut values = Vec::new();
 
@@ -680,6 +705,7 @@ struct SequenceParseContext<'a> {
     source_span: SourceSpan,
     source: &'a str,
     tokens: &'a [Token],
+    constant_values: &'a BTreeMap<String, FixedFileTemplateValue>,
 }
 
 struct ProgressionSegment<'a, 'b> {
@@ -1137,6 +1163,7 @@ fn parse_sequence_values(
             context.source_span,
             &source,
             row_count,
+            context.constant_values,
         );
     }
 
@@ -1217,7 +1244,12 @@ fn parse_sequence_expression(
             token: ",".to_owned(),
         });
     }
-    if end == start + 1 {
+    if end == start + 1
+        && matches!(
+            context.tokens[start].kind,
+            TokenKind::Integer | TokenKind::HexInteger
+        )
+    {
         return parse_literal_token(
             &context.tokens[start],
             context.source_name,
@@ -1257,7 +1289,10 @@ fn parse_sequence_expression(
         });
     }
 
-    match evaluate_fixed_file_template_value_expression(&expression) {
+    match evaluate_fixed_file_template_value_expression_with_values(
+        &expression,
+        context.constant_values,
+    ) {
         Some(FixedFileTemplateValue::Integer(value)) => {
             u64::try_from(value).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
                 source_name: context.source_name.to_owned(),
