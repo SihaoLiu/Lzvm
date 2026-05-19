@@ -626,6 +626,7 @@ fn validate_setup_directory(
             );
             let _ = writeln!(stdout, "pcs_material_bytes={}", report.pcs_material_bytes);
             write_setup_source_companion_status(stdout, &report);
+            let _ = writeln!(stdout, "setup_hash={}", report.fingerprint);
             0
         }
         Err(error) => {

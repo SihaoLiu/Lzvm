@@ -2319,9 +2319,15 @@ fn validates_a_complete_setup_directory() {
     );
 
     assert_eq!(code, 0);
+    let setup_hash = key_directory_catalog_digest_hex(
+        &read_key_directory_catalog(&dir).expect("catalog should load"),
+    )
+    .expect("digest should encode");
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
-        "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nsource_fixed_file_manifest=absent\nsource_fixed_file_manifest_entries=0\nsource_fixed_file_manifest_bytes=0\nsource_program_archive=absent\nsource_program_archive_sources=0\nsource_program_archive_edges=0\nsource_program_archive_bytes=0\n"
+        format!(
+            "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nsource_fixed_file_manifest=absent\nsource_fixed_file_manifest_entries=0\nsource_fixed_file_manifest_bytes=0\nsource_program_archive=absent\nsource_program_archive_sources=0\nsource_program_archive_edges=0\nsource_program_archive_bytes=0\nsetup_hash={setup_hash}\n"
+        )
     );
     assert!(stderr.is_empty());
 
@@ -2356,6 +2362,10 @@ fn reports_source_fixed_file_manifest_status_for_setup_directories() {
     write_setup_directory(&dir);
     write_source_fixed_file_manifest(&dir);
     let manifest_bytes = source_fixed_file_manifest_bytes(&dir);
+    let setup_hash = key_directory_catalog_digest_hex(
+        &read_key_directory_catalog(&dir).expect("catalog should load"),
+    )
+    .expect("digest should encode");
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -2373,7 +2383,7 @@ fn reports_source_fixed_file_manifest_status_for_setup_directories() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nsource_fixed_file_manifest=present\nsource_fixed_file_manifest_entries=1\nsource_fixed_file_manifest_bytes={manifest_bytes}\nsource_program_archive=absent\nsource_program_archive_sources=0\nsource_program_archive_edges=0\nsource_program_archive_bytes=0\n"
+            "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nsource_fixed_file_manifest=present\nsource_fixed_file_manifest_entries=1\nsource_fixed_file_manifest_bytes={manifest_bytes}\nsource_program_archive=absent\nsource_program_archive_sources=0\nsource_program_archive_edges=0\nsource_program_archive_bytes=0\nsetup_hash={setup_hash}\n"
         )
     );
     assert!(stderr.is_empty());
@@ -2397,6 +2407,10 @@ fn reports_source_program_archive_status_for_setup_directories() {
     write_setup_directory(&dir);
     write_source_program_archive(&dir);
     let archive_bytes = source_program_archive_bytes(&dir);
+    let setup_hash = key_directory_catalog_digest_hex(
+        &read_key_directory_catalog(&dir).expect("catalog should load"),
+    )
+    .expect("digest should encode");
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -2414,7 +2428,7 @@ fn reports_source_program_archive_status_for_setup_directories() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nsource_fixed_file_manifest=absent\nsource_fixed_file_manifest_entries=0\nsource_fixed_file_manifest_bytes=0\nsource_program_archive=present\nsource_program_archive_sources=2\nsource_program_archive_edges=1\nsource_program_archive_bytes={archive_bytes}\n"
+            "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=0\npcs_material_bytes=0\nsource_fixed_file_manifest=absent\nsource_fixed_file_manifest_entries=0\nsource_fixed_file_manifest_bytes=0\nsource_program_archive=present\nsource_program_archive_sources=2\nsource_program_archive_edges=1\nsource_program_archive_bytes={archive_bytes}\nsetup_hash={setup_hash}\n"
         )
     );
     assert!(stderr.is_empty());
@@ -2740,6 +2754,7 @@ fn validates_generated_key_directory_materials() {
     run_setup_command(&["setup", "generate-key", root]);
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
     let material_bytes = pcs_material_byte_count(&catalog);
+    let setup_hash = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -2749,7 +2764,7 @@ fn validates_generated_key_directory_materials() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nsource_fixed_file_manifest=absent\nsource_fixed_file_manifest_entries=0\nsource_fixed_file_manifest_bytes=0\nsource_program_archive=absent\nsource_program_archive_sources=0\nsource_program_archive_edges=0\nsource_program_archive_bytes=0\n"
+            "status=ok\nunits=4\nglobal_constraints=0\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nsource_fixed_file_manifest=absent\nsource_fixed_file_manifest_entries=0\nsource_fixed_file_manifest_bytes=0\nsource_program_archive=absent\nsource_program_archive_sources=0\nsource_program_archive_edges=0\nsource_program_archive_bytes=0\nsetup_hash={setup_hash}\n"
         )
     );
     assert!(stderr.is_empty());

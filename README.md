@@ -29,7 +29,7 @@ Validate an existing setup directory:
 cargo run -p lzvm-cli -- setup validate <setup-dir>
 ```
 
-The command loads the discovered setup catalog, validates companion metadata and binary artifacts, and prints a stable summary.
+The command loads the discovered setup catalog, validates companion metadata and binary artifacts, and prints a stable summary with the catalog `setup_hash`.
 When key material companions are present, the summary includes the material unit count and byte total.
 
 Fingerprint an existing setup directory catalog:
