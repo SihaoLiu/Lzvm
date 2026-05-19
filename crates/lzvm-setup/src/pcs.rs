@@ -6,12 +6,15 @@ use lzvm_artifacts::key_directory::{
     read_key_directory_layout, KeyDirectoryError, KeyDirectoryLayout,
 };
 use lzvm_artifacts::pcs_material::{
-    build_pcs_setup_material, encode_pcs_setup_material, PcsSetupMaterialError,
+    build_pcs_setup_material, encode_pcs_setup_material, read_pcs_setup_material_file,
+    PcsSetupMaterialError,
 };
 use lzvm_artifacts::pcs_plan::{
     derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file, PcsPlanError,
 };
 use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, SetupInfoError};
+
+use crate::{publish_staging_bytes, write_staging_bytes, SetupError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PcsDirectoryWriteReport {
@@ -32,9 +35,16 @@ pub enum PcsDirectoryWriteError {
     PcsPlan(PcsPlanError),
     ConstantTree(ConstantTreeError),
     PcsMaterial(PcsSetupMaterialError),
+    Setup(SetupError),
     MissingUnitPath { role: &'static str },
     PcsPlanMismatch,
     Io { message: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PcsOutputKind {
+    Plan,
+    Material,
 }
 
 impl fmt::Display for PcsDirectoryWriteError {
@@ -45,6 +55,7 @@ impl fmt::Display for PcsDirectoryWriteError {
             Self::PcsPlan(error) => write!(f, "{error}"),
             Self::ConstantTree(error) => write!(f, "{error}"),
             Self::PcsMaterial(error) => write!(f, "{error}"),
+            Self::Setup(error) => write!(f, "{error}"),
             Self::MissingUnitPath { role } => write!(f, "missing unit {role}"),
             Self::PcsPlanMismatch => write!(f, "PCS setup plan does not match setup metadata"),
             Self::Io { message } => write!(f, "{message}"),
@@ -52,7 +63,19 @@ impl fmt::Display for PcsDirectoryWriteError {
     }
 }
 
-impl std::error::Error for PcsDirectoryWriteError {}
+impl std::error::Error for PcsDirectoryWriteError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::KeyDirectory(error) => Some(error),
+            Self::SetupInfo(error) => Some(error),
+            Self::PcsPlan(error) => Some(error),
+            Self::ConstantTree(error) => Some(error),
+            Self::PcsMaterial(error) => Some(error),
+            Self::Setup(error) => Some(error),
+            Self::MissingUnitPath { .. } | Self::PcsPlanMismatch | Self::Io { .. } => None,
+        }
+    }
+}
 
 impl From<KeyDirectoryError> for PcsDirectoryWriteError {
     fn from(error: KeyDirectoryError) -> Self {
@@ -84,13 +107,19 @@ impl From<PcsSetupMaterialError> for PcsDirectoryWriteError {
     }
 }
 
+impl From<SetupError> for PcsDirectoryWriteError {
+    fn from(error: SetupError) -> Self {
+        Self::Setup(error)
+    }
+}
+
 pub fn write_pcs_setup_plan_file(
     setup_info_path: impl AsRef<Path>,
     output_path: impl AsRef<Path>,
 ) -> Result<PcsFileWriteReport, PcsDirectoryWriteError> {
     let output_path = output_path.as_ref().to_path_buf();
     let bytes = encode_pcs_setup_plan_from_path(setup_info_path.as_ref())?;
-    write_output_bytes(&output_path, &bytes)?;
+    write_output_bytes(&output_path, &bytes, PcsOutputKind::Plan)?;
     Ok(PcsFileWriteReport {
         path: output_path,
         bytes_written: bytes.len() as u64,
@@ -111,7 +140,7 @@ pub fn write_pcs_setup_material_file(
         fixed_columns_path.as_ref(),
         constant_tree_path.as_ref(),
     )?;
-    write_output_bytes(&output_path, &bytes)?;
+    write_output_bytes(&output_path, &bytes, PcsOutputKind::Material)?;
     Ok(PcsFileWriteReport {
         path: output_path,
         bytes_written: bytes.len() as u64,
@@ -135,7 +164,7 @@ pub fn write_pcs_directory_from_layout(
         let output = require_unit_path(unit.pcs_setup_plan(), "PCS plan output path")?;
 
         let bytes = encode_pcs_setup_plan_from_path(&setup_path)?;
-        write_output_bytes(&output, &bytes)?;
+        write_output_bytes(&output, &bytes, PcsOutputKind::Plan)?;
         bytes_written = bytes_written.saturating_add(bytes.len() as u64);
     }
 
@@ -168,7 +197,7 @@ pub fn write_pcs_material_directory_from_layout(
             &unit.fixed_columns,
             &unit.constant_tree,
         )?;
-        write_output_bytes(&output, &bytes)?;
+        write_output_bytes(&output, &bytes, PcsOutputKind::Material)?;
         bytes_written = bytes_written.saturating_add(bytes.len() as u64);
     }
 
@@ -213,14 +242,20 @@ fn encode_pcs_setup_material_from_paths(
     encode_pcs_setup_material(&material).map_err(Into::into)
 }
 
-fn write_output_bytes(path: &Path, bytes: &[u8]) -> Result<(), PcsDirectoryWriteError> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| PcsDirectoryWriteError::Io {
-            message: error.to_string(),
-        })?;
+fn write_output_bytes(
+    path: &Path,
+    bytes: &[u8],
+    kind: PcsOutputKind,
+) -> Result<(), PcsDirectoryWriteError> {
+    let staging_path = write_staging_bytes(path, bytes, "write PCS setup artifact staging file")?;
+    match kind {
+        PcsOutputKind::Plan => {
+            read_pcs_setup_plan_file(&staging_path)?;
+        }
+        PcsOutputKind::Material => {
+            read_pcs_setup_material_file(&staging_path)?;
+        }
     }
-    std::fs::write(path, bytes).map_err(|error| PcsDirectoryWriteError::Io {
-        message: error.to_string(),
-    })?;
+    publish_staging_bytes(&staging_path, path, "publish PCS setup artifact")?;
     Ok(())
 }

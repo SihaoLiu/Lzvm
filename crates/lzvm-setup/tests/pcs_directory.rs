@@ -207,3 +207,64 @@ fn writes_pcs_plan_and_material_from_files() {
         }
     );
 }
+
+#[test]
+#[cfg(unix)]
+fn pcs_file_writes_publish_by_replacing_the_output_path() {
+    use std::os::unix::fs::symlink;
+
+    let dir = temp_dir("files-symlink-output");
+    let _ = fs::remove_dir_all(&dir);
+    let layout = one_unit_layout(&dir);
+    let unit = &layout.units[0];
+    let setup = sample_base_setup_info();
+    let columns = sample_columns();
+    let fixed = encode_raw_fixed_columns(&columns, &setup).expect("fixed columns should encode");
+    let tree_bytes =
+        build_constant_tree_from_fixed_columns(&columns, &setup).expect("tree should build");
+
+    write_setup_fixture(&layout, &setup);
+    write_bytes(&unit.fixed_columns, &fixed);
+    write_bytes(&unit.constant_tree, &tree_bytes);
+
+    let setup_path = unit.setup_info().expect("setup path should derive");
+    let plan_path = dir.join("single.pcs-plan");
+    let material_path = dir.join("single.pcs-material");
+    let plan_target = dir.join("plan-target.bin");
+    let material_target = dir.join("material-target.bin");
+    let sentinel = b"preserve existing symlink target";
+    write_bytes(&plan_target, sentinel);
+    write_bytes(&material_target, sentinel);
+    symlink(&plan_target, &plan_path).expect("plan symlink should be created");
+    symlink(&material_target, &material_path).expect("material symlink should be created");
+
+    write_pcs_setup_plan_file(&setup_path, &plan_path).expect("plan should write");
+    write_pcs_setup_material_file(
+        &setup_path,
+        &plan_path,
+        &unit.fixed_columns,
+        &unit.constant_tree,
+        &material_path,
+    )
+    .expect("material should write");
+
+    let plan = read_pcs_setup_plan_file(&plan_path).expect("plan should parse");
+    let material = read_pcs_setup_material_file(&material_path).expect("material should parse");
+    let tree = parse_constant_tree_bytes(tree_bytes, &setup).expect("tree should parse");
+    let expected_material =
+        build_pcs_setup_material(&plan, &fixed, &tree).expect("material should build");
+
+    assert_eq!(
+        fs::read(&plan_target).expect("target should read"),
+        sentinel
+    );
+    assert_eq!(
+        fs::read(&material_target).expect("target should read"),
+        sentinel
+    );
+    assert!(fs::read_link(&plan_path).is_err());
+    assert!(fs::read_link(&material_path).is_err());
+    assert_eq!(material, expected_material);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
