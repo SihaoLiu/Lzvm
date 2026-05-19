@@ -46,7 +46,7 @@ Generate native setup key material for a setup directory:
 cargo run -p lzvm-cli -- setup generate-key [--backend cpu|cuda] [--source <main-file>] [--include-path <dir>] [--include-path-first] <setup-dir>
 ```
 
-This is the public directory-level setup generation entry point. It reads repository-owned binary setup, expression, verifier, and global metadata plus fixed-column inputs, then writes expression programs, verifier programs, raw fixed-column artifacts, native constant trees, binary verification keys, PCS setup plans, and PCS setup-material companions for every discovered unit. When `--source` is supplied, literal fixed-column declarations are materialized into unit fixed-column input paths before key generation continues; the source archive and source fixed-file manifest are then written into the setup directory and included in the final setup manifest. The default backend is `cpu`; `cuda` is available when the CLI is built with the `cuda` feature.
+This is the public directory-level setup generation entry point. It reads repository-owned binary setup, expression, verifier, and global metadata plus fixed-column inputs, then writes expression programs, verifier programs, raw fixed-column artifacts, native constant trees, binary verification keys, PCS setup plans, and PCS setup-material companions for every discovered unit. When `--source` is supplied, supported source fixed-column declarations are materialized into unit fixed-column input paths before key generation continues; the source archive and source fixed-file manifest are then written into the setup directory and included in the final setup manifest. The default backend is `cpu`; `cuda` is available when the CLI is built with the `cuda` feature.
 On success, the report includes `setup_hash` and `setup_directory_manifest` so later proof commands can bind to the generated key material without running a separate fingerprint command.
 
 Write source-level setup companion artifacts into a setup directory:
@@ -168,7 +168,7 @@ Generate a sectioned fixed-column source artifact from literal fixed-column decl
 cargo run -p lzvm-cli -- setup write-fixed-source [--include-path <dir>] [--include-path-first] <setup-info-bin> <main-file> <group-name> <unit-name> <out-columns-bin>
 ```
 
-This command reads native binary setup metadata and source declarations such as `col fixed name = [1, 2];`, validates the resulting columns against the setup metadata, and publishes a sectioned fixed-column artifact. It intentionally accepts only literal decimal or hexadecimal sequence initializers; non-literal expressions should be lowered by an explicit setup compiler stage before this command runs.
+This command reads native binary setup metadata and source declarations such as `col fixed name = [1, 2];`, validates the resulting columns against the setup metadata, and publishes a sectioned fixed-column artifact. Supported sequence entries include decimal and hexadecimal integers, static arithmetic expressions, scalar constants declared earlier in the same source module, inclusive ranges, repeat counts, suffix fills, repeated sequence patterns, nested repeats, and additive or multiplicative progressions.
 
 Generate native base fixed-column and constant-tree artifacts in one command:
 
