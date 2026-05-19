@@ -765,19 +765,28 @@ fn append_sequence_range(
     end: usize,
     row_count: usize,
 ) -> Result<(), SourceFixedColumnsWriteError> {
-    let first = parse_sequence_expression(context, start, range_index)?;
-    let last = parse_sequence_expression(context, range_index + 1, end)?;
+    let (first, first_count) = parse_range_endpoint(context, start, range_index)?;
+    let (last, last_count) = parse_range_endpoint(context, range_index + 1, end)?;
+    if first_count != last_count {
+        return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
+            source_name: context.source_name.to_owned(),
+            source_span: context.source_span,
+            expression: segment_text(context, start, end),
+        });
+    }
     let ascending = first <= last;
     let mut value = first;
     loop {
-        if values.len() >= row_count {
-            return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
-                source_name: context.source_name.to_owned(),
-                source_span: context.source_span,
-                expression: segment_text(context, start, end),
-            });
+        for _ in 0..first_count {
+            if values.len() >= row_count {
+                return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
+                    source_name: context.source_name.to_owned(),
+                    source_span: context.source_span,
+                    expression: segment_text(context, start, end),
+                });
+            }
+            values.push(value);
         }
-        values.push(value);
         if value == last {
             break;
         }
@@ -793,6 +802,25 @@ fn append_sequence_range(
         })?;
     }
     Ok(())
+}
+
+fn parse_range_endpoint(
+    context: &SequenceParseContext<'_>,
+    start: usize,
+    end: usize,
+) -> Result<(u64, usize), SourceFixedColumnsWriteError> {
+    let Some(repeat_index) = top_level_token_index(context, start, end, TokenKind::Colon)? else {
+        return Ok((parse_sequence_expression(context, start, end)?, 1));
+    };
+    let value = parse_sequence_expression(context, start, repeat_index)?;
+    let count = parse_sequence_expression(context, repeat_index + 1, end)?;
+    let count =
+        usize::try_from(count).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
+            source_name: context.source_name.to_owned(),
+            source_span: context.source_span,
+            expression: segment_text(context, start, end),
+        })?;
+    Ok((value, count))
 }
 
 fn top_level_range_index(
