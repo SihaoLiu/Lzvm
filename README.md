@@ -127,7 +127,7 @@ Generate native PCS setup-plan artifacts for every unit in a setup directory:
 cargo run -p lzvm-cli -- setup write-pcs-directory <setup-dir>
 ```
 
-This lower-level command derives each unit from setup-directory metadata, reads the unit setup metadata, and writes a canonical `.pcs-plan` companion next to that unit metadata prefix. Use `setup generate-key` for the normal full directory flow.
+This lower-level command derives each unit from setup-directory metadata, reads the unit setup metadata, and writes a canonical `.pcs-plan` companion next to that unit's setup artifact prefix. Use `setup generate-key` for the normal full directory flow.
 
 Generate a native PCS setup-material artifact from binary setup inputs:
 
@@ -143,7 +143,7 @@ Generate native PCS setup-material artifacts for every unit in a setup directory
 cargo run -p lzvm-cli -- setup write-pcs-material-directory <setup-dir>
 ```
 
-This lower-level command requires each unit's `.pcs-plan`, raw fixed-column artifact, and native constant tree to be present, then writes `.pcs-material` companions for the directory-level setup pipeline. Use `setup generate-key` for the normal full directory flow.
+This lower-level command requires each unit's `.pcs-plan`, raw fixed-column artifact, and native constant tree to be present, then writes a `.pcs-material` companion next to that unit's setup artifact prefix. Use `setup generate-key` for the normal full directory flow.
 
 Generate a program-image commitment cache for proof input binding:
 
