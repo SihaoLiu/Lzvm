@@ -30,6 +30,7 @@ mod pcs;
 mod program_image;
 mod reports;
 mod source_companions;
+mod source_fixed_columns;
 mod source_fixed_file_manifest;
 mod source_program_archive;
 mod staging;
@@ -63,6 +64,10 @@ pub use reports::*;
 pub use source_companions::{
     write_source_companions, SourceCompanionWriteError, SourceCompanionWriteReport,
     SourceCompanionWriteRequest,
+};
+pub use source_fixed_columns::{
+    write_fixed_columns_from_source_file, SourceFixedColumnsWriteError,
+    SourceFixedColumnsWriteReport, SourceFixedColumnsWriteRequest,
 };
 pub use source_fixed_file_manifest::{
     source_fixed_file_manifest_from_resolved, write_source_fixed_file_manifest,

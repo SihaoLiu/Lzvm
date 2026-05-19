@@ -29,6 +29,7 @@ mod program_image_cache;
 mod prove_inputs;
 mod prove_plan;
 mod prove_witness;
+mod setup_fixed_source;
 mod setup_source_companions;
 mod verify_commands;
 
@@ -247,6 +248,7 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             )
         }
         ["setup", "write-program-image-cache", ..] => write_program_image_cache_usage(stderr),
+        ["setup", "write-fixed-source", rest @ ..] => setup_fixed_source::run(rest, stdout, stderr),
         ["setup", "write-fixed-native", setup_info_bin, columns_bin, out_const] => {
             write_fixed_columns_native(setup_info_bin, columns_bin, out_const, stdout, stderr)
         }

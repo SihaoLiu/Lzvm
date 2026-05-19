@@ -162,6 +162,14 @@ cargo run -p lzvm-cli -- setup write-fixed-native <setup-info-bin> <columns-bin>
 
 This path uses repository-owned sectioned binary codecs for setup metadata and fixed-column source data. It is preferred for generated setup flows because it avoids JSON parsing for the inputs that feed raw fixed-column output.
 
+Generate a sectioned fixed-column source artifact from literal fixed-column declarations:
+
+```sh
+cargo run -p lzvm-cli -- setup write-fixed-source [--include-path <dir>] [--include-path-first] <setup-info-bin> <main-file> <group-name> <unit-name> <out-columns-bin>
+```
+
+This command reads native binary setup metadata and source declarations such as `col fixed name = [1, 2];`, validates the resulting columns against the setup metadata, and publishes a sectioned fixed-column artifact. It intentionally accepts only literal decimal or hexadecimal sequence initializers; non-literal expressions should be lowered by an explicit setup compiler stage before this command runs.
+
 Generate native base fixed-column and constant-tree artifacts in one command:
 
 ```sh
