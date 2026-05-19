@@ -2,8 +2,9 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use lzvm_setup::{
-    write_fixed_columns_from_source_directory, write_key_directory, FixedExtensionBackend,
-    KeyDirectoryWriteReport, SourceFixedColumnsDirectoryWriteReport,
+    write_fixed_columns_from_source_directory, write_key_directory, write_source_companions,
+    FixedExtensionBackend, KeyDirectoryWriteReport, SourceCompanionWriteReport,
+    SourceCompanionWriteRequest, SourceFixedColumnsDirectoryWriteReport,
     SourceFixedColumnsDirectoryWriteRequest,
 };
 
@@ -17,12 +18,12 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
 
-    let source_report = if let Some(main_file) = parsed.source {
+    let source_report = if let Some(main_file) = parsed.source.as_ref() {
         match write_fixed_columns_from_source_directory(&SourceFixedColumnsDirectoryWriteRequest {
             working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-            include_paths: parsed.include_paths,
+            include_paths: parsed.include_paths.clone(),
             include_path_first: parsed.include_path_first,
-            main_file,
+            main_file: main_file.clone(),
             setup_dir: parsed.setup_dir.clone(),
         }) {
             Ok(report) => Some(report),
@@ -37,7 +38,30 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
 
     match write_key_directory(&parsed.setup_dir, parsed.backend) {
         Ok(report) => {
-            write_report(stdout, source_report.as_ref(), &report);
+            let companion_report = if let Some(main_file) = parsed.source.as_ref() {
+                match write_source_companions(&SourceCompanionWriteRequest {
+                    working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+                    include_paths: parsed.include_paths,
+                    include_path_first: parsed.include_path_first,
+                    refresh_setup_directory_manifest: true,
+                    main_file: main_file.clone(),
+                    setup_dir: parsed.setup_dir.clone(),
+                }) {
+                    Ok(report) => Some(report),
+                    Err(error) => {
+                        let _ = writeln!(stderr, "setup key generation failed: {error}");
+                        return 1;
+                    }
+                }
+            } else {
+                None
+            };
+            write_report(
+                stdout,
+                source_report.as_ref(),
+                companion_report.as_ref(),
+                &report,
+            );
             0
         }
         Err(error) => {
@@ -130,12 +154,35 @@ fn parse_backend(value: &str) -> Result<FixedExtensionBackend, ParseError> {
 fn write_report(
     stdout: &mut dyn Write,
     source_report: Option<&SourceFixedColumnsDirectoryWriteReport>,
+    companion_report: Option<&SourceCompanionWriteReport>,
     report: &KeyDirectoryWriteReport,
 ) {
+    let manifest = companion_report
+        .and_then(|report| report.setup_directory_manifest.as_ref())
+        .unwrap_or(&report.manifest);
+
     let _ = writeln!(stdout, "status=ok");
     if let Some(source_report) = source_report {
         let _ = writeln!(stdout, "source_fixed_units={}", source_report.unit_count);
         let _ = writeln!(stdout, "source_fixed_bytes={}", source_report.bytes_written);
+    }
+    if let Some(companion_report) = companion_report {
+        let _ = writeln!(
+            stdout,
+            "source_program_archive={}",
+            companion_report
+                .source_program_archive
+                .output_path
+                .display()
+        );
+        let _ = writeln!(
+            stdout,
+            "source_fixed_file_manifest={}",
+            companion_report
+                .source_fixed_file_manifest
+                .output_path
+                .display()
+        );
     }
     let _ = writeln!(stdout, "units={}", report.base.unit_count);
     let _ = writeln!(stdout, "fixed_bytes={}", report.base.fixed_bytes);
@@ -149,12 +196,12 @@ fn write_report(
         "pcs_material_bytes={}",
         report.pcs_material.bytes_written
     );
-    let _ = writeln!(stdout, "manifest_bytes={}", report.manifest.bytes_written);
-    let _ = writeln!(stdout, "setup_hash={}", report.manifest.fingerprint);
+    let _ = writeln!(stdout, "manifest_bytes={}", manifest.bytes_written);
+    let _ = writeln!(stdout, "setup_hash={}", manifest.fingerprint);
     let _ = writeln!(
         stdout,
         "setup_directory_manifest={}",
-        report.manifest.path.display()
+        manifest.path.display()
     );
 }
 

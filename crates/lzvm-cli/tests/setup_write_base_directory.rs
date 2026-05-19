@@ -904,11 +904,16 @@ fn generate_key_writes_missing_fixed_inputs_from_source_literals() {
     }
     let manifest_path = dir.join(SETUP_DIRECTORY_MANIFEST_FILE);
     assert!(manifest_path.is_file());
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    assert!(catalog.source_program_archive.is_some());
+    assert!(catalog.source_fixed_file_manifest.is_some());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(code, 0);
     let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
     assert!(stdout.starts_with(&format!("status=ok\nsource_fixed_units={unit_count}\n")));
+    assert!(stdout.contains("source_program_archive="));
+    assert!(stdout.contains("source_fixed_file_manifest="));
     assert!(stdout.contains(&format!("units={unit_count}\n")));
     assert!(stdout.contains("setup_hash="));
     assert!(stderr.is_empty());
