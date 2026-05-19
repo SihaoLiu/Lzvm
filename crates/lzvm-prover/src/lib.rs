@@ -469,6 +469,9 @@ pub enum ProveExecutionPlanError {
     ProgramImageCacheGuestImageDigestMismatch {
         path: PathBuf,
     },
+    ProgramImageCacheSetupHashMismatch {
+        path: PathBuf,
+    },
     MissingPublicInputs {
         path: PathBuf,
     },
@@ -552,6 +555,11 @@ impl fmt::Display for ProveExecutionPlanError {
                 "program image cache guest image digest mismatch at {}",
                 path.display()
             ),
+            Self::ProgramImageCacheSetupHashMismatch { path } => write!(
+                f,
+                "program image cache setup hash mismatch at {}",
+                path.display()
+            ),
             Self::MissingPublicInputs { path } => {
                 write!(
                     f,
@@ -610,6 +618,7 @@ impl std::error::Error for ProveExecutionPlanError {
             | Self::MissingProgramImageCache { .. }
             | Self::ProgramImageCacheIsNotFile { .. }
             | Self::ProgramImageCacheGuestImageDigestMismatch { .. }
+            | Self::ProgramImageCacheSetupHashMismatch { .. }
             | Self::FixedColumnCountTooLarge { .. }
             | Self::StageCountTooLarge { .. } => None,
             _ => None,
@@ -800,7 +809,11 @@ pub fn derive_prove_execution_plan_with_program_image_cache(
         })?;
     }
     let program_image_cache = match program_image_cache {
-        Some(path) => Some(load_program_image_cache(&path, &guest_image_info)?),
+        Some(path) => Some(load_program_image_cache(
+            &path,
+            &guest_image_info,
+            &run_plan.schedule.setup_hash,
+        )?),
         None => None,
     };
 
@@ -819,6 +832,7 @@ pub fn derive_prove_execution_plan_with_program_image_cache(
 fn load_program_image_cache(
     path: &Path,
     guest_image_info: &GuestImageInfo,
+    setup_hash: &[u8; 32],
 ) -> Result<ProveProgramImageCache, ProveExecutionPlanError> {
     validate_regular_file(
         path,
@@ -834,6 +848,13 @@ fn load_program_image_cache(
     if cache.source_image_digest != guest_image_info.digest {
         return Err(
             ProveExecutionPlanError::ProgramImageCacheGuestImageDigestMismatch {
+                path: path.to_path_buf(),
+            },
+        );
+    }
+    if &cache.constraint_system_digest != setup_hash {
+        return Err(
+            ProveExecutionPlanError::ProgramImageCacheSetupHashMismatch {
                 path: path.to_path_buf(),
             },
         );

@@ -145,6 +145,14 @@ cargo run -p lzvm-cli -- setup write-pcs-material-directory <setup-dir>
 
 This lower-level command requires each unit's `.pcs-plan`, raw fixed-column artifact, and native constant tree to be present, then writes `.pcs-material` companions for the directory-level setup pipeline. Use `setup generate-key` for the normal full directory flow.
 
+Generate a program-image commitment cache for proof input binding:
+
+```sh
+cargo run -p lzvm-cli -- setup write-program-image-cache [--backend cpu|cuda] <program-bin> <guest-image> <constraint-digest-bin> <root-bin> <trace-rows> <trace-columns> <blowup-factor> <arity> <out-cache>
+```
+
+The constraint digest input must match the `setup_hash` reported by the setup directory used for proving. Proof input and witness commands reject cache files whose guest-image digest or setup hash no longer matches the current run.
+
 Generate a raw fixed-column artifact from native binary setup metadata and a native binary fixed-column source:
 
 ```sh

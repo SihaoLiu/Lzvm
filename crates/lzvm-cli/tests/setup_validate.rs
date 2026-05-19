@@ -66,7 +66,8 @@ use lzvm_artifacts::program_image::{
     read_program_image_commitment_cache_file, ProgramImageGpuMode,
 };
 use lzvm_artifacts::program_image_segment::{
-    parse_program_image_cache_segment, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+    encode_program_image_cache_segment, parse_program_image_cache_segment,
+    program_image_cache_segment_digest, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::{
     encode_proof_artifact, parse_proof_artifact, ProofArtifact, ProofSegment,
@@ -5391,7 +5392,7 @@ fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
     );
     write_bytes(&program_path, b"packed-program");
     write_bytes(&other_program_path, b"other-packed-program");
-    write_bytes(&constraint_digest_path, [0x44_u8; 32]);
+    write_bytes(&constraint_digest_path, setup_hash);
     write_bytes(
         &root_path,
         encode_verification_key_binary(&VerificationKeyRoot::FieldElements(vec![11, 12, 13, 14]))
@@ -5425,6 +5426,9 @@ fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
     .expect("other cache should write");
     let expected_cache =
         read_program_image_commitment_cache_file(&cache_path).expect("cache should read");
+    let expected_cache_segment =
+        encode_program_image_cache_segment(&expected_cache).expect("cache segment should encode");
+    let expected_cache_segment_hash = program_image_cache_segment_digest(&expected_cache_segment);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -5531,9 +5535,10 @@ fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
     );
     assert!(verify_stderr.is_empty());
     assert!(verify_stdout_text.contains("program_image_caches=1\n"));
-    assert!(verify_stdout_text.contains(
-        "program_image_cache_segment_hash=f42614ba128d6a56d9d2df9b73c1c44aa3898eab8a02c5e99078918d4be1545b\n"
-    ));
+    assert!(verify_stdout_text.contains(&format!(
+        "program_image_cache_segment_hash={}\n",
+        format_hash(&expected_cache_segment_hash)
+    )));
     assert!(verify_stdout_text.contains(&format!(
         "program_image_cache_program_digest={}\n",
         format_hash(&expected_cache.program_digest)
@@ -8918,6 +8923,8 @@ fn rejects_prove_witness_with_mismatched_program_image_cache_source_digest() {
     let dir = temp_dir("prove-witness-program-image-cache-mismatch");
     let _ = fs::remove_dir_all(&dir);
     write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let output_dir = dir.join("proof-out");
     let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
     let guest_image = dir.join("guest.elf");
@@ -8932,7 +8939,7 @@ fn rejects_prove_witness_with_mismatched_program_image_cache_source_digest() {
     write_bytes(&guest_image, guest_image_bytes);
     write_bytes(&cache_guest_image, cache_guest_image_bytes);
     write_bytes(&program_path, b"packed-program");
-    write_bytes(&constraint_digest_path, [0x44_u8; 32]);
+    write_bytes(&constraint_digest_path, setup_hash);
     write_bytes(
         &root_path,
         encode_verification_key_binary(&VerificationKeyRoot::FieldElements(vec![11, 12, 13, 14]))
@@ -8984,10 +8991,77 @@ fn rejects_prove_witness_with_mismatched_program_image_cache_source_digest() {
 }
 
 #[test]
+fn rejects_prove_witness_with_mismatched_program_image_cache_setup_hash() {
+    let dir = temp_dir("prove-witness-program-image-cache-setup-hash-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let program_path = dir.join("program.bin");
+    let constraint_digest_path = dir.join("constraint.digest");
+    let root_path = dir.join("root.bin");
+    let cache_path = dir.join("program_image.cache");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&program_path, b"packed-program");
+    write_bytes(&constraint_digest_path, [0x44_u8; 32]);
+    write_bytes(
+        &root_path,
+        encode_verification_key_binary(&VerificationKeyRoot::FieldElements(vec![11, 12, 13, 14]))
+            .expect("root should encode"),
+    );
+    write_program_image_commitment_cache_file(ProgramImageCommitmentCacheFileRequest {
+        program_path: &program_path,
+        guest_image_path: &guest_image,
+        constraint_digest_path: &constraint_digest_path,
+        root_path: &root_path,
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cpu,
+        output_path: &cache_path,
+    })
+    .expect("cache should write");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        format!(
+            "prove witness failed: program image cache setup hash mismatch at {}\n",
+            cache_path.display()
+        )
+    );
+}
+
+#[test]
 fn prove_inputs_rejects_duplicate_program_image_cache() {
     let dir = temp_dir("prove-inputs-duplicate-program-image-cache");
     let _ = fs::remove_dir_all(&dir);
     write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let output_dir = dir.join("proof-out");
     let witness_library = dir.join("libwitness.so");
     let guest_image = dir.join("guest.elf");
@@ -9001,7 +9075,7 @@ fn prove_inputs_rejects_duplicate_program_image_cache() {
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(&program_path, b"packed-program");
     write_bytes(&other_program_path, b"other-packed-program");
-    write_bytes(&constraint_digest_path, [0x44_u8; 32]);
+    write_bytes(&constraint_digest_path, setup_hash);
     write_bytes(
         &root_path,
         encode_verification_key_binary(&VerificationKeyRoot::FieldElements(vec![11, 12, 13, 14]))
