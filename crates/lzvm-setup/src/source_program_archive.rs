@@ -1,11 +1,15 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use lzvm_artifacts::source_program::{encode_source_program_archive, SourceProgramArchiveError};
+use lzvm_artifacts::source_program::{
+    encode_source_program_archive, read_source_program_archive_file, SourceProgramArchiveError,
+};
 use lzvm_pil::{
     build_source_program_archive, SourceLoaderConfig, SourceProgramArchiveBuildError,
     SourceProgramError, SourceProgramLoader,
 };
+
+use crate::staging_path_for;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceProgramArchiveWriteRequest {
@@ -131,9 +135,17 @@ fn write_output(path: &PathBuf, bytes: &[u8]) -> Result<(), SourceProgramArchive
             message: error.to_string(),
         })?;
     }
-    std::fs::write(path, bytes).map_err(|error| SourceProgramArchiveWriteError::Io {
+    let staging_path = staging_path_for(path);
+    std::fs::write(&staging_path, bytes).map_err(|error| SourceProgramArchiveWriteError::Io {
+        path: staging_path.clone(),
+        role: "write output staging",
+        message: error.to_string(),
+    })?;
+    read_source_program_archive_file(&staging_path)
+        .map_err(SourceProgramArchiveWriteError::ArchiveEncode)?;
+    std::fs::rename(&staging_path, path).map_err(|error| SourceProgramArchiveWriteError::Io {
         path: path.to_path_buf(),
-        role: "write output",
+        role: "publish output",
         message: error.to_string(),
     })
 }

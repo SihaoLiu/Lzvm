@@ -2,13 +2,16 @@ use std::fmt;
 use std::path::PathBuf;
 
 use lzvm_artifacts::source_fixed_file_manifest::{
-    encode_source_fixed_file_manifest, SourceFixedFileManifest, SourceFixedFileManifestEntry,
-    SourceFixedFileManifestError, SourceFixedFileManifestKind,
+    encode_source_fixed_file_manifest, read_source_fixed_file_manifest_file,
+    SourceFixedFileManifest, SourceFixedFileManifestEntry, SourceFixedFileManifestError,
+    SourceFixedFileManifestKind,
 };
 use lzvm_pil::{
     FixedFilePragmaKind, ParseError, SourceLoaderConfig, SourceProgramError, SourceProgramLoader,
     SourceProgramResolvedFixedFilePragma,
 };
+
+use crate::staging_path_for;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceFixedFileManifestWriteRequest {
@@ -199,9 +202,19 @@ fn write_output(path: &PathBuf, bytes: &[u8]) -> Result<(), SourceFixedFileManif
             message: error.to_string(),
         })?;
     }
-    std::fs::write(path, bytes).map_err(|error| SourceFixedFileManifestWriteError::Io {
+    let staging_path = staging_path_for(path);
+    std::fs::write(&staging_path, bytes).map_err(|error| {
+        SourceFixedFileManifestWriteError::Io {
+            path: staging_path.clone(),
+            role: "write output staging",
+            message: error.to_string(),
+        }
+    })?;
+    read_source_fixed_file_manifest_file(&staging_path)
+        .map_err(SourceFixedFileManifestWriteError::ManifestEncode)?;
+    std::fs::rename(&staging_path, path).map_err(|error| SourceFixedFileManifestWriteError::Io {
         path: path.to_path_buf(),
-        role: "write output",
+        role: "publish output",
         message: error.to_string(),
     })
 }

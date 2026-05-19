@@ -64,3 +64,44 @@ fn writes_source_program_archives_from_setup_requests() {
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
+
+#[test]
+#[cfg(unix)]
+fn source_program_archive_write_replaces_output_paths() {
+    use std::os::unix::fs::symlink;
+
+    let dir = temp_dir("symlink-output");
+    let _ = fs::remove_dir_all(&dir);
+    let main_path = dir.join("main.pil");
+    let output_path = dir.join("source-program.bin");
+    let target_path = dir.join("target.bin");
+    write_file(
+        &main_path,
+        "container air.main;\n\
+         airtemplate Main() {\n\
+             #pragma output_fixed_file `${AIR_NAME}.fixed`\n\
+         }\n\
+         airgroup Main { Main(); }\n\
+         col witness main.trace;",
+    );
+    write_file(&target_path, "preserve source program target");
+    symlink(&target_path, &output_path).expect("output symlink should be created");
+
+    write_source_program_archive(&SourceProgramArchiveWriteRequest {
+        working_dir: dir.clone(),
+        include_paths: Vec::new(),
+        include_path_first: false,
+        main_file: main_path,
+        output_path: output_path.clone(),
+    })
+    .expect("archive should be written");
+
+    read_source_program_archive_file(&output_path).expect("source program archive should parse");
+    assert!(fs::read_link(&output_path).is_err());
+    assert_eq!(
+        fs::read_to_string(&target_path).expect("target should read"),
+        "preserve source program target"
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
