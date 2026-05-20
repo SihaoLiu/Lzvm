@@ -16,7 +16,7 @@ use crate::{
     },
     source_static_values::{
         evaluate_source_static_expression, source_declaration_constant_values_from_cache,
-        SourceTemplateConstantValueCache,
+        static_value_integer, SourceTemplateConstantValueCache,
     },
     source_template_for::source_static_for_loop_with_tokens,
     source_template_if::source_static_if_body_statements_with_tokens,
@@ -710,7 +710,7 @@ fn source_opening_index_value(
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Option<usize> {
     if let Some(value) = evaluate_source_static_expression(program, expression, values) {
-        return source_static_integer_value(value).and_then(|value| usize::try_from(value).ok());
+        return static_value_integer(&value).and_then(|value| usize::try_from(value).ok());
     }
     usize::try_from(eval_i128_expression(expression).ok()?).ok()
 }
@@ -856,19 +856,11 @@ fn eval_i128_expression_with_values(
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<i128, SourceKeyDirectoryMetadataError> {
     if let Some(value) = evaluate_source_static_expression(program, expression, values) {
-        if let Some(value) = source_static_integer_value(value) {
+        if let Some(value) = static_value_integer(&value) {
             return Ok(value);
         }
     }
     eval_i128_expression(expression)
-}
-
-fn source_static_integer_value(value: FixedFileTemplateValue) -> Option<i128> {
-    match value {
-        FixedFileTemplateValue::Integer(value) => Some(value),
-        FixedFileTemplateValue::Boolean(value) => Some(i128::from(value)),
-        FixedFileTemplateValue::String(_) => None,
-    }
 }
 
 fn eval_i128_expression(expression: &Expression) -> Result<i128, SourceKeyDirectoryMetadataError> {

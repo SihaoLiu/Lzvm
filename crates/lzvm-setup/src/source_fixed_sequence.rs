@@ -2,15 +2,14 @@ use std::path::PathBuf;
 
 use lzvm_field::{Felt, MODULUS};
 use lzvm_pil::{
-    lex_source, parse_expression, FixedFileTemplateValue, SourceFile, SourceProgram, SourceSpan,
-    Token, TokenKind,
+    lex_source, parse_expression, SourceFile, SourceProgram, SourceSpan, Token, TokenKind,
 };
 
 use crate::source_fixed_columns::SourceFixedColumnsWriteError;
 use crate::source_fixed_expression::{
     evaluate_source_fixed_template_value_expression, SourceFixedConstantValues,
 };
-use crate::source_static_values::evaluate_source_static_expression;
+use crate::source_static_values::{evaluate_source_static_expression, static_value_integer};
 
 pub(crate) fn parse_literal_sequence(
     program: &SourceProgram,
@@ -1303,7 +1302,7 @@ fn parse_sequence_expression(
                     &context.constant_values.scalars,
                 )
             });
-    if let Some(value) = value.and_then(source_fixed_static_integer_value) {
+    if let Some(value) = value.as_ref().and_then(static_value_integer) {
         Ok(value)
     } else {
         Err(SourceFixedColumnsWriteError::UnsupportedExpression {
@@ -1311,14 +1310,6 @@ fn parse_sequence_expression(
             source_span: context.source_span,
             expression: expression_text.to_owned(),
         })
-    }
-}
-
-fn source_fixed_static_integer_value(value: FixedFileTemplateValue) -> Option<i128> {
-    match value {
-        FixedFileTemplateValue::Integer(value) => Some(value),
-        FixedFileTemplateValue::Boolean(value) => Some(i128::from(value)),
-        FixedFileTemplateValue::String(_) => None,
     }
 }
 

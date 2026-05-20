@@ -13,7 +13,7 @@ use crate::{
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scalar_slots::SourceScalarSlots,
     source_statement_hints::{SourceExpressionArrayAlias, SourceExpressionArrayAliases},
-    source_static_values::evaluate_source_static_expression,
+    source_static_values::{evaluate_source_static_expression, static_value_integer},
 };
 
 pub(crate) type SourceExpressionAliases = BTreeMap<String, Expression>;
@@ -507,7 +507,7 @@ fn eval_i128_expression_with_values(
     if let Some(value) =
         evaluate_source_static_expression(state.program, expression, state.constant_values)
     {
-        if let Some(value) = source_static_integer_value(value) {
+        if let Some(value) = static_value_integer(&value) {
             return Ok(value);
         }
     }
@@ -540,7 +540,7 @@ fn static_scalar_integer(
     if let Some(value) =
         evaluate_source_static_expression(state.program, expression, state.constant_values)
     {
-        return Ok(source_static_integer_value(value));
+        return Ok(static_value_integer(&value));
     }
     match &strip_group_expression(expression).kind {
         ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
@@ -560,14 +560,6 @@ fn static_scalar_integer(
             }
         }
         _ => Ok(None),
-    }
-}
-
-fn source_static_integer_value(value: FixedFileTemplateValue) -> Option<i128> {
-    match value {
-        FixedFileTemplateValue::Integer(value) => Some(value),
-        FixedFileTemplateValue::Boolean(value) => Some(i128::from(value)),
-        FixedFileTemplateValue::String(_) => None,
     }
 }
 

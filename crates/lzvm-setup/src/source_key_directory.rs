@@ -34,7 +34,8 @@ use crate::{
     source_static_values::{
         evaluate_source_static_expression, source_declaration_constant_values_from_cache,
         source_declaration_in_static_false_branch, source_scalar_constant_values,
-        source_template_constant_value_cache, SourceTemplateConstantValueCache,
+        source_template_constant_value_cache, static_value_integer,
+        SourceTemplateConstantValueCache,
     },
     source_verifier_info::source_verifier_info,
     write_staging_bytes, SetupError,
@@ -1121,20 +1122,12 @@ fn eval_u32_expression_with_values(
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<u32, SourceKeyDirectoryMetadataError> {
     if let Some(value) = evaluate_source_static_expression(program, expression, values) {
-        if let Some(value) = source_static_integer_value(value) {
+        if let Some(value) = static_value_integer(&value) {
             return u32::try_from(value)
                 .map_err(|_| unsupported_source_message("source expression is out of range"));
         }
     }
     eval_u32_expression(expression)
-}
-
-fn source_static_integer_value(value: FixedFileTemplateValue) -> Option<i128> {
-    match value {
-        FixedFileTemplateValue::Integer(value) => Some(value),
-        FixedFileTemplateValue::Boolean(value) => Some(i128::from(value)),
-        FixedFileTemplateValue::String(_) => None,
-    }
 }
 
 fn eval_i128_expression(expression: &Expression) -> Result<i128, SourceKeyDirectoryMetadataError> {

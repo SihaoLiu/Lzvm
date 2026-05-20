@@ -795,7 +795,7 @@ pub(crate) fn static_value_truthy(value: &FixedFileTemplateValue) -> bool {
     }
 }
 
-fn static_value_integer(value: &FixedFileTemplateValue) -> Option<i128> {
+pub(crate) fn static_value_integer(value: &FixedFileTemplateValue) -> Option<i128> {
     match value {
         FixedFileTemplateValue::Integer(value) => Some(*value),
         FixedFileTemplateValue::Boolean(value) => Some(static_bool(*value)),

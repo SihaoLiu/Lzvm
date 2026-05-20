@@ -12,7 +12,9 @@ use lzvm_pil::{
 use crate::{
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scope::global_constraint_source_names,
-    source_static_values::{evaluate_source_static_expression, source_scalar_constant_values},
+    source_static_values::{
+        evaluate_source_static_expression, source_scalar_constant_values, static_value_integer,
+    },
 };
 
 pub(crate) fn source_global_program(
@@ -618,9 +620,8 @@ fn expression_is_one(expression: &Expression, alias_scope: &SourceGlobalAliasSco
         expression,
         &alias_scope.static_values,
     ) {
-        Some(FixedFileTemplateValue::Integer(value)) => value == 1,
-        Some(FixedFileTemplateValue::Boolean(value)) => value,
-        Some(FixedFileTemplateValue::String(_)) | None => false,
+        Some(value) => static_value_integer(&value).is_some_and(|value| value == 1),
+        None => false,
     }
 }
 
@@ -628,15 +629,12 @@ fn static_u32_expression(
     expression: &Expression,
     alias_scope: &SourceGlobalAliasScope<'_>,
 ) -> Option<u32> {
-    match evaluate_source_static_expression(
+    let value = evaluate_source_static_expression(
         alias_scope.program,
         expression,
         &alias_scope.static_values,
-    )? {
-        FixedFileTemplateValue::Integer(value) => u32::try_from(value).ok(),
-        FixedFileTemplateValue::Boolean(value) => Some(u32::from(value)),
-        FixedFileTemplateValue::String(_) => None,
-    }
+    )?;
+    u32::try_from(static_value_integer(&value)?).ok()
 }
 
 fn skip_top_level_statement(
