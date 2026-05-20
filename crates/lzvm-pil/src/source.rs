@@ -216,25 +216,46 @@ impl SourceLoader {
         found_search_index: usize,
         direct_search_index: usize,
     ) -> String {
-        if found_search_index != direct_search_index {
-            return path_to_source_name(requested);
-        }
-
-        if is_main {
+        let source_name = if found_search_index != direct_search_index {
+            path_to_source_name(requested)
+        } else if is_main {
             self.base_path = Some(file_dir.to_path_buf());
-            return full_path
+            full_path
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_else(|| path_to_source_name(full_path));
+                .unwrap_or_else(|| path_to_source_name(full_path))
+        } else if let Some(base_path) = &self.base_path {
+            if let Ok(relative) = full_path.strip_prefix(base_path) {
+                path_to_source_name(relative)
+            } else {
+                path_to_source_name(full_path)
+            }
+        } else {
+            path_to_source_name(full_path)
+        };
+
+        self.disambiguate_source_name(source_name, full_path)
+    }
+
+    fn disambiguate_source_name(&self, source_name: String, full_path: &Path) -> String {
+        if !self.source_name_conflicts(&source_name, full_path) {
+            return source_name;
         }
 
-        if let Some(base_path) = &self.base_path {
-            if let Ok(relative) = full_path.strip_prefix(base_path) {
-                return path_to_source_name(relative);
+        if let Ok(relative) = full_path.strip_prefix(&self.config.working_dir) {
+            let relative_name = path_to_source_name(relative);
+            if !self.source_name_conflicts(&relative_name, full_path) {
+                return relative_name;
             }
         }
 
         path_to_source_name(full_path)
+    }
+
+    fn source_name_conflicts(&self, source_name: &str, full_path: &Path) -> bool {
+        self.source_to_full_path
+            .get(source_name)
+            .is_some_and(|existing| existing != full_path)
     }
 }
 

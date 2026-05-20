@@ -107,3 +107,40 @@ fn builds_source_program_archives_from_loaded_sources() {
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
+
+#[test]
+fn builds_source_program_archives_with_duplicate_requested_include_names() {
+    let dir = temp_file("duplicate-requested-name-dir");
+    let _ = fs::remove_dir_all(&dir);
+    let main_path = dir.join("main.pil");
+    let lib = dir.join("lib");
+    write_file(
+        &main_path,
+        "include \"opids.pil\";\ninclude \"nested/uses_lib.pil\";",
+    );
+    write_file(&dir.join("nested/uses_lib.pil"), "include \"opids.pil\";");
+    write_file(&dir.join("opids.pil"), "constant LOCAL = 1;");
+    write_file(&lib.join("opids.pil"), "constant LIB = 2;");
+
+    let mut loader = SourceProgramLoader::new(SourceLoaderConfig {
+        working_dir: dir.clone(),
+        include_paths: vec![lib],
+        include_path_first: false,
+    });
+    let program = loader
+        .load_main(&main_path)
+        .expect("source program should load");
+
+    let archive = build_source_program_archive(&program).expect("archive should build");
+
+    encode_source_program_archive(&archive).expect("archive should encode");
+    let source_names = archive
+        .sources
+        .iter()
+        .map(|source| source.source_name.as_str())
+        .collect::<Vec<_>>();
+    assert!(source_names.contains(&"opids.pil"));
+    assert!(source_names.contains(&"lib/opids.pil"));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
