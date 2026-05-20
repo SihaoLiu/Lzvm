@@ -14,26 +14,30 @@ pub(crate) fn infer_source_row_counts(
     program: &SourceProgram,
 ) -> Result<SourceUnitRowCounts, SourceKeyDirectoryMetadataError> {
     let mut row_counts = infer_source_row_counts_from_air_units(program)?;
-    for module in &program.modules {
-        for declaration in &module.columns {
-            if declaration.kind != ColumnKind::Fixed {
-                continue;
-            }
-            let Some(initializer) = declaration.initializer.as_ref() else {
-                continue;
-            };
-            if initializer.kind != ColumnInitializerKind::Sequence {
-                continue;
-            }
-            let text = module
-                .source
-                .contents
-                .get(initializer.span.start..initializer.span.end)
-                .ok_or_else(|| unsupported_source_message("source fixed-column span is invalid"))?;
-            match count_source_sequence_items(text) {
-                Ok(count) => merge_source_sequence_count(program, &mut row_counts, count)?,
-                Err(_) if !row_counts.is_empty() => {}
-                Err(error) => return Err(error),
+    if row_counts.is_empty() {
+        for module in &program.modules {
+            for declaration in &module.columns {
+                if declaration.kind != ColumnKind::Fixed {
+                    continue;
+                }
+                let Some(initializer) = declaration.initializer.as_ref() else {
+                    continue;
+                };
+                if initializer.kind != ColumnInitializerKind::Sequence {
+                    continue;
+                }
+                let text = module
+                    .source
+                    .contents
+                    .get(initializer.span.start..initializer.span.end)
+                    .ok_or_else(|| {
+                        unsupported_source_message("source fixed-column span is invalid")
+                    })?;
+                match count_source_sequence_items(text) {
+                    Ok(count) => merge_source_sequence_count(program, &mut row_counts, count)?,
+                    Err(_) if !row_counts.is_empty() => {}
+                    Err(error) => return Err(error),
+                }
             }
         }
     }

@@ -893,6 +893,59 @@ fn generate_key_uses_source_template_row_count_for_fill_sequences() {
 }
 
 #[test]
+fn generate_key_uses_source_template_row_count_for_repeated_sequences() {
+    let dir = temp_dir("template-row-count-repeat");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(const int N = 8) { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [1:3, 2:3, 3:2];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
+        .expect("source global metadata should parse");
+    assert_eq!(global.airs[0][0].num_rows, 8);
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    let columns = parse_raw_fixed_columns(
+        &fs::read(&unit.fixed_columns).expect("fixed columns should read"),
+        &setup,
+        unit.group_name.as_deref().unwrap_or("raw"),
+        unit.unit_name.as_deref().unwrap_or("unit"),
+    )
+    .expect("fixed columns should parse");
+    assert_eq!(columns.row_count, 8);
+    assert_eq!(columns.columns[0].values, [1, 1, 1, 2, 2, 2, 3, 3]);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_writes_per_unit_source_row_counts() {
     let dir = temp_dir("per-unit-row-counts");
     let _ = fs::remove_dir_all(&dir);
