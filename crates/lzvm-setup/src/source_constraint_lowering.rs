@@ -37,10 +37,10 @@ pub(crate) fn lower_source_template_boolean_constraint(
     let Some(result) = lower_source_constraint_residual(expression, &mut state)? else {
         return Ok(None);
     };
-    if state.operations.is_empty() {
-        return Ok(None);
-    }
     if !matches!(result, CodeOperand::Temporary { .. }) {
+        push_source_copy_operation(&mut state, result)?;
+    }
+    if state.operations.is_empty() {
         return Ok(None);
     }
     let (boundary, offset_min, offset_max) = state.frame_offsets.boundary()?;
@@ -266,6 +266,23 @@ fn push_source_mul_operation(
         op: OperationKind::Mul,
         destination: CodeDestination::temporary(id, 1),
         sources: vec![left, right],
+    });
+    Ok(CodeOperand::temporary(id, 1))
+}
+
+fn push_source_copy_operation(
+    state: &mut SourceConstraintLoweringState<'_>,
+    source: CodeOperand,
+) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
+    let id = state.next_temporary;
+    state.next_temporary = state
+        .next_temporary
+        .checked_add(1)
+        .ok_or_else(|| unsupported_source_message("source scalar constraint temporary overflow"))?;
+    state.operations.push(CodeOperation {
+        op: OperationKind::Copy,
+        destination: CodeDestination::temporary(id, 1),
+        sources: vec![source],
     });
     Ok(CodeOperand::temporary(id, 1))
 }
