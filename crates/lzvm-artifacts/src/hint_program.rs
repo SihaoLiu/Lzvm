@@ -14,6 +14,14 @@ const FIELD_MIN_BYTES: usize = 1 + 4;
 const VALUE_MIN_BYTES: usize = 1 + 4;
 const POSITION_BYTES: usize = 4;
 
+pub const SOURCE_LOOKUP_HINT_PREFIX: &str = "source.lookup.";
+pub const SOURCE_LOOKUP_PROVES_HINT: &str = "source.lookup.proves";
+pub const SOURCE_LOOKUP_ASSUMES_HINT: &str = "source.lookup.assumes";
+
+pub fn source_lookup_hint_name(name: &str) -> bool {
+    name.starts_with(SOURCE_LOOKUP_HINT_PREFIX)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HintProgram {
     pub hints: Vec<Hint>,

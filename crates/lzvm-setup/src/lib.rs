@@ -36,10 +36,12 @@ mod source_fixed_expression;
 mod source_fixed_file_manifest;
 mod source_fixed_sequence;
 mod source_key_directory;
+mod source_lookup_hints;
 mod source_program_archive;
 mod source_row_count;
 mod source_scope;
 mod source_static_values;
+mod source_template_context;
 mod source_verifier_info;
 mod staging;
 

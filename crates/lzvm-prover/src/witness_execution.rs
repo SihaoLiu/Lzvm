@@ -2,6 +2,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::fixed::FixedColumns;
+use lzvm_artifacts::hint_program::{source_lookup_hint_name, HintProgram};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValues, PublicValuesError};
 use lzvm_artifacts::trace_bundle::TraceBundle;
 use lzvm_field::{Ext3, Felt, FieldError};
@@ -183,6 +184,10 @@ pub enum ProveWitnessCommitmentError {
         unit_index: usize,
         source: HintEvalError,
     },
+    UnsupportedRegularHint {
+        unit_index: usize,
+        name: String,
+    },
     RegularConstraintViolation {
         unit_index: usize,
         constraint_index: usize,
@@ -315,6 +320,10 @@ impl fmt::Display for ProveWitnessCommitmentError {
                 f,
                 "prove witness commitment regular hint evaluation failed for unit {unit_index}: {source}"
             ),
+            Self::UnsupportedRegularHint { unit_index, name } => write!(
+                f,
+                "unsupported regular hint {name} for prove witness commitment unit {unit_index}"
+            ),
             Self::RegularConstraintViolation {
                 unit_index,
                 constraint_index,
@@ -355,6 +364,7 @@ impl std::error::Error for ProveWitnessCommitmentError {
             | Self::StageIndexTooLarge { .. }
             | Self::MissingRegularConstraintInput { .. }
             | Self::MissingRegularHintInput { .. }
+            | Self::UnsupportedRegularHint { .. }
             | Self::RegularConstraintViolation { .. } => None,
         }
     }
@@ -695,6 +705,7 @@ fn validate_witness_regular_hints(
     if plan_unit.regular_hints.hints.is_empty() {
         return Ok(());
     }
+    reject_unsupported_regular_hints(&plan_unit.regular_hints, unit_index)?;
 
     let requirements = regular_hint_input_requirements(&plan_unit.regular_hints);
 
@@ -769,6 +780,23 @@ fn validate_witness_regular_hints(
             },
         )
         .map_err(|error| map_regular_hint_eval_error(unit_index, error))?;
+    }
+    Ok(())
+}
+
+fn reject_unsupported_regular_hints(
+    program: &HintProgram,
+    unit_index: usize,
+) -> Result<(), ProveWitnessCommitmentError> {
+    if let Some(hint) = program
+        .hints
+        .iter()
+        .find(|hint| source_lookup_hint_name(&hint.name))
+    {
+        return Err(ProveWitnessCommitmentError::UnsupportedRegularHint {
+            unit_index,
+            name: hint.name.clone(),
+        });
     }
     Ok(())
 }
@@ -860,5 +888,40 @@ fn witness_input_path(pass: &ProvePassRequest) -> Option<&Path> {
             partition.input_data.as_deref()
         }
         ProvePassRequest::Internal { .. } => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lzvm_artifacts::hint_program::{
+        Hint, HintField, HintOperand, HintValue, SOURCE_LOOKUP_PROVES_HINT,
+    };
+
+    #[test]
+    fn rejects_source_lookup_regular_hints() {
+        let program = HintProgram {
+            hints: vec![Hint {
+                name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
+                fields: vec![HintField {
+                    name: "line".to_owned(),
+                    values: vec![HintValue {
+                        operand: HintOperand::String("lookup_proves(7, [value])".to_owned()),
+                        positions: Vec::new(),
+                    }],
+                }],
+            }],
+        };
+
+        let error = reject_unsupported_regular_hints(&program, 3)
+            .expect_err("source lookup hints should be rejected before evaluation");
+
+        assert_eq!(
+            error,
+            ProveWitnessCommitmentError::UnsupportedRegularHint {
+                unit_index: 3,
+                name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
+            }
+        );
     }
 }

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use lzvm_artifacts::constraint_program::{GlobalConstraintEntry, GlobalConstraintProgram};
 use lzvm_artifacts::expression_info::{
     BoundaryKind, CodeDestination, CodeOperand, CodeOperation, ConstraintCode, ExpressionInfo,
-    ExpressionInfoError, OperationKind,
+    ExpressionInfoError, HintInfo, OperationKind,
 };
 use lzvm_artifacts::global_info::{
     encode_global_info, AggregationType, CurveKind, GlobalAir, GlobalInfo, GlobalInfoError,
@@ -30,6 +30,7 @@ use lzvm_pil::{
 use crate::{
     publish_staging_bytes,
     source_expression_filters::source_expression_assigns_fixed_index,
+    source_lookup_hints::lower_source_lookup_statement,
     source_row_count::{infer_source_row_counts, SourceUnitRowCounts},
     source_scope::{
         concrete_template_names, declaration_in_function_body, declaration_in_inactive_template,
@@ -40,6 +41,7 @@ use crate::{
         source_scalar_constant_values, source_static_assignment_expression,
         source_static_if_statement_is_false,
     },
+    source_template_context::SourceTemplateLoweringContext,
     source_verifier_info::source_verifier_info,
     write_staging_bytes, SetupError,
 };
@@ -356,34 +358,34 @@ fn source_expression_info(
     let fixed_assignment_columns = source_fixed_assignment_column_names(program);
     let active_templates = concrete_template_names(program);
     let constant_values = source_scalar_constant_values(program, 1_u64 << setup.stark.n_bits);
+    let mut hints = Vec::new();
     let mut constraints = Vec::new();
     for module in &program.modules {
         for template in &module.air_templates {
             if !active_templates.contains(&template.name) {
                 continue;
             }
+            let context = SourceTemplateLoweringContext {
+                program,
+                module,
+                commitment_slots: &commitment_slots,
+                fixed_columns: &fixed_assignment_columns,
+                constant_values: &constant_values,
+            };
             for statement in &template.statements {
-                lower_source_template_statement(
-                    program,
-                    module,
-                    statement,
-                    &commitment_slots,
-                    &fixed_assignment_columns,
-                    &constant_values,
-                    &mut constraints,
-                )?;
+                lower_source_template_statement(&context, statement, &mut hints, &mut constraints)?;
             }
         }
     }
     Ok(ExpressionInfo {
-        hints: Vec::new(),
+        hints,
         expressions: Vec::new(),
         constraints,
     })
 }
 
 #[derive(Debug, Clone, Copy)]
-struct SourceCommitmentSlot {
+pub(crate) struct SourceCommitmentSlot {
     id: u32,
     stage: u32,
     dimension: u32,
@@ -429,37 +431,54 @@ fn source_fixed_assignment_column_names(program: &SourceProgram) -> BTreeSet<Str
 }
 
 fn lower_source_template_statement(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
+    context: &SourceTemplateLoweringContext<'_>,
     statement: &FunctionStatement,
-    commitment_slots: &BTreeMap<String, SourceCommitmentSlot>,
-    fixed_columns: &BTreeSet<String>,
-    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    hints: &mut Vec<HintInfo>,
     constraints: &mut Vec<ConstraintCode>,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
         return Ok(());
     }
-    if source_static_if_statement_is_false(program, module, statement, constant_values) {
+    if source_static_if_statement_is_false(
+        context.program,
+        context.module,
+        statement,
+        context.constant_values,
+    ) {
         return Ok(());
     }
     if statement.kind != FunctionStatementKind::Expression {
         return unsupported("air template statements need constraint lowering support");
     }
 
-    if source_statement_first_token_kind(module, statement)?
+    if source_statement_first_token_kind(context.module, statement)?
         .is_some_and(|kind| matches!(kind, TokenKind::AirValue | TokenKind::Commit))
     {
         return Ok(());
     }
-    if source_expression_assigns_fixed_index(statement.value_expression.as_ref(), fixed_columns)
-        || source_static_assignment_expression(module, statement.value_expression.as_ref())
+    if source_expression_assigns_fixed_index(
+        statement.value_expression.as_ref(),
+        context.fixed_columns,
+    ) || source_static_assignment_expression(context.module, statement.value_expression.as_ref())
     {
         return Ok(());
     }
-    if let Some(constraint) =
-        lower_source_template_boolean_constraint(module, statement, commitment_slots)?
+    if let Some(hint) =
+        lower_source_lookup_statement(context.module, statement).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: context.module.source_name.clone(),
+                source,
+            }
+        })?
     {
+        hints.push(hint);
+        return Ok(());
+    }
+    if let Some(constraint) = lower_source_template_boolean_constraint(
+        context.module,
+        statement,
+        context.commitment_slots,
+    )? {
         constraints.push(constraint);
         return Ok(());
     }
