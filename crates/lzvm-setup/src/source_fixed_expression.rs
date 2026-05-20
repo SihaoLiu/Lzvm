@@ -163,24 +163,28 @@ pub(crate) fn evaluate_source_fixed_template_value_expression(
         return Some(value);
     }
 
-    if let ExpressionKind::Binary {
-        op: BinaryOperator::Power,
-        left,
-        right,
-    } = &expression.kind
-    {
-        let base = evaluate_source_fixed_template_value_expression(left, constant_values)?;
-        let exponent = evaluate_source_fixed_template_value_expression(right, constant_values)?;
-        let (FixedFileTemplateValue::Integer(base), FixedFileTemplateValue::Integer(exponent)) =
-            (base, exponent)
+    if let ExpressionKind::Binary { op, left, right } = &expression.kind {
+        let left = evaluate_source_fixed_template_value_expression(left, constant_values)?;
+        let right = evaluate_source_fixed_template_value_expression(right, constant_values)?;
+        let (FixedFileTemplateValue::Integer(left), FixedFileTemplateValue::Integer(right)) =
+            (left, right)
         else {
             return None;
         };
-        let base = u64::try_from(base).ok()?;
-        let exponent = u64::try_from(exponent).ok()?;
-        return Some(FixedFileTemplateValue::Integer(i128::from(
-            Felt::from_u64(base).pow(exponent).to_u64(),
-        )));
+        let value = match op {
+            BinaryOperator::Add => left.checked_add(right)?,
+            BinaryOperator::Subtract => left.checked_sub(right)?,
+            BinaryOperator::Multiply => left.checked_mul(right)?,
+            BinaryOperator::Divide if right != 0 => left.checked_div(right)?,
+            BinaryOperator::Modulo if right != 0 => left.checked_rem(right)?,
+            BinaryOperator::Power => {
+                let base = u64::try_from(left).ok()?;
+                let exponent = u64::try_from(right).ok()?;
+                i128::from(Felt::from_u64(base).pow(exponent).to_u64())
+            }
+            _ => return None,
+        };
+        return Some(FixedFileTemplateValue::Integer(value));
     }
 
     let ExpressionKind::Index { target, index } = &expression.kind else {

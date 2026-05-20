@@ -18,6 +18,33 @@ pub(crate) fn source_expression_assigns_fixed_index(
     source_fixed_index_assignment_name(left).is_some_and(|name| fixed_columns.contains(name))
 }
 
+pub(crate) fn source_expression_is_assignment(expression: Option<&Expression>) -> bool {
+    let Some(expression) = expression else {
+        return false;
+    };
+    let ExpressionKind::Binary { op, .. } = &strip_group_expression(expression).kind else {
+        return false;
+    };
+    matches!(
+        op,
+        BinaryOperator::Assign
+            | BinaryOperator::ConstrainedAssign
+            | BinaryOperator::PlusAssign
+            | BinaryOperator::MinusAssign
+            | BinaryOperator::StarAssign
+    )
+}
+
+pub(crate) fn source_expression_is_equality_constraint(expression: Option<&Expression>) -> bool {
+    let Some(expression) = expression else {
+        return false;
+    };
+    let ExpressionKind::Binary { op, .. } = &strip_group_expression(expression).kind else {
+        return false;
+    };
+    *op == BinaryOperator::TripleEqual
+}
+
 fn source_fixed_index_assignment_name(expression: &Expression) -> Option<&str> {
     let ExpressionKind::Index { target, .. } = &strip_group_expression(expression).kind else {
         return None;

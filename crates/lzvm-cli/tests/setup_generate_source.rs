@@ -1721,7 +1721,7 @@ fn generate_key_allows_source_custom_commit_declarations() {
 }
 
 #[test]
-fn generate_key_rejects_source_metadata_that_requires_lowering() {
+fn generate_key_records_source_metadata_that_requires_lowering() {
     let dir = temp_dir("needs-lowering");
     let _ = fs::remove_dir_all(&dir);
     let source_path = dir.join("source").join("main.pil");
@@ -1746,11 +1746,12 @@ fn generate_key_rejects_source_metadata_that_requires_lowering() {
         &mut stderr,
     );
 
-    assert_eq!(code, 1);
-    assert!(stdout.is_empty());
-    let stderr = String::from_utf8(stderr).expect("stderr should be utf-8");
-    assert!(stderr.contains("air template statements need constraint lowering support"));
-    assert!(!dir.join("pilout.globalInfo.bin").exists());
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+    assert!(dir.join("pilout.globalInfo.bin").exists());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 

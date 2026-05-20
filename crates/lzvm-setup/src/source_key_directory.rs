@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::constraint_program::{GlobalConstraintEntry, GlobalConstraintProgram};
 use lzvm_artifacts::expression_info::{
-    BoundaryKind, CodeDestination, CodeOperand, CodeOperation, ConstraintCode, ExpressionInfo,
-    ExpressionInfoError, HintInfo, OperationKind,
+    ConstraintCode, ExpressionInfo, ExpressionInfoError, HintInfo,
 };
 use lzvm_artifacts::global_info::{
     encode_global_info, AggregationType, CurveKind, GlobalAir, GlobalInfo, GlobalInfoError,
@@ -29,17 +28,28 @@ use lzvm_pil::{
 
 use crate::{
     publish_staging_bytes,
-    source_expression_filters::source_expression_assigns_fixed_index,
-    source_lookup_hints::lower_source_lookup_statement,
+    source_constraint_lowering::lower_source_template_boolean_constraint,
+    source_expression_filters::{
+        source_expression_assigns_fixed_index, source_expression_is_assignment,
+        source_expression_is_equality_constraint,
+    },
     source_row_count::{infer_source_row_counts, SourceUnitRowCounts},
+    source_scalar_slots::SourceScalarSlots,
     source_scope::{
         concrete_template_names, declaration_in_function_body, declaration_in_inactive_template,
         global_constraint_source_names,
     },
+    source_statement_hints::{
+        lower_source_lookup_statement, lower_unsupported_source_assignment_statement,
+        lower_unsupported_source_call_statement, lower_unsupported_source_constraint_statement,
+        lower_unsupported_source_template_statement, source_statement_contains_assignment_operator,
+        source_statement_first_token_kind,
+    },
     source_static_values::{
-        source_declaration_constant_values, source_declaration_in_static_false_branch,
+        source_declaration_constant_values_from_cache, source_declaration_in_static_false_branch,
         source_scalar_constant_values, source_static_assignment_expression,
-        source_static_if_statement_is_false,
+        source_static_if_statement_is_false, source_template_constant_value_cache,
+        SourceTemplateConstantValueCache,
     },
     source_template_context::SourceTemplateLoweringContext,
     source_verifier_info::source_verifier_info,
@@ -354,7 +364,8 @@ fn source_expression_info(
     program: &SourceProgram,
     setup: &UnitSetupInfo,
 ) -> Result<ExpressionInfo, SourceKeyDirectoryMetadataError> {
-    let commitment_slots = source_commitment_slots(setup)?;
+    let scalar_slots = SourceScalarSlots::from_setup(setup)
+        .map_err(|error| unsupported_source_message(error.to_string()))?;
     let fixed_assignment_columns = source_fixed_assignment_column_names(program);
     let active_templates = concrete_template_names(program);
     let constant_values = source_scalar_constant_values(program, 1_u64 << setup.stark.n_bits);
@@ -368,7 +379,7 @@ fn source_expression_info(
             let context = SourceTemplateLoweringContext {
                 program,
                 module,
-                commitment_slots: &commitment_slots,
+                scalar_slots: &scalar_slots,
                 fixed_columns: &fixed_assignment_columns,
                 constant_values: &constant_values,
             };
@@ -382,30 +393,6 @@ fn source_expression_info(
         expressions: Vec::new(),
         constraints,
     })
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct SourceCommitmentSlot {
-    id: u32,
-    stage: u32,
-    dimension: u32,
-}
-
-fn source_commitment_slots(
-    setup: &UnitSetupInfo,
-) -> Result<BTreeMap<String, SourceCommitmentSlot>, SourceKeyDirectoryMetadataError> {
-    let mut slots = BTreeMap::new();
-    for (index, column) in setup.commitment_columns.iter().enumerate() {
-        slots.insert(
-            column.name.clone(),
-            SourceCommitmentSlot {
-                id: source_usize_to_u32(index, "source commitment id overflow")?,
-                stage: column.stage,
-                dimension: column.dimension,
-            },
-        );
-    }
-    Ok(slots)
 }
 
 fn source_fixed_assignment_column_names(program: &SourceProgram) -> BTreeSet<String> {
@@ -448,13 +435,34 @@ fn lower_source_template_statement(
         return Ok(());
     }
     if statement.kind != FunctionStatementKind::Expression {
-        return unsupported("air template statements need constraint lowering support");
+        hints.push(lower_unsupported_source_template_statement(
+            context.module,
+            statement,
+        ));
+        return Ok(());
     }
 
-    if source_statement_first_token_kind(context.module, statement)?
-        .is_some_and(|kind| matches!(kind, TokenKind::AirValue | TokenKind::Commit))
+    if let Some(kind) =
+        source_statement_first_token_kind(context.module, statement).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: context.module.source_name.clone(),
+                source,
+            }
+        })?
     {
-        return Ok(());
+        if matches!(kind, TokenKind::AirValue | TokenKind::Commit) {
+            return Ok(());
+        }
+        if matches!(
+            kind,
+            TokenKind::Include | TokenKind::Require | TokenKind::Use
+        ) {
+            hints.push(lower_unsupported_source_template_statement(
+                context.module,
+                statement,
+            ));
+            return Ok(());
+        }
     }
     if source_expression_assigns_fixed_index(
         statement.value_expression.as_ref(),
@@ -474,141 +482,72 @@ fn lower_source_template_statement(
         hints.push(hint);
         return Ok(());
     }
-    if let Some(constraint) = lower_source_template_boolean_constraint(
-        context.module,
-        statement,
-        context.commitment_slots,
-    )? {
-        constraints.push(constraint);
+    let contains_assignment_operator =
+        source_statement_contains_assignment_operator(context.module, statement).map_err(
+            |source| SourceKeyDirectoryMetadataError::Lex {
+                source_name: context.module.source_name.clone(),
+                source,
+            },
+        )?;
+    if source_expression_is_assignment(statement.value_expression.as_ref())
+        || contains_assignment_operator
+    {
+        hints.push(lower_unsupported_source_assignment_statement(
+            context.module,
+            statement,
+        ));
         return Ok(());
     }
-    unsupported("air template statements need constraint lowering support")
-}
-
-fn source_statement_first_token_kind(
-    module: &SourceProgramModule,
-    statement: &FunctionStatement,
-) -> Result<Option<TokenKind>, SourceKeyDirectoryMetadataError> {
-    let text = &module.source.contents[statement.start..statement.end];
-    let tokens = lex_source(text).map_err(|source| SourceKeyDirectoryMetadataError::Lex {
-        source_name: module.source_name.clone(),
-        source,
-    })?;
-    Ok(tokens.first().map(|token| token.kind))
-}
-
-fn lower_source_template_boolean_constraint(
-    module: &SourceProgramModule,
-    statement: &FunctionStatement,
-    commitment_slots: &BTreeMap<String, SourceCommitmentSlot>,
-) -> Result<Option<ConstraintCode>, SourceKeyDirectoryMetadataError> {
-    let Some(expression) = statement.value_expression.as_ref() else {
-        return Ok(None);
-    };
-    let Some(body) = source_zero_constraint_body(expression) else {
-        return Ok(None);
-    };
-    let mut operations = Vec::new();
-    let mut next_temporary = 0_u32;
-    let result = lower_source_scalar_expression(
-        body,
-        commitment_slots,
-        &mut operations,
-        &mut next_temporary,
-    )?;
-    if operations.is_empty() {
-        return Ok(None);
-    }
-    if !matches!(result, CodeOperand::Temporary { .. }) {
-        return Ok(None);
-    }
-    Ok(Some(ConstraintCode {
-        stage: 1,
-        boundary: BoundaryKind::EveryRow,
-        offset_min: None,
-        offset_max: None,
-        line: module.source.contents[statement.start..statement.end]
-            .trim()
-            .to_owned(),
-        intermediate: false,
-        temporary_count: next_temporary,
-        operations,
-    }))
-}
-
-fn source_zero_constraint_body(expression: &Expression) -> Option<&Expression> {
-    let ExpressionKind::Binary { op, left, right } = &strip_group_expression(expression).kind
-    else {
-        return None;
-    };
-    if *op != BinaryOperator::TripleEqual {
-        return None;
-    }
-    if expression_is_zero(right) {
-        Some(left)
-    } else if expression_is_zero(left) {
-        Some(right)
-    } else {
-        None
-    }
-}
-
-fn lower_source_scalar_expression(
-    expression: &Expression,
-    commitment_slots: &BTreeMap<String, SourceCommitmentSlot>,
-    operations: &mut Vec<CodeOperation>,
-    next_temporary: &mut u32,
-) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
-    match &strip_group_expression(expression).kind {
-        ExpressionKind::Name(name) => source_scalar_commitment_operand(name, commitment_slots),
-        ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
-            let value = parse_i128_literal(value)
-                .ok()
-                .and_then(|value| u64::try_from(value).ok())
-                .ok_or_else(|| unsupported_source_message("source scalar literal overflow"))?;
-            Ok(CodeOperand::number(value, 1))
+    match lower_source_template_boolean_constraint(context.module, statement, context.scalar_slots)
+    {
+        Ok(Some(constraint)) => {
+            constraints.push(constraint);
+            return Ok(());
         }
-        ExpressionKind::Binary { op, left, right } => {
-            let op = match op {
-                BinaryOperator::Add => OperationKind::Add,
-                BinaryOperator::Subtract => OperationKind::Sub,
-                BinaryOperator::Multiply => OperationKind::Mul,
-                _ => return unsupported("unsupported source scalar constraint expression"),
-            };
-            let left =
-                lower_source_scalar_expression(left, commitment_slots, operations, next_temporary)?;
-            let right = lower_source_scalar_expression(
-                right,
-                commitment_slots,
-                operations,
-                next_temporary,
-            )?;
-            let id = *next_temporary;
-            *next_temporary = next_temporary.checked_add(1).ok_or_else(|| {
-                unsupported_source_message("source scalar constraint temporary overflow")
-            })?;
-            operations.push(CodeOperation {
-                op,
-                destination: CodeDestination::temporary(id, 1),
-                sources: vec![left, right],
-            });
-            Ok(CodeOperand::temporary(id, 1))
+        Ok(None)
+            if source_expression_is_equality_constraint(statement.value_expression.as_ref()) =>
+        {
+            hints.push(lower_unsupported_source_constraint_statement(
+                context.module,
+                statement,
+            ));
+            return Ok(());
         }
-        _ => unsupported("unsupported source scalar constraint expression"),
+        Ok(None) => {}
+        Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
+            hints.push(lower_unsupported_source_constraint_statement(
+                context.module,
+                statement,
+            ));
+            return Ok(());
+        }
+        Err(error) => return Err(error),
     }
+    if let Some(hint) =
+        lower_unsupported_source_call_statement(context.module, statement).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: context.module.source_name.clone(),
+                source,
+            }
+        })?
+    {
+        hints.push(hint);
+        return Ok(());
+    }
+    unsupported(format!(
+        "air template statements need constraint lowering support: {}",
+        source_statement_line(context.module, statement)
+    ))
 }
 
-fn source_scalar_commitment_operand(
-    name: &str,
-    commitment_slots: &BTreeMap<String, SourceCommitmentSlot>,
-) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
-    let slot = commitment_slots.get(name).ok_or_else(|| {
-        unsupported_source_message("source constraint references unknown witness")
-    })?;
-    if slot.stage != 1 || slot.dimension != 1 {
-        return unsupported("source boolean constraints require scalar stage-one witness values");
-    }
-    Ok(CodeOperand::commitment(slot.id, 1))
+fn source_statement_line<'a>(
+    module: &'a SourceProgramModule,
+    statement: &FunctionStatement,
+) -> &'a str {
+    module.source.contents[statement.start..statement.end]
+        .trim()
+        .trim_end_matches(';')
+        .trim()
 }
 
 fn source_global_program(
@@ -820,15 +759,6 @@ fn expression_is_one(expression: &Expression) -> bool {
     match &strip_group_expression(expression).kind {
         ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
             parse_i128_literal(value).is_ok_and(|value| value == 1)
-        }
-        _ => false,
-    }
-}
-
-fn expression_is_zero(expression: &Expression) -> bool {
-    match &strip_group_expression(expression).kind {
-        ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
-            parse_i128_literal(value).is_ok_and(|value| value == 0)
         }
         _ => false,
     }
@@ -1273,6 +1203,7 @@ fn source_challenge_counts(
 fn source_unit_values(
     program: &SourceProgram,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    template_values: &SourceTemplateConstantValueCache,
 ) -> Result<Vec<StageValue>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeMap::<String, (u32, Vec<u32>)>::new();
     let mut values = Vec::new();
@@ -1283,30 +1214,30 @@ fn source_unit_values(
             {
                 continue;
             }
+            let declaration_values = source_declaration_constant_values_from_cache(
+                module,
+                declaration.start,
+                declaration.end,
+                constant_values,
+                template_values,
+            );
             if source_declaration_in_static_false_branch(
                 program,
                 module,
                 declaration.start,
                 declaration.end,
-                constant_values,
+                declaration_values,
             ) {
                 continue;
             }
             if declaration.stage == 0 {
                 return unsupported("source air value stage must be positive");
             }
-            let declaration_values = source_declaration_constant_values(
-                program,
-                module,
-                declaration.start,
-                declaration.end,
-                constant_values,
-            );
             for item in &declaration.items {
                 if item.template {
                     return unsupported("template air-value names need instance lowering support");
                 }
-                let lengths = source_item_lengths(item, "source air value", &declaration_values)?;
+                let lengths = source_item_lengths(item, "source air value", declaration_values)?;
                 let shape = (declaration.stage, lengths.clone());
                 if let Some(existing) = seen.get(&item.name) {
                     if *existing != shape {
@@ -1414,12 +1345,22 @@ fn source_unit_setup_info(
         .checked_add(1)
         .ok_or_else(|| unsupported_source_message("source domain is too large"))?;
     let constant_values = source_scalar_constant_values(program, row_count);
+    let template_values = source_template_constant_value_cache(program, &constant_values);
     let active_templates = concrete_template_names(program);
-    let constant_columns = source_constant_columns(program, &constant_values, &active_templates)?;
-    let commitment_columns =
-        source_commitment_columns(program, &constant_values, &active_templates)?;
+    let constant_columns = source_constant_columns(
+        program,
+        &constant_values,
+        &active_templates,
+        &template_values,
+    )?;
+    let commitment_columns = source_commitment_columns(
+        program,
+        &constant_values,
+        &active_templates,
+        &template_values,
+    )?;
     let (n_stages, commitment_widths) = source_commitment_section_widths(&commitment_columns)?;
-    let unit_value_map = source_unit_values(program, &constant_values)?;
+    let unit_value_map = source_unit_values(program, &constant_values, &template_values)?;
     let (group_value_map, _) = source_air_group_values(program, &constant_values)?;
     let challenge_count = source_challenge_counts(program, &constant_values)?
         .into_iter()
@@ -1477,6 +1418,7 @@ fn source_constant_columns(
     program: &SourceProgram,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
     active_templates: &BTreeSet<String>,
+    template_values: &SourceTemplateConstantValueCache,
 ) -> Result<Vec<ConstantColumn>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut columns = Vec::new();
@@ -1496,12 +1438,12 @@ fn source_constant_columns(
             ) {
                 continue;
             }
-            let declaration_values = source_declaration_constant_values(
-                program,
+            let declaration_values = source_declaration_constant_values_from_cache(
                 module,
                 declaration.start,
                 declaration.end,
                 constant_values,
+                template_values,
             );
             for item in &declaration.items {
                 if item.template {
@@ -1513,8 +1455,7 @@ fn source_constant_columns(
                 if !seen.insert(item.name.clone()) {
                     continue;
                 }
-                let lengths =
-                    source_item_lengths(item, "source fixed-column", &declaration_values)?;
+                let lengths = source_item_lengths(item, "source fixed-column", declaration_values)?;
                 let dimension = source_column_dimension(&lengths, "source fixed-column")?;
                 let id = u32::try_from(columns.len())
                     .map_err(|_| unsupported_source_message("too many source fixed columns"))?;
@@ -1536,6 +1477,7 @@ fn source_commitment_columns(
     program: &SourceProgram,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
     active_templates: &BTreeSet<String>,
+    template_values: &SourceTemplateConstantValueCache,
 ) -> Result<Vec<CommitmentColumn>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut columns = Vec::new();
@@ -1556,14 +1498,14 @@ fn source_commitment_columns(
             ) {
                 continue;
             }
-            let declaration_values = source_declaration_constant_values(
-                program,
+            let declaration_values = source_declaration_constant_values_from_cache(
                 module,
                 declaration.start,
                 declaration.end,
                 constant_values,
+                template_values,
             );
-            let stage = source_column_stage(declaration, &declaration_values)?;
+            let stage = source_column_stage(declaration, declaration_values)?;
             for item in &declaration.items {
                 if item.template {
                     return unsupported(format!(
@@ -1575,7 +1517,7 @@ fn source_commitment_columns(
                     continue;
                 }
                 let lengths =
-                    source_item_lengths(item, "source commitment-column", &declaration_values)?;
+                    source_item_lengths(item, "source commitment-column", declaration_values)?;
                 let dimension = source_column_dimension(&lengths, "source commitment-column")?;
                 let cursor = stages.entry(stage).or_default();
                 let stage_id = cursor.next_id;

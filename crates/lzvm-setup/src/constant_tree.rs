@@ -321,14 +321,13 @@ fn build_constant_tree_from_leaves_on_cpu(
     setup: &UnitSetupInfo,
 ) -> Result<Vec<u8>, SetupError> {
     let shape = constant_tree_shape(leaves, setup)?;
-    let rows = read_constant_tree_leaf_rows(leaves, shape)?;
 
     let mut out = Vec::with_capacity(shape.expected_tree_len);
     out.extend_from_slice(leaves);
 
     let mut level = Vec::with_capacity(shape.row_count);
-    for row in &rows {
-        let digest = linear_hash(row, shape.arity)?;
+    for row in 0..shape.row_count {
+        let digest = linear_hash_leaf_row(leaves, shape, row)?;
         append_digest(&mut out, digest);
         level.push(digest);
     }
@@ -554,6 +553,7 @@ fn constant_tree_shape(
     })
 }
 
+#[cfg(feature = "cuda")]
 fn read_constant_tree_leaf_rows(
     leaves: &[u8],
     shape: ConstantTreeShape,
@@ -581,62 +581,107 @@ fn read_constant_tree_leaf_rows(
     Ok(rows)
 }
 
-fn linear_hash(values: &[Felt], arity: usize) -> Result<[Felt; HASH_WORDS], SetupError> {
-    match arity {
-        2 => Ok(linear_hash_arity2(values)),
-        4 => Ok(linear_hash_arity4(values)),
+fn linear_hash_leaf_row(
+    leaves: &[u8],
+    shape: ConstantTreeShape,
+    row: usize,
+) -> Result<[Felt; HASH_WORDS], SetupError> {
+    match shape.arity {
+        2 => linear_hash_leaf_row_arity2(leaves, shape, row),
+        4 => linear_hash_leaf_row_arity4(leaves, shape, row),
         _ => Err(SetupError::UnsupportedConstantTreeArity {
-            arity: u32::try_from(arity).unwrap_or(u32::MAX),
+            arity: u32::try_from(shape.arity).unwrap_or(u32::MAX),
         }),
     }
 }
 
-fn linear_hash_arity2(values: &[Felt]) -> [Felt; HASH_WORDS] {
-    if values.len() <= HASH_WORDS {
-        let mut digest = [Felt::ZERO; HASH_WORDS];
-        digest[..values.len()].copy_from_slice(values);
-        return digest;
+fn linear_hash_leaf_row_arity2(
+    leaves: &[u8],
+    shape: ConstantTreeShape,
+    row: usize,
+) -> Result<[Felt; HASH_WORDS], SetupError> {
+    if shape.column_count <= HASH_WORDS {
+        return padded_leaf_row_digest(leaves, shape, row);
     }
 
     let mut state = [Felt::ZERO; 8];
     let mut offset = 0;
-    while offset < values.len() {
+    while offset < shape.column_count {
         let capacity = [state[0], state[1], state[2], state[3]];
         state[4..].copy_from_slice(&capacity);
         state[..HASH_WORDS].fill(Felt::ZERO);
 
-        let chunk_len = (values.len() - offset).min(HASH_WORDS);
-        state[..chunk_len].copy_from_slice(&values[offset..offset + chunk_len]);
+        let chunk_len = (shape.column_count - offset).min(HASH_WORDS);
+        for (index, slot) in state.iter_mut().enumerate().take(chunk_len) {
+            *slot = read_leaf_value(leaves, shape, row, offset + index)?;
+        }
         state = poseidon2_hash_8(state);
         offset += chunk_len;
     }
 
-    [state[0], state[1], state[2], state[3]]
+    Ok([state[0], state[1], state[2], state[3]])
 }
 
-fn linear_hash_arity4(values: &[Felt]) -> [Felt; HASH_WORDS] {
+fn linear_hash_leaf_row_arity4(
+    leaves: &[u8],
+    shape: ConstantTreeShape,
+    row: usize,
+) -> Result<[Felt; HASH_WORDS], SetupError> {
     const RATE: usize = 12;
 
-    if values.len() <= HASH_WORDS {
-        let mut digest = [Felt::ZERO; HASH_WORDS];
-        digest[..values.len()].copy_from_slice(values);
-        return digest;
+    if shape.column_count <= HASH_WORDS {
+        return padded_leaf_row_digest(leaves, shape, row);
     }
 
     let mut state = [Felt::ZERO; 16];
     let mut offset = 0;
-    while offset < values.len() {
+    while offset < shape.column_count {
         let capacity = [state[0], state[1], state[2], state[3]];
         state[RATE..].copy_from_slice(&capacity);
         state[..RATE].fill(Felt::ZERO);
 
-        let chunk_len = (values.len() - offset).min(RATE);
-        state[..chunk_len].copy_from_slice(&values[offset..offset + chunk_len]);
+        let chunk_len = (shape.column_count - offset).min(RATE);
+        for (index, slot) in state.iter_mut().enumerate().take(chunk_len) {
+            *slot = read_leaf_value(leaves, shape, row, offset + index)?;
+        }
         state = poseidon2_hash_16(state);
         offset += chunk_len;
     }
 
-    [state[0], state[1], state[2], state[3]]
+    Ok([state[0], state[1], state[2], state[3]])
+}
+
+fn padded_leaf_row_digest(
+    leaves: &[u8],
+    shape: ConstantTreeShape,
+    row: usize,
+) -> Result<[Felt; HASH_WORDS], SetupError> {
+    let mut digest = [Felt::ZERO; HASH_WORDS];
+    for (column, slot) in digest.iter_mut().enumerate().take(shape.column_count) {
+        *slot = read_leaf_value(leaves, shape, row, column)?;
+    }
+    Ok(digest)
+}
+
+fn read_leaf_value(
+    leaves: &[u8],
+    shape: ConstantTreeShape,
+    row: usize,
+    column: usize,
+) -> Result<Felt, SetupError> {
+    let word_index = row
+        .checked_mul(shape.column_count)
+        .and_then(|offset| offset.checked_add(column))
+        .ok_or(SetupError::LengthOverflow)?;
+    let byte_index = word_index
+        .checked_mul(WORD_BYTES)
+        .ok_or(SetupError::LengthOverflow)?;
+    let value = u64::from_le_bytes(
+        leaves[byte_index..byte_index + WORD_BYTES]
+            .try_into()
+            .expect("slice length checked"),
+    );
+    Felt::from_canonical(value).map_err(Into::into)
 }
 
 fn parent_hash(

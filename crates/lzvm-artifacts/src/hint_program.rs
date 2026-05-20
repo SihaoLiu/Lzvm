@@ -17,9 +17,21 @@ const POSITION_BYTES: usize = 4;
 pub const SOURCE_LOOKUP_HINT_PREFIX: &str = "source.lookup.";
 pub const SOURCE_LOOKUP_PROVES_HINT: &str = "source.lookup.proves";
 pub const SOURCE_LOOKUP_ASSUMES_HINT: &str = "source.lookup.assumes";
+pub const SOURCE_UNSUPPORTED_CALL_HINT: &str = "source.call.unsupported";
+pub const SOURCE_UNSUPPORTED_ASSIGNMENT_HINT: &str = "source.assignment.unsupported";
+pub const SOURCE_UNSUPPORTED_STATEMENT_HINT: &str = "source.statement.unsupported";
+pub const SOURCE_UNSUPPORTED_CONSTRAINT_HINT: &str = "source.constraint.unsupported";
 
 pub fn source_lookup_hint_name(name: &str) -> bool {
     name.starts_with(SOURCE_LOOKUP_HINT_PREFIX)
+}
+
+pub fn source_unimplemented_hint_name(name: &str) -> bool {
+    source_lookup_hint_name(name)
+        || name == SOURCE_UNSUPPORTED_CALL_HINT
+        || name == SOURCE_UNSUPPORTED_ASSIGNMENT_HINT
+        || name == SOURCE_UNSUPPORTED_STATEMENT_HINT
+        || name == SOURCE_UNSUPPORTED_CONSTRAINT_HINT
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -8,6 +8,7 @@ use fixtures::sample_two_column_setup_info;
 use fixtures::sample_wide_setup_info;
 use lzvm_artifacts::constant_tree::read_constant_tree_file;
 use lzvm_artifacts::fixed::{FixedColumn, FixedColumns};
+use lzvm_artifacts::setup_info::ConstantColumn;
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt};
 use lzvm_setup::{
@@ -40,13 +41,12 @@ fn sample_columns() -> FixedColumns {
     }
 }
 
-#[cfg(feature = "cuda")]
-fn sample_wide_columns() -> FixedColumns {
+fn sample_wide_columns(column_count: u64) -> FixedColumns {
     FixedColumns {
         group_name: "group-a".to_owned(),
         unit_name: "unit-a".to_owned(),
         row_count: 2,
-        columns: (0_u64..5)
+        columns: (0_u64..column_count)
             .map(|index| FixedColumn {
                 name: format!("main.c{index}"),
                 dimensions: vec![1],
@@ -54,6 +54,25 @@ fn sample_wide_columns() -> FixedColumns {
             })
             .collect(),
     }
+}
+
+fn wide_setup_info(column_count: u32, arity: u32) -> lzvm_artifacts::setup_info::UnitSetupInfo {
+    let mut setup = sample_two_column_setup_info(1, 2, 2, arity);
+    setup.n_constants = column_count;
+    setup
+        .section_widths
+        .insert("const".to_owned(), column_count);
+    setup.constant_columns = (0_u32..column_count)
+        .map(|index| ConstantColumn {
+            name: format!("main.c{index}"),
+            stage: 0,
+            dimension: 1,
+            pols_map_id: index,
+            stage_id: index,
+            lengths: Vec::new(),
+        })
+        .collect();
+    setup
 }
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -165,6 +184,95 @@ fn manual_expected_tree_words_arity4(leaves: &[u8]) -> Vec<u64> {
     expected
 }
 
+fn linear_digest_arity2(values: &[u64]) -> [Felt; 4] {
+    if values.len() <= 4 {
+        let mut digest = [Felt::ZERO; 4];
+        for (slot, value) in digest.iter_mut().zip(values.iter().copied()) {
+            *slot = Felt::from_u64(value);
+        }
+        return digest;
+    }
+
+    let mut state = [Felt::ZERO; 8];
+    let mut offset = 0;
+    while offset < values.len() {
+        let capacity = [state[0], state[1], state[2], state[3]];
+        state[4..].copy_from_slice(&capacity);
+        state[..4].fill(Felt::ZERO);
+
+        let chunk_len = (values.len() - offset).min(4);
+        for index in 0..chunk_len {
+            state[index] = Felt::from_u64(values[offset + index]);
+        }
+        state = poseidon2_hash_8(state);
+        offset += chunk_len;
+    }
+
+    [state[0], state[1], state[2], state[3]]
+}
+
+fn linear_digest_arity4(values: &[u64]) -> [Felt; 4] {
+    if values.len() <= 4 {
+        let mut digest = [Felt::ZERO; 4];
+        for (slot, value) in digest.iter_mut().zip(values.iter().copied()) {
+            *slot = Felt::from_u64(value);
+        }
+        return digest;
+    }
+
+    let mut state = [Felt::ZERO; 16];
+    let mut offset = 0;
+    while offset < values.len() {
+        let capacity = [state[0], state[1], state[2], state[3]];
+        state[12..].copy_from_slice(&capacity);
+        state[..12].fill(Felt::ZERO);
+
+        let chunk_len = (values.len() - offset).min(12);
+        for index in 0..chunk_len {
+            state[index] = Felt::from_u64(values[offset + index]);
+        }
+        state = poseidon2_hash_16(state);
+        offset += chunk_len;
+    }
+
+    [state[0], state[1], state[2], state[3]]
+}
+
+fn manual_expected_wide_tree_words(leaves: &[u8], column_count: usize, arity: usize) -> Vec<u64> {
+    let leaf_words = words(leaves);
+    let rows = leaf_words
+        .chunks_exact(column_count)
+        .map(|row| match arity {
+            2 => linear_digest_arity2(row),
+            4 => linear_digest_arity4(row),
+            _ => panic!("unsupported arity"),
+        })
+        .collect::<Vec<_>>();
+
+    let mut expected = leaf_words;
+    for row in &rows {
+        encode_digest_words(&mut expected, *row);
+    }
+
+    match arity {
+        2 => {
+            let parent_left = parent_hash(rows[0], rows[1]);
+            let parent_right = parent_hash(rows[2], rows[3]);
+            let root = parent_hash(parent_left, parent_right);
+            encode_digest_words(&mut expected, parent_left);
+            encode_digest_words(&mut expected, parent_right);
+            encode_digest_words(&mut expected, root);
+        }
+        4 => {
+            let root = parent_hash_4([rows[0], rows[1], rows[2], rows[3]]);
+            encode_digest_words(&mut expected, root);
+        }
+        _ => panic!("unsupported arity"),
+    }
+
+    expected
+}
+
 #[test]
 fn builds_native_constant_tree_from_fixed_columns() {
     let setup = sample_two_column_setup_info(1, 2, 2, 2);
@@ -231,6 +339,38 @@ fn builds_native_arity_4_constant_tree_from_fixed_columns() {
 }
 
 #[test]
+fn builds_wide_native_constant_tree_from_fixed_columns() {
+    let column_count = 5;
+    let setup = wide_setup_info(column_count, 2);
+    let columns = sample_wide_columns(u64::from(column_count));
+    let leaves =
+        extend_fixed_columns_for_constant_tree(&columns, &setup).expect("leaves should extend");
+
+    let tree = build_constant_tree_from_fixed_columns(&columns, &setup).expect("tree should build");
+
+    assert_eq!(
+        words(&tree),
+        manual_expected_wide_tree_words(&leaves, column_count as usize, 2)
+    );
+}
+
+#[test]
+fn builds_wide_native_arity_4_constant_tree_from_fixed_columns() {
+    let column_count = 13;
+    let setup = wide_setup_info(column_count, 4);
+    let columns = sample_wide_columns(u64::from(column_count));
+    let leaves =
+        extend_fixed_columns_for_constant_tree(&columns, &setup).expect("leaves should extend");
+
+    let tree = build_constant_tree_from_fixed_columns(&columns, &setup).expect("tree should build");
+
+    assert_eq!(
+        words(&tree),
+        manual_expected_wide_tree_words(&leaves, column_count as usize, 4)
+    );
+}
+
+#[test]
 #[cfg(feature = "cuda")]
 fn builds_native_constant_tree_from_leaves_with_cuda_backend() {
     let setup = sample_two_column_setup_info(1, 2, 2, 2);
@@ -264,7 +404,7 @@ fn builds_native_arity_4_constant_tree_from_leaves_with_cuda_backend() {
 #[cfg(feature = "cuda")]
 fn builds_wide_native_constant_tree_from_leaves_with_cuda_backend() {
     let setup = sample_wide_setup_info(2);
-    let leaves = extend_fixed_columns_for_constant_tree(&sample_wide_columns(), &setup)
+    let leaves = extend_fixed_columns_for_constant_tree(&sample_wide_columns(5), &setup)
         .expect("leaves should extend");
     let expected = build_constant_tree_from_leaves(&leaves, &setup).expect("cpu tree should build");
 
@@ -279,7 +419,7 @@ fn builds_wide_native_constant_tree_from_leaves_with_cuda_backend() {
 #[cfg(feature = "cuda")]
 fn builds_wide_native_arity_4_constant_tree_from_leaves_with_cuda_backend() {
     let setup = sample_wide_setup_info(4);
-    let leaves = extend_fixed_columns_for_constant_tree(&sample_wide_columns(), &setup)
+    let leaves = extend_fixed_columns_for_constant_tree(&sample_wide_columns(5), &setup)
         .expect("leaves should extend");
     let expected = build_constant_tree_from_leaves(&leaves, &setup).expect("cpu tree should build");
 

@@ -2,7 +2,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::fixed::FixedColumns;
-use lzvm_artifacts::hint_program::{source_lookup_hint_name, HintProgram};
+use lzvm_artifacts::hint_program::{source_unimplemented_hint_name, HintProgram};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValues, PublicValuesError};
 use lzvm_artifacts::trace_bundle::TraceBundle;
 use lzvm_field::{Ext3, Felt, FieldError};
@@ -791,7 +791,7 @@ fn reject_unsupported_regular_hints(
     if let Some(hint) = program
         .hints
         .iter()
-        .find(|hint| source_lookup_hint_name(&hint.name))
+        .find(|hint| source_unimplemented_hint_name(&hint.name))
     {
         return Err(ProveWitnessCommitmentError::UnsupportedRegularHint {
             unit_index,
@@ -896,6 +896,8 @@ mod tests {
     use super::*;
     use lzvm_artifacts::hint_program::{
         Hint, HintField, HintOperand, HintValue, SOURCE_LOOKUP_PROVES_HINT,
+        SOURCE_UNSUPPORTED_ASSIGNMENT_HINT, SOURCE_UNSUPPORTED_CALL_HINT,
+        SOURCE_UNSUPPORTED_CONSTRAINT_HINT, SOURCE_UNSUPPORTED_STATEMENT_HINT,
     };
 
     #[test]
@@ -921,6 +923,114 @@ mod tests {
             ProveWitnessCommitmentError::UnsupportedRegularHint {
                 unit_index: 3,
                 name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_unsupported_source_call_regular_hints() {
+        let program = HintProgram {
+            hints: vec![Hint {
+                name: SOURCE_UNSUPPORTED_CALL_HINT.to_owned(),
+                fields: vec![HintField {
+                    name: "line".to_owned(),
+                    values: vec![HintValue {
+                        operand: HintOperand::String("source_protocol_call()".to_owned()),
+                        positions: Vec::new(),
+                    }],
+                }],
+            }],
+        };
+
+        let error = reject_unsupported_regular_hints(&program, 5)
+            .expect_err("unsupported source call hints should be rejected before evaluation");
+
+        assert_eq!(
+            error,
+            ProveWitnessCommitmentError::UnsupportedRegularHint {
+                unit_index: 5,
+                name: SOURCE_UNSUPPORTED_CALL_HINT.to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_unsupported_source_assignment_regular_hints() {
+        let program = HintProgram {
+            hints: vec![Hint {
+                name: SOURCE_UNSUPPORTED_ASSIGNMENT_HINT.to_owned(),
+                fields: vec![HintField {
+                    name: "line".to_owned(),
+                    values: vec![HintValue {
+                        operand: HintOperand::String("out[0] = value + 1".to_owned()),
+                        positions: Vec::new(),
+                    }],
+                }],
+            }],
+        };
+
+        let error = reject_unsupported_regular_hints(&program, 7)
+            .expect_err("unsupported source assignment hints should be rejected before evaluation");
+
+        assert_eq!(
+            error,
+            ProveWitnessCommitmentError::UnsupportedRegularHint {
+                unit_index: 7,
+                name: SOURCE_UNSUPPORTED_ASSIGNMENT_HINT.to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_unsupported_source_statement_regular_hints() {
+        let program = HintProgram {
+            hints: vec![Hint {
+                name: SOURCE_UNSUPPORTED_STATEMENT_HINT.to_owned(),
+                fields: vec![HintField {
+                    name: "line".to_owned(),
+                    values: vec![HintValue {
+                        operand: HintOperand::String("for (...) { }".to_owned()),
+                        positions: Vec::new(),
+                    }],
+                }],
+            }],
+        };
+
+        let error = reject_unsupported_regular_hints(&program, 9)
+            .expect_err("unsupported source statement hints should be rejected before evaluation");
+
+        assert_eq!(
+            error,
+            ProveWitnessCommitmentError::UnsupportedRegularHint {
+                unit_index: 9,
+                name: SOURCE_UNSUPPORTED_STATEMENT_HINT.to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_unsupported_source_constraint_regular_hints() {
+        let program = HintProgram {
+            hints: vec![Hint {
+                name: SOURCE_UNSUPPORTED_CONSTRAINT_HINT.to_owned(),
+                fields: vec![HintField {
+                    name: "line".to_owned(),
+                    values: vec![HintValue {
+                        operand: HintOperand::String("value * (value - delayed) === 0".to_owned()),
+                        positions: Vec::new(),
+                    }],
+                }],
+            }],
+        };
+
+        let error = reject_unsupported_regular_hints(&program, 11)
+            .expect_err("unsupported source constraint hints should be rejected before evaluation");
+
+        assert_eq!(
+            error,
+            ProveWitnessCommitmentError::UnsupportedRegularHint {
+                unit_index: 11,
+                name: SOURCE_UNSUPPORTED_CONSTRAINT_HINT.to_owned(),
             }
         );
     }

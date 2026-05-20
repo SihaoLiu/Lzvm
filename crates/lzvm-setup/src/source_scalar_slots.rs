@@ -1,0 +1,149 @@
+use std::collections::BTreeMap;
+use std::fmt;
+
+use lzvm_artifacts::expression_info::CodeOperand;
+use lzvm_artifacts::setup_info::UnitSetupInfo;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SourceScalarSlotError {
+    LengthOverflow(&'static str),
+    UnknownValue { name: String },
+    UnsupportedValueShape { name: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SourceCommitmentSlot {
+    id: u32,
+    stage: u32,
+    dimension: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SourceUnitValueSlot {
+    id: u32,
+    stage: u32,
+    dimension: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SourceConstantSlot {
+    id: u32,
+    stage: u32,
+    dimension: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SourceScalarSlots {
+    commitments: BTreeMap<String, SourceCommitmentSlot>,
+    unit_values: BTreeMap<String, SourceUnitValueSlot>,
+    constants: BTreeMap<String, SourceConstantSlot>,
+}
+
+impl SourceScalarSlots {
+    pub(crate) fn from_setup(setup: &UnitSetupInfo) -> Result<Self, SourceScalarSlotError> {
+        let mut commitments = BTreeMap::new();
+        for (index, column) in setup.commitment_columns.iter().enumerate() {
+            commitments.insert(
+                column.name.clone(),
+                SourceCommitmentSlot {
+                    id: usize_to_u32(index, "source commitment id overflow")?,
+                    stage: column.stage,
+                    dimension: column.dimension,
+                },
+            );
+        }
+
+        let mut unit_values = BTreeMap::new();
+        for (index, value) in setup.unit_value_map.iter().enumerate() {
+            unit_values.insert(
+                value.name.clone(),
+                SourceUnitValueSlot {
+                    id: usize_to_u32(index, "source unit value id overflow")?,
+                    stage: value.stage,
+                    dimension: stage_value_dimension(&value.lengths)?,
+                },
+            );
+        }
+
+        let mut constants = BTreeMap::new();
+        for column in &setup.constant_columns {
+            constants.insert(
+                column.name.clone(),
+                SourceConstantSlot {
+                    id: column.pols_map_id,
+                    stage: column.stage,
+                    dimension: column.dimension,
+                },
+            );
+        }
+
+        Ok(Self {
+            commitments,
+            unit_values,
+            constants,
+        })
+    }
+
+    pub(crate) fn operand(&self, name: &str) -> Result<CodeOperand, SourceScalarSlotError> {
+        if let Some(slot) = self.commitments.get(name) {
+            if slot.stage != 1 || slot.dimension != 1 {
+                return Err(SourceScalarSlotError::UnsupportedValueShape {
+                    name: name.to_owned(),
+                });
+            }
+            return Ok(CodeOperand::commitment(slot.id, 1));
+        }
+
+        if let Some(slot) = self.unit_values.get(name) {
+            if slot.stage != 1 || slot.dimension != 1 {
+                return Err(SourceScalarSlotError::UnsupportedValueShape {
+                    name: name.to_owned(),
+                });
+            }
+            return Ok(CodeOperand::air_value(slot.id, Some(slot.stage), None, 1));
+        }
+
+        if let Some(slot) = self.constants.get(name) {
+            if slot.stage != 0 || slot.dimension != 1 {
+                return Err(SourceScalarSlotError::UnsupportedValueShape {
+                    name: name.to_owned(),
+                });
+            }
+            return Ok(CodeOperand::constant(slot.id, 1));
+        }
+
+        Err(SourceScalarSlotError::UnknownValue {
+            name: name.to_owned(),
+        })
+    }
+}
+
+impl fmt::Display for SourceScalarSlotError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LengthOverflow(message) => write!(f, "{message}"),
+            Self::UnknownValue { name } => {
+                write!(f, "source constraint references unknown value {name}")
+            }
+            Self::UnsupportedValueShape { name } => write!(
+                f,
+                "source boolean constraints require scalar source values: {name}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SourceScalarSlotError {}
+
+fn usize_to_u32(value: usize, message: &'static str) -> Result<u32, SourceScalarSlotError> {
+    u32::try_from(value).map_err(|_| SourceScalarSlotError::LengthOverflow(message))
+}
+
+fn stage_value_dimension(lengths: &[u32]) -> Result<u32, SourceScalarSlotError> {
+    lengths.iter().try_fold(1_u32, |acc, length| {
+        acc.checked_mul(*length)
+            .ok_or(SourceScalarSlotError::LengthOverflow(
+                "source unit value dimension overflow",
+            ))
+    })
+}

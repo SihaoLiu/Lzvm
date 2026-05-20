@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::thread;
 
 use lzvm_artifacts::expression_info::{
     encode_expression_info, read_expression_info_binary_file, ExpressionInfo,
@@ -8,7 +9,7 @@ use lzvm_artifacts::expression_program::{encode_expression_program, read_express
 use lzvm_artifacts::fixed::{read_fixed_columns_file, read_fixed_columns_file_for_setup};
 use lzvm_artifacts::global_info::{encode_global_info, read_global_info_binary_file, GlobalInfo};
 use lzvm_artifacts::key_directory::{
-    read_key_directory_layout, KeyDirectoryError, KeyDirectoryLayout,
+    read_key_directory_layout, KeyDirectoryError, KeyDirectoryLayout, KeyUnitPaths,
 };
 use lzvm_artifacts::regular_program::{
     encode_regular_program, read_regular_program_file, regular_program_from_expression_info,
@@ -30,16 +31,18 @@ mod pcs;
 mod program_image;
 mod reports;
 mod source_companions;
+mod source_constraint_lowering;
 mod source_expression_filters;
 mod source_fixed_columns;
 mod source_fixed_expression;
 mod source_fixed_file_manifest;
 mod source_fixed_sequence;
 mod source_key_directory;
-mod source_lookup_hints;
 mod source_program_archive;
 mod source_row_count;
+mod source_scalar_slots;
 mod source_scope;
+mod source_statement_hints;
 mod source_static_values;
 mod source_template_context;
 mod source_verifier_info;
@@ -205,63 +208,16 @@ pub fn write_base_directory_from_layout(
     validate_base_directory_inputs(layout, derive_verkey)?;
     write_global_info_binary_for_directory(&layout.global_paths.info, &layout.global_info)?;
 
-    let mut fixed_bytes = 0_u64;
-    let mut tree_bytes = 0_u64;
-    let mut verkey_bytes = 0_u64;
-    for unit in &layout.units {
-        let setup_path = require_base_unit_path(unit.setup_info(), "setup metadata path")?;
-        let setup = read_unit_setup_info_binary_file(&setup_path)?;
-        if let Some(path) = unit.setup_info_binary() {
-            write_unit_setup_info_binary_for_directory(&path, &setup)?;
-        }
-
-        let expression_path =
-            require_base_unit_path(unit.expression_info(), "expression metadata path")?;
-        let expressions = read_expression_info_binary_file(&expression_path)?;
-        if let Some(path) = unit.expression_info_binary() {
-            write_expression_info_binary_for_directory(&path, &expressions)?;
-        }
-        if let Some(path) = unit.expression_program() {
-            write_regular_program_for_directory(&path, &expressions, &setup)?;
-        }
-
-        let verifier_path = require_base_unit_path(unit.verifier_info(), "verifier metadata path")?;
-        let verifier = read_verifier_info_binary_file(&verifier_path)?;
-        if let Some(path) = unit.verifier_info_binary() {
-            write_verifier_info_binary_for_directory(&path, &verifier)?;
-        }
-        if let Some(path) = unit.verifier_program() {
-            write_verifier_program_for_directory(&path, &verifier, &setup, &layout.global_info)?;
-        }
-
-        let group_name = unit.group_name.as_deref().unwrap_or("raw");
-        let unit_name = unit.unit_name.as_deref().unwrap_or("unit");
-        let columns =
-            read_fixed_columns_file_for_setup(&unit.fixed_columns, &setup, group_name, unit_name)?;
-        let expected_root = if derive_verkey {
-            None
-        } else {
-            Some(read_verification_key_binary_file(
-                unit.verification_key_binary(),
-            )?)
-        };
-        let tree = build_constant_tree_from_fixed_columns_with_backend(&columns, &setup, backend)?;
-        let fixed_report = write_base_fixed_columns(&unit.fixed_columns, &columns, &setup)?;
-        let tree_report =
-            write_base_constant_tree(&unit.constant_tree, &tree, &setup, expected_root.as_ref())?;
-
-        if derive_verkey {
-            let key_report = write_verification_key_from_constant_tree(
-                unit.verification_key_binary(),
-                &tree,
-                &setup,
-            )?;
-            verkey_bytes = verkey_bytes.saturating_add(key_report.binary_bytes);
-        }
-
-        fixed_bytes = fixed_bytes.saturating_add(fixed_report.bytes_written);
-        tree_bytes = tree_bytes.saturating_add(tree_report.bytes_written);
-    }
+    let reports = write_base_units(layout, backend, derive_verkey)?;
+    let fixed_bytes = reports
+        .iter()
+        .fold(0_u64, |acc, report| acc.saturating_add(report.fixed_bytes));
+    let tree_bytes = reports
+        .iter()
+        .fold(0_u64, |acc, report| acc.saturating_add(report.tree_bytes));
+    let verkey_bytes = reports
+        .iter()
+        .fold(0_u64, |acc, report| acc.saturating_add(report.verkey_bytes));
 
     Ok(BaseDirectoryWriteReport {
         unit_count: layout.units.len(),
@@ -272,6 +228,123 @@ pub fn write_base_directory_from_layout(
         } else {
             None
         },
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BaseUnitWriteReport {
+    fixed_bytes: u64,
+    tree_bytes: u64,
+    verkey_bytes: u64,
+}
+
+fn write_base_units(
+    layout: &KeyDirectoryLayout,
+    backend: FixedExtensionBackend,
+    derive_verkey: bool,
+) -> Result<Vec<BaseUnitWriteReport>, BaseDirectoryWriteError> {
+    let parallelism = base_unit_parallelism(layout.units.len());
+    let mut reports = Vec::with_capacity(layout.units.len());
+
+    thread::scope(|scope| {
+        for units in layout.units.chunks(parallelism) {
+            let handles = units
+                .iter()
+                .map(|unit| {
+                    scope.spawn(move || {
+                        write_base_unit(unit, &layout.global_info, backend, derive_verkey)
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            for handle in handles {
+                let report = handle
+                    .join()
+                    .map_err(|_| BaseDirectoryWriteError::Message {
+                        message: "base-directory unit worker panicked".to_owned(),
+                    })??;
+                reports.push(report);
+            }
+        }
+        Ok::<(), BaseDirectoryWriteError>(())
+    })?;
+
+    Ok(reports)
+}
+
+fn base_unit_parallelism(unit_count: usize) -> usize {
+    if unit_count <= 1 {
+        return 1;
+    }
+    thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .clamp(1, 4)
+        .min(unit_count)
+}
+
+fn write_base_unit(
+    unit: &KeyUnitPaths,
+    global_info: &GlobalInfo,
+    backend: FixedExtensionBackend,
+    derive_verkey: bool,
+) -> Result<BaseUnitWriteReport, BaseDirectoryWriteError> {
+    let setup_path = require_base_unit_path(unit.setup_info(), "setup metadata path")?;
+    let setup = read_unit_setup_info_binary_file(&setup_path)?;
+    if let Some(path) = unit.setup_info_binary() {
+        write_unit_setup_info_binary_for_directory(&path, &setup)?;
+    }
+
+    let expression_path =
+        require_base_unit_path(unit.expression_info(), "expression metadata path")?;
+    let expressions = read_expression_info_binary_file(&expression_path)?;
+    if let Some(path) = unit.expression_info_binary() {
+        write_expression_info_binary_for_directory(&path, &expressions)?;
+    }
+    if let Some(path) = unit.expression_program() {
+        write_regular_program_for_directory(&path, &expressions, &setup)?;
+    }
+
+    let verifier_path = require_base_unit_path(unit.verifier_info(), "verifier metadata path")?;
+    let verifier = read_verifier_info_binary_file(&verifier_path)?;
+    if let Some(path) = unit.verifier_info_binary() {
+        write_verifier_info_binary_for_directory(&path, &verifier)?;
+    }
+    if let Some(path) = unit.verifier_program() {
+        write_verifier_program_for_directory(&path, &verifier, &setup, global_info)?;
+    }
+
+    let group_name = unit.group_name.as_deref().unwrap_or("raw");
+    let unit_name = unit.unit_name.as_deref().unwrap_or("unit");
+    let columns =
+        read_fixed_columns_file_for_setup(&unit.fixed_columns, &setup, group_name, unit_name)?;
+    let expected_root = if derive_verkey {
+        None
+    } else {
+        Some(read_verification_key_binary_file(
+            unit.verification_key_binary(),
+        )?)
+    };
+    let tree = build_constant_tree_from_fixed_columns_with_backend(&columns, &setup, backend)?;
+    let fixed_report = write_base_fixed_columns(&unit.fixed_columns, &columns, &setup)?;
+    let tree_report =
+        write_base_constant_tree(&unit.constant_tree, &tree, &setup, expected_root.as_ref())?;
+
+    let verkey_bytes = if derive_verkey {
+        let key_report = write_verification_key_from_constant_tree(
+            unit.verification_key_binary(),
+            &tree,
+            &setup,
+        )?;
+        key_report.binary_bytes
+    } else {
+        0
+    };
+
+    Ok(BaseUnitWriteReport {
+        fixed_bytes: fixed_report.bytes_written,
+        tree_bytes: tree_report.bytes_written,
+        verkey_bytes,
     })
 }
 

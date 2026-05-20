@@ -8,6 +8,9 @@ use lzvm_pil::{
     SourceProgram, SourceProgramModule, SourceSpan, Token, TokenKind, UnaryOperator,
 };
 
+pub(crate) type SourceTemplateConstantValueCache =
+    BTreeMap<(String, usize, usize), BTreeMap<String, FixedFileTemplateValue>>;
+
 pub(crate) fn source_scalar_constant_values(
     program: &SourceProgram,
     row_count: u64,
@@ -31,6 +34,7 @@ pub(crate) fn source_scalar_constant_values(
 
     loop {
         let mut progressed = false;
+        let integer_env = integer_values(&values);
         for (index, declaration) in declarations.iter().enumerate() {
             if resolved[index] {
                 continue;
@@ -43,8 +47,12 @@ pub(crate) fn source_scalar_constant_values(
             let Some(expression) = declaration.initializer_expression.as_ref() else {
                 continue;
             };
-            let Some(value) = evaluate_source_static_expression(program, expression, &values)
-            else {
+            let Some(value) = evaluate_source_static_expression_with_integer_env(
+                program,
+                expression,
+                &values,
+                &integer_env,
+            ) else {
                 continue;
             };
             values.insert(declaration.name.clone(), value);
@@ -66,9 +74,18 @@ fn evaluate_source_static_expression(
     expression: &Expression,
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Option<FixedFileTemplateValue> {
+    let env = integer_values(values);
+    evaluate_source_static_expression_with_integer_env(program, expression, values, &env)
+}
+
+fn evaluate_source_static_expression_with_integer_env(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    integer_env: &BTreeMap<String, i128>,
+) -> Option<FixedFileTemplateValue> {
     evaluate_fixed_file_template_value_expression_with_values(expression, values).or_else(|| {
-        let env = integer_values(values);
-        evaluate_static_i128(program, expression, &env).map(FixedFileTemplateValue::Integer)
+        evaluate_static_i128(program, expression, integer_env).map(FixedFileTemplateValue::Integer)
     })
 }
 
@@ -398,9 +415,10 @@ fn parse_i128(value: &str) -> Option<i128> {
     value.parse::<i128>().ok()
 }
 
-fn evaluate_source_static_expression_or_span(
+fn evaluate_source_static_expression_or_token_span(
     program: &SourceProgram,
     source: &SourceFile,
+    tokens: &[Token],
     expression: Option<&Expression>,
     span: Option<SourceSpan>,
     values: &BTreeMap<String, FixedFileTemplateValue>,
@@ -410,19 +428,10 @@ fn evaluate_source_static_expression_or_span(
             return Some(value);
         }
     }
-    evaluate_source_static_span(program, source, span?, values)
-}
-
-fn evaluate_source_static_span(
-    program: &SourceProgram,
-    source: &SourceFile,
-    span: SourceSpan,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<FixedFileTemplateValue> {
-    let tokens = lex_source(&source.contents).ok()?;
-    let start = source_token_index_at_start(&tokens, span.start)?;
-    let end = source_token_index_after_end(&tokens, span.end)?;
-    evaluate_source_static_token_range(program, source, &tokens, start, end, values)
+    let span = span?;
+    let start = source_token_index_at_start(tokens, span.start)?;
+    let end = source_token_index_after_end(tokens, span.end)?;
+    evaluate_source_static_token_range(program, source, tokens, start, end, values)
 }
 
 fn evaluate_source_static_token_range(
@@ -559,11 +568,17 @@ fn execute_static_template_statement(
     match tokens.get(index)?.kind {
         TokenKind::If => execute_static_template_if(program, module, tokens, index, end, values),
         kind if static_declaration_start(kind) => {
-            execute_static_template_declaration(program, module, tokens[index].start, values);
+            execute_static_template_declaration(program, module, tokens, index, values);
             skip_static_template_statement(tokens, index, end)
         }
         _ => {
             let semicolon = next_static_semicolon_limited(tokens, index, end)?;
+            if !static_statement_contains_assignment_operator(tokens, index, semicolon) {
+                return Some(semicolon + 1);
+            }
+            if unsupported_static_assignment_statement(tokens, index, semicolon) {
+                return Some(semicolon + 1);
+            }
             let (expression, consumed) = parse_expression(&module.source, index, semicolon).ok()?;
             if consumed == semicolon {
                 execute_source_static_expression_statement(program, &expression, values);
@@ -679,9 +694,11 @@ fn skip_static_if_statement(tokens: &[Token], index: usize, end: usize) -> Optio
 fn execute_static_template_declaration(
     program: &SourceProgram,
     module: &SourceProgramModule,
-    start: usize,
+    tokens: &[Token],
+    index: usize,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
 ) -> Option<()> {
+    let start = tokens.get(index)?.start;
     if let Some(declaration) = module
         .constants
         .iter()
@@ -690,9 +707,10 @@ fn execute_static_template_declaration(
         if !declaration.array_dims.is_empty() || values.contains_key(&declaration.name) {
             return Some(());
         }
-        let value = evaluate_source_static_expression_or_span(
+        let value = evaluate_source_static_expression_or_token_span(
             program,
             &module.source,
+            tokens,
             declaration.initializer_expression.as_ref(),
             declaration.initializer,
             values,
@@ -708,15 +726,45 @@ fn execute_static_template_declaration(
     if !declaration.array_dims.is_empty() {
         return Some(());
     }
-    let value = evaluate_source_static_expression_or_span(
+    let value = evaluate_source_static_expression_or_token_span(
         program,
         &module.source,
+        tokens,
         declaration.initializer_expression.as_ref(),
         declaration.initializer,
         values,
     )?;
     values.insert(declaration.name.clone(), value);
     Some(())
+}
+
+fn static_statement_contains_assignment_operator(
+    tokens: &[Token],
+    index: usize,
+    end: usize,
+) -> bool {
+    tokens.iter().take(end).skip(index).any(|token| {
+        matches!(
+            token.kind,
+            TokenKind::Assign | TokenKind::PlusEqual | TokenKind::MinusEqual | TokenKind::StarEqual
+        )
+    })
+}
+
+fn unsupported_static_assignment_statement(tokens: &[Token], index: usize, end: usize) -> bool {
+    let mut has_bracket = false;
+    for token in tokens.iter().take(end).skip(index) {
+        match token.kind {
+            TokenKind::LBracket | TokenKind::RBracket => has_bracket = true,
+            TokenKind::Assign
+            | TokenKind::ConstrainedAssign
+            | TokenKind::PlusEqual
+            | TokenKind::MinusEqual
+            | TokenKind::StarEqual => return has_bracket,
+            _ => {}
+        }
+    }
+    false
 }
 
 fn execute_source_static_expression_statement(
@@ -801,13 +849,24 @@ pub(crate) fn source_static_if_statement_is_false(
     if statement.kind != FunctionStatementKind::If {
         return false;
     }
-    let values = source_declaration_constant_values(
-        program,
-        module,
-        statement.start,
-        statement.end,
-        base_values,
-    );
+    let mut values = base_values.clone();
+    if let Some(template) = module.air_templates.iter().find(|template| {
+        template.body.start <= statement.start && statement.end <= template.body.end
+    }) {
+        for parameter in &template.parameters {
+            if values.contains_key(&parameter.name) {
+                continue;
+            }
+            let Some(expression) = parameter.default_expression.as_ref() else {
+                continue;
+            };
+            let Some(value) = evaluate_source_static_expression(program, expression, &values)
+            else {
+                continue;
+            };
+            values.insert(parameter.name.clone(), value);
+        }
+    }
     statement
         .header_expression
         .as_ref()
@@ -963,4 +1022,54 @@ pub(crate) fn source_declaration_constant_values(
     execute_static_template_range(program, module, template.body.start, start, &mut values);
 
     values
+}
+
+pub(crate) fn source_template_constant_value_cache(
+    program: &SourceProgram,
+    base_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> SourceTemplateConstantValueCache {
+    let mut cache = BTreeMap::new();
+    for module in &program.modules {
+        for template in &module.air_templates {
+            let values = source_declaration_constant_values(
+                program,
+                module,
+                template.body.end,
+                template.body.end,
+                base_values,
+            );
+            cache.insert(
+                (
+                    module.source_name.clone(),
+                    template.body.start,
+                    template.body.end,
+                ),
+                values,
+            );
+        }
+    }
+    cache
+}
+
+pub(crate) fn source_declaration_constant_values_from_cache<'a>(
+    module: &SourceProgramModule,
+    start: usize,
+    end: usize,
+    base_values: &'a BTreeMap<String, FixedFileTemplateValue>,
+    cache: &'a SourceTemplateConstantValueCache,
+) -> &'a BTreeMap<String, FixedFileTemplateValue> {
+    let Some(template) = module
+        .air_templates
+        .iter()
+        .find(|template| template.body.start <= start && end <= template.body.end)
+    else {
+        return base_values;
+    };
+    cache
+        .get(&(
+            module.source_name.clone(),
+            template.body.start,
+            template.body.end,
+        ))
+        .unwrap_or(base_values)
 }

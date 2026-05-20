@@ -1,13 +1,17 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::SetupError;
+
+static STAGING_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn staging_path_for(path: &Path) -> PathBuf {
     let mut name = path
         .file_name()
         .map(|name| name.to_os_string())
         .unwrap_or_else(|| "fixed-columns".into());
-    name.push(format!(".staging.{}", std::process::id()));
+    let id = STAGING_COUNTER.fetch_add(1, Ordering::Relaxed);
+    name.push(format!(".staging.{}.{}", std::process::id(), id));
     path.with_file_name(name)
 }
 

@@ -26,6 +26,10 @@ use crate::{
     source_fixed_sequence::{
         canonical_fixed_value, parse_literal_sequence, parse_literal_sequence_values,
     },
+    source_static_values::{
+        source_declaration_constant_values_from_cache, source_template_constant_value_cache,
+        SourceTemplateConstantValueCache,
+    },
     write_staging_bytes, SetupError,
 };
 
@@ -72,6 +76,7 @@ struct SourceFixedColumnDeclaration {
     item: ColumnItem,
     initializer: Option<ColumnInitializer>,
     dimensions: Vec<u32>,
+    constant_values: SourceFixedConstantValues,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -492,12 +497,14 @@ fn fixed_columns_from_source_program(
         .collect::<BTreeSet<_>>();
     let mut declarations = Vec::<SourceFixedColumnDeclaration>::new();
     let constant_values = source_fixed_constant_values(program, setup, row_count)?;
+    let template_values = source_template_constant_value_cache(program, &constant_values.scalars);
     let mut column_values = source_fixed_values_from_template_assignments(
         program,
         &expected_columns,
         row_count_usize,
         &constant_values,
     )?;
+    let mut seen_declarations = BTreeSet::new();
 
     for module in &program.modules {
         for declaration in &module.columns {
@@ -517,17 +524,27 @@ fn fixed_columns_from_source_program(
             if !expected_columns.contains(&item.name) {
                 continue;
             }
+            if !seen_declarations.insert(item.name.clone()) {
+                continue;
+            }
             if declaration.items.len() != 1 || item.template {
                 return Err(SourceFixedColumnsWriteError::UnsupportedColumnShape {
                     source_name: declaration.source_name.clone(),
                     column: item.name.clone(),
                 });
             }
+            let declaration_values = source_fixed_declaration_constant_values(
+                module,
+                declaration.start,
+                declaration.end,
+                &constant_values,
+                &template_values,
+            );
             let dimensions = source_fixed_column_dimensions(
                 &declaration.source_name,
                 &module.source.contents,
                 item,
-                &constant_values,
+                &declaration_values,
             )?;
             declarations.push(SourceFixedColumnDeclaration {
                 source_name: declaration.source_name.clone(),
@@ -535,6 +552,7 @@ fn fixed_columns_from_source_program(
                 item: item.clone(),
                 initializer: declaration.initializer.clone(),
                 dimensions,
+                constant_values: declaration_values,
             });
         }
     }
@@ -553,7 +571,7 @@ fn fixed_columns_from_source_program(
                     &declaration.item.name,
                     initializer,
                     row_count_usize,
-                    &constant_values,
+                    &declaration.constant_values,
                     &column_values,
                 )?
             } else {
@@ -598,6 +616,26 @@ fn fixed_columns_from_source_program(
         row_count,
         columns,
     })
+}
+
+fn source_fixed_declaration_constant_values(
+    module: &lzvm_pil::SourceProgramModule,
+    start: usize,
+    end: usize,
+    base_values: &SourceFixedConstantValues,
+    template_values: &SourceTemplateConstantValueCache,
+) -> SourceFixedConstantValues {
+    SourceFixedConstantValues {
+        scalars: source_declaration_constant_values_from_cache(
+            module,
+            start,
+            end,
+            &base_values.scalars,
+            template_values,
+        )
+        .clone(),
+        arrays: base_values.arrays.clone(),
+    }
 }
 
 fn source_fixed_values_from_template_assignments(
@@ -958,15 +996,23 @@ fn source_fixed_constant_array_value(
     let initializer = source
         .get(initializer_span.start..initializer_span.end)
         .unwrap_or_default();
-    parse_literal_sequence_values(
+    if !initializer.trim_start().starts_with('[') {
+        return Ok(None);
+    }
+    let values = match parse_literal_sequence_values(
         &declaration.source_name,
         initializer_span,
         initializer,
         length,
         values,
-    )?
-    .into_iter()
-    .map(|value| canonical_fixed_value(value, &declaration.source_name, initializer_span))
-    .collect::<Result<Vec<_>, _>>()
-    .map(Some)
+    ) {
+        Ok(values) => values,
+        Err(SourceFixedColumnsWriteError::UnsupportedExpression { .. }) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    values
+        .into_iter()
+        .map(|value| canonical_fixed_value(value, &declaration.source_name, initializer_span))
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
 }
