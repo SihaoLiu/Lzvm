@@ -674,7 +674,7 @@ fn validate_setup_proof_segment_ids(segments: &[ProofSegment]) -> Result<(), Set
     Ok(())
 }
 
-fn is_setup_proof_segment_id(id: u32) -> bool {
+pub(crate) fn is_setup_proof_segment_id(id: u32) -> bool {
     if (WITNESS_COMMITMENT_SEGMENT_BASE_ID..PCS_MATERIAL_MANIFEST_SEGMENT_ID).contains(&id) {
         return true;
     }

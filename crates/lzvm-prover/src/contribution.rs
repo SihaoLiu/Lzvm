@@ -2,22 +2,16 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use lzvm_artifacts::challenge_values_segment::CHALLENGE_VALUES_SEGMENT_ID;
 use lzvm_artifacts::contribution_segment::{
     encode_contribution_segment, parse_contribution_segment, ContributionEntry,
     ContributionSegment, ContributionSegmentError, CONTRIBUTION_SEGMENT_ID,
 };
-use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
-use lzvm_artifacts::group_values_segment::GROUP_VALUES_SEGMENT_ID;
 use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryError};
-use lzvm_artifacts::pcs_proof_values_segment::PCS_PROOF_VALUES_SEGMENT_ID;
-use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
 use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifactError, ProofSegment};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValuesError};
 use lzvm_artifacts::setup_info::StageValue;
 use lzvm_artifacts::setup_manifest::SetupDirectoryManifestError;
-use lzvm_artifacts::unit_values_segment::UNIT_VALUES_SEGMENT_ID;
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_field::{poseidon2_hash_16, Ext3, Felt, FieldError, PoseidonTranscript, TranscriptError};
 
@@ -27,8 +21,8 @@ use crate::proof_values::{
     ProvePcsProofValuesSegmentError,
 };
 use crate::setup_preflight::{
-    validate_setup_directory_manifest_if_present, validate_setup_preflight_hashes,
-    SetupPreflightError,
+    is_setup_proof_segment_id, validate_setup_directory_manifest_if_present,
+    validate_setup_preflight_hashes, SetupPreflightError,
 };
 use crate::{ProveUnitSchedule, ProveWitnessTraceCommitments};
 
@@ -671,16 +665,7 @@ fn validate_contribution_proof_segment_ids(
     segments: &[ProofSegment],
 ) -> Result<(), ContributionChallengeFileError> {
     for segment in segments {
-        if matches!(
-            segment.id,
-            CONTRIBUTION_SEGMENT_ID
-                | PCS_PROOF_VALUES_SEGMENT_ID
-                | PROGRAM_IMAGE_CACHE_SEGMENT_ID
-                | ETH_BLOCK_INPUT_SEGMENT_ID
-                | CHALLENGE_VALUES_SEGMENT_ID
-                | UNIT_VALUES_SEGMENT_ID
-                | GROUP_VALUES_SEGMENT_ID
-        ) {
+        if is_setup_proof_segment_id(segment.id) {
             continue;
         }
         return Err(ContributionChallengeFileError::UnexpectedProofSegment { id: segment.id });
@@ -925,12 +910,20 @@ fn raw_contribution_entry(
 #[cfg(test)]
 mod tests {
     use lzvm_artifacts::challenge_values_segment::CHALLENGE_VALUES_SEGMENT_ID;
+    use lzvm_artifacts::constant_opening_segment::CONSTANT_OPENING_SEGMENT_ID;
     use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
     use lzvm_artifacts::group_values_segment::GROUP_VALUES_SEGMENT_ID;
+    use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
+    use lzvm_artifacts::pcs_fri_segment::PCS_FRI_OPENING_SEGMENT_ID;
+    use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
+    use lzvm_artifacts::pcs_nonce_segment::PCS_QUERY_NONCE_SEGMENT_ID;
     use lzvm_artifacts::pcs_proof_values_segment::PCS_PROOF_VALUES_SEGMENT_ID;
+    use lzvm_artifacts::pcs_query_segment::PCS_QUERY_PLAN_SEGMENT_ID;
     use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
     use lzvm_artifacts::proof::ProofSegment;
     use lzvm_artifacts::unit_values_segment::UNIT_VALUES_SEGMENT_ID;
+    use lzvm_artifacts::witness_opening_segment::WITNESS_OPENING_SEGMENT_ID;
+    use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 
     use super::validate_contribution_proof_segment_ids;
     use crate::contribution::CONTRIBUTION_SEGMENT_ID;
@@ -951,20 +944,56 @@ mod tests {
                 data: vec![3],
             },
             ProofSegment {
-                id: ETH_BLOCK_INPUT_SEGMENT_ID,
+                id: WITNESS_COMMITMENT_SEGMENT_BASE_ID,
                 data: vec![4],
             },
             ProofSegment {
-                id: CHALLENGE_VALUES_SEGMENT_ID,
+                id: WITNESS_COMMITMENT_SEGMENT_BASE_ID + 1,
                 data: vec![5],
             },
             ProofSegment {
-                id: UNIT_VALUES_SEGMENT_ID,
+                id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
                 data: vec![6],
             },
             ProofSegment {
-                id: GROUP_VALUES_SEGMENT_ID,
+                id: PCS_QUERY_PLAN_SEGMENT_ID,
                 data: vec![7],
+            },
+            ProofSegment {
+                id: WITNESS_OPENING_SEGMENT_ID,
+                data: vec![8],
+            },
+            ProofSegment {
+                id: CONSTANT_OPENING_SEGMENT_ID,
+                data: vec![9],
+            },
+            ProofSegment {
+                id: PCS_FRI_OPENING_SEGMENT_ID,
+                data: vec![10],
+            },
+            ProofSegment {
+                id: PCS_QUERY_NONCE_SEGMENT_ID,
+                data: vec![11],
+            },
+            ProofSegment {
+                id: PCS_EVALUATION_SEGMENT_ID,
+                data: vec![12],
+            },
+            ProofSegment {
+                id: GROUP_VALUES_SEGMENT_ID,
+                data: vec![13],
+            },
+            ProofSegment {
+                id: UNIT_VALUES_SEGMENT_ID,
+                data: vec![14],
+            },
+            ProofSegment {
+                id: CHALLENGE_VALUES_SEGMENT_ID,
+                data: vec![15],
+            },
+            ProofSegment {
+                id: ETH_BLOCK_INPUT_SEGMENT_ID,
+                data: vec![16],
             },
         ];
 
