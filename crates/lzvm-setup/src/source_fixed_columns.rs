@@ -14,7 +14,8 @@ use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, BinaryOperator, ColumnInitializer,
     ColumnInitializerKind, ColumnItem, ColumnKind, ConstantDeclaration, Expression, ExpressionKind,
     FixedFileTemplateValue, FunctionStatement, FunctionStatementKind, LexError, ParseError,
-    SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader, SourceSpan,
+    SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader,
+    SourceProgramModule, SourceSpan,
 };
 
 use crate::{
@@ -26,10 +27,13 @@ use crate::{
     source_fixed_sequence::{
         canonical_fixed_value, parse_literal_sequence, parse_literal_sequence_values,
     },
+    source_key_directory::SourceKeyDirectoryMetadataError,
     source_static_values::{
         source_declaration_constant_values_from_cache, source_template_constant_value_cache,
         SourceTemplateConstantValueCache,
     },
+    source_template_for::source_static_for_loop,
+    source_template_if::source_static_if_body_statements,
     write_staging_bytes, SetupError,
 };
 
@@ -647,13 +651,19 @@ fn source_fixed_values_from_template_assignments(
     let mut partial_values = BTreeMap::<String, Vec<Option<u64>>>::new();
     for module in &program.modules {
         for template in &module.air_templates {
+            let local_values = BTreeMap::new();
+            let context = SourceFixedTemplateAssignmentContext {
+                program,
+                module,
+                expected_columns,
+                row_count,
+            };
             for statement in &template.statements {
                 collect_source_fixed_template_assignment(
-                    &module.source_name,
+                    &context,
                     statement,
-                    expected_columns,
-                    row_count,
                     constant_values,
+                    &local_values,
                     &mut partial_values,
                 )?;
             }
@@ -671,14 +681,73 @@ fn source_fixed_values_from_template_assignments(
         .collect())
 }
 
-fn collect_source_fixed_template_assignment(
-    source_name: &str,
-    statement: &FunctionStatement,
-    expected_columns: &BTreeSet<String>,
+struct SourceFixedTemplateAssignmentContext<'a> {
+    program: &'a SourceProgram,
+    module: &'a SourceProgramModule,
+    expected_columns: &'a BTreeSet<String>,
     row_count: usize,
+}
+
+fn collect_source_fixed_template_assignment(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    statement: &FunctionStatement,
     constant_values: &SourceFixedConstantValues,
+    local_values: &BTreeMap<String, FixedFileTemplateValue>,
     partial_values: &mut BTreeMap<String, Vec<Option<u64>>>,
 ) -> Result<(), SourceFixedColumnsWriteError> {
+    let assignment_values = source_fixed_assignment_values(constant_values, local_values);
+    if statement.kind == FunctionStatementKind::If {
+        match source_static_if_body_statements(
+            context.program,
+            context.module,
+            statement,
+            &assignment_values.scalars,
+        ) {
+            Ok(Some(body_statements)) => {
+                for body_statement in &body_statements {
+                    collect_source_fixed_template_assignment(
+                        context,
+                        body_statement,
+                        constant_values,
+                        local_values,
+                        partial_values,
+                    )?;
+                }
+            }
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
+            Err(error) => {
+                return Err(source_fixed_template_assignment_error(statement, error));
+            }
+        }
+        return Ok(());
+    }
+    if statement.kind == FunctionStatementKind::For {
+        match source_static_for_loop(
+            context.program,
+            context.module,
+            statement,
+            &assignment_values.scalars,
+        ) {
+            Ok(Some(loop_info)) => {
+                for iteration_values in &loop_info.iteration_values {
+                    for body_statement in &loop_info.body_statements {
+                        collect_source_fixed_template_assignment(
+                            context,
+                            body_statement,
+                            constant_values,
+                            iteration_values,
+                            partial_values,
+                        )?;
+                    }
+                }
+            }
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
+            Err(error) => {
+                return Err(source_fixed_template_assignment_error(statement, error));
+            }
+        }
+        return Ok(());
+    }
     if statement.kind != FunctionStatementKind::Expression {
         return Ok(());
     }
@@ -694,23 +763,23 @@ fn collect_source_fixed_template_assignment(
         return Ok(());
     }
     let Some((column_name, row)) = source_fixed_index_assignment_target(
-        source_name,
+        &context.module.source_name,
         left,
-        expected_columns,
-        row_count,
-        constant_values,
+        context.expected_columns,
+        context.row_count,
+        &assignment_values,
     )?
     else {
         return Ok(());
     };
     let Some(FixedFileTemplateValue::Integer(value)) =
-        evaluate_source_fixed_template_value_expression(right, constant_values)
+        evaluate_source_fixed_template_value_expression(right, &assignment_values)
     else {
         return Ok(());
     };
     let value = canonical_fixed_value(
         value,
-        source_name,
+        &context.module.source_name,
         SourceSpan {
             start: right.start,
             end: right.end,
@@ -718,11 +787,11 @@ fn collect_source_fixed_template_assignment(
     )?;
     let values = partial_values
         .entry(column_name.clone())
-        .or_insert_with(|| vec![None; row_count]);
+        .or_insert_with(|| vec![None; context.row_count]);
     match values[row] {
         Some(existing) if existing != value => {
             Err(SourceFixedColumnsWriteError::UnsupportedInitializer {
-                source_name: source_name.to_owned(),
+                source_name: context.module.source_name.clone(),
                 column: column_name,
             })
         }
@@ -731,6 +800,57 @@ fn collect_source_fixed_template_assignment(
             values[row] = Some(value);
             Ok(())
         }
+    }
+}
+
+fn source_fixed_assignment_values(
+    constant_values: &SourceFixedConstantValues,
+    local_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> SourceFixedConstantValues {
+    if local_values.is_empty() {
+        return constant_values.clone();
+    }
+    let mut values = constant_values.clone();
+    values.scalars.extend(local_values.clone());
+    values
+}
+
+fn source_fixed_template_assignment_error(
+    statement: &FunctionStatement,
+    error: SourceKeyDirectoryMetadataError,
+) -> SourceFixedColumnsWriteError {
+    let source_span = SourceSpan {
+        start: statement.start,
+        end: statement.end,
+    };
+    match error {
+        SourceKeyDirectoryMetadataError::SourceProgram(error) => {
+            SourceFixedColumnsWriteError::SourceProgram(error)
+        }
+        SourceKeyDirectoryMetadataError::SetupInfo(error) => {
+            SourceFixedColumnsWriteError::SetupInfo(error)
+        }
+        SourceKeyDirectoryMetadataError::Setup(error) => SourceFixedColumnsWriteError::Setup(error),
+        SourceKeyDirectoryMetadataError::Parse(error) => {
+            SourceFixedColumnsWriteError::ExpressionParse {
+                source_name: statement.source_name.clone(),
+                source_span,
+                source: error,
+            }
+        }
+        SourceKeyDirectoryMetadataError::Lex {
+            source_name,
+            source,
+        } => SourceFixedColumnsWriteError::Lex {
+            source_name,
+            source_span,
+            source,
+        },
+        other => SourceFixedColumnsWriteError::UnsupportedExpression {
+            source_name: statement.source_name.clone(),
+            source_span,
+            expression: other.to_string(),
+        },
     }
 }
 
