@@ -51,6 +51,14 @@ struct SourceUnitValueSlot {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SourceGroupValueSlot {
+    id: u32,
+    stage: u32,
+    source_dimension: u32,
+    operand_dimension: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SourceConstantSlot {
     id: u32,
     stage: u32,
@@ -84,6 +92,7 @@ struct SourceProofValueSlot {
 pub(crate) struct SourceScalarSlots {
     commitments: BTreeMap<String, SourceCommitmentSlot>,
     unit_values: BTreeMap<String, SourceUnitValueSlot>,
+    group_values: BTreeMap<String, SourceGroupValueSlot>,
     constants: BTreeMap<String, SourceConstantSlot>,
     publics: BTreeMap<String, SourcePublicSlot>,
     challenges: BTreeMap<String, SourceChallengeSlot>,
@@ -116,7 +125,26 @@ impl SourceScalarSlots {
                 SourceUnitValueSlot {
                     id: usize_to_u32(index, "source unit value id overflow")?,
                     stage: value.stage,
-                    dimension: stage_value_dimension(&value.lengths)?,
+                    dimension: stage_value_dimension(
+                        &value.lengths,
+                        "source unit value dimension overflow",
+                    )?,
+                },
+            );
+        }
+
+        let mut group_values = BTreeMap::new();
+        for (index, value) in setup.group_value_map.iter().enumerate() {
+            group_values.insert(
+                value.name.clone(),
+                SourceGroupValueSlot {
+                    id: usize_to_u32(index, "source group value id overflow")?,
+                    stage: value.stage,
+                    source_dimension: stage_value_dimension(
+                        &value.lengths,
+                        "source group value dimension overflow",
+                    )?,
+                    operand_dimension: if value.stage == 1 { 1 } else { 3 },
                 },
             );
         }
@@ -189,6 +217,7 @@ impl SourceScalarSlots {
         Ok(Self {
             commitments,
             unit_values,
+            group_values,
             constants,
             publics,
             challenges,
@@ -213,6 +242,20 @@ impl SourceScalarSlots {
                 });
             }
             return Ok(CodeOperand::air_value(slot.id, Some(slot.stage), None, 1));
+        }
+
+        if let Some(slot) = self.group_values.get(name) {
+            if slot.source_dimension != 1 {
+                return Err(SourceScalarSlotError::UnsupportedValueShape {
+                    name: name.to_owned(),
+                });
+            }
+            return Ok(CodeOperand::air_group_value(
+                slot.id,
+                Some(slot.stage),
+                None,
+                slot.operand_dimension,
+            ));
         }
 
         if let Some(slot) = self.constants.get(name) {
@@ -434,12 +477,13 @@ fn usize_to_u32(value: usize, message: &'static str) -> Result<u32, SourceScalar
     u32::try_from(value).map_err(|_| SourceScalarSlotError::LengthOverflow(message))
 }
 
-fn stage_value_dimension(lengths: &[u32]) -> Result<u32, SourceScalarSlotError> {
+fn stage_value_dimension(
+    lengths: &[u32],
+    overflow_message: &'static str,
+) -> Result<u32, SourceScalarSlotError> {
     lengths.iter().try_fold(1_u32, |acc, length| {
         acc.checked_mul(*length)
-            .ok_or(SourceScalarSlotError::LengthOverflow(
-                "source unit value dimension overflow",
-            ))
+            .ok_or(SourceScalarSlotError::LengthOverflow(overflow_message))
     })
 }
 
