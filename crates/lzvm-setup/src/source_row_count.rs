@@ -294,13 +294,13 @@ fn sequence_item_len(item: &str) -> Result<u64, SourceKeyDirectoryMetadataError>
         }
         let start = parse_i128_literal(item[..index].trim())?;
         let end = parse_i128_literal(item[index + 2..].trim())?;
-        if end < start {
-            return unsupported("source fixed-column descending ranges need explicit metadata");
+        let length = if start <= end {
+            end.checked_sub(start)
+        } else {
+            start.checked_sub(end)
         }
-        let length = end
-            .checked_sub(start)
-            .and_then(|value| value.checked_add(1))
-            .ok_or_else(|| unsupported_source_message("source range length overflow"))?;
+        .and_then(|value| value.checked_add(1))
+        .ok_or_else(|| unsupported_source_message("source range length overflow"))?;
         u64::try_from(length)
             .map_err(|_| unsupported_source_message("source range length overflow"))
     } else {
