@@ -3,10 +3,13 @@ use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::fixed::parse_raw_fixed_columns;
 use lzvm_artifacts::global_info::read_global_info_binary_file;
+use lzvm_artifacts::global_program::read_global_program_file;
 use lzvm_artifacts::key_directory::{read_key_directory_catalog, read_key_directory_layout};
 use lzvm_artifacts::setup_info::read_unit_setup_info_binary_file;
 use lzvm_artifacts::setup_manifest::SETUP_DIRECTORY_MANIFEST_FILE;
 use lzvm_cli::run_cli;
+use lzvm_field::{Ext3, Felt};
+use lzvm_prover::global_constraints::{evaluate_global_constraints, GlobalConstraintInputs};
 
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
@@ -248,6 +251,117 @@ fn generate_key_writes_source_proof_values_to_global_metadata() {
     assert_eq!(global.proof_values_map[0].stage, 1);
     assert_eq!(global.proof_values_map[0].id, None);
     assert!(global.proof_values_map[0].lengths.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_writes_later_stage_source_proof_values_to_global_metadata() {
+    let dir = temp_dir("later-proof-value-metadata");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "proofval stage(2) extension_flag;\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
+        .expect("source global metadata should parse");
+    assert_eq!(global.num_proof_values, [0, 1]);
+    assert_eq!(global.proof_values_map.len(), 1);
+    assert_eq!(global.proof_values_map[0].name, "extension_flag");
+    assert_eq!(global.proof_values_map[0].stage, 2);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_lowers_source_proof_value_boolean_constraints() {
+    let dir = temp_dir("proof-value-boolean");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "proofval enable_flag;\n\
+         enable_flag * (1 - enable_flag);\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let program = read_global_program_file(dir.join("pilout.globalConstraints.bin"))
+        .expect("source global program should parse");
+    assert_eq!(program.constraints.entries.len(), 1);
+
+    let satisfied_zero = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            proof_values: &[Felt::from_u64(0)],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("zero proof value should evaluate");
+    assert_eq!(satisfied_zero, [Ext3::ZERO]);
+
+    let satisfied_one = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            proof_values: &[Felt::from_u64(1)],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("one proof value should evaluate");
+    assert_eq!(satisfied_one, [Ext3::ZERO]);
+
+    let unsatisfied = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            proof_values: &[Felt::from_u64(2)],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("non-boolean proof value should evaluate");
+    assert_ne!(unsatisfied, [Ext3::ZERO]);
+
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
     assert!(String::from_utf8(stdout)
         .expect("stdout should be utf-8")

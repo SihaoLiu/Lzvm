@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use lzvm_artifacts::constraint_program::GlobalConstraintProgram;
+use lzvm_artifacts::constraint_program::{GlobalConstraintEntry, GlobalConstraintProgram};
 use lzvm_artifacts::expression_info::{ExpressionInfo, ExpressionInfoError};
 use lzvm_artifacts::global_info::{
     encode_global_info, AggregationType, CurveKind, GlobalAir, GlobalInfo, GlobalInfoError,
@@ -20,9 +20,10 @@ use lzvm_artifacts::verifier_info::{
     VerifierOperand, VerifierOperation, VerifierOperationKind,
 };
 use lzvm_pil::{
-    lex_source, BinaryOperator, ColumnInitializerKind, ColumnItem, ColumnKind, Expression,
-    ExpressionKind, LexError, SourceLoaderConfig, SourceProgram, SourceProgramError,
-    SourceProgramLoader, Token, TokenKind, UnaryOperator, ValueDeclarationKind,
+    lex_source, parse_expression, BinaryOperator, ColumnInitializerKind, ColumnItem, ColumnKind,
+    Expression, ExpressionKind, LexError, ParseError, SourceLoaderConfig, SourceProgram,
+    SourceProgramError, SourceProgramLoader, SourceProgramModule, Token, TokenKind, UnaryOperator,
+    ValueDeclarationKind,
 };
 
 use crate::{publish_staging_bytes, write_staging_bytes, SetupError};
@@ -53,6 +54,7 @@ pub enum SourceKeyDirectoryMetadataError {
     VerifierInfo(VerifierInfoError),
     KeyDirectory(KeyDirectoryError),
     Setup(SetupError),
+    Parse(ParseError),
     Lex {
         source_name: String,
         source: LexError,
@@ -73,6 +75,7 @@ impl fmt::Display for SourceKeyDirectoryMetadataError {
             Self::VerifierInfo(error) => write!(f, "{error}"),
             Self::KeyDirectory(error) => write!(f, "{error}"),
             Self::Setup(error) => write!(f, "{error}"),
+            Self::Parse(error) => write!(f, "{error}"),
             Self::Lex {
                 source_name,
                 source,
@@ -100,6 +103,7 @@ impl std::error::Error for SourceKeyDirectoryMetadataError {
             Self::VerifierInfo(error) => Some(error),
             Self::KeyDirectory(error) => Some(error),
             Self::Setup(error) => Some(error),
+            Self::Parse(error) => Some(error),
             Self::Lex { source, .. } => Some(source),
             Self::UnsupportedSourceProgram { .. } => None,
         }
@@ -148,6 +152,12 @@ impl From<SetupError> for SourceKeyDirectoryMetadataError {
     }
 }
 
+impl From<ParseError> for SourceKeyDirectoryMetadataError {
+    fn from(error: ParseError) -> Self {
+        Self::Parse(error)
+    }
+}
+
 pub fn write_source_key_directory_metadata(
     request: &SourceKeyDirectoryMetadataRequest,
 ) -> Result<SourceKeyDirectoryMetadataReport, SourceKeyDirectoryMetadataError> {
@@ -170,15 +180,7 @@ pub fn write_source_key_directory_metadata(
         constraints: Vec::new(),
     };
     let verifier_info = source_verifier_info();
-    let global_program = GlobalProgram {
-        constraints: GlobalConstraintProgram {
-            entries: Vec::new(),
-            ops: Vec::new(),
-            args: Vec::new(),
-            numbers: Vec::new(),
-        },
-        hints: HintProgram { hints: Vec::new() },
-    };
+    let global_program = source_global_program(&program, &global_info)?;
 
     let mut bytes_written = 0_u64;
     bytes_written = bytes_written.saturating_add(write_validated_bytes(
@@ -248,7 +250,6 @@ fn validate_supported_source_program(
     program: &SourceProgram,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     for module in &program.modules {
-        validate_no_top_level_semantic_statements(&module.source_name, &module.source.contents)?;
         if !module
             .air_templates
             .iter()
@@ -289,13 +290,31 @@ fn validate_supported_source_program(
     Ok(())
 }
 
-fn validate_no_top_level_semantic_statements(
-    source_name: &str,
-    source: &str,
+fn source_global_program(
+    program: &SourceProgram,
+    global_info: &GlobalInfo,
+) -> Result<GlobalProgram, SourceKeyDirectoryMetadataError> {
+    let proof_value_slots = source_proof_value_slots(global_info)?;
+    let mut constraints = SourceGlobalConstraintBuilder::default();
+    for module in &program.modules {
+        lower_module_top_level_global_constraints(module, &proof_value_slots, &mut constraints)?;
+    }
+    Ok(GlobalProgram {
+        constraints: constraints.finish(),
+        hints: HintProgram { hints: Vec::new() },
+    })
+}
+
+fn lower_module_top_level_global_constraints(
+    module: &SourceProgramModule,
+    proof_value_slots: &BTreeMap<String, SourceProofValueSlot>,
+    constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
-    let tokens = lex_source(source).map_err(|source| SourceKeyDirectoryMetadataError::Lex {
-        source_name: source_name.to_owned(),
-        source,
+    let tokens = lex_source(&module.source.contents).map_err(|source| {
+        SourceKeyDirectoryMetadataError::Lex {
+            source_name: module.source_name.clone(),
+            source,
+        }
     })?;
     let mut index = 0;
     while index < tokens.len() {
@@ -311,9 +330,13 @@ fn validate_no_top_level_semantic_statements(
                 if let Some(next_index) = skip_known_top_level_metadata_directive(&tokens, index) {
                     index = next_index;
                 } else {
-                    return unsupported(
-                        "top-level statements need global constraint lowering support",
-                    );
+                    index = lower_top_level_expression_statement(
+                        module,
+                        &tokens,
+                        index,
+                        proof_value_slots,
+                        constraints,
+                    )?;
                 }
             }
             TokenKind::Public | TokenKind::Private
@@ -327,11 +350,265 @@ fn validate_no_top_level_semantic_statements(
                 index = skip_top_level_item(&tokens, index)?;
             }
             _ => {
-                return unsupported("top-level statements need global constraint lowering support");
+                index = lower_top_level_expression_statement(
+                    module,
+                    &tokens,
+                    index,
+                    proof_value_slots,
+                    constraints,
+                )?;
             }
         }
     }
     Ok(())
+}
+
+fn lower_top_level_expression_statement(
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    index: usize,
+    proof_value_slots: &BTreeMap<String, SourceProofValueSlot>,
+    constraints: &mut SourceGlobalConstraintBuilder,
+) -> Result<usize, SourceKeyDirectoryMetadataError> {
+    let next_index = skip_top_level_statement(tokens, index)?;
+    let expression_end = next_index
+        .checked_sub(1)
+        .ok_or_else(|| unsupported_source_message("top-level statement has no expression"))?;
+    let (expression, consumed) = parse_expression(&module.source, index, expression_end)?;
+    if consumed != expression_end {
+        return unsupported("top-level statement has unsupported trailing tokens");
+    }
+    lower_top_level_global_constraint(
+        &expression,
+        &module.source.contents[expression.start..expression.end],
+        proof_value_slots,
+        constraints,
+    )?;
+    Ok(next_index)
+}
+
+fn lower_top_level_global_constraint(
+    expression: &Expression,
+    source_line: &str,
+    proof_value_slots: &BTreeMap<String, SourceProofValueSlot>,
+    constraints: &mut SourceGlobalConstraintBuilder,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    let Some(name) = proof_value_boolean_constraint_name(expression) else {
+        return unsupported("top-level statements need global constraint lowering support");
+    };
+    let slot = proof_value_slots.get(name).copied().ok_or_else(|| {
+        unsupported_source_message("top-level proof value constraint references an unknown value")
+    })?;
+    if slot.stage != 1 {
+        return unsupported("top-level proof value constraints require stage-one values");
+    }
+    constraints.append_proof_value_boolean_constraint(slot.offset, source_line.trim().to_owned())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SourceProofValueSlot {
+    offset: u32,
+    stage: u64,
+}
+
+fn source_proof_value_slots(
+    global_info: &GlobalInfo,
+) -> Result<BTreeMap<String, SourceProofValueSlot>, SourceKeyDirectoryMetadataError> {
+    let mut slots = BTreeMap::new();
+    let mut next_offset = 0_u32;
+    for entry in &global_info.proof_values_map {
+        slots.insert(
+            entry.name.clone(),
+            SourceProofValueSlot {
+                offset: next_offset,
+                stage: entry.stage,
+            },
+        );
+        let width = if entry.stage == 1 { 1 } else { 3 };
+        next_offset = next_offset
+            .checked_add(width)
+            .ok_or_else(|| unsupported_source_message("source proof value offset overflow"))?;
+    }
+    Ok(slots)
+}
+
+fn proof_value_boolean_constraint_name(expression: &Expression) -> Option<&str> {
+    let ExpressionKind::Binary { op, left, right } = &strip_group_expression(expression).kind
+    else {
+        return None;
+    };
+    if *op != BinaryOperator::Multiply {
+        return None;
+    }
+
+    if let Some(name) = expression_name(left) {
+        if one_minus_name(right, name) || name_minus_one(right, name) {
+            return Some(name);
+        }
+    }
+    if let Some(name) = expression_name(right) {
+        if one_minus_name(left, name) || name_minus_one(left, name) {
+            return Some(name);
+        }
+    }
+    None
+}
+
+fn strip_group_expression(expression: &Expression) -> &Expression {
+    match &expression.kind {
+        ExpressionKind::Group(inner) => strip_group_expression(inner),
+        _ => expression,
+    }
+}
+
+fn expression_name(expression: &Expression) -> Option<&str> {
+    match &strip_group_expression(expression).kind {
+        ExpressionKind::Name(name) => Some(name),
+        _ => None,
+    }
+}
+
+fn one_minus_name(expression: &Expression, name: &str) -> bool {
+    let ExpressionKind::Binary { op, left, right } = &strip_group_expression(expression).kind
+    else {
+        return false;
+    };
+    *op == BinaryOperator::Subtract
+        && expression_is_one(left)
+        && expression_name(right) == Some(name)
+}
+
+fn name_minus_one(expression: &Expression, name: &str) -> bool {
+    let ExpressionKind::Binary { op, left, right } = &strip_group_expression(expression).kind
+    else {
+        return false;
+    };
+    *op == BinaryOperator::Subtract
+        && expression_name(left) == Some(name)
+        && expression_is_one(right)
+}
+
+fn expression_is_one(expression: &Expression) -> bool {
+    match &strip_group_expression(expression).kind {
+        ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
+            parse_i128_literal(value).is_ok_and(|value| value == 1)
+        }
+        _ => false,
+    }
+}
+
+fn skip_top_level_statement(
+    tokens: &[Token],
+    index: usize,
+) -> Result<usize, SourceKeyDirectoryMetadataError> {
+    let mut stack = Vec::<TokenKind>::new();
+    let mut cursor = index;
+    while let Some(token) = tokens.get(cursor) {
+        if stack.is_empty() && token.kind == TokenKind::Semicolon {
+            return Ok(cursor + 1);
+        }
+
+        match token.kind {
+            TokenKind::LParen => stack.push(TokenKind::RParen),
+            TokenKind::LBracket => stack.push(TokenKind::RBracket),
+            TokenKind::LBrace => stack.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                let Some(expected) = stack.pop() else {
+                    return unsupported("top-level statement has an unmatched closing delimiter");
+                };
+                if token.kind != expected {
+                    return unsupported("top-level statement delimiters are not balanced");
+                }
+            }
+            _ => {}
+        }
+        cursor += 1;
+    }
+    unsupported("top-level statement has no terminator")
+}
+
+#[derive(Default)]
+struct SourceGlobalConstraintBuilder {
+    entries: Vec<GlobalConstraintEntry>,
+    ops: Vec<u8>,
+    args: Vec<u16>,
+    numbers: Vec<u64>,
+}
+
+impl SourceGlobalConstraintBuilder {
+    fn append_proof_value_boolean_constraint(
+        &mut self,
+        proof_value_offset: u32,
+        source_line: String,
+    ) -> Result<(), SourceKeyDirectoryMetadataError> {
+        let ops_offset = source_usize_to_u32(self.ops.len(), "source global op offset overflow")?;
+        let args_offset =
+            source_usize_to_u32(self.args.len(), "source global argument offset overflow")?;
+        let one_offset = self.intern_number(1)?;
+        let proof_value_offset =
+            source_u32_to_u16(proof_value_offset, "source proof value offset overflow")?;
+        let one_offset = source_u32_to_u16(one_offset, "source number offset overflow")?;
+
+        self.ops.extend([0, 0]);
+        self.args.extend([
+            1,
+            0,
+            2,
+            one_offset,
+            3,
+            proof_value_offset,
+            2,
+            1,
+            3,
+            proof_value_offset,
+            0,
+            0,
+        ]);
+        self.entries.push(GlobalConstraintEntry {
+            destination_dimension: 1,
+            destination_id: 1,
+            temp1_count: 2,
+            temp3_count: 0,
+            ops_count: 2,
+            ops_offset,
+            args_count: 12,
+            args_offset,
+            source_line,
+        });
+        Ok(())
+    }
+
+    fn intern_number(&mut self, value: u64) -> Result<u32, SourceKeyDirectoryMetadataError> {
+        if let Some(index) = self.numbers.iter().position(|existing| *existing == value) {
+            return source_usize_to_u32(index, "source number offset overflow");
+        }
+        let index = source_usize_to_u32(self.numbers.len(), "source number offset overflow")?;
+        self.numbers.push(value);
+        Ok(index)
+    }
+
+    fn finish(self) -> GlobalConstraintProgram {
+        GlobalConstraintProgram {
+            entries: self.entries,
+            ops: self.ops,
+            args: self.args,
+            numbers: self.numbers,
+        }
+    }
+}
+
+fn source_usize_to_u32(
+    value: usize,
+    message: &'static str,
+) -> Result<u32, SourceKeyDirectoryMetadataError> {
+    u32::try_from(value).map_err(|_| unsupported_source_message(message))
+}
+
+fn source_u32_to_u16(
+    value: u32,
+    message: &'static str,
+) -> Result<u16, SourceKeyDirectoryMetadataError> {
+    u16::try_from(value).map_err(|_| unsupported_source_message(message))
 }
 
 fn skip_known_top_level_metadata_directive(tokens: &[Token], index: usize) -> Option<usize> {
