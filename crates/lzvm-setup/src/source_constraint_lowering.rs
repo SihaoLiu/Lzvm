@@ -10,7 +10,9 @@ use lzvm_pil::{
 };
 
 use crate::{
-    source_key_directory::SourceKeyDirectoryMetadataError, source_scalar_slots::SourceScalarSlots,
+    source_key_directory::SourceKeyDirectoryMetadataError,
+    source_scalar_slots::SourceScalarSlots,
+    source_statement_hints::{SourceExpressionArrayAlias, SourceExpressionArrayAliases},
     source_static_values::evaluate_source_static_expression,
 };
 
@@ -23,6 +25,7 @@ pub(crate) fn lower_source_template_boolean_constraint(
     scalar_slots: &SourceScalarSlots,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: &SourceExpressionAliases,
+    expression_array_aliases: &SourceExpressionArrayAliases,
 ) -> Result<Option<ConstraintCode>, SourceKeyDirectoryMetadataError> {
     let Some(expression) = statement.value_expression.as_ref() else {
         return Ok(None);
@@ -32,10 +35,12 @@ pub(crate) fn lower_source_template_boolean_constraint(
         scalar_slots,
         constant_values,
         expression_aliases,
+        expression_array_aliases,
         operations: Vec::new(),
         next_temporary: 0,
         frame_offsets: SourceConstraintFrameOffsets::default(),
         resolving_aliases: BTreeSet::new(),
+        resolving_array_aliases: BTreeSet::new(),
     };
     let Some(result) = lower_source_constraint_residual(expression, &mut state)? else {
         return Ok(None);
@@ -66,10 +71,12 @@ struct SourceConstraintLoweringState<'a> {
     scalar_slots: &'a SourceScalarSlots,
     constant_values: &'a BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: &'a SourceExpressionAliases,
+    expression_array_aliases: &'a SourceExpressionArrayAliases,
     operations: Vec<CodeOperation>,
     next_temporary: u32,
     frame_offsets: SourceConstraintFrameOffsets,
     resolving_aliases: BTreeSet<String>,
+    resolving_array_aliases: BTreeSet<String>,
 }
 
 fn lower_source_constraint_residual(
@@ -178,6 +185,33 @@ fn lower_source_scalar_expression_at(
                 return unsupported("unsupported source indexed constraint target");
             };
             let index = source_scalar_index_value(index, state)?;
+            if let Some(alias) = state.expression_array_aliases.get(name) {
+                let element = source_constraint_array_alias_element(
+                    alias,
+                    usize::try_from(index).map_err(|_| {
+                        unsupported_source_message("source scalar constraint index overflow")
+                    })?,
+                    state.expression_array_aliases,
+                    &mut state.resolving_array_aliases,
+                )
+                .ok_or_else(|| {
+                    unsupported_source_message("unsupported source indexed constraint target")
+                })?;
+                return match element {
+                    SourceConstraintArrayAliasElement::Expression(expression) => {
+                        lower_source_scalar_expression_at(expression, state, row_offset)
+                    }
+                    SourceConstraintArrayAliasElement::NamedArray(name) => {
+                        if row_offset != 0 {
+                            state.frame_offsets.include(row_offset);
+                        }
+                        state
+                            .scalar_slots
+                            .operand_index_at(name, index, row_offset)
+                            .map_err(|error| unsupported_source_message(error.to_string()))
+                    }
+                };
+            }
             if row_offset != 0 {
                 state.frame_offsets.include(row_offset);
             }
@@ -214,6 +248,40 @@ fn lower_source_scalar_expression_at(
             Ok(CodeOperand::temporary(id, dimension))
         }
         _ => unsupported("unsupported source scalar constraint expression"),
+    }
+}
+
+enum SourceConstraintArrayAliasElement<'a> {
+    Expression(&'a Expression),
+    NamedArray(&'a str),
+}
+
+fn source_constraint_array_alias_element<'a>(
+    alias: &'a SourceExpressionArrayAlias,
+    index: usize,
+    expression_array_aliases: &'a SourceExpressionArrayAliases,
+    resolving_array_aliases: &mut BTreeSet<String>,
+) -> Option<SourceConstraintArrayAliasElement<'a>> {
+    match alias {
+        SourceExpressionArrayAlias::Name(name) => {
+            if let Some(next_alias) = expression_array_aliases.get(name) {
+                if !resolving_array_aliases.insert(name.clone()) {
+                    return None;
+                }
+                let element = source_constraint_array_alias_element(
+                    next_alias,
+                    index,
+                    expression_array_aliases,
+                    resolving_array_aliases,
+                );
+                resolving_array_aliases.remove(name);
+                return element;
+            }
+            Some(SourceConstraintArrayAliasElement::NamedArray(name))
+        }
+        SourceExpressionArrayAlias::Values(expressions) => expressions
+            .get(index)
+            .map(SourceConstraintArrayAliasElement::Expression),
     }
 }
 

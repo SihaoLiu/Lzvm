@@ -338,6 +338,7 @@ fn lower_source_template_statement(
             context.scalar_slots,
             values,
             &alias_scope.expressions,
+            &alias_scope.expression_arrays,
         );
         match lowered {
             Ok(Some(constraint)) => constraints.push(constraint),
@@ -374,6 +375,7 @@ fn lower_source_template_statement(
         context.scalar_slots,
         values,
         &alias_scope.expressions,
+        &alias_scope.expression_arrays,
     ) {
         Ok(Some(constraint)) => {
             constraints.push(constraint);
@@ -904,6 +906,7 @@ fn lower_source_function_body_statement(
         context.scalar_slots,
         values,
         &alias_scope.expressions,
+        &alias_scope.expression_arrays,
     ) {
         Ok(Some(constraint)) => {
             constraints.push(constraint);
