@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use lzvm_pil::{
-    lex_source, parse_expression, BinaryOperator, Expression, ExpressionKind,
+    lex_source, parse_expression_tokens, BinaryOperator, Expression, ExpressionKind,
     FixedFileTemplateValue, FunctionDeclaration, FunctionStatement, FunctionStatementDeclaration,
     FunctionStatementKind, SourceFile, SourceProgram, SourceProgramModule, SourceSpan, Token,
     TokenKind, UnaryOperator,
@@ -516,7 +516,8 @@ fn execute_static_expression_statements(
             TokenKind::EndOfInput => break,
             _ => {
                 let end = next_static_semicolon(&tokens, index)?;
-                let (expression, consumed) = parse_expression(source, index, end).ok()?;
+                let (expression, consumed) =
+                    parse_expression_tokens(&tokens, index, end, source).ok()?;
                 if consumed != end {
                     return None;
                 }
@@ -661,7 +662,7 @@ fn evaluate_source_static_token_range(
         );
     }
 
-    let (expression, consumed) = parse_expression(source, start, end).ok()?;
+    let (expression, consumed) = parse_expression_tokens(tokens, start, end, source).ok()?;
     if consumed != end {
         return None;
     }
@@ -783,7 +784,8 @@ fn execute_static_template_statement(
             if execute_source_static_postfix_update(tokens, index, semicolon, values).is_some() {
                 return Some(semicolon + 1);
             }
-            let (expression, consumed) = parse_expression(&module.source, index, semicolon).ok()?;
+            let (expression, consumed) =
+                parse_expression_tokens(tokens, index, semicolon, &module.source).ok()?;
             if consumed == semicolon {
                 execute_source_static_expression_statement(program, &expression, values);
             }

@@ -88,6 +88,24 @@ fn nested_zero_static_for_loop_source(outer_count: usize, body_statement_count: 
     source
 }
 
+fn many_static_template_assignment_source(statement_count: usize) -> String {
+    let mut source = String::from(
+        "airtemplate UnitA() {\n\
+             col witness values[1];\n\
+             int accumulator = 0;\n",
+    );
+    for _ in 0..statement_count {
+        source.push_str("    accumulator += 1;\n");
+    }
+    source.push_str(
+        "    values[0] === 0;\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [0, 0];",
+    );
+    source
+}
+
 #[test]
 fn generate_key_unrolls_static_source_for_loop_constraints() {
     let dir = temp_dir("static-for-loop-constraint");
@@ -593,6 +611,51 @@ fn generate_key_reuses_nested_static_for_loop_bodies() {
     )
     .expect("expression metadata should parse");
     assert!(expressions.constraints.is_empty());
+    assert!(expressions.hints.is_empty());
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_keeps_many_static_template_assignments_responsive() {
+    let dir = temp_dir("many-static-template-assignments");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(&source_path, many_static_template_assignment_source(2500));
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let started = Instant::now();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    let elapsed = started.elapsed();
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(
+        elapsed < Duration::from_secs(8),
+        "source setup took {elapsed:?}"
+    );
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert_eq!(expressions.constraints.len(), 1);
     assert!(expressions.hints.is_empty());
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
