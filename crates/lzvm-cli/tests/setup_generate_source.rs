@@ -141,6 +141,42 @@ fn generate_key_allows_unused_helper_functions_in_source_metadata() {
 }
 
 #[test]
+fn generate_key_allows_local_variables_inside_unused_helpers() {
+    let dir = temp_dir("helper-locals");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "function helper() { expr packed = 0; return packed; }\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(dir.join(SETUP_DIRECTORY_MANIFEST_FILE).is_file());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_rejects_source_metadata_that_requires_lowering() {
     let dir = temp_dir("needs-lowering");
     let _ = fs::remove_dir_all(&dir);

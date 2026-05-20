@@ -254,15 +254,14 @@ fn validate_supported_source_program(
                 "fixed columns without source initializers need external fixed input support",
             );
         }
-        if !module.variables.is_empty()
-            || !module.commits.is_empty()
+        if !module.commits.is_empty()
             || !module.publics.is_empty()
             || !module.public_tables.is_empty()
             || !module.air_group_values.is_empty()
             || !module.values.is_empty()
         {
             return unsupported(
-                "variables, public values, commits, and value maps need metadata lowering support",
+                "public values, commits, and value maps need metadata lowering support",
             );
         }
     }
