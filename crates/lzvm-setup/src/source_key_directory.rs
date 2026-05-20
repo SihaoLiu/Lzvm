@@ -225,7 +225,8 @@ pub fn write_source_key_directory_metadata(
             };
             let row_count = source_layout_unit_row_count(unit, &row_counts)?;
             let mut setup_info = source_unit_setup_info(&program, row_count)?;
-            let expression_info = source_expression_info(&program, &setup_info)?;
+            let expression_info =
+                source_expression_info(&program, &setup_info, &global_info.publics_map)?;
             setup_info.n_constraints = Some(
                 u32::try_from(expression_info.constraints.len())
                     .map_err(|_| unsupported_source_message("too many source constraints"))?,

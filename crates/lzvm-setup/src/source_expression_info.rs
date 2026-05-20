@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_artifacts::expression_info::{ConstraintCode, ExpressionInfo, HintInfo};
+use lzvm_artifacts::global_info::PublicValue;
 use lzvm_artifacts::setup_info::UnitSetupInfo;
 use lzvm_pil::{
     ColumnKind, FixedFileTemplateValue, FunctionStatement, FunctionStatementKind, SourceProgram,
@@ -39,8 +40,9 @@ use crate::{
 pub(crate) fn source_expression_info(
     program: &SourceProgram,
     setup: &UnitSetupInfo,
+    publics: &[PublicValue],
 ) -> Result<ExpressionInfo, SourceKeyDirectoryMetadataError> {
-    let scalar_slots = SourceScalarSlots::from_setup(setup)
+    let scalar_slots = SourceScalarSlots::from_setup(setup, publics)
         .map_err(|error| unsupported_source_message(error.to_string()))?;
     let fixed_assignment_columns = source_fixed_assignment_column_names(program);
     let active_templates = concrete_template_names(program);

@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use lzvm_artifacts::expression_info::CodeOperand;
+use lzvm_artifacts::global_info::PublicValue;
 use lzvm_artifacts::setup_info::UnitSetupInfo;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,15 +48,26 @@ struct SourceConstantSlot {
     dimension: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SourcePublicSlot {
+    id: u32,
+    stage: u64,
+    dimension: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SourceScalarSlots {
     commitments: BTreeMap<String, SourceCommitmentSlot>,
     unit_values: BTreeMap<String, SourceUnitValueSlot>,
     constants: BTreeMap<String, SourceConstantSlot>,
+    publics: BTreeMap<String, SourcePublicSlot>,
 }
 
 impl SourceScalarSlots {
-    pub(crate) fn from_setup(setup: &UnitSetupInfo) -> Result<Self, SourceScalarSlotError> {
+    pub(crate) fn from_setup(
+        setup: &UnitSetupInfo,
+        public_values: &[PublicValue],
+    ) -> Result<Self, SourceScalarSlotError> {
         let mut commitments = BTreeMap::new();
         for (index, column) in setup.commitment_columns.iter().enumerate() {
             commitments.insert(
@@ -92,10 +104,23 @@ impl SourceScalarSlots {
             );
         }
 
+        let mut publics = BTreeMap::new();
+        for (index, value) in public_values.iter().enumerate() {
+            publics.insert(
+                value.name.clone(),
+                SourcePublicSlot {
+                    id: usize_to_u32(index, "source public id overflow")?,
+                    stage: value.stage,
+                    dimension: public_value_dimension(&value.lengths)?,
+                },
+            );
+        }
+
         Ok(Self {
             commitments,
             unit_values,
             constants,
+            publics,
         })
     }
 
@@ -125,6 +150,15 @@ impl SourceScalarSlots {
                 });
             }
             return Ok(CodeOperand::constant(slot.id, 1));
+        }
+
+        if let Some(slot) = self.publics.get(name) {
+            if slot.stage != 1 || slot.dimension != 1 {
+                return Err(SourceScalarSlotError::UnsupportedValueShape {
+                    name: name.to_owned(),
+                });
+            }
+            return Ok(CodeOperand::public(slot.id, 1));
         }
 
         Err(SourceScalarSlotError::UnknownValue {
@@ -247,5 +281,17 @@ fn stage_value_dimension(lengths: &[u32]) -> Result<u32, SourceScalarSlotError> 
             .ok_or(SourceScalarSlotError::LengthOverflow(
                 "source unit value dimension overflow",
             ))
+    })
+}
+
+fn public_value_dimension(lengths: &[u64]) -> Result<u32, SourceScalarSlotError> {
+    let dimension = lengths.iter().try_fold(1_u64, |acc, length| {
+        acc.checked_mul(*length)
+            .ok_or(SourceScalarSlotError::LengthOverflow(
+                "source public value dimension overflow",
+            ))
+    })?;
+    u32::try_from(dimension).map_err(|_| {
+        SourceScalarSlotError::LengthOverflow("source public value dimension overflow")
     })
 }
