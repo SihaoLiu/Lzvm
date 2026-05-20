@@ -168,6 +168,25 @@ pub fn derive_pcs_final_query_challenge(
         .ok_or(PcsTranscriptError::EmptyFinalPolynomial)
 }
 
+pub fn aggregate_pcs_final_query_challenges(
+    challenges: &[Ext3],
+) -> Result<Ext3, PcsTranscriptError> {
+    if challenges.is_empty() {
+        return Err(PcsTranscriptError::EmptyFinalPolynomial);
+    }
+    if challenges.len() == 1 {
+        return Ok(challenges[0]);
+    }
+
+    let mut transcript = PoseidonTranscript::new(2)?;
+    let count = u64::try_from(challenges.len()).map_err(|_| PcsTranscriptError::LengthOverflow)?;
+    transcript.put(&[Felt::from_u64(count)]);
+    for challenge in challenges {
+        transcript.put(&[challenge.c0, challenge.c1, challenge.c2]);
+    }
+    Ok(transcript.get_field())
+}
+
 pub fn derive_pcs_transcript_challenges(
     input: PcsTranscriptInputs<'_>,
 ) -> Result<Vec<Ext3>, PcsTranscriptError> {

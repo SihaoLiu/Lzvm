@@ -19,7 +19,9 @@ use lzvm_artifacts::pcs_material_segment::{
     parse_pcs_material_manifest_segment, PcsMaterialManifestSegment,
     PcsMaterialManifestSegmentError, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
-use lzvm_artifacts::pcs_nonce_segment::PCS_QUERY_NONCE_SEGMENT_ID;
+use lzvm_artifacts::pcs_nonce_segment::{
+    parse_pcs_query_nonce_segment, PCS_QUERY_NONCE_SEGMENT_ID,
+};
 use lzvm_artifacts::pcs_query_segment::{
     parse_pcs_query_plan_segment, PcsQueryPlanSegment, PcsQueryPlanSegmentError, PcsQueryPlanUnit,
     PCS_QUERY_PLAN_SEGMENT_ID,
@@ -30,7 +32,7 @@ use lzvm_artifacts::witness_segment::{
     parse_witness_commitment_segment, WitnessCommitmentSegmentError,
     WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
-use lzvm_field::Felt;
+use lzvm_field::{Ext3, Felt};
 
 use crate::pcs_evaluation::{
     load_pcs_evaluation_unit_from_segments, validate_pcs_evaluation_units_match_query_units,
@@ -40,7 +42,10 @@ use crate::pcs_fri::{
     load_pcs_fri_opening_unit_from_segments, validate_pcs_fri_opening_units_match_query_units,
     LoadPcsFriOpeningUnitError,
 };
-use crate::pcs_transcript::PcsTranscriptSegmentInputs;
+use crate::pcs_transcript::{
+    aggregate_pcs_final_query_challenges, derive_pcs_final_query_challenge_from_segments,
+    PcsTranscriptError, PcsTranscriptSegmentInputs,
+};
 use crate::unit_values::{
     load_unit_values_from_segments, validate_unit_values_units_match_query_units,
     LoadUnitValuesSegmentError,
@@ -73,6 +78,7 @@ pub enum ValidatePcsQueryPlanSegmentsError {
     Evaluation(LoadPcsEvaluationUnitError),
     Fri(LoadPcsFriOpeningUnitError),
     UnitValues(LoadUnitValuesSegmentError),
+    Transcript(PcsTranscriptError),
     Build(ProvePcsQueryPlanSegmentError),
     DuplicateBindingSegment {
         id: u32,
@@ -115,6 +121,9 @@ impl fmt::Display for ValidatePcsQueryPlanSegmentsError {
             Self::Evaluation(error) => write!(f, "{error}"),
             Self::Fri(error) => write!(f, "{error}"),
             Self::UnitValues(error) => write!(f, "{error}"),
+            Self::Transcript(error) => {
+                write!(f, "derive PCS query plan transcript failed: {error}")
+            }
             Self::Build(error) => write!(f, "derive PCS query plan segment failed: {error}"),
             Self::DuplicateBindingSegment { id } => {
                 write!(f, "duplicate proof binding segment id: {id}")
@@ -156,6 +165,7 @@ impl std::error::Error for ValidatePcsQueryPlanSegmentsError {
             Self::Evaluation(error) => Some(error),
             Self::Fri(error) => Some(error),
             Self::UnitValues(error) => Some(error),
+            Self::Transcript(error) => Some(error),
             Self::Build(error) => Some(error),
             Self::MissingMaterialSegment
             | Self::DuplicateMaterialSegment
@@ -244,9 +254,13 @@ fn validate_transcript_query_plan_unit_inputs(
     schedule: &ProveSchedule,
     query_units: &[PcsQueryPlanUnit],
     material: &PcsMaterialManifestSegment,
+    public_values: &[Felt],
     witness_segments: &[ProofSegment],
     segments: &[ProofSegment],
-) -> Result<(), ValidatePcsQueryPlanSegmentsError> {
+) -> Result<Vec<Ext3>, ValidatePcsQueryPlanSegmentsError> {
+    let binding_segments = checked_proof_binding_segments(segments)
+        .map_err(|id| ValidatePcsQueryPlanSegmentsError::DuplicateBindingSegment { id })?;
+    let mut final_query_challenges = Vec::with_capacity(query_units.len());
     for query_unit in query_units {
         let unit_index_u32 = query_unit.unit_index;
         let unit_index = usize::try_from(unit_index_u32)
@@ -255,7 +269,7 @@ fn validate_transcript_query_plan_unit_inputs(
             .units
             .get(unit_index)
             .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
-        material
+        let material_unit = material
             .units
             .iter()
             .find(|unit| unit.unit_index == unit_index_u32)
@@ -263,16 +277,37 @@ fn validate_transcript_query_plan_unit_inputs(
         let witness_segment_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
             .checked_add(unit_index_u32)
             .ok_or(ValidatePcsQueryPlanSegmentsError::WitnessSegmentIdOverflow)?;
-        witness_segments
+        let witness_segment = witness_segments
             .iter()
             .find(|segment| segment.id == witness_segment_id)
             .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
-        load_pcs_evaluation_unit_from_segments(unit_index, unit, segments)
+        let witness =
+            parse_witness_commitment_segment(&witness_segment.data).map_err(|source| {
+                ValidatePcsQueryPlanSegmentsError::WitnessSegment { unit_index, source }
+            })?;
+        let evaluations = load_pcs_evaluation_unit_from_segments(unit_index, unit, segments)
             .map_err(ValidatePcsQueryPlanSegmentsError::Evaluation)?;
-        load_pcs_fri_opening_unit_from_segments(unit_index, segments)
+        let fri = load_pcs_fri_opening_unit_from_segments(unit_index, segments)
             .map_err(ValidatePcsQueryPlanSegmentsError::Fri)?;
-        load_unit_values_from_segments(unit_index, &unit.unit_value_map, segments)
-            .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
+        let unit_values =
+            load_unit_values_from_segments(unit_index, &unit.unit_value_map, segments)
+                .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
+        let final_query_challenge =
+            derive_pcs_final_query_challenge_from_segments(PcsTranscriptSegmentInputs {
+                unit_index,
+                unit,
+                material: material_unit,
+                public_values,
+                unit_values: &unit_values,
+                witness: &witness,
+                evaluations: &evaluations,
+                fri: &fri,
+                root_challenge_draws: &unit.transcript_root_challenge_draws,
+                evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
+                binding_segments: &binding_segments,
+            })
+            .map_err(ValidatePcsQueryPlanSegmentsError::Transcript)?;
+        final_query_challenges.push(final_query_challenge);
     }
     validate_pcs_evaluation_units_match_query_units(query_units, segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::Evaluation)?;
@@ -280,7 +315,7 @@ fn validate_transcript_query_plan_unit_inputs(
         .map_err(ValidatePcsQueryPlanSegmentsError::Fri)?;
     validate_unit_values_units_match_query_units(query_units, segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
-    Ok(())
+    Ok(final_query_challenges)
 }
 
 pub(crate) fn proof_binding_segments(segments: &[ProofSegment]) -> Vec<ProofSegment> {
@@ -374,70 +409,36 @@ pub fn validate_transcript_pcs_query_plan_segments(
         ))?;
     let witness_segments = load_witness_commitment_segments(&schedule.units, segments)
         .map_err(ValidatePcsQueryPlanSegmentsError::Witness)?;
-    let query_unit = query_plan
-        .units
-        .first()
-        .ok_or(ValidatePcsQueryPlanSegmentsError::TranscriptUnitCountMismatch)?;
-    let unit_index_u32 = query_unit.unit_index;
-    let unit_index = usize::try_from(unit_index_u32)
-        .map_err(|_| ValidatePcsQueryPlanSegmentsError::UnitIndexOverflow)?;
-    let unit = schedule
-        .units
-        .get(unit_index)
-        .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
     let material = parse_pcs_material_manifest_segment(&material_segment.data)
         .map_err(ValidatePcsQueryPlanSegmentsError::Material)?;
-    let material_unit = material
-        .units
-        .iter()
-        .find(|unit| unit.unit_index == unit_index_u32)
-        .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
-    let witness_segment_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
-        .checked_add(unit_index_u32)
-        .ok_or(ValidatePcsQueryPlanSegmentsError::WitnessSegmentIdOverflow)?;
-    let witness_segment = witness_segments
-        .iter()
-        .find(|segment| segment.id == witness_segment_id)
-        .ok_or(ValidatePcsQueryPlanSegmentsError::UnitMismatch { unit_index })?;
-    let witness = parse_witness_commitment_segment(&witness_segment.data).map_err(|source| {
-        ValidatePcsQueryPlanSegmentsError::WitnessSegment { unit_index, source }
-    })?;
-    let evaluation_unit = load_pcs_evaluation_unit_from_segments(unit_index, unit, segments)
-        .map_err(ValidatePcsQueryPlanSegmentsError::Evaluation)?;
-    let fri_unit = load_pcs_fri_opening_unit_from_segments(unit_index, segments)
-        .map_err(ValidatePcsQueryPlanSegmentsError::Fri)?;
-    let unit_values = load_unit_values_from_segments(unit_index, &unit.unit_value_map, segments)
-        .map_err(ValidatePcsQueryPlanSegmentsError::UnitValues)?;
-    let binding_segments = checked_proof_binding_segments(segments)
-        .map_err(|id| ValidatePcsQueryPlanSegmentsError::DuplicateBindingSegment { id })?;
-    let expected_segment = build_pcs_query_plan_segment_from_transcript_segments(
+    if query_plan.units.is_empty() {
+        return Err(ValidatePcsQueryPlanSegmentsError::TranscriptUnitCountMismatch);
+    }
+    let final_query_challenges = validate_transcript_query_plan_unit_inputs(
+        schedule,
+        &query_plan.units,
+        &material,
+        public_values,
+        &witness_segments,
+        segments,
+    )?;
+    let final_query_challenge = aggregate_pcs_final_query_challenges(&final_query_challenges)
+        .map_err(ValidatePcsQueryPlanSegmentsError::Transcript)?;
+    let nonce = Felt::from_u64(
+        parse_pcs_query_nonce_segment(&nonce_segment.data)
+            .map_err(ProvePcsQueryPlanSegmentError::from)
+            .map_err(ValidatePcsQueryPlanSegmentsError::Build)?
+            .nonce,
+    );
+    let expected_segment = build_pcs_query_plan_segment_from_challenge(
         schedule,
         &witness_segments,
-        PcsTranscriptSegmentInputs {
-            unit_index,
-            unit,
-            material: material_unit,
-            public_values,
-            unit_values: &unit_values,
-            witness: &witness,
-            evaluations: &evaluation_unit,
-            fri: &fri_unit,
-            root_challenge_draws: &unit.transcript_root_challenge_draws,
-            evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
-            binding_segments: &binding_segments,
-        },
-        nonce_segment,
+        final_query_challenge,
+        nonce,
     )
     .map_err(ValidatePcsQueryPlanSegmentsError::Build)?;
     if query_segment.data != expected_segment.data {
         return Err(ValidatePcsQueryPlanSegmentsError::QueryPlanMismatch);
     }
-    validate_transcript_query_plan_unit_inputs(
-        schedule,
-        &query_plan.units,
-        &material,
-        &witness_segments,
-        segments,
-    )?;
     Ok(())
 }

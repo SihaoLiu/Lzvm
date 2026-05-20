@@ -454,6 +454,113 @@ fn rejects_transcript_pcs_query_plan_missing_later_material_unit() {
 }
 
 #[test]
+fn rejects_transcript_pcs_query_plan_not_bound_to_each_unit_challenge() {
+    let mut schedule = sample_schedule();
+    let mut second_unit = sample_unit();
+    schedule.units[0].evaluation_value_count = 1;
+    schedule.units[0].transcript_evaluation_challenge_draws = 1;
+    second_unit.evaluation_value_count = 1;
+    second_unit.transcript_evaluation_challenge_draws = 1;
+    second_unit.unit_id = Some(1);
+    second_unit.unit_name = Some("unit-b".to_owned());
+    schedule.unit_count = 2;
+    schedule.pcs_material_unit_count = 2;
+    schedule.total_query_count = 4;
+    schedule.units.push(second_unit);
+
+    let first_material = material_unit(0);
+    let mut second_material = material_unit(1);
+    second_material.constant_tree_root = [21, 22, 23, 24];
+
+    let first_witness = witness_commitment(0);
+    let mut second_witness = witness_commitment(1);
+    second_witness.stages[0].root = [25, 26, 27, 28];
+    let first_witness_segment = witness_segment(0);
+    let second_witness_segment = ProofSegment {
+        id: WITNESS_COMMITMENT_SEGMENT_BASE_ID + 1,
+        data: encode_witness_commitment_segment(&second_witness)
+            .expect("witness segment should encode"),
+    };
+
+    let first_evaluations = PcsEvaluationUnitSegment {
+        unit_index: 0,
+        values: vec![[9, 10, 11]],
+    };
+    let second_evaluations = PcsEvaluationUnitSegment {
+        unit_index: 1,
+        values: vec![[29, 30, 31]],
+    };
+    let first_fri = PcsFriOpeningUnitSegment {
+        unit_index: 0,
+        layers: Vec::new(),
+        final_polynomial: vec![[12, 13, 14]],
+    };
+    let second_fri = PcsFriOpeningUnitSegment {
+        unit_index: 1,
+        layers: Vec::new(),
+        final_polynomial: vec![[32, 33, 34]],
+    };
+    let first_input = PcsTranscriptSegmentInputs {
+        unit_index: 0,
+        unit: &schedule.units[0],
+        material: &first_material,
+        public_values: &[],
+        unit_values: &[],
+        witness: &first_witness,
+        evaluations: &first_evaluations,
+        fri: &first_fri,
+        root_challenge_draws: &schedule.units[0].transcript_root_challenge_draws,
+        evaluation_challenge_draws: schedule.units[0].transcript_evaluation_challenge_draws,
+        binding_segments: &[],
+    };
+    let nonce_segment =
+        build_pcs_query_nonce_segment_from_transcript_segments(&schedule, first_input)
+            .expect("query nonce should build");
+    let query_segment = build_pcs_query_plan_segment_from_transcript_segments(
+        &schedule,
+        &[
+            first_witness_segment.clone(),
+            second_witness_segment.clone(),
+        ],
+        first_input,
+        &nonce_segment,
+    )
+    .expect("query plan should build");
+    let segments = vec![
+        ProofSegment {
+            id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+            data: encode_pcs_material_manifest_segment(&PcsMaterialManifestSegment {
+                units: vec![first_material, second_material],
+            })
+            .expect("material segment should encode"),
+        },
+        first_witness_segment,
+        second_witness_segment,
+        ProofSegment {
+            id: PCS_EVALUATION_SEGMENT_ID,
+            data: encode_pcs_evaluation_segment(&PcsEvaluationSegment {
+                units: vec![first_evaluations, second_evaluations],
+            })
+            .expect("evaluation segment should encode"),
+        },
+        ProofSegment {
+            id: PCS_FRI_OPENING_SEGMENT_ID,
+            data: encode_pcs_fri_opening_segment(&PcsFriOpeningSegment {
+                units: vec![first_fri, second_fri],
+            })
+            .expect("FRI opening segment should encode"),
+        },
+        nonce_segment,
+        query_segment,
+    ];
+
+    let error = validate_transcript_pcs_query_plan_segments(&schedule, &[], &segments)
+        .expect_err("query plan should bind every unit transcript");
+
+    assert_eq!(error, ValidatePcsQueryPlanSegmentsError::QueryPlanMismatch);
+}
+
+#[test]
 fn detects_transcript_pcs_query_plan_inputs() {
     assert!(!uses_transcript_pcs_query_plan_inputs(&[]));
     assert!(uses_transcript_pcs_query_plan_inputs(&[ProofSegment {

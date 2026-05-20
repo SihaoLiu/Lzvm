@@ -20,6 +20,7 @@ use crate::contribution::{
     build_contribution_segment, build_witness_contribution_input, derive_worker_contribution_entry,
 };
 use crate::group_values::build_group_values_segment;
+use crate::pcs_transcript::aggregate_pcs_final_query_challenges;
 use crate::proof_values::build_pcs_proof_values_segment_from_packed_values;
 use crate::setup_preflight::{validate_setup_preflight, validate_setup_preflight_hashes};
 use crate::unit_values::{
@@ -242,11 +243,13 @@ pub fn build_witness_proof_artifact_for_unit(
     };
     let query_segment = match &transcript_values {
         Some((_, values)) => {
-            let final_query_challenge = values
-                .first()
-                .ok_or_else(|| "build FRI transcript values failed: no units".to_owned())?
-                .commitments
-                .final_query_challenge;
+            let final_query_challenges = values
+                .iter()
+                .map(|value| value.commitments.final_query_challenge)
+                .collect::<Vec<_>>();
+            let final_query_challenge =
+                aggregate_pcs_final_query_challenges(&final_query_challenges)
+                    .map_err(|error| format!("build query challenge failed: {error}"))?;
             let nonce_segment = build_pcs_query_nonce_segment_with_streams(
                 request.schedule,
                 final_query_challenge,
@@ -885,11 +888,12 @@ fn build_witness_transcript_proof_artifact_for_all_units(
     let transcript_values =
         build_pcs_fri_transcript_values_from_trace_segments(request.schedule, &transcript_inputs)
             .map_err(|error| format!("build FRI transcript values failed: {error}"))?;
-    let final_query_challenge = transcript_values
-        .first()
-        .ok_or_else(|| "build FRI transcript values failed: no units".to_owned())?
-        .commitments
-        .final_query_challenge;
+    let final_query_challenges = transcript_values
+        .iter()
+        .map(|value| value.commitments.final_query_challenge)
+        .collect::<Vec<_>>();
+    let final_query_challenge = aggregate_pcs_final_query_challenges(&final_query_challenges)
+        .map_err(|error| format!("build query challenge failed: {error}"))?;
     let nonce_segment = build_pcs_query_nonce_segment_with_streams(
         request.schedule,
         final_query_challenge,
