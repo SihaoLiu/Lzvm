@@ -3,7 +3,10 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::constraint_program::{GlobalConstraintEntry, GlobalConstraintProgram};
-use lzvm_artifacts::expression_info::{ExpressionInfo, ExpressionInfoError};
+use lzvm_artifacts::expression_info::{
+    BoundaryKind, CodeDestination, CodeOperand, CodeOperation, ConstraintCode, ExpressionInfo,
+    ExpressionInfoError, OperationKind,
+};
 use lzvm_artifacts::global_info::{
     encode_global_info, AggregationType, CurveKind, GlobalAir, GlobalInfo, GlobalInfoError,
     NamedStageValue, PublicValue,
@@ -174,12 +177,19 @@ pub fn write_source_key_directory_metadata(
 
     let row_count = infer_source_row_count(&program)?;
     let global_info = source_global_info(&program, row_count)?;
-    let setup_info = source_unit_setup_info(&program, row_count)?;
-    let expression_info = ExpressionInfo {
-        hints: Vec::new(),
-        expressions: Vec::new(),
-        constraints: Vec::new(),
-    };
+    let mut setup_info = source_unit_setup_info(&program, row_count)?;
+    let expression_info = source_expression_info(&program, &setup_info)?;
+    setup_info.n_constraints = Some(
+        u32::try_from(expression_info.constraints.len())
+            .map_err(|_| unsupported_source_message("too many source constraints"))?,
+    );
+    if !expression_info.constraints.is_empty() && setup_info.n_stages == 0 {
+        setup_info.n_stages = 1;
+        setup_info
+            .section_widths
+            .entry("cm2".to_owned())
+            .or_insert(1);
+    }
     let verifier_info = source_verifier_info();
     let global_program = source_global_program(&program, &global_info)?;
 
@@ -251,15 +261,6 @@ fn validate_supported_source_program(
     program: &SourceProgram,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     for module in &program.modules {
-        for template in &module.air_templates {
-            for statement in &template.statements {
-                if !source_template_statement_supported_without_constraint_lowering(
-                    module, statement,
-                )? {
-                    return unsupported("air template statements need constraint lowering support");
-                }
-            }
-        }
         if module
             .columns
             .iter()
@@ -276,25 +277,206 @@ fn validate_supported_source_program(
     Ok(())
 }
 
-fn source_template_statement_supported_without_constraint_lowering(
+fn source_expression_info(
+    program: &SourceProgram,
+    setup: &UnitSetupInfo,
+) -> Result<ExpressionInfo, SourceKeyDirectoryMetadataError> {
+    let commitment_slots = source_commitment_slots(setup)?;
+    let mut constraints = Vec::new();
+    for module in &program.modules {
+        for template in &module.air_templates {
+            for statement in &template.statements {
+                lower_source_template_statement(
+                    module,
+                    statement,
+                    &commitment_slots,
+                    &mut constraints,
+                )?;
+            }
+        }
+    }
+    Ok(ExpressionInfo {
+        hints: Vec::new(),
+        expressions: Vec::new(),
+        constraints,
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SourceCommitmentSlot {
+    id: u32,
+    stage: u32,
+    dimension: u32,
+}
+
+fn source_commitment_slots(
+    setup: &UnitSetupInfo,
+) -> Result<BTreeMap<String, SourceCommitmentSlot>, SourceKeyDirectoryMetadataError> {
+    let mut slots = BTreeMap::new();
+    for (index, column) in setup.commitment_columns.iter().enumerate() {
+        slots.insert(
+            column.name.clone(),
+            SourceCommitmentSlot {
+                id: source_usize_to_u32(index, "source commitment id overflow")?,
+                stage: column.stage,
+                dimension: column.dimension,
+            },
+        );
+    }
+    Ok(slots)
+}
+
+fn lower_source_template_statement(
     module: &SourceProgramModule,
     statement: &FunctionStatement,
-) -> Result<bool, SourceKeyDirectoryMetadataError> {
+    commitment_slots: &BTreeMap<String, SourceCommitmentSlot>,
+    constraints: &mut Vec<ConstraintCode>,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
-        return Ok(true);
+        return Ok(());
     }
     if statement.kind != FunctionStatementKind::Expression {
-        return Ok(false);
+        return unsupported("air template statements need constraint lowering support");
     }
 
+    if source_statement_first_token_kind(module, statement)?
+        .is_some_and(|kind| kind == TokenKind::AirValue)
+    {
+        return Ok(());
+    }
+    if let Some(constraint) =
+        lower_source_template_boolean_constraint(module, statement, commitment_slots)?
+    {
+        constraints.push(constraint);
+        return Ok(());
+    }
+    unsupported("air template statements need constraint lowering support")
+}
+
+fn source_statement_first_token_kind(
+    module: &SourceProgramModule,
+    statement: &FunctionStatement,
+) -> Result<Option<TokenKind>, SourceKeyDirectoryMetadataError> {
     let text = &module.source.contents[statement.start..statement.end];
     let tokens = lex_source(text).map_err(|source| SourceKeyDirectoryMetadataError::Lex {
         source_name: module.source_name.clone(),
         source,
     })?;
-    Ok(tokens
-        .first()
-        .is_some_and(|token| token.kind == TokenKind::AirValue))
+    Ok(tokens.first().map(|token| token.kind))
+}
+
+fn lower_source_template_boolean_constraint(
+    module: &SourceProgramModule,
+    statement: &FunctionStatement,
+    commitment_slots: &BTreeMap<String, SourceCommitmentSlot>,
+) -> Result<Option<ConstraintCode>, SourceKeyDirectoryMetadataError> {
+    let Some(expression) = statement.value_expression.as_ref() else {
+        return Ok(None);
+    };
+    let Some(body) = source_zero_constraint_body(expression) else {
+        return Ok(None);
+    };
+    let mut operations = Vec::new();
+    let mut next_temporary = 0_u32;
+    let result = lower_source_scalar_expression(
+        body,
+        commitment_slots,
+        &mut operations,
+        &mut next_temporary,
+    )?;
+    if operations.is_empty() {
+        return Ok(None);
+    }
+    if !matches!(result, CodeOperand::Temporary { .. }) {
+        return Ok(None);
+    }
+    Ok(Some(ConstraintCode {
+        stage: 1,
+        boundary: BoundaryKind::EveryRow,
+        offset_min: None,
+        offset_max: None,
+        line: module.source.contents[statement.start..statement.end]
+            .trim()
+            .to_owned(),
+        intermediate: false,
+        temporary_count: next_temporary,
+        operations,
+    }))
+}
+
+fn source_zero_constraint_body(expression: &Expression) -> Option<&Expression> {
+    let ExpressionKind::Binary { op, left, right } = &strip_group_expression(expression).kind
+    else {
+        return None;
+    };
+    if *op != BinaryOperator::TripleEqual {
+        return None;
+    }
+    if expression_is_zero(right) {
+        Some(left)
+    } else if expression_is_zero(left) {
+        Some(right)
+    } else {
+        None
+    }
+}
+
+fn lower_source_scalar_expression(
+    expression: &Expression,
+    commitment_slots: &BTreeMap<String, SourceCommitmentSlot>,
+    operations: &mut Vec<CodeOperation>,
+    next_temporary: &mut u32,
+) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
+    match &strip_group_expression(expression).kind {
+        ExpressionKind::Name(name) => source_scalar_commitment_operand(name, commitment_slots),
+        ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
+            let value = parse_i128_literal(value)
+                .ok()
+                .and_then(|value| u64::try_from(value).ok())
+                .ok_or_else(|| unsupported_source_message("source scalar literal overflow"))?;
+            Ok(CodeOperand::number(value, 1))
+        }
+        ExpressionKind::Binary { op, left, right } => {
+            let op = match op {
+                BinaryOperator::Add => OperationKind::Add,
+                BinaryOperator::Subtract => OperationKind::Sub,
+                BinaryOperator::Multiply => OperationKind::Mul,
+                _ => return unsupported("unsupported source scalar constraint expression"),
+            };
+            let left =
+                lower_source_scalar_expression(left, commitment_slots, operations, next_temporary)?;
+            let right = lower_source_scalar_expression(
+                right,
+                commitment_slots,
+                operations,
+                next_temporary,
+            )?;
+            let id = *next_temporary;
+            *next_temporary = next_temporary.checked_add(1).ok_or_else(|| {
+                unsupported_source_message("source scalar constraint temporary overflow")
+            })?;
+            operations.push(CodeOperation {
+                op,
+                destination: CodeDestination::temporary(id, 1),
+                sources: vec![left, right],
+            });
+            Ok(CodeOperand::temporary(id, 1))
+        }
+        _ => unsupported("unsupported source scalar constraint expression"),
+    }
+}
+
+fn source_scalar_commitment_operand(
+    name: &str,
+    commitment_slots: &BTreeMap<String, SourceCommitmentSlot>,
+) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
+    let slot = commitment_slots.get(name).ok_or_else(|| {
+        unsupported_source_message("source constraint references unknown witness")
+    })?;
+    if slot.stage != 1 || slot.dimension != 1 {
+        return unsupported("source boolean constraints require scalar stage-one witness values");
+    }
+    Ok(CodeOperand::commitment(slot.id, 1))
 }
 
 fn source_global_program(
@@ -499,6 +681,15 @@ fn expression_is_one(expression: &Expression) -> bool {
     match &strip_group_expression(expression).kind {
         ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
             parse_i128_literal(value).is_ok_and(|value| value == 1)
+        }
+        _ => false,
+    }
+}
+
+fn expression_is_zero(expression: &Expression) -> bool {
+    match &strip_group_expression(expression).kind {
+        ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
+            parse_i128_literal(value).is_ok_and(|value| value == 0)
         }
         _ => false,
     }
