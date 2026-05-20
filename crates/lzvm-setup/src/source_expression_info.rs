@@ -29,8 +29,7 @@ use crate::{
     },
     source_static_values::{
         source_declaration_constant_values_from_cache, source_scalar_constant_values,
-        source_static_assignment_expression, source_static_if_statement_is_false,
-        source_template_constant_value_cache,
+        source_static_assignment_expression, source_template_constant_value_cache,
     },
     source_template_context::SourceTemplateLoweringContext,
     source_template_for::source_static_for_loop,
@@ -135,14 +134,6 @@ fn lower_source_template_statement(
         };
         &merged_declaration_values
     };
-    if source_static_if_statement_is_false(
-        context.program,
-        context.module,
-        statement,
-        declaration_values,
-    ) {
-        return Ok(());
-    }
     if statement.kind == FunctionStatementKind::If {
         match source_static_if_body_statements(
             context.program,
