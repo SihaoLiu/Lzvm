@@ -7,9 +7,23 @@ use lzvm_artifacts::setup_info::UnitSetupInfo;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SourceScalarSlotError {
     LengthOverflow(&'static str),
-    UnknownValue { name: String },
-    UnsupportedValueShape { name: String },
-    UnsupportedRowOffset { name: String },
+    UnknownValue {
+        name: String,
+    },
+    UnsupportedValueShape {
+        name: String,
+    },
+    UnsupportedRowOffset {
+        name: String,
+    },
+    UnsupportedIndex {
+        name: String,
+    },
+    IndexOutOfRange {
+        name: String,
+        index: u32,
+        dimension: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,6 +163,41 @@ impl SourceScalarSlots {
             name: name.to_owned(),
         })
     }
+
+    pub(crate) fn operand_index_at(
+        &self,
+        name: &str,
+        index: u32,
+        row_offset: i64,
+    ) -> Result<CodeOperand, SourceScalarSlotError> {
+        if let Some(slot) = self.commitments.get(name) {
+            if slot.stage != 1 {
+                return Err(SourceScalarSlotError::UnsupportedValueShape {
+                    name: name.to_owned(),
+                });
+            }
+            if index >= slot.dimension {
+                return Err(SourceScalarSlotError::IndexOutOfRange {
+                    name: name.to_owned(),
+                    index,
+                    dimension: slot.dimension,
+                });
+            }
+            if slot.dimension == 1 {
+                return self.operand_at(name, row_offset);
+            }
+            return Ok(CodeOperand::commitment_element_at(
+                slot.id,
+                index,
+                (row_offset != 0).then_some(row_offset),
+                1,
+            ));
+        }
+
+        Err(SourceScalarSlotError::UnsupportedIndex {
+            name: name.to_owned(),
+        })
+    }
 }
 
 impl fmt::Display for SourceScalarSlotError {
@@ -168,6 +217,20 @@ impl fmt::Display for SourceScalarSlotError {
                     "source row offsets require commitment or fixed source values: {name}"
                 )
             }
+            Self::UnsupportedIndex { name } => {
+                write!(
+                    f,
+                    "source indexed constraints require commitment values: {name}"
+                )
+            }
+            Self::IndexOutOfRange {
+                name,
+                index,
+                dimension,
+            } => write!(
+                f,
+                "source indexed constraint index {index} is outside {name} dimension {dimension}"
+            ),
         }
     }
 }

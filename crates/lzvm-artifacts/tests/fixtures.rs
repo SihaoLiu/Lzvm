@@ -314,9 +314,12 @@ pub fn sample_expression_info_fixture() -> ExpressionInfo {
                 intermediate: false,
                 temporary_count: 1,
                 operations: vec![CodeOperation {
-                    op: OperationKind::Copy,
+                    op: OperationKind::Add,
                     destination: CodeDestination::temporary(0, 1),
-                    sources: vec![CodeOperand::constant_at(2, Some(1), 1)],
+                    sources: vec![
+                        CodeOperand::constant_at(2, Some(1), 1),
+                        CodeOperand::commitment_element_at(0, 1, Some(1), 1),
+                    ],
                 }],
             },
         ],

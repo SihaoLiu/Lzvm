@@ -36,6 +36,7 @@ const OPERAND_CUSTOM_COMMITMENT_TAG: u8 = 11;
 const OPERAND_AIR_GROUP_VALUE_TAG: u8 = 12;
 const OPERAND_AIR_VALUE_TAG: u8 = 13;
 const OPERAND_CONSTANT_AT_TAG: u8 = 14;
+const OPERAND_COMMITMENT_ELEMENT_TAG: u8 = 15;
 
 const U32_BYTES: usize = 4;
 const TAG_BYTES: usize = 1;
@@ -483,6 +484,17 @@ fn write_operand(out: &mut Vec<u8>, value: &CodeOperand) {
             write_reference_body(out, *id, *dimension);
             write_optional_i64(out, *prime);
         }
+        CodeOperand::CommitmentElement {
+            id,
+            element,
+            prime,
+            dimension,
+        } => {
+            out.push(OPERAND_COMMITMENT_ELEMENT_TAG);
+            write_reference_body(out, *id, *dimension);
+            write_u32(out, *element);
+            write_optional_i64(out, *prime);
+        }
         CodeOperand::BoundaryZerofier { id, dimension } => {
             out.push(OPERAND_BOUNDARY_TAG);
             write_reference_body(out, *id, *dimension);
@@ -675,6 +687,14 @@ impl<'a> Reader<'a> {
                 let (id, dimension) = self.read_reference_body()?;
                 let prime = self.read_optional_i64("commitment_prime")?;
                 Ok(CodeOperand::commitment_at(id, prime, dimension))
+            }
+            OPERAND_COMMITMENT_ELEMENT_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                let element = self.read_u32()?;
+                let prime = self.read_optional_i64("commitment_element_prime")?;
+                Ok(CodeOperand::commitment_element_at(
+                    id, element, prime, dimension,
+                ))
             }
             OPERAND_BOUNDARY_TAG => {
                 let (id, dimension) = self.read_reference_body()?;

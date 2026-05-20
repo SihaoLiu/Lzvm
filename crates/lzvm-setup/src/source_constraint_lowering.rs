@@ -167,6 +167,16 @@ fn lower_source_scalar_expression_at(
                 .ok_or_else(|| unsupported_source_message("source row offset overflow"))?;
             lower_source_scalar_expression_at(target, state, combined_offset)
         }
+        ExpressionKind::Index { target, index } => {
+            let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
+                return unsupported("unsupported source indexed constraint target");
+            };
+            let index = source_scalar_index_value(index, state.constant_values)?;
+            state
+                .scalar_slots
+                .operand_index_at(name, index, row_offset)
+                .map_err(|error| unsupported_source_message(error.to_string()))
+        }
         ExpressionKind::Binary { op, left, right } => {
             if *op == BinaryOperator::Divide {
                 return lower_source_static_divisor_expression(left, right, state, row_offset);
@@ -359,6 +369,17 @@ fn source_row_offset_value(
         offset
     };
     i64::try_from(signed).map_err(|_| unsupported_source_message("source row offset overflow"))
+}
+
+fn source_scalar_index_value(
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<u32, SourceKeyDirectoryMetadataError> {
+    let index = eval_i128_expression_with_values(expression, values)?;
+    if index < 0 {
+        return unsupported("source scalar constraint index must be nonnegative");
+    }
+    u32::try_from(index).map_err(|_| unsupported_source_message("source scalar index overflow"))
 }
 
 fn eval_i128_expression_with_values(

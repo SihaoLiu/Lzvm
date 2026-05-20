@@ -57,6 +57,11 @@ pub enum RegularProgramLoweringError {
     MissingCommitmentColumn {
         id: u32,
     },
+    CommitmentElementOutOfRange {
+        id: u32,
+        element: u32,
+        dimension: u32,
+    },
     MissingOpeningPoint {
         value: i64,
     },
@@ -123,6 +128,14 @@ impl fmt::Display for RegularProgramLoweringError {
             Self::MissingCommitmentColumn { id } => {
                 write!(f, "missing commitment column {id}")
             }
+            Self::CommitmentElementOutOfRange {
+                id,
+                element,
+                dimension,
+            } => write!(
+                f,
+                "commitment column {id} element {element} is outside dimension {dimension}"
+            ),
             Self::MissingOpeningPoint { value } => {
                 write!(f, "missing opening point {value}")
             }
@@ -635,23 +648,13 @@ fn lower_source(
             id,
             prime,
             dimension,
-        } => {
-            let column = setup
-                .commitment_columns
-                .get(
-                    usize::try_from(*id)
-                        .map_err(|_| RegularProgramLoweringError::LengthOverflow)?,
-                )
-                .ok_or(RegularProgramLoweringError::MissingCommitmentColumn { id: *id })?;
-            Ok(SourceArg {
-                dimension: *dimension,
-                fields: [
-                    u32_to_u16(column.stage)?,
-                    u32_to_u16(column.stage_position)?,
-                    u32_to_u16(opening_point_index(setup, prime.unwrap_or(0))?)?,
-                ],
-            })
-        }
+        } => lower_commitment_source(setup, *id, 0, *prime, *dimension),
+        CodeOperand::CommitmentElement {
+            id,
+            element,
+            prime,
+            dimension,
+        } => lower_commitment_source(setup, *id, *element, *prime, *dimension),
         CodeOperand::Challenge { id, dimension, .. } => Ok(SourceArg {
             dimension: *dimension,
             fields: [
@@ -719,6 +722,34 @@ fn lower_source(
             operand: operand.clone(),
         }),
     }
+}
+
+fn lower_commitment_source(
+    setup: &UnitSetupInfo,
+    id: u32,
+    element: u32,
+    prime: Option<i64>,
+    dimension: u32,
+) -> Result<SourceArg, RegularProgramLoweringError> {
+    let column = setup
+        .commitment_columns
+        .get(usize::try_from(id).map_err(|_| RegularProgramLoweringError::LengthOverflow)?)
+        .ok_or(RegularProgramLoweringError::MissingCommitmentColumn { id })?;
+    if element >= column.dimension {
+        return Err(RegularProgramLoweringError::CommitmentElementOutOfRange {
+            id,
+            element,
+            dimension: column.dimension,
+        });
+    }
+    Ok(SourceArg {
+        dimension,
+        fields: [
+            u32_to_u16(column.stage)?,
+            u32_to_u16(add_u32(column.stage_position, element)?)?,
+            u32_to_u16(opening_point_index(setup, prime.unwrap_or(0))?)?,
+        ],
+    })
 }
 
 fn zero_source(
@@ -920,6 +951,7 @@ fn operand_dimension(operand: &CodeOperand) -> u32 {
         | CodeOperand::Constant { dimension, .. }
         | CodeOperand::ConstantAt { dimension, .. }
         | CodeOperand::Commitment { dimension, .. }
+        | CodeOperand::CommitmentElement { dimension, .. }
         | CodeOperand::BoundaryZerofier { dimension, .. }
         | CodeOperand::ProofValue { dimension, .. }
         | CodeOperand::OpeningDenominator { dimension, .. }
@@ -935,6 +967,7 @@ fn operand_order(operand: &CodeOperand) -> u8 {
         | CodeOperand::ConstantAt { .. }
         | CodeOperand::BoundaryZerofier { .. } => 0,
         CodeOperand::Commitment { dimension: 1, .. } => 0,
+        CodeOperand::CommitmentElement { dimension: 1, .. } => 0,
         CodeOperand::CustomCommitment { dimension: 1, .. } => 0,
         CodeOperand::Temporary { dimension: 1, .. } => 1,
         CodeOperand::Public { .. } => 2,
@@ -942,6 +975,7 @@ fn operand_order(operand: &CodeOperand) -> u8 {
         CodeOperand::AirValue { dimension: 1, .. } => 4,
         CodeOperand::ProofValue { dimension: 1, .. } => 5,
         CodeOperand::Commitment { .. }
+        | CodeOperand::CommitmentElement { .. }
         | CodeOperand::CustomCommitment { .. }
         | CodeOperand::OpeningDenominator { .. } => 6,
         CodeOperand::Temporary { .. } => 7,

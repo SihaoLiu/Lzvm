@@ -9,7 +9,7 @@ use crate::sectioned::{
 mod binary;
 
 const EXPRESSION_INFO_KIND: [u8; 4] = *b"xinf";
-const EXPRESSION_INFO_VERSION: u32 = 6;
+const EXPRESSION_INFO_VERSION: u32 = 7;
 const EXPRESSION_INFO_SECTION_ID: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -205,6 +205,12 @@ pub enum CodeOperand {
         prime: Option<i64>,
         dimension: u32,
     },
+    CommitmentElement {
+        id: u32,
+        element: u32,
+        prime: Option<i64>,
+        dimension: u32,
+    },
     BoundaryZerofier {
         id: u32,
         dimension: u32,
@@ -388,6 +394,20 @@ impl CodeOperand {
     pub fn commitment_at(id: u32, prime: Option<i64>, dimension: u32) -> Self {
         Self::Commitment {
             id,
+            prime,
+            dimension,
+        }
+    }
+
+    pub fn commitment_element_at(
+        id: u32,
+        element: u32,
+        prime: Option<i64>,
+        dimension: u32,
+    ) -> Self {
+        Self::CommitmentElement {
+            id,
+            element,
             prime,
             dimension,
         }
