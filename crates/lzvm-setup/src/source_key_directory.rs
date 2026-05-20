@@ -233,6 +233,7 @@ pub fn write_source_key_directory_metadata(
                 &setup_info,
                 &global_info.publics_map,
                 &challenge_slots,
+                &global_info.proof_values_map,
             )?;
             setup_info.n_constraints = Some(
                 u32::try_from(expression_info.constraints.len())

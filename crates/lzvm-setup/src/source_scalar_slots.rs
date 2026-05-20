@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use lzvm_artifacts::expression_info::CodeOperand;
-use lzvm_artifacts::global_info::PublicValue;
+use lzvm_artifacts::global_info::{NamedStageValue, PublicValue};
 use lzvm_artifacts::setup_info::UnitSetupInfo;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,6 +72,14 @@ struct SourceChallengeSlot {
     dimension: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SourceProofValueSlot {
+    offset: u32,
+    stage: u32,
+    source_dimension: u32,
+    operand_dimension: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SourceScalarSlots {
     commitments: BTreeMap<String, SourceCommitmentSlot>,
@@ -79,6 +87,7 @@ pub(crate) struct SourceScalarSlots {
     constants: BTreeMap<String, SourceConstantSlot>,
     publics: BTreeMap<String, SourcePublicSlot>,
     challenges: BTreeMap<String, SourceChallengeSlot>,
+    proof_values: BTreeMap<String, SourceProofValueSlot>,
 }
 
 impl SourceScalarSlots {
@@ -86,6 +95,7 @@ impl SourceScalarSlots {
         setup: &UnitSetupInfo,
         public_values: &[PublicValue],
         challenge_values: &[SourceChallengeSlotMetadata],
+        proof_values: &[NamedStageValue],
     ) -> Result<Self, SourceScalarSlotError> {
         let mut commitments = BTreeMap::new();
         for (index, column) in setup.commitment_columns.iter().enumerate() {
@@ -155,12 +165,34 @@ impl SourceScalarSlots {
             })
             .collect();
 
+        let mut proof_value_slots = BTreeMap::new();
+        let mut proof_value_offset = 0_u32;
+        for value in proof_values {
+            let stage = u32::try_from(value.stage).map_err(|_| {
+                SourceScalarSlotError::LengthOverflow("source proof value stage overflow")
+            })?;
+            let operand_dimension = if value.stage == 1 { 1 } else { 3 };
+            proof_value_slots.insert(
+                value.name.clone(),
+                SourceProofValueSlot {
+                    offset: proof_value_offset,
+                    stage,
+                    source_dimension: named_stage_value_dimension(&value.lengths)?,
+                    operand_dimension,
+                },
+            );
+            proof_value_offset = proof_value_offset.checked_add(operand_dimension).ok_or(
+                SourceScalarSlotError::LengthOverflow("source proof value offset overflow"),
+            )?;
+        }
+
         Ok(Self {
             commitments,
             unit_values,
             constants,
             publics,
             challenges,
+            proof_values: proof_value_slots,
         })
     }
 
@@ -212,6 +244,19 @@ impl SourceScalarSlots {
                 Some(slot.stage),
                 Some(slot.stage_id),
                 3,
+            ));
+        }
+
+        if let Some(slot) = self.proof_values.get(name) {
+            if slot.source_dimension != 1 {
+                return Err(SourceScalarSlotError::UnsupportedValueShape {
+                    name: name.to_owned(),
+                });
+            }
+            return Ok(CodeOperand::proof_value_at(
+                slot.offset,
+                Some(slot.stage),
+                slot.operand_dimension,
             ));
         }
 
@@ -408,4 +453,15 @@ fn public_value_dimension(lengths: &[u64]) -> Result<u32, SourceScalarSlotError>
     u32::try_from(dimension).map_err(|_| {
         SourceScalarSlotError::LengthOverflow("source public value dimension overflow")
     })
+}
+
+fn named_stage_value_dimension(lengths: &[u64]) -> Result<u32, SourceScalarSlotError> {
+    let dimension = lengths.iter().try_fold(1_u64, |acc, length| {
+        acc.checked_mul(*length)
+            .ok_or(SourceScalarSlotError::LengthOverflow(
+                "source stage value dimension overflow",
+            ))
+    })?;
+    u32::try_from(dimension)
+        .map_err(|_| SourceScalarSlotError::LengthOverflow("source stage value dimension overflow"))
 }
