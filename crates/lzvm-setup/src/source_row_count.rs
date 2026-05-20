@@ -310,8 +310,15 @@ fn sequence_item_len(item: &str) -> Result<u64, SourceKeyDirectoryMetadataError>
             .checked_mul(start_repeat)
             .ok_or_else(|| unsupported_source_message("source range length overflow"))
     } else {
-        Ok(1)
+        parse_sequence_repeat_count(item)
     }
+}
+
+fn parse_sequence_repeat_count(value: &str) -> Result<u64, SourceKeyDirectoryMetadataError> {
+    let Some((_, repeat)) = value.split_once(':') else {
+        return Ok(1);
+    };
+    parse_u64_literal(repeat.trim())
 }
 
 fn parse_range_endpoint_count(value: &str) -> Result<(i128, u64), SourceKeyDirectoryMetadataError> {
