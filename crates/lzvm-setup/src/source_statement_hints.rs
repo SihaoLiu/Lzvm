@@ -111,8 +111,9 @@ pub(crate) fn source_lookup_statement_expressions(
     }
 
     let second_argument = split_named_argument(&tokens, arguments[1]);
-    if second_argument.name.is_some() {
-        return Ok(None);
+    match second_argument.name.as_deref() {
+        None | Some("expressions") => {}
+        _ => return Ok(None),
     }
     let mut expressions = Vec::new();
     if !source_lookup_value_expressions(
@@ -127,20 +128,17 @@ pub(crate) fn source_lookup_statement_expressions(
 
     for range in arguments.into_iter().skip(2) {
         let argument = split_named_argument(&tokens, range);
-        let Some(argument_name) = argument.name else {
+        let Some(argument_name) = argument.name.as_deref() else {
             return Ok(None);
         };
-        match argument_name.as_str() {
-            "mul" | "sel" => {}
+        match argument_name {
+            "mul" | "sel" | "table_id" => {}
             _ => return Ok(None),
         }
-        if !source_lookup_value_expressions(
-            module,
-            &line,
-            &tokens,
-            argument.value_range,
-            &mut expressions,
-        ) {
+        let Some(value_range) = source_lookup_argument_value_range(&argument) else {
+            return Ok(None);
+        };
+        if !source_lookup_value_expressions(module, &line, &tokens, value_range, &mut expressions) {
             return Ok(None);
         }
     }
@@ -245,8 +243,9 @@ fn lower_structured_source_lookup_hint(
     };
 
     let second_argument = split_named_argument(&tokens, arguments[1]);
-    if second_argument.name.is_some() {
-        return Ok(None);
+    match second_argument.name.as_deref() {
+        None | Some("expressions") => {}
+        _ => return Ok(None),
     }
     let Some(lookup_values) = source_lookup_values(&context, second_argument.value_range) else {
         return Ok(None);
@@ -261,15 +260,24 @@ fn lower_structured_source_lookup_hint(
     ];
     for range in arguments.into_iter().skip(2) {
         let argument = split_named_argument(&tokens, range);
-        let Some(argument_name) = argument.name else {
+        let Some(argument_name) = argument.name.as_deref() else {
             return Ok(None);
         };
-        let field_name = match argument_name.as_str() {
+        let field_name = match argument_name {
             "mul" => "multiplicity",
             "sel" => "selector",
+            "table_id" => "table_id",
             _ => return Ok(None),
         };
-        let Some(value) = source_lookup_value(&context, argument.value_range) else {
+        let Some(value_range) = source_lookup_argument_value_range(&argument) else {
+            return Ok(None);
+        };
+        let value = if field_name == "table_id" {
+            source_lookup_static_value(&context, value_range)
+        } else {
+            source_lookup_value(&context, value_range)
+        };
+        let Some(value) = value else {
             return Ok(None);
         };
         fields.push(HintFieldInfo {
@@ -349,6 +357,7 @@ fn top_level_argument_ranges(
 
 struct SourceLookupArgument {
     name: Option<String>,
+    name_range: Option<(usize, usize)>,
     value_range: (usize, usize),
 }
 
@@ -369,13 +378,22 @@ fn split_named_argument(tokens: &[Token], range: (usize, usize)) -> SourceLookup
     {
         return SourceLookupArgument {
             name: Some(tokens[range.0].lexeme.clone()),
+            name_range: Some((range.0, range.0 + 1)),
             value_range: (range.0 + 2, range.1),
         };
     }
     SourceLookupArgument {
         name: None,
+        name_range: None,
         value_range: range,
     }
+}
+
+fn source_lookup_argument_value_range(argument: &SourceLookupArgument) -> Option<(usize, usize)> {
+    if argument.value_range.0 < argument.value_range.1 {
+        return Some(argument.value_range);
+    }
+    argument.name_range
 }
 
 fn parse_unsigned_argument(
@@ -460,6 +478,31 @@ fn source_lookup_value(
         positions: Vec::new(),
         payload: source_lookup_value_payload(context, range)?,
     })
+}
+
+fn source_lookup_static_value(
+    context: &SourceLookupLowering<'_>,
+    range: (usize, usize),
+) -> Option<HintValueInfo> {
+    Some(HintValueInfo {
+        positions: Vec::new(),
+        payload: source_lookup_static_value_payload(context, range)?,
+    })
+}
+
+fn source_lookup_static_value_payload(
+    context: &SourceLookupLowering<'_>,
+    range: (usize, usize),
+) -> Option<HintPayload> {
+    let expression =
+        parse_source_lookup_expression(context.module, context.line, context.tokens, range)?;
+    match evaluate_source_static_expression(context.program, &expression, context.values)? {
+        FixedFileTemplateValue::Integer(value) => {
+            Some(HintPayload::number(canonical_hint_number(value)?))
+        }
+        FixedFileTemplateValue::Boolean(value) => Some(HintPayload::number(u64::from(value))),
+        FixedFileTemplateValue::String(_) => None,
+    }
 }
 
 fn source_lookup_value_payload(
