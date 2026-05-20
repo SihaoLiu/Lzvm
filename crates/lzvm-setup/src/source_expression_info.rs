@@ -475,6 +475,25 @@ fn source_function_call_bindings(
     let mut function_aliases = expression_aliases.clone();
     let mut function_array_aliases = SourceExpressionArrayAliases::new();
     for parameter in &function.parameters {
+        if source_expr_parameter(parameter) {
+            if let Some(expression) = parameter.default_expression.as_ref() {
+                function_aliases.insert(parameter.name.clone(), expression.clone());
+            }
+            continue;
+        }
+        if source_expr_array_parameter(parameter) {
+            if let Some(expression) = parameter.default_expression.as_ref() {
+                insert_source_expr_array_static_values(
+                    program,
+                    expression,
+                    &mut function_values,
+                    &parameter.name,
+                )?;
+                let alias = source_expression_array_alias(expression)?;
+                function_array_aliases.insert(parameter.name.clone(), alias);
+            }
+            continue;
+        }
         if source_const_parameter(parameter) && parameter.array_dims.is_empty() {
             let Some(expression) = parameter.default_expression.as_ref() else {
                 continue;
@@ -488,19 +507,6 @@ fn source_function_call_bindings(
                 let elements =
                     source_static_array_literal(program, module, span, &function_values)?;
                 insert_source_static_array(&mut function_values, &parameter.name, elements)?;
-            }
-            continue;
-        }
-        if source_expr_parameter(parameter) {
-            if let Some(expression) = parameter.default_expression.as_ref() {
-                function_aliases.insert(parameter.name.clone(), expression.clone());
-            }
-            continue;
-        }
-        if source_expr_array_parameter(parameter) {
-            if let Some(expression) = parameter.default_expression.as_ref() {
-                let alias = source_expression_array_alias(expression)?;
-                function_array_aliases.insert(parameter.name.clone(), alias);
             }
             continue;
         }
@@ -551,18 +557,19 @@ fn source_bind_function_argument(
     expression_aliases: &mut SourceExpressionAliases,
     expression_array_aliases: &mut SourceExpressionArrayAliases,
 ) -> Option<()> {
-    if source_const_parameter(parameter) && parameter.array_dims.is_empty() {
-        let value = evaluate_source_static_expression(program, expression, values)?;
-        values.insert(parameter.name.clone(), value);
-        return Some(());
-    }
     if source_expr_parameter(parameter) {
         expression_aliases.insert(parameter.name.clone(), expression.clone());
         return Some(());
     }
     if source_expr_array_parameter(parameter) {
+        insert_source_expr_array_static_values(program, expression, values, &parameter.name)?;
         let alias = source_expression_array_alias(expression)?;
         expression_array_aliases.insert(parameter.name.clone(), alias);
+        return Some(());
+    }
+    if source_const_parameter(parameter) && parameter.array_dims.is_empty() {
+        let value = evaluate_source_static_expression(program, expression, values)?;
+        values.insert(parameter.name.clone(), value);
         return Some(());
     }
     if !source_const_parameter(parameter) {
@@ -576,22 +583,34 @@ fn source_bind_function_argument(
     insert_source_static_array(values, &parameter.name, elements)
 }
 
+fn insert_source_expr_array_static_values(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    target_name: &str,
+) -> Option<()> {
+    if let Some(elements) = source_static_array_expression(program, expression, values) {
+        return insert_source_static_array(values, target_name, elements);
+    }
+    let Some(name) = source_expression_name(expression) else {
+        return Some(());
+    };
+    let Some(elements) = source_static_array_values(values, name) else {
+        return Some(());
+    };
+    insert_source_static_array(values, target_name, elements)
+}
+
 fn source_const_parameter(parameter: &lzvm_pil::FunctionParameter) -> bool {
     parameter.is_const && !parameter.by_reference
 }
 
 fn source_expr_parameter(parameter: &lzvm_pil::FunctionParameter) -> bool {
-    !parameter.is_const
-        && !parameter.by_reference
-        && parameter.array_dims.is_empty()
-        && parameter.type_name == "expr"
+    !parameter.by_reference && parameter.array_dims.is_empty() && parameter.type_name == "expr"
 }
 
 fn source_expr_array_parameter(parameter: &lzvm_pil::FunctionParameter) -> bool {
-    !parameter.is_const
-        && !parameter.by_reference
-        && !parameter.array_dims.is_empty()
-        && parameter.type_name == "expr"
+    !parameter.by_reference && !parameter.array_dims.is_empty() && parameter.type_name == "expr"
 }
 
 fn source_expression_array_alias(expression: &Expression) -> Option<SourceExpressionArrayAlias> {

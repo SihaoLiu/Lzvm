@@ -285,17 +285,17 @@ fn source_opening_function_call_bindings(
     let mut function_values = values.clone();
     let mut function_aliases = expression_aliases.clone();
     for parameter in &function.parameters {
+        if source_opening_expr_scalar_parameter(parameter) {
+            if let Some(expression) = parameter.default_expression.as_ref() {
+                function_aliases.insert(parameter.name.clone(), expression.clone());
+            }
+            continue;
+        }
         if source_opening_const_scalar_parameter(parameter) {
             if let Some(expression) = parameter.default_expression.as_ref() {
                 let value =
                     evaluate_source_static_expression(program, expression, &function_values)?;
                 function_values.insert(parameter.name.clone(), value);
-            }
-            continue;
-        }
-        if source_opening_expr_scalar_parameter(parameter) {
-            if let Some(expression) = parameter.default_expression.as_ref() {
-                function_aliases.insert(parameter.name.clone(), expression.clone());
             }
             continue;
         }
@@ -342,13 +342,13 @@ fn source_bind_opening_function_argument(
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: &mut SourceExpressionAliases,
 ) -> Option<()> {
+    if source_opening_expr_scalar_parameter(parameter) {
+        expression_aliases.insert(parameter.name.clone(), expression.clone());
+        return Some(());
+    }
     if source_opening_const_scalar_parameter(parameter) {
         let value = evaluate_source_static_expression(program, expression, values)?;
         values.insert(parameter.name.clone(), value);
-        return Some(());
-    }
-    if source_opening_expr_scalar_parameter(parameter) {
-        expression_aliases.insert(parameter.name.clone(), expression.clone());
         return Some(());
     }
     None
@@ -359,10 +359,7 @@ fn source_opening_const_scalar_parameter(parameter: &lzvm_pil::FunctionParameter
 }
 
 fn source_opening_expr_scalar_parameter(parameter: &lzvm_pil::FunctionParameter) -> bool {
-    !parameter.is_const
-        && !parameter.by_reference
-        && parameter.array_dims.is_empty()
-        && parameter.type_name == "expr"
+    !parameter.by_reference && parameter.array_dims.is_empty() && parameter.type_name == "expr"
 }
 
 fn source_call_expression(expression: Option<&Expression>) -> Option<(&str, &[CallArgument])> {
