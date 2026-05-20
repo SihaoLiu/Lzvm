@@ -1,10 +1,12 @@
+use std::collections::BTreeMap;
+
 use lzvm_artifacts::expression_info::{
     BoundaryKind, CodeDestination, CodeOperand, CodeOperation, ConstraintCode, OperationKind,
 };
 use lzvm_field::MODULUS;
 use lzvm_pil::{
-    BinaryOperator, Expression, ExpressionKind, FunctionStatement, SourceProgramModule,
-    UnaryOperator,
+    evaluate_fixed_file_template_value_expression_with_values, BinaryOperator, Expression,
+    ExpressionKind, FixedFileTemplateValue, FunctionStatement, SourceProgramModule, UnaryOperator,
 };
 
 use crate::{
@@ -15,6 +17,7 @@ pub(crate) fn lower_source_template_boolean_constraint(
     module: &SourceProgramModule,
     statement: &FunctionStatement,
     scalar_slots: &SourceScalarSlots,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<Option<ConstraintCode>, SourceKeyDirectoryMetadataError> {
     let Some(expression) = statement.value_expression.as_ref() else {
         return Ok(None);
@@ -25,6 +28,7 @@ pub(crate) fn lower_source_template_boolean_constraint(
     let Some(result) = lower_source_constraint_residual(
         expression,
         scalar_slots,
+        constant_values,
         &mut operations,
         &mut next_temporary,
         &mut frame_offsets,
@@ -56,6 +60,7 @@ pub(crate) fn lower_source_template_boolean_constraint(
 fn lower_source_constraint_residual(
     expression: &Expression,
     scalar_slots: &SourceScalarSlots,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
     operations: &mut Vec<CodeOperation>,
     next_temporary: &mut u32,
     frame_offsets: &mut SourceConstraintFrameOffsets,
@@ -71,6 +76,7 @@ fn lower_source_constraint_residual(
         return lower_source_scalar_expression(
             left,
             scalar_slots,
+            constant_values,
             operations,
             next_temporary,
             frame_offsets,
@@ -80,6 +86,7 @@ fn lower_source_constraint_residual(
         return lower_source_scalar_expression(
             right,
             scalar_slots,
+            constant_values,
             operations,
             next_temporary,
             frame_offsets,
@@ -90,6 +97,7 @@ fn lower_source_constraint_residual(
     let left = lower_source_scalar_expression(
         left,
         scalar_slots,
+        constant_values,
         operations,
         next_temporary,
         frame_offsets,
@@ -97,6 +105,7 @@ fn lower_source_constraint_residual(
     let right = lower_source_scalar_expression(
         right,
         scalar_slots,
+        constant_values,
         operations,
         next_temporary,
         frame_offsets,
@@ -116,12 +125,13 @@ fn lower_source_constraint_residual(
 fn lower_source_scalar_expression(
     expression: &Expression,
     scalar_slots: &SourceScalarSlots,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
     operations: &mut Vec<CodeOperation>,
     next_temporary: &mut u32,
     frame_offsets: &mut SourceConstraintFrameOffsets,
 ) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
     let expression = strip_group_expression(expression);
-    if let Some(value) = static_scalar_integer(expression)? {
+    if let Some(value) = static_scalar_integer(expression, constant_values)? {
         return Ok(CodeOperand::number(canonical_field_value(value)?, 1));
     }
     match &expression.kind {
@@ -132,6 +142,7 @@ fn lower_source_scalar_expression(
             let value = lower_source_scalar_expression(
                 expr,
                 scalar_slots,
+                constant_values,
                 operations,
                 next_temporary,
                 frame_offsets,
@@ -158,7 +169,7 @@ fn lower_source_scalar_expression(
             offset,
             prior,
         } => {
-            let signed_offset = source_row_offset_value(offset, *prior)?;
+            let signed_offset = source_row_offset_value(offset, *prior, constant_values)?;
             let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
                 return unsupported("source row offsets require named scalar values");
             };
@@ -177,6 +188,7 @@ fn lower_source_scalar_expression(
             let left = lower_source_scalar_expression(
                 left,
                 scalar_slots,
+                constant_values,
                 operations,
                 next_temporary,
                 frame_offsets,
@@ -184,6 +196,7 @@ fn lower_source_scalar_expression(
             let right = lower_source_scalar_expression(
                 right,
                 scalar_slots,
+                constant_values,
                 operations,
                 next_temporary,
                 frame_offsets,
@@ -261,8 +274,9 @@ fn expression_is_zero(expression: &Expression) -> bool {
 fn source_row_offset_value(
     expression: &Expression,
     prior: bool,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<i64, SourceKeyDirectoryMetadataError> {
-    let offset = eval_i128_expression(expression)?;
+    let offset = eval_i128_expression_with_values(expression, values)?;
     let signed = if prior {
         offset
             .checked_neg()
@@ -271,6 +285,18 @@ fn source_row_offset_value(
         offset
     };
     i64::try_from(signed).map_err(|_| unsupported_source_message("source row offset overflow"))
+}
+
+fn eval_i128_expression_with_values(
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<i128, SourceKeyDirectoryMetadataError> {
+    if let Some(FixedFileTemplateValue::Integer(value)) =
+        evaluate_fixed_file_template_value_expression_with_values(expression, values)
+    {
+        return Ok(value);
+    }
+    eval_i128_expression(expression)
 }
 
 fn eval_i128_expression(expression: &Expression) -> Result<i128, SourceKeyDirectoryMetadataError> {
@@ -294,13 +320,19 @@ fn eval_i128_expression(expression: &Expression) -> Result<i128, SourceKeyDirect
 
 fn static_scalar_integer(
     expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<Option<i128>, SourceKeyDirectoryMetadataError> {
+    if let Some(FixedFileTemplateValue::Integer(value)) =
+        evaluate_fixed_file_template_value_expression_with_values(expression, values)
+    {
+        return Ok(Some(value));
+    }
     match &strip_group_expression(expression).kind {
         ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
             parse_i128_literal(value).map(Some)
         }
         ExpressionKind::Unary { op, expr } => {
-            let Some(value) = static_scalar_integer(expr)? else {
+            let Some(value) = static_scalar_integer(expr, values)? else {
                 return Ok(None);
             };
             match op {

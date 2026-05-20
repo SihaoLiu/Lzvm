@@ -499,8 +499,12 @@ fn lower_source_template_statement(
         ));
         return Ok(());
     }
-    match lower_source_template_boolean_constraint(context.module, statement, context.scalar_slots)
-    {
+    match lower_source_template_boolean_constraint(
+        context.module,
+        statement,
+        context.scalar_slots,
+        context.constant_values,
+    ) {
         Ok(Some(constraint)) => {
             constraints.push(constraint);
             return Ok(());
