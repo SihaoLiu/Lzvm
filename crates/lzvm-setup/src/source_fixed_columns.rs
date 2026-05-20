@@ -1,3 +1,4 @@
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::PathBuf;
@@ -703,6 +704,7 @@ struct SourceFixedTemplateAssignmentContext<'a> {
 struct SourceFixedAssignmentValues<'a> {
     base_scalars: &'a BTreeMap<String, FixedFileTemplateValue>,
     overlays: Vec<(String, FixedFileTemplateValue)>,
+    scalar_map: OnceCell<BTreeMap<String, FixedFileTemplateValue>>,
     arrays: &'a BTreeMap<String, Vec<u64>>,
 }
 
@@ -711,6 +713,7 @@ impl<'a> SourceFixedAssignmentValues<'a> {
         Self {
             base_scalars: &constant_values.scalars,
             overlays: Vec::new(),
+            scalar_map: OnceCell::new(),
             arrays: &constant_values.arrays,
         }
     }
@@ -725,6 +728,7 @@ impl<'a> SourceFixedAssignmentValues<'a> {
         Self {
             base_scalars: base.base_scalars,
             overlays,
+            scalar_map: OnceCell::new(),
             arrays: base.arrays,
         }
     }
@@ -737,12 +741,14 @@ impl<'a> SourceFixedAssignmentValues<'a> {
             .or_else(|| self.base_scalars.get(name).cloned())
     }
 
-    fn scalar_map(&self) -> BTreeMap<String, FixedFileTemplateValue> {
-        let mut scalars = self.base_scalars.clone();
-        for (name, value) in &self.overlays {
-            scalars.insert(name.clone(), value.clone());
-        }
-        scalars
+    fn scalar_map(&self) -> &BTreeMap<String, FixedFileTemplateValue> {
+        self.scalar_map.get_or_init(|| {
+            let mut scalars = self.base_scalars.clone();
+            for (name, value) in &self.overlays {
+                scalars.insert(name.clone(), value.clone());
+            }
+            scalars
+        })
     }
 }
 
@@ -754,13 +760,12 @@ fn collect_source_fixed_template_assignment(
     partial_values: &mut BTreeMap<String, Vec<Option<u64>>>,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     if statement.kind == FunctionStatementKind::If {
-        let control_scalars = assignment_values.scalar_map();
         match source_static_if_body_statements_with_tokens(
             context.program,
             context.module,
             context.tokens,
             statement,
-            &control_scalars,
+            assignment_values.scalar_map(),
             body_cache,
         ) {
             Ok(Some(body_statements)) => {
@@ -782,13 +787,12 @@ fn collect_source_fixed_template_assignment(
         return Ok(());
     }
     if statement.kind == FunctionStatementKind::For {
-        let control_scalars = assignment_values.scalar_map();
         match source_static_for_loop_with_tokens(
             context.program,
             context.module,
             context.tokens,
             statement,
-            &control_scalars,
+            assignment_values.scalar_map(),
             body_cache,
         ) {
             Ok(Some(loop_info)) => {
