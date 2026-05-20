@@ -370,6 +370,7 @@ fn source_expression_info(
     let fixed_assignment_columns = source_fixed_assignment_column_names(program);
     let active_templates = concrete_template_names(program);
     let constant_values = source_scalar_constant_values(program, 1_u64 << setup.stark.n_bits);
+    let template_values = source_template_constant_value_cache(program, &constant_values);
     let mut hints = Vec::new();
     let mut constraints = Vec::new();
     for module in &program.modules {
@@ -383,6 +384,7 @@ fn source_expression_info(
                 scalar_slots: &scalar_slots,
                 fixed_columns: &fixed_assignment_columns,
                 constant_values: &constant_values,
+                template_values: &template_values,
             };
             for statement in &template.statements {
                 lower_source_template_statement(&context, statement, &mut hints, &mut constraints)?;
@@ -427,11 +429,18 @@ fn lower_source_template_statement(
     if statement.kind == FunctionStatementKind::Declaration {
         return Ok(());
     }
+    let declaration_values = source_declaration_constant_values_from_cache(
+        context.module,
+        statement.start,
+        statement.end,
+        context.constant_values,
+        context.template_values,
+    );
     if source_static_if_statement_is_false(
         context.program,
         context.module,
         statement,
-        context.constant_values,
+        declaration_values,
     ) {
         return Ok(());
     }
@@ -503,7 +512,7 @@ fn lower_source_template_statement(
         context.module,
         statement,
         context.scalar_slots,
-        context.constant_values,
+        declaration_values,
     ) {
         Ok(Some(constraint)) => {
             constraints.push(constraint);
