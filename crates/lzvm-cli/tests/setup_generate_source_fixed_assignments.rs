@@ -67,6 +67,26 @@ fn many_scalar_fixed_assignment_source(
     source
 }
 
+fn many_static_if_fixed_assignment_source(statement_count: usize) -> String {
+    let row_count = statement_count.next_power_of_two();
+    let mut source = format!(
+        "airtemplate UnitA(const int N = {row_count}) {{\n\
+             col fixed table.value;\n"
+    );
+    for index in 0..statement_count {
+        source.push_str(&format!(
+            "    if (1) {{\n\
+                 table.value[{index}] = {index};\n\
+             }}\n"
+        ));
+    }
+    source.push_str(
+        "}\n\
+         airgroup GroupA { UnitA(); }",
+    );
+    source
+}
+
 #[test]
 fn generate_key_lowers_source_template_fixed_index_assignments() {
     let dir = temp_dir("template-fixed-assignments");
@@ -280,6 +300,58 @@ fn generate_key_reuses_fixed_assignment_scalar_values() {
     assert_eq!(columns.row_count, 4096);
     assert_eq!(columns.columns[0].values[0], 0);
     assert_eq!(columns.columns[0].values[4095], 518);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_keeps_many_static_if_fixed_assignments_responsive() {
+    let dir = temp_dir("many-static-if-fixed-assignments");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(&source_path, many_static_if_fixed_assignment_source(2048));
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let started = Instant::now();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    let elapsed = started.elapsed();
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(
+        elapsed < Duration::from_secs(8),
+        "source setup took {elapsed:?}"
+    );
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    let columns = parse_raw_fixed_columns(
+        &fs::read(&unit.fixed_columns).expect("fixed columns should read"),
+        &setup,
+        unit.group_name.as_deref().unwrap_or("raw"),
+        unit.unit_name.as_deref().unwrap_or("unit"),
+    )
+    .expect("fixed columns should parse");
+    assert_eq!(columns.row_count, 2048);
+    assert_eq!(columns.columns[0].values[0], 0);
+    assert_eq!(columns.columns[0].values[2047], 2047);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
     assert!(String::from_utf8(stdout)
         .expect("stdout should be utf-8")

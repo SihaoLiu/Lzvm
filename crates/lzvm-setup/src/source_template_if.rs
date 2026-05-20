@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use lzvm_pil::{
-    lex_source, parse_expression_tokens, FixedFileTemplateValue, FunctionStatement,
-    FunctionStatementKind, SourceProgram, SourceProgramModule, SourceSpan, Token, TokenKind,
+    parse_expression_tokens, FixedFileTemplateValue, FunctionStatement, FunctionStatementKind,
+    SourceProgram, SourceProgramModule, SourceSpan, Token, TokenKind,
 };
 
 use crate::{
@@ -10,29 +10,6 @@ use crate::{
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_static_values::{evaluate_source_static_expression, static_value_truthy},
 };
-
-pub(crate) fn source_static_if_body_statements(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
-    statement: &FunctionStatement,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-) -> Result<Option<Vec<FunctionStatement>>, SourceKeyDirectoryMetadataError> {
-    let tokens = lex_source(&module.source.contents).map_err(|source| {
-        SourceKeyDirectoryMetadataError::Lex {
-            source_name: module.source_name.clone(),
-            source,
-        }
-    })?;
-    let mut body_cache = SourceControlBodyCache::default();
-    source_static_if_body_statements_with_tokens(
-        program,
-        module,
-        &tokens,
-        statement,
-        values,
-        &mut body_cache,
-    )
-}
 
 pub(crate) fn source_static_if_body_statements_with_tokens(
     program: &SourceProgram,

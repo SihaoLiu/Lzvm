@@ -11,14 +11,15 @@ use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyDirectoryError
 use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, SetupInfoError, UnitSetupInfo};
 use lzvm_field::Felt;
 use lzvm_pil::{
-    BinaryOperator, ColumnInitializer, ColumnInitializerKind, ColumnItem, ColumnKind,
+    lex_source, BinaryOperator, ColumnInitializer, ColumnInitializerKind, ColumnItem, ColumnKind,
     ConstantDeclaration, Expression, ExpressionKind, FixedFileTemplateValue, FunctionStatement,
     FunctionStatementKind, LexError, ParseError, SourceLoaderConfig, SourceProgram,
-    SourceProgramError, SourceProgramLoader, SourceProgramModule, SourceSpan, UnaryOperator,
+    SourceProgramError, SourceProgramLoader, SourceProgramModule, SourceSpan, Token, UnaryOperator,
 };
 
 use crate::{
     publish_staging_bytes,
+    source_control_body_cache::SourceControlBodyCache,
     source_fixed_expression::SourceFixedConstantValues,
     source_fixed_expression::{
         evaluate_source_fixed_template_value_expression_with_parts,
@@ -32,8 +33,8 @@ use crate::{
         evaluate_source_static_expression, source_declaration_constant_values_from_cache,
         source_template_constant_value_cache, SourceTemplateConstantValueCache,
     },
-    source_template_for::source_static_for_loop,
-    source_template_if::source_static_if_body_statements,
+    source_template_for::source_static_for_loop_with_tokens,
+    source_template_if::source_static_if_body_statements_with_tokens,
     write_staging_bytes, SetupError,
 };
 
@@ -648,11 +649,23 @@ fn source_fixed_values_from_template_assignments(
 ) -> Result<BTreeMap<String, Vec<u64>>, SourceFixedColumnsWriteError> {
     let mut partial_values = BTreeMap::<String, Vec<Option<u64>>>::new();
     for module in &program.modules {
+        let tokens = lex_source(&module.source.contents).map_err(|source| {
+            SourceFixedColumnsWriteError::Lex {
+                source_name: module.source_name.clone(),
+                source_span: SourceSpan {
+                    start: 0,
+                    end: module.source.contents.len(),
+                },
+                source,
+            }
+        })?;
+        let mut body_cache = SourceControlBodyCache::default();
         for template in &module.air_templates {
             let assignment_values = SourceFixedAssignmentValues::base(constant_values);
             let context = SourceFixedTemplateAssignmentContext {
                 program,
                 module,
+                tokens: &tokens,
                 expected_columns,
                 row_count,
             };
@@ -661,6 +674,7 @@ fn source_fixed_values_from_template_assignments(
                     &context,
                     statement,
                     &assignment_values,
+                    &mut body_cache,
                     &mut partial_values,
                 )?;
             }
@@ -681,6 +695,7 @@ fn source_fixed_values_from_template_assignments(
 struct SourceFixedTemplateAssignmentContext<'a> {
     program: &'a SourceProgram,
     module: &'a SourceProgramModule,
+    tokens: &'a [Token],
     expected_columns: &'a BTreeSet<String>,
     row_count: usize,
 }
@@ -735,15 +750,18 @@ fn collect_source_fixed_template_assignment(
     context: &SourceFixedTemplateAssignmentContext<'_>,
     statement: &FunctionStatement,
     assignment_values: &SourceFixedAssignmentValues<'_>,
+    body_cache: &mut SourceControlBodyCache,
     partial_values: &mut BTreeMap<String, Vec<Option<u64>>>,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     if statement.kind == FunctionStatementKind::If {
         let control_scalars = assignment_values.scalar_map();
-        match source_static_if_body_statements(
+        match source_static_if_body_statements_with_tokens(
             context.program,
             context.module,
+            context.tokens,
             statement,
             &control_scalars,
+            body_cache,
         ) {
             Ok(Some(body_statements)) => {
                 for body_statement in &body_statements {
@@ -751,6 +769,7 @@ fn collect_source_fixed_template_assignment(
                         context,
                         body_statement,
                         assignment_values,
+                        body_cache,
                         partial_values,
                     )?;
                 }
@@ -764,7 +783,14 @@ fn collect_source_fixed_template_assignment(
     }
     if statement.kind == FunctionStatementKind::For {
         let control_scalars = assignment_values.scalar_map();
-        match source_static_for_loop(context.program, context.module, statement, &control_scalars) {
+        match source_static_for_loop_with_tokens(
+            context.program,
+            context.module,
+            context.tokens,
+            statement,
+            &control_scalars,
+            body_cache,
+        ) {
             Ok(Some(loop_info)) => {
                 for iteration_value in &loop_info.iteration_values {
                     let iteration_assignment_values = SourceFixedAssignmentValues::with_loop_value(
@@ -777,6 +803,7 @@ fn collect_source_fixed_template_assignment(
                             context,
                             body_statement,
                             &iteration_assignment_values,
+                            body_cache,
                             partial_values,
                         )?;
                     }

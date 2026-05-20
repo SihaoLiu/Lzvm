@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
 use lzvm_pil::{
-    lex_source, parse_expression_tokens, BinaryOperator, Expression, ExpressionKind,
-    FixedFileTemplateValue, FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind,
-    SourceProgram, SourceProgramModule, SourceSpan, Token, TokenKind, UnaryOperator,
+    parse_expression_tokens, BinaryOperator, Expression, ExpressionKind, FixedFileTemplateValue,
+    FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind, SourceProgram,
+    SourceProgramModule, SourceSpan, Token, TokenKind, UnaryOperator,
 };
 
 use crate::{
@@ -18,29 +18,6 @@ pub(crate) struct SourceStaticForLoop {
     pub(crate) body_statements: Vec<FunctionStatement>,
     pub(crate) iteration_values: Vec<FixedFileTemplateValue>,
     pub(crate) variable_name: String,
-}
-
-pub(crate) fn source_static_for_loop(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
-    statement: &FunctionStatement,
-    base_values: &BTreeMap<String, FixedFileTemplateValue>,
-) -> Result<Option<SourceStaticForLoop>, SourceKeyDirectoryMetadataError> {
-    let tokens = lex_source(&module.source.contents).map_err(|source| {
-        SourceKeyDirectoryMetadataError::Lex {
-            source_name: module.source_name.clone(),
-            source,
-        }
-    })?;
-    let mut body_cache = SourceControlBodyCache::default();
-    source_static_for_loop_with_tokens(
-        program,
-        module,
-        &tokens,
-        statement,
-        base_values,
-        &mut body_cache,
-    )
 }
 
 pub(crate) fn source_static_for_loop_with_tokens(
