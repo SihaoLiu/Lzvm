@@ -353,6 +353,62 @@ fn generate_key_writes_source_air_values_to_unit_metadata() {
 }
 
 #[test]
+fn generate_key_writes_source_air_group_values_to_metadata() {
+    let dir = temp_dir("air-group-value-metadata");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "const int WIDTH = 2;\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];\n\
+         airgroupval stage(2) aggregate(sum) group.total;\n\
+         airgroupval stage(2) aggregate(prod) group.product[WIDTH];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
+        .expect("source global metadata should parse");
+    assert_eq!(global.aggregation_types.len(), 1);
+    assert_eq!(global.aggregation_types[0].len(), 2);
+    assert_eq!(global.aggregation_types[0][0].aggregation_type, 0);
+    assert_eq!(global.aggregation_types[0][1].aggregation_type, 1);
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let setup_path = layout.units[0]
+        .setup_info_binary()
+        .expect("setup metadata path should derive");
+    let setup = read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+    assert_eq!(setup.group_value_map.len(), 2);
+    assert_eq!(setup.group_value_map[0].name, "group.total");
+    assert_eq!(setup.group_value_map[0].stage, 2);
+    assert!(setup.group_value_map[0].lengths.is_empty());
+    assert_eq!(setup.group_value_map[1].name, "group.product");
+    assert_eq!(setup.group_value_map[1].stage, 2);
+    assert_eq!(setup.group_value_map[1].lengths, [2]);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_writes_later_stage_source_proof_values_to_global_metadata() {
     let dir = temp_dir("later-proof-value-metadata");
     let _ = fs::remove_dir_all(&dir);

@@ -267,13 +267,8 @@ fn validate_supported_source_program(
                 "fixed columns without source initializers need external fixed input support",
             );
         }
-        if !module.commits.is_empty()
-            || !module.public_tables.is_empty()
-            || !module.air_group_values.is_empty()
-        {
-            return unsupported(
-                "air group values, public tables, and commits need metadata lowering support",
-            );
+        if !module.commits.is_empty() || !module.public_tables.is_empty() {
+            return unsupported("public tables and commits need metadata lowering support");
         }
     }
     Ok(())
@@ -620,6 +615,7 @@ fn top_level_declaration_start(kind: TokenKind) -> bool {
     matches!(
         kind,
         TokenKind::AirGroup
+            | TokenKind::AirGroupValue
             | TokenKind::AirTemplate
             | TokenKind::AirValue
             | TokenKind::Challenge
@@ -716,6 +712,7 @@ fn source_global_info(
     let num_challenges = source_challenge_counts(program, &constant_values)?;
     let (num_proof_values, proof_values_map) = source_proof_values(program, &constant_values)?;
     let publics_map = source_public_values(program, &constant_values)?;
+    let (_, group_aggregation_types) = source_air_group_values(program, &constant_values)?;
     let mut groups = BTreeMap::<usize, (String, BTreeMap<usize, String>)>::new();
     for unit in program
         .air_units()
@@ -762,7 +759,7 @@ fn source_global_info(
         air_groups.push(group_name);
         airs.push(group_units);
     }
-    let aggregation_types = vec![Vec::<AggregationType>::new(); air_groups.len()];
+    let aggregation_types = vec![group_aggregation_types; air_groups.len()];
 
     Ok(GlobalInfo {
         name: "source-program".to_owned(),
@@ -932,6 +929,55 @@ fn source_unit_values(
     Ok(values)
 }
 
+fn source_air_group_values(
+    program: &SourceProgram,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<(Vec<StageValue>, Vec<AggregationType>), SourceKeyDirectoryMetadataError> {
+    let mut seen = BTreeSet::new();
+    let mut values = Vec::new();
+    let mut aggregation_types = Vec::new();
+    for module in &program.modules {
+        for declaration in &module.air_group_values {
+            if declaration.stage == 0 {
+                return unsupported("source air group value stage must be positive");
+            }
+            if declaration.default_value.is_some() {
+                return unsupported("source air group value defaults need proof lowering support");
+            }
+            let aggregation_type =
+                source_group_value_aggregation_type(&declaration.aggregate_type)?;
+            for item in &declaration.items {
+                if item.template {
+                    return unsupported(
+                        "template air-group-value names need instance lowering support",
+                    );
+                }
+                if !seen.insert(item.name.clone()) {
+                    return unsupported("duplicate source air group value name");
+                }
+                values.push(StageValue {
+                    name: item.name.clone(),
+                    stage: declaration.stage,
+                    lengths: source_item_lengths(item, "source air group value", constant_values)?,
+                });
+                aggregation_types.push(AggregationType { aggregation_type });
+            }
+        }
+    }
+    Ok((values, aggregation_types))
+}
+
+fn source_group_value_aggregation_type(
+    name: &Option<String>,
+) -> Result<u64, SourceKeyDirectoryMetadataError> {
+    match name.as_deref() {
+        Some("sum") => Ok(0),
+        Some("prod") => Ok(1),
+        Some(_) => unsupported("unsupported source air group value aggregation type"),
+        None => unsupported("source air group value aggregation type is required"),
+    }
+}
+
 fn unsupported_source_message(message: impl Into<String>) -> SourceKeyDirectoryMetadataError {
     SourceKeyDirectoryMetadataError::UnsupportedSourceProgram {
         message: message.into(),
@@ -951,6 +997,7 @@ fn source_unit_setup_info(
     let commitment_columns = source_commitment_columns(program, &constant_values)?;
     let (n_stages, commitment_widths) = source_commitment_section_widths(&commitment_columns)?;
     let unit_value_map = source_unit_values(program, &constant_values)?;
+    let (group_value_map, _) = source_air_group_values(program, &constant_values)?;
     let challenge_count = source_challenge_counts(program, &constant_values)?
         .into_iter()
         .try_fold(0_usize, |acc, count| {
@@ -986,7 +1033,7 @@ fn source_unit_setup_info(
         boundaries: Vec::<Boundary>::new(),
         commitment_columns,
         unit_value_map,
-        group_value_map: Vec::<StageValue>::new(),
+        group_value_map,
         stark: StarkStruct {
             n_bits,
             n_bits_ext,
