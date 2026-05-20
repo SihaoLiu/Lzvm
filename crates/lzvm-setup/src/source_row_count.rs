@@ -8,7 +8,7 @@ use lzvm_pil::{
 };
 
 use crate::source_key_directory::SourceKeyDirectoryMetadataError;
-use crate::source_static_values::evaluate_source_static_expression;
+use crate::source_static_values::{evaluate_source_static_expression, static_value_integer};
 
 pub(crate) type SourceUnitRowCounts = BTreeMap<(usize, usize), u64>;
 
@@ -716,11 +716,12 @@ fn parse_i128_static_integer(
             .or_else(|| {
                 evaluate_source_static_expression(context.program, &expression, context.constants)
             });
-    match value {
-        Some(FixedFileTemplateValue::Integer(value)) => Ok(value),
-        _ => Err(unsupported_source_message(
+    if let Some(value) = value.as_ref().and_then(static_value_integer) {
+        Ok(value)
+    } else {
+        Err(unsupported_source_message(
             "source literal must be an integer",
-        )),
+        ))
     }
 }
 
