@@ -22,6 +22,14 @@ pub enum ProvePcsQueryPlanSegmentError {
         segment_unit_index: u32,
         payload_unit_index: u32,
     },
+    TranscriptWitnessUnitCountMismatch {
+        expected: usize,
+        found: usize,
+    },
+    TranscriptWitnessUnitMismatch {
+        input_unit_index: u32,
+        witness_unit_index: u32,
+    },
     QueryCountExceedsDomain {
         unit_index: usize,
         query_count: u32,
@@ -65,6 +73,17 @@ impl fmt::Display for ProvePcsQueryPlanSegmentError {
             } => write!(
                 f,
                 "prove PCS query plan witness unit mismatch: segment {segment_unit_index}, payload {payload_unit_index}"
+            ),
+            Self::TranscriptWitnessUnitCountMismatch { expected, found } => write!(
+                f,
+                "prove PCS transcript query plan expected {expected} witness unit, found {found}"
+            ),
+            Self::TranscriptWitnessUnitMismatch {
+                input_unit_index,
+                witness_unit_index,
+            } => write!(
+                f,
+                "prove PCS transcript query plan witness unit {witness_unit_index} does not match input unit {input_unit_index}"
             ),
             Self::QueryCountExceedsDomain {
                 unit_index,
@@ -110,6 +129,8 @@ impl std::error::Error for ProvePcsQueryPlanSegmentError {
             Self::MissingWitnessSegments
             | Self::UnitIndexOutOfRange { .. }
             | Self::WitnessUnitMismatch { .. }
+            | Self::TranscriptWitnessUnitCountMismatch { .. }
+            | Self::TranscriptWitnessUnitMismatch { .. }
             | Self::QueryCountExceedsDomain { .. }
             | Self::MissingTranscriptArity { .. }
             | Self::InvalidNonceSegmentId { .. }

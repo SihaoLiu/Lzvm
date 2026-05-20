@@ -133,9 +133,31 @@ pub fn build_pcs_query_plan_segment_from_transcript_segments(
         });
     }
 
+    let input_unit_index = u32::try_from(input.unit_index)
+        .map_err(|_| ProvePcsQueryPlanSegmentError::LengthOverflow)?;
+    let witness_segments = sorted_witness_commitment_segments(witness_segments)?;
+    let query_units = collect_witness_query_units(schedule, &witness_segments)?;
+    if query_units.len() != 1 {
+        return Err(
+            ProvePcsQueryPlanSegmentError::TranscriptWitnessUnitCountMismatch {
+                expected: 1,
+                found: query_units.len(),
+            },
+        );
+    }
+    let witness_unit_index = query_units[0].0;
+    if witness_unit_index != input_unit_index {
+        return Err(
+            ProvePcsQueryPlanSegmentError::TranscriptWitnessUnitMismatch {
+                input_unit_index,
+                witness_unit_index,
+            },
+        );
+    }
+
     let challenge = derive_pcs_final_query_challenge_from_segments(input)?;
     let nonce = Felt::from_u64(parse_pcs_query_nonce_segment(&nonce_segment.data)?.nonce);
-    build_pcs_query_plan_segment_from_challenge(schedule, witness_segments, challenge, nonce)
+    build_pcs_query_plan_segment_from_challenge(schedule, &witness_segments, challenge, nonce)
 }
 
 #[cfg(feature = "cuda")]
