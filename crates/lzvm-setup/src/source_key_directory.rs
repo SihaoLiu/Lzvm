@@ -34,9 +34,9 @@ use crate::{
         global_constraint_source_names,
     },
     source_static_values::{
-        source_declaration_constant_values_from_cache, source_declaration_in_static_false_branch,
-        source_scalar_constant_values, source_template_constant_value_cache,
-        SourceTemplateConstantValueCache,
+        evaluate_source_static_expression, source_declaration_constant_values_from_cache,
+        source_declaration_in_static_false_branch, source_scalar_constant_values,
+        source_template_constant_value_cache, SourceTemplateConstantValueCache,
     },
     source_verifier_info::source_verifier_info,
     write_staging_bytes, SetupError,
@@ -897,10 +897,15 @@ fn source_public_values(
                 values.push(PublicValue {
                     name: item.name.clone(),
                     stage: 1,
-                    lengths: source_item_lengths(item, "source public value", constant_values)?
-                        .into_iter()
-                        .map(u64::from)
-                        .collect(),
+                    lengths: source_item_lengths(
+                        program,
+                        item,
+                        "source public value",
+                        constant_values,
+                    )?
+                    .into_iter()
+                    .map(u64::from)
+                    .collect(),
                 });
             }
         }
@@ -945,10 +950,15 @@ fn source_proof_values(
                     name: item.name.clone(),
                     stage: u64::from(declaration.stage),
                     id: None,
-                    lengths: source_item_lengths(item, "source proof value", constant_values)?
-                        .into_iter()
-                        .map(u64::from)
-                        .collect(),
+                    lengths: source_item_lengths(
+                        program,
+                        item,
+                        "source proof value",
+                        constant_values,
+                    )?
+                    .into_iter()
+                    .map(u64::from)
+                    .collect(),
                 });
             }
         }
@@ -979,7 +989,8 @@ fn source_challenge_counts(
                 if item.template {
                     return unsupported("template challenge names need instance lowering support");
                 }
-                let lengths = source_item_lengths(item, "source challenge", constant_values)?;
+                let lengths =
+                    source_item_lengths(program, item, "source challenge", constant_values)?;
                 let dimension = source_column_dimension(&lengths, "source challenge")?;
                 let shape = SourceChallengeShape { stage, dimension };
                 if let Some(existing) = seen.get(&item.name) {
@@ -1035,7 +1046,8 @@ fn source_unit_values(
                 if item.template {
                     return unsupported("template air-value names need instance lowering support");
                 }
-                let lengths = source_item_lengths(item, "source air value", declaration_values)?;
+                let lengths =
+                    source_item_lengths(program, item, "source air value", declaration_values)?;
                 let shape = (declaration.stage, lengths.clone());
                 if let Some(existing) = seen.get(&item.name) {
                     if *existing != shape {
@@ -1108,7 +1120,12 @@ fn source_air_group_values(
                 values.push(StageValue {
                     name: item.name.clone(),
                     stage: declaration.stage,
-                    lengths: source_item_lengths(item, "source air group value", constant_values)?,
+                    lengths: source_item_lengths(
+                        program,
+                        item,
+                        "source air group value",
+                        constant_values,
+                    )?,
                 });
                 aggregation_types.push(AggregationType { aggregation_type });
             }
@@ -1259,7 +1276,8 @@ fn source_constant_columns(
                 if !seen.insert(item.name.clone()) {
                     continue;
                 }
-                let lengths = source_item_lengths(item, "source fixed-column", declaration_values)?;
+                let lengths =
+                    source_item_lengths(program, item, "source fixed-column", declaration_values)?;
                 let dimension = source_column_dimension(&lengths, "source fixed-column")?;
                 let id = u32::try_from(columns.len())
                     .map_err(|_| unsupported_source_message("too many source fixed columns"))?;
@@ -1309,7 +1327,7 @@ fn source_commitment_columns(
                 constant_values,
                 template_values,
             );
-            let stage = source_column_stage(declaration, declaration_values)?;
+            let stage = source_column_stage(program, declaration, declaration_values)?;
             for item in &declaration.items {
                 if item.template {
                     return unsupported(format!(
@@ -1320,8 +1338,12 @@ fn source_commitment_columns(
                 if !seen.insert(item.name.clone()) {
                     continue;
                 }
-                let lengths =
-                    source_item_lengths(item, "source commitment-column", declaration_values)?;
+                let lengths = source_item_lengths(
+                    program,
+                    item,
+                    "source commitment-column",
+                    declaration_values,
+                )?;
                 let dimension = source_column_dimension(&lengths, "source commitment-column")?;
                 let cursor = stages.entry(stage).or_default();
                 let stage_id = cursor.next_id;
@@ -1397,6 +1419,7 @@ fn source_commitment_section_widths(
 }
 
 fn source_column_stage(
+    program: &SourceProgram,
     declaration: &ColumnDeclaration,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<u32, SourceKeyDirectoryMetadataError> {
@@ -1415,6 +1438,7 @@ fn source_column_stage(
             return unsupported("source column stage must have one argument");
         };
         stage = Some(eval_u32_expression_with_values(
+            program,
             expression,
             constant_values,
         )?);
@@ -1440,6 +1464,7 @@ fn source_column_dimension(
 }
 
 fn source_item_lengths(
+    program: &SourceProgram,
     item: &ColumnItem,
     item_role: &str,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
@@ -1449,7 +1474,7 @@ fn source_item_lengths(
         let Some(expression) = expression else {
             return unsupported(format!("{item_role} array dimensions must be static"));
         };
-        let value = eval_u32_expression_with_values(expression, constant_values)?;
+        let value = eval_u32_expression_with_values(program, expression, constant_values)?;
         if value == 0 {
             return unsupported(format!("{item_role} array dimensions must be positive"));
         }
@@ -1465,11 +1490,12 @@ fn eval_u32_expression(expression: &Expression) -> Result<u32, SourceKeyDirector
 }
 
 fn eval_u32_expression_with_values(
+    program: &SourceProgram,
     expression: &Expression,
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<u32, SourceKeyDirectoryMetadataError> {
     if let Some(FixedFileTemplateValue::Integer(value)) =
-        evaluate_fixed_file_template_value_expression_with_values(expression, values)
+        evaluate_source_static_expression(program, expression, values)
     {
         return u32::try_from(value)
             .map_err(|_| unsupported_source_message("source expression is out of range"));

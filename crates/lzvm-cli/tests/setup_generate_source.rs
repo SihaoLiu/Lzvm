@@ -575,6 +575,58 @@ fn generate_key_uses_static_function_constants_for_column_dimensions() {
 }
 
 #[test]
+fn generate_key_uses_static_function_calls_for_column_dimensions() {
+    let dir = temp_dir("static-function-call-dimensions");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "function chunk_size(): int {\n\
+             int chunks = 1;\n\
+             while (chunks < 3) {\n\
+                 chunks += 1;\n\
+             }\n\
+             return chunks;\n\
+         }\n\
+         airtemplate UnitA() {\n\
+             col witness trace[chunk_size()];\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let setup_path = layout.units[0]
+        .setup_info_binary()
+        .expect("setup metadata path should derive");
+    let setup = read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+    assert_eq!(setup.commitment_columns.len(), 1);
+    assert_eq!(setup.commitment_columns[0].name, "trace");
+    assert_eq!(setup.commitment_columns[0].lengths, [3]);
+    assert_eq!(setup.commitment_columns[0].dimension, 3);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_uses_template_static_assignments_for_column_dimensions() {
     let dir = temp_dir("template-static-assignment-dimensions");
     let _ = fs::remove_dir_all(&dir);
