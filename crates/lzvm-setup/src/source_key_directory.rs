@@ -17,11 +17,10 @@ use lzvm_artifacts::setup_info::{
 };
 use lzvm_artifacts::verifier_info::{encode_verifier_info, VerifierInfoError};
 use lzvm_pil::{
-    evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
-    BinaryOperator, ColumnDeclaration, ColumnItem, ColumnKind, Expression, ExpressionKind,
-    FixedFileTemplateValue, LexError, ParseError, SourceLoaderConfig, SourceProgram,
-    SourceProgramError, SourceProgramLoader, SourceProgramModule, Token, TokenKind, UnaryOperator,
-    ValueDeclarationKind,
+    lex_source, parse_expression, BinaryOperator, ColumnDeclaration, ColumnItem, ColumnKind,
+    Expression, ExpressionKind, FixedFileTemplateValue, LexError, ParseError, SourceLoaderConfig,
+    SourceProgram, SourceProgramError, SourceProgramLoader, SourceProgramModule, Token, TokenKind,
+    UnaryOperator, ValueDeclarationKind,
 };
 
 use crate::{
@@ -1086,10 +1085,7 @@ fn source_air_group_values(
                 source_group_value_aggregation_type(&declaration.aggregate_type)?;
             if let Some(default_expression) = declaration.default_expression.as_ref() {
                 let Some(FixedFileTemplateValue::Integer(default_value)) =
-                    evaluate_fixed_file_template_value_expression_with_values(
-                        default_expression,
-                        constant_values,
-                    )
+                    evaluate_source_static_expression(program, default_expression, constant_values)
                 else {
                     return unsupported(
                         "source air group value defaults need proof lowering support",
