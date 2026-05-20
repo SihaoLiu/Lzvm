@@ -214,6 +214,28 @@ pub(crate) fn evaluate_source_fixed_template_value_expression(
         .map(|value| FixedFileTemplateValue::Integer(i128::from(value)))
 }
 
+fn evaluate_source_fixed_template_value_expression_with_static_index(
+    context: &SourceFixedExpressionContext<'_>,
+    expression: &Expression,
+) -> Option<FixedFileTemplateValue> {
+    let ExpressionKind::Index { target, index } = &expression.kind else {
+        return None;
+    };
+    let ExpressionKind::Name(array_name) = &target.kind else {
+        return None;
+    };
+    let values = context.constant_values.arrays.get(array_name)?;
+    let index = evaluate_source_fixed_static_value_expression(context, index)?;
+    let FixedFileTemplateValue::Integer(index) = index else {
+        return None;
+    };
+    let index = usize::try_from(index).ok()?;
+    values
+        .get(index)
+        .copied()
+        .map(|value| FixedFileTemplateValue::Integer(i128::from(value)))
+}
+
 fn source_fixed_expression_static_integer(
     context: &SourceFixedExpressionContext<'_>,
     expression: &Expression,
@@ -228,15 +250,17 @@ fn evaluate_source_fixed_static_value_expression(
     context: &SourceFixedExpressionContext<'_>,
     expression: &Expression,
 ) -> Option<FixedFileTemplateValue> {
-    evaluate_source_fixed_template_value_expression(expression, context.constant_values).or_else(
-        || {
+    evaluate_source_fixed_template_value_expression(expression, context.constant_values)
+        .or_else(|| {
+            evaluate_source_fixed_template_value_expression_with_static_index(context, expression)
+        })
+        .or_else(|| {
             evaluate_source_static_expression(
                 context.program,
                 expression,
                 &context.constant_values.scalars,
             )
-        },
-    )
+        })
 }
 
 fn canonical_source_fixed_expression_value(
