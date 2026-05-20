@@ -472,10 +472,11 @@ fn lower_top_level_global_constraint(
     let slot = proof_value_slots.get(name).copied().ok_or_else(|| {
         unsupported_source_message("top-level proof value constraint references an unknown value")
     })?;
-    if slot.stage != 1 {
-        return unsupported("top-level proof value constraints require stage-one values");
-    }
-    constraints.append_proof_value_boolean_constraint(slot.offset, source_line.trim().to_owned())
+    constraints.append_proof_value_boolean_constraint(
+        slot.offset,
+        proof_value_operand_dimension(slot.stage),
+        source_line.trim().to_owned(),
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -612,6 +613,19 @@ impl SourceGlobalConstraintBuilder {
     fn append_proof_value_boolean_constraint(
         &mut self,
         proof_value_offset: u32,
+        dimension: u32,
+        source_line: String,
+    ) -> Result<(), SourceKeyDirectoryMetadataError> {
+        match dimension {
+            1 => self.append_base_proof_value_boolean_constraint(proof_value_offset, source_line),
+            3 => self.append_ext_proof_value_boolean_constraint(proof_value_offset, source_line),
+            _ => unsupported("unsupported source proof value dimension"),
+        }
+    }
+
+    fn append_base_proof_value_boolean_constraint(
+        &mut self,
+        proof_value_offset: u32,
         source_line: String,
     ) -> Result<(), SourceKeyDirectoryMetadataError> {
         let ops_offset = source_usize_to_u32(self.ops.len(), "source global op offset overflow")?;
@@ -651,6 +665,48 @@ impl SourceGlobalConstraintBuilder {
         Ok(())
     }
 
+    fn append_ext_proof_value_boolean_constraint(
+        &mut self,
+        proof_value_offset: u32,
+        source_line: String,
+    ) -> Result<(), SourceKeyDirectoryMetadataError> {
+        let ops_offset = source_usize_to_u32(self.ops.len(), "source global op offset overflow")?;
+        let args_offset =
+            source_usize_to_u32(self.args.len(), "source global argument offset overflow")?;
+        let one_offset = self.intern_number(1)?;
+        let proof_value_offset =
+            source_u32_to_u16(proof_value_offset, "source proof value offset overflow")?;
+        let one_offset = source_u32_to_u16(one_offset, "source number offset overflow")?;
+
+        self.ops.extend([1, 2]);
+        self.args.extend([
+            3,
+            0,
+            3,
+            proof_value_offset,
+            2,
+            one_offset,
+            2,
+            3,
+            3,
+            proof_value_offset,
+            4,
+            0,
+        ]);
+        self.entries.push(GlobalConstraintEntry {
+            destination_dimension: 3,
+            destination_id: 1,
+            temp1_count: 0,
+            temp3_count: 2,
+            ops_count: 2,
+            ops_offset,
+            args_count: 12,
+            args_offset,
+            source_line,
+        });
+        Ok(())
+    }
+
     fn intern_number(&mut self, value: u64) -> Result<u32, SourceKeyDirectoryMetadataError> {
         if let Some(index) = self.numbers.iter().position(|existing| *existing == value) {
             return source_usize_to_u32(index, "source number offset overflow");
@@ -667,6 +723,14 @@ impl SourceGlobalConstraintBuilder {
             args: self.args,
             numbers: self.numbers,
         }
+    }
+}
+
+fn proof_value_operand_dimension(stage: u64) -> u32 {
+    if stage == 1 {
+        1
+    } else {
+        3
     }
 }
 
