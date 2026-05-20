@@ -612,12 +612,10 @@ fn function_statement_expression(
         return Ok(None);
     }
 
-    let (expression, next_index) = parse_expression_tokens(tokens, start_index, end_index, source)?;
-    if next_index != end_index {
-        return Ok(None);
+    match parse_expression_tokens(tokens, start_index, end_index, source) {
+        Ok((expression, next_index)) if next_index == end_index => Ok(Some(expression)),
+        Ok(_) | Err(_) => Ok(None),
     }
-
-    Ok(Some(expression))
 }
 
 fn function_statement_expression_kind(kind: FunctionStatementKind) -> bool {

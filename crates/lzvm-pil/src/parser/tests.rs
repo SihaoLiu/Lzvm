@@ -868,6 +868,26 @@ fn parses_air_group_declarations_with_nested_body_spans() {
 }
 
 #[test]
+fn parses_air_group_statements_with_array_call_arguments_as_spans() {
+    let source = source("airgroup Main { configure(table_ids: [TABLE_A, TABLE_B]); }");
+
+    let declarations = parse_air_group_declarations(&source).expect("air groups should parse");
+
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(declarations[0].statements.len(), 1);
+    let statement = &declarations[0].statements[0];
+    assert_eq!(statement.kind, FunctionStatementKind::Expression);
+    assert_eq!(
+        &source.contents[statement
+            .value
+            .expect("value span should be recorded")
+            .start..statement.value.unwrap().end],
+        "configure(table_ids: [TABLE_A, TABLE_B])"
+    );
+    assert!(statement.value_expression.is_none());
+}
+
+#[test]
 fn skips_air_group_scope_references_when_parsing_air_group_declarations() {
     let source = source("on final airgroup finalize();\nairgroup Main { Main(); }");
 
