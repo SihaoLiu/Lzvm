@@ -21,14 +21,17 @@ use lzvm_artifacts::verifier_info::{encode_verifier_info, VerifierInfoError};
 use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
     BinaryOperator, ColumnDeclaration, ColumnItem, ColumnKind, Expression, ExpressionKind,
-    FixedFileTemplateValue, FunctionStatement, FunctionStatementKind, LexError, ParseError,
-    SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader,
-    SourceProgramModule, Token, TokenKind, UnaryOperator, ValueDeclarationKind,
+    FixedFileTemplateValue, FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind,
+    LexError, ParseError, SourceLoaderConfig, SourceProgram, SourceProgramError,
+    SourceProgramLoader, SourceProgramModule, Token, TokenKind, UnaryOperator,
+    ValueDeclarationKind,
 };
 
 use crate::{
     publish_staging_bytes,
-    source_constraint_lowering::lower_source_template_boolean_constraint,
+    source_constraint_lowering::{
+        lower_source_template_boolean_constraint, SourceExpressionAliases,
+    },
     source_expression_filters::{
         source_expression_assigns_fixed_index, source_expression_is_assignment,
         source_expression_is_equality_constraint,
@@ -386,8 +389,16 @@ fn source_expression_info(
                 constant_values: &constant_values,
                 template_values: &template_values,
             };
+            let mut expression_aliases = SourceExpressionAliases::new();
             for statement in &template.statements {
-                lower_source_template_statement(&context, statement, &mut hints, &mut constraints)?;
+                lower_source_template_statement(
+                    &context,
+                    statement,
+                    &expression_aliases,
+                    &mut hints,
+                    &mut constraints,
+                )?;
+                collect_source_template_expression_alias(statement, &mut expression_aliases);
             }
         }
     }
@@ -423,6 +434,7 @@ fn source_fixed_assignment_column_names(program: &SourceProgram) -> BTreeSet<Str
 fn lower_source_template_statement(
     context: &SourceTemplateLoweringContext<'_>,
     statement: &FunctionStatement,
+    expression_aliases: &SourceExpressionAliases,
     hints: &mut Vec<HintInfo>,
     constraints: &mut Vec<ConstraintCode>,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
@@ -513,6 +525,7 @@ fn lower_source_template_statement(
         statement,
         context.scalar_slots,
         declaration_values,
+        expression_aliases,
     ) {
         Ok(Some(constraint)) => {
             constraints.push(constraint);
@@ -562,6 +575,23 @@ fn source_statement_line<'a>(
         .trim()
         .trim_end_matches(';')
         .trim()
+}
+
+fn collect_source_template_expression_alias(
+    statement: &FunctionStatement,
+    expression_aliases: &mut SourceExpressionAliases,
+) {
+    let Some(FunctionStatementDeclaration::Constant(declaration)) = statement.declaration.as_ref()
+    else {
+        return;
+    };
+    if declaration.type_name.as_deref() != Some("expr") || !declaration.array_dims.is_empty() {
+        return;
+    }
+    let Some(expression) = declaration.initializer_expression.as_ref() else {
+        return;
+    };
+    expression_aliases.insert(declaration.name.clone(), expression.clone());
 }
 
 fn source_global_program(
@@ -1376,7 +1406,12 @@ fn source_unit_setup_info(
     let (n_stages, commitment_widths) = source_commitment_section_widths(&commitment_columns)?;
     let unit_value_map = source_unit_values(program, &constant_values, &template_values)?;
     let (group_value_map, _) = source_air_group_values(program, &constant_values)?;
-    let opening_points = source_opening_points(program, &constant_values, &active_templates)?;
+    let opening_points = source_opening_points(
+        program,
+        &constant_values,
+        &active_templates,
+        &template_values,
+    )?;
     let challenge_count = source_challenge_counts(program, &constant_values)?
         .into_iter()
         .try_fold(0_usize, |acc, count| {

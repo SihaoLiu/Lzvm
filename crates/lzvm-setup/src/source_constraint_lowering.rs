@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_artifacts::expression_info::{
     BoundaryKind, CodeDestination, CodeOperand, CodeOperation, ConstraintCode, OperationKind,
@@ -13,36 +13,37 @@ use crate::{
     source_key_directory::SourceKeyDirectoryMetadataError, source_scalar_slots::SourceScalarSlots,
 };
 
+pub(crate) type SourceExpressionAliases = BTreeMap<String, Expression>;
+
 pub(crate) fn lower_source_template_boolean_constraint(
     module: &SourceProgramModule,
     statement: &FunctionStatement,
     scalar_slots: &SourceScalarSlots,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: &SourceExpressionAliases,
 ) -> Result<Option<ConstraintCode>, SourceKeyDirectoryMetadataError> {
     let Some(expression) = statement.value_expression.as_ref() else {
         return Ok(None);
     };
-    let mut operations = Vec::new();
-    let mut next_temporary = 0_u32;
-    let mut frame_offsets = SourceConstraintFrameOffsets::default();
-    let Some(result) = lower_source_constraint_residual(
-        expression,
+    let mut state = SourceConstraintLoweringState {
         scalar_slots,
         constant_values,
-        &mut operations,
-        &mut next_temporary,
-        &mut frame_offsets,
-    )?
-    else {
+        expression_aliases,
+        operations: Vec::new(),
+        next_temporary: 0,
+        frame_offsets: SourceConstraintFrameOffsets::default(),
+        resolving_aliases: BTreeSet::new(),
+    };
+    let Some(result) = lower_source_constraint_residual(expression, &mut state)? else {
         return Ok(None);
     };
-    if operations.is_empty() {
+    if state.operations.is_empty() {
         return Ok(None);
     }
     if !matches!(result, CodeOperand::Temporary { .. }) {
         return Ok(None);
     }
-    let (boundary, offset_min, offset_max) = frame_offsets.boundary()?;
+    let (boundary, offset_min, offset_max) = state.frame_offsets.boundary()?;
     Ok(Some(ConstraintCode {
         stage: 1,
         boundary,
@@ -52,18 +53,24 @@ pub(crate) fn lower_source_template_boolean_constraint(
             .trim()
             .to_owned(),
         intermediate: false,
-        temporary_count: next_temporary,
-        operations,
+        temporary_count: state.next_temporary,
+        operations: state.operations,
     }))
+}
+
+struct SourceConstraintLoweringState<'a> {
+    scalar_slots: &'a SourceScalarSlots,
+    constant_values: &'a BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: &'a SourceExpressionAliases,
+    operations: Vec<CodeOperation>,
+    next_temporary: u32,
+    frame_offsets: SourceConstraintFrameOffsets,
+    resolving_aliases: BTreeSet<String>,
 }
 
 fn lower_source_constraint_residual(
     expression: &Expression,
-    scalar_slots: &SourceScalarSlots,
-    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
-    operations: &mut Vec<CodeOperation>,
-    next_temporary: &mut u32,
-    frame_offsets: &mut SourceConstraintFrameOffsets,
+    state: &mut SourceConstraintLoweringState<'_>,
 ) -> Result<Option<CodeOperand>, SourceKeyDirectoryMetadataError> {
     let ExpressionKind::Binary { op, left, right } = &strip_group_expression(expression).kind
     else {
@@ -73,48 +80,19 @@ fn lower_source_constraint_residual(
         return Ok(None);
     }
     if expression_is_zero(right) {
-        return lower_source_scalar_expression(
-            left,
-            scalar_slots,
-            constant_values,
-            operations,
-            next_temporary,
-            frame_offsets,
-        )
-        .map(Some);
+        return lower_source_scalar_expression(left, state).map(Some);
     } else if expression_is_zero(left) {
-        return lower_source_scalar_expression(
-            right,
-            scalar_slots,
-            constant_values,
-            operations,
-            next_temporary,
-            frame_offsets,
-        )
-        .map(Some);
+        return lower_source_scalar_expression(right, state).map(Some);
     }
 
-    let left = lower_source_scalar_expression(
-        left,
-        scalar_slots,
-        constant_values,
-        operations,
-        next_temporary,
-        frame_offsets,
-    )?;
-    let right = lower_source_scalar_expression(
-        right,
-        scalar_slots,
-        constant_values,
-        operations,
-        next_temporary,
-        frame_offsets,
-    )?;
-    let id = *next_temporary;
-    *next_temporary = next_temporary
+    let left = lower_source_scalar_expression(left, state)?;
+    let right = lower_source_scalar_expression(right, state)?;
+    let id = state.next_temporary;
+    state.next_temporary = state
+        .next_temporary
         .checked_add(1)
         .ok_or_else(|| unsupported_source_message("source scalar constraint temporary overflow"))?;
-    operations.push(CodeOperation {
+    state.operations.push(CodeOperation {
         op: OperationKind::Sub,
         destination: CodeDestination::temporary(id, 1),
         sources: vec![left, right],
@@ -124,37 +102,40 @@ fn lower_source_constraint_residual(
 
 fn lower_source_scalar_expression(
     expression: &Expression,
-    scalar_slots: &SourceScalarSlots,
-    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
-    operations: &mut Vec<CodeOperation>,
-    next_temporary: &mut u32,
-    frame_offsets: &mut SourceConstraintFrameOffsets,
+    state: &mut SourceConstraintLoweringState<'_>,
 ) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
     let expression = strip_group_expression(expression);
-    if let Some(value) = static_scalar_integer(expression, constant_values)? {
+    if let Some(value) = static_scalar_integer(expression, state.constant_values)? {
         return Ok(CodeOperand::number(canonical_field_value(value)?, 1));
     }
     match &expression.kind {
-        ExpressionKind::Name(name) => scalar_slots
-            .operand(name)
-            .map_err(|error| unsupported_source_message(error.to_string())),
+        ExpressionKind::Name(name) => {
+            if let Some(alias) = state.expression_aliases.get(name) {
+                if !state.resolving_aliases.insert(name.clone()) {
+                    return unsupported("source scalar constraint expression alias cycle");
+                }
+                let operand = lower_source_scalar_expression(alias, state);
+                state.resolving_aliases.remove(name);
+                return operand;
+            }
+            state
+                .scalar_slots
+                .operand(name)
+                .map_err(|error| unsupported_source_message(error.to_string()))
+        }
         ExpressionKind::Unary { op, expr } => {
-            let value = lower_source_scalar_expression(
-                expr,
-                scalar_slots,
-                constant_values,
-                operations,
-                next_temporary,
-                frame_offsets,
-            )?;
+            let value = lower_source_scalar_expression(expr, state)?;
             match op {
                 UnaryOperator::Plus => Ok(value),
                 UnaryOperator::Minus => {
-                    let id = *next_temporary;
-                    *next_temporary = next_temporary.checked_add(1).ok_or_else(|| {
-                        unsupported_source_message("source scalar constraint temporary overflow")
-                    })?;
-                    operations.push(CodeOperation {
+                    let id = state.next_temporary;
+                    state.next_temporary =
+                        state.next_temporary.checked_add(1).ok_or_else(|| {
+                            unsupported_source_message(
+                                "source scalar constraint temporary overflow",
+                            )
+                        })?;
+                    state.operations.push(CodeOperation {
                         op: OperationKind::Sub,
                         destination: CodeDestination::temporary(id, 1),
                         sources: vec![CodeOperand::number(0, 1), value],
@@ -169,12 +150,13 @@ fn lower_source_scalar_expression(
             offset,
             prior,
         } => {
-            let signed_offset = source_row_offset_value(offset, *prior, constant_values)?;
+            let signed_offset = source_row_offset_value(offset, *prior, state.constant_values)?;
             let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
                 return unsupported("source row offsets require named scalar values");
             };
-            frame_offsets.include(signed_offset);
-            scalar_slots
+            state.frame_offsets.include(signed_offset);
+            state
+                .scalar_slots
                 .operand_at(name, signed_offset)
                 .map_err(|error| unsupported_source_message(error.to_string()))
         }
@@ -185,27 +167,13 @@ fn lower_source_scalar_expression(
                 BinaryOperator::Multiply => OperationKind::Mul,
                 _ => return unsupported("unsupported source scalar constraint expression"),
             };
-            let left = lower_source_scalar_expression(
-                left,
-                scalar_slots,
-                constant_values,
-                operations,
-                next_temporary,
-                frame_offsets,
-            )?;
-            let right = lower_source_scalar_expression(
-                right,
-                scalar_slots,
-                constant_values,
-                operations,
-                next_temporary,
-                frame_offsets,
-            )?;
-            let id = *next_temporary;
-            *next_temporary = next_temporary.checked_add(1).ok_or_else(|| {
+            let left = lower_source_scalar_expression(left, state)?;
+            let right = lower_source_scalar_expression(right, state)?;
+            let id = state.next_temporary;
+            state.next_temporary = state.next_temporary.checked_add(1).ok_or_else(|| {
                 unsupported_source_message("source scalar constraint temporary overflow")
             })?;
-            operations.push(CodeOperation {
+            state.operations.push(CodeOperation {
                 op,
                 destination: CodeDestination::temporary(id, 1),
                 sources: vec![left, right],

@@ -30,8 +30,7 @@ fn generate_key_records_unsupported_source_constraints_as_regular_hints() {
         &source_path,
         "airtemplate UnitA() {\n\
              col witness value;\n\
-             const expr delayed = value';\n\
-             value * (value - delayed) === 0;\n\
+             value / (value + 1) === 0;\n\
          }\n\
          airgroup GroupA { UnitA(); }\n\
          col fixed main.left = [5, 1];",
