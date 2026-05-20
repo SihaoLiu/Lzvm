@@ -6,12 +6,13 @@ use lzvm_artifacts::global_program::GlobalProgram;
 use lzvm_artifacts::hint_program::HintProgram;
 use lzvm_pil::{
     lex_source, parse_expression, BinaryOperator, ConstantDeclaration, Expression, ExpressionKind,
-    SourceProgram, SourceProgramModule, Token, TokenKind,
+    FixedFileTemplateValue, SourceProgram, SourceProgramModule, Token, TokenKind,
 };
 
 use crate::{
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scope::global_constraint_source_names,
+    source_static_values::{evaluate_source_static_expression, source_scalar_constant_values},
 };
 
 pub(crate) fn source_global_program(
@@ -21,15 +22,21 @@ pub(crate) fn source_global_program(
     let proof_value_slots = source_proof_value_slots(global_info)?;
     let public_value_slots = source_public_value_slots(global_info)?;
     let global_source_names = global_constraint_source_names(program);
+    let static_values = global_info
+        .lattice_size
+        .map(|row_count| source_scalar_constant_values(program, row_count))
+        .unwrap_or_default();
     let mut constraints = SourceGlobalConstraintBuilder::default();
     for module in &program.modules {
         if !global_source_names.contains(&module.source_name) {
             continue;
         }
         lower_module_top_level_global_constraints(
+            program,
             module,
             &proof_value_slots,
             &public_value_slots,
+            &static_values,
             &mut constraints,
         )?;
     }
@@ -40,14 +47,18 @@ pub(crate) fn source_global_program(
 }
 
 fn lower_module_top_level_global_constraints(
+    program: &SourceProgram,
     module: &SourceProgramModule,
     proof_value_slots: &BTreeMap<String, SourceProofValueSlot>,
     public_value_slots: &BTreeMap<String, SourcePublicValueSlot>,
+    static_values: &BTreeMap<String, FixedFileTemplateValue>,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     let alias_scope = SourceGlobalAliasScope {
+        program,
         expressions: top_level_global_expression_aliases(module),
         expression_arrays: top_level_global_expression_array_aliases(module),
+        static_values: static_values.clone(),
     };
     let tokens = lex_source(&module.source.contents).map_err(|source| {
         SourceKeyDirectoryMetadataError::Lex {
@@ -112,7 +123,7 @@ fn lower_top_level_expression_statement(
     index: usize,
     proof_value_slots: &BTreeMap<String, SourceProofValueSlot>,
     public_value_slots: &BTreeMap<String, SourcePublicValueSlot>,
-    alias_scope: &SourceGlobalAliasScope,
+    alias_scope: &SourceGlobalAliasScope<'_>,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<usize, SourceKeyDirectoryMetadataError> {
     let next_index = skip_top_level_statement(tokens, index)?;
@@ -139,7 +150,7 @@ fn lower_top_level_global_constraint(
     source_line: &str,
     proof_value_slots: &BTreeMap<String, SourceProofValueSlot>,
     public_value_slots: &BTreeMap<String, SourcePublicValueSlot>,
-    alias_scope: &SourceGlobalAliasScope,
+    alias_scope: &SourceGlobalAliasScope<'_>,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     let mut resolving_aliases = BTreeSet::new();
@@ -195,9 +206,11 @@ struct SourceBooleanTarget {
     index: Option<u32>,
 }
 
-struct SourceGlobalAliasScope {
+struct SourceGlobalAliasScope<'a> {
+    program: &'a SourceProgram,
     expressions: SourceGlobalExpressionAliases,
     expression_arrays: SourceGlobalExpressionArrayAliases,
+    static_values: BTreeMap<String, FixedFileTemplateValue>,
 }
 
 type SourceGlobalExpressionAliases = BTreeMap<String, Expression>;
@@ -389,7 +402,7 @@ fn public_value_target_offset(
 
 fn proof_value_boolean_constraint_target(
     expression: &Expression,
-    alias_scope: &SourceGlobalAliasScope,
+    alias_scope: &SourceGlobalAliasScope<'_>,
     resolving_aliases: &mut BTreeSet<String>,
     resolving_array_aliases: &mut BTreeSet<String>,
 ) -> Option<SourceBooleanTarget> {
@@ -457,7 +470,7 @@ fn strip_group_expression(expression: &Expression) -> &Expression {
 
 fn expression_target(
     expression: &Expression,
-    alias_scope: &SourceGlobalAliasScope,
+    alias_scope: &SourceGlobalAliasScope<'_>,
     resolving_aliases: &mut BTreeSet<String>,
     resolving_array_aliases: &mut BTreeSet<String>,
 ) -> Option<SourceBooleanTarget> {
@@ -485,7 +498,7 @@ fn expression_target(
             let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
                 return None;
             };
-            let index = static_u32_expression(index)?;
+            let index = static_u32_expression(index, alias_scope)?;
             if let Some(alias) = alias_scope.expression_arrays.get(name) {
                 let element = source_global_expression_array_alias_element(
                     alias,
@@ -556,7 +569,7 @@ fn source_global_expression_array_alias_element<'a>(
 fn one_minus_target(
     expression: &Expression,
     target: &SourceBooleanTarget,
-    alias_scope: &SourceGlobalAliasScope,
+    alias_scope: &SourceGlobalAliasScope<'_>,
     resolving_aliases: &mut BTreeSet<String>,
     resolving_array_aliases: &mut BTreeSet<String>,
 ) -> bool {
@@ -579,7 +592,7 @@ fn one_minus_target(
 fn target_minus_one(
     expression: &Expression,
     target: &SourceBooleanTarget,
-    alias_scope: &SourceGlobalAliasScope,
+    alias_scope: &SourceGlobalAliasScope<'_>,
     resolving_aliases: &mut BTreeSet<String>,
     resolving_array_aliases: &mut BTreeSet<String>,
 ) -> bool {
@@ -608,13 +621,18 @@ fn expression_is_one(expression: &Expression) -> bool {
     }
 }
 
-fn static_u32_expression(expression: &Expression) -> Option<u32> {
-    match &strip_group_expression(expression).kind {
-        ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
-            let value = parse_i128_literal(value).ok()?;
-            u32::try_from(value).ok()
-        }
-        _ => None,
+fn static_u32_expression(
+    expression: &Expression,
+    alias_scope: &SourceGlobalAliasScope<'_>,
+) -> Option<u32> {
+    match evaluate_source_static_expression(
+        alias_scope.program,
+        expression,
+        &alias_scope.static_values,
+    )? {
+        FixedFileTemplateValue::Integer(value) => u32::try_from(value).ok(),
+        FixedFileTemplateValue::Boolean(value) => Some(u32::from(value)),
+        FixedFileTemplateValue::String(_) => None,
     }
 }
 
