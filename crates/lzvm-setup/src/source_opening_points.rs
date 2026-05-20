@@ -1,16 +1,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_pil::{
-    evaluate_fixed_file_template_value_expression_with_values, Expression, ExpressionKind,
-    FixedFileTemplateValue, FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind,
-    SourceProgram, SourceProgramModule, UnaryOperator,
+    Expression, ExpressionKind, FixedFileTemplateValue, FunctionStatement,
+    FunctionStatementDeclaration, FunctionStatementKind, SourceProgram, SourceProgramModule,
+    UnaryOperator,
 };
 
 use crate::{
     source_constraint_lowering::SourceExpressionAliases,
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_static_values::{
-        source_declaration_constant_values_from_cache, SourceTemplateConstantValueCache,
+        evaluate_source_static_expression, source_declaration_constant_values_from_cache,
+        SourceTemplateConstantValueCache,
     },
     source_template_for::source_static_for_loop,
     source_template_if::source_static_if_body_statements,
@@ -154,6 +155,7 @@ fn collect_source_statement_opening_points(
     if let Some(expression) = statement.value_expression.as_ref() {
         let mut resolving_aliases = BTreeSet::new();
         collect_source_opening_points(
+            context.program,
             expression,
             declaration_values,
             expression_aliases,
@@ -165,6 +167,7 @@ fn collect_source_statement_opening_points(
 }
 
 fn collect_source_opening_points(
+    program: &SourceProgram,
     expression: &Expression,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: &SourceExpressionAliases,
@@ -173,6 +176,7 @@ fn collect_source_opening_points(
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     match &expression.kind {
         ExpressionKind::Group(inner) => collect_source_opening_points(
+            program,
             inner,
             constant_values,
             expression_aliases,
@@ -180,6 +184,7 @@ fn collect_source_opening_points(
             resolving_aliases,
         ),
         ExpressionKind::Unary { expr, .. } => collect_source_opening_points(
+            program,
             expr,
             constant_values,
             expression_aliases,
@@ -188,6 +193,7 @@ fn collect_source_opening_points(
         ),
         ExpressionKind::Binary { left, right, .. } => {
             collect_source_opening_points(
+                program,
                 left,
                 constant_values,
                 expression_aliases,
@@ -195,6 +201,7 @@ fn collect_source_opening_points(
                 resolving_aliases,
             )?;
             collect_source_opening_points(
+                program,
                 right,
                 constant_values,
                 expression_aliases,
@@ -204,6 +211,7 @@ fn collect_source_opening_points(
         }
         ExpressionKind::Call { callee, args } => {
             collect_source_opening_points(
+                program,
                 callee,
                 constant_values,
                 expression_aliases,
@@ -212,6 +220,7 @@ fn collect_source_opening_points(
             )?;
             for arg in args {
                 collect_source_opening_points(
+                    program,
                     &arg.value,
                     constant_values,
                     expression_aliases,
@@ -223,6 +232,7 @@ fn collect_source_opening_points(
         }
         ExpressionKind::Index { target, index } => {
             collect_source_opening_points(
+                program,
                 target,
                 constant_values,
                 expression_aliases,
@@ -230,6 +240,7 @@ fn collect_source_opening_points(
                 resolving_aliases,
             )?;
             collect_source_opening_points(
+                program,
                 index,
                 constant_values,
                 expression_aliases,
@@ -243,6 +254,7 @@ fn collect_source_opening_points(
             prior,
         } => {
             collect_source_opening_points(
+                program,
                 target,
                 constant_values,
                 expression_aliases,
@@ -250,13 +262,14 @@ fn collect_source_opening_points(
                 resolving_aliases,
             )?;
             collect_source_opening_points(
+                program,
                 offset,
                 constant_values,
                 expression_aliases,
                 points,
                 resolving_aliases,
             )?;
-            let signed_offset = source_row_offset_value(offset, *prior, constant_values)?;
+            let signed_offset = source_row_offset_value(program, offset, *prior, constant_values)?;
             if !points.contains(&signed_offset) {
                 points.push(signed_offset);
             }
@@ -270,6 +283,7 @@ fn collect_source_opening_points(
                 return unsupported("source opening point expression alias cycle");
             }
             let result = collect_source_opening_points(
+                program,
                 alias,
                 constant_values,
                 expression_aliases,
@@ -305,11 +319,12 @@ fn collect_source_opening_point_expression_alias(
 }
 
 fn source_row_offset_value(
+    program: &SourceProgram,
     expression: &Expression,
     prior: bool,
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<i64, SourceKeyDirectoryMetadataError> {
-    let offset = eval_i128_expression_with_values(expression, values)?;
+    let offset = eval_i128_expression_with_values(program, expression, values)?;
     let signed = if prior {
         offset
             .checked_neg()
@@ -321,11 +336,12 @@ fn source_row_offset_value(
 }
 
 fn eval_i128_expression_with_values(
+    program: &SourceProgram,
     expression: &Expression,
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<i128, SourceKeyDirectoryMetadataError> {
     if let Some(FixedFileTemplateValue::Integer(value)) =
-        evaluate_fixed_file_template_value_expression_with_values(expression, values)
+        evaluate_source_static_expression(program, expression, values)
     {
         return Ok(value);
     }

@@ -250,6 +250,7 @@ fn lower_source_template_statement(
     }
     if source_expression_is_constrained_assignment(statement.value_expression.as_ref()) {
         let lowered = lower_source_template_boolean_constraint(
+            context.program,
             context.module,
             statement,
             context.scalar_slots,
@@ -285,6 +286,7 @@ fn lower_source_template_statement(
         return Ok(());
     }
     match lower_source_template_boolean_constraint(
+        context.program,
         context.module,
         statement,
         context.scalar_slots,

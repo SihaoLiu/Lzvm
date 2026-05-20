@@ -5,17 +5,19 @@ use lzvm_artifacts::expression_info::{
 };
 use lzvm_field::{Felt, MODULUS};
 use lzvm_pil::{
-    evaluate_fixed_file_template_value_expression_with_values, BinaryOperator, Expression,
-    ExpressionKind, FixedFileTemplateValue, FunctionStatement, SourceProgramModule, UnaryOperator,
+    BinaryOperator, Expression, ExpressionKind, FixedFileTemplateValue, FunctionStatement,
+    SourceProgram, SourceProgramModule, UnaryOperator,
 };
 
 use crate::{
     source_key_directory::SourceKeyDirectoryMetadataError, source_scalar_slots::SourceScalarSlots,
+    source_static_values::evaluate_source_static_expression,
 };
 
 pub(crate) type SourceExpressionAliases = BTreeMap<String, Expression>;
 
 pub(crate) fn lower_source_template_boolean_constraint(
+    program: &SourceProgram,
     module: &SourceProgramModule,
     statement: &FunctionStatement,
     scalar_slots: &SourceScalarSlots,
@@ -26,6 +28,7 @@ pub(crate) fn lower_source_template_boolean_constraint(
         return Ok(None);
     };
     let mut state = SourceConstraintLoweringState {
+        program,
         scalar_slots,
         constant_values,
         expression_aliases,
@@ -59,6 +62,7 @@ pub(crate) fn lower_source_template_boolean_constraint(
 }
 
 struct SourceConstraintLoweringState<'a> {
+    program: &'a SourceProgram,
     scalar_slots: &'a SourceScalarSlots,
     constant_values: &'a BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: &'a SourceExpressionAliases,
@@ -109,7 +113,7 @@ fn lower_source_scalar_expression_at(
     row_offset: i64,
 ) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
     let expression = strip_group_expression(expression);
-    if let Some(value) = static_scalar_integer(expression, state.constant_values)? {
+    if let Some(value) = static_scalar_integer(expression, state)? {
         return Ok(CodeOperand::number(canonical_field_value(value)?, 1));
     }
     match &expression.kind {
@@ -161,7 +165,7 @@ fn lower_source_scalar_expression_at(
             offset,
             prior,
         } => {
-            let signed_offset = source_row_offset_value(offset, *prior, state.constant_values)?;
+            let signed_offset = source_row_offset_value(offset, *prior, state)?;
             let combined_offset = row_offset
                 .checked_add(signed_offset)
                 .ok_or_else(|| unsupported_source_message("source row offset overflow"))?;
@@ -171,7 +175,7 @@ fn lower_source_scalar_expression_at(
             let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
                 return unsupported("unsupported source indexed constraint target");
             };
-            let index = source_scalar_index_value(index, state.constant_values)?;
+            let index = source_scalar_index_value(index, state)?;
             if row_offset != 0 {
                 state.frame_offsets.include(row_offset);
             }
@@ -216,7 +220,7 @@ fn lower_source_static_divisor_expression(
     state: &mut SourceConstraintLoweringState<'_>,
     row_offset: i64,
 ) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
-    let Some(divisor) = static_scalar_integer(right, state.constant_values)? else {
+    let Some(divisor) = static_scalar_integer(right, state)? else {
         return unsupported("unsupported source scalar constraint expression");
     };
     let divisor = Felt::from_u64(canonical_field_value(divisor)?);
@@ -243,7 +247,7 @@ fn lower_source_static_exponent_expression(
     state: &mut SourceConstraintLoweringState<'_>,
     row_offset: i64,
 ) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
-    let Some(exponent) = static_scalar_integer(right, state.constant_values)? else {
+    let Some(exponent) = static_scalar_integer(right, state)? else {
         return unsupported("unsupported source scalar constraint expression");
     };
     let mut exponent = u64::try_from(exponent)
@@ -361,9 +365,9 @@ fn expression_is_zero(expression: &Expression) -> bool {
 fn source_row_offset_value(
     expression: &Expression,
     prior: bool,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
+    state: &SourceConstraintLoweringState<'_>,
 ) -> Result<i64, SourceKeyDirectoryMetadataError> {
-    let offset = eval_i128_expression_with_values(expression, values)?;
+    let offset = eval_i128_expression_with_values(expression, state)?;
     let signed = if prior {
         offset
             .checked_neg()
@@ -376,9 +380,9 @@ fn source_row_offset_value(
 
 fn source_scalar_index_value(
     expression: &Expression,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
+    state: &SourceConstraintLoweringState<'_>,
 ) -> Result<u32, SourceKeyDirectoryMetadataError> {
-    let index = eval_i128_expression_with_values(expression, values)?;
+    let index = eval_i128_expression_with_values(expression, state)?;
     if index < 0 {
         return unsupported("source scalar constraint index must be nonnegative");
     }
@@ -387,10 +391,10 @@ fn source_scalar_index_value(
 
 fn eval_i128_expression_with_values(
     expression: &Expression,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
+    state: &SourceConstraintLoweringState<'_>,
 ) -> Result<i128, SourceKeyDirectoryMetadataError> {
     if let Some(FixedFileTemplateValue::Integer(value)) =
-        evaluate_fixed_file_template_value_expression_with_values(expression, values)
+        evaluate_source_static_expression(state.program, expression, state.constant_values)
     {
         return Ok(value);
     }
@@ -418,10 +422,10 @@ fn eval_i128_expression(expression: &Expression) -> Result<i128, SourceKeyDirect
 
 fn static_scalar_integer(
     expression: &Expression,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
+    state: &SourceConstraintLoweringState<'_>,
 ) -> Result<Option<i128>, SourceKeyDirectoryMetadataError> {
     if let Some(FixedFileTemplateValue::Integer(value)) =
-        evaluate_fixed_file_template_value_expression_with_values(expression, values)
+        evaluate_source_static_expression(state.program, expression, state.constant_values)
     {
         return Ok(Some(value));
     }
@@ -430,7 +434,7 @@ fn static_scalar_integer(
             parse_i128_literal(value).map(Some)
         }
         ExpressionKind::Unary { op, expr } => {
-            let Some(value) = static_scalar_integer(expr, values)? else {
+            let Some(value) = static_scalar_integer(expr, state)? else {
                 return Ok(None);
             };
             match op {
