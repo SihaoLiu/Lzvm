@@ -29,8 +29,8 @@ use crate::{
     },
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_static_values::{
-        source_declaration_constant_values_from_cache, source_template_constant_value_cache,
-        SourceTemplateConstantValueCache,
+        evaluate_source_static_expression, source_declaration_constant_values_from_cache,
+        source_template_constant_value_cache, SourceTemplateConstantValueCache,
     },
     source_template_for::source_static_for_loop,
     source_template_if::source_static_if_body_statements,
@@ -1014,7 +1014,7 @@ fn source_fixed_constant_values(
             if resolved[index] {
                 continue;
             }
-            if source_fixed_constant_value(declaration, &mut values).is_some() {
+            if source_fixed_constant_value(program, declaration, &mut values).is_some() {
                 resolved[index] = true;
                 progressed = true;
             }
@@ -1070,6 +1070,7 @@ fn source_fixed_domain_constant_values(
 }
 
 fn source_fixed_constant_value(
+    program: &SourceProgram,
     declaration: &ConstantDeclaration,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
 ) -> Option<()> {
@@ -1077,7 +1078,7 @@ fn source_fixed_constant_value(
         return Some(());
     }
     let expression = declaration.initializer_expression.as_ref()?;
-    let value = evaluate_fixed_file_template_value_expression_with_values(expression, values)?;
+    let value = evaluate_source_static_expression(program, expression, values)?;
     values.insert(declaration.name.clone(), value);
     Some(())
 }
