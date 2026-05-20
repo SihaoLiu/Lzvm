@@ -982,6 +982,95 @@ fn generate_key_writes_array_fixed_inputs_from_source_dimensions() {
         &mut stderr,
     );
 
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    for unit in &layout.units {
+        let setup_path = unit
+            .setup_info_binary()
+            .expect("setup metadata path should derive");
+        let setup =
+            read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+        let columns = parse_raw_fixed_columns(
+            &fs::read(&unit.fixed_columns).expect("raw fixed columns should read"),
+            &setup,
+            "GroupA",
+            "UnitA",
+        )
+        .expect("raw fixed columns should parse");
+        assert_eq!(columns.columns[0].dimensions, [1]);
+        assert_eq!(columns.columns[0].values, [0, 1]);
+        assert_eq!(columns.columns[1].dimensions, [2]);
+        assert_eq!(columns.columns[1].values, [9, 8]);
+        assert!(unit.constant_tree.is_file());
+        assert!(unit.verification_key_binary().is_file());
+        assert!(unit
+            .pcs_setup_plan()
+            .expect("PCS plan path should derive")
+            .is_file());
+        assert!(unit
+            .pcs_setup_material()
+            .expect("PCS material path should derive")
+            .is_file());
+    }
+    let manifest_path = dir.join(SETUP_DIRECTORY_MANIFEST_FILE);
+    assert!(manifest_path.is_file());
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    assert!(catalog.source_program_archive.is_some());
+    assert!(catalog.source_fixed_file_manifest.is_some());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("source_fixed_units="));
+    assert!(stdout.contains("setup_hash="));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_writes_array_fixed_inputs_from_source_dimension_functions() {
+    let dir = create_key_directory_without_fixed_inputs("generate-key-source-array-functions");
+    let source_path = dir.join("main.pil");
+    write_bytes(
+        &source_path,
+        "function width(): int {\n\
+             return 2;\n\
+         }\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [0..1];\n\
+         col fixed main.right[width()] = [9, 8];",
+    );
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    for unit in &layout.units {
+        let mut setup = fixtures::sample_setup_info();
+        setup.constant_columns[1].dimension = 2;
+        setup.constant_columns[1].lengths = vec![2];
+        write_unit_setup_metadata(
+            &unit
+                .setup_info_binary()
+                .expect("setup metadata path should derive"),
+            &setup,
+        );
+        assert!(!unit.fixed_columns.is_file());
+    }
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+
     let layout = read_key_directory_layout(&dir).expect("layout should derive");
     for unit in &layout.units {
         let setup_path = unit

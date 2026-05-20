@@ -11,11 +11,10 @@ use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyDirectoryError
 use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, SetupInfoError, UnitSetupInfo};
 use lzvm_field::Felt;
 use lzvm_pil::{
-    evaluate_fixed_file_template_value_expression_with_values, BinaryOperator, ColumnInitializer,
-    ColumnInitializerKind, ColumnItem, ColumnKind, ConstantDeclaration, Expression, ExpressionKind,
-    FixedFileTemplateValue, FunctionStatement, FunctionStatementKind, LexError, ParseError,
-    SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader,
-    SourceProgramModule, SourceSpan,
+    BinaryOperator, ColumnInitializer, ColumnInitializerKind, ColumnItem, ColumnKind,
+    ConstantDeclaration, Expression, ExpressionKind, FixedFileTemplateValue, FunctionStatement,
+    FunctionStatementKind, LexError, ParseError, SourceLoaderConfig, SourceProgram,
+    SourceProgramError, SourceProgramLoader, SourceProgramModule, SourceSpan,
 };
 
 use crate::{
@@ -546,6 +545,7 @@ fn fixed_columns_from_source_program(
                 &template_values,
             );
             let dimensions = source_fixed_column_dimensions(
+                program,
                 &declaration.source_name,
                 &module.source.contents,
                 item,
@@ -943,6 +943,7 @@ fn source_fixed_column_values_from_initializer(
 }
 
 fn source_fixed_column_dimensions(
+    program: &SourceProgram,
     source_name: &str,
     source: &str,
     item: &lzvm_pil::ColumnItem,
@@ -964,10 +965,7 @@ fn source_fixed_column_dimensions(
             };
             let expression_text = source_fixed_dimension_expression_text(source, *span);
             let Some(FixedFileTemplateValue::Integer(value)) =
-                evaluate_fixed_file_template_value_expression_with_values(
-                    expression,
-                    &constant_values.scalars,
-                )
+                evaluate_source_static_expression(program, expression, &constant_values.scalars)
             else {
                 return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
                     source_name: source_name.to_owned(),
