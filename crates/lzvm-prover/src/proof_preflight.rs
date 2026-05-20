@@ -389,7 +389,7 @@ pub fn validate_proof_public_values(
     })
 }
 
-fn contains_eth_block_public_values(public_values: &PublicValues) -> bool {
+pub(crate) fn contains_eth_block_public_values(public_values: &PublicValues) -> bool {
     public_values
         .values
         .iter()
