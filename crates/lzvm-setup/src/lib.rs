@@ -32,6 +32,7 @@ mod program_image;
 mod reports;
 mod source_companions;
 mod source_constraint_lowering;
+mod source_control_body_cache;
 mod source_expression_aliases;
 mod source_expression_filters;
 mod source_expression_info;

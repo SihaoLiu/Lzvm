@@ -8,6 +8,7 @@ use lzvm_pil::{
 
 use crate::{
     source_constraint_lowering::SourceExpressionAliases,
+    source_control_body_cache::{SourceControlBodyCache, SourceControlBodyCaches},
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_static_values::{
         evaluate_source_static_expression, source_declaration_constant_values_from_cache,
@@ -22,6 +23,7 @@ pub(crate) fn source_opening_points(
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
     active_templates: &BTreeSet<String>,
     template_values: &SourceTemplateConstantValueCache,
+    body_caches: &mut SourceControlBodyCaches,
 ) -> Result<Vec<i64>, SourceKeyDirectoryMetadataError> {
     let mut points = vec![0_i64];
     for module in &program.modules {
@@ -31,6 +33,7 @@ pub(crate) fn source_opening_points(
                 source,
             }
         })?;
+        let body_cache = body_caches.module_cache(&module.source_name);
         for template in &module.air_templates {
             if !active_templates.contains(&template.name) {
                 continue;
@@ -57,6 +60,7 @@ pub(crate) fn source_opening_points(
                     statement,
                     &mut statement_values,
                     &expression_aliases,
+                    body_cache,
                     &mut points,
                 )?;
                 collect_source_opening_point_expression_alias(statement, &mut expression_aliases);
@@ -79,6 +83,7 @@ fn collect_source_statement_opening_points(
     statement: &FunctionStatement,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: &SourceExpressionAliases,
+    body_cache: &mut SourceControlBodyCache,
     points: &mut Vec<i64>,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
@@ -91,6 +96,7 @@ fn collect_source_statement_opening_points(
             context.tokens,
             statement,
             values,
+            body_cache,
         ) {
             Ok(Some(body_statements)) => {
                 let mut body_aliases = expression_aliases.clone();
@@ -100,6 +106,7 @@ fn collect_source_statement_opening_points(
                         body_statement,
                         values,
                         &body_aliases,
+                        body_cache,
                         points,
                     )?;
                     collect_source_opening_point_expression_alias(
@@ -122,6 +129,7 @@ fn collect_source_statement_opening_points(
             context.tokens,
             statement,
             values,
+            body_cache,
         ) {
             Ok(Some(loop_info)) => {
                 for iteration_values in &loop_info.iteration_values {
@@ -135,6 +143,7 @@ fn collect_source_statement_opening_points(
                             body_statement,
                             values,
                             &loop_aliases,
+                            body_cache,
                             points,
                         )?;
                         collect_source_opening_point_expression_alias(

@@ -1,13 +1,13 @@
 use std::collections::BTreeMap;
 
 use lzvm_pil::{
-    lex_source, parse_expression_tokens, parse_function_body_statements, BinaryOperator,
-    Expression, ExpressionKind, FixedFileTemplateValue, FunctionStatement,
-    FunctionStatementDeclaration, FunctionStatementKind, SourceProgram, SourceProgramModule,
-    SourceSpan, Token, TokenKind, UnaryOperator,
+    lex_source, parse_expression_tokens, BinaryOperator, Expression, ExpressionKind,
+    FixedFileTemplateValue, FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind,
+    SourceProgram, SourceProgramModule, SourceSpan, Token, TokenKind, UnaryOperator,
 };
 
 use crate::{
+    source_control_body_cache::SourceControlBodyCache,
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_static_values::{evaluate_source_static_expression, static_value_truthy},
 };
@@ -32,7 +32,15 @@ pub(crate) fn source_static_for_loop(
             source,
         }
     })?;
-    source_static_for_loop_with_tokens(program, module, &tokens, statement, base_values)
+    let mut body_cache = SourceControlBodyCache::default();
+    source_static_for_loop_with_tokens(
+        program,
+        module,
+        &tokens,
+        statement,
+        base_values,
+        &mut body_cache,
+    )
 }
 
 pub(crate) fn source_static_for_loop_with_tokens(
@@ -41,6 +49,7 @@ pub(crate) fn source_static_for_loop_with_tokens(
     tokens: &[Token],
     statement: &FunctionStatement,
     base_values: &BTreeMap<String, FixedFileTemplateValue>,
+    body_cache: &mut SourceControlBodyCache,
 ) -> Result<Option<SourceStaticForLoop>, SourceKeyDirectoryMetadataError> {
     if statement.kind != FunctionStatementKind::For {
         return Ok(None);
@@ -64,7 +73,7 @@ pub(crate) fn source_static_for_loop_with_tokens(
     let Some((condition, update)) = source_for_loop_header(tokens, header, module)? else {
         return Ok(None);
     };
-    let body_statements = parse_function_body_statements(tokens, body, &module.source)?;
+    let body_statements = body_cache.body_statements(tokens, body, &module.source)?;
 
     let mut values = base_values.clone();
     values.insert(

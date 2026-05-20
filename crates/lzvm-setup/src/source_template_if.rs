@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
 use lzvm_pil::{
-    lex_source, parse_expression_tokens, parse_function_body_statements, FixedFileTemplateValue,
-    FunctionStatement, FunctionStatementKind, SourceProgram, SourceProgramModule, SourceSpan,
-    Token, TokenKind,
+    lex_source, parse_expression_tokens, FixedFileTemplateValue, FunctionStatement,
+    FunctionStatementKind, SourceProgram, SourceProgramModule, SourceSpan, Token, TokenKind,
 };
 
 use crate::{
+    source_control_body_cache::SourceControlBodyCache,
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_static_values::{evaluate_source_static_expression, static_value_truthy},
 };
@@ -23,7 +23,15 @@ pub(crate) fn source_static_if_body_statements(
             source,
         }
     })?;
-    source_static_if_body_statements_with_tokens(program, module, &tokens, statement, values)
+    let mut body_cache = SourceControlBodyCache::default();
+    source_static_if_body_statements_with_tokens(
+        program,
+        module,
+        &tokens,
+        statement,
+        values,
+        &mut body_cache,
+    )
 }
 
 pub(crate) fn source_static_if_body_statements_with_tokens(
@@ -32,6 +40,7 @@ pub(crate) fn source_static_if_body_statements_with_tokens(
     tokens: &[Token],
     statement: &FunctionStatement,
     values: &BTreeMap<String, FixedFileTemplateValue>,
+    body_cache: &mut SourceControlBodyCache,
 ) -> Result<Option<Vec<FunctionStatement>>, SourceKeyDirectoryMetadataError> {
     if statement.kind != FunctionStatementKind::If {
         return Ok(None);
@@ -56,7 +65,7 @@ pub(crate) fn source_static_if_body_statements_with_tokens(
     let Some(body) = selection else {
         return Ok(Some(Vec::new()));
     };
-    Ok(Some(parse_function_body_statements(
+    Ok(Some(body_cache.body_statements(
         tokens,
         body,
         &module.source,

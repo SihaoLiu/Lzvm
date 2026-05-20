@@ -13,6 +13,7 @@ use crate::{
     source_constraint_lowering::{
         lower_source_template_boolean_constraint, SourceExpressionAliases,
     },
+    source_control_body_cache::{SourceControlBodyCache, SourceControlBodyCaches},
     source_expression_aliases::collect_source_template_expression_alias,
     source_expression_filters::{
         source_expression_assigns_fixed_index, source_expression_is_assignment,
@@ -45,6 +46,7 @@ pub(crate) fn source_expression_info(
     publics: &[PublicValue],
     challenges: &[SourceChallengeSlotMetadata],
     proof_values: &[NamedStageValue],
+    body_caches: &mut SourceControlBodyCaches,
 ) -> Result<ExpressionInfo, SourceKeyDirectoryMetadataError> {
     let scalar_slots = SourceScalarSlots::from_setup(setup, publics, challenges, proof_values)
         .map_err(|error| unsupported_source_message(error.to_string()))?;
@@ -61,6 +63,7 @@ pub(crate) fn source_expression_info(
                 source,
             }
         })?;
+        let body_cache = body_caches.module_cache(&module.source_name);
         for template in &module.air_templates {
             if !active_templates.contains(&template.name) {
                 continue;
@@ -89,6 +92,7 @@ pub(crate) fn source_expression_info(
                     statement,
                     &mut statement_values,
                     &expression_aliases,
+                    body_cache,
                     &mut hints,
                     &mut constraints,
                 )?;
@@ -130,6 +134,7 @@ fn lower_source_template_statement(
     statement: &FunctionStatement,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: &SourceExpressionAliases,
+    body_cache: &mut SourceControlBodyCache,
     hints: &mut Vec<HintInfo>,
     constraints: &mut Vec<ConstraintCode>,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
@@ -144,6 +149,7 @@ fn lower_source_template_statement(
             context.tokens,
             statement,
             values,
+            body_cache,
         ) {
             Ok(Some(body_statements)) => {
                 let mut body_aliases = expression_aliases.clone();
@@ -153,6 +159,7 @@ fn lower_source_template_statement(
                         body_statement,
                         values,
                         &body_aliases,
+                        body_cache,
                         hints,
                         constraints,
                     )?;
@@ -177,6 +184,7 @@ fn lower_source_template_statement(
             context.tokens,
             statement,
             values,
+            body_cache,
         ) {
             Ok(Some(loop_info)) => {
                 for iteration_values in &loop_info.iteration_values {
@@ -190,6 +198,7 @@ fn lower_source_template_statement(
                             body_statement,
                             values,
                             &loop_aliases,
+                            body_cache,
                             hints,
                             constraints,
                         )?;

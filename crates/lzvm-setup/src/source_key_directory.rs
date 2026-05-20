@@ -22,6 +22,7 @@ use lzvm_pil::{
 
 use crate::{
     publish_staging_bytes,
+    source_control_body_cache::SourceControlBodyCaches,
     source_expression_info::source_expression_info,
     source_global_constraints::source_global_program,
     source_opening_points::source_opening_points,
@@ -217,12 +218,13 @@ pub fn write_source_key_directory_metadata(
     let payload_result = (|| {
         let layout = read_key_directory_layout(&request.setup_dir)?;
         let mut unit_payloads = Vec::new();
+        let mut body_caches = SourceControlBodyCaches::default();
         for unit in &layout.units {
             let Some(setup_path) = unit.setup_info_binary() else {
                 continue;
             };
             let row_count = source_layout_unit_row_count(unit, &row_counts)?;
-            let mut setup_info = source_unit_setup_info(&program, row_count)?;
+            let mut setup_info = source_unit_setup_info(&program, row_count, &mut body_caches)?;
             let unit_constant_values = source_scalar_constant_values(&program, row_count);
             let challenge_slots = source_challenge_slots(&program, &unit_constant_values)?;
             let expression_info = source_expression_info(
@@ -231,6 +233,7 @@ pub fn write_source_key_directory_metadata(
                 &global_info.publics_map,
                 &challenge_slots,
                 &global_info.proof_values_map,
+                &mut body_caches,
             )?;
             setup_info.n_constraints = Some(
                 u32::try_from(expression_info.constraints.len())
@@ -775,6 +778,7 @@ fn unsupported_source_message(message: impl Into<String>) -> SourceKeyDirectoryM
 fn source_unit_setup_info(
     program: &SourceProgram,
     row_count: u64,
+    body_caches: &mut SourceControlBodyCaches,
 ) -> Result<UnitSetupInfo, SourceKeyDirectoryMetadataError> {
     let n_bits = row_count.trailing_zeros();
     let n_bits_ext = n_bits
@@ -803,6 +807,7 @@ fn source_unit_setup_info(
         &constant_values,
         &active_templates,
         &template_values,
+        body_caches,
     )?;
     let challenge_count = source_challenge_counts(program, &constant_values)?
         .into_iter()
