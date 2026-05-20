@@ -184,6 +184,142 @@ fn generate_key_allows_local_variables_inside_unused_helpers() {
 }
 
 #[test]
+fn generate_key_skips_source_global_variable_declarations() {
+    let dir = temp_dir("global-variable");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "const int MODE_DEFAULT = 0;\n\
+         int MODE = MODE_DEFAULT;\n\
+         function set_mode(const int mode) { MODE = mode; }\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
+        .expect("source global metadata should parse");
+    assert_eq!(global.airs[0][0].num_rows, 2);
+    assert!(dir.join(SETUP_DIRECTORY_MANIFEST_FILE).is_file());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_skips_source_top_level_initializer_blocks() {
+    let dir = temp_dir("initializer-blocks");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "const int FIELD_A = 0;\n\
+         int ACTIVE_FIELD = FIELD_A;\n\
+         int TABLE[2];\n\
+         for (int i = 0; i < length(TABLE); i++) {\n\
+             TABLE[i] = 0;\n\
+         }\n\
+         switch (ACTIVE_FIELD) {\n\
+             case FIELD_A:\n\
+                 assert(length(TABLE) == 2);\n\
+                 for (int i = 0; i < length(TABLE); i++) {\n\
+                     TABLE[i] = i;\n\
+                 }\n\
+             default:\n\
+                 TABLE[0] = 1;\n\
+         }\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
+        .expect("source global metadata should parse");
+    assert_eq!(global.airs[0][0].num_rows, 2);
+    assert!(dir.join(SETUP_DIRECTORY_MANIFEST_FILE).is_file());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_skips_top_level_statements_from_include_fragments() {
+    let dir = temp_dir("include-fragment-statement");
+    let _ = fs::remove_dir_all(&dir);
+    let source_dir = dir.join("source");
+    let source_path = source_dir.join("main.pil");
+    write_file(
+        &source_dir.join("fragment.pil"),
+        "chunk[0] = x + y;\n\
+         chunk[1] = x - y;",
+    );
+    write_file(
+        &source_path,
+        "include \"fragment.pil\";\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(dir.join(SETUP_DIRECTORY_MANIFEST_FILE).is_file());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_allows_known_source_metadata_directives() {
     let dir = temp_dir("metadata-directive");
     let _ = fs::remove_dir_all(&dir);

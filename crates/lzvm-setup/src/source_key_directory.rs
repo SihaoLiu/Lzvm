@@ -25,8 +25,8 @@ use lzvm_artifacts::verifier_info::{
 use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
     BinaryOperator, ColumnDeclaration, ColumnItem, ColumnKind, Expression, ExpressionKind,
-    FixedFileTemplateValue, FunctionStatement, FunctionStatementKind, LexError, ParseError,
-    SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader,
+    FixedFileTemplateValue, FunctionStatement, FunctionStatementKind, IncludeKind, LexError,
+    ParseError, SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader,
     SourceProgramModule, Token, TokenKind, UnaryOperator, ValueDeclarationKind,
 };
 
@@ -591,14 +591,31 @@ fn source_global_program(
     global_info: &GlobalInfo,
 ) -> Result<GlobalProgram, SourceKeyDirectoryMetadataError> {
     let proof_value_slots = source_proof_value_slots(global_info)?;
+    let global_source_names = source_global_constraint_source_names(program);
     let mut constraints = SourceGlobalConstraintBuilder::default();
     for module in &program.modules {
+        if !global_source_names.contains(&module.source_name) {
+            continue;
+        }
         lower_module_top_level_global_constraints(module, &proof_value_slots, &mut constraints)?;
     }
     Ok(GlobalProgram {
         constraints: constraints.finish(),
         hints: HintProgram { hints: Vec::new() },
     })
+}
+
+fn source_global_constraint_source_names(program: &SourceProgram) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    if let Some(source) = program.graph.sources.first() {
+        names.insert(source.source_name.clone());
+    }
+    for edge in &program.graph.edges {
+        if edge.kind == IncludeKind::Require {
+            names.insert(edge.to.clone());
+        }
+    }
+    names
 }
 
 fn lower_module_top_level_global_constraints(
@@ -690,7 +707,10 @@ fn lower_top_level_global_constraint(
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     let Some(name) = proof_value_boolean_constraint_name(expression) else {
-        return unsupported("top-level statements need global constraint lowering support");
+        return unsupported(format!(
+            "top-level statements need global constraint lowering support: {}",
+            source_line.trim()
+        ));
     };
     let slot = proof_value_slots.get(name).copied().ok_or_else(|| {
         unsupported_source_message("top-level proof value constraint references an unknown value")
@@ -946,13 +966,19 @@ fn top_level_declaration_start(kind: TokenKind) -> bool {
             | TokenKind::Constant
             | TokenKind::Container
             | TokenKind::Declare
+            | TokenKind::Expr
+            | TokenKind::Fe
+            | TokenKind::For
             | TokenKind::Function
             | TokenKind::Include
+            | TokenKind::Int
             | TokenKind::Package
             | TokenKind::ProofValue
             | TokenKind::Public
             | TokenKind::PublicTable
             | TokenKind::Require
+            | TokenKind::String
+            | TokenKind::Switch
             | TokenKind::Use
     )
 }
