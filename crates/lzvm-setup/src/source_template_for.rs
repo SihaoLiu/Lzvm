@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use lzvm_pil::{
     parse_expression_tokens, BinaryOperator, Expression, ExpressionKind, FixedFileTemplateValue,
@@ -17,7 +18,7 @@ use crate::{
 const STATIC_FOR_LOOP_LIMIT: usize = 10_000;
 
 pub(crate) struct SourceStaticForLoop {
-    pub(crate) body_statements: Vec<FunctionStatement>,
+    pub(crate) body_statements: Arc<[FunctionStatement]>,
     pub(crate) iteration_values: Vec<FixedFileTemplateValue>,
     pub(crate) variable_name: String,
 }

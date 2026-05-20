@@ -153,7 +153,7 @@ fn lower_source_template_statement(
         ) {
             Ok(Some(body_statements)) => {
                 let mut body_aliases = expression_aliases.clone();
-                for body_statement in &body_statements {
+                for body_statement in body_statements.iter() {
                     lower_source_template_statement(
                         context,
                         body_statement,
@@ -190,7 +190,7 @@ fn lower_source_template_statement(
                 for iteration_value in &loop_info.iteration_values {
                     let mut loop_aliases = expression_aliases.clone();
                     values.insert(loop_info.variable_name.clone(), iteration_value.clone());
-                    for body_statement in &loop_info.body_statements {
+                    for body_statement in loop_info.body_statements.iter() {
                         lower_source_template_statement(
                             context,
                             body_statement,

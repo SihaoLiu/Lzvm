@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use lzvm_pil::{
     parse_function_body_statements, FunctionStatement, ParseError, SourceFile, SourceSpan, Token,
@@ -17,7 +18,7 @@ impl SourceControlBodyCaches {
 
 #[derive(Debug, Default)]
 pub(crate) struct SourceControlBodyCache {
-    statements: BTreeMap<(usize, usize), Vec<FunctionStatement>>,
+    statements: BTreeMap<(usize, usize), Arc<[FunctionStatement]>>,
     token_bounds: BTreeMap<(usize, usize), Option<(usize, usize)>>,
 }
 
@@ -50,14 +51,64 @@ impl SourceControlBodyCache {
         tokens: &[Token],
         body: SourceSpan,
         source: &SourceFile,
-    ) -> Result<Vec<FunctionStatement>, ParseError> {
+    ) -> Result<Arc<[FunctionStatement]>, ParseError> {
         let key = (body.start, body.end);
         if let Some(statements) = self.statements.get(&key) {
-            return Ok(statements.clone());
+            return Ok(Arc::clone(statements));
         }
 
-        let statements = parse_function_body_statements(tokens, body, source)?;
-        self.statements.insert(key, statements.clone());
+        let statements = parse_function_body_statements(tokens, body, source)?.into();
+        self.statements.insert(key, Arc::clone(&statements));
         Ok(statements)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::time::{Duration, Instant};
+
+    use lzvm_pil::{lex_source, SourceFile, SourceSpan};
+
+    use super::SourceControlBodyCache;
+
+    #[test]
+    fn body_statements_reuses_cached_body_handles() {
+        let mut contents = "{\n".to_owned();
+        for index in 0..512 {
+            contents.push_str(&format!(
+                "table.value[{index}] = ((({index} + 1) * 3) + (({index} + 2) * 5));\n"
+            ));
+        }
+        contents.push('}');
+        let source = SourceFile {
+            contents: contents.clone(),
+            file_dir: PathBuf::new(),
+            full_path: PathBuf::from("main.pil"),
+            source_name: "main.pil".to_owned(),
+        };
+        let tokens = lex_source(&contents).expect("source should lex");
+        let body = SourceSpan {
+            start: 0,
+            end: contents.len(),
+        };
+        let mut cache = SourceControlBodyCache::default();
+        let first = cache
+            .body_statements(&tokens, body, &source)
+            .expect("body should parse");
+        assert_eq!(first.len(), 512);
+
+        let started = Instant::now();
+        for _ in 0..2000 {
+            let cached = cache
+                .body_statements(&tokens, body, &source)
+                .expect("body should come from cache");
+            assert_eq!(cached.len(), 512);
+        }
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(200),
+            "cached body lookups took {elapsed:?}"
+        );
     }
 }

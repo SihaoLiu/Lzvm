@@ -807,7 +807,7 @@ fn collect_source_fixed_template_assignment(
             body_cache,
         ) {
             Ok(Some(body_statements)) => {
-                for body_statement in &body_statements {
+                for body_statement in body_statements.iter() {
                     collect_source_fixed_template_assignment(
                         context,
                         body_statement,
@@ -840,7 +840,7 @@ fn collect_source_fixed_template_assignment(
                         &loop_info.variable_name,
                         iteration_value,
                     );
-                    for body_statement in &loop_info.body_statements {
+                    for body_statement in loop_info.body_statements.iter() {
                         collect_source_fixed_template_assignment(
                             context,
                             body_statement,

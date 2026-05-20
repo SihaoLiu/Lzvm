@@ -87,6 +87,7 @@ fn collect_source_statement_opening_points(
     points: &mut Vec<i64>,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
+        apply_source_opening_static_declaration(context.program, statement, values);
         return Ok(());
     }
     if statement.kind == FunctionStatementKind::If {
@@ -100,7 +101,7 @@ fn collect_source_statement_opening_points(
         ) {
             Ok(Some(body_statements)) => {
                 let mut body_aliases = expression_aliases.clone();
-                for body_statement in &body_statements {
+                for body_statement in body_statements.iter() {
                     collect_source_statement_opening_points(
                         context,
                         body_statement,
@@ -135,7 +136,7 @@ fn collect_source_statement_opening_points(
                 for iteration_value in &loop_info.iteration_values {
                     let mut loop_aliases = expression_aliases.clone();
                     values.insert(loop_info.variable_name.clone(), iteration_value.clone());
-                    for body_statement in &loop_info.body_statements {
+                    for body_statement in loop_info.body_statements.iter() {
                         collect_source_statement_opening_points(
                             context,
                             body_statement,
@@ -325,6 +326,42 @@ fn collect_source_opening_point_expression_alias(
         return;
     };
     expression_aliases.insert(declaration.name.clone(), expression.clone());
+}
+
+fn apply_source_opening_static_declaration(
+    program: &SourceProgram,
+    statement: &FunctionStatement,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> bool {
+    match statement.declaration.as_ref() {
+        Some(FunctionStatementDeclaration::Constant(declaration)) => {
+            if !declaration.array_dims.is_empty() {
+                return false;
+            }
+            let Some(expression) = declaration.initializer_expression.as_ref() else {
+                return false;
+            };
+            let Some(value) = evaluate_source_static_expression(program, expression, values) else {
+                return false;
+            };
+            values.insert(declaration.name.clone(), value);
+            true
+        }
+        Some(FunctionStatementDeclaration::Variable(declaration)) => {
+            if !declaration.array_dims.is_empty() {
+                return false;
+            }
+            let Some(expression) = declaration.initializer_expression.as_ref() else {
+                return false;
+            };
+            let Some(value) = evaluate_source_static_expression(program, expression, values) else {
+                return false;
+            };
+            values.insert(declaration.name.clone(), value);
+            true
+        }
+        _ => false,
+    }
 }
 
 fn source_row_offset_value(

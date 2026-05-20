@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use lzvm_pil::{
     parse_expression_tokens, FixedFileTemplateValue, FunctionStatement, FunctionStatementKind,
@@ -20,7 +21,7 @@ pub(crate) fn source_static_if_body_statements_with_tokens(
     statement: &FunctionStatement,
     values: &BTreeMap<String, FixedFileTemplateValue>,
     body_cache: &mut SourceControlBodyCache,
-) -> Result<Option<Vec<FunctionStatement>>, SourceKeyDirectoryMetadataError> {
+) -> Result<Option<Arc<[FunctionStatement]>>, SourceKeyDirectoryMetadataError> {
     source_static_if_body_statements_with_lookup(
         program, module, tokens, statement, values, body_cache,
     )
@@ -33,7 +34,7 @@ pub(crate) fn source_static_if_body_statements_with_lookup(
     statement: &FunctionStatement,
     values: &(impl SourceStaticValueLookup + ?Sized),
     body_cache: &mut SourceControlBodyCache,
-) -> Result<Option<Vec<FunctionStatement>>, SourceKeyDirectoryMetadataError> {
+) -> Result<Option<Arc<[FunctionStatement]>>, SourceKeyDirectoryMetadataError> {
     if statement.kind != FunctionStatementKind::If {
         return Ok(None);
     }
@@ -51,7 +52,7 @@ pub(crate) fn source_static_if_body_statements_with_lookup(
         return Ok(None);
     };
     let Some(body) = selection else {
-        return Ok(Some(Vec::new()));
+        return Ok(Some(Arc::from([])));
     };
     Ok(Some(body_cache.body_statements(
         tokens,
