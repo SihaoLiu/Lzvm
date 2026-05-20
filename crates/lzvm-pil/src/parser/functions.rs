@@ -267,6 +267,16 @@ fn parse_function_statement(
                 parse_semicolon_statement_span(tokens, index, limit_index, source)?;
             (FunctionStatementKind::Continue, span, next_index)
         }
+        TokenKind::AtIdentifier => {
+            let (span, next_index) =
+                parse_at_identifier_statement_span(tokens, index, limit_index, source)?;
+            (FunctionStatementKind::Expression, span, next_index)
+        }
+        TokenKind::Container => {
+            let (span, next_index) =
+                parse_container_statement_span(tokens, index, limit_index, source)?;
+            (FunctionStatementKind::Declaration, span, next_index)
+        }
         kind if function_statement_declaration_start(kind) => {
             let (span, next_index) =
                 parse_semicolon_statement_span(tokens, index, limit_index, source)?;
@@ -502,6 +512,130 @@ fn parse_semicolon_statement_span(
     })
 }
 
+fn parse_container_statement_span(
+    tokens: &[Token],
+    index: usize,
+    limit_index: usize,
+    source: &SourceFile,
+) -> Result<(SourceSpan, usize), ParseError> {
+    let start = tokens
+        .get(index)
+        .ok_or_else(|| ParseError::ExpectedTerminator {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, index),
+        })?
+        .start;
+    let cursor = parse_container_statement_header(tokens, index, source)?;
+    let terminator = tokens
+        .get(cursor)
+        .ok_or_else(|| ParseError::ExpectedTerminator {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, cursor),
+        })?;
+
+    match terminator.kind {
+        TokenKind::Semicolon => Ok((
+            SourceSpan {
+                start,
+                end: terminator.end,
+            },
+            cursor + 1,
+        )),
+        TokenKind::LBrace => {
+            let (body, next_index) = parse_delimited_span(tokens, cursor, source)?;
+            if next_index > limit_index {
+                return Err(ParseError::ExpectedCloseBrace {
+                    source_name: source.source_name.clone(),
+                    start: body.start,
+                });
+            }
+            Ok((
+                SourceSpan {
+                    start,
+                    end: body.end,
+                },
+                next_index,
+            ))
+        }
+        _ => Err(ParseError::ExpectedTerminator {
+            source_name: source.source_name.clone(),
+            start: terminator.start,
+        }),
+    }
+}
+
+fn parse_container_statement_header(
+    tokens: &[Token],
+    index: usize,
+    source: &SourceFile,
+) -> Result<usize, ParseError> {
+    let (_, mut cursor) = parse_name_reference(tokens, index + 1, source)?;
+    if tokens
+        .get(cursor)
+        .is_some_and(|token| token.kind == TokenKind::Alias)
+    {
+        let alias = tokens
+            .get(cursor + 1)
+            .ok_or_else(|| ParseError::ExpectedAlias {
+                source_name: source.source_name.clone(),
+                start: missing_start(tokens, cursor + 1),
+            })?;
+        if !matches!(
+            alias.kind,
+            TokenKind::Identifier | TokenKind::StringLiteral | TokenKind::TemplateLiteral
+        ) {
+            return Err(ParseError::ExpectedAlias {
+                source_name: source.source_name.clone(),
+                start: alias.start,
+            });
+        }
+        cursor += 2;
+    }
+
+    Ok(cursor)
+}
+
+fn parse_at_identifier_statement_span(
+    tokens: &[Token],
+    index: usize,
+    limit_index: usize,
+    source: &SourceFile,
+) -> Result<(SourceSpan, usize), ParseError> {
+    let start = tokens
+        .get(index)
+        .ok_or_else(|| ParseError::ExpectedTerminator {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, index),
+        })?
+        .start;
+    if !tokens
+        .get(index + 1)
+        .is_some_and(|token| token.kind == TokenKind::LBrace)
+    {
+        return parse_semicolon_statement_span(tokens, index, limit_index, source);
+    }
+
+    let (payload, mut next_index) = parse_delimited_span(tokens, index + 1, source)?;
+    if next_index > limit_index {
+        return Err(ParseError::ExpectedCloseBrace {
+            source_name: source.source_name.clone(),
+            start: payload.start,
+        });
+    }
+
+    let mut end = payload.end;
+    if next_index < limit_index
+        && tokens
+            .get(next_index)
+            .is_some_and(|token| token.kind == TokenKind::Semicolon)
+    {
+        end = tokens[next_index].end;
+        next_index += 1;
+    }
+
+    Ok((SourceSpan { start, end }, next_index))
+}
+
 fn function_statement_header_span(
     tokens: &[Token],
     index: usize,
@@ -541,6 +675,13 @@ fn function_statement_body_span(
     if kind == FunctionStatementKind::Block {
         return Ok(Some(span));
     }
+    if kind == FunctionStatementKind::Declaration
+        && tokens
+            .get(index)
+            .is_some_and(|token| token.kind == TokenKind::Container)
+    {
+        return function_statement_container_body_span(tokens, index, next_index, source);
+    }
     if !function_statement_has_body(kind) {
         return Ok(None);
     }
@@ -563,6 +704,31 @@ fn function_statement_body_span(
         }
     }
     Ok(None)
+}
+
+fn function_statement_container_body_span(
+    tokens: &[Token],
+    index: usize,
+    next_index: usize,
+    source: &SourceFile,
+) -> Result<Option<SourceSpan>, ParseError> {
+    let cursor = parse_container_statement_header(tokens, index, source)?;
+    if cursor >= next_index {
+        return Ok(None);
+    }
+    if !tokens
+        .get(cursor)
+        .is_some_and(|token| token.kind == TokenKind::LBrace)
+    {
+        return Ok(None);
+    }
+
+    let (body, body_next_index) = parse_delimited_span(tokens, cursor, source)?;
+    if body_next_index == next_index {
+        Ok(Some(body))
+    } else {
+        Ok(None)
+    }
 }
 
 fn function_statement_value_span(

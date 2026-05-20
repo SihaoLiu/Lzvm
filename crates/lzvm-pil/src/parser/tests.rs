@@ -1330,6 +1330,47 @@ fn parses_function_statement_expression_trees() {
 }
 
 #[test]
+fn parses_function_container_statement_body_spans() {
+    let source = source("function init() { container proof.data { int count = 0; } }");
+
+    let declarations = parse_function_declarations(&source).expect("functions should parse");
+
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(declarations[0].statements.len(), 1);
+    let statement = &declarations[0].statements[0];
+    assert_eq!(statement.kind, FunctionStatementKind::Declaration);
+    let body = statement.body.expect("container body should be recorded");
+    assert_eq!(&source.contents[body.start..body.end], "{ int count = 0; }");
+    assert!(statement.value.is_none());
+    assert!(statement.value_expression.is_none());
+}
+
+#[test]
+fn parses_function_hint_annotation_without_statement_terminator_before_loop() {
+    let source = source(
+        "function issue() { @trace{name: count}\n\
+         for (int i = 0; i < count; i++) { count += i; } }",
+    );
+
+    let declarations = parse_function_declarations(&source).expect("functions should parse");
+
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(declarations[0].statements.len(), 2);
+    assert_eq!(
+        &source.contents[declarations[0].statements[0].start..declarations[0].statements[0].end],
+        "@trace{name: count}"
+    );
+    assert_eq!(
+        declarations[0].statements[0].kind,
+        FunctionStatementKind::Expression
+    );
+    assert_eq!(
+        declarations[0].statements[1].kind,
+        FunctionStatementKind::For
+    );
+}
+
+#[test]
 fn rejects_unclosed_function_body() {
     let source = source("function sum(int a, int b): int { return a + b;");
 
