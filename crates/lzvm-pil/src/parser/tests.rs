@@ -814,6 +814,27 @@ fn parses_air_template_declarations_with_params_and_nested_body() {
 }
 
 #[test]
+fn parses_air_template_nested_function_statements() {
+    let source = source(
+        "airtemplate Main { function helper(int value): int { return value; } col witness trace; }",
+    );
+
+    let declarations =
+        parse_air_template_declarations(&source).expect("air templates should parse");
+
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(declarations[0].statements.len(), 2);
+    let statement = &declarations[0].statements[0];
+    assert_eq!(statement.kind, FunctionStatementKind::Declaration);
+    let body = statement.body.expect("function body should be recorded");
+    assert_eq!(&source.contents[body.start..body.end], "{ return value; }");
+    assert_eq!(
+        declarations[0].statements[1].kind,
+        FunctionStatementKind::Declaration
+    );
+}
+
+#[test]
 fn parses_parameterless_air_template_declarations() {
     let source = source("airtemplate Empty { col witness trace; }");
 

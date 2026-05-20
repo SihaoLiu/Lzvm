@@ -267,6 +267,13 @@ fn parse_function_statement(
                 parse_semicolon_statement_span(tokens, index, limit_index, source)?;
             (FunctionStatementKind::Continue, span, next_index)
         }
+        TokenKind::Function | TokenKind::Public | TokenKind::Private
+            if function_statement_function_start(tokens, index) =>
+        {
+            let (span, next_index) =
+                parse_nested_function_statement_span(tokens, index, limit_index, source)?;
+            (FunctionStatementKind::Declaration, span, next_index)
+        }
         TokenKind::AtIdentifier => {
             let (span, next_index) =
                 parse_at_identifier_statement_span(tokens, index, limit_index, source)?;
@@ -636,6 +643,33 @@ fn parse_at_identifier_statement_span(
     Ok((SourceSpan { start, end }, next_index))
 }
 
+fn parse_nested_function_statement_span(
+    tokens: &[Token],
+    index: usize,
+    limit_index: usize,
+    source: &SourceFile,
+) -> Result<(SourceSpan, usize), ParseError> {
+    let parsed =
+        parse_function_at(tokens, index, source)?.ok_or_else(|| ParseError::ExpectedName {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, index),
+        })?;
+    if parsed.next_index > limit_index {
+        return Err(ParseError::ExpectedCloseBrace {
+            source_name: source.source_name.clone(),
+            start: parsed.declaration.body.start,
+        });
+    }
+
+    Ok((
+        SourceSpan {
+            start: parsed.declaration.start,
+            end: parsed.declaration.end,
+        },
+        parsed.next_index,
+    ))
+}
+
 fn function_statement_header_span(
     tokens: &[Token],
     index: usize,
@@ -676,6 +710,11 @@ fn function_statement_body_span(
         return Ok(Some(span));
     }
     if kind == FunctionStatementKind::Declaration
+        && function_statement_function_start(tokens, index)
+    {
+        return function_statement_nested_function_body_span(tokens, index, next_index, source);
+    }
+    if kind == FunctionStatementKind::Declaration
         && tokens
             .get(index)
             .is_some_and(|token| token.kind == TokenKind::Container)
@@ -704,6 +743,22 @@ fn function_statement_body_span(
         }
     }
     Ok(None)
+}
+
+fn function_statement_nested_function_body_span(
+    tokens: &[Token],
+    index: usize,
+    next_index: usize,
+    source: &SourceFile,
+) -> Result<Option<SourceSpan>, ParseError> {
+    let Some(parsed) = parse_function_at(tokens, index, source)? else {
+        return Ok(None);
+    };
+    if parsed.next_index == next_index {
+        Ok(Some(parsed.declaration.body))
+    } else {
+        Ok(None)
+    }
 }
 
 fn function_statement_container_body_span(
@@ -878,6 +933,16 @@ fn function_statement_declaration_start(kind: TokenKind) -> bool {
             | TokenKind::String
             | TokenKind::Col
     )
+}
+
+fn function_statement_function_start(tokens: &[Token], index: usize) -> bool {
+    match tokens.get(index).map(|token| token.kind) {
+        Some(TokenKind::Function) => true,
+        Some(TokenKind::Public | TokenKind::Private) => tokens
+            .get(index + 1)
+            .is_some_and(|token| token.kind == TokenKind::Function),
+        _ => false,
+    }
 }
 
 fn function_statement_declaration(
