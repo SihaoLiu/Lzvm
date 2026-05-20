@@ -20,6 +20,7 @@ use crate::{
     source_scalar_slots::SourceScalarSlots,
     source_static_values::{
         evaluate_source_static_expression, source_static_array_element, source_static_array_values,
+        static_value_integer,
     },
 };
 
@@ -977,11 +978,8 @@ fn source_lookup_index(
     expression: &Expression,
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Option<u32> {
-    match evaluate_source_static_expression(program, expression, values)? {
-        FixedFileTemplateValue::Integer(value) => u32::try_from(value).ok(),
-        FixedFileTemplateValue::Boolean(value) => Some(u32::from(value)),
-        FixedFileTemplateValue::String(_) => None,
-    }
+    let value = evaluate_source_static_expression(program, expression, values)?;
+    u32::try_from(static_value_integer(&value)?).ok()
 }
 
 fn source_lookup_row_offset_value(
@@ -990,11 +988,8 @@ fn source_lookup_row_offset_value(
     prior: bool,
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Option<i64> {
-    let FixedFileTemplateValue::Integer(offset) =
-        evaluate_source_static_expression(program, expression, values)?
-    else {
-        return None;
-    };
+    let value = evaluate_source_static_expression(program, expression, values)?;
+    let offset = static_value_integer(&value)?;
     let signed = if prior { offset.checked_neg()? } else { offset };
     i64::try_from(signed).ok()
 }
