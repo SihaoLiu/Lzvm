@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::PathBuf;
@@ -21,8 +22,8 @@ use crate::{
     publish_staging_bytes,
     source_fixed_expression::SourceFixedConstantValues,
     source_fixed_expression::{
-        evaluate_source_fixed_template_value_expression, source_fixed_column_expression_values,
-        SourceFixedExpressionValuesRequest,
+        evaluate_source_fixed_template_value_expression_with_parts,
+        source_fixed_column_expression_values, SourceFixedExpressionValuesRequest,
     },
     source_fixed_sequence::{
         canonical_fixed_value, parse_literal_sequence, parse_literal_sequence_values,
@@ -686,6 +687,11 @@ struct SourceFixedTemplateAssignmentContext<'a> {
     row_count: usize,
 }
 
+struct SourceFixedAssignmentValues<'a> {
+    scalars: Cow<'a, BTreeMap<String, FixedFileTemplateValue>>,
+    arrays: &'a BTreeMap<String, Vec<u64>>,
+}
+
 fn collect_source_fixed_template_assignment(
     context: &SourceFixedTemplateAssignmentContext<'_>,
     statement: &FunctionStatement,
@@ -699,7 +705,7 @@ fn collect_source_fixed_template_assignment(
             context.program,
             context.module,
             statement,
-            &assignment_values.scalars,
+            assignment_values.scalars.as_ref(),
         ) {
             Ok(Some(body_statements)) => {
                 for body_statement in &body_statements {
@@ -724,7 +730,7 @@ fn collect_source_fixed_template_assignment(
             context.program,
             context.module,
             statement,
-            &assignment_values.scalars,
+            assignment_values.scalars.as_ref(),
         ) {
             Ok(Some(loop_info)) => {
                 for iteration_values in &loop_info.iteration_values {
@@ -771,7 +777,11 @@ fn collect_source_fixed_template_assignment(
         return Ok(());
     };
     let Some(FixedFileTemplateValue::Integer(value)) =
-        evaluate_source_fixed_template_value_expression(right, &assignment_values)
+        evaluate_source_fixed_template_value_expression_with_parts(
+            right,
+            assignment_values.scalars.as_ref(),
+            assignment_values.arrays,
+        )
     else {
         return Ok(());
     };
@@ -801,16 +811,21 @@ fn collect_source_fixed_template_assignment(
     }
 }
 
-fn source_fixed_assignment_values(
-    constant_values: &SourceFixedConstantValues,
+fn source_fixed_assignment_values<'a>(
+    constant_values: &'a SourceFixedConstantValues,
     local_values: &BTreeMap<String, FixedFileTemplateValue>,
-) -> SourceFixedConstantValues {
-    if local_values.is_empty() {
-        return constant_values.clone();
+) -> SourceFixedAssignmentValues<'a> {
+    let scalars = if local_values.is_empty() {
+        Cow::Borrowed(&constant_values.scalars)
+    } else {
+        let mut scalars = constant_values.scalars.clone();
+        scalars.extend(local_values.clone());
+        Cow::Owned(scalars)
+    };
+    SourceFixedAssignmentValues {
+        scalars,
+        arrays: &constant_values.arrays,
     }
-    let mut values = constant_values.clone();
-    values.scalars.extend(local_values.clone());
-    values
 }
 
 fn source_fixed_template_assignment_error(
@@ -857,7 +872,7 @@ fn source_fixed_index_assignment_target(
     expression: &Expression,
     expected_columns: &BTreeSet<String>,
     row_count: usize,
-    constant_values: &SourceFixedConstantValues,
+    constant_values: &SourceFixedAssignmentValues<'_>,
 ) -> Result<Option<(String, usize)>, SourceFixedColumnsWriteError> {
     let ExpressionKind::Index { target, index } =
         &strip_source_fixed_group_expression(expression).kind
@@ -872,7 +887,11 @@ fn source_fixed_index_assignment_target(
         return Ok(None);
     }
     let Some(FixedFileTemplateValue::Integer(row)) =
-        evaluate_source_fixed_template_value_expression(index, constant_values)
+        evaluate_source_fixed_template_value_expression_with_parts(
+            index,
+            constant_values.scalars.as_ref(),
+            constant_values.arrays,
+        )
     else {
         return Ok(None);
     };

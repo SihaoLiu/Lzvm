@@ -164,16 +164,29 @@ pub(crate) fn evaluate_source_fixed_template_value_expression(
     expression: &Expression,
     constant_values: &SourceFixedConstantValues,
 ) -> Option<FixedFileTemplateValue> {
-    if let Some(value) = evaluate_fixed_file_template_value_expression_with_values(
+    evaluate_source_fixed_template_value_expression_with_parts(
         expression,
         &constant_values.scalars,
-    ) {
+        &constant_values.arrays,
+    )
+}
+
+pub(crate) fn evaluate_source_fixed_template_value_expression_with_parts(
+    expression: &Expression,
+    scalars: &BTreeMap<String, FixedFileTemplateValue>,
+    arrays: &BTreeMap<String, Vec<u64>>,
+) -> Option<FixedFileTemplateValue> {
+    if let Some(value) =
+        evaluate_fixed_file_template_value_expression_with_values(expression, scalars)
+    {
         return Some(value);
     }
 
     if let ExpressionKind::Binary { op, left, right } = &expression.kind {
-        let left = evaluate_source_fixed_template_value_expression(left, constant_values)?;
-        let right = evaluate_source_fixed_template_value_expression(right, constant_values)?;
+        let left =
+            evaluate_source_fixed_template_value_expression_with_parts(left, scalars, arrays)?;
+        let right =
+            evaluate_source_fixed_template_value_expression_with_parts(right, scalars, arrays)?;
         let (FixedFileTemplateValue::Integer(left), FixedFileTemplateValue::Integer(right)) =
             (left, right)
         else {
@@ -201,9 +214,9 @@ pub(crate) fn evaluate_source_fixed_template_value_expression(
     let ExpressionKind::Name(array_name) = &target.kind else {
         return None;
     };
-    let values = constant_values.arrays.get(array_name)?;
+    let values = arrays.get(array_name)?;
     let FixedFileTemplateValue::Integer(index) =
-        evaluate_source_fixed_template_value_expression(index, constant_values)?
+        evaluate_source_fixed_template_value_expression_with_parts(index, scalars, arrays)?
     else {
         return None;
     };
