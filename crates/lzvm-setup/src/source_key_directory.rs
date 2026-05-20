@@ -22,8 +22,8 @@ use lzvm_artifacts::verifier_info::{
 use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
     BinaryOperator, ColumnDeclaration, ColumnInitializerKind, ColumnItem, ColumnKind, Expression,
-    ExpressionKind, FixedFileTemplateValue, FunctionStatementKind, LexError, ParseError,
-    SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader,
+    ExpressionKind, FixedFileTemplateValue, FunctionStatement, FunctionStatementKind, LexError,
+    ParseError, SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader,
     SourceProgramModule, Token, TokenKind, UnaryOperator, ValueDeclarationKind,
 };
 
@@ -251,13 +251,14 @@ fn validate_supported_source_program(
     program: &SourceProgram,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     for module in &program.modules {
-        if !module.air_templates.iter().all(|template| {
-            template
-                .statements
-                .iter()
-                .all(|statement| statement.kind == FunctionStatementKind::Declaration)
-        }) {
-            return unsupported("air template statements need constraint lowering support");
+        for template in &module.air_templates {
+            for statement in &template.statements {
+                if !source_template_statement_supported_without_constraint_lowering(
+                    module, statement,
+                )? {
+                    return unsupported("air template statements need constraint lowering support");
+                }
+            }
         }
         if module
             .columns
@@ -273,6 +274,27 @@ fn validate_supported_source_program(
         }
     }
     Ok(())
+}
+
+fn source_template_statement_supported_without_constraint_lowering(
+    module: &SourceProgramModule,
+    statement: &FunctionStatement,
+) -> Result<bool, SourceKeyDirectoryMetadataError> {
+    if statement.kind == FunctionStatementKind::Declaration {
+        return Ok(true);
+    }
+    if statement.kind != FunctionStatementKind::Expression {
+        return Ok(false);
+    }
+
+    let text = &module.source.contents[statement.start..statement.end];
+    let tokens = lex_source(text).map_err(|source| SourceKeyDirectoryMetadataError::Lex {
+        source_name: module.source_name.clone(),
+        source,
+    })?;
+    Ok(tokens
+        .first()
+        .is_some_and(|token| token.kind == TokenKind::AirValue))
 }
 
 fn source_global_program(
