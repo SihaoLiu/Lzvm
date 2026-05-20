@@ -54,9 +54,7 @@ pub fn parse_constant_declarations(
     let mut stack = Vec::new();
 
     while index < tokens.len() {
-        if matches!(tokens[index].kind, TokenKind::Const | TokenKind::Constant)
-            && declaration_statement_context(&stack)
-        {
+        if constant_declaration_context(&tokens, index, &stack) {
             let parsed = parse_constant_declaration_at(&tokens, index, source)?;
             index = parsed.next_index;
             declarations.push(parsed.declaration);
@@ -1067,6 +1065,34 @@ fn declaration_statement_context(stack: &[TokenKind]) -> bool {
     stack
         .iter()
         .all(|kind| !matches!(kind, TokenKind::RParen | TokenKind::RBracket))
+}
+
+fn constant_declaration_context(tokens: &[Token], index: usize, stack: &[TokenKind]) -> bool {
+    if !declaration_statement_context(stack) {
+        return false;
+    }
+
+    match tokens.get(index).map(|token| token.kind) {
+        Some(TokenKind::Constant) => tokens
+            .get(index + 1)
+            .is_some_and(|token| name_reference_start(token.kind)),
+        Some(TokenKind::Const) => {
+            tokens
+                .get(index + 1)
+                .is_some_and(|token| constant_type_name(token).is_some())
+                && tokens
+                    .get(index + 2)
+                    .is_some_and(|token| name_reference_start(token.kind))
+        }
+        _ => false,
+    }
+}
+
+fn name_reference_start(kind: TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Identifier | TokenKind::Air | TokenKind::AirGroup | TokenKind::Proof
+    )
 }
 
 fn variable_statement_context(tokens: &[Token], index: usize, stack: &[TokenKind]) -> bool {
