@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use lzvm_pil::{
-    evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
-    BinaryOperator, Expression, ExpressionKind, FixedFileTemplateValue, FunctionDeclaration,
-    FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind, SourceFile,
-    SourceProgram, SourceProgramModule, SourceSpan, Token, TokenKind, UnaryOperator,
+    lex_source, parse_expression, BinaryOperator, Expression, ExpressionKind,
+    FixedFileTemplateValue, FunctionDeclaration, FunctionStatement, FunctionStatementDeclaration,
+    FunctionStatementKind, SourceFile, SourceProgram, SourceProgramModule, SourceSpan, Token,
+    TokenKind, UnaryOperator,
 };
 
 pub(crate) type SourceTemplateConstantValueCache =
@@ -74,8 +74,14 @@ pub(crate) fn evaluate_source_static_expression(
     expression: &Expression,
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Option<FixedFileTemplateValue> {
+    if let Some(value) = evaluate_source_template_value_expression(expression, values) {
+        return Some(value);
+    }
+    if !source_expression_needs_integer_env(expression) {
+        return None;
+    }
     let env = integer_values(values);
-    evaluate_source_static_expression_with_integer_env(program, expression, values, &env)
+    evaluate_static_i128(program, expression, &env).map(FixedFileTemplateValue::Integer)
 }
 
 fn evaluate_source_static_expression_with_integer_env(
@@ -84,9 +90,183 @@ fn evaluate_source_static_expression_with_integer_env(
     values: &BTreeMap<String, FixedFileTemplateValue>,
     integer_env: &BTreeMap<String, i128>,
 ) -> Option<FixedFileTemplateValue> {
-    evaluate_fixed_file_template_value_expression_with_values(expression, values).or_else(|| {
+    evaluate_source_template_value_expression(expression, values).or_else(|| {
+        if !source_expression_needs_integer_env(expression) {
+            return None;
+        }
         evaluate_static_i128(program, expression, integer_env).map(FixedFileTemplateValue::Integer)
     })
+}
+
+fn source_expression_needs_integer_env(expression: &Expression) -> bool {
+    match &expression.kind {
+        ExpressionKind::Call { args, .. } => args.is_empty(),
+        ExpressionKind::Group(inner) => source_expression_needs_integer_env(inner),
+        ExpressionKind::Unary { expr, .. } => source_expression_needs_integer_env(expr),
+        ExpressionKind::Binary { left, right, .. } => {
+            source_expression_needs_integer_env(left) || source_expression_needs_integer_env(right)
+        }
+        _ => false,
+    }
+}
+
+fn evaluate_source_template_value_expression(
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<FixedFileTemplateValue> {
+    match &expression.kind {
+        ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
+            parse_i128(value).map(FixedFileTemplateValue::Integer)
+        }
+        ExpressionKind::StringLiteral(value) | ExpressionKind::TemplateLiteral(value) => {
+            Some(FixedFileTemplateValue::String(value.clone()))
+        }
+        ExpressionKind::Name(name) => values.get(name).cloned(),
+        ExpressionKind::Group(inner) => evaluate_source_template_value_expression(inner, values),
+        ExpressionKind::Unary { op, expr } => {
+            let value = evaluate_source_template_value_expression(expr, values)?;
+            match op {
+                UnaryOperator::Plus => {
+                    static_value_integer(&value).map(FixedFileTemplateValue::Integer)
+                }
+                UnaryOperator::Minus => static_value_integer(&value)
+                    .and_then(i128::checked_neg)
+                    .map(FixedFileTemplateValue::Integer),
+                UnaryOperator::Not => Some(FixedFileTemplateValue::Boolean(!static_value_truthy(
+                    &value,
+                ))),
+                UnaryOperator::Increment | UnaryOperator::Decrement => None,
+            }
+        }
+        ExpressionKind::Binary { op, left, right } => {
+            let left = evaluate_source_template_value_expression(left, values)?;
+            match op {
+                BinaryOperator::LogicalAnd => {
+                    if static_value_truthy(&left) {
+                        evaluate_source_template_value_expression(right, values)
+                    } else {
+                        Some(left)
+                    }
+                }
+                BinaryOperator::LogicalOr => {
+                    if static_value_truthy(&left) {
+                        Some(left)
+                    } else {
+                        evaluate_source_template_value_expression(right, values)
+                    }
+                }
+                _ => {
+                    let right = evaluate_source_template_value_expression(right, values)?;
+                    evaluate_source_template_binary(*op, left, right)
+                }
+            }
+        }
+        _ => None,
+    }
+}
+
+fn evaluate_source_template_binary(
+    op: BinaryOperator,
+    left: FixedFileTemplateValue,
+    right: FixedFileTemplateValue,
+) -> Option<FixedFileTemplateValue> {
+    match op {
+        BinaryOperator::Add => match (&left, &right) {
+            (FixedFileTemplateValue::Integer(left), FixedFileTemplateValue::Integer(right)) => left
+                .checked_add(*right)
+                .map(FixedFileTemplateValue::Integer),
+            _ => Some(FixedFileTemplateValue::String(format!(
+                "{}{}",
+                source_template_value_string(left),
+                source_template_value_string(right)
+            ))),
+        },
+        BinaryOperator::Subtract => source_template_integer_op(left, right, i128::checked_sub),
+        BinaryOperator::Multiply => source_template_integer_op(left, right, i128::checked_mul),
+        BinaryOperator::Divide | BinaryOperator::Backslash => {
+            let left = static_value_integer(&left)?;
+            let right = static_value_integer(&right)?;
+            (right != 0).then(|| FixedFileTemplateValue::Integer(left / right))
+        }
+        BinaryOperator::Modulo => {
+            let left = static_value_integer(&left)?;
+            let right = static_value_integer(&right)?;
+            (right != 0).then(|| FixedFileTemplateValue::Integer(left % right))
+        }
+        BinaryOperator::Power => {
+            let exponent = u32::try_from(static_value_integer(&right)?).ok()?;
+            static_value_integer(&left)?
+                .checked_pow(exponent)
+                .map(FixedFileTemplateValue::Integer)
+        }
+        BinaryOperator::ShiftLeft => source_template_integer_shift(left, right, true),
+        BinaryOperator::ShiftRight => source_template_integer_shift(left, right, false),
+        BinaryOperator::BitAnd => source_template_integer_bitwise(left, right, |a, b| a & b),
+        BinaryOperator::BitXor => source_template_integer_bitwise(left, right, |a, b| a ^ b),
+        BinaryOperator::BitOr => source_template_integer_bitwise(left, right, |a, b| a | b),
+        BinaryOperator::Less => source_template_integer_cmp(left, right, |a, b| a < b),
+        BinaryOperator::LessEqual => source_template_integer_cmp(left, right, |a, b| a <= b),
+        BinaryOperator::Greater => source_template_integer_cmp(left, right, |a, b| a > b),
+        BinaryOperator::GreaterEqual => source_template_integer_cmp(left, right, |a, b| a >= b),
+        BinaryOperator::EqualEqual | BinaryOperator::TripleEqual => {
+            Some(FixedFileTemplateValue::Boolean(left == right))
+        }
+        BinaryOperator::NotEqual => Some(FixedFileTemplateValue::Boolean(left != right)),
+        _ => None,
+    }
+}
+
+fn source_template_integer_op(
+    left: FixedFileTemplateValue,
+    right: FixedFileTemplateValue,
+    op: impl FnOnce(i128, i128) -> Option<i128>,
+) -> Option<FixedFileTemplateValue> {
+    op(static_value_integer(&left)?, static_value_integer(&right)?)
+        .map(FixedFileTemplateValue::Integer)
+}
+
+fn source_template_integer_shift(
+    left: FixedFileTemplateValue,
+    right: FixedFileTemplateValue,
+    shift_left: bool,
+) -> Option<FixedFileTemplateValue> {
+    let left = static_value_integer(&left)?;
+    let right = u32::try_from(static_value_integer(&right)?).ok()?;
+    if shift_left {
+        left.checked_shl(right).map(FixedFileTemplateValue::Integer)
+    } else {
+        left.checked_shr(right).map(FixedFileTemplateValue::Integer)
+    }
+}
+
+fn source_template_integer_bitwise(
+    left: FixedFileTemplateValue,
+    right: FixedFileTemplateValue,
+    op: impl FnOnce(i128, i128) -> i128,
+) -> Option<FixedFileTemplateValue> {
+    Some(FixedFileTemplateValue::Integer(op(
+        static_value_integer(&left)?,
+        static_value_integer(&right)?,
+    )))
+}
+
+fn source_template_integer_cmp(
+    left: FixedFileTemplateValue,
+    right: FixedFileTemplateValue,
+    op: impl FnOnce(i128, i128) -> bool,
+) -> Option<FixedFileTemplateValue> {
+    Some(FixedFileTemplateValue::Boolean(op(
+        static_value_integer(&left)?,
+        static_value_integer(&right)?,
+    )))
+}
+
+fn source_template_value_string(value: FixedFileTemplateValue) -> String {
+    match value {
+        FixedFileTemplateValue::Integer(value) => value.to_string(),
+        FixedFileTemplateValue::Boolean(value) => value.to_string(),
+        FixedFileTemplateValue::String(value) => value,
+    }
 }
 
 fn integer_values(values: &BTreeMap<String, FixedFileTemplateValue>) -> BTreeMap<String, i128> {

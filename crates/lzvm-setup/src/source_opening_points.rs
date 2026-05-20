@@ -30,18 +30,25 @@ pub(crate) fn source_opening_points(
                 continue;
             }
             let mut expression_aliases = SourceExpressionAliases::new();
-            let local_values = BTreeMap::new();
             let context = SourceOpeningPointContext {
                 program,
                 module,
                 constant_values,
                 template_values,
             };
+            let mut statement_values = source_declaration_constant_values_from_cache(
+                context.module,
+                template.body.start,
+                template.body.end,
+                context.constant_values,
+                context.template_values,
+            )
+            .clone();
             for statement in &template.statements {
                 collect_source_statement_opening_points(
                     &context,
                     statement,
-                    &local_values,
+                    &mut statement_values,
                     &expression_aliases,
                     &mut points,
                 )?;
@@ -62,45 +69,22 @@ struct SourceOpeningPointContext<'a> {
 fn collect_source_statement_opening_points(
     context: &SourceOpeningPointContext<'_>,
     statement: &FunctionStatement,
-    local_values: &BTreeMap<String, FixedFileTemplateValue>,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: &SourceExpressionAliases,
     points: &mut Vec<i64>,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
         return Ok(());
     }
-    let declaration_values = source_declaration_constant_values_from_cache(
-        context.module,
-        statement.start,
-        statement.end,
-        context.constant_values,
-        context.template_values,
-    );
-    let merged_declaration_values;
-    let declaration_values = if local_values.is_empty() {
-        declaration_values
-    } else {
-        merged_declaration_values = {
-            let mut values = declaration_values.clone();
-            values.extend(local_values.clone());
-            values
-        };
-        &merged_declaration_values
-    };
     if statement.kind == FunctionStatementKind::If {
-        match source_static_if_body_statements(
-            context.program,
-            context.module,
-            statement,
-            declaration_values,
-        ) {
+        match source_static_if_body_statements(context.program, context.module, statement, values) {
             Ok(Some(body_statements)) => {
                 let mut body_aliases = expression_aliases.clone();
                 for body_statement in &body_statements {
                     collect_source_statement_opening_points(
                         context,
                         body_statement,
-                        local_values,
+                        values,
                         &body_aliases,
                         points,
                     )?;
@@ -118,20 +102,18 @@ fn collect_source_statement_opening_points(
         }
     }
     if statement.kind == FunctionStatementKind::For {
-        match source_static_for_loop(
-            context.program,
-            context.module,
-            statement,
-            declaration_values,
-        ) {
+        match source_static_for_loop(context.program, context.module, statement, values) {
             Ok(Some(loop_info)) => {
                 for iteration_values in &loop_info.iteration_values {
                     let mut loop_aliases = expression_aliases.clone();
+                    if let Some(value) = iteration_values.get(&loop_info.variable_name) {
+                        values.insert(loop_info.variable_name.clone(), value.clone());
+                    }
                     for body_statement in &loop_info.body_statements {
                         collect_source_statement_opening_points(
                             context,
                             body_statement,
-                            iteration_values,
+                            values,
                             &loop_aliases,
                             points,
                         )?;
@@ -157,7 +139,7 @@ fn collect_source_statement_opening_points(
         collect_source_opening_points(
             context.program,
             expression,
-            declaration_values,
+            values,
             expression_aliases,
             points,
             &mut resolving_aliases,

@@ -68,12 +68,19 @@ pub(crate) fn source_expression_info(
                 template_values: &template_values,
             };
             let mut expression_aliases = SourceExpressionAliases::new();
-            let mut local_values = BTreeMap::new();
+            let mut statement_values = source_declaration_constant_values_from_cache(
+                context.module,
+                template.body.start,
+                template.body.end,
+                context.constant_values,
+                context.template_values,
+            )
+            .clone();
             for statement in &template.statements {
                 lower_source_template_statement(
                     &context,
                     statement,
-                    &mut local_values,
+                    &mut statement_values,
                     &expression_aliases,
                     &mut hints,
                     &mut constraints,
@@ -114,52 +121,24 @@ fn source_fixed_assignment_column_names(program: &SourceProgram) -> BTreeSet<Str
 fn lower_source_template_statement(
     context: &SourceTemplateLoweringContext<'_>,
     statement: &FunctionStatement,
-    local_values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: &SourceExpressionAliases,
     hints: &mut Vec<HintInfo>,
     constraints: &mut Vec<ConstraintCode>,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
-    let declaration_values = source_declaration_constant_values_from_cache(
-        context.module,
-        statement.start,
-        statement.end,
-        context.constant_values,
-        context.template_values,
-    );
-    let merged_declaration_values;
-    let declaration_values = if local_values.is_empty() {
-        declaration_values
-    } else {
-        merged_declaration_values = {
-            let mut values = declaration_values.clone();
-            values.extend(local_values.clone());
-            values
-        };
-        &merged_declaration_values
-    };
     if statement.kind == FunctionStatementKind::Declaration {
-        apply_source_static_declaration(
-            context.program,
-            statement,
-            declaration_values,
-            local_values,
-        );
+        apply_source_static_declaration(context.program, statement, values);
         return Ok(());
     }
     if statement.kind == FunctionStatementKind::If {
-        match source_static_if_body_statements(
-            context.program,
-            context.module,
-            statement,
-            declaration_values,
-        ) {
+        match source_static_if_body_statements(context.program, context.module, statement, values) {
             Ok(Some(body_statements)) => {
                 let mut body_aliases = expression_aliases.clone();
                 for body_statement in &body_statements {
                     lower_source_template_statement(
                         context,
                         body_statement,
-                        local_values,
+                        values,
                         &body_aliases,
                         hints,
                         constraints,
@@ -179,31 +158,24 @@ fn lower_source_template_statement(
         }
     }
     if statement.kind == FunctionStatementKind::For {
-        match source_static_for_loop(
-            context.program,
-            context.module,
-            statement,
-            declaration_values,
-        ) {
+        match source_static_for_loop(context.program, context.module, statement, values) {
             Ok(Some(loop_info)) => {
                 for iteration_values in &loop_info.iteration_values {
                     let mut loop_aliases = expression_aliases.clone();
-                    let mut loop_values = local_values.clone();
                     if let Some(value) = iteration_values.get(&loop_info.variable_name) {
-                        loop_values.insert(loop_info.variable_name.clone(), value.clone());
+                        values.insert(loop_info.variable_name.clone(), value.clone());
                     }
                     for body_statement in &loop_info.body_statements {
                         lower_source_template_statement(
                             context,
                             body_statement,
-                            &mut loop_values,
+                            values,
                             &loop_aliases,
                             hints,
                             constraints,
                         )?;
                         collect_source_template_expression_alias(body_statement, &mut loop_aliases);
                     }
-                    *local_values = loop_values;
                 }
                 return Ok(());
             }
@@ -256,8 +228,7 @@ fn lower_source_template_statement(
     if apply_source_static_expression_statement(
         context.program,
         statement.value_expression.as_ref(),
-        declaration_values,
-        local_values,
+        values,
     ) {
         return Ok(());
     }
@@ -269,7 +240,7 @@ fn lower_source_template_statement(
             }
         })?
     {
-        if apply_source_static_delta(&update.name, update.delta, declaration_values, local_values) {
+        if apply_source_static_delta(&update.name, update.delta, values) {
             return Ok(());
         }
         if source_static_name(context.module, &update.name) {
@@ -301,7 +272,7 @@ fn lower_source_template_statement(
             context.module,
             statement,
             context.scalar_slots,
-            declaration_values,
+            values,
             expression_aliases,
         );
         match lowered {
@@ -337,7 +308,7 @@ fn lower_source_template_statement(
         context.module,
         statement,
         context.scalar_slots,
-        declaration_values,
+        values,
         expression_aliases,
     ) {
         Ok(Some(constraint)) => {
@@ -383,8 +354,7 @@ fn lower_source_template_statement(
 fn apply_source_static_declaration(
     program: &SourceProgram,
     statement: &FunctionStatement,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-    local_values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
 ) -> bool {
     match statement.declaration.as_ref() {
         Some(FunctionStatementDeclaration::Constant(declaration)) => {
@@ -397,7 +367,7 @@ fn apply_source_static_declaration(
             let Some(value) = evaluate_source_static_expression(program, expression, values) else {
                 return false;
             };
-            local_values.insert(declaration.name.clone(), value);
+            values.insert(declaration.name.clone(), value);
             true
         }
         Some(FunctionStatementDeclaration::Variable(declaration)) => {
@@ -410,7 +380,7 @@ fn apply_source_static_declaration(
             let Some(value) = evaluate_source_static_expression(program, expression, values) else {
                 return false;
             };
-            local_values.insert(declaration.name.clone(), value);
+            values.insert(declaration.name.clone(), value);
             true
         }
         _ => false,
@@ -420,8 +390,7 @@ fn apply_source_static_declaration(
 fn apply_source_static_expression_statement(
     program: &SourceProgram,
     expression: Option<&Expression>,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-    local_values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
 ) -> bool {
     let Some(expression) = expression else {
         return false;
@@ -436,13 +405,13 @@ fn apply_source_static_expression_statement(
             let Some(name) = source_expression_name(expr) else {
                 return false;
             };
-            apply_source_static_delta(name, delta, values, local_values)
+            apply_source_static_delta(name, delta, values)
         }
         ExpressionKind::Binary { op, left, right } => {
             let Some(name) = source_expression_name(left) else {
                 return false;
             };
-            if !values.contains_key(name) && !local_values.contains_key(name) {
+            if !values.contains_key(name) {
                 return false;
             }
             let Some(right) = evaluate_source_static_expression(program, right, values) else {
@@ -451,9 +420,7 @@ fn apply_source_static_expression_statement(
             let value = match op {
                 BinaryOperator::Assign => right,
                 BinaryOperator::PlusAssign => {
-                    let Some(current) = source_static_integer_value(
-                        local_values.get(name).or_else(|| values.get(name)),
-                    ) else {
+                    let Some(current) = source_static_integer_value(values.get(name)) else {
                         return false;
                     };
                     let Some(right) = source_static_integer_value(Some(&right)) else {
@@ -465,9 +432,7 @@ fn apply_source_static_expression_statement(
                     FixedFileTemplateValue::Integer(value)
                 }
                 BinaryOperator::MinusAssign => {
-                    let Some(current) = source_static_integer_value(
-                        local_values.get(name).or_else(|| values.get(name)),
-                    ) else {
+                    let Some(current) = source_static_integer_value(values.get(name)) else {
                         return false;
                     };
                     let Some(right) = source_static_integer_value(Some(&right)) else {
@@ -479,9 +444,7 @@ fn apply_source_static_expression_statement(
                     FixedFileTemplateValue::Integer(value)
                 }
                 BinaryOperator::StarAssign => {
-                    let Some(current) = source_static_integer_value(
-                        local_values.get(name).or_else(|| values.get(name)),
-                    ) else {
+                    let Some(current) = source_static_integer_value(values.get(name)) else {
                         return false;
                     };
                     let Some(right) = source_static_integer_value(Some(&right)) else {
@@ -494,7 +457,7 @@ fn apply_source_static_expression_statement(
                 }
                 _ => return false,
             };
-            local_values.insert(name.to_owned(), value);
+            values.insert(name.to_owned(), value);
             true
         }
         _ => false,
@@ -538,18 +501,15 @@ fn source_static_postfix_update(
 fn apply_source_static_delta(
     name: &str,
     delta: i128,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-    local_values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
 ) -> bool {
-    let Some(current) =
-        source_static_integer_value(local_values.get(name).or_else(|| values.get(name)))
-    else {
+    let Some(current) = source_static_integer_value(values.get(name)) else {
         return false;
     };
     let Some(value) = current.checked_add(delta) else {
         return false;
     };
-    local_values.insert(name.to_owned(), FixedFileTemplateValue::Integer(value));
+    values.insert(name.to_owned(), FixedFileTemplateValue::Integer(value));
     true
 }
 
