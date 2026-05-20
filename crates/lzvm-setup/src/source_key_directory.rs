@@ -1120,13 +1120,21 @@ fn eval_u32_expression_with_values(
     expression: &Expression,
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<u32, SourceKeyDirectoryMetadataError> {
-    if let Some(FixedFileTemplateValue::Integer(value)) =
-        evaluate_source_static_expression(program, expression, values)
-    {
-        return u32::try_from(value)
-            .map_err(|_| unsupported_source_message("source expression is out of range"));
+    if let Some(value) = evaluate_source_static_expression(program, expression, values) {
+        if let Some(value) = source_static_integer_value(value) {
+            return u32::try_from(value)
+                .map_err(|_| unsupported_source_message("source expression is out of range"));
+        }
     }
     eval_u32_expression(expression)
+}
+
+fn source_static_integer_value(value: FixedFileTemplateValue) -> Option<i128> {
+    match value {
+        FixedFileTemplateValue::Integer(value) => Some(value),
+        FixedFileTemplateValue::Boolean(value) => Some(i128::from(value)),
+        FixedFileTemplateValue::String(_) => None,
+    }
 }
 
 fn eval_i128_expression(expression: &Expression) -> Result<i128, SourceKeyDirectoryMetadataError> {
