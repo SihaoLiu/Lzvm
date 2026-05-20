@@ -568,14 +568,11 @@ fn fixed_columns_from_source_program(
             if resolved_values[index].is_some() {
                 continue;
             }
-            let values = if let Some(initializer) = declaration.initializer.as_ref() {
+            let values = if declaration.initializer.is_some() {
                 source_fixed_column_values_from_initializer(
-                    &declaration.source_name,
-                    &declaration.source,
-                    &declaration.item.name,
-                    initializer,
+                    program,
+                    declaration,
                     row_count_usize,
-                    &declaration.constant_values,
                     &column_values,
                 )?
             } else {
@@ -908,33 +905,34 @@ fn strip_source_fixed_group_expression(expression: &Expression) -> &Expression {
 }
 
 fn source_fixed_column_values_from_initializer(
-    source_name: &str,
-    source: &str,
-    column_name: &str,
-    initializer: &ColumnInitializer,
+    program: &SourceProgram,
+    declaration: &SourceFixedColumnDeclaration,
     row_count: usize,
-    constant_values: &SourceFixedConstantValues,
     column_values: &BTreeMap<String, Vec<u64>>,
 ) -> Result<Option<Vec<u64>>, SourceFixedColumnsWriteError> {
+    let Some(initializer) = declaration.initializer.as_ref() else {
+        return Ok(None);
+    };
     match initializer.kind {
         ColumnInitializerKind::Sequence => {
-            let source = &source[initializer.span.start..initializer.span.end];
+            let source = &declaration.source[initializer.span.start..initializer.span.end];
             parse_literal_sequence(
-                source_name,
+                program,
+                &declaration.source_name,
                 initializer.span,
                 source,
                 row_count,
-                constant_values,
+                &declaration.constant_values,
             )
             .map(Some)
         }
         ColumnInitializerKind::Expression => source_fixed_column_expression_values(
-            source_name,
-            source,
-            column_name,
+            &declaration.source_name,
+            &declaration.source,
+            &declaration.item.name,
             initializer,
             row_count,
-            constant_values,
+            &declaration.constant_values,
             column_values,
         ),
     }
@@ -1032,6 +1030,7 @@ fn source_fixed_constant_values(
     for module in &program.modules {
         for declaration in &module.constants {
             if let Some(values) = source_fixed_constant_array_value(
+                program,
                 declaration,
                 &module.source.contents,
                 &constant_values,
@@ -1084,6 +1083,7 @@ fn source_fixed_constant_value(
 }
 
 fn source_fixed_constant_array_value(
+    program: &SourceProgram,
     declaration: &ConstantDeclaration,
     source: &str,
     values: &SourceFixedConstantValues,
@@ -1101,10 +1101,7 @@ fn source_fixed_constant_array_value(
         return Ok(None);
     };
     let Some(FixedFileTemplateValue::Integer(length)) =
-        evaluate_fixed_file_template_value_expression_with_values(
-            dimension_expression,
-            &values.scalars,
-        )
+        evaluate_source_static_expression(program, dimension_expression, &values.scalars)
     else {
         return Ok(None);
     };
@@ -1121,6 +1118,7 @@ fn source_fixed_constant_array_value(
         return Ok(None);
     }
     let values = match parse_literal_sequence_values(
+        program,
         &declaration.source_name,
         initializer_span,
         initializer,

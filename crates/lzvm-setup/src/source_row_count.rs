@@ -37,7 +37,7 @@ pub(crate) fn infer_source_row_counts(
                     .ok_or_else(|| {
                         unsupported_source_message("source fixed-column span is invalid")
                     })?;
-                match count_source_sequence_items(text, &constants) {
+                match count_source_sequence_items(program, text, &constants) {
                     Ok(count) => merge_source_sequence_count(program, &mut row_counts, count)?,
                     Err(error) => {
                         first_sequence_error.get_or_insert(error);
@@ -234,15 +234,17 @@ fn validate_source_row_count(value: u64) -> Result<(), SourceKeyDirectoryMetadat
 }
 
 fn count_source_sequence_items(
+    program: &SourceProgram,
     text: &str,
     constants: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<u64, SourceKeyDirectoryMetadataError> {
-    count_source_sequence_items_with_last(text, constants).map(|count| count.len)
+    let context = SequenceCountContext { program, constants };
+    count_source_sequence_items_with_last(&context, text).map(|count| count.len)
 }
 
 fn count_source_sequence_items_with_last(
+    context: &SequenceCountContext<'_>,
     text: &str,
-    constants: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<SequenceItemCount, SourceKeyDirectoryMetadataError> {
     let text = text.trim();
     if text.ends_with("...") {
@@ -275,14 +277,14 @@ fn count_source_sequence_items_with_last(
         }
         let item_count = if let Some(kind) = pending_comma_progression.take() {
             sequence_comma_progression_count(
+                context,
                 item,
                 kind,
-                constants,
                 value_before_previous,
                 previous_value,
             )?
         } else {
-            sequence_item_count(item, constants, previous_value)?
+            sequence_item_count(context, item, previous_value)?
         };
         count = count
             .checked_add(item_count.len)
@@ -301,6 +303,11 @@ fn count_source_sequence_items_with_last(
         len: count,
         last_value: previous_value,
     })
+}
+
+struct SequenceCountContext<'a> {
+    program: &'a SourceProgram,
+    constants: &'a BTreeMap<String, FixedFileTemplateValue>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -348,18 +355,18 @@ fn split_top_level_commas(value: &str) -> Vec<&str> {
 }
 
 fn sequence_item_count(
+    context: &SequenceCountContext<'_>,
     item: &str,
-    constants: &BTreeMap<String, FixedFileTemplateValue>,
     previous_value: Option<i128>,
 ) -> Result<SequenceItemCount, SourceKeyDirectoryMetadataError> {
     if let Some((index, kind)) = top_level_progression_index(item) {
-        sequence_progression_count(item, index, kind, constants, previous_value)
+        sequence_progression_count(context, item, index, kind, previous_value)
     } else if let Some(index) = top_level_range_index(item) {
         if item[index..].starts_with("...") || item[index + 2..].contains("..") {
             return unsupported("source fixed-column sequence ranges must be finite");
         }
-        let (start, start_repeat) = parse_range_endpoint_count(item[..index].trim(), constants)?;
-        let (end, end_repeat) = parse_range_endpoint_count(item[index + 2..].trim(), constants)?;
+        let (start, start_repeat) = parse_range_endpoint_count(context, item[..index].trim())?;
+        let (end, end_repeat) = parse_range_endpoint_count(context, item[index + 2..].trim())?;
         if start_repeat != end_repeat {
             return unsupported("source fixed-column range repeat counts must match");
         }
@@ -380,8 +387,8 @@ fn sequence_item_count(
             last_value: Some(end),
         })
     } else if let Some(index) = top_level_delimiter_index(item, ':') {
-        let value_count = sequence_repeat_value_count(item[..index].trim(), constants)?;
-        let repeat = parse_u64_static_integer(item[index + 1..].trim(), constants)?;
+        let value_count = sequence_repeat_value_count(context, item[..index].trim())?;
+        let repeat = parse_u64_static_integer(context, item[index + 1..].trim())?;
         let len = value_count
             .len
             .checked_mul(repeat)
@@ -397,42 +404,42 @@ fn sequence_item_count(
     } else {
         Ok(SequenceItemCount {
             len: 1,
-            last_value: parse_i128_static_integer(item, constants).ok(),
+            last_value: parse_i128_static_integer(context, item).ok(),
         })
     }
 }
 
 fn sequence_repeat_value_count(
+    context: &SequenceCountContext<'_>,
     value: &str,
-    constants: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<SequenceItemCount, SourceKeyDirectoryMetadataError> {
     if value.starts_with('[') && value.ends_with(']') {
-        count_source_sequence_items_with_last(value, constants)
+        count_source_sequence_items_with_last(context, value)
     } else {
         Ok(SequenceItemCount {
             len: 1,
-            last_value: parse_i128_static_integer(value, constants).ok(),
+            last_value: parse_i128_static_integer(context, value).ok(),
         })
     }
 }
 
 fn sequence_progression_count(
+    context: &SequenceCountContext<'_>,
     item: &str,
     progression_index: usize,
     kind: SequenceProgressionKind,
-    constants: &BTreeMap<String, FixedFileTemplateValue>,
     previous_value: Option<i128>,
 ) -> Result<SequenceItemCount, SourceKeyDirectoryMetadataError> {
     let previous = previous_value.ok_or_else(|| {
         unsupported_source_message("source fixed-column progression needs explicit metadata")
     })?;
-    let current = parse_i128_static_integer(item[..progression_index].trim(), constants)?;
+    let current = parse_i128_static_integer(context, item[..progression_index].trim())?;
     let last_start = progression_index + kind.marker_len();
     let last = item.get(last_start..).unwrap_or_default().trim();
     if last.is_empty() {
         return unsupported("source fixed-column progression needs explicit metadata");
     }
-    let last = parse_i128_static_integer(last, constants)?;
+    let last = parse_i128_static_integer(context, last)?;
     let len = match kind {
         SequenceProgressionKind::Add => {
             let step = current
@@ -459,9 +466,9 @@ fn comma_progression_marker(item: &str) -> Option<SequenceProgressionKind> {
 }
 
 fn sequence_comma_progression_count(
+    context: &SequenceCountContext<'_>,
     last: &str,
     kind: SequenceProgressionKind,
-    constants: &BTreeMap<String, FixedFileTemplateValue>,
     previous_value: Option<i128>,
     current_value: Option<i128>,
 ) -> Result<SequenceItemCount, SourceKeyDirectoryMetadataError> {
@@ -471,7 +478,7 @@ fn sequence_comma_progression_count(
     let current = current_value.ok_or_else(|| {
         unsupported_source_message("source fixed-column progression needs explicit metadata")
     })?;
-    let last = parse_i128_static_integer(last, constants)?;
+    let last = parse_i128_static_integer(context, last)?;
     let inclusive_len = match kind {
         SequenceProgressionKind::Add => {
             let step = current
@@ -589,14 +596,14 @@ fn sequence_div_progression_len(
 }
 
 fn parse_range_endpoint_count(
+    context: &SequenceCountContext<'_>,
     value: &str,
-    constants: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<(i128, u64), SourceKeyDirectoryMetadataError> {
     let Some((value, repeat)) = value.split_once(':') else {
-        return Ok((parse_i128_static_integer(value, constants)?, 1));
+        return Ok((parse_i128_static_integer(context, value)?, 1));
     };
-    let value = parse_i128_static_integer(value.trim(), constants)?;
-    let repeat = parse_u64_static_integer(repeat.trim(), constants)?;
+    let value = parse_i128_static_integer(context, value.trim())?;
+    let repeat = parse_u64_static_integer(context, repeat.trim())?;
     Ok((value, repeat))
 }
 
@@ -674,16 +681,16 @@ fn top_level_delimiter_index(value: &str, delimiter: char) -> Option<usize> {
 }
 
 fn parse_u64_static_integer(
+    context: &SequenceCountContext<'_>,
     value: &str,
-    constants: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<u64, SourceKeyDirectoryMetadataError> {
-    let value = parse_i128_static_integer(value, constants)?;
+    let value = parse_i128_static_integer(context, value)?;
     u64::try_from(value).map_err(|_| unsupported_source_message("source literal must be unsigned"))
 }
 
 fn parse_i128_static_integer(
+    context: &SequenceCountContext<'_>,
     value: &str,
-    constants: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<i128, SourceKeyDirectoryMetadataError> {
     if let Ok(value) = parse_i128_literal(value) {
         return Ok(value);
@@ -704,7 +711,12 @@ fn parse_i128_static_integer(
             "source literal must be an integer",
         ));
     }
-    match evaluate_fixed_file_template_value_expression_with_values(&expression, constants) {
+    let value =
+        evaluate_fixed_file_template_value_expression_with_values(&expression, context.constants)
+            .or_else(|| {
+                evaluate_source_static_expression(context.program, &expression, context.constants)
+            });
+    match value {
         Some(FixedFileTemplateValue::Integer(value)) => Ok(value),
         _ => Err(unsupported_source_message(
             "source literal must be an integer",

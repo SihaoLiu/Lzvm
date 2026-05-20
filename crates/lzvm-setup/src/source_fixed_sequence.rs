@@ -2,28 +2,39 @@ use std::path::PathBuf;
 
 use lzvm_field::{Felt, MODULUS};
 use lzvm_pil::{
-    lex_source, parse_expression, FixedFileTemplateValue, SourceFile, SourceSpan, Token, TokenKind,
+    lex_source, parse_expression, FixedFileTemplateValue, SourceFile, SourceProgram, SourceSpan,
+    Token, TokenKind,
 };
 
 use crate::source_fixed_columns::SourceFixedColumnsWriteError;
 use crate::source_fixed_expression::{
     evaluate_source_fixed_template_value_expression, SourceFixedConstantValues,
 };
+use crate::source_static_values::evaluate_source_static_expression;
 
 pub(crate) fn parse_literal_sequence(
+    program: &SourceProgram,
     source_name: &str,
     source_span: SourceSpan,
     source: &str,
     row_count: usize,
     constant_values: &SourceFixedConstantValues,
 ) -> Result<Vec<u64>, SourceFixedColumnsWriteError> {
-    parse_literal_sequence_values(source_name, source_span, source, row_count, constant_values)?
-        .into_iter()
-        .map(|value| canonical_fixed_value(value, source_name, source_span))
-        .collect()
+    parse_literal_sequence_values(
+        program,
+        source_name,
+        source_span,
+        source,
+        row_count,
+        constant_values,
+    )?
+    .into_iter()
+    .map(|value| canonical_fixed_value(value, source_name, source_span))
+    .collect()
 }
 
 pub(crate) fn parse_literal_sequence_values(
+    program: &SourceProgram,
     source_name: &str,
     source_span: SourceSpan,
     source: &str,
@@ -44,6 +55,7 @@ pub(crate) fn parse_literal_sequence_values(
         source_span,
     )?;
     let context = SequenceParseContext {
+        program,
         source_name,
         source_span,
         source,
@@ -212,6 +224,7 @@ fn fill_sequence_pattern(
 }
 
 struct SequenceParseContext<'a> {
+    program: &'a SourceProgram,
     source_name: &'a str,
     source_span: SourceSpan,
     source: &'a str,
@@ -1150,6 +1163,7 @@ fn parse_sequence_values(
     {
         let source = segment_text(context, start, end);
         return parse_literal_sequence_values(
+            context.program,
             context.source_name,
             context.source_span,
             &source,
@@ -1280,7 +1294,16 @@ fn parse_sequence_expression(
         });
     }
 
-    match evaluate_source_fixed_template_value_expression(&expression, context.constant_values) {
+    let value =
+        evaluate_source_fixed_template_value_expression(&expression, context.constant_values)
+            .or_else(|| {
+                evaluate_source_static_expression(
+                    context.program,
+                    &expression,
+                    &context.constant_values.scalars,
+                )
+            });
+    match value {
         Some(FixedFileTemplateValue::Integer(value)) => Ok(value),
         _ => Err(SourceFixedColumnsWriteError::UnsupportedExpression {
             source_name: context.source_name.to_owned(),
