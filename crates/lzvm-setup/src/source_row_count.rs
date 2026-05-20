@@ -17,6 +17,7 @@ pub(crate) fn infer_source_row_counts(
     let mut row_counts = infer_source_row_counts_from_air_units(program)?;
     if row_counts.is_empty() {
         let constants = source_static_constant_values(program);
+        let mut first_sequence_error = None;
         for module in &program.modules {
             for declaration in &module.columns {
                 if declaration.kind != ColumnKind::Fixed {
@@ -37,9 +38,15 @@ pub(crate) fn infer_source_row_counts(
                     })?;
                 match count_source_sequence_items(text, &constants) {
                     Ok(count) => merge_source_sequence_count(program, &mut row_counts, count)?,
-                    Err(_) if !row_counts.is_empty() => {}
-                    Err(error) => return Err(error),
+                    Err(error) => {
+                        first_sequence_error.get_or_insert(error);
+                    }
                 }
+            }
+        }
+        if row_counts.is_empty() {
+            if let Some(error) = first_sequence_error {
+                return Err(error);
             }
         }
     }
