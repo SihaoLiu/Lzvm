@@ -47,7 +47,8 @@ struct SourceCommitmentSlot {
 struct SourceUnitValueSlot {
     id: u32,
     stage: u32,
-    dimension: u32,
+    source_dimension: u32,
+    operand_dimension: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,10 +126,11 @@ impl SourceScalarSlots {
                 SourceUnitValueSlot {
                     id: usize_to_u32(index, "source unit value id overflow")?,
                     stage: value.stage,
-                    dimension: stage_value_dimension(
+                    source_dimension: stage_value_dimension(
                         &value.lengths,
                         "source unit value dimension overflow",
                     )?,
+                    operand_dimension: if value.stage == 1 { 1 } else { 3 },
                 },
             );
         }
@@ -236,12 +238,17 @@ impl SourceScalarSlots {
         }
 
         if let Some(slot) = self.unit_values.get(name) {
-            if slot.stage != 1 || slot.dimension != 1 {
+            if slot.source_dimension != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
                 });
             }
-            return Ok(CodeOperand::air_value(slot.id, Some(slot.stage), None, 1));
+            return Ok(CodeOperand::air_value(
+                slot.id,
+                Some(slot.stage),
+                None,
+                slot.operand_dimension,
+            ));
         }
 
         if let Some(slot) = self.group_values.get(name) {
