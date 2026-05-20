@@ -314,6 +314,115 @@ fn generate_key_lowers_named_source_lookup_arguments() {
 }
 
 #[test]
+fn generate_key_lowers_positional_source_lookup_arguments() {
+    let dir = temp_dir("source-lookup-positional-arguments");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col witness multiplicity;\n\
+             col witness selector;\n\
+             col witness value;\n\
+             const int LABEL = 11;\n\
+             const int TAG = 12;\n\
+             lookup_proves(7, [value], multiplicity, LABEL, TAG, 3);\n\
+             lookup_assumes(8, [value'], selector, LABEL, TAG);\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    assert_eq!(setup.opening_points, vec![0, 1]);
+    let regular = read_regular_program_file(
+        unit.expression_program()
+            .expect("regular program path should derive"),
+    )
+    .expect("regular program should parse");
+
+    assert_eq!(regular.hints.hints.len(), 2);
+    assert_eq!(regular.hints.hints[0].name, SOURCE_LOOKUP_PROVES_HINT);
+    assert_eq!(regular.hints.hints[0].fields.len(), 6);
+    assert_eq!(regular.hints.hints[0].fields[2].name, "multiplicity");
+    assert_eq!(regular.hints.hints[0].fields[3].name, "name");
+    assert_eq!(regular.hints.hints[0].fields[4].name, "surname");
+    assert_eq!(regular.hints.hints[0].fields[5].name, "table_id");
+    assert_eq!(
+        regular.hints.hints[0].fields[2].values[0].operand,
+        HintOperand::Commitment {
+            id: 0,
+            row_offset_index: 0
+        }
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[3].values[0].operand,
+        HintOperand::Number(11)
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[4].values[0].operand,
+        HintOperand::Number(12)
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[5].values[0].operand,
+        HintOperand::Number(3)
+    );
+    assert_eq!(regular.hints.hints[1].name, SOURCE_LOOKUP_ASSUMES_HINT);
+    assert_eq!(regular.hints.hints[1].fields.len(), 5);
+    assert_eq!(regular.hints.hints[1].fields[2].name, "selector");
+    assert_eq!(regular.hints.hints[1].fields[3].name, "name");
+    assert_eq!(regular.hints.hints[1].fields[4].name, "surname");
+    assert_eq!(
+        regular.hints.hints[1].fields[1].values[0].operand,
+        HintOperand::Commitment {
+            id: 2,
+            row_offset_index: 1
+        }
+    );
+    assert_eq!(
+        regular.hints.hints[1].fields[2].values[0].operand,
+        HintOperand::Commitment {
+            id: 1,
+            row_offset_index: 0
+        }
+    );
+    assert_eq!(
+        regular.hints.hints[1].fields[3].values[0].operand,
+        HintOperand::Number(11)
+    );
+    assert_eq!(
+        regular.hints.hints[1].fields[4].values[0].operand,
+        HintOperand::Number(12)
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_lowers_source_lookup_static_label_argument() {
     let dir = temp_dir("source-lookup-static-label");
     let _ = fs::remove_dir_all(&dir);
@@ -478,6 +587,100 @@ fn generate_key_lowers_source_bus_call_aliases() {
     assert_eq!(
         regular.hints.hints[2].fields[2].values[0].operand,
         HintOperand::Number(17)
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_lowers_source_bus_type_arguments() {
+    let dir = temp_dir("source-bus-type-arguments");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col witness selector;\n\
+             col witness value;\n\
+             const int BUS_KIND = 13;\n\
+             const int LABEL = 17;\n\
+             const int TAG = 19;\n\
+             permutation_proves(7, [value], selector, BUS_KIND, LABEL, TAG);\n\
+             direct_update_assumes(8, [value], sel: selector, bus_type: BUS_KIND, surname: TAG);\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let regular = read_regular_program_file(
+        unit.expression_program()
+            .expect("regular program path should derive"),
+    )
+    .expect("regular program should parse");
+
+    assert_eq!(regular.hints.hints.len(), 2);
+    assert_eq!(regular.hints.hints[0].name, SOURCE_LOOKUP_PROVES_HINT);
+    assert_eq!(regular.hints.hints[0].fields[2].name, "selector");
+    assert_eq!(regular.hints.hints[0].fields[3].name, "bus_type");
+    assert_eq!(regular.hints.hints[0].fields[4].name, "name");
+    assert_eq!(regular.hints.hints[0].fields[5].name, "surname");
+    assert_eq!(
+        regular.hints.hints[0].fields[2].values[0].operand,
+        HintOperand::Commitment {
+            id: 0,
+            row_offset_index: 0
+        }
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[3].values[0].operand,
+        HintOperand::Number(13)
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[4].values[0].operand,
+        HintOperand::Number(17)
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[5].values[0].operand,
+        HintOperand::Number(19)
+    );
+    assert_eq!(regular.hints.hints[1].name, SOURCE_LOOKUP_ASSUMES_HINT);
+    assert_eq!(regular.hints.hints[1].fields[2].name, "selector");
+    assert_eq!(regular.hints.hints[1].fields[3].name, "bus_type");
+    assert_eq!(regular.hints.hints[1].fields[4].name, "surname");
+    assert_eq!(
+        regular.hints.hints[1].fields[2].values[0].operand,
+        HintOperand::Commitment {
+            id: 0,
+            row_offset_index: 0
+        }
+    );
+    assert_eq!(
+        regular.hints.hints[1].fields[3].values[0].operand,
+        HintOperand::Number(13)
+    );
+    assert_eq!(
+        regular.hints.hints[1].fields[4].values[0].operand,
+        HintOperand::Number(19)
     );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
     assert!(String::from_utf8(stdout)

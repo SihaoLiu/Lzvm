@@ -98,9 +98,8 @@ pub(crate) fn source_lookup_statement_expressions(
     let Some(first) = tokens.first() else {
         return Ok(None);
     };
-    if first.kind != TokenKind::Identifier
-        || !source_lookup_call_matches(name, first.lexeme.as_str())
-    {
+    let call_name = first.lexeme.as_str();
+    if first.kind != TokenKind::Identifier || !source_lookup_call_matches(name, call_name) {
         return Ok(None);
     }
 
@@ -127,15 +126,12 @@ pub(crate) fn source_lookup_statement_expressions(
         return Ok(None);
     }
 
-    for range in arguments.into_iter().skip(2) {
+    for (positional_index, range) in arguments.into_iter().skip(2).enumerate() {
         let argument = split_named_argument(&tokens, range);
-        let Some(argument_name) = argument.name.as_deref() else {
+        let Some(_) = source_lookup_extra_field(name, call_name, &argument, positional_index)
+        else {
             return Ok(None);
         };
-        match argument_name {
-            "mul" | "sel" | "table_id" | "name" | "surname" => {}
-            _ => return Ok(None),
-        }
         let Some(value_range) = source_lookup_argument_value_range(&argument) else {
             return Ok(None);
         };
@@ -216,9 +212,8 @@ fn lower_structured_source_lookup_hint(
     let Some(first) = tokens.first() else {
         return Ok(None);
     };
-    if first.kind != TokenKind::Identifier
-        || !source_lookup_call_matches(name, first.lexeme.as_str())
-    {
+    let call_name = first.lexeme.as_str();
+    if first.kind != TokenKind::Identifier || !source_lookup_call_matches(name, call_name) {
         return Ok(None);
     }
 
@@ -271,32 +266,24 @@ fn lower_structured_source_lookup_hint(
             values: lookup_values,
         },
     ];
-    for range in arguments.into_iter().skip(2) {
+    for (positional_index, range) in arguments.into_iter().skip(2).enumerate() {
         let argument = split_named_argument(&tokens, range);
-        let Some(argument_name) = argument.name.as_deref() else {
+        let Some(field) = source_lookup_extra_field(name, call_name, &argument, positional_index)
+        else {
             return Ok(None);
-        };
-        let field_name = match argument_name {
-            "mul" => "multiplicity",
-            "sel" => "selector",
-            "table_id" => "table_id",
-            "name" => "name",
-            "surname" => "surname",
-            _ => return Ok(None),
         };
         let Some(value_range) = source_lookup_argument_value_range(&argument) else {
             return Ok(None);
         };
-        let value = if matches!(field_name, "table_id" | "name" | "surname") {
-            source_lookup_static_value(&context, value_range)
-        } else {
-            source_lookup_value(&context, value_range)
+        let value = match field.value_kind {
+            SourceLookupFieldValueKind::Dynamic => source_lookup_value(&context, value_range),
+            SourceLookupFieldValueKind::Static => source_lookup_static_value(&context, value_range),
         };
         let Some(value) = value else {
             return Ok(None);
         };
         fields.push(HintFieldInfo {
-            name: field_name.to_owned(),
+            name: field.name.to_owned(),
             values: vec![value],
         });
     }
@@ -388,6 +375,18 @@ struct SourceLookupArgument {
     value_range: (usize, usize),
 }
 
+#[derive(Clone, Copy)]
+enum SourceLookupFieldValueKind {
+    Dynamic,
+    Static,
+}
+
+#[derive(Clone, Copy)]
+struct SourceLookupExtraField {
+    name: &'static str,
+    value_kind: SourceLookupFieldValueKind,
+}
+
 struct SourceLookupLowering<'a> {
     program: &'a SourceProgram,
     module: &'a SourceProgramModule,
@@ -423,6 +422,98 @@ fn source_lookup_argument_value_range(argument: &SourceLookupArgument) -> Option
         return Some(argument.value_range);
     }
     argument.name_range
+}
+
+fn source_lookup_extra_field(
+    hint_name: &str,
+    call_name: &str,
+    argument: &SourceLookupArgument,
+    positional_index: usize,
+) -> Option<SourceLookupExtraField> {
+    if let Some(name) = argument.name.as_deref() {
+        return source_lookup_named_extra_field(name);
+    }
+    source_lookup_positional_extra_field(hint_name, call_name, positional_index)
+}
+
+fn source_lookup_named_extra_field(name: &str) -> Option<SourceLookupExtraField> {
+    match name {
+        "mul" => Some(SourceLookupExtraField {
+            name: "multiplicity",
+            value_kind: SourceLookupFieldValueKind::Dynamic,
+        }),
+        "sel" => Some(SourceLookupExtraField {
+            name: "selector",
+            value_kind: SourceLookupFieldValueKind::Dynamic,
+        }),
+        "table_id" => Some(source_lookup_static_extra_field("table_id")),
+        "bus_type" => Some(source_lookup_static_extra_field("bus_type")),
+        "name" => Some(source_lookup_static_extra_field("name")),
+        "surname" => Some(source_lookup_static_extra_field("surname")),
+        _ => None,
+    }
+}
+
+fn source_lookup_positional_extra_field(
+    hint_name: &str,
+    call_name: &str,
+    positional_index: usize,
+) -> Option<SourceLookupExtraField> {
+    match call_name {
+        "lookup_proves" => match positional_index {
+            0 => Some(SourceLookupExtraField {
+                name: "multiplicity",
+                value_kind: SourceLookupFieldValueKind::Dynamic,
+            }),
+            1 => Some(source_lookup_static_extra_field("name")),
+            2 => Some(source_lookup_static_extra_field("surname")),
+            3 => Some(source_lookup_static_extra_field("table_id")),
+            _ => None,
+        },
+        "lookup_assumes" => source_lookup_positional_selector_field(positional_index, false),
+        "permutation_proves"
+        | "permutation_assumes"
+        | "direct_update_proves"
+        | "direct_update_assumes"
+        | "direct_global_update_proves"
+        | "direct_global_update_assumes" => {
+            source_lookup_positional_selector_field(positional_index, true)
+        }
+        _ if hint_name == SOURCE_LOOKUP_PROVES_HINT => match positional_index {
+            0 => Some(SourceLookupExtraField {
+                name: "multiplicity",
+                value_kind: SourceLookupFieldValueKind::Dynamic,
+            }),
+            _ => None,
+        },
+        _ if hint_name == SOURCE_LOOKUP_ASSUMES_HINT => {
+            source_lookup_positional_selector_field(positional_index, false)
+        }
+        _ => None,
+    }
+}
+
+fn source_lookup_positional_selector_field(
+    positional_index: usize,
+    has_bus_type: bool,
+) -> Option<SourceLookupExtraField> {
+    match (positional_index, has_bus_type) {
+        (0, _) => Some(SourceLookupExtraField {
+            name: "selector",
+            value_kind: SourceLookupFieldValueKind::Dynamic,
+        }),
+        (1, true) => Some(source_lookup_static_extra_field("bus_type")),
+        (1, false) | (2, true) => Some(source_lookup_static_extra_field("name")),
+        (2, false) | (3, true) => Some(source_lookup_static_extra_field("surname")),
+        _ => None,
+    }
+}
+
+fn source_lookup_static_extra_field(name: &'static str) -> SourceLookupExtraField {
+    SourceLookupExtraField {
+        name,
+        value_kind: SourceLookupFieldValueKind::Static,
+    }
 }
 
 fn parse_unsigned_argument(
