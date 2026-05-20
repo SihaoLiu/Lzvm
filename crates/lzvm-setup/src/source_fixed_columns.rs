@@ -480,7 +480,7 @@ fn fixed_columns_from_source_program(
         .collect::<BTreeSet<_>>();
     let mut declarations = Vec::<(String, ColumnItem, ColumnInitializer, Vec<u32>, String)>::new();
     let mut column_values = BTreeMap::new();
-    let constant_values = source_fixed_constant_values(program)?;
+    let constant_values = source_fixed_constant_values(program, setup, row_count)?;
 
     for module in &program.modules {
         for declaration in &module.columns {
@@ -673,13 +673,15 @@ fn source_fixed_dimension_expression_text(source: &str, span: SourceSpan) -> Str
 
 fn source_fixed_constant_values(
     program: &SourceProgram,
+    setup: &UnitSetupInfo,
+    row_count: u64,
 ) -> Result<SourceFixedConstantValues, SourceFixedColumnsWriteError> {
     let declarations = program
         .modules
         .iter()
         .flat_map(|module| module.constants.iter())
         .collect::<Vec<_>>();
-    let mut values = BTreeMap::new();
+    let mut values = source_fixed_domain_constant_values(setup, row_count);
     let mut resolved = vec![false; declarations.len()];
 
     loop {
@@ -718,6 +720,22 @@ fn source_fixed_constant_values(
     }
 
     Ok(constant_values)
+}
+
+fn source_fixed_domain_constant_values(
+    setup: &UnitSetupInfo,
+    row_count: u64,
+) -> BTreeMap<String, FixedFileTemplateValue> {
+    BTreeMap::from([
+        (
+            "BITS".to_owned(),
+            FixedFileTemplateValue::Integer(i128::from(setup.stark.n_bits)),
+        ),
+        (
+            "N".to_owned(),
+            FixedFileTemplateValue::Integer(i128::from(row_count)),
+        ),
+    ])
 }
 
 fn source_fixed_constant_value(
