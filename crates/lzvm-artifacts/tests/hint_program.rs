@@ -409,6 +409,10 @@ fn builds_regular_hint_program_from_expression_info_payloads() {
             positions: vec![10],
             payload: HintPayload::proof_value(22, Some(2), Some(3)),
         },
+        HintValueInfo {
+            positions: vec![11],
+            payload: HintPayload::commitment_element(23, 1, Some(24), Some(0), Some(1)),
+        },
     ]);
 
     let program = regular_hint_program_from_expression_info(&info).expect("payloads should lower");
@@ -429,6 +433,14 @@ fn builds_regular_hint_program_from_expression_info_payloads() {
             id: 7,
             row_offset_index: 9,
             commit_id: 8
+        }
+    );
+    assert_eq!(
+        program.hints[0].fields[0].values[11].operand,
+        HintOperand::CommitmentElement {
+            id: 23,
+            element: 1,
+            row_offset_index: 24
         }
     );
 }

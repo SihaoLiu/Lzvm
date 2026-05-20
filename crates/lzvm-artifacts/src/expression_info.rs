@@ -9,7 +9,7 @@ use crate::sectioned::{
 mod binary;
 
 const EXPRESSION_INFO_KIND: [u8; 4] = *b"xinf";
-const EXPRESSION_INFO_VERSION: u32 = 7;
+const EXPRESSION_INFO_VERSION: u32 = 8;
 const EXPRESSION_INFO_SECTION_ID: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -51,6 +51,17 @@ pub enum HintPayload {
     },
     Commitment {
         id: u32,
+        row_offset_index: Option<u32>,
+        row_offset: Option<i64>,
+        stage: Option<u32>,
+        stage_id: Option<u32>,
+        dimension: Option<u32>,
+        air_group_id: Option<u32>,
+        air_id: Option<u32>,
+    },
+    CommitmentElement {
+        id: u32,
+        element: u32,
         row_offset_index: Option<u32>,
         row_offset: Option<i64>,
         stage: Option<u32>,
@@ -268,6 +279,26 @@ impl HintPayload {
 
     pub fn temporary(id: u32, dimension: Option<u32>) -> Self {
         Self::Temporary { id, dimension }
+    }
+
+    pub fn commitment_element(
+        id: u32,
+        element: u32,
+        row_offset_index: Option<u32>,
+        row_offset: Option<i64>,
+        dimension: Option<u32>,
+    ) -> Self {
+        Self::CommitmentElement {
+            id,
+            element,
+            row_offset_index,
+            row_offset,
+            stage: None,
+            stage_id: None,
+            dimension,
+            air_group_id: None,
+            air_id: None,
+        }
     }
 
     pub fn constant(

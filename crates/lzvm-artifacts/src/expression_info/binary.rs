@@ -17,6 +17,7 @@ const HINT_PUBLIC_TAG: u8 = 8;
 const HINT_AIR_GROUP_VALUE_TAG: u8 = 9;
 const HINT_AIR_VALUE_TAG: u8 = 10;
 const HINT_PROOF_VALUE_TAG: u8 = 11;
+const HINT_COMMITMENT_ELEMENT_TAG: u8 = 12;
 
 const DESTINATION_TEMPORARY_TAG: u8 = 1;
 const DESTINATION_QUOTIENT_TAG: u8 = 2;
@@ -288,6 +289,28 @@ fn write_hint_payload(out: &mut Vec<u8>, value: &HintPayload) -> Result<(), Expr
         } => {
             out.push(HINT_COMMITMENT_TAG);
             write_u32(out, *id);
+            write_optional_u32(out, *row_offset_index);
+            write_optional_i64(out, *row_offset);
+            write_optional_u32(out, *stage);
+            write_optional_u32(out, *stage_id);
+            write_optional_u32(out, *dimension);
+            write_optional_u32(out, *air_group_id);
+            write_optional_u32(out, *air_id);
+        }
+        HintPayload::CommitmentElement {
+            id,
+            element,
+            row_offset_index,
+            row_offset,
+            stage,
+            stage_id,
+            dimension,
+            air_group_id,
+            air_id,
+        } => {
+            out.push(HINT_COMMITMENT_ELEMENT_TAG);
+            write_u32(out, *id);
+            write_u32(out, *element);
             write_optional_u32(out, *row_offset_index);
             write_optional_i64(out, *row_offset);
             write_optional_u32(out, *stage);
@@ -765,6 +788,29 @@ impl<'a> Reader<'a> {
                 let air_id = self.read_optional_u32("hint_commitment_air")?;
                 Ok(HintPayload::Commitment {
                     id,
+                    row_offset_index,
+                    row_offset,
+                    stage,
+                    stage_id,
+                    dimension,
+                    air_group_id,
+                    air_id,
+                })
+            }
+            HINT_COMMITMENT_ELEMENT_TAG => {
+                let id = self.read_u32()?;
+                let element = self.read_u32()?;
+                let row_offset_index =
+                    self.read_optional_u32("hint_commitment_element_row_offset_index")?;
+                let row_offset = self.read_optional_i64("hint_commitment_element_row_offset")?;
+                let stage = self.read_optional_u32("hint_commitment_element_stage")?;
+                let stage_id = self.read_optional_u32("hint_commitment_element_stage_id")?;
+                let dimension = self.read_optional_u32("hint_commitment_element_dimension")?;
+                let air_group_id = self.read_optional_u32("hint_commitment_element_group")?;
+                let air_id = self.read_optional_u32("hint_commitment_element_air")?;
+                Ok(HintPayload::CommitmentElement {
+                    id,
+                    element,
                     row_offset_index,
                     row_offset,
                     stage,

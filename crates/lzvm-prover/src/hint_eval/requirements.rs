@@ -18,7 +18,9 @@ pub fn regular_hint_input_requirements(program: &HintProgram) -> RegularHintInpu
     let mut requirements = RegularHintInputRequirements::default();
     for_hint_operand(program, |operand| match operand {
         HintOperand::Constant { .. } => requirements.fixed_columns = true,
-        HintOperand::Commitment { .. } => requirements.stage_columns = true,
+        HintOperand::Commitment { .. } | HintOperand::CommitmentElement { .. } => {
+            requirements.stage_columns = true
+        }
         HintOperand::Public { .. } => requirements.publics = true,
         HintOperand::AirValue { .. } => requirements.unit_values = true,
         HintOperand::ProofValue { .. } => requirements.proof_values = true,

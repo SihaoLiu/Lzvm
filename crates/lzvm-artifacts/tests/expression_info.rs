@@ -18,7 +18,7 @@ fn temp_file_path(name: &str) -> PathBuf {
 fn expression_info_file(section: Vec<u8>) -> Vec<u8> {
     encode_sectioned_file(&SectionedFile {
         kind: *b"xinf",
-        version: 7,
+        version: 8,
         sections: vec![SectionedSection {
             id: 1,
             data: section,
@@ -117,20 +117,20 @@ fn encodes_the_current_expression_info_format_version() {
     let bytes = encode_expression_info(&info).expect("fixture should encode");
     let version = u32::from_le_bytes(bytes[4..8].try_into().expect("slice length checked"));
 
-    assert_eq!(version, 7);
+    assert_eq!(version, 8);
 }
 
 #[test]
 fn rejects_stale_expression_info_format_headers() {
     let info = fixtures::sample_expression_info_fixture();
     let mut bytes = encode_expression_info(&info).expect("fixture should encode");
-    bytes[4..8].copy_from_slice(&6_u32.to_le_bytes());
+    bytes[4..8].copy_from_slice(&7_u32.to_le_bytes());
 
     let error = parse_expression_info(&bytes).expect_err("stale format should be rejected");
 
     assert!(matches!(
         error,
-        ExpressionInfoError::UnsupportedVersion { found: 6, max: 7 }
+        ExpressionInfoError::UnsupportedVersion { found: 7, max: 8 }
     ));
 }
 

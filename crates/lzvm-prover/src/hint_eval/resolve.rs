@@ -280,6 +280,9 @@ fn resolve_global_operand(
         HintOperand::Commitment { .. } => Err(HintEvalError::UnsupportedOperand {
             operand: "commitment",
         }),
+        HintOperand::CommitmentElement { .. } => Err(HintEvalError::UnsupportedOperand {
+            operand: "commitment element",
+        }),
         HintOperand::Constant { .. } => Err(HintEvalError::UnsupportedOperand {
             operand: "constant",
         }),
@@ -337,6 +340,34 @@ fn resolve_regular_operand(
                 column.dimension,
                 source_row,
             )
+        }
+        HintOperand::CommitmentElement {
+            id,
+            element,
+            row_offset_index,
+        } => {
+            let column = find_commitment_column(setup, *id)?;
+            if *element >= column.dimension {
+                return Err(HintEvalError::SourceIndexOutOfRange {
+                    source: "commitment element",
+                    index: *element as usize,
+                    width: 1,
+                    len: column.dimension as usize,
+                });
+            }
+            let source_row = regular_source_row(*row_offset_index as usize, row, inputs)?;
+            let matrix = find_regular_stage_columns(inputs, column.stage as u16)?;
+            let source_column = column
+                .stage_position
+                .checked_add(*element)
+                .ok_or(HintEvalError::LengthOverflow)? as usize;
+            Ok(ResolvedHintPayload::Scalar(read_regular_matrix_scalar(
+                "commitment element",
+                matrix,
+                inputs.domain_size,
+                source_column,
+                source_row,
+            )?))
         }
         HintOperand::AirValue { id } => {
             let (offset, width) = stage_value_offset(&setup.unit_value_map, *id as usize)?;

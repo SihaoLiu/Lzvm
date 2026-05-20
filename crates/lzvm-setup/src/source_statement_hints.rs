@@ -164,6 +164,9 @@ fn source_lookup_value_expressions(
             return false;
         };
         for value_range in ranges {
+            if source_lookup_spread_name(tokens, value_range).is_some() {
+                continue;
+            }
             let Some(expression) =
                 parse_source_lookup_expression(module, line, tokens, value_range)
             else {
@@ -462,12 +465,45 @@ fn source_lookup_values(
         && context.tokens[range.1 - 1].kind == TokenKind::RBracket
     {
         let ranges = top_level_argument_ranges(context.tokens, range.0, range.1 - 1)?;
-        return ranges
-            .into_iter()
-            .map(|value_range| source_lookup_value(context, value_range))
-            .collect();
+        let mut values = Vec::new();
+        for value_range in ranges {
+            if let Some(name) = source_lookup_spread_name(context.tokens, value_range) {
+                values.extend(source_lookup_spread_values(context, name)?);
+            } else {
+                values.push(source_lookup_value(context, value_range)?);
+            }
+        }
+        return Some(values);
     }
     Some(vec![source_lookup_value(context, range)?])
+}
+
+fn source_lookup_spread_name(tokens: &[Token], range: (usize, usize)) -> Option<&str> {
+    if range.0 + 2 == range.1
+        && tokens[range.0].kind == TokenKind::Ellipsis
+        && tokens[range.0 + 1].kind == TokenKind::Identifier
+    {
+        return Some(tokens[range.0 + 1].lexeme.as_str());
+    }
+    None
+}
+
+fn source_lookup_spread_values(
+    context: &SourceLookupLowering<'_>,
+    name: &str,
+) -> Option<Vec<HintValueInfo>> {
+    context
+        .scalar_slots
+        .operand_elements_at(name, 0)
+        .ok()?
+        .into_iter()
+        .map(|operand| {
+            Some(HintValueInfo {
+                positions: Vec::new(),
+                payload: hint_payload_from_code_operand(operand, context.opening_points)?,
+            })
+        })
+        .collect()
 }
 
 fn source_lookup_value(
@@ -646,6 +682,21 @@ fn hint_payload_from_code_operand(
                 air_group_id: None,
                 air_id: None,
             })
+        }
+        CodeOperand::CommitmentElement {
+            id,
+            element,
+            prime,
+            dimension,
+        } => {
+            let row_offset = prime.unwrap_or(0);
+            Some(HintPayload::commitment_element(
+                id,
+                element,
+                Some(opening_point_index(opening_points, row_offset)?),
+                Some(row_offset),
+                Some(dimension),
+            ))
         }
         CodeOperand::Constant { id, dimension } => Some(HintPayload::constant(
             id,

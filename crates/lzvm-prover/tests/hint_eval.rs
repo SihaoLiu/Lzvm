@@ -275,32 +275,40 @@ fn resolves_regular_hint_values_from_row_inputs() {
                         positions: vec![1],
                     },
                     HintValue {
-                        operand: HintOperand::AirValue { id: 1 },
+                        operand: HintOperand::CommitmentElement {
+                            id: 20,
+                            element: 1,
+                            row_offset_index: 0,
+                        },
                         positions: vec![2],
                     },
                     HintValue {
-                        operand: HintOperand::AirGroupValue { id: 0 },
+                        operand: HintOperand::AirValue { id: 1 },
                         positions: vec![3],
                     },
                     HintValue {
-                        operand: HintOperand::Challenge { id: 0 },
+                        operand: HintOperand::AirGroupValue { id: 0 },
                         positions: vec![4],
                     },
                     HintValue {
-                        operand: HintOperand::Public { id: 1 },
+                        operand: HintOperand::Challenge { id: 0 },
                         positions: vec![5],
                     },
                     HintValue {
-                        operand: HintOperand::ProofValue { id: 0 },
+                        operand: HintOperand::Public { id: 1 },
                         positions: vec![6],
                     },
                     HintValue {
-                        operand: HintOperand::Number(77),
+                        operand: HintOperand::ProofValue { id: 0 },
                         positions: vec![7],
                     },
                     HintValue {
-                        operand: HintOperand::String("row-label".to_owned()),
+                        operand: HintOperand::Number(77),
                         positions: vec![8],
+                    },
+                    HintValue {
+                        operand: HintOperand::String("row-label".to_owned()),
+                        positions: vec![9],
                     },
                 ],
             }],
@@ -368,32 +376,36 @@ fn resolves_regular_hint_values_from_row_inputs() {
                 positions: vec![1],
             },
             ResolvedHintValue {
-                payload: ResolvedHintPayload::Extension(ext([901, 902, 903])),
+                payload: ResolvedHintPayload::Scalar(felt(502)),
                 positions: vec![2],
             },
             ResolvedHintValue {
-                payload: ResolvedHintPayload::Extension(ext([1101, 1102, 1103])),
+                payload: ResolvedHintPayload::Extension(ext([901, 902, 903])),
                 positions: vec![3],
             },
             ResolvedHintValue {
-                payload: ResolvedHintPayload::Extension(ext([1201, 1202, 1203])),
+                payload: ResolvedHintPayload::Extension(ext([1101, 1102, 1103])),
                 positions: vec![4],
             },
             ResolvedHintValue {
-                payload: ResolvedHintPayload::Scalar(felt(702)),
+                payload: ResolvedHintPayload::Extension(ext([1201, 1202, 1203])),
                 positions: vec![5],
             },
             ResolvedHintValue {
-                payload: ResolvedHintPayload::Scalar(felt(1001)),
+                payload: ResolvedHintPayload::Scalar(felt(702)),
                 positions: vec![6],
             },
             ResolvedHintValue {
-                payload: ResolvedHintPayload::Scalar(felt(77)),
+                payload: ResolvedHintPayload::Scalar(felt(1001)),
                 positions: vec![7],
             },
             ResolvedHintValue {
-                payload: ResolvedHintPayload::Text("row-label".to_owned()),
+                payload: ResolvedHintPayload::Scalar(felt(77)),
                 positions: vec![8],
+            },
+            ResolvedHintValue {
+                payload: ResolvedHintPayload::Text("row-label".to_owned()),
+                positions: vec![9],
             },
         ]
     );

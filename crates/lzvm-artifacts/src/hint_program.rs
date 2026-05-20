@@ -78,6 +78,11 @@ pub enum HintOperand {
         id: u32,
         row_offset_index: u32,
     },
+    CommitmentElement {
+        id: u32,
+        element: u32,
+        row_offset_index: u32,
+    },
     Constant {
         id: u32,
         row_offset_index: u32,
@@ -307,6 +312,21 @@ fn hint_operand_from_payload(
             row_offset_index: required_payload_field(*row_offset_index, "cm", "row_offset_index")?,
         }),
         HintPayload::Commitment { .. } => Err(invalid_operand_section("cm", kind)),
+        HintPayload::CommitmentElement {
+            id,
+            element,
+            row_offset_index,
+            ..
+        } if kind == HintSectionKind::Regular => Ok(HintOperand::CommitmentElement {
+            id: *id,
+            element: *element,
+            row_offset_index: required_payload_field(
+                *row_offset_index,
+                "cm_element",
+                "row_offset_index",
+            )?,
+        }),
+        HintPayload::CommitmentElement { .. } => Err(invalid_operand_section("cm_element", kind)),
         HintPayload::CustomCommitment {
             id,
             commit_id,
@@ -482,6 +502,16 @@ fn read_hint_value(
                 row_offset_index,
             }
         }
+        "cm_element" if kind == HintSectionKind::Regular => {
+            let id = reader.read_u32()?;
+            let element = reader.read_u32()?;
+            let row_offset_index = reader.read_u32()?;
+            HintOperand::CommitmentElement {
+                id,
+                element,
+                row_offset_index,
+            }
+        }
         "const" if kind == HintSectionKind::Regular => {
             let id = reader.read_u32()?;
             let row_offset_index = reader.read_u32()?;
@@ -615,6 +645,19 @@ fn write_hint_value(
         }
         HintOperand::Commitment { .. } => {
             return Err(invalid_operand_section("cm", kind));
+        }
+        HintOperand::CommitmentElement {
+            id,
+            element,
+            row_offset_index,
+        } if kind == HintSectionKind::Regular => {
+            write_string(out, "cm_element")?;
+            write_u32(out, *id);
+            write_u32(out, *element);
+            write_u32(out, *row_offset_index);
+        }
+        HintOperand::CommitmentElement { .. } => {
+            return Err(invalid_operand_section("cm_element", kind));
         }
         HintOperand::Constant {
             id,

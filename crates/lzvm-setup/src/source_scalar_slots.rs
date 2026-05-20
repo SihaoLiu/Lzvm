@@ -347,6 +347,52 @@ impl SourceScalarSlots {
         })
     }
 
+    pub(crate) fn operand_elements_at(
+        &self,
+        name: &str,
+        row_offset: i64,
+    ) -> Result<Vec<CodeOperand>, SourceScalarSlotError> {
+        if let Some(slot) = self.commitments.get(name) {
+            if slot.stage != 1 {
+                return Err(SourceScalarSlotError::UnsupportedValueShape {
+                    name: name.to_owned(),
+                });
+            }
+            return (0..slot.dimension)
+                .map(|index| self.operand_index_at(name, index, row_offset))
+                .collect();
+        }
+
+        if let Some(slot) = self.publics.get(name) {
+            if slot.stage != 1 {
+                return Err(SourceScalarSlotError::UnsupportedValueShape {
+                    name: name.to_owned(),
+                });
+            }
+            if row_offset != 0 {
+                return Err(SourceScalarSlotError::UnsupportedRowOffset {
+                    name: name.to_owned(),
+                });
+            }
+            return (0..slot.dimension)
+                .map(|index| self.operand_index_at(name, index, row_offset))
+                .collect();
+        }
+
+        if let Some(slot) = self.challenges.get(name) {
+            if row_offset != 0 {
+                return Err(SourceScalarSlotError::UnsupportedRowOffset {
+                    name: name.to_owned(),
+                });
+            }
+            return (0..slot.dimension)
+                .map(|index| self.operand_index_at(name, index, row_offset))
+                .collect();
+        }
+
+        Ok(vec![self.operand_at(name, row_offset)?])
+    }
+
     pub(crate) fn operand_index_at(
         &self,
         name: &str,
