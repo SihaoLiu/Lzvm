@@ -1276,11 +1276,32 @@ fn source_air_group_values(
             if declaration.stage == 0 {
                 return unsupported("source air group value stage must be positive");
             }
-            if declaration.default_value.is_some() {
-                return unsupported("source air group value defaults need proof lowering support");
-            }
             let aggregation_type =
                 source_group_value_aggregation_type(&declaration.aggregate_type)?;
+            if let Some(default_expression) = declaration.default_expression.as_ref() {
+                let Some(FixedFileTemplateValue::Integer(default_value)) =
+                    evaluate_fixed_file_template_value_expression_with_values(
+                        default_expression,
+                        constant_values,
+                    )
+                else {
+                    return unsupported(
+                        "source air group value defaults need proof lowering support",
+                    );
+                };
+                let identity = match aggregation_type {
+                    0 => 0,
+                    1 => 1,
+                    _ => return unsupported("unsupported source air group value aggregation type"),
+                };
+                if default_value != identity {
+                    return unsupported(
+                        "source air group value defaults need proof lowering support",
+                    );
+                }
+            } else if declaration.default_value.is_some() {
+                return unsupported("source air group value defaults need proof lowering support");
+            }
             for item in &declaration.items {
                 if item.template {
                     return unsupported(
