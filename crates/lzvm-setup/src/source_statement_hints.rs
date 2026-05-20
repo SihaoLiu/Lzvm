@@ -135,7 +135,7 @@ pub(crate) fn source_lookup_statement_expressions(
             return Ok(None);
         };
         match argument_name {
-            "mul" | "sel" | "table_id" => {}
+            "mul" | "sel" | "table_id" | "surname" => {}
             _ => return Ok(None),
         }
         let Some(value_range) = source_lookup_argument_value_range(&argument) else {
@@ -273,12 +273,13 @@ fn lower_structured_source_lookup_hint(
             "mul" => "multiplicity",
             "sel" => "selector",
             "table_id" => "table_id",
+            "surname" => "surname",
             _ => return Ok(None),
         };
         let Some(value_range) = source_lookup_argument_value_range(&argument) else {
             return Ok(None);
         };
-        let value = if field_name == "table_id" {
+        let value = if matches!(field_name, "table_id" | "surname") {
             source_lookup_static_value(&context, value_range)
         } else {
             source_lookup_value(&context, value_range)
