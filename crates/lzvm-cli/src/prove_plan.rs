@@ -190,10 +190,8 @@ pub(crate) fn parse_run_args(
             "--input-data" => {
                 index += 1;
                 partition_option_used = true;
-                let value = args
-                    .get(index)
-                    .ok_or(ParseError::Invalid("missing --input-data value".to_owned()))?;
-                if input_data.replace(PathBuf::from(*value)).is_some() {
+                let value = required_option_value(args.get(index), "--input-data")?;
+                if input_data.replace(PathBuf::from(value)).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --input-data option".to_owned(),
                     ));
@@ -201,10 +199,8 @@ pub(crate) fn parse_run_args(
             }
             "--program-image-cache" => {
                 index += 1;
-                let value = args.get(index).ok_or(ParseError::Invalid(
-                    "missing --program-image-cache value".to_owned(),
-                ))?;
-                if program_image_cache.replace(PathBuf::from(*value)).is_some() {
+                let value = required_option_value(args.get(index), "--program-image-cache")?;
+                if program_image_cache.replace(PathBuf::from(value)).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --program-image-cache option".to_owned(),
                     ));
@@ -278,16 +274,25 @@ fn set_pass_selection(
     Ok(())
 }
 
+pub(crate) fn required_option_value<'a>(
+    value: Option<&&'a str>,
+    option: &str,
+) -> Result<&'a str, ParseError> {
+    let value = value.ok_or_else(|| ParseError::Invalid(format!("missing {option} value")))?;
+    if value.starts_with("--") {
+        return Err(ParseError::Invalid(format!("missing {option} value")));
+    }
+    Ok(*value)
+}
+
 fn parse_usize(value: Option<&&str>, option: &str) -> Result<usize, ParseError> {
-    value
-        .ok_or_else(|| ParseError::Invalid(format!("missing {option} value")))?
+    required_option_value(value, option)?
         .parse::<usize>()
         .map_err(|_| ParseError::Invalid(format!("{option} value must be an unsigned integer")))
 }
 
 fn parse_partition_ids(value: Option<&&str>) -> Result<Vec<u32>, ParseError> {
-    let value =
-        value.ok_or_else(|| ParseError::Invalid("missing --partition-ids value".to_owned()))?;
+    let value = required_option_value(value, "--partition-ids")?;
     if value.is_empty() {
         return Err(ParseError::Invalid(
             "--partition-ids value must not be empty".to_owned(),

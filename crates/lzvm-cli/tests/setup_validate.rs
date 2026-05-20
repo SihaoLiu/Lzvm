@@ -11634,6 +11634,116 @@ fn reports_usage_for_missing_prove_witness_paths() {
 }
 
 #[test]
+fn prove_inputs_rejects_missing_eth_block_input_value_before_next_option() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            "--eth-block-input",
+            "--trace-bytes",
+            "trace.bin",
+            "setup",
+            "out",
+            "guest.elf",
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove inputs failed: missing --eth-block-input value\n"
+    );
+}
+
+#[test]
+fn prove_inputs_rejects_missing_program_image_cache_value_before_next_option() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            "--program-image-cache",
+            "--eth-block-input",
+            "block.input",
+            "setup",
+            "out",
+            "witness.so",
+            "guest.elf",
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove inputs failed: missing --program-image-cache value\n"
+    );
+}
+
+#[test]
+fn prove_witness_rejects_missing_eth_block_input_value_before_next_option() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--eth-block-input",
+            "--trace-bytes",
+            "trace.bin",
+            "setup",
+            "out",
+            "guest.elf",
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove witness failed: missing --eth-block-input value\n"
+    );
+}
+
+#[test]
+fn prove_witness_rejects_missing_program_image_cache_value_before_next_option() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--program-image-cache",
+            "--eth-block-input",
+            "block.input",
+            "setup",
+            "out",
+            "witness.so",
+            "guest.elf",
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove witness failed: missing --program-image-cache value\n"
+    );
+}
+
+#[test]
 fn reports_usage_for_missing_setup_preflight_inputs() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();

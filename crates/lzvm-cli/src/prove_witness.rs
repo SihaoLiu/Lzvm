@@ -31,7 +31,7 @@ use crate::eth_block_prove_input::{
 };
 use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{
-    parse_run_args, prepare_requested_gpu_setup, read_checked_setup_catalog,
+    parse_run_args, prepare_requested_gpu_setup, read_checked_setup_catalog, required_option_value,
     validate_all_unit_stored_witness_limit, write_run_plan_summary, ParseError, ParsedRunArgs,
 };
 
@@ -451,10 +451,8 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             "--all-units" => all_units = true,
             "--trace-bytes" => {
                 index += 1;
-                let value = args
-                    .get(index)
-                    .ok_or_else(|| ParseError::Invalid("missing --trace-bytes value".to_owned()))?;
-                if trace_bytes.replace((*value).into()).is_some() {
+                let value = required_option_value(args.get(index), "--trace-bytes")?;
+                if trace_bytes.replace(value.into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --trace-bytes option".to_owned(),
                     ));
@@ -462,10 +460,8 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             }
             "--trace-bundle" => {
                 index += 1;
-                let value = args.get(index).ok_or_else(|| {
-                    ParseError::Invalid("missing --trace-bundle value".to_owned())
-                })?;
-                if trace_bundle.replace((*value).into()).is_some() {
+                let value = required_option_value(args.get(index), "--trace-bundle")?;
+                if trace_bundle.replace(value.into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --trace-bundle option".to_owned(),
                     ));
@@ -473,10 +469,8 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             }
             "--unit-values" => {
                 index += 1;
-                let value = args
-                    .get(index)
-                    .ok_or_else(|| ParseError::Invalid("missing --unit-values value".to_owned()))?;
-                if unit_values.replace((*value).into()).is_some() {
+                let value = required_option_value(args.get(index), "--unit-values")?;
+                if unit_values.replace(value.into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --unit-values option".to_owned(),
                     ));
@@ -484,10 +478,8 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             }
             "--unit-values-segment" => {
                 index += 1;
-                let value = args.get(index).ok_or_else(|| {
-                    ParseError::Invalid("missing --unit-values-segment value".to_owned())
-                })?;
-                if unit_values_segment.replace((*value).into()).is_some() {
+                let value = required_option_value(args.get(index), "--unit-values-segment")?;
+                if unit_values_segment.replace(value.into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --unit-values-segment option".to_owned(),
                     ));
@@ -495,10 +487,8 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             }
             "--proof-values" => {
                 index += 1;
-                let value = args.get(index).ok_or_else(|| {
-                    ParseError::Invalid("missing --proof-values value".to_owned())
-                })?;
-                if proof_values.replace((*value).into()).is_some() {
+                let value = required_option_value(args.get(index), "--proof-values")?;
+                if proof_values.replace(value.into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --proof-values option".to_owned(),
                     ));
@@ -506,10 +496,8 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             }
             "--proof-values-segment" => {
                 index += 1;
-                let value = args.get(index).ok_or_else(|| {
-                    ParseError::Invalid("missing --proof-values-segment value".to_owned())
-                })?;
-                if proof_values_segment.replace((*value).into()).is_some() {
+                let value = required_option_value(args.get(index), "--proof-values-segment")?;
+                if proof_values_segment.replace(value.into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --proof-values-segment option".to_owned(),
                     ));
@@ -517,10 +505,8 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             }
             "--group-values" => {
                 index += 1;
-                let value = args.get(index).ok_or_else(|| {
-                    ParseError::Invalid("missing --group-values value".to_owned())
-                })?;
-                if group_values.replace((*value).into()).is_some() {
+                let value = required_option_value(args.get(index), "--group-values")?;
+                if group_values.replace(value.into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --group-values option".to_owned(),
                     ));
@@ -528,10 +514,8 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             }
             "--group-values-segment" => {
                 index += 1;
-                let value = args.get(index).ok_or_else(|| {
-                    ParseError::Invalid("missing --group-values-segment value".to_owned())
-                })?;
-                if group_values_segment.replace((*value).into()).is_some() {
+                let value = required_option_value(args.get(index), "--group-values-segment")?;
+                if group_values_segment.replace(value.into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --group-values-segment option".to_owned(),
                     ));
@@ -539,10 +523,8 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             }
             "--challenge-values" => {
                 index += 1;
-                let value = args.get(index).ok_or_else(|| {
-                    ParseError::Invalid("missing --challenge-values value".to_owned())
-                })?;
-                if challenge_values.replace((*value).into()).is_some() {
+                let value = required_option_value(args.get(index), "--challenge-values")?;
+                if challenge_values.replace(value.into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --challenge-values option".to_owned(),
                     ));
@@ -550,10 +532,8 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             }
             "--challenge-values-segment" => {
                 index += 1;
-                let value = args.get(index).ok_or_else(|| {
-                    ParseError::Invalid("missing --challenge-values-segment value".to_owned())
-                })?;
-                if challenge_values_segment.replace((*value).into()).is_some() {
+                let value = required_option_value(args.get(index), "--challenge-values-segment")?;
+                if challenge_values_segment.replace(value.into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --challenge-values-segment option".to_owned(),
                     ));
@@ -561,10 +541,8 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             }
             "--evaluation-values" => {
                 index += 1;
-                let value = args.get(index).ok_or_else(|| {
-                    ParseError::Invalid("missing --evaluation-values value".to_owned())
-                })?;
-                if evaluation_values.replace((*value).into()).is_some() {
+                let value = required_option_value(args.get(index), "--evaluation-values")?;
+                if evaluation_values.replace(value.into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --evaluation-values option".to_owned(),
                     ));
@@ -572,10 +550,8 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             }
             "--evaluation-values-segment" => {
                 index += 1;
-                let value = args.get(index).ok_or_else(|| {
-                    ParseError::Invalid("missing --evaluation-values-segment value".to_owned())
-                })?;
-                if evaluation_values_segment.replace((*value).into()).is_some() {
+                let value = required_option_value(args.get(index), "--evaluation-values-segment")?;
+                if evaluation_values_segment.replace(value.into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --evaluation-values-segment option".to_owned(),
                     ));
@@ -583,14 +559,18 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             }
             "--eth-block-input" => {
                 index += 1;
-                let value = args.get(index).ok_or_else(|| {
-                    ParseError::Invalid("missing --eth-block-input value".to_owned())
-                })?;
-                if eth_block_input.replace((*value).into()).is_some() {
+                let value = required_option_value(args.get(index), "--eth-block-input")?;
+                if eth_block_input.replace(value.into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --eth-block-input option".to_owned(),
                     ));
                 }
+            }
+            "--program-image-cache" => {
+                index += 1;
+                let value = required_option_value(args.get(index), "--program-image-cache")?;
+                filtered.push("--program-image-cache");
+                filtered.push(value);
             }
             _ => filtered.push(args[index]),
         }

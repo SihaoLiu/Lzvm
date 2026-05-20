@@ -18,7 +18,8 @@ use crate::eth_block_prove_input::{validate_eth_block_input, write_eth_block_inp
 use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{
     format_hash, parse_run_args, prepare_requested_gpu_setup, read_checked_setup_catalog,
-    validate_all_unit_stored_witness_limit, write_run_plan_summary, ParseError, ParsedRunArgs,
+    required_option_value, validate_all_unit_stored_witness_limit, write_run_plan_summary,
+    ParseError, ParsedRunArgs,
 };
 
 pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -239,10 +240,8 @@ fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
         match args[index] {
             "--trace-bytes" => {
                 index += 1;
-                let value = args
-                    .get(index)
-                    .ok_or_else(|| ParseError::Invalid("missing --trace-bytes value".to_owned()))?;
-                if trace_bytes.replace((*value).into()).is_some() {
+                let value = required_option_value(args.get(index), "--trace-bytes")?;
+                if trace_bytes.replace(value.into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --trace-bytes option".to_owned(),
                     ));
@@ -250,10 +249,8 @@ fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
             }
             "--trace-bundle" => {
                 index += 1;
-                let value = args.get(index).ok_or_else(|| {
-                    ParseError::Invalid("missing --trace-bundle value".to_owned())
-                })?;
-                if trace_bundle.replace((*value).into()).is_some() {
+                let value = required_option_value(args.get(index), "--trace-bundle")?;
+                if trace_bundle.replace(value.into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --trace-bundle option".to_owned(),
                     ));
@@ -261,14 +258,18 @@ fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
             }
             "--eth-block-input" => {
                 index += 1;
-                let value = args.get(index).ok_or_else(|| {
-                    ParseError::Invalid("missing --eth-block-input value".to_owned())
-                })?;
-                if eth_block_input.replace((*value).into()).is_some() {
+                let value = required_option_value(args.get(index), "--eth-block-input")?;
+                if eth_block_input.replace(value.into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --eth-block-input option".to_owned(),
                     ));
                 }
+            }
+            "--program-image-cache" => {
+                index += 1;
+                let value = required_option_value(args.get(index), "--program-image-cache")?;
+                filtered.push("--program-image-cache");
+                filtered.push(value);
             }
             value => filtered.push(value),
         }
