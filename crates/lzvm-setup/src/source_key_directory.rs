@@ -22,9 +22,9 @@ use lzvm_artifacts::verifier_info::{
 use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
     BinaryOperator, ColumnDeclaration, ColumnInitializerKind, ColumnItem, ColumnKind, Expression,
-    ExpressionKind, FixedFileTemplateValue, LexError, ParseError, SourceLoaderConfig,
-    SourceProgram, SourceProgramError, SourceProgramLoader, SourceProgramModule, Token, TokenKind,
-    UnaryOperator, ValueDeclarationKind,
+    ExpressionKind, FixedFileTemplateValue, FunctionStatementKind, LexError, ParseError,
+    SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader,
+    SourceProgramModule, Token, TokenKind, UnaryOperator, ValueDeclarationKind,
 };
 
 use crate::{publish_staging_bytes, write_staging_bytes, SetupError};
@@ -251,11 +251,12 @@ fn validate_supported_source_program(
     program: &SourceProgram,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     for module in &program.modules {
-        if !module
-            .air_templates
-            .iter()
-            .all(|template| template.statements.is_empty())
-        {
+        if !module.air_templates.iter().all(|template| {
+            template
+                .statements
+                .iter()
+                .all(|statement| statement.kind == FunctionStatementKind::Declaration)
+        }) {
             return unsupported("air template statements need constraint lowering support");
         }
         if module

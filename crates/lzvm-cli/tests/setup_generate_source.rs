@@ -633,6 +633,51 @@ fn generate_key_writes_source_witness_layout_to_unit_metadata() {
 }
 
 #[test]
+fn generate_key_allows_source_template_column_declarations() {
+    let dir = temp_dir("template-column-declarations");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col witness local.trace;\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let setup_path = layout.units[0]
+        .setup_info_binary()
+        .expect("setup metadata path should derive");
+    let setup = read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+    assert_eq!(setup.commitment_columns.len(), 1);
+    assert_eq!(setup.commitment_columns[0].name, "local.trace");
+    assert_eq!(setup.commitment_columns[0].stage, 1);
+    assert_eq!(setup.commitment_columns[0].stage_position, 0);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_rejects_source_metadata_that_requires_lowering() {
     let dir = temp_dir("needs-lowering");
     let _ = fs::remove_dir_all(&dir);
