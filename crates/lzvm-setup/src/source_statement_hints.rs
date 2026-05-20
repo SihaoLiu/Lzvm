@@ -601,7 +601,19 @@ fn source_lookup_values(
         }
         return Some(values);
     }
+    if let Some(name) = source_lookup_bare_name(context.tokens, range) {
+        if let Some(values) = source_lookup_spread_values(context, name) {
+            return Some(values);
+        }
+    }
     Some(vec![source_lookup_value(context, range)?])
+}
+
+fn source_lookup_bare_name(tokens: &[Token], range: (usize, usize)) -> Option<&str> {
+    if range.0 + 1 == range.1 && tokens[range.0].kind == TokenKind::Identifier {
+        return Some(tokens[range.0].lexeme.as_str());
+    }
+    None
 }
 
 fn source_lookup_spread_name(tokens: &[Token], range: (usize, usize)) -> Option<&str> {
