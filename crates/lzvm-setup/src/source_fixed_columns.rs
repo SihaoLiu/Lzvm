@@ -9,6 +9,7 @@ use lzvm_artifacts::fixed::{
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyDirectoryError, KeyUnitKind};
 use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, SetupInfoError, UnitSetupInfo};
+use lzvm_field::MODULUS;
 use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
     ColumnInitializerKind, ColumnKind, ConstantDeclaration, FixedFileTemplateValue, LexError,
@@ -641,6 +642,19 @@ fn parse_literal_sequence(
     row_count: usize,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<Vec<u64>, SourceFixedColumnsWriteError> {
+    parse_literal_sequence_values(source_name, source_span, source, row_count, constant_values)?
+        .into_iter()
+        .map(|value| canonical_fixed_value(value, source_name, source_span))
+        .collect()
+}
+
+fn parse_literal_sequence_values(
+    source_name: &str,
+    source_span: SourceSpan,
+    source: &str,
+    row_count: usize,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<Vec<i128>, SourceFixedColumnsWriteError> {
     let tokens = lex_source(source).map_err(|source| SourceFixedColumnsWriteError::Lex {
         source_name: source_name.to_owned(),
         source_span,
@@ -661,7 +675,7 @@ fn parse_literal_sequence(
         tokens: &tokens,
         constant_values,
     };
-    let mut values = Vec::new();
+    let mut values = Vec::<i128>::new();
 
     let mut segment_start = cursor;
     let mut stack = Vec::new();
@@ -762,7 +776,7 @@ fn parse_literal_sequence(
 }
 
 fn fill_sequence_pattern(
-    values: &mut Vec<u64>,
+    values: &mut Vec<i128>,
     row_count: usize,
     source_name: &str,
     source_span: SourceSpan,
@@ -799,7 +813,7 @@ struct ProgressionSegment<'a, 'b> {
 }
 
 fn append_sequence_segment(
-    values: &mut Vec<u64>,
+    values: &mut Vec<i128>,
     context: &SequenceParseContext<'_>,
     start: usize,
     end: usize,
@@ -859,7 +873,7 @@ fn append_sequence_segment(
 }
 
 fn append_sequence_repeat(
-    values: &mut Vec<u64>,
+    values: &mut Vec<i128>,
     context: &SequenceParseContext<'_>,
     start: usize,
     repeat_index: usize,
@@ -867,13 +881,7 @@ fn append_sequence_repeat(
     row_count: usize,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     let repeated_values = parse_sequence_values(context, start, repeat_index, row_count)?;
-    let count = parse_sequence_expression(context, repeat_index + 1, end)?;
-    let count =
-        usize::try_from(count).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
-            source_name: context.source_name.to_owned(),
-            source_span: context.source_span,
-            expression: segment_text(context, start, end),
-        })?;
+    let count = parse_sequence_count(context, repeat_index + 1, end)?;
     for _ in 0..count {
         for value in &repeated_values {
             if values.len() >= row_count {
@@ -890,7 +898,7 @@ fn append_sequence_repeat(
 }
 
 fn append_sequence_add_progression(
-    values: &mut Vec<u64>,
+    values: &mut Vec<i128>,
     context: &SequenceParseContext<'_>,
     start: usize,
     progression_index: usize,
@@ -906,7 +914,13 @@ fn append_sequence_add_progression(
                 token: context.tokens[progression_index].lexeme.clone(),
             })?;
     let current = parse_sequence_expression(context, start, progression_index)?;
-    let step = i128::from(current) - i128::from(previous);
+    let step = current.checked_sub(previous).ok_or_else(|| {
+        SourceFixedColumnsWriteError::IntegerOutOfRange {
+            source_name: context.source_name.to_owned(),
+            source_span: context.source_span,
+            expression: segment_text(context, start, end),
+        }
+    })?;
     let segment = ProgressionSegment {
         context,
         start,
@@ -921,12 +935,12 @@ fn append_sequence_add_progression(
 }
 
 fn append_add_progression_fill(
-    values: &mut Vec<u64>,
+    values: &mut Vec<i128>,
     segment: &ProgressionSegment<'_, '_>,
-    current: u64,
+    current: i128,
     step: i128,
 ) -> Result<(), SourceFixedColumnsWriteError> {
-    let mut value = i128::from(current);
+    let mut value = current;
     while values.len() < segment.row_count {
         push_progression_value(values, segment, value)?;
         if values.len() < segment.row_count {
@@ -943,10 +957,10 @@ fn append_add_progression_fill(
 }
 
 fn append_add_progression_values(
-    values: &mut Vec<u64>,
+    values: &mut Vec<i128>,
     segment: &ProgressionSegment<'_, '_>,
-    current: u64,
-    last: u64,
+    current: i128,
+    last: i128,
     step: i128,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     if (step > 0 && current > last)
@@ -956,8 +970,7 @@ fn append_add_progression_values(
         return Err(progression_unsupported(segment));
     }
 
-    let mut value = i128::from(current);
-    let last = i128::from(last);
+    let mut value = current;
     loop {
         push_progression_value(values, segment, value)?;
         if value == last {
@@ -978,7 +991,7 @@ fn append_add_progression_values(
 }
 
 fn append_sequence_mul_progression(
-    values: &mut Vec<u64>,
+    values: &mut Vec<i128>,
     context: &SequenceParseContext<'_>,
     start: usize,
     progression_index: usize,
@@ -995,8 +1008,14 @@ fn append_sequence_mul_progression(
             })?;
     let current = parse_sequence_expression(context, start, progression_index)?;
 
-    if previous != 0 && current >= previous && current % previous == 0 {
-        let factor = current / previous;
+    if previous > 0 && current >= previous && current % previous == 0 {
+        let factor = u128::try_from(current / previous).map_err(|_| {
+            SourceFixedColumnsWriteError::IntegerOutOfRange {
+                source_name: context.source_name.to_owned(),
+                source_span: context.source_span,
+                expression: segment_text(context, start, end),
+            }
+        })?;
         let segment = ProgressionSegment {
             context,
             start,
@@ -1009,8 +1028,14 @@ fn append_sequence_mul_progression(
         let last = parse_sequence_expression(context, progression_index + 1, end)?;
         return append_mul_progression_values(values, &segment, current, last, factor);
     }
-    if current != 0 && previous > current && previous % current == 0 {
-        let divisor = previous / current;
+    if current > 0 && previous > current && previous % current == 0 {
+        let divisor = u128::try_from(previous / current).map_err(|_| {
+            SourceFixedColumnsWriteError::IntegerOutOfRange {
+                source_name: context.source_name.to_owned(),
+                source_span: context.source_span,
+                expression: segment_text(context, start, end),
+            }
+        })?;
         let segment = ProgressionSegment {
             context,
             start,
@@ -1031,15 +1056,22 @@ fn append_sequence_mul_progression(
 }
 
 fn append_mul_progression_fill(
-    values: &mut Vec<u64>,
+    values: &mut Vec<i128>,
     segment: &ProgressionSegment<'_, '_>,
-    current: u64,
-    factor: u64,
+    current: i128,
+    factor: u128,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     let mut value = current;
     while values.len() < segment.row_count {
-        push_progression_value(values, segment, i128::from(value))?;
+        push_progression_value(values, segment, value)?;
         if values.len() < segment.row_count {
+            let factor = i128::try_from(factor).map_err(|_| {
+                SourceFixedColumnsWriteError::IntegerOutOfRange {
+                    source_name: segment.context.source_name.to_owned(),
+                    source_span: segment.context.source_span,
+                    expression: progression_expression(segment),
+                }
+            })?;
             value = value.checked_mul(factor).ok_or_else(|| {
                 SourceFixedColumnsWriteError::IntegerOutOfRange {
                     source_name: segment.context.source_name.to_owned(),
@@ -1053,18 +1085,24 @@ fn append_mul_progression_fill(
 }
 
 fn append_mul_progression_values(
-    values: &mut Vec<u64>,
+    values: &mut Vec<i128>,
     segment: &ProgressionSegment<'_, '_>,
-    current: u64,
-    last: u64,
-    factor: u64,
+    current: i128,
+    last: i128,
+    factor: u128,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     if factor <= 1 && current != last {
         return Err(progression_unsupported(segment));
     }
     let mut value = current;
+    let factor =
+        i128::try_from(factor).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
+            source_name: segment.context.source_name.to_owned(),
+            source_span: segment.context.source_span,
+            expression: progression_expression(segment),
+        })?;
     loop {
-        push_progression_value(values, segment, i128::from(value))?;
+        push_progression_value(values, segment, value)?;
         if value == last {
             break;
         }
@@ -1083,16 +1121,22 @@ fn append_mul_progression_values(
 }
 
 fn append_div_progression_fill(
-    values: &mut Vec<u64>,
+    values: &mut Vec<i128>,
     segment: &ProgressionSegment<'_, '_>,
-    current: u64,
-    divisor: u64,
+    current: i128,
+    divisor: u128,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     let mut value = current;
+    let divisor =
+        i128::try_from(divisor).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
+            source_name: segment.context.source_name.to_owned(),
+            source_span: segment.context.source_span,
+            expression: progression_expression(segment),
+        })?;
     while values.len() < segment.row_count {
-        push_progression_value(values, segment, i128::from(value))?;
+        push_progression_value(values, segment, value)?;
         if values.len() < segment.row_count {
-            if !value.is_multiple_of(divisor) {
+            if value % divisor != 0 {
                 return Err(progression_unsupported(segment));
             }
             value /= divisor;
@@ -1102,22 +1146,28 @@ fn append_div_progression_fill(
 }
 
 fn append_div_progression_values(
-    values: &mut Vec<u64>,
+    values: &mut Vec<i128>,
     segment: &ProgressionSegment<'_, '_>,
-    current: u64,
-    last: u64,
-    divisor: u64,
+    current: i128,
+    last: i128,
+    divisor: u128,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     if divisor <= 1 && current != last {
         return Err(progression_unsupported(segment));
     }
     let mut value = current;
+    let divisor =
+        i128::try_from(divisor).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
+            source_name: segment.context.source_name.to_owned(),
+            source_span: segment.context.source_span,
+            expression: progression_expression(segment),
+        })?;
     loop {
-        push_progression_value(values, segment, i128::from(value))?;
+        push_progression_value(values, segment, value)?;
         if value == last {
             break;
         }
-        if !value.is_multiple_of(divisor) {
+        if value % divisor != 0 {
             return Err(progression_unsupported(segment));
         }
         value /= divisor;
@@ -1129,19 +1179,13 @@ fn append_div_progression_values(
 }
 
 fn push_progression_value(
-    values: &mut Vec<u64>,
+    values: &mut Vec<i128>,
     segment: &ProgressionSegment<'_, '_>,
     value: i128,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     if values.len() >= segment.row_count {
         return Err(progression_unsupported(segment));
     }
-    let value =
-        u64::try_from(value).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
-            source_name: segment.context.source_name.to_owned(),
-            source_span: segment.context.source_span,
-            expression: progression_expression(segment),
-        })?;
     values.push(value);
     Ok(())
 }
@@ -1159,7 +1203,7 @@ fn progression_expression(segment: &ProgressionSegment<'_, '_>) -> String {
 }
 
 fn append_sequence_range(
-    values: &mut Vec<u64>,
+    values: &mut Vec<i128>,
     context: &SequenceParseContext<'_>,
     start: usize,
     range_index: usize,
@@ -1209,18 +1253,12 @@ fn parse_range_endpoint(
     context: &SequenceParseContext<'_>,
     start: usize,
     end: usize,
-) -> Result<(u64, usize), SourceFixedColumnsWriteError> {
+) -> Result<(i128, usize), SourceFixedColumnsWriteError> {
     let Some(repeat_index) = top_level_token_index(context, start, end, TokenKind::Colon)? else {
         return Ok((parse_sequence_expression(context, start, end)?, 1));
     };
     let value = parse_sequence_expression(context, start, repeat_index)?;
-    let count = parse_sequence_expression(context, repeat_index + 1, end)?;
-    let count =
-        usize::try_from(count).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
-            source_name: context.source_name.to_owned(),
-            source_span: context.source_span,
-            expression: segment_text(context, start, end),
-        })?;
+    let count = parse_sequence_count(context, repeat_index + 1, end)?;
     Ok((value, count))
 }
 
@@ -1229,7 +1267,7 @@ fn parse_sequence_values(
     start: usize,
     end: usize,
     row_count: usize,
-) -> Result<Vec<u64>, SourceFixedColumnsWriteError> {
+) -> Result<Vec<i128>, SourceFixedColumnsWriteError> {
     if start < end
         && context
             .tokens
@@ -1241,7 +1279,7 @@ fn parse_sequence_values(
             .is_some_and(|token| token.kind == TokenKind::RBracket)
     {
         let source = segment_text(context, start, end);
-        return parse_literal_sequence(
+        return parse_literal_sequence_values(
             context.source_name,
             context.source_span,
             &source,
@@ -1319,7 +1357,7 @@ fn parse_sequence_expression(
     context: &SequenceParseContext<'_>,
     start: usize,
     end: usize,
-) -> Result<u64, SourceFixedColumnsWriteError> {
+) -> Result<i128, SourceFixedColumnsWriteError> {
     if start >= end {
         return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
             source_name: context.source_name.to_owned(),
@@ -1376,19 +1414,40 @@ fn parse_sequence_expression(
         &expression,
         context.constant_values,
     ) {
-        Some(FixedFileTemplateValue::Integer(value)) => {
-            u64::try_from(value).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
-                source_name: context.source_name.to_owned(),
-                source_span: context.source_span,
-                expression: expression_text.to_owned(),
-            })
-        }
+        Some(FixedFileTemplateValue::Integer(value)) => Ok(value),
         _ => Err(SourceFixedColumnsWriteError::UnsupportedExpression {
             source_name: context.source_name.to_owned(),
             source_span: context.source_span,
             expression: expression_text.to_owned(),
         }),
     }
+}
+
+fn parse_sequence_count(
+    context: &SequenceParseContext<'_>,
+    start: usize,
+    end: usize,
+) -> Result<usize, SourceFixedColumnsWriteError> {
+    let value = parse_sequence_expression(context, start, end)?;
+    usize::try_from(value).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
+        source_name: context.source_name.to_owned(),
+        source_span: context.source_span,
+        expression: segment_text(context, start, end),
+    })
+}
+
+fn canonical_fixed_value(
+    value: i128,
+    source_name: &str,
+    source_span: SourceSpan,
+) -> Result<u64, SourceFixedColumnsWriteError> {
+    let modulus = i128::from(MODULUS);
+    let canonical = value.rem_euclid(modulus);
+    u64::try_from(canonical).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
+        source_name: source_name.to_owned(),
+        source_span,
+        expression: value.to_string(),
+    })
 }
 
 fn expect_token(
@@ -1436,10 +1495,10 @@ fn parse_literal_token(
     token: &Token,
     source_name: &str,
     source_span: SourceSpan,
-) -> Result<u64, SourceFixedColumnsWriteError> {
+) -> Result<i128, SourceFixedColumnsWriteError> {
     match token.kind {
-        TokenKind::Integer => token.lexeme.parse::<u64>(),
-        TokenKind::HexInteger => u64::from_str_radix(
+        TokenKind::Integer => token.lexeme.parse::<i128>(),
+        TokenKind::HexInteger => i128::from_str_radix(
             token
                 .lexeme
                 .strip_prefix("0x")
