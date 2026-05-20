@@ -20,10 +20,11 @@ use lzvm_artifacts::verifier_info::{
     VerifierOperand, VerifierOperation, VerifierOperationKind,
 };
 use lzvm_pil::{
-    lex_source, parse_expression, BinaryOperator, ColumnInitializerKind, ColumnItem, ColumnKind,
-    Expression, ExpressionKind, LexError, ParseError, SourceLoaderConfig, SourceProgram,
-    SourceProgramError, SourceProgramLoader, SourceProgramModule, Token, TokenKind, UnaryOperator,
-    ValueDeclarationKind,
+    evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
+    BinaryOperator, ColumnDeclaration, ColumnInitializerKind, ColumnItem, ColumnKind, Expression,
+    ExpressionKind, FixedFileTemplateValue, LexError, ParseError, SourceLoaderConfig,
+    SourceProgram, SourceProgramError, SourceProgramLoader, SourceProgramModule, Token, TokenKind,
+    UnaryOperator, ValueDeclarationKind,
 };
 
 use crate::{publish_staging_bytes, write_staging_bytes, SetupError};
@@ -256,13 +257,6 @@ fn validate_supported_source_program(
             .all(|template| template.statements.is_empty())
         {
             return unsupported("air template statements need constraint lowering support");
-        }
-        if module
-            .columns
-            .iter()
-            .any(|column| column.kind != ColumnKind::Fixed)
-        {
-            return unsupported("non-fixed columns need witness layout support");
         }
         if module
             .columns
@@ -721,8 +715,9 @@ fn source_global_info(
     program: &SourceProgram,
     row_count: u64,
 ) -> Result<GlobalInfo, SourceKeyDirectoryMetadataError> {
-    let (num_proof_values, proof_values_map) = source_proof_values(program)?;
-    let publics_map = source_public_values(program)?;
+    let constant_values = source_scalar_constant_values(program, row_count);
+    let (num_proof_values, proof_values_map) = source_proof_values(program, &constant_values)?;
+    let publics_map = source_public_values(program, &constant_values)?;
     let mut groups = BTreeMap::<usize, (String, BTreeMap<usize, String>)>::new();
     for unit in program
         .air_units()
@@ -790,6 +785,7 @@ fn source_global_info(
 
 fn source_public_values(
     program: &SourceProgram,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<Vec<PublicValue>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut values = Vec::new();
@@ -810,7 +806,7 @@ fn source_public_values(
                 values.push(PublicValue {
                     name: item.name.clone(),
                     stage: 1,
-                    lengths: source_item_lengths(item, "source public value")?
+                    lengths: source_item_lengths(item, "source public value", constant_values)?
                         .into_iter()
                         .map(u64::from)
                         .collect(),
@@ -823,6 +819,7 @@ fn source_public_values(
 
 fn source_proof_values(
     program: &SourceProgram,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<(Vec<u64>, Vec<NamedStageValue>), SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut counts_by_stage = Vec::<u64>::new();
@@ -857,7 +854,7 @@ fn source_proof_values(
                     name: item.name.clone(),
                     stage: u64::from(declaration.stage),
                     id: None,
-                    lengths: source_item_lengths(item, "source proof value")?
+                    lengths: source_item_lengths(item, "source proof value", constant_values)?
                         .into_iter()
                         .map(u64::from)
                         .collect(),
@@ -882,15 +879,20 @@ fn source_unit_setup_info(
     let n_bits_ext = n_bits
         .checked_add(1)
         .ok_or_else(|| unsupported_source_message("source domain is too large"))?;
-    let constant_columns = source_constant_columns(program)?;
-    let public_count = source_public_values(program)?.len();
+    let constant_values = source_scalar_constant_values(program, row_count);
+    let constant_columns = source_constant_columns(program, &constant_values)?;
+    let commitment_columns = source_commitment_columns(program, &constant_values)?;
+    let (n_stages, commitment_widths) = source_commitment_section_widths(&commitment_columns)?;
+    let public_count = source_public_values(program, &constant_values)?.len();
     let const_width = constant_columns
         .iter()
         .try_fold(0_u32, |acc, column| acc.checked_add(column.dimension))
         .ok_or_else(|| unsupported_source_message("source constant width overflow"))?;
+    let mut section_widths = BTreeMap::from([("const".to_owned(), const_width)]);
+    section_widths.extend(commitment_widths);
 
     Ok(UnitSetupInfo {
-        n_stages: 1,
+        n_stages,
         n_constants: u32::try_from(constant_columns.len())
             .map_err(|_| unsupported_source_message("too many source fixed columns"))?,
         constant_columns,
@@ -901,16 +903,12 @@ fn source_unit_setup_info(
         n_constraints: Some(0),
         q_degree: 3,
         opening_points: vec![0],
-        section_widths: BTreeMap::from([
-            ("const".to_owned(), const_width),
-            ("cm1".to_owned(), 1),
-            ("cm2".to_owned(), 1),
-        ]),
+        section_widths,
         challenge_count: 0,
         eval_count: 0,
         evaluation_map: Vec::<EvaluationMapEntry>::new(),
         boundaries: Vec::<Boundary>::new(),
-        commitment_columns: Vec::<CommitmentColumn>::new(),
+        commitment_columns,
         unit_value_map: Vec::<StageValue>::new(),
         group_value_map: Vec::<StageValue>::new(),
         stark: StarkStruct {
@@ -931,6 +929,7 @@ fn source_unit_setup_info(
 
 fn source_constant_columns(
     program: &SourceProgram,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<Vec<ConstantColumn>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut columns = Vec::new();
@@ -948,17 +947,8 @@ fn source_constant_columns(
                 if !seen.insert(item.name.clone()) {
                     continue;
                 }
-                let lengths = source_item_lengths(item, "source fixed-column")?;
-                let dimension = if lengths.is_empty() {
-                    1
-                } else {
-                    lengths
-                        .iter()
-                        .try_fold(1_u32, |acc, length| acc.checked_mul(*length))
-                        .ok_or_else(|| {
-                            unsupported_source_message("source fixed-column dimension overflow")
-                        })?
-                };
+                let lengths = source_item_lengths(item, "source fixed-column", constant_values)?;
+                let dimension = source_column_dimension(&lengths, "source fixed-column")?;
                 let id = u32::try_from(columns.len())
                     .map_err(|_| unsupported_source_message("too many source fixed columns"))?;
                 columns.push(ConstantColumn {
@@ -975,22 +965,216 @@ fn source_constant_columns(
     Ok(columns)
 }
 
+fn source_commitment_columns(
+    program: &SourceProgram,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<Vec<CommitmentColumn>, SourceKeyDirectoryMetadataError> {
+    let mut seen = BTreeSet::new();
+    let mut columns = Vec::new();
+    let mut stages = BTreeMap::<u32, SourceCommitmentStageCursor>::new();
+    for module in &program.modules {
+        for declaration in &module.columns {
+            if matches!(declaration.kind, ColumnKind::Fixed) {
+                continue;
+            }
+            let stage = source_column_stage(declaration, constant_values)?;
+            for item in &declaration.items {
+                if item.template {
+                    return unsupported(
+                        "template commitment-column names need instance lowering support",
+                    );
+                }
+                if !seen.insert(item.name.clone()) {
+                    continue;
+                }
+                let lengths =
+                    source_item_lengths(item, "source commitment-column", constant_values)?;
+                let dimension = source_column_dimension(&lengths, "source commitment-column")?;
+                let cursor = stages.entry(stage).or_default();
+                let stage_id = cursor.next_id;
+                let stage_position = cursor.next_position;
+                cursor.next_id = cursor.next_id.checked_add(1).ok_or_else(|| {
+                    unsupported_source_message("source commitment stage id overflow")
+                })?;
+                cursor.next_position =
+                    cursor.next_position.checked_add(dimension).ok_or_else(|| {
+                        unsupported_source_message("source commitment stage width overflow")
+                    })?;
+                let pols_map_id = u32::try_from(columns.len()).map_err(|_| {
+                    unsupported_source_message("too many source commitment columns")
+                })?;
+                columns.push(CommitmentColumn {
+                    name: item.name.clone(),
+                    stage,
+                    dimension,
+                    pols_map_id,
+                    stage_id,
+                    stage_position,
+                    intermediate: declaration.kind == ColumnKind::Custom,
+                    lengths,
+                });
+            }
+        }
+    }
+    Ok(columns)
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct SourceCommitmentStageCursor {
+    next_id: u32,
+    next_position: u32,
+}
+
+fn source_commitment_section_widths(
+    columns: &[CommitmentColumn],
+) -> Result<(u32, BTreeMap<String, u32>), SourceKeyDirectoryMetadataError> {
+    if columns.is_empty() {
+        return Ok((
+            1,
+            BTreeMap::from([("cm1".to_owned(), 1), ("cm2".to_owned(), 1)]),
+        ));
+    }
+
+    let mut widths = BTreeMap::<u32, u32>::new();
+    for column in columns {
+        let end = column
+            .stage_position
+            .checked_add(column.dimension)
+            .ok_or_else(|| unsupported_source_message("source commitment stage width overflow"))?;
+        widths
+            .entry(column.stage)
+            .and_modify(|width| *width = (*width).max(end))
+            .or_insert(end);
+    }
+    let max_stage = *widths
+        .keys()
+        .next_back()
+        .ok_or_else(|| unsupported_source_message("source commitment stage set is empty"))?;
+    let mut section_widths = BTreeMap::new();
+    for stage in 1..=max_stage {
+        let Some(width) = widths.get(&stage).copied() else {
+            return unsupported("source commitment stages must be contiguous");
+        };
+        section_widths.insert(format!("cm{stage}"), width);
+    }
+    let n_stages = max_stage
+        .checked_sub(1)
+        .ok_or_else(|| unsupported_source_message("source commitment stage underflow"))?;
+    Ok((n_stages, section_widths))
+}
+
+fn source_column_stage(
+    declaration: &ColumnDeclaration,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<u32, SourceKeyDirectoryMetadataError> {
+    let mut stage = None;
+    for feature in &declaration.features {
+        if feature.name != "stage" {
+            continue;
+        }
+        if stage.is_some() {
+            return unsupported("duplicate source column stage feature");
+        }
+        let Some(args) = feature.args_expressions.as_ref() else {
+            return unsupported("source column stage must be static");
+        };
+        let [expression] = args.as_slice() else {
+            return unsupported("source column stage must have one argument");
+        };
+        stage = Some(eval_u32_expression_with_values(
+            expression,
+            constant_values,
+        )?);
+    }
+    let stage = stage.unwrap_or(1);
+    if stage == 0 {
+        return unsupported("source commitment column stage must be positive");
+    }
+    Ok(stage)
+}
+
+fn source_column_dimension(
+    lengths: &[u32],
+    item_role: &str,
+) -> Result<u32, SourceKeyDirectoryMetadataError> {
+    if lengths.is_empty() {
+        return Ok(1);
+    }
+    lengths
+        .iter()
+        .try_fold(1_u32, |acc, length| acc.checked_mul(*length))
+        .ok_or_else(|| unsupported_source_message(format!("{item_role} dimension overflow")))
+}
+
 fn source_item_lengths(
     item: &ColumnItem,
     item_role: &str,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<Vec<u32>, SourceKeyDirectoryMetadataError> {
     let mut lengths = Vec::with_capacity(item.array_dim_expressions.len());
     for expression in &item.array_dim_expressions {
         let Some(expression) = expression else {
             return unsupported(format!("{item_role} array dimensions must be static"));
         };
-        let value = eval_u32_expression(expression)?;
+        let value = eval_u32_expression_with_values(expression, constant_values)?;
         if value == 0 {
             return unsupported(format!("{item_role} array dimensions must be positive"));
         }
         lengths.push(value);
     }
     Ok(lengths)
+}
+
+fn source_scalar_constant_values(
+    program: &SourceProgram,
+    row_count: u64,
+) -> BTreeMap<String, FixedFileTemplateValue> {
+    let mut values = BTreeMap::from([
+        (
+            "BITS".to_owned(),
+            FixedFileTemplateValue::Integer(i128::from(row_count.trailing_zeros())),
+        ),
+        (
+            "N".to_owned(),
+            FixedFileTemplateValue::Integer(i128::from(row_count)),
+        ),
+    ]);
+    let declarations = program
+        .modules
+        .iter()
+        .flat_map(|module| module.constants.iter())
+        .collect::<Vec<_>>();
+    let mut resolved = vec![false; declarations.len()];
+
+    loop {
+        let mut progressed = false;
+        for (index, declaration) in declarations.iter().enumerate() {
+            if resolved[index] {
+                continue;
+            }
+            if !declaration.array_dims.is_empty() || values.contains_key(&declaration.name) {
+                resolved[index] = true;
+                progressed = true;
+                continue;
+            }
+            let Some(expression) = declaration.initializer_expression.as_ref() else {
+                continue;
+            };
+            let Some(value) =
+                evaluate_fixed_file_template_value_expression_with_values(expression, &values)
+            else {
+                continue;
+            };
+            values.insert(declaration.name.clone(), value);
+            resolved[index] = true;
+            progressed = true;
+        }
+        if !progressed {
+            break;
+        }
+    }
+
+    values
 }
 
 fn infer_source_row_count(program: &SourceProgram) -> Result<u64, SourceKeyDirectoryMetadataError> {
@@ -1114,6 +1298,19 @@ fn eval_u32_expression(expression: &Expression) -> Result<u32, SourceKeyDirector
     let value = eval_i128_expression(expression)?;
     u32::try_from(value)
         .map_err(|_| unsupported_source_message("source expression is out of range"))
+}
+
+fn eval_u32_expression_with_values(
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<u32, SourceKeyDirectoryMetadataError> {
+    if let Some(FixedFileTemplateValue::Integer(value)) =
+        evaluate_fixed_file_template_value_expression_with_values(expression, values)
+    {
+        return u32::try_from(value)
+            .map_err(|_| unsupported_source_message("source expression is out of range"));
+    }
+    eval_u32_expression(expression)
 }
 
 fn eval_i128_expression(expression: &Expression) -> Result<i128, SourceKeyDirectoryMetadataError> {
