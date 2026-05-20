@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use lzvm_pil::{
-    evaluate_fixed_file_template_value_expression_with_values, AirInstanceDeclaration,
-    AirTemplateDeclaration, CallArgument, ColumnInitializerKind, ColumnKind,
-    FixedFileTemplateValue, SourceProgram,
+    evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
+    AirInstanceDeclaration, AirTemplateDeclaration, CallArgument, ColumnInitializerKind,
+    ColumnKind, FixedFileTemplateValue, SourceFile, SourceProgram,
 };
 
 use crate::source_key_directory::SourceKeyDirectoryMetadataError;
@@ -15,6 +16,7 @@ pub(crate) fn infer_source_row_counts(
 ) -> Result<SourceUnitRowCounts, SourceKeyDirectoryMetadataError> {
     let mut row_counts = infer_source_row_counts_from_air_units(program)?;
     if row_counts.is_empty() {
+        let constants = source_static_constant_values(program);
         for module in &program.modules {
             for declaration in &module.columns {
                 if declaration.kind != ColumnKind::Fixed {
@@ -33,7 +35,7 @@ pub(crate) fn infer_source_row_counts(
                     .ok_or_else(|| {
                         unsupported_source_message("source fixed-column span is invalid")
                     })?;
-                match count_source_sequence_items(text) {
+                match count_source_sequence_items(text, &constants) {
                     Ok(count) => merge_source_sequence_count(program, &mut row_counts, count)?,
                     Err(_) if !row_counts.is_empty() => {}
                     Err(error) => return Err(error),
@@ -225,7 +227,10 @@ fn validate_source_row_count(value: u64) -> Result<(), SourceKeyDirectoryMetadat
     Ok(())
 }
 
-fn count_source_sequence_items(text: &str) -> Result<u64, SourceKeyDirectoryMetadataError> {
+fn count_source_sequence_items(
+    text: &str,
+    constants: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<u64, SourceKeyDirectoryMetadataError> {
     let text = text.trim();
     if text.ends_with("...") {
         return unsupported("source fixed-column fill sequences need explicit metadata");
@@ -243,7 +248,7 @@ fn count_source_sequence_items(text: &str) -> Result<u64, SourceKeyDirectoryMeta
             continue;
         }
         count = count
-            .checked_add(sequence_item_len(item)?)
+            .checked_add(sequence_item_len(item, constants)?)
             .ok_or_else(|| unsupported_source_message("source sequence length overflow"))?;
     }
     Ok(count)
@@ -287,13 +292,16 @@ fn split_top_level_commas(value: &str) -> Vec<&str> {
     items
 }
 
-fn sequence_item_len(item: &str) -> Result<u64, SourceKeyDirectoryMetadataError> {
+fn sequence_item_len(
+    item: &str,
+    constants: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<u64, SourceKeyDirectoryMetadataError> {
     if let Some(index) = item.find("..") {
         if item[index..].starts_with("...") || item[index + 2..].contains("..") {
             return unsupported("source fixed-column sequence ranges must be finite");
         }
-        let (start, start_repeat) = parse_range_endpoint_count(item[..index].trim())?;
-        let (end, end_repeat) = parse_range_endpoint_count(item[index + 2..].trim())?;
+        let (start, start_repeat) = parse_range_endpoint_count(item[..index].trim(), constants)?;
+        let (end, end_repeat) = parse_range_endpoint_count(item[index + 2..].trim(), constants)?;
         if start_repeat != end_repeat {
             return unsupported("source fixed-column range repeat counts must match");
         }
@@ -310,29 +318,69 @@ fn sequence_item_len(item: &str) -> Result<u64, SourceKeyDirectoryMetadataError>
             .checked_mul(start_repeat)
             .ok_or_else(|| unsupported_source_message("source range length overflow"))
     } else {
-        parse_sequence_repeat_count(item)
+        parse_sequence_repeat_count(item, constants)
     }
 }
 
-fn parse_sequence_repeat_count(value: &str) -> Result<u64, SourceKeyDirectoryMetadataError> {
+fn parse_sequence_repeat_count(
+    value: &str,
+    constants: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<u64, SourceKeyDirectoryMetadataError> {
     let Some((_, repeat)) = value.split_once(':') else {
         return Ok(1);
     };
-    parse_u64_literal(repeat.trim())
+    parse_u64_static_integer(repeat.trim(), constants)
 }
 
-fn parse_range_endpoint_count(value: &str) -> Result<(i128, u64), SourceKeyDirectoryMetadataError> {
+fn parse_range_endpoint_count(
+    value: &str,
+    constants: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<(i128, u64), SourceKeyDirectoryMetadataError> {
     let Some((value, repeat)) = value.split_once(':') else {
-        return Ok((parse_i128_literal(value)?, 1));
+        return Ok((parse_i128_static_integer(value, constants)?, 1));
     };
-    let value = parse_i128_literal(value.trim())?;
-    let repeat = parse_u64_literal(repeat.trim())?;
+    let value = parse_i128_static_integer(value.trim(), constants)?;
+    let repeat = parse_u64_static_integer(repeat.trim(), constants)?;
     Ok((value, repeat))
 }
 
-fn parse_u64_literal(value: &str) -> Result<u64, SourceKeyDirectoryMetadataError> {
-    let value = parse_i128_literal(value)?;
+fn parse_u64_static_integer(
+    value: &str,
+    constants: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<u64, SourceKeyDirectoryMetadataError> {
+    let value = parse_i128_static_integer(value, constants)?;
     u64::try_from(value).map_err(|_| unsupported_source_message("source literal must be unsigned"))
+}
+
+fn parse_i128_static_integer(
+    value: &str,
+    constants: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<i128, SourceKeyDirectoryMetadataError> {
+    if let Ok(value) = parse_i128_literal(value) {
+        return Ok(value);
+    }
+    let source = SourceFile {
+        contents: value.to_owned(),
+        file_dir: PathBuf::new(),
+        full_path: PathBuf::from("<source-row-count>"),
+        source_name: "<source-row-count>".to_owned(),
+    };
+    let token_count = lex_source(value)
+        .map_err(|_| unsupported_source_message("source literal must be an integer"))?
+        .len();
+    let (expression, next_index) = parse_expression(&source, 0, token_count)
+        .map_err(|_| unsupported_source_message("source literal must be an integer"))?;
+    if next_index != token_count {
+        return Err(unsupported_source_message(
+            "source literal must be an integer",
+        ));
+    }
+    match evaluate_fixed_file_template_value_expression_with_values(&expression, constants) {
+        Some(FixedFileTemplateValue::Integer(value)) => Ok(value),
+        _ => Err(unsupported_source_message(
+            "source literal must be an integer",
+        )),
+    }
 }
 
 fn parse_i128_literal(value: &str) -> Result<i128, SourceKeyDirectoryMetadataError> {
