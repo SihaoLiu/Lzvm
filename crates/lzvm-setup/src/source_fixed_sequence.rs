@@ -817,12 +817,10 @@ fn append_sequence_mul_progression(
     };
     if progression_uses_omega(&segment) {
         let factor = field_progression_factor(previous, current, &segment)?;
-        let current = field_progression_value(current, &segment)?.to_u64();
         if progression_index + 1 == end {
             return append_mul_progression_fill_field(values, &segment, current, factor);
         }
         let last = parse_sequence_expression(context, progression_index + 1, end)?;
-        let last = field_progression_value(last, &segment)?.to_u64();
         return append_mul_progression_values_field(values, &segment, current, last, factor);
     }
 
@@ -893,10 +891,10 @@ fn append_mul_progression_fill(
 fn append_mul_progression_fill_field(
     values: &mut Vec<i128>,
     segment: &ProgressionSegment<'_, '_>,
-    current: u64,
+    current: i128,
     factor: Felt,
 ) -> Result<(), SourceFixedColumnsWriteError> {
-    let mut value = Felt::from_u64(current);
+    let mut value = field_progression_value(current, segment)?;
     while values.len() < segment.row_count {
         push_progression_value(values, segment, i128::from(value.to_u64()))?;
         if values.len() < segment.row_count {
@@ -945,12 +943,12 @@ fn append_mul_progression_values(
 fn append_mul_progression_values_field(
     values: &mut Vec<i128>,
     segment: &ProgressionSegment<'_, '_>,
-    current: u64,
-    last: u64,
+    current: i128,
+    last: i128,
     factor: Felt,
 ) -> Result<(), SourceFixedColumnsWriteError> {
-    let mut value = Felt::from_u64(current);
-    let last = Felt::from_u64(last);
+    let mut value = field_progression_value(current, segment)?;
+    let last = field_progression_value(last, segment)?;
     loop {
         push_progression_value(values, segment, i128::from(value.to_u64()))?;
         if value == last {
@@ -1048,9 +1046,10 @@ fn field_progression_value(
     value: i128,
     segment: &ProgressionSegment<'_, '_>,
 ) -> Result<Felt, SourceFixedColumnsWriteError> {
-    u64::try_from(value)
-        .map(Felt::from_u64)
-        .map_err(|_| progression_unsupported(segment))
+    let modulus = i128::from(MODULUS);
+    let canonical = value.rem_euclid(modulus);
+    let canonical = u64::try_from(canonical).map_err(|_| progression_unsupported(segment))?;
+    Ok(Felt::from_u64(canonical))
 }
 
 fn progression_unsupported(segment: &ProgressionSegment<'_, '_>) -> SourceFixedColumnsWriteError {
