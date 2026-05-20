@@ -296,7 +296,7 @@ fn sequence_item_len(
     item: &str,
     constants: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<u64, SourceKeyDirectoryMetadataError> {
-    if let Some(index) = item.find("..") {
+    if let Some(index) = top_level_range_index(item) {
         if item[index..].starts_with("...") || item[index + 2..].contains("..") {
             return unsupported("source fixed-column sequence ranges must be finite");
         }
@@ -317,19 +317,26 @@ fn sequence_item_len(
         range_length
             .checked_mul(start_repeat)
             .ok_or_else(|| unsupported_source_message("source range length overflow"))
+    } else if let Some(index) = top_level_delimiter_index(item, ':') {
+        let value_len = sequence_repeat_value_len(item[..index].trim(), constants)?;
+        let repeat = parse_u64_static_integer(item[index + 1..].trim(), constants)?;
+        value_len
+            .checked_mul(repeat)
+            .ok_or_else(|| unsupported_source_message("source sequence length overflow"))
     } else {
-        parse_sequence_repeat_count(item, constants)
+        Ok(1)
     }
 }
 
-fn parse_sequence_repeat_count(
+fn sequence_repeat_value_len(
     value: &str,
     constants: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<u64, SourceKeyDirectoryMetadataError> {
-    let Some((_, repeat)) = value.split_once(':') else {
-        return Ok(1);
-    };
-    parse_u64_static_integer(repeat.trim(), constants)
+    if value.starts_with('[') && value.ends_with(']') {
+        count_source_sequence_items(value, constants)
+    } else {
+        Ok(1)
+    }
 }
 
 fn parse_range_endpoint_count(
@@ -342,6 +349,50 @@ fn parse_range_endpoint_count(
     let value = parse_i128_static_integer(value.trim(), constants)?;
     let repeat = parse_u64_static_integer(repeat.trim(), constants)?;
     Ok((value, repeat))
+}
+
+fn top_level_range_index(value: &str) -> Option<usize> {
+    let mut cursor = 0;
+    while let Some(index) = top_level_delimiter_index(&value[cursor..], '.') {
+        let index = cursor + index;
+        if value[index..].starts_with("..") {
+            return Some(index);
+        }
+        cursor = index + 1;
+    }
+    None
+}
+
+fn top_level_delimiter_index(value: &str, delimiter: char) -> Option<usize> {
+    let mut depth = 0_i32;
+    let mut quote = None::<char>;
+    let mut escaped = false;
+
+    for (index, character) in value.char_indices() {
+        if let Some(active_quote) = quote {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if character == '\\' {
+                escaped = true;
+                continue;
+            }
+            if character == active_quote {
+                quote = None;
+            }
+            continue;
+        }
+
+        match character {
+            '"' | '\'' | '`' => quote = Some(character),
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth -= 1,
+            _ if character == delimiter && depth == 0 => return Some(index),
+            _ => {}
+        }
+    }
+    None
 }
 
 fn parse_u64_static_integer(
