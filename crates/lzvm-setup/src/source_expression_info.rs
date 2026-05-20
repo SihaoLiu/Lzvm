@@ -4,9 +4,9 @@ use lzvm_artifacts::expression_info::{ConstraintCode, ExpressionInfo, HintInfo};
 use lzvm_artifacts::global_info::{NamedStageValue, PublicValue};
 use lzvm_artifacts::setup_info::UnitSetupInfo;
 use lzvm_pil::{
-    lex_source, BinaryOperator, ColumnKind, Expression, ExpressionKind, FixedFileTemplateValue,
-    FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind, SourceProgram,
-    SourceProgramModule, TokenKind, UnaryOperator,
+    lex_source, BinaryOperator, CallArgument, ColumnKind, Expression, ExpressionKind,
+    FixedFileTemplateValue, FunctionDeclaration, FunctionStatement, FunctionStatementDeclaration,
+    FunctionStatementKind, SourceProgram, SourceProgramModule, TokenKind, UnaryOperator,
 };
 
 use crate::{
@@ -365,6 +365,9 @@ fn lower_source_template_statement(
         }
         Err(error) => return Err(error),
     }
+    if lower_source_template_function_call(context, statement, values, hints, constraints)? {
+        return Ok(());
+    }
     if let Some(hint) =
         lower_unsupported_source_call_statement(context.module, statement).map_err(|source| {
             SourceKeyDirectoryMetadataError::Lex {
@@ -380,6 +383,191 @@ fn lower_source_template_statement(
         "air template statements need constraint lowering support: {}",
         source_statement_line(context.module, statement)
     ))
+}
+
+fn lower_source_template_function_call(
+    context: &SourceTemplateLoweringContext<'_>,
+    statement: &FunctionStatement,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    hints: &mut Vec<HintInfo>,
+    constraints: &mut Vec<ConstraintCode>,
+) -> Result<bool, SourceKeyDirectoryMetadataError> {
+    let Some((name, arguments)) = source_call_expression(statement.value_expression.as_ref())
+    else {
+        return Ok(false);
+    };
+    let Some(function) = context
+        .module
+        .functions
+        .iter()
+        .find(|function| function.name == name)
+    else {
+        return Ok(false);
+    };
+    if function.return_type.is_some() {
+        return Ok(false);
+    }
+    let Some(mut function_values) =
+        source_function_call_values(context.program, function, arguments, values)
+    else {
+        return Ok(false);
+    };
+
+    let mut function_hints = Vec::new();
+    let mut function_constraints = Vec::new();
+    for body_statement in &function.statements {
+        if !lower_source_function_body_statement(
+            context,
+            body_statement,
+            &mut function_values,
+            &mut function_hints,
+            &mut function_constraints,
+        )? {
+            return Ok(false);
+        }
+    }
+
+    hints.extend(function_hints);
+    constraints.extend(function_constraints);
+    Ok(true)
+}
+
+fn source_function_call_values(
+    program: &SourceProgram,
+    function: &FunctionDeclaration,
+    arguments: &[CallArgument],
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<BTreeMap<String, FixedFileTemplateValue>> {
+    let mut function_values = values.clone();
+    for parameter in &function.parameters {
+        if !source_scalar_const_parameter(parameter) {
+            return None;
+        }
+        if let Some(expression) = parameter.default_expression.as_ref() {
+            let value = evaluate_source_static_expression(program, expression, &function_values)?;
+            function_values.insert(parameter.name.clone(), value);
+        }
+    }
+
+    let mut positional_index = 0;
+    for argument in arguments {
+        let value = evaluate_source_static_expression(program, &argument.value, &function_values)?;
+        if let Some(name) = argument.name.as_ref() {
+            let parameter = function
+                .parameters
+                .iter()
+                .find(|parameter| parameter.name == *name)?;
+            if !source_scalar_const_parameter(parameter) {
+                return None;
+            }
+            function_values.insert(name.clone(), value);
+            continue;
+        }
+        let parameter = function.parameters.get(positional_index)?;
+        if !source_scalar_const_parameter(parameter) {
+            return None;
+        }
+        function_values.insert(parameter.name.clone(), value);
+        positional_index += 1;
+    }
+
+    Some(function_values)
+}
+
+fn source_scalar_const_parameter(parameter: &lzvm_pil::FunctionParameter) -> bool {
+    parameter.is_const && !parameter.by_reference && parameter.array_dims.is_empty()
+}
+
+fn source_call_expression(expression: Option<&Expression>) -> Option<(&str, &[CallArgument])> {
+    let ExpressionKind::Call { callee, args } = &expression?.kind else {
+        return None;
+    };
+    let ExpressionKind::Name(name) = &callee.kind else {
+        return None;
+    };
+    Some((name.as_str(), args.as_slice()))
+}
+
+fn source_static_assertion(
+    program: &SourceProgram,
+    expression: Option<&Expression>,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> bool {
+    let Some((name, arguments)) = source_call_expression(expression) else {
+        return false;
+    };
+    if name != "assert" || arguments.len() != 1 || arguments[0].name.is_some() {
+        return false;
+    }
+    evaluate_source_static_expression(program, &arguments[0].value, values)
+        .is_some_and(source_static_value_truthy)
+}
+
+fn source_static_value_truthy(value: FixedFileTemplateValue) -> bool {
+    match value {
+        FixedFileTemplateValue::Integer(value) => value != 0,
+        FixedFileTemplateValue::Boolean(value) => value,
+        FixedFileTemplateValue::String(value) => !value.is_empty(),
+    }
+}
+
+fn lower_source_function_body_statement(
+    context: &SourceTemplateLoweringContext<'_>,
+    statement: &FunctionStatement,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    hints: &mut Vec<HintInfo>,
+    constraints: &mut Vec<ConstraintCode>,
+) -> Result<bool, SourceKeyDirectoryMetadataError> {
+    if statement.kind == FunctionStatementKind::Declaration {
+        return Ok(apply_source_static_declaration(
+            context.program,
+            statement,
+            values,
+        ));
+    }
+    if statement.kind != FunctionStatementKind::Expression {
+        return Ok(false);
+    }
+    if apply_source_static_expression_statement(
+        context.program,
+        statement.value_expression.as_ref(),
+        values,
+    ) || source_static_assertion(context.program, statement.value_expression.as_ref(), values)
+    {
+        return Ok(true);
+    }
+    if let Some(hint) = lower_source_lookup_statement(
+        context.program,
+        context.module,
+        statement,
+        values,
+        context.scalar_slots,
+        context.opening_points,
+    )
+    .map_err(|source| SourceKeyDirectoryMetadataError::Lex {
+        source_name: context.module.source_name.clone(),
+        source,
+    })? {
+        hints.push(hint);
+        return Ok(true);
+    }
+    match lower_source_template_boolean_constraint(
+        context.program,
+        context.module,
+        statement,
+        context.scalar_slots,
+        values,
+        &SourceExpressionAliases::new(),
+    ) {
+        Ok(Some(constraint)) => {
+            constraints.push(constraint);
+            Ok(true)
+        }
+        Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn apply_source_static_declaration(
