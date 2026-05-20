@@ -12,9 +12,9 @@ use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, SetupInfoErro
 use lzvm_field::MODULUS;
 use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
-    ColumnInitializerKind, ColumnKind, ConstantDeclaration, FixedFileTemplateValue, LexError,
-    ParseError, SourceFile, SourceLoaderConfig, SourceProgram, SourceProgramError,
-    SourceProgramLoader, SourceSpan, Token, TokenKind,
+    ColumnInitializer, ColumnInitializerKind, ColumnKind, ConstantDeclaration, ExpressionKind,
+    FixedFileTemplateValue, LexError, ParseError, SourceFile, SourceLoaderConfig, SourceProgram,
+    SourceProgramError, SourceProgramLoader, SourceSpan, Token, TokenKind,
 };
 
 use crate::{publish_staging_bytes, write_staging_bytes, SetupError};
@@ -472,6 +472,7 @@ fn fixed_columns_from_source_program(
         .map(|column| column.name)
         .collect::<BTreeSet<_>>();
     let mut columns = Vec::new();
+    let mut column_values = BTreeMap::new();
     let constant_values = source_fixed_constant_values(program);
 
     for module in &program.modules {
@@ -507,20 +508,16 @@ fn fixed_columns_from_source_program(
                 item,
                 &constant_values,
             )?;
-            if initializer.kind != ColumnInitializerKind::Sequence {
-                return Err(SourceFixedColumnsWriteError::UnsupportedInitializer {
-                    source_name: declaration.source_name.clone(),
-                    column: item.name.clone(),
-                });
-            }
-            let source = &module.source.contents[initializer.span.start..initializer.span.end];
-            let values = parse_literal_sequence(
+            let values = source_fixed_column_values_from_initializer(
                 &declaration.source_name,
-                initializer.span,
-                source,
+                &module.source.contents,
+                &item.name,
+                initializer,
                 row_count_usize,
                 &constant_values,
+                &column_values,
             )?;
+            column_values.insert(item.name.clone(), values.clone());
             columns.push(FixedColumn {
                 name: item.name.clone(),
                 dimensions,
@@ -535,6 +532,79 @@ fn fixed_columns_from_source_program(
         row_count,
         columns,
     })
+}
+
+fn source_fixed_column_values_from_initializer(
+    source_name: &str,
+    source: &str,
+    column_name: &str,
+    initializer: &ColumnInitializer,
+    row_count: usize,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    column_values: &BTreeMap<String, Vec<u64>>,
+) -> Result<Vec<u64>, SourceFixedColumnsWriteError> {
+    match initializer.kind {
+        ColumnInitializerKind::Sequence => {
+            let source = &source[initializer.span.start..initializer.span.end];
+            parse_literal_sequence(
+                source_name,
+                initializer.span,
+                source,
+                row_count,
+                constant_values,
+            )
+        }
+        ColumnInitializerKind::Expression => source_fixed_column_reference_values(
+            source_name,
+            column_name,
+            initializer,
+            column_values,
+        ),
+    }
+}
+
+fn source_fixed_column_reference_values(
+    source_name: &str,
+    column_name: &str,
+    initializer: &ColumnInitializer,
+    column_values: &BTreeMap<String, Vec<u64>>,
+) -> Result<Vec<u64>, SourceFixedColumnsWriteError> {
+    let Some(expression) = initializer.expression.as_ref() else {
+        return Err(SourceFixedColumnsWriteError::UnsupportedInitializer {
+            source_name: source_name.to_owned(),
+            column: column_name.to_owned(),
+        });
+    };
+    let ExpressionKind::Name(reference) = &expression.kind else {
+        return Err(SourceFixedColumnsWriteError::UnsupportedInitializer {
+            source_name: source_name.to_owned(),
+            column: column_name.to_owned(),
+        });
+    };
+
+    for candidate in fixed_column_reference_candidates(column_name, reference) {
+        if let Some(values) = column_values.get(&candidate) {
+            return Ok(values.clone());
+        }
+    }
+
+    Err(SourceFixedColumnsWriteError::UnsupportedInitializer {
+        source_name: source_name.to_owned(),
+        column: column_name.to_owned(),
+    })
+}
+
+fn fixed_column_reference_candidates(column_name: &str, reference: &str) -> Vec<String> {
+    if reference.contains('.') {
+        return vec![reference.to_owned()];
+    }
+
+    let mut candidates = Vec::new();
+    if let Some((scope, _)) = column_name.rsplit_once('.') {
+        candidates.push(format!("{scope}.{reference}"));
+    }
+    candidates.push(reference.to_owned());
+    candidates
 }
 
 fn source_fixed_column_dimensions(
