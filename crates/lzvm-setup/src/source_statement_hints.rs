@@ -4,7 +4,7 @@ use lzvm_artifacts::hint_program::{
     SOURCE_UNSUPPORTED_CALL_HINT, SOURCE_UNSUPPORTED_CONSTRAINT_HINT,
     SOURCE_UNSUPPORTED_STATEMENT_HINT,
 };
-use lzvm_pil::{lex_source, FunctionStatement, LexError, SourceProgramModule, TokenKind};
+use lzvm_pil::{lex_source, FunctionStatement, LexError, SourceProgramModule, Token, TokenKind};
 
 pub(crate) fn source_statement_first_token_kind(
     module: &SourceProgramModule,
@@ -42,12 +42,89 @@ pub(crate) fn lower_source_lookup_statement(
     let Some(name) = source_lookup_hint_name(module, statement)? else {
         return Ok(None);
     };
-    let line = module.source.contents[statement.start..statement.end]
-        .trim()
-        .trim_end_matches(';')
-        .trim()
-        .to_owned();
+    let line = source_statement_line(module, statement);
+    if let Some(hint) = lower_structured_source_lookup_hint(name, &line)? {
+        return Ok(Some(hint));
+    }
+    Ok(Some(source_lookup_line_hint(name, line)))
+}
+
+fn lower_structured_source_lookup_hint(
+    name: &str,
+    line: &str,
+) -> Result<Option<HintInfo>, LexError> {
+    let tokens = lex_source(line)?;
+    let Some(open_index) = tokens
+        .iter()
+        .position(|token| token.kind == TokenKind::LParen)
+    else {
+        return Ok(None);
+    };
+    let Some(close_index) = tokens
+        .iter()
+        .rposition(|token| token.kind == TokenKind::RParen)
+    else {
+        return Ok(None);
+    };
+    let Some(first) = tokens.first() else {
+        return Ok(None);
+    };
+    if first.kind != TokenKind::Identifier || first.lexeme.as_str() != source_lookup_call_name(name)
+    {
+        return Ok(None);
+    }
+
+    let Some(arguments) = top_level_argument_ranges(&tokens, open_index, close_index) else {
+        return Ok(None);
+    };
+    if arguments.len() < 2 {
+        return Ok(None);
+    }
+
+    let first_argument = split_named_argument(&tokens, arguments[0]);
+    if first_argument.name.is_some() {
+        return Ok(None);
+    }
+    let Some(bus_id) = parse_unsigned_argument(&tokens, first_argument.value_range) else {
+        return Ok(None);
+    };
+
+    let second_argument = split_named_argument(&tokens, arguments[1]);
+    if second_argument.name.is_some() {
+        return Ok(None);
+    }
+    let Some(values) = source_lookup_values(line, &tokens, second_argument.value_range) else {
+        return Ok(None);
+    };
+
+    let mut fields = vec![
+        hint_number_field("bus_id", bus_id),
+        hint_string_values_field("values", values),
+    ];
+    for range in arguments.into_iter().skip(2) {
+        let argument = split_named_argument(&tokens, range);
+        let Some(argument_name) = argument.name else {
+            return Ok(None);
+        };
+        let field_name = match argument_name.as_str() {
+            "mul" => "multiplicity",
+            "sel" => "selector",
+            _ => return Ok(None),
+        };
+        let Some(value) = token_range_text(line, &tokens, argument.value_range) else {
+            return Ok(None);
+        };
+        fields.push(hint_string_field(field_name, value));
+    }
+
     Ok(Some(HintInfo {
+        name: name.to_owned(),
+        fields,
+    }))
+}
+
+fn source_lookup_line_hint(name: &str, line: String) -> HintInfo {
+    HintInfo {
         name: name.to_owned(),
         fields: vec![HintFieldInfo {
             name: "line".to_owned(),
@@ -56,7 +133,156 @@ pub(crate) fn lower_source_lookup_statement(
                 payload: HintPayload::string(line),
             }],
         }],
-    }))
+    }
+}
+
+fn source_lookup_call_name(name: &str) -> &'static str {
+    match name {
+        SOURCE_LOOKUP_PROVES_HINT => "lookup_proves",
+        SOURCE_LOOKUP_ASSUMES_HINT => "lookup_assumes",
+        _ => "",
+    }
+}
+
+fn top_level_argument_ranges(
+    tokens: &[Token],
+    open_index: usize,
+    close_index: usize,
+) -> Option<Vec<(usize, usize)>> {
+    if open_index >= close_index {
+        return None;
+    }
+    let mut ranges = Vec::new();
+    let mut start = open_index + 1;
+    let mut depth = 0_i32;
+    for (index, token) in tokens
+        .iter()
+        .enumerate()
+        .take(close_index)
+        .skip(open_index + 1)
+    {
+        match token.kind {
+            TokenKind::LParen | TokenKind::LBracket => depth += 1,
+            TokenKind::RParen | TokenKind::RBracket => depth -= 1,
+            TokenKind::Comma if depth == 0 => {
+                if start == index {
+                    return None;
+                }
+                ranges.push((start, index));
+                start = index + 1;
+            }
+            _ => {}
+        }
+        if depth < 0 {
+            return None;
+        }
+    }
+    if depth != 0 {
+        return None;
+    }
+    if start < close_index {
+        ranges.push((start, close_index));
+    }
+    Some(ranges)
+}
+
+struct SourceLookupArgument {
+    name: Option<String>,
+    value_range: (usize, usize),
+}
+
+fn split_named_argument(tokens: &[Token], range: (usize, usize)) -> SourceLookupArgument {
+    if range.0 + 2 <= range.1
+        && tokens[range.0].kind == TokenKind::Identifier
+        && tokens[range.0 + 1].kind == TokenKind::Colon
+    {
+        return SourceLookupArgument {
+            name: Some(tokens[range.0].lexeme.clone()),
+            value_range: (range.0 + 2, range.1),
+        };
+    }
+    SourceLookupArgument {
+        name: None,
+        value_range: range,
+    }
+}
+
+fn parse_unsigned_argument(tokens: &[Token], range: (usize, usize)) -> Option<u64> {
+    if range.0 + 1 != range.1 {
+        return None;
+    }
+    let token = &tokens[range.0];
+    match token.kind {
+        TokenKind::Integer => token.lexeme.replace('_', "").parse::<u64>().ok(),
+        TokenKind::HexInteger => u64::from_str_radix(
+            token
+                .lexeme
+                .trim_start_matches("0x")
+                .trim_start_matches("0X")
+                .replace('_', "")
+                .as_str(),
+            16,
+        )
+        .ok(),
+        _ => None,
+    }
+}
+
+fn source_lookup_values(
+    line: &str,
+    tokens: &[Token],
+    range: (usize, usize),
+) -> Option<Vec<String>> {
+    if range.0 >= range.1 {
+        return None;
+    }
+    if tokens[range.0].kind == TokenKind::LBracket
+        && range.0 + 1 < range.1
+        && tokens[range.1 - 1].kind == TokenKind::RBracket
+    {
+        let ranges = top_level_argument_ranges(tokens, range.0, range.1 - 1)?;
+        return ranges
+            .into_iter()
+            .map(|value_range| token_range_text(line, tokens, value_range))
+            .collect();
+    }
+    Some(vec![token_range_text(line, tokens, range)?])
+}
+
+fn token_range_text(line: &str, tokens: &[Token], range: (usize, usize)) -> Option<String> {
+    if range.0 >= range.1 || range.1 > tokens.len() {
+        return None;
+    }
+    let start = tokens[range.0].start;
+    let end = tokens[range.1 - 1].end;
+    Some(line.get(start..end)?.trim().to_owned())
+}
+
+fn hint_number_field(name: &str, value: u64) -> HintFieldInfo {
+    HintFieldInfo {
+        name: name.to_owned(),
+        values: vec![HintValueInfo {
+            positions: Vec::new(),
+            payload: HintPayload::number(value),
+        }],
+    }
+}
+
+fn hint_string_field(name: &str, value: String) -> HintFieldInfo {
+    hint_string_values_field(name, vec![value])
+}
+
+fn hint_string_values_field(name: &str, values: Vec<String>) -> HintFieldInfo {
+    HintFieldInfo {
+        name: name.to_owned(),
+        values: values
+            .into_iter()
+            .map(|value| HintValueInfo {
+                positions: Vec::new(),
+                payload: HintPayload::string(value),
+            })
+            .collect(),
+    }
 }
 
 pub(crate) fn lower_unsupported_source_call_statement(

@@ -2,7 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::expression_info::read_expression_info_binary_file;
-use lzvm_artifacts::hint_program::{SOURCE_LOOKUP_ASSUMES_HINT, SOURCE_LOOKUP_PROVES_HINT};
+use lzvm_artifacts::hint_program::{
+    HintOperand, SOURCE_LOOKUP_ASSUMES_HINT, SOURCE_LOOKUP_PROVES_HINT,
+};
 use lzvm_artifacts::key_directory::read_key_directory_layout;
 use lzvm_artifacts::regular_program::read_regular_program_file;
 use lzvm_cli::run_cli;
@@ -21,7 +23,7 @@ fn write_file(path: &Path, contents: impl AsRef<[u8]>) {
 }
 
 #[test]
-fn generate_key_records_source_lookup_calls_as_regular_hints() {
+fn generate_key_records_source_lookup_calls_as_structured_regular_hints() {
     let dir = temp_dir("source-lookup-hints");
     let _ = fs::remove_dir_all(&dir);
     let source_path = dir.join("source").join("main.pil");
@@ -61,11 +63,15 @@ fn generate_key_records_source_lookup_calls_as_regular_hints() {
         .expect("expression metadata should parse");
     assert_eq!(expressions.hints.len(), 2);
     assert_eq!(expressions.hints[0].name, SOURCE_LOOKUP_PROVES_HINT);
-    assert_eq!(expressions.hints[0].fields.len(), 1);
-    assert_eq!(expressions.hints[0].fields[0].name, "line");
+    assert_eq!(expressions.hints[0].fields.len(), 3);
+    assert_eq!(expressions.hints[0].fields[0].name, "bus_id");
+    assert_eq!(expressions.hints[0].fields[1].name, "values");
+    assert_eq!(expressions.hints[0].fields[2].name, "multiplicity");
     assert_eq!(expressions.hints[1].name, SOURCE_LOOKUP_ASSUMES_HINT);
-    assert_eq!(expressions.hints[1].fields.len(), 1);
-    assert_eq!(expressions.hints[1].fields[0].name, "line");
+    assert_eq!(expressions.hints[1].fields.len(), 3);
+    assert_eq!(expressions.hints[1].fields[0].name, "bus_id");
+    assert_eq!(expressions.hints[1].fields[1].name, "values");
+    assert_eq!(expressions.hints[1].fields[2].name, "selector");
     let regular = read_regular_program_file(
         unit.expression_program()
             .expect("regular program path should derive"),
@@ -73,7 +79,31 @@ fn generate_key_records_source_lookup_calls_as_regular_hints() {
     .expect("regular program should parse");
     assert_eq!(regular.hints.hints.len(), 2);
     assert_eq!(regular.hints.hints[0].name, SOURCE_LOOKUP_PROVES_HINT);
+    assert_eq!(
+        regular.hints.hints[0].fields[0].values[0].operand,
+        HintOperand::Number(7)
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[0].operand,
+        HintOperand::String("value".to_owned())
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[2].values[0].operand,
+        HintOperand::String("multiplicity".to_owned())
+    );
     assert_eq!(regular.hints.hints[1].name, SOURCE_LOOKUP_ASSUMES_HINT);
+    assert_eq!(
+        regular.hints.hints[1].fields[0].values[0].operand,
+        HintOperand::Number(9)
+    );
+    assert_eq!(
+        regular.hints.hints[1].fields[1].values[0].operand,
+        HintOperand::String("value".to_owned())
+    );
+    assert_eq!(
+        regular.hints.hints[1].fields[2].values[0].operand,
+        HintOperand::String("multiplicity".to_owned())
+    );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
     assert!(String::from_utf8(stdout)
         .expect("stdout should be utf-8")
