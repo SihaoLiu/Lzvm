@@ -37,7 +37,7 @@ pub(crate) fn lower_source_template_boolean_constraint(
     if !matches!(result, CodeOperand::Temporary { .. }) {
         return Ok(None);
     }
-    let (boundary, offset_min, offset_max) = frame_offsets.boundary();
+    let (boundary, offset_min, offset_max) = frame_offsets.boundary()?;
     Ok(Some(ConstraintCode {
         stage: 1,
         boundary,
@@ -129,9 +129,6 @@ fn lower_source_scalar_expression(
             prior,
         } => {
             let signed_offset = source_row_offset_value(offset, *prior)?;
-            if signed_offset < 0 {
-                return unsupported("source prior-row constraints need boundary lowering support");
-            }
             let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
                 return unsupported("source row offsets require named scalar values");
             };
@@ -195,11 +192,25 @@ impl SourceConstraintFrameOffsets {
         self.max = self.max.max(offset);
     }
 
-    fn boundary(&self) -> (BoundaryKind, Option<i64>, Option<i64>) {
+    fn boundary(
+        &self,
+    ) -> Result<(BoundaryKind, Option<i64>, Option<i64>), SourceKeyDirectoryMetadataError> {
         if self.min == 0 && self.max == 0 {
-            (BoundaryKind::EveryRow, None, None)
+            Ok((BoundaryKind::EveryRow, None, None))
         } else {
-            (BoundaryKind::EveryFrame, Some(self.min), Some(self.max))
+            let leading_rows = if self.min < 0 {
+                self.min
+                    .checked_neg()
+                    .ok_or_else(|| unsupported_source_message("source row offset overflow"))?
+            } else {
+                0
+            };
+            let trailing_rows = self.max.max(0);
+            Ok((
+                BoundaryKind::EveryFrame,
+                Some(leading_rows),
+                Some(trailing_rows),
+            ))
         }
     }
 }

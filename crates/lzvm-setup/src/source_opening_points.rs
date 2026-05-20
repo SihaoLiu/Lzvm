@@ -75,17 +75,9 @@ fn collect_source_opening_points(
         } => {
             collect_source_opening_points(target, constant_values, points)?;
             collect_source_opening_points(offset, constant_values, points)?;
-            if *prior {
-                return Ok(());
-            }
-            let offset = eval_i128_expression_with_values(offset, constant_values)?;
-            if offset < 0 {
-                return Ok(());
-            }
-            let offset = i64::try_from(offset)
-                .map_err(|_| unsupported_source_message("source row offset overflow"))?;
-            if !points.contains(&offset) {
-                points.push(offset);
+            let signed_offset = source_row_offset_value(offset, *prior, constant_values)?;
+            if !points.contains(&signed_offset) {
+                points.push(signed_offset);
             }
             Ok(())
         }
@@ -96,6 +88,22 @@ fn collect_source_opening_points(
         | ExpressionKind::Name(_)
         | ExpressionKind::PositionalParam(_) => Ok(()),
     }
+}
+
+fn source_row_offset_value(
+    expression: &Expression,
+    prior: bool,
+    values: &std::collections::BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<i64, SourceKeyDirectoryMetadataError> {
+    let offset = eval_i128_expression_with_values(expression, values)?;
+    let signed = if prior {
+        offset
+            .checked_neg()
+            .ok_or_else(|| unsupported_source_message("source row offset overflow"))?
+    } else {
+        offset
+    };
+    i64::try_from(signed).map_err(|_| unsupported_source_message("source row offset overflow"))
 }
 
 fn eval_i128_expression_with_values(
