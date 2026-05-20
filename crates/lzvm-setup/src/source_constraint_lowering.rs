@@ -151,13 +151,11 @@ fn lower_source_scalar_expression(
             prior,
         } => {
             let signed_offset = source_row_offset_value(offset, *prior, state.constant_values)?;
-            let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
-                return unsupported("source row offsets require named scalar values");
-            };
+            let name = source_row_offset_target_name(target, state)?;
             state.frame_offsets.include(signed_offset);
             state
                 .scalar_slots
-                .operand_at(name, signed_offset)
+                .operand_at(&name, signed_offset)
                 .map_err(|error| unsupported_source_message(error.to_string()))
         }
         ExpressionKind::Binary { op, left, right } => {
@@ -181,6 +179,26 @@ fn lower_source_scalar_expression(
             Ok(CodeOperand::temporary(id, 1))
         }
         _ => unsupported("unsupported source scalar constraint expression"),
+    }
+}
+
+fn source_row_offset_target_name(
+    expression: &Expression,
+    state: &mut SourceConstraintLoweringState<'_>,
+) -> Result<String, SourceKeyDirectoryMetadataError> {
+    match &strip_group_expression(expression).kind {
+        ExpressionKind::Name(name) => {
+            let Some(alias) = state.expression_aliases.get(name).cloned() else {
+                return Ok(name.clone());
+            };
+            if !state.resolving_aliases.insert(name.clone()) {
+                return unsupported("source scalar constraint expression alias cycle");
+            }
+            let target = source_row_offset_target_name(&alias, state);
+            state.resolving_aliases.remove(name);
+            target
+        }
+        _ => unsupported("source row offsets require named scalar values"),
     }
 }
 
