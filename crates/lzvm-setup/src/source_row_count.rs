@@ -292,20 +292,40 @@ fn sequence_item_len(item: &str) -> Result<u64, SourceKeyDirectoryMetadataError>
         if item[index..].starts_with("...") || item[index + 2..].contains("..") {
             return unsupported("source fixed-column sequence ranges must be finite");
         }
-        let start = parse_i128_literal(item[..index].trim())?;
-        let end = parse_i128_literal(item[index + 2..].trim())?;
-        let length = if start <= end {
+        let (start, start_repeat) = parse_range_endpoint_count(item[..index].trim())?;
+        let (end, end_repeat) = parse_range_endpoint_count(item[index + 2..].trim())?;
+        if start_repeat != end_repeat {
+            return unsupported("source fixed-column range repeat counts must match");
+        }
+        let range_length = if start <= end {
             end.checked_sub(start)
         } else {
             start.checked_sub(end)
         }
         .and_then(|value| value.checked_add(1))
         .ok_or_else(|| unsupported_source_message("source range length overflow"))?;
-        u64::try_from(length)
-            .map_err(|_| unsupported_source_message("source range length overflow"))
+        let range_length = u64::try_from(range_length)
+            .map_err(|_| unsupported_source_message("source range length overflow"))?;
+        range_length
+            .checked_mul(start_repeat)
+            .ok_or_else(|| unsupported_source_message("source range length overflow"))
     } else {
         Ok(1)
     }
+}
+
+fn parse_range_endpoint_count(value: &str) -> Result<(i128, u64), SourceKeyDirectoryMetadataError> {
+    let Some((value, repeat)) = value.split_once(':') else {
+        return Ok((parse_i128_literal(value)?, 1));
+    };
+    let value = parse_i128_literal(value.trim())?;
+    let repeat = parse_u64_literal(repeat.trim())?;
+    Ok((value, repeat))
+}
+
+fn parse_u64_literal(value: &str) -> Result<u64, SourceKeyDirectoryMetadataError> {
+    let value = parse_i128_literal(value)?;
+    u64::try_from(value).map_err(|_| unsupported_source_message("source literal must be unsigned"))
 }
 
 fn parse_i128_literal(value: &str) -> Result<i128, SourceKeyDirectoryMetadataError> {
