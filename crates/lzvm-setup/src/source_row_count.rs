@@ -257,16 +257,46 @@ fn count_source_sequence_items_with_last(
         })?;
     let mut count = 0_u64;
     let mut previous_value = None;
+    let mut value_before_previous = None;
+    let mut pending_comma_progression = None::<SequenceProgressionKind>;
     for item in split_top_level_commas(inner) {
         let item = item.trim();
         if item.is_empty() {
             continue;
         }
-        let item_count = sequence_item_count(item, constants, previous_value)?;
+        if let Some(kind) = comma_progression_marker(item) {
+            if pending_comma_progression.is_some() {
+                return unsupported("source fixed-column progression needs explicit metadata");
+            }
+            if value_before_previous.is_none() || previous_value.is_none() {
+                return unsupported("source fixed-column progression needs explicit metadata");
+            }
+            pending_comma_progression = Some(kind);
+            continue;
+        }
+        let item_count = if let Some(kind) = pending_comma_progression.take() {
+            sequence_comma_progression_count(
+                item,
+                kind,
+                constants,
+                value_before_previous,
+                previous_value,
+            )?
+        } else {
+            sequence_item_count(item, constants, previous_value)?
+        };
         count = count
             .checked_add(item_count.len)
             .ok_or_else(|| unsupported_source_message("source sequence length overflow"))?;
+        value_before_previous = if item_count.len == 1 {
+            previous_value
+        } else {
+            None
+        };
         previous_value = item_count.last_value;
+    }
+    if pending_comma_progression.is_some() {
+        return unsupported("source fixed-column progression needs explicit metadata");
     }
     Ok(SequenceItemCount {
         len: count,
@@ -417,6 +447,45 @@ fn sequence_progression_count(
     };
     Ok(SequenceItemCount {
         len,
+        last_value: Some(last),
+    })
+}
+
+fn comma_progression_marker(item: &str) -> Option<SequenceProgressionKind> {
+    match item {
+        "..+.." => Some(SequenceProgressionKind::Add),
+        "..*.." => Some(SequenceProgressionKind::Mul),
+        _ => None,
+    }
+}
+
+fn sequence_comma_progression_count(
+    last: &str,
+    kind: SequenceProgressionKind,
+    constants: &BTreeMap<String, FixedFileTemplateValue>,
+    previous_value: Option<i128>,
+    current_value: Option<i128>,
+) -> Result<SequenceItemCount, SourceKeyDirectoryMetadataError> {
+    let previous = previous_value.ok_or_else(|| {
+        unsupported_source_message("source fixed-column progression needs explicit metadata")
+    })?;
+    let current = current_value.ok_or_else(|| {
+        unsupported_source_message("source fixed-column progression needs explicit metadata")
+    })?;
+    let last = parse_i128_static_integer(last, constants)?;
+    let inclusive_len = match kind {
+        SequenceProgressionKind::Add => {
+            let step = current
+                .checked_sub(previous)
+                .ok_or_else(|| unsupported_source_message("source progression length overflow"))?;
+            sequence_add_progression_len(current, last, step)?
+        }
+        SequenceProgressionKind::Mul => {
+            sequence_mul_or_div_progression_len(previous, current, last)?
+        }
+    };
+    Ok(SequenceItemCount {
+        len: inclusive_len.saturating_sub(1),
         last_value: Some(last),
     })
 }
