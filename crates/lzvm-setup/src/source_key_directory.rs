@@ -270,13 +270,13 @@ fn validate_supported_source_program(
         if module
             .values
             .iter()
-            .any(|value| value.kind != ValueDeclarationKind::ProofValue)
+            .any(|value| value.kind == ValueDeclarationKind::AirValue)
             || !module.commits.is_empty()
             || !module.public_tables.is_empty()
             || !module.air_group_values.is_empty()
         {
             return unsupported(
-                "public tables, commits, and non-proof value maps need metadata lowering support",
+                "air values, public tables, and commits need metadata lowering support",
             );
         }
     }
@@ -716,6 +716,7 @@ fn source_global_info(
     row_count: u64,
 ) -> Result<GlobalInfo, SourceKeyDirectoryMetadataError> {
     let constant_values = source_scalar_constant_values(program, row_count);
+    let num_challenges = source_challenge_counts(program, &constant_values)?;
     let (num_proof_values, proof_values_map) = source_proof_values(program, &constant_values)?;
     let publics_map = source_public_values(program, &constant_values)?;
     let mut groups = BTreeMap::<usize, (String, BTreeMap<usize, String>)>::new();
@@ -775,7 +776,7 @@ fn source_global_info(
         aggregation_types,
         n_publics: u64::try_from(publics_map.len())
             .map_err(|_| unsupported_source_message("too many source public values"))?,
-        num_challenges: Vec::new(),
+        num_challenges,
         num_proof_values,
         proof_values_map,
         publics_map,
@@ -865,6 +866,43 @@ fn source_proof_values(
     Ok((counts_by_stage, values))
 }
 
+fn source_challenge_counts(
+    program: &SourceProgram,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<Vec<u64>, SourceKeyDirectoryMetadataError> {
+    let mut seen = BTreeSet::new();
+    let mut counts_by_stage = Vec::<u64>::new();
+    for module in &program.modules {
+        for declaration in &module.values {
+            if declaration.kind != ValueDeclarationKind::Challenge {
+                continue;
+            }
+            let stage = usize::try_from(declaration.stage)
+                .map_err(|_| unsupported_source_message("source challenge stage overflow"))?;
+            if stage == 0 {
+                return unsupported("source challenge stage must be positive");
+            }
+            if counts_by_stage.len() < stage {
+                counts_by_stage.resize(stage, 0);
+            }
+            for item in &declaration.items {
+                if item.template {
+                    return unsupported("template challenge names need instance lowering support");
+                }
+                if !seen.insert(item.name.clone()) {
+                    return unsupported("duplicate source challenge name");
+                }
+                let lengths = source_item_lengths(item, "source challenge", constant_values)?;
+                let dimension = source_column_dimension(&lengths, "source challenge")?;
+                counts_by_stage[stage - 1] = counts_by_stage[stage - 1]
+                    .checked_add(u64::from(dimension))
+                    .ok_or_else(|| unsupported_source_message("source challenge count overflow"))?;
+            }
+        }
+    }
+    Ok(counts_by_stage)
+}
+
 fn unsupported_source_message(message: impl Into<String>) -> SourceKeyDirectoryMetadataError {
     SourceKeyDirectoryMetadataError::UnsupportedSourceProgram {
         message: message.into(),
@@ -883,6 +921,14 @@ fn source_unit_setup_info(
     let constant_columns = source_constant_columns(program, &constant_values)?;
     let commitment_columns = source_commitment_columns(program, &constant_values)?;
     let (n_stages, commitment_widths) = source_commitment_section_widths(&commitment_columns)?;
+    let challenge_count = source_challenge_counts(program, &constant_values)?
+        .into_iter()
+        .try_fold(0_usize, |acc, count| {
+            usize::try_from(count)
+                .ok()
+                .and_then(|count| acc.checked_add(count))
+        })
+        .ok_or_else(|| unsupported_source_message("source challenge count overflow"))?;
     let public_count = source_public_values(program, &constant_values)?.len();
     let const_width = constant_columns
         .iter()
@@ -904,7 +950,7 @@ fn source_unit_setup_info(
         q_degree: 3,
         opening_points: vec![0],
         section_widths,
-        challenge_count: 0,
+        challenge_count,
         eval_count: 0,
         evaluation_map: Vec::<EvaluationMapEntry>::new(),
         boundaries: Vec::<Boundary>::new(),
