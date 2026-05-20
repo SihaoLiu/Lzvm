@@ -168,6 +168,9 @@ fn lower_source_scalar_expression_at(
             if *op == BinaryOperator::Divide {
                 return lower_source_static_divisor_expression(left, right, state, row_offset);
             }
+            if *op == BinaryOperator::Power {
+                return lower_source_static_exponent_expression(left, right, state, row_offset);
+            }
             let op = match op {
                 BinaryOperator::Add => OperationKind::Add,
                 BinaryOperator::Subtract => OperationKind::Sub,
@@ -214,6 +217,55 @@ fn lower_source_static_divisor_expression(
         op: OperationKind::Mul,
         destination: CodeDestination::temporary(id, 1),
         sources: vec![left, CodeOperand::number(inverse.to_u64(), 1)],
+    });
+    Ok(CodeOperand::temporary(id, 1))
+}
+
+fn lower_source_static_exponent_expression(
+    left: &Expression,
+    right: &Expression,
+    state: &mut SourceConstraintLoweringState<'_>,
+    row_offset: i64,
+) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
+    let Some(exponent) = static_scalar_integer(right, state.constant_values)? else {
+        return unsupported("unsupported source scalar constraint expression");
+    };
+    let mut exponent = u64::try_from(exponent)
+        .map_err(|_| unsupported_source_message("source scalar constraint exponent overflow"))?;
+    if exponent == 0 {
+        return Ok(CodeOperand::number(1, 1));
+    }
+    let mut power = lower_source_scalar_expression_at(left, state, row_offset)?;
+    let mut result = None;
+    while exponent > 0 {
+        if exponent & 1 == 1 {
+            result = Some(match result {
+                Some(value) => push_source_mul_operation(state, value, power.clone())?,
+                None => power.clone(),
+            });
+        }
+        exponent >>= 1;
+        if exponent > 0 {
+            power = push_source_mul_operation(state, power.clone(), power)?;
+        }
+    }
+    Ok(result.expect("nonzero exponent should produce a result"))
+}
+
+fn push_source_mul_operation(
+    state: &mut SourceConstraintLoweringState<'_>,
+    left: CodeOperand,
+    right: CodeOperand,
+) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
+    let id = state.next_temporary;
+    state.next_temporary = state
+        .next_temporary
+        .checked_add(1)
+        .ok_or_else(|| unsupported_source_message("source scalar constraint temporary overflow"))?;
+    state.operations.push(CodeOperation {
+        op: OperationKind::Mul,
+        destination: CodeDestination::temporary(id, 1),
+        sources: vec![left, right],
     });
     Ok(CodeOperand::temporary(id, 1))
 }
