@@ -261,15 +261,6 @@ fn validate_supported_source_program(
     program: &SourceProgram,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     for module in &program.modules {
-        if module
-            .columns
-            .iter()
-            .any(|column| column.kind == ColumnKind::Fixed && column.initializer.is_none())
-        {
-            return unsupported(
-                "fixed columns without source initializers need external fixed input support",
-            );
-        }
         if !module.commits.is_empty() || !module.public_tables.is_empty() {
             return unsupported("public tables and commits need metadata lowering support");
         }
@@ -282,6 +273,7 @@ fn source_expression_info(
     setup: &UnitSetupInfo,
 ) -> Result<ExpressionInfo, SourceKeyDirectoryMetadataError> {
     let commitment_slots = source_commitment_slots(setup)?;
+    let fixed_assignment_columns = source_fixed_assignment_column_names(program);
     let mut constraints = Vec::new();
     for module in &program.modules {
         for template in &module.air_templates {
@@ -290,6 +282,7 @@ fn source_expression_info(
                     module,
                     statement,
                     &commitment_slots,
+                    &fixed_assignment_columns,
                     &mut constraints,
                 )?;
             }
@@ -326,10 +319,23 @@ fn source_commitment_slots(
     Ok(slots)
 }
 
+fn source_fixed_assignment_column_names(program: &SourceProgram) -> BTreeSet<String> {
+    program
+        .modules
+        .iter()
+        .flat_map(|module| module.columns.iter())
+        .filter(|declaration| {
+            declaration.kind == ColumnKind::Fixed && declaration.initializer.is_none()
+        })
+        .flat_map(|declaration| declaration.items.iter().map(|item| item.name.clone()))
+        .collect()
+}
+
 fn lower_source_template_statement(
     module: &SourceProgramModule,
     statement: &FunctionStatement,
     commitment_slots: &BTreeMap<String, SourceCommitmentSlot>,
+    fixed_columns: &BTreeSet<String>,
     constraints: &mut Vec<ConstraintCode>,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
@@ -344,6 +350,9 @@ fn lower_source_template_statement(
     {
         return Ok(());
     }
+    if source_expression_assigns_fixed_index(statement.value_expression.as_ref(), fixed_columns) {
+        return Ok(());
+    }
     if let Some(constraint) =
         lower_source_template_boolean_constraint(module, statement, commitment_slots)?
     {
@@ -351,6 +360,32 @@ fn lower_source_template_statement(
         return Ok(());
     }
     unsupported("air template statements need constraint lowering support")
+}
+
+fn source_expression_assigns_fixed_index(
+    expression: Option<&Expression>,
+    fixed_columns: &BTreeSet<String>,
+) -> bool {
+    let Some(expression) = expression else {
+        return false;
+    };
+    let ExpressionKind::Binary { op, left, .. } = &strip_group_expression(expression).kind else {
+        return false;
+    };
+    if *op != BinaryOperator::Assign {
+        return false;
+    }
+    source_fixed_index_assignment_name(left).is_some_and(|name| fixed_columns.contains(name))
+}
+
+fn source_fixed_index_assignment_name(expression: &Expression) -> Option<&str> {
+    let ExpressionKind::Index { target, .. } = &strip_group_expression(expression).kind else {
+        return None;
+    };
+    let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
+        return None;
+    };
+    Some(name)
 }
 
 fn source_statement_first_token_kind(

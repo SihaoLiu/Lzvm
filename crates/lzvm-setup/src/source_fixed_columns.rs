@@ -11,16 +11,18 @@ use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyDirectoryError
 use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, SetupInfoError, UnitSetupInfo};
 use lzvm_field::Felt;
 use lzvm_pil::{
-    evaluate_fixed_file_template_value_expression_with_values, ColumnInitializer,
-    ColumnInitializerKind, ColumnItem, ColumnKind, ConstantDeclaration, FixedFileTemplateValue,
-    LexError, ParseError, SourceLoaderConfig, SourceProgram, SourceProgramError,
-    SourceProgramLoader, SourceSpan,
+    evaluate_fixed_file_template_value_expression_with_values, BinaryOperator, ColumnInitializer,
+    ColumnInitializerKind, ColumnItem, ColumnKind, ConstantDeclaration, Expression, ExpressionKind,
+    FixedFileTemplateValue, FunctionStatement, FunctionStatementKind, LexError, ParseError,
+    SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader, SourceSpan,
 };
 
 use crate::{
     publish_staging_bytes,
-    source_fixed_expression::source_fixed_column_expression_values,
     source_fixed_expression::SourceFixedConstantValues,
+    source_fixed_expression::{
+        evaluate_source_fixed_template_value_expression, source_fixed_column_expression_values,
+    },
     source_fixed_sequence::{
         canonical_fixed_value, parse_literal_sequence, parse_literal_sequence_values,
     },
@@ -61,6 +63,15 @@ pub struct SourceFixedColumnsDirectoryWriteReport {
     pub setup_dir: PathBuf,
     pub unit_count: usize,
     pub bytes_written: u64,
+}
+
+#[derive(Debug, Clone)]
+struct SourceFixedColumnDeclaration {
+    source_name: String,
+    source: String,
+    item: ColumnItem,
+    initializer: Option<ColumnInitializer>,
+    dimensions: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -479,9 +490,14 @@ fn fixed_columns_from_source_program(
         .into_iter()
         .map(|column| column.name)
         .collect::<BTreeSet<_>>();
-    let mut declarations = Vec::<(String, ColumnItem, ColumnInitializer, Vec<u32>, String)>::new();
-    let mut column_values = BTreeMap::new();
+    let mut declarations = Vec::<SourceFixedColumnDeclaration>::new();
     let constant_values = source_fixed_constant_values(program, setup, row_count)?;
+    let mut column_values = source_fixed_values_from_template_assignments(
+        program,
+        &expected_columns,
+        row_count_usize,
+        &constant_values,
+    )?;
 
     for module in &program.modules {
         for declaration in &module.columns {
@@ -495,9 +511,6 @@ fn fixed_columns_from_source_program(
             {
                 continue;
             }
-            let Some(initializer) = declaration.initializer.as_ref() else {
-                continue;
-            };
             let Some(item) = declaration.items.first() else {
                 continue;
             };
@@ -516,37 +529,40 @@ fn fixed_columns_from_source_program(
                 item,
                 &constant_values,
             )?;
-            declarations.push((
-                declaration.source_name.clone(),
-                item.clone(),
-                initializer.clone(),
+            declarations.push(SourceFixedColumnDeclaration {
+                source_name: declaration.source_name.clone(),
+                source: module.source.contents.clone(),
+                item: item.clone(),
+                initializer: declaration.initializer.clone(),
                 dimensions,
-                module.source.contents.clone(),
-            ));
+            });
         }
     }
 
     let mut resolved_values = vec![None::<Vec<u64>>; declarations.len()];
     loop {
         let mut progressed = false;
-        for (index, (source_name, item, initializer, _, source)) in declarations.iter().enumerate()
-        {
+        for (index, declaration) in declarations.iter().enumerate() {
             if resolved_values[index].is_some() {
                 continue;
             }
-            let Some(values) = source_fixed_column_values_from_initializer(
-                source_name,
-                source,
-                &item.name,
-                initializer,
-                row_count_usize,
-                &constant_values,
-                &column_values,
-            )?
-            else {
+            let values = if let Some(initializer) = declaration.initializer.as_ref() {
+                source_fixed_column_values_from_initializer(
+                    &declaration.source_name,
+                    &declaration.source,
+                    &declaration.item.name,
+                    initializer,
+                    row_count_usize,
+                    &constant_values,
+                    &column_values,
+                )?
+            } else {
+                column_values.get(&declaration.item.name).cloned()
+            };
+            let Some(values) = values else {
                 continue;
             };
-            column_values.insert(item.name.clone(), values.clone());
+            column_values.insert(declaration.item.name.clone(), values.clone());
             resolved_values[index] = Some(values);
             progressed = true;
         }
@@ -555,23 +571,23 @@ fn fixed_columns_from_source_program(
         }
     }
 
-    for ((source_name, item, _, _, _), values) in declarations.iter().zip(&resolved_values) {
+    for (declaration, values) in declarations.iter().zip(&resolved_values) {
         if values.is_none() {
             return Err(SourceFixedColumnsWriteError::UnsupportedInitializer {
-                source_name: source_name.clone(),
-                column: item.name.clone(),
+                source_name: declaration.source_name.clone(),
+                column: declaration.item.name.clone(),
             });
         }
     }
 
     let mut columns = Vec::with_capacity(declarations.len());
-    for (index, (_, item, _, dimensions, _)) in declarations.into_iter().enumerate() {
+    for (index, declaration) in declarations.into_iter().enumerate() {
         let values = resolved_values[index]
             .take()
             .expect("resolved fixed column values should exist");
         columns.push(FixedColumn {
-            name: item.name,
-            dimensions,
+            name: declaration.item.name,
+            dimensions: declaration.dimensions,
             values,
         });
     }
@@ -582,6 +598,155 @@ fn fixed_columns_from_source_program(
         row_count,
         columns,
     })
+}
+
+fn source_fixed_values_from_template_assignments(
+    program: &SourceProgram,
+    expected_columns: &BTreeSet<String>,
+    row_count: usize,
+    constant_values: &SourceFixedConstantValues,
+) -> Result<BTreeMap<String, Vec<u64>>, SourceFixedColumnsWriteError> {
+    let mut partial_values = BTreeMap::<String, Vec<Option<u64>>>::new();
+    for module in &program.modules {
+        for template in &module.air_templates {
+            for statement in &template.statements {
+                collect_source_fixed_template_assignment(
+                    &module.source_name,
+                    statement,
+                    expected_columns,
+                    row_count,
+                    constant_values,
+                    &mut partial_values,
+                )?;
+            }
+        }
+    }
+
+    Ok(partial_values
+        .into_iter()
+        .filter_map(|(name, values)| {
+            values
+                .into_iter()
+                .collect::<Option<Vec<_>>>()
+                .map(|values| (name, values))
+        })
+        .collect())
+}
+
+fn collect_source_fixed_template_assignment(
+    source_name: &str,
+    statement: &FunctionStatement,
+    expected_columns: &BTreeSet<String>,
+    row_count: usize,
+    constant_values: &SourceFixedConstantValues,
+    partial_values: &mut BTreeMap<String, Vec<Option<u64>>>,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    if statement.kind != FunctionStatementKind::Expression {
+        return Ok(());
+    }
+    let Some(expression) = statement.value_expression.as_ref() else {
+        return Ok(());
+    };
+    let ExpressionKind::Binary { op, left, right } =
+        &strip_source_fixed_group_expression(expression).kind
+    else {
+        return Ok(());
+    };
+    if *op != BinaryOperator::Assign {
+        return Ok(());
+    }
+    let Some((column_name, row)) = source_fixed_index_assignment_target(
+        source_name,
+        left,
+        expected_columns,
+        row_count,
+        constant_values,
+    )?
+    else {
+        return Ok(());
+    };
+    let Some(FixedFileTemplateValue::Integer(value)) =
+        evaluate_source_fixed_template_value_expression(right, constant_values)
+    else {
+        return Ok(());
+    };
+    let value = canonical_fixed_value(
+        value,
+        source_name,
+        SourceSpan {
+            start: right.start,
+            end: right.end,
+        },
+    )?;
+    let values = partial_values
+        .entry(column_name.clone())
+        .or_insert_with(|| vec![None; row_count]);
+    match values[row] {
+        Some(existing) if existing != value => {
+            Err(SourceFixedColumnsWriteError::UnsupportedInitializer {
+                source_name: source_name.to_owned(),
+                column: column_name,
+            })
+        }
+        Some(_) => Ok(()),
+        None => {
+            values[row] = Some(value);
+            Ok(())
+        }
+    }
+}
+
+fn source_fixed_index_assignment_target(
+    source_name: &str,
+    expression: &Expression,
+    expected_columns: &BTreeSet<String>,
+    row_count: usize,
+    constant_values: &SourceFixedConstantValues,
+) -> Result<Option<(String, usize)>, SourceFixedColumnsWriteError> {
+    let ExpressionKind::Index { target, index } =
+        &strip_source_fixed_group_expression(expression).kind
+    else {
+        return Ok(None);
+    };
+    let ExpressionKind::Name(column_name) = &strip_source_fixed_group_expression(target).kind
+    else {
+        return Ok(None);
+    };
+    if !expected_columns.contains(column_name) {
+        return Ok(None);
+    }
+    let Some(FixedFileTemplateValue::Integer(row)) =
+        evaluate_source_fixed_template_value_expression(index, constant_values)
+    else {
+        return Ok(None);
+    };
+    let row =
+        usize::try_from(row).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
+            source_name: source_name.to_owned(),
+            source_span: SourceSpan {
+                start: index.start,
+                end: index.end,
+            },
+            expression: row.to_string(),
+        })?;
+    if row >= row_count {
+        return Err(SourceFixedColumnsWriteError::IntegerOutOfRange {
+            source_name: source_name.to_owned(),
+            source_span: SourceSpan {
+                start: index.start,
+                end: index.end,
+            },
+            expression: row.to_string(),
+        });
+    }
+    Ok(Some((column_name.clone(), row)))
+}
+
+fn strip_source_fixed_group_expression(expression: &Expression) -> &Expression {
+    match &expression.kind {
+        ExpressionKind::Group(inner) => strip_source_fixed_group_expression(inner),
+        _ => expression,
+    }
 }
 
 fn source_fixed_column_values_from_initializer(
