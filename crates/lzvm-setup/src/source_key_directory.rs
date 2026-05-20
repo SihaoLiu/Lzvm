@@ -24,13 +24,16 @@ use lzvm_artifacts::verifier_info::{
 };
 use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
-    BinaryOperator, ColumnDeclaration, ColumnInitializerKind, ColumnItem, ColumnKind, Expression,
-    ExpressionKind, FixedFileTemplateValue, FunctionStatement, FunctionStatementKind, LexError,
-    ParseError, SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader,
+    BinaryOperator, ColumnDeclaration, ColumnItem, ColumnKind, Expression, ExpressionKind,
+    FixedFileTemplateValue, FunctionStatement, FunctionStatementKind, LexError, ParseError,
+    SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader,
     SourceProgramModule, Token, TokenKind, UnaryOperator, ValueDeclarationKind,
 };
 
-use crate::{publish_staging_bytes, write_staging_bytes, SetupError};
+use crate::{
+    publish_staging_bytes, source_row_count::infer_source_row_count, write_staging_bytes,
+    SetupError,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceKeyDirectoryMetadataRequest {
@@ -1547,123 +1550,6 @@ fn source_scalar_constant_values(
     }
 
     values
-}
-
-fn infer_source_row_count(program: &SourceProgram) -> Result<u64, SourceKeyDirectoryMetadataError> {
-    let mut row_count = None::<u64>;
-    for module in &program.modules {
-        for declaration in &module.columns {
-            if declaration.kind != ColumnKind::Fixed {
-                continue;
-            }
-            let Some(initializer) = declaration.initializer.as_ref() else {
-                continue;
-            };
-            if initializer.kind != ColumnInitializerKind::Sequence {
-                continue;
-            }
-            let text = module
-                .source
-                .contents
-                .get(initializer.span.start..initializer.span.end)
-                .ok_or_else(|| unsupported_source_message("source fixed-column span is invalid"))?;
-            let count = count_source_sequence_items(text)?;
-            if count == 0 || !count.is_power_of_two() {
-                return unsupported("source fixed-column sequence length must be a power of two");
-            }
-            match row_count {
-                Some(expected) if expected != count => {
-                    return unsupported("source fixed-column sequence lengths must match")
-                }
-                Some(_) => {}
-                None => row_count = Some(count),
-            }
-        }
-    }
-    Ok(row_count.unwrap_or(2))
-}
-
-fn count_source_sequence_items(text: &str) -> Result<u64, SourceKeyDirectoryMetadataError> {
-    let text = text.trim();
-    if text.ends_with("...") {
-        return unsupported("source fixed-column fill sequences need explicit metadata");
-    }
-    let inner = text
-        .strip_prefix('[')
-        .and_then(|value| value.strip_suffix(']'))
-        .ok_or_else(|| {
-            unsupported_source_message("source fixed-column sequence must use brackets")
-        })?;
-    let mut count = 0_u64;
-    for item in split_top_level_commas(inner) {
-        let item = item.trim();
-        if item.is_empty() {
-            continue;
-        }
-        count = count
-            .checked_add(sequence_item_len(item)?)
-            .ok_or_else(|| unsupported_source_message("source sequence length overflow"))?;
-    }
-    Ok(count)
-}
-
-fn split_top_level_commas(value: &str) -> Vec<&str> {
-    let mut items = Vec::new();
-    let mut depth = 0_i32;
-    let mut start = 0;
-    let mut quote = None::<char>;
-    let mut escaped = false;
-
-    for (index, character) in value.char_indices() {
-        if let Some(active_quote) = quote {
-            if escaped {
-                escaped = false;
-                continue;
-            }
-            if character == '\\' {
-                escaped = true;
-                continue;
-            }
-            if character == active_quote {
-                quote = None;
-            }
-            continue;
-        }
-
-        match character {
-            '"' | '\'' | '`' => quote = Some(character),
-            '(' | '[' | '{' => depth += 1,
-            ')' | ']' | '}' => depth -= 1,
-            ',' if depth == 0 => {
-                items.push(&value[start..index]);
-                start = index + character.len_utf8();
-            }
-            _ => {}
-        }
-    }
-    items.push(&value[start..]);
-    items
-}
-
-fn sequence_item_len(item: &str) -> Result<u64, SourceKeyDirectoryMetadataError> {
-    if let Some(index) = item.find("..") {
-        if item[index..].starts_with("...") || item[index + 2..].contains("..") {
-            return unsupported("source fixed-column sequence ranges must be finite");
-        }
-        let start = parse_i128_literal(item[..index].trim())?;
-        let end = parse_i128_literal(item[index + 2..].trim())?;
-        if end < start {
-            return unsupported("source fixed-column descending ranges need explicit metadata");
-        }
-        let length = end
-            .checked_sub(start)
-            .and_then(|value| value.checked_add(1))
-            .ok_or_else(|| unsupported_source_message("source range length overflow"))?;
-        u64::try_from(length)
-            .map_err(|_| unsupported_source_message("source range length overflow"))
-    } else {
-        Ok(1)
-    }
 }
 
 fn eval_u32_expression(expression: &Expression) -> Result<u32, SourceKeyDirectoryMetadataError> {
