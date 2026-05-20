@@ -281,14 +281,17 @@ fn lower_source_template_statement(
     if source_static_assignment_expression(context.module, statement.value_expression.as_ref()) {
         return Ok(());
     }
-    if let Some(hint) =
-        lower_source_lookup_statement(context.program, context.module, statement, values).map_err(
-            |source| SourceKeyDirectoryMetadataError::Lex {
-                source_name: context.module.source_name.clone(),
-                source,
-            },
-        )?
-    {
+    if let Some(hint) = lower_source_lookup_statement(
+        context.program,
+        context.module,
+        statement,
+        values,
+        context.scalar_slots,
+    )
+    .map_err(|source| SourceKeyDirectoryMetadataError::Lex {
+        source_name: context.module.source_name.clone(),
+        source,
+    })? {
         hints.push(hint);
         return Ok(());
     }

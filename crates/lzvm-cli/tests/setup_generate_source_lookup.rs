@@ -32,8 +32,8 @@ fn generate_key_records_source_lookup_calls_as_structured_regular_hints() {
         "airtemplate UnitA() {\n\
              col witness multiplicity;\n\
              col witness value;\n\
-             lookup_proves(7, [value], mul: multiplicity);\n\
-             lookup_assumes(9, [value], sel: multiplicity);\n\
+             lookup_proves(7, [value, main.left], mul: multiplicity);\n\
+             lookup_assumes(9, [value, main.left], sel: multiplicity);\n\
          }\n\
          airgroup GroupA { UnitA(); }\n\
          col fixed main.left = [5, 1];",
@@ -85,11 +85,24 @@ fn generate_key_records_source_lookup_calls_as_structured_regular_hints() {
     );
     assert_eq!(
         regular.hints.hints[0].fields[1].values[0].operand,
-        HintOperand::String("value".to_owned())
+        HintOperand::Commitment {
+            id: 1,
+            row_offset_index: 0
+        }
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[1].operand,
+        HintOperand::Constant {
+            id: 0,
+            row_offset_index: 0
+        }
     );
     assert_eq!(
         regular.hints.hints[0].fields[2].values[0].operand,
-        HintOperand::String("multiplicity".to_owned())
+        HintOperand::Commitment {
+            id: 0,
+            row_offset_index: 0
+        }
     );
     assert_eq!(regular.hints.hints[1].name, SOURCE_LOOKUP_ASSUMES_HINT);
     assert_eq!(
@@ -98,11 +111,24 @@ fn generate_key_records_source_lookup_calls_as_structured_regular_hints() {
     );
     assert_eq!(
         regular.hints.hints[1].fields[1].values[0].operand,
-        HintOperand::String("value".to_owned())
+        HintOperand::Commitment {
+            id: 1,
+            row_offset_index: 0
+        }
+    );
+    assert_eq!(
+        regular.hints.hints[1].fields[1].values[1].operand,
+        HintOperand::Constant {
+            id: 0,
+            row_offset_index: 0
+        }
     );
     assert_eq!(
         regular.hints.hints[1].fields[2].values[0].operand,
-        HintOperand::String("multiplicity".to_owned())
+        HintOperand::Commitment {
+            id: 0,
+            row_offset_index: 0
+        }
     );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
     assert!(String::from_utf8(stdout)

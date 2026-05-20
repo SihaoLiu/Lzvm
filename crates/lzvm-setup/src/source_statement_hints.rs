@@ -1,18 +1,23 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use lzvm_artifacts::expression_info::{HintFieldInfo, HintInfo, HintPayload, HintValueInfo};
+use lzvm_artifacts::expression_info::{
+    CodeOperand, HintFieldInfo, HintInfo, HintPayload, HintValueInfo,
+};
 use lzvm_artifacts::hint_program::{
     SOURCE_LOOKUP_ASSUMES_HINT, SOURCE_LOOKUP_PROVES_HINT, SOURCE_UNSUPPORTED_ASSIGNMENT_HINT,
     SOURCE_UNSUPPORTED_CALL_HINT, SOURCE_UNSUPPORTED_CONSTRAINT_HINT,
     SOURCE_UNSUPPORTED_STATEMENT_HINT,
 };
+use lzvm_field::MODULUS;
 use lzvm_pil::{
-    lex_source, parse_expression_tokens, FixedFileTemplateValue, FunctionStatement, LexError,
-    SourceFile, SourceProgram, SourceProgramModule, Token, TokenKind,
+    lex_source, parse_expression_tokens, Expression, ExpressionKind, FixedFileTemplateValue,
+    FunctionStatement, LexError, SourceFile, SourceProgram, SourceProgramModule, Token, TokenKind,
 };
 
-use crate::source_static_values::evaluate_source_static_expression;
+use crate::{
+    source_scalar_slots::SourceScalarSlots, source_static_values::evaluate_source_static_expression,
+};
 
 pub(crate) fn source_statement_first_token_kind(
     module: &SourceProgramModule,
@@ -48,12 +53,15 @@ pub(crate) fn lower_source_lookup_statement(
     module: &SourceProgramModule,
     statement: &FunctionStatement,
     values: &BTreeMap<String, FixedFileTemplateValue>,
+    scalar_slots: &SourceScalarSlots,
 ) -> Result<Option<HintInfo>, LexError> {
     let Some(name) = source_lookup_hint_name(module, statement)? else {
         return Ok(None);
     };
     let line = source_statement_line(module, statement);
-    if let Some(hint) = lower_structured_source_lookup_hint(program, module, values, name, &line)? {
+    if let Some(hint) =
+        lower_structured_source_lookup_hint(program, module, values, scalar_slots, name, &line)?
+    {
         return Ok(Some(hint));
     }
     Ok(Some(source_lookup_line_hint(name, line)))
@@ -63,6 +71,7 @@ fn lower_structured_source_lookup_hint(
     program: &SourceProgram,
     module: &SourceProgramModule,
     values: &BTreeMap<String, FixedFileTemplateValue>,
+    scalar_slots: &SourceScalarSlots,
     name: &str,
     line: &str,
 ) -> Result<Option<HintInfo>, LexError> {
@@ -113,13 +122,24 @@ fn lower_structured_source_lookup_hint(
     if second_argument.name.is_some() {
         return Ok(None);
     }
-    let Some(values) = source_lookup_values(line, &tokens, second_argument.value_range) else {
+    let Some(lookup_values) = source_lookup_values(
+        program,
+        module,
+        line,
+        &tokens,
+        second_argument.value_range,
+        values,
+        scalar_slots,
+    ) else {
         return Ok(None);
     };
 
     let mut fields = vec![
         hint_number_field("bus_id", bus_id),
-        hint_string_values_field("values", values),
+        HintFieldInfo {
+            name: "values".to_owned(),
+            values: lookup_values,
+        },
     ];
     for range in arguments.into_iter().skip(2) {
         let argument = split_named_argument(&tokens, range);
@@ -131,10 +151,21 @@ fn lower_structured_source_lookup_hint(
             "sel" => "selector",
             _ => return Ok(None),
         };
-        let Some(value) = token_range_text(line, &tokens, argument.value_range) else {
+        let Some(value) = source_lookup_value(
+            program,
+            module,
+            line,
+            &tokens,
+            argument.value_range,
+            values,
+            scalar_slots,
+        ) else {
             return Ok(None);
         };
-        fields.push(hint_string_field(field_name, value));
+        fields.push(HintFieldInfo {
+            name: field_name.to_owned(),
+            values: vec![value],
+        });
     }
 
     Ok(Some(HintInfo {
@@ -282,10 +313,14 @@ fn evaluate_unsigned_argument(
 }
 
 fn source_lookup_values(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
     line: &str,
     tokens: &[Token],
     range: (usize, usize),
-) -> Option<Vec<String>> {
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    scalar_slots: &SourceScalarSlots,
+) -> Option<Vec<HintValueInfo>> {
     if range.0 >= range.1 {
         return None;
     }
@@ -296,19 +331,193 @@ fn source_lookup_values(
         let ranges = top_level_argument_ranges(tokens, range.0, range.1 - 1)?;
         return ranges
             .into_iter()
-            .map(|value_range| token_range_text(line, tokens, value_range))
+            .map(|value_range| {
+                source_lookup_value(
+                    program,
+                    module,
+                    line,
+                    tokens,
+                    value_range,
+                    values,
+                    scalar_slots,
+                )
+            })
             .collect();
     }
-    Some(vec![token_range_text(line, tokens, range)?])
+    Some(vec![source_lookup_value(
+        program,
+        module,
+        line,
+        tokens,
+        range,
+        values,
+        scalar_slots,
+    )?])
 }
 
-fn token_range_text(line: &str, tokens: &[Token], range: (usize, usize)) -> Option<String> {
-    if range.0 >= range.1 || range.1 > tokens.len() {
-        return None;
+fn source_lookup_value(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    line: &str,
+    tokens: &[Token],
+    range: (usize, usize),
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    scalar_slots: &SourceScalarSlots,
+) -> Option<HintValueInfo> {
+    Some(HintValueInfo {
+        positions: Vec::new(),
+        payload: source_lookup_value_payload(
+            program,
+            module,
+            line,
+            tokens,
+            range,
+            values,
+            scalar_slots,
+        )?,
+    })
+}
+
+fn source_lookup_value_payload(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    line: &str,
+    tokens: &[Token],
+    range: (usize, usize),
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    scalar_slots: &SourceScalarSlots,
+) -> Option<HintPayload> {
+    let expression = parse_source_lookup_expression(module, line, tokens, range)?;
+    if let Some(value) = evaluate_source_static_expression(program, &expression, values) {
+        match value {
+            FixedFileTemplateValue::Integer(value) => {
+                return Some(HintPayload::number(canonical_hint_number(value)?));
+            }
+            FixedFileTemplateValue::Boolean(value) => {
+                return Some(HintPayload::number(u64::from(value)));
+            }
+            FixedFileTemplateValue::String(_) => return None,
+        }
     }
-    let start = tokens[range.0].start;
-    let end = tokens[range.1 - 1].end;
-    Some(line.get(start..end)?.trim().to_owned())
+    let operand = source_lookup_scalar_operand(program, &expression, values, scalar_slots)?;
+    hint_payload_from_code_operand(operand)
+}
+
+fn parse_source_lookup_expression(
+    module: &SourceProgramModule,
+    line: &str,
+    tokens: &[Token],
+    range: (usize, usize),
+) -> Option<Expression> {
+    let source = SourceFile {
+        contents: line.to_owned(),
+        file_dir: PathBuf::new(),
+        full_path: PathBuf::new(),
+        source_name: module.source_name.clone(),
+    };
+    let (expression, consumed) = parse_expression_tokens(tokens, range.0, range.1, &source).ok()?;
+    (consumed == range.1).then_some(expression)
+}
+
+fn source_lookup_scalar_operand(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    scalar_slots: &SourceScalarSlots,
+) -> Option<CodeOperand> {
+    match &strip_group_expression(expression).kind {
+        ExpressionKind::Name(name) => scalar_slots.operand(name).ok(),
+        ExpressionKind::Index { target, index } => {
+            let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
+                return None;
+            };
+            let index = source_lookup_index(program, index, values)?;
+            scalar_slots.operand_index_at(name, index, 0).ok()
+        }
+        _ => None,
+    }
+}
+
+fn strip_group_expression(expression: &Expression) -> &Expression {
+    match &expression.kind {
+        ExpressionKind::Group(inner) => strip_group_expression(inner),
+        _ => expression,
+    }
+}
+
+fn source_lookup_index(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<u32> {
+    match evaluate_source_static_expression(program, expression, values)? {
+        FixedFileTemplateValue::Integer(value) => u32::try_from(value).ok(),
+        FixedFileTemplateValue::Boolean(value) => Some(u32::from(value)),
+        FixedFileTemplateValue::String(_) => None,
+    }
+}
+
+fn canonical_hint_number(value: i128) -> Option<u64> {
+    let modulus = i128::from(MODULUS);
+    u64::try_from(value.rem_euclid(modulus)).ok()
+}
+
+fn hint_payload_from_code_operand(operand: CodeOperand) -> Option<HintPayload> {
+    match operand {
+        CodeOperand::Number { value, .. } => Some(HintPayload::number(value)),
+        CodeOperand::Commitment {
+            id,
+            prime: None,
+            dimension,
+        } => Some(HintPayload::Commitment {
+            id,
+            row_offset_index: Some(0),
+            row_offset: Some(0),
+            stage: None,
+            stage_id: None,
+            dimension: Some(dimension),
+            air_group_id: None,
+            air_id: None,
+        }),
+        CodeOperand::Constant { id, dimension } => Some(HintPayload::constant(
+            id,
+            Some(0),
+            Some(0),
+            Some(dimension),
+            None,
+            None,
+        )),
+        CodeOperand::AirValue {
+            id,
+            stage,
+            dimension,
+            ..
+        } => Some(HintPayload::air_value(id, stage, Some(dimension))),
+        CodeOperand::AirGroupValue {
+            id,
+            stage,
+            air_group_id,
+            dimension,
+        } => Some(HintPayload::air_group_value(
+            id,
+            air_group_id,
+            stage,
+            Some(dimension),
+        )),
+        CodeOperand::Public { id, .. } => Some(HintPayload::public(id, None)),
+        CodeOperand::Challenge {
+            id,
+            stage,
+            stage_id,
+            ..
+        } => Some(HintPayload::challenge(id, stage, stage_id)),
+        CodeOperand::ProofValue {
+            id,
+            stage,
+            dimension,
+        } => Some(HintPayload::proof_value(id, stage, Some(dimension))),
+        _ => None,
+    }
 }
 
 fn hint_number_field(name: &str, value: u64) -> HintFieldInfo {
@@ -318,23 +527,6 @@ fn hint_number_field(name: &str, value: u64) -> HintFieldInfo {
             positions: Vec::new(),
             payload: HintPayload::number(value),
         }],
-    }
-}
-
-fn hint_string_field(name: &str, value: String) -> HintFieldInfo {
-    hint_string_values_field(name, vec![value])
-}
-
-fn hint_string_values_field(name: &str, values: Vec<String>) -> HintFieldInfo {
-    HintFieldInfo {
-        name: name.to_owned(),
-        values: values
-            .into_iter()
-            .map(|value| HintValueInfo {
-                positions: Vec::new(),
-                payload: HintPayload::string(value),
-            })
-            .collect(),
     }
 }
 
