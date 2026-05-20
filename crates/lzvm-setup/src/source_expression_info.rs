@@ -282,12 +282,12 @@ fn lower_source_template_statement(
         return Ok(());
     }
     if let Some(hint) =
-        lower_source_lookup_statement(context.module, statement).map_err(|source| {
-            SourceKeyDirectoryMetadataError::Lex {
+        lower_source_lookup_statement(context.program, context.module, statement, values).map_err(
+            |source| SourceKeyDirectoryMetadataError::Lex {
                 source_name: context.module.source_name.clone(),
                 source,
-            }
-        })?
+            },
+        )?
     {
         hints.push(hint);
         return Ok(());

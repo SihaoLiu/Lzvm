@@ -1,10 +1,18 @@
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
 use lzvm_artifacts::expression_info::{HintFieldInfo, HintInfo, HintPayload, HintValueInfo};
 use lzvm_artifacts::hint_program::{
     SOURCE_LOOKUP_ASSUMES_HINT, SOURCE_LOOKUP_PROVES_HINT, SOURCE_UNSUPPORTED_ASSIGNMENT_HINT,
     SOURCE_UNSUPPORTED_CALL_HINT, SOURCE_UNSUPPORTED_CONSTRAINT_HINT,
     SOURCE_UNSUPPORTED_STATEMENT_HINT,
 };
-use lzvm_pil::{lex_source, FunctionStatement, LexError, SourceProgramModule, Token, TokenKind};
+use lzvm_pil::{
+    lex_source, parse_expression_tokens, FixedFileTemplateValue, FunctionStatement, LexError,
+    SourceFile, SourceProgram, SourceProgramModule, Token, TokenKind,
+};
+
+use crate::source_static_values::evaluate_source_static_expression;
 
 pub(crate) fn source_statement_first_token_kind(
     module: &SourceProgramModule,
@@ -36,20 +44,25 @@ pub(crate) fn source_statement_contains_assignment_operator(
 }
 
 pub(crate) fn lower_source_lookup_statement(
+    program: &SourceProgram,
     module: &SourceProgramModule,
     statement: &FunctionStatement,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<Option<HintInfo>, LexError> {
     let Some(name) = source_lookup_hint_name(module, statement)? else {
         return Ok(None);
     };
     let line = source_statement_line(module, statement);
-    if let Some(hint) = lower_structured_source_lookup_hint(name, &line)? {
+    if let Some(hint) = lower_structured_source_lookup_hint(program, module, values, name, &line)? {
         return Ok(Some(hint));
     }
     Ok(Some(source_lookup_line_hint(name, line)))
 }
 
 fn lower_structured_source_lookup_hint(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
     name: &str,
     line: &str,
 ) -> Result<Option<HintInfo>, LexError> {
@@ -85,7 +98,14 @@ fn lower_structured_source_lookup_hint(
     if first_argument.name.is_some() {
         return Ok(None);
     }
-    let Some(bus_id) = parse_unsigned_argument(&tokens, first_argument.value_range) else {
+    let Some(bus_id) = parse_unsigned_argument(
+        program,
+        module,
+        line,
+        &tokens,
+        first_argument.value_range,
+        values,
+    ) else {
         return Ok(None);
     };
 
@@ -207,12 +227,19 @@ fn split_named_argument(tokens: &[Token], range: (usize, usize)) -> SourceLookup
     }
 }
 
-fn parse_unsigned_argument(tokens: &[Token], range: (usize, usize)) -> Option<u64> {
+fn parse_unsigned_argument(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    line: &str,
+    tokens: &[Token],
+    range: (usize, usize),
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<u64> {
     if range.0 + 1 != range.1 {
-        return None;
+        return evaluate_unsigned_argument(program, module, line, tokens, range, values);
     }
     let token = &tokens[range.0];
-    match token.kind {
+    let literal = match token.kind {
         TokenKind::Integer => token.lexeme.replace('_', "").parse::<u64>().ok(),
         TokenKind::HexInteger => u64::from_str_radix(
             token
@@ -225,6 +252,32 @@ fn parse_unsigned_argument(tokens: &[Token], range: (usize, usize)) -> Option<u6
         )
         .ok(),
         _ => None,
+    };
+    literal.or_else(|| evaluate_unsigned_argument(program, module, line, tokens, range, values))
+}
+
+fn evaluate_unsigned_argument(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    line: &str,
+    tokens: &[Token],
+    range: (usize, usize),
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<u64> {
+    let source = SourceFile {
+        contents: line.to_owned(),
+        file_dir: PathBuf::new(),
+        full_path: PathBuf::new(),
+        source_name: module.source_name.clone(),
+    };
+    let (expression, consumed) = parse_expression_tokens(tokens, range.0, range.1, &source).ok()?;
+    if consumed != range.1 {
+        return None;
+    }
+    match evaluate_source_static_expression(program, &expression, values)? {
+        FixedFileTemplateValue::Integer(value) => u64::try_from(value).ok(),
+        FixedFileTemplateValue::Boolean(value) => Some(u64::from(value)),
+        FixedFileTemplateValue::String(_) => None,
     }
 }
 
