@@ -361,13 +361,19 @@ fn source_global_program(
     global_info: &GlobalInfo,
 ) -> Result<GlobalProgram, SourceKeyDirectoryMetadataError> {
     let proof_value_slots = source_proof_value_slots(global_info)?;
+    let public_value_slots = source_public_value_slots(global_info)?;
     let global_source_names = global_constraint_source_names(program);
     let mut constraints = SourceGlobalConstraintBuilder::default();
     for module in &program.modules {
         if !global_source_names.contains(&module.source_name) {
             continue;
         }
-        lower_module_top_level_global_constraints(module, &proof_value_slots, &mut constraints)?;
+        lower_module_top_level_global_constraints(
+            module,
+            &proof_value_slots,
+            &public_value_slots,
+            &mut constraints,
+        )?;
     }
     Ok(GlobalProgram {
         constraints: constraints.finish(),
@@ -378,6 +384,7 @@ fn source_global_program(
 fn lower_module_top_level_global_constraints(
     module: &SourceProgramModule,
     proof_value_slots: &BTreeMap<String, SourceProofValueSlot>,
+    public_value_slots: &BTreeMap<String, SourcePublicValueSlot>,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     let tokens = lex_source(&module.source.contents).map_err(|source| {
@@ -405,6 +412,7 @@ fn lower_module_top_level_global_constraints(
                         &tokens,
                         index,
                         proof_value_slots,
+                        public_value_slots,
                         constraints,
                     )?;
                 }
@@ -425,6 +433,7 @@ fn lower_module_top_level_global_constraints(
                     &tokens,
                     index,
                     proof_value_slots,
+                    public_value_slots,
                     constraints,
                 )?;
             }
@@ -438,6 +447,7 @@ fn lower_top_level_expression_statement(
     tokens: &[Token],
     index: usize,
     proof_value_slots: &BTreeMap<String, SourceProofValueSlot>,
+    public_value_slots: &BTreeMap<String, SourcePublicValueSlot>,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<usize, SourceKeyDirectoryMetadataError> {
     let next_index = skip_top_level_statement(tokens, index)?;
@@ -452,6 +462,7 @@ fn lower_top_level_expression_statement(
         &expression,
         &module.source.contents[expression.start..expression.end],
         proof_value_slots,
+        public_value_slots,
         constraints,
     )?;
     Ok(next_index)
@@ -461,6 +472,7 @@ fn lower_top_level_global_constraint(
     expression: &Expression,
     source_line: &str,
     proof_value_slots: &BTreeMap<String, SourceProofValueSlot>,
+    public_value_slots: &BTreeMap<String, SourcePublicValueSlot>,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     let Some(name) = proof_value_boolean_constraint_name(expression) else {
@@ -469,20 +481,34 @@ fn lower_top_level_global_constraint(
             source_line.trim()
         ));
     };
-    let slot = proof_value_slots.get(name).copied().ok_or_else(|| {
-        unsupported_source_message("top-level proof value constraint references an unknown value")
-    })?;
-    constraints.append_proof_value_boolean_constraint(
-        slot.offset,
-        proof_value_operand_dimension(slot.stage),
-        source_line.trim().to_owned(),
-    )
+    if let Some(slot) = proof_value_slots.get(name).copied() {
+        return constraints.append_proof_value_boolean_constraint(
+            slot.offset,
+            proof_value_operand_dimension(slot.stage),
+            source_line.trim().to_owned(),
+        );
+    }
+    if let Some(slot) = public_value_slots.get(name).copied() {
+        if slot.stage != 1 || slot.dimension != 1 {
+            return unsupported("top-level public value constraints require scalar values");
+        }
+        return constraints
+            .append_public_value_boolean_constraint(slot.offset, source_line.trim().to_owned());
+    }
+    unsupported("top-level boolean constraint references an unknown value")
 }
 
 #[derive(Debug, Clone, Copy)]
 struct SourceProofValueSlot {
     offset: u32,
     stage: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SourcePublicValueSlot {
+    offset: u32,
+    stage: u64,
+    dimension: u32,
 }
 
 fn source_proof_value_slots(
@@ -502,6 +528,28 @@ fn source_proof_value_slots(
         next_offset = next_offset
             .checked_add(width)
             .ok_or_else(|| unsupported_source_message("source proof value offset overflow"))?;
+    }
+    Ok(slots)
+}
+
+fn source_public_value_slots(
+    global_info: &GlobalInfo,
+) -> Result<BTreeMap<String, SourcePublicValueSlot>, SourceKeyDirectoryMetadataError> {
+    let mut slots = BTreeMap::new();
+    let mut next_offset = 0_u32;
+    for entry in &global_info.publics_map {
+        let dimension = source_global_public_value_dimension(&entry.lengths)?;
+        slots.insert(
+            entry.name.clone(),
+            SourcePublicValueSlot {
+                offset: next_offset,
+                stage: entry.stage,
+                dimension,
+            },
+        );
+        next_offset = next_offset
+            .checked_add(dimension)
+            .ok_or_else(|| unsupported_source_message("source public value offset overflow"))?;
     }
     Ok(slots)
 }
@@ -610,6 +658,19 @@ struct SourceGlobalConstraintBuilder {
 }
 
 impl SourceGlobalConstraintBuilder {
+    fn append_public_value_boolean_constraint(
+        &mut self,
+        public_value_offset: u32,
+        source_line: String,
+    ) -> Result<(), SourceKeyDirectoryMetadataError> {
+        self.append_base_scalar_boolean_constraint(
+            1,
+            public_value_offset,
+            "source public value offset overflow",
+            source_line,
+        )
+    }
+
     fn append_proof_value_boolean_constraint(
         &mut self,
         proof_value_offset: u32,
@@ -628,12 +689,26 @@ impl SourceGlobalConstraintBuilder {
         proof_value_offset: u32,
         source_line: String,
     ) -> Result<(), SourceKeyDirectoryMetadataError> {
+        self.append_base_scalar_boolean_constraint(
+            3,
+            proof_value_offset,
+            "source proof value offset overflow",
+            source_line,
+        )
+    }
+
+    fn append_base_scalar_boolean_constraint(
+        &mut self,
+        source_buffer: u16,
+        source_offset: u32,
+        offset_overflow_message: &'static str,
+        source_line: String,
+    ) -> Result<(), SourceKeyDirectoryMetadataError> {
         let ops_offset = source_usize_to_u32(self.ops.len(), "source global op offset overflow")?;
         let args_offset =
             source_usize_to_u32(self.args.len(), "source global argument offset overflow")?;
         let one_offset = self.intern_number(1)?;
-        let proof_value_offset =
-            source_u32_to_u16(proof_value_offset, "source proof value offset overflow")?;
+        let source_offset = source_u32_to_u16(source_offset, offset_overflow_message)?;
         let one_offset = source_u32_to_u16(one_offset, "source number offset overflow")?;
 
         self.ops.extend([0, 0]);
@@ -642,12 +717,12 @@ impl SourceGlobalConstraintBuilder {
             0,
             2,
             one_offset,
-            3,
-            proof_value_offset,
+            source_buffer,
+            source_offset,
             2,
             1,
-            3,
-            proof_value_offset,
+            source_buffer,
+            source_offset,
             0,
             0,
         ]);
@@ -732,6 +807,17 @@ fn proof_value_operand_dimension(stage: u64) -> u32 {
     } else {
         3
     }
+}
+
+fn source_global_public_value_dimension(
+    lengths: &[u64],
+) -> Result<u32, SourceKeyDirectoryMetadataError> {
+    let dimension = lengths.iter().try_fold(1_u64, |acc, length| {
+        acc.checked_mul(*length)
+            .ok_or_else(|| unsupported_source_message("source public value dimension overflow"))
+    })?;
+    u32::try_from(dimension)
+        .map_err(|_| unsupported_source_message("source public value dimension overflow"))
 }
 
 fn source_usize_to_u32(
