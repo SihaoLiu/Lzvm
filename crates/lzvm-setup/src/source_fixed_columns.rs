@@ -882,8 +882,9 @@ fn collect_source_fixed_template_assignment(
     else {
         return Ok(());
     };
-    let Some(FixedFileTemplateValue::Integer(value)) =
-        evaluate_source_fixed_assignment_value_expression(right, assignment_values)
+    let Some(value) = evaluate_source_fixed_assignment_value_expression(right, assignment_values)
+        .as_ref()
+        .and_then(source_fixed_assignment_integer)
     else {
         return Ok(());
     };
@@ -1124,6 +1125,7 @@ fn source_fixed_assignment_value_eq(
 fn source_fixed_assignment_integer(value: &FixedFileTemplateValue) -> Option<i128> {
     match value {
         FixedFileTemplateValue::Integer(value) => Some(*value),
+        FixedFileTemplateValue::Boolean(value) => Some(if *value { 1 } else { 0 }),
         _ => None,
     }
 }
@@ -1221,9 +1223,11 @@ fn source_fixed_index_assignment_target(
     if !expected_columns.contains(column_name) {
         return Ok(None);
     }
-    let Some(FixedFileTemplateValue::Integer(row)) =
-        evaluate_source_fixed_assignment_value_expression(index, constant_values)
+    let Some(row_value) = evaluate_source_fixed_assignment_value_expression(index, constant_values)
     else {
+        return Ok(None);
+    };
+    let Some(row) = source_fixed_assignment_integer(&row_value) else {
         return Ok(None);
     };
     let row =
