@@ -8,13 +8,19 @@ use lzvm_pil::{
 
 use crate::source_fixed_columns::SourceFixedColumnsWriteError;
 
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SourceFixedConstantValues {
+    pub(crate) scalars: BTreeMap<String, FixedFileTemplateValue>,
+    pub(crate) arrays: BTreeMap<String, Vec<u64>>,
+}
+
 pub(crate) fn source_fixed_column_expression_values(
     source_name: &str,
     source: &str,
     column_name: &str,
     initializer: &ColumnInitializer,
     row_count: usize,
-    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    constant_values: &SourceFixedConstantValues,
     column_values: &BTreeMap<String, Vec<u64>>,
 ) -> Result<Option<Vec<u64>>, SourceFixedColumnsWriteError> {
     let Some(expression) = initializer.expression.as_ref() else {
@@ -50,7 +56,7 @@ struct SourceFixedExpressionContext<'a> {
     source: &'a str,
     column_name: &'a str,
     row_count: usize,
-    constant_values: &'a BTreeMap<String, FixedFileTemplateValue>,
+    constant_values: &'a SourceFixedConstantValues,
     column_values: &'a BTreeMap<String, Vec<u64>>,
 }
 
@@ -61,7 +67,7 @@ fn evaluate_source_fixed_expression(
     expression: &Expression,
     row: usize,
     row_count: usize,
-    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    constant_values: &SourceFixedConstantValues,
     column_values: &BTreeMap<String, Vec<u64>>,
 ) -> Result<Option<u64>, SourceFixedColumnsWriteError> {
     let context = SourceFixedExpressionContext {
@@ -81,10 +87,7 @@ fn evaluate_source_fixed_expression_inner(
     row: usize,
 ) -> Result<Option<u64>, SourceFixedColumnsWriteError> {
     if let Some(FixedFileTemplateValue::Integer(value)) =
-        evaluate_fixed_file_template_value_expression_with_values(
-            expression,
-            context.constant_values,
-        )
+        evaluate_source_fixed_template_value_expression(expression, context.constant_values)
     {
         return canonical_source_fixed_expression_value(context, expression, value).map(Some);
     }
@@ -154,24 +157,59 @@ fn evaluate_source_fixed_expression_inner(
             let source_row = shifted.rem_euclid(row_count) as usize;
             evaluate_source_fixed_expression_inner(context, target, source_row)
         }
+        ExpressionKind::Index { .. } => {
+            if let Some(FixedFileTemplateValue::Integer(value)) =
+                evaluate_source_fixed_template_value_expression(expression, context.constant_values)
+            {
+                return canonical_source_fixed_expression_value(context, expression, value)
+                    .map(Some);
+            }
+            Err(source_fixed_expression_unsupported(context, expression))
+        }
         ExpressionKind::StringLiteral(_)
         | ExpressionKind::TemplateLiteral(_)
         | ExpressionKind::PositionalParam(_)
-        | ExpressionKind::Call { .. }
-        | ExpressionKind::Index { .. } => {
+        | ExpressionKind::Call { .. } => {
             Err(source_fixed_expression_unsupported(context, expression))
         }
     }
+}
+
+pub(crate) fn evaluate_source_fixed_template_value_expression(
+    expression: &Expression,
+    constant_values: &SourceFixedConstantValues,
+) -> Option<FixedFileTemplateValue> {
+    if let Some(value) = evaluate_fixed_file_template_value_expression_with_values(
+        expression,
+        &constant_values.scalars,
+    ) {
+        return Some(value);
+    }
+
+    let ExpressionKind::Index { target, index } = &expression.kind else {
+        return None;
+    };
+    let ExpressionKind::Name(array_name) = &target.kind else {
+        return None;
+    };
+    let values = constant_values.arrays.get(array_name)?;
+    let FixedFileTemplateValue::Integer(index) =
+        evaluate_source_fixed_template_value_expression(index, constant_values)?
+    else {
+        return None;
+    };
+    let index = usize::try_from(index).ok()?;
+    values
+        .get(index)
+        .copied()
+        .map(|value| FixedFileTemplateValue::Integer(i128::from(value)))
 }
 
 fn source_fixed_expression_static_integer(
     context: &SourceFixedExpressionContext<'_>,
     expression: &Expression,
 ) -> Result<i128, SourceFixedColumnsWriteError> {
-    match evaluate_fixed_file_template_value_expression_with_values(
-        expression,
-        context.constant_values,
-    ) {
+    match evaluate_source_fixed_template_value_expression(expression, context.constant_values) {
         Some(FixedFileTemplateValue::Integer(value)) => Ok(value),
         _ => Err(source_fixed_expression_unsupported(context, expression)),
     }

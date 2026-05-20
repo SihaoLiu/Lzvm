@@ -18,8 +18,10 @@ use lzvm_pil::{
 };
 
 use crate::{
-    publish_staging_bytes, source_fixed_expression::source_fixed_column_expression_values,
-    write_staging_bytes, SetupError,
+    publish_staging_bytes,
+    source_fixed_expression::evaluate_source_fixed_template_value_expression,
+    source_fixed_expression::source_fixed_column_expression_values,
+    source_fixed_expression::SourceFixedConstantValues, write_staging_bytes, SetupError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -476,7 +478,7 @@ fn fixed_columns_from_source_program(
         .collect::<BTreeSet<_>>();
     let mut declarations = Vec::<(String, ColumnItem, ColumnInitializer, Vec<u32>, String)>::new();
     let mut column_values = BTreeMap::new();
-    let constant_values = source_fixed_constant_values(program);
+    let constant_values = source_fixed_constant_values(program)?;
 
     for module in &program.modules {
         for declaration in &module.columns {
@@ -585,7 +587,7 @@ fn source_fixed_column_values_from_initializer(
     column_name: &str,
     initializer: &ColumnInitializer,
     row_count: usize,
-    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    constant_values: &SourceFixedConstantValues,
     column_values: &BTreeMap<String, Vec<u64>>,
 ) -> Result<Option<Vec<u64>>, SourceFixedColumnsWriteError> {
     match initializer.kind {
@@ -616,7 +618,7 @@ fn source_fixed_column_dimensions(
     source_name: &str,
     source: &str,
     item: &lzvm_pil::ColumnItem,
-    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    constant_values: &SourceFixedConstantValues,
 ) -> Result<Vec<u32>, SourceFixedColumnsWriteError> {
     if item.array_dims.is_empty() {
         return Ok(vec![1]);
@@ -636,7 +638,7 @@ fn source_fixed_column_dimensions(
             let Some(FixedFileTemplateValue::Integer(value)) =
                 evaluate_fixed_file_template_value_expression_with_values(
                     expression,
-                    constant_values,
+                    &constant_values.scalars,
                 )
             else {
                 return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
@@ -669,7 +671,7 @@ fn source_fixed_dimension_expression_text(source: &str, span: SourceSpan) -> Str
 
 fn source_fixed_constant_values(
     program: &SourceProgram,
-) -> BTreeMap<String, FixedFileTemplateValue> {
+) -> Result<SourceFixedConstantValues, SourceFixedColumnsWriteError> {
     let declarations = program
         .modules
         .iter()
@@ -694,7 +696,26 @@ fn source_fixed_constant_values(
         }
     }
 
-    values
+    let mut constant_values = SourceFixedConstantValues {
+        scalars: values,
+        arrays: BTreeMap::new(),
+    };
+
+    for module in &program.modules {
+        for declaration in &module.constants {
+            if let Some(values) = source_fixed_constant_array_value(
+                declaration,
+                &module.source.contents,
+                &constant_values,
+            )? {
+                constant_values
+                    .arrays
+                    .insert(declaration.name.clone(), values);
+            }
+        }
+    }
+
+    Ok(constant_values)
 }
 
 fn source_fixed_constant_value(
@@ -710,12 +731,59 @@ fn source_fixed_constant_value(
     Some(())
 }
 
+fn source_fixed_constant_array_value(
+    declaration: &ConstantDeclaration,
+    source: &str,
+    values: &SourceFixedConstantValues,
+) -> Result<Option<Vec<u64>>, SourceFixedColumnsWriteError> {
+    if declaration.array_dims.len() != 1
+        || declaration.array_dim_expressions.len() != 1
+        || values.arrays.contains_key(&declaration.name)
+    {
+        return Ok(None);
+    }
+    let Some(dimension_expression) = declaration.array_dim_expressions[0].as_ref() else {
+        return Ok(None);
+    };
+    let Some(initializer_span) = declaration.initializer else {
+        return Ok(None);
+    };
+    let Some(FixedFileTemplateValue::Integer(length)) =
+        evaluate_fixed_file_template_value_expression_with_values(
+            dimension_expression,
+            &values.scalars,
+        )
+    else {
+        return Ok(None);
+    };
+    let length =
+        usize::try_from(length).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
+            source_name: declaration.source_name.clone(),
+            source_span: declaration.array_dims[0],
+            expression: source_fixed_dimension_expression_text(source, declaration.array_dims[0]),
+        })?;
+    let initializer = source
+        .get(initializer_span.start..initializer_span.end)
+        .unwrap_or_default();
+    parse_literal_sequence_values(
+        &declaration.source_name,
+        initializer_span,
+        initializer,
+        length,
+        values,
+    )?
+    .into_iter()
+    .map(|value| canonical_fixed_value(value, &declaration.source_name, initializer_span))
+    .collect::<Result<Vec<_>, _>>()
+    .map(Some)
+}
+
 fn parse_literal_sequence(
     source_name: &str,
     source_span: SourceSpan,
     source: &str,
     row_count: usize,
-    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    constant_values: &SourceFixedConstantValues,
 ) -> Result<Vec<u64>, SourceFixedColumnsWriteError> {
     parse_literal_sequence_values(source_name, source_span, source, row_count, constant_values)?
         .into_iter()
@@ -728,7 +796,7 @@ fn parse_literal_sequence_values(
     source_span: SourceSpan,
     source: &str,
     row_count: usize,
-    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    constant_values: &SourceFixedConstantValues,
 ) -> Result<Vec<i128>, SourceFixedColumnsWriteError> {
     let tokens = lex_source(source).map_err(|source| SourceFixedColumnsWriteError::Lex {
         source_name: source_name.to_owned(),
@@ -877,7 +945,7 @@ struct SequenceParseContext<'a> {
     source_span: SourceSpan,
     source: &'a str,
     tokens: &'a [Token],
-    constant_values: &'a BTreeMap<String, FixedFileTemplateValue>,
+    constant_values: &'a SourceFixedConstantValues,
 }
 
 struct ProgressionSegment<'a, 'b> {
@@ -1485,10 +1553,7 @@ fn parse_sequence_expression(
         });
     }
 
-    match evaluate_fixed_file_template_value_expression_with_values(
-        &expression,
-        context.constant_values,
-    ) {
+    match evaluate_source_fixed_template_value_expression(&expression, context.constant_values) {
         Some(FixedFileTemplateValue::Integer(value)) => Ok(value),
         _ => Err(SourceFixedColumnsWriteError::UnsupportedExpression {
             source_name: context.source_name.to_owned(),
