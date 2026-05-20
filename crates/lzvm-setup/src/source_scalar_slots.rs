@@ -50,7 +50,7 @@ struct SourceConstantSlot {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SourcePublicSlot {
-    id: u32,
+    offset: u32,
     stage: u64,
     dimension: u32,
 }
@@ -105,15 +105,20 @@ impl SourceScalarSlots {
         }
 
         let mut publics = BTreeMap::new();
-        for (index, value) in public_values.iter().enumerate() {
+        let mut public_offset = 0_u32;
+        for value in public_values {
+            let dimension = public_value_dimension(&value.lengths)?;
             publics.insert(
                 value.name.clone(),
                 SourcePublicSlot {
-                    id: usize_to_u32(index, "source public id overflow")?,
+                    offset: public_offset,
                     stage: value.stage,
-                    dimension: public_value_dimension(&value.lengths)?,
+                    dimension,
                 },
             );
+            public_offset = public_offset.checked_add(dimension).ok_or(
+                SourceScalarSlotError::LengthOverflow("source public value offset overflow"),
+            )?;
         }
 
         Ok(Self {
@@ -158,7 +163,7 @@ impl SourceScalarSlots {
                     name: name.to_owned(),
                 });
             }
-            return Ok(CodeOperand::public(slot.id, 1));
+            return Ok(CodeOperand::public(slot.offset, 1));
         }
 
         Err(SourceScalarSlotError::UnknownValue {
@@ -226,6 +231,33 @@ impl SourceScalarSlots {
                 (row_offset != 0).then_some(row_offset),
                 1,
             ));
+        }
+
+        if let Some(slot) = self.publics.get(name) {
+            if slot.stage != 1 {
+                return Err(SourceScalarSlotError::UnsupportedValueShape {
+                    name: name.to_owned(),
+                });
+            }
+            if row_offset != 0 {
+                return Err(SourceScalarSlotError::UnsupportedRowOffset {
+                    name: name.to_owned(),
+                });
+            }
+            if index >= slot.dimension {
+                return Err(SourceScalarSlotError::IndexOutOfRange {
+                    name: name.to_owned(),
+                    index,
+                    dimension: slot.dimension,
+                });
+            }
+            let offset =
+                slot.offset
+                    .checked_add(index)
+                    .ok_or(SourceScalarSlotError::LengthOverflow(
+                        "source public value offset overflow",
+                    ))?;
+            return Ok(CodeOperand::public(offset, 1));
         }
 
         Err(SourceScalarSlotError::UnsupportedIndex {
