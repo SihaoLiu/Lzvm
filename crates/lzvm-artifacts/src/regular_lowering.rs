@@ -619,6 +619,18 @@ fn lower_source(
                 u32_to_u16(opening_point_index(setup, 0)?)?,
             ],
         }),
+        CodeOperand::ConstantAt {
+            id,
+            prime,
+            dimension,
+        } => Ok(SourceArg {
+            dimension: *dimension,
+            fields: [
+                0,
+                u32_to_u16(*id)?,
+                u32_to_u16(opening_point_index(setup, prime.unwrap_or(0))?)?,
+            ],
+        }),
         CodeOperand::Commitment {
             id,
             prime,
@@ -906,6 +918,7 @@ fn operand_dimension(operand: &CodeOperand) -> u32 {
         | CodeOperand::Challenge { dimension, .. }
         | CodeOperand::Public { dimension, .. }
         | CodeOperand::Constant { dimension, .. }
+        | CodeOperand::ConstantAt { dimension, .. }
         | CodeOperand::Commitment { dimension, .. }
         | CodeOperand::BoundaryZerofier { dimension, .. }
         | CodeOperand::ProofValue { dimension, .. }
@@ -918,7 +931,9 @@ fn operand_dimension(operand: &CodeOperand) -> u32 {
 
 fn operand_order(operand: &CodeOperand) -> u8 {
     match operand {
-        CodeOperand::Constant { .. } | CodeOperand::BoundaryZerofier { .. } => 0,
+        CodeOperand::Constant { .. }
+        | CodeOperand::ConstantAt { .. }
+        | CodeOperand::BoundaryZerofier { .. } => 0,
         CodeOperand::Commitment { dimension: 1, .. } => 0,
         CodeOperand::CustomCommitment { dimension: 1, .. } => 0,
         CodeOperand::Temporary { dimension: 1, .. } => 1,

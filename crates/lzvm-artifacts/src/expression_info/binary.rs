@@ -35,6 +35,7 @@ const OPERAND_OPENING_DENOMINATOR_TAG: u8 = 10;
 const OPERAND_CUSTOM_COMMITMENT_TAG: u8 = 11;
 const OPERAND_AIR_GROUP_VALUE_TAG: u8 = 12;
 const OPERAND_AIR_VALUE_TAG: u8 = 13;
+const OPERAND_CONSTANT_AT_TAG: u8 = 14;
 
 const U32_BYTES: usize = 4;
 const TAG_BYTES: usize = 1;
@@ -464,6 +465,15 @@ fn write_operand(out: &mut Vec<u8>, value: &CodeOperand) {
             out.push(OPERAND_CONSTANT_TAG);
             write_reference_body(out, *id, *dimension);
         }
+        CodeOperand::ConstantAt {
+            id,
+            prime,
+            dimension,
+        } => {
+            out.push(OPERAND_CONSTANT_AT_TAG);
+            write_reference_body(out, *id, *dimension);
+            write_optional_i64(out, *prime);
+        }
         CodeOperand::Commitment {
             id,
             prime,
@@ -655,6 +665,11 @@ impl<'a> Reader<'a> {
             OPERAND_CONSTANT_TAG => {
                 let (id, dimension) = self.read_reference_body()?;
                 Ok(CodeOperand::constant(id, dimension))
+            }
+            OPERAND_CONSTANT_AT_TAG => {
+                let (id, dimension) = self.read_reference_body()?;
+                let prime = self.read_optional_i64("constant_prime")?;
+                Ok(CodeOperand::constant_at(id, prime, dimension))
             }
             OPERAND_COMMITMENT_TAG => {
                 let (id, dimension) = self.read_reference_body()?;

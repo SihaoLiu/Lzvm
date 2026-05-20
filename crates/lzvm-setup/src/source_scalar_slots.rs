@@ -136,6 +136,15 @@ impl SourceScalarSlots {
             return Ok(CodeOperand::commitment_at(slot.id, Some(row_offset), 1));
         }
 
+        if let Some(slot) = self.constants.get(name) {
+            if slot.stage != 0 || slot.dimension != 1 {
+                return Err(SourceScalarSlotError::UnsupportedValueShape {
+                    name: name.to_owned(),
+                });
+            }
+            return Ok(CodeOperand::constant_at(slot.id, Some(row_offset), 1));
+        }
+
         Err(SourceScalarSlotError::UnsupportedRowOffset {
             name: name.to_owned(),
         })
@@ -156,7 +165,7 @@ impl fmt::Display for SourceScalarSlotError {
             Self::UnsupportedRowOffset { name } => {
                 write!(
                     f,
-                    "source row offsets require commitment source values: {name}"
+                    "source row offsets require commitment or fixed source values: {name}"
                 )
             }
         }

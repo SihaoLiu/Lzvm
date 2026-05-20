@@ -287,23 +287,39 @@ pub fn sample_expression_info_fixture() -> ExpressionInfo {
                 },
             ],
         }],
-        constraints: vec![ConstraintCode {
-            stage: 2,
-            boundary: BoundaryKind::EveryFrame,
-            offset_min: Some(-1),
-            offset_max: Some(2),
-            line: "constraint-a".to_owned(),
-            intermediate: true,
-            temporary_count: 1,
-            operations: vec![CodeOperation {
-                op: OperationKind::Mul,
-                destination: CodeDestination::temporary(0, 3),
-                sources: vec![
-                    CodeOperand::challenge(0, Some(1), Some(0), 3),
-                    CodeOperand::commitment_at(2, Some(0), 3),
-                ],
-            }],
-        }],
+        constraints: vec![
+            ConstraintCode {
+                stage: 2,
+                boundary: BoundaryKind::EveryFrame,
+                offset_min: Some(-1),
+                offset_max: Some(2),
+                line: "constraint-a".to_owned(),
+                intermediate: true,
+                temporary_count: 1,
+                operations: vec![CodeOperation {
+                    op: OperationKind::Mul,
+                    destination: CodeDestination::temporary(0, 3),
+                    sources: vec![
+                        CodeOperand::challenge(0, Some(1), Some(0), 3),
+                        CodeOperand::commitment_at(2, Some(0), 3),
+                    ],
+                }],
+            },
+            ConstraintCode {
+                stage: 1,
+                boundary: BoundaryKind::EveryFrame,
+                offset_min: Some(0),
+                offset_max: Some(1),
+                line: "constraint-b".to_owned(),
+                intermediate: false,
+                temporary_count: 1,
+                operations: vec![CodeOperation {
+                    op: OperationKind::Copy,
+                    destination: CodeDestination::temporary(0, 1),
+                    sources: vec![CodeOperand::constant_at(2, Some(1), 1)],
+                }],
+            },
+        ],
     }
 }
 

@@ -9,7 +9,7 @@ use crate::sectioned::{
 mod binary;
 
 const EXPRESSION_INFO_KIND: [u8; 4] = *b"xinf";
-const EXPRESSION_INFO_VERSION: u32 = 5;
+const EXPRESSION_INFO_VERSION: u32 = 6;
 const EXPRESSION_INFO_SECTION_ID: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -195,6 +195,11 @@ pub enum CodeOperand {
         id: u32,
         dimension: u32,
     },
+    ConstantAt {
+        id: u32,
+        prime: Option<i64>,
+        dimension: u32,
+    },
     Commitment {
         id: u32,
         prime: Option<i64>,
@@ -362,6 +367,14 @@ impl CodeOperand {
 
     pub fn constant(id: u32, dimension: u32) -> Self {
         Self::Constant { id, dimension }
+    }
+
+    pub fn constant_at(id: u32, prime: Option<i64>, dimension: u32) -> Self {
+        Self::ConstantAt {
+            id,
+            prime,
+            dimension,
+        }
     }
 
     pub fn commitment(id: u32, dimension: u32) -> Self {
