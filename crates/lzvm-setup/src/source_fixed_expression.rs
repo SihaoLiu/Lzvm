@@ -71,8 +71,8 @@ fn evaluate_source_fixed_expression_inner(
     expression: &Expression,
     row: usize,
 ) -> Result<Option<u64>, SourceFixedColumnsWriteError> {
-    if let Some(FixedFileTemplateValue::Integer(value)) =
-        evaluate_source_fixed_static_value_expression(context, expression)
+    if let Some(value) = evaluate_source_fixed_static_value_expression(context, expression)
+        .and_then(source_fixed_static_integer_value)
     {
         return canonical_source_fixed_expression_value(context, expression, value).map(Some);
     }
@@ -143,8 +143,8 @@ fn evaluate_source_fixed_expression_inner(
             evaluate_source_fixed_expression_inner(context, target, source_row)
         }
         ExpressionKind::Index { .. } => {
-            if let Some(FixedFileTemplateValue::Integer(value)) =
-                evaluate_source_fixed_static_value_expression(context, expression)
+            if let Some(value) = evaluate_source_fixed_static_value_expression(context, expression)
+                .and_then(source_fixed_static_integer_value)
             {
                 return canonical_source_fixed_expression_value(context, expression, value)
                     .map(Some);
@@ -216,11 +216,9 @@ pub(crate) fn evaluate_source_fixed_template_value_expression_with_parts(
         return None;
     };
     let values = arrays.get(array_name)?;
-    let FixedFileTemplateValue::Integer(index) =
-        evaluate_source_fixed_template_value_expression_with_parts(index, scalars, arrays)?
-    else {
-        return None;
-    };
+    let index = source_fixed_static_integer_value(
+        evaluate_source_fixed_template_value_expression_with_parts(index, scalars, arrays)?,
+    )?;
     let index = usize::try_from(index).ok()?;
     values
         .get(index)
@@ -239,10 +237,9 @@ fn evaluate_source_fixed_template_value_expression_with_static_index(
         return None;
     };
     let values = context.constant_values.arrays.get(array_name)?;
-    let index = evaluate_source_fixed_static_value_expression(context, index)?;
-    let FixedFileTemplateValue::Integer(index) = index else {
-        return None;
-    };
+    let index = source_fixed_static_integer_value(evaluate_source_fixed_static_value_expression(
+        context, index,
+    )?)?;
     let index = usize::try_from(index).ok()?;
     values
         .get(index)
@@ -254,8 +251,10 @@ fn source_fixed_expression_static_integer(
     context: &SourceFixedExpressionContext<'_>,
     expression: &Expression,
 ) -> Result<i128, SourceFixedColumnsWriteError> {
-    match evaluate_source_fixed_static_value_expression(context, expression) {
-        Some(FixedFileTemplateValue::Integer(value)) => Ok(value),
+    match evaluate_source_fixed_static_value_expression(context, expression)
+        .and_then(source_fixed_static_integer_value)
+    {
+        Some(value) => Ok(value),
         _ => Err(source_fixed_expression_unsupported(context, expression)),
     }
 }
@@ -275,6 +274,14 @@ fn evaluate_source_fixed_static_value_expression(
                 &context.constant_values.scalars,
             )
         })
+}
+
+fn source_fixed_static_integer_value(value: FixedFileTemplateValue) -> Option<i128> {
+    match value {
+        FixedFileTemplateValue::Integer(value) => Some(value),
+        FixedFileTemplateValue::Boolean(value) => Some(i128::from(value)),
+        FixedFileTemplateValue::String(_) => None,
+    }
 }
 
 fn canonical_source_fixed_expression_value(
