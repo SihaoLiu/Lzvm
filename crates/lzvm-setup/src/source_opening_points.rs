@@ -10,6 +10,7 @@ use crate::{
     source_constraint_lowering::SourceExpressionAliases,
     source_control_body_cache::{SourceControlBodyCache, SourceControlBodyCaches},
     source_key_directory::SourceKeyDirectoryMetadataError,
+    source_statement_hints::source_lookup_statement_expressions,
     source_static_values::{
         evaluate_source_static_expression, source_declaration_constant_values_from_cache,
         SourceTemplateConstantValueCache,
@@ -172,6 +173,24 @@ fn collect_source_statement_opening_points(
             points,
             &mut resolving_aliases,
         )?;
+    }
+    if let Some(expressions) = source_lookup_statement_expressions(context.module, statement)
+        .map_err(|source| SourceKeyDirectoryMetadataError::Lex {
+            source_name: context.module.source_name.clone(),
+            source,
+        })?
+    {
+        for expression in expressions {
+            let mut resolving_aliases = BTreeSet::new();
+            collect_source_opening_points(
+                context.program,
+                &expression,
+                values,
+                expression_aliases,
+                points,
+                &mut resolving_aliases,
+            )?;
+        }
     }
     Ok(())
 }

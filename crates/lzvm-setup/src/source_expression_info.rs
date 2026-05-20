@@ -73,6 +73,7 @@ pub(crate) fn source_expression_info(
                 module,
                 tokens: &tokens,
                 scalar_slots: &scalar_slots,
+                opening_points: &setup.opening_points,
                 fixed_columns: &fixed_assignment_columns,
                 constant_values: &constant_values,
                 template_values: &template_values,
@@ -287,6 +288,7 @@ fn lower_source_template_statement(
         statement,
         values,
         context.scalar_slots,
+        context.opening_points,
     )
     .map_err(|source| SourceKeyDirectoryMetadataError::Lex {
         source_name: context.module.source_name.clone(),

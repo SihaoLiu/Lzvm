@@ -7,6 +7,7 @@ use lzvm_artifacts::hint_program::{
 };
 use lzvm_artifacts::key_directory::read_key_directory_layout;
 use lzvm_artifacts::regular_program::read_regular_program_file;
+use lzvm_artifacts::setup_info::read_unit_setup_info_binary_file;
 use lzvm_cli::run_cli;
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -32,8 +33,8 @@ fn generate_key_records_source_lookup_calls_as_structured_regular_hints() {
         "airtemplate UnitA() {\n\
              col witness multiplicity;\n\
              col witness value;\n\
-             lookup_proves(7, [value, main.left], mul: multiplicity);\n\
-             lookup_assumes(9, [value, main.left], sel: multiplicity);\n\
+             lookup_proves(7, [value, value', main.left], mul: multiplicity);\n\
+             lookup_assumes(9, [value, value', main.left], sel: multiplicity);\n\
          }\n\
          airgroup GroupA { UnitA(); }\n\
          col fixed main.left = [5, 1];",
@@ -56,6 +57,12 @@ fn generate_key_records_source_lookup_calls_as_structured_regular_hints() {
     assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
     let layout = read_key_directory_layout(&dir).expect("layout should derive");
     let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    assert_eq!(setup.opening_points, vec![0, 1]);
     let expression_path = unit
         .expression_info_binary()
         .expect("expression metadata path should derive");
@@ -92,6 +99,13 @@ fn generate_key_records_source_lookup_calls_as_structured_regular_hints() {
     );
     assert_eq!(
         regular.hints.hints[0].fields[1].values[1].operand,
+        HintOperand::Commitment {
+            id: 1,
+            row_offset_index: 1
+        }
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[2].operand,
         HintOperand::Constant {
             id: 0,
             row_offset_index: 0
@@ -118,6 +132,13 @@ fn generate_key_records_source_lookup_calls_as_structured_regular_hints() {
     );
     assert_eq!(
         regular.hints.hints[1].fields[1].values[1].operand,
+        HintOperand::Commitment {
+            id: 1,
+            row_offset_index: 1
+        }
+    );
+    assert_eq!(
+        regular.hints.hints[1].fields[1].values[2].operand,
         HintOperand::Constant {
             id: 0,
             row_offset_index: 0

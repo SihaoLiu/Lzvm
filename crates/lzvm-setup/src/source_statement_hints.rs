@@ -54,17 +54,133 @@ pub(crate) fn lower_source_lookup_statement(
     statement: &FunctionStatement,
     values: &BTreeMap<String, FixedFileTemplateValue>,
     scalar_slots: &SourceScalarSlots,
+    opening_points: &[i64],
 ) -> Result<Option<HintInfo>, LexError> {
     let Some(name) = source_lookup_hint_name(module, statement)? else {
         return Ok(None);
     };
     let line = source_statement_line(module, statement);
-    if let Some(hint) =
-        lower_structured_source_lookup_hint(program, module, values, scalar_slots, name, &line)?
-    {
+    if let Some(hint) = lower_structured_source_lookup_hint(
+        program,
+        module,
+        values,
+        scalar_slots,
+        opening_points,
+        name,
+        &line,
+    )? {
         return Ok(Some(hint));
     }
     Ok(Some(source_lookup_line_hint(name, line)))
+}
+
+pub(crate) fn source_lookup_statement_expressions(
+    module: &SourceProgramModule,
+    statement: &FunctionStatement,
+) -> Result<Option<Vec<Expression>>, LexError> {
+    let Some(name) = source_lookup_hint_name(module, statement)? else {
+        return Ok(None);
+    };
+    let line = source_statement_line(module, statement);
+    let tokens = lex_source(&line)?;
+    let Some(open_index) = tokens
+        .iter()
+        .position(|token| token.kind == TokenKind::LParen)
+    else {
+        return Ok(None);
+    };
+    let Some(close_index) = tokens
+        .iter()
+        .rposition(|token| token.kind == TokenKind::RParen)
+    else {
+        return Ok(None);
+    };
+    let Some(first) = tokens.first() else {
+        return Ok(None);
+    };
+    if first.kind != TokenKind::Identifier || first.lexeme.as_str() != source_lookup_call_name(name)
+    {
+        return Ok(None);
+    }
+
+    let Some(arguments) = top_level_argument_ranges(&tokens, open_index, close_index) else {
+        return Ok(None);
+    };
+    if arguments.len() < 2 {
+        return Ok(None);
+    }
+
+    let second_argument = split_named_argument(&tokens, arguments[1]);
+    if second_argument.name.is_some() {
+        return Ok(None);
+    }
+    let mut expressions = Vec::new();
+    if !source_lookup_value_expressions(
+        module,
+        &line,
+        &tokens,
+        second_argument.value_range,
+        &mut expressions,
+    ) {
+        return Ok(None);
+    }
+
+    for range in arguments.into_iter().skip(2) {
+        let argument = split_named_argument(&tokens, range);
+        let Some(argument_name) = argument.name else {
+            return Ok(None);
+        };
+        match argument_name.as_str() {
+            "mul" | "sel" => {}
+            _ => return Ok(None),
+        }
+        if !source_lookup_value_expressions(
+            module,
+            &line,
+            &tokens,
+            argument.value_range,
+            &mut expressions,
+        ) {
+            return Ok(None);
+        }
+    }
+
+    Ok(Some(expressions))
+}
+
+fn source_lookup_value_expressions(
+    module: &SourceProgramModule,
+    line: &str,
+    tokens: &[Token],
+    range: (usize, usize),
+    expressions: &mut Vec<Expression>,
+) -> bool {
+    if range.0 >= range.1 {
+        return false;
+    }
+    if tokens[range.0].kind == TokenKind::LBracket
+        && range.0 + 1 < range.1
+        && tokens[range.1 - 1].kind == TokenKind::RBracket
+    {
+        let Some(ranges) = top_level_argument_ranges(tokens, range.0, range.1 - 1) else {
+            return false;
+        };
+        for value_range in ranges {
+            let Some(expression) =
+                parse_source_lookup_expression(module, line, tokens, value_range)
+            else {
+                return false;
+            };
+            expressions.push(expression);
+        }
+        return true;
+    }
+
+    let Some(expression) = parse_source_lookup_expression(module, line, tokens, range) else {
+        return false;
+    };
+    expressions.push(expression);
+    true
 }
 
 fn lower_structured_source_lookup_hint(
@@ -72,6 +188,7 @@ fn lower_structured_source_lookup_hint(
     module: &SourceProgramModule,
     values: &BTreeMap<String, FixedFileTemplateValue>,
     scalar_slots: &SourceScalarSlots,
+    opening_points: &[i64],
     name: &str,
     line: &str,
 ) -> Result<Option<HintInfo>, LexError> {
@@ -102,6 +219,15 @@ fn lower_structured_source_lookup_hint(
     if arguments.len() < 2 {
         return Ok(None);
     }
+    let context = SourceLookupLowering {
+        program,
+        module,
+        line,
+        tokens: &tokens,
+        values,
+        scalar_slots,
+        opening_points,
+    };
 
     let first_argument = split_named_argument(&tokens, arguments[0]);
     if first_argument.name.is_some() {
@@ -122,15 +248,7 @@ fn lower_structured_source_lookup_hint(
     if second_argument.name.is_some() {
         return Ok(None);
     }
-    let Some(lookup_values) = source_lookup_values(
-        program,
-        module,
-        line,
-        &tokens,
-        second_argument.value_range,
-        values,
-        scalar_slots,
-    ) else {
+    let Some(lookup_values) = source_lookup_values(&context, second_argument.value_range) else {
         return Ok(None);
     };
 
@@ -151,15 +269,7 @@ fn lower_structured_source_lookup_hint(
             "sel" => "selector",
             _ => return Ok(None),
         };
-        let Some(value) = source_lookup_value(
-            program,
-            module,
-            line,
-            &tokens,
-            argument.value_range,
-            values,
-            scalar_slots,
-        ) else {
+        let Some(value) = source_lookup_value(&context, argument.value_range) else {
             return Ok(None);
         };
         fields.push(HintFieldInfo {
@@ -242,6 +352,16 @@ struct SourceLookupArgument {
     value_range: (usize, usize),
 }
 
+struct SourceLookupLowering<'a> {
+    program: &'a SourceProgram,
+    module: &'a SourceProgramModule,
+    line: &'a str,
+    tokens: &'a [Token],
+    values: &'a BTreeMap<String, FixedFileTemplateValue>,
+    scalar_slots: &'a SourceScalarSlots,
+    opening_points: &'a [i64],
+}
+
 fn split_named_argument(tokens: &[Token], range: (usize, usize)) -> SourceLookupArgument {
     if range.0 + 2 <= range.1
         && tokens[range.0].kind == TokenKind::Identifier
@@ -313,82 +433,44 @@ fn evaluate_unsigned_argument(
 }
 
 fn source_lookup_values(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
-    line: &str,
-    tokens: &[Token],
+    context: &SourceLookupLowering<'_>,
     range: (usize, usize),
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-    scalar_slots: &SourceScalarSlots,
 ) -> Option<Vec<HintValueInfo>> {
     if range.0 >= range.1 {
         return None;
     }
-    if tokens[range.0].kind == TokenKind::LBracket
+    if context.tokens[range.0].kind == TokenKind::LBracket
         && range.0 + 1 < range.1
-        && tokens[range.1 - 1].kind == TokenKind::RBracket
+        && context.tokens[range.1 - 1].kind == TokenKind::RBracket
     {
-        let ranges = top_level_argument_ranges(tokens, range.0, range.1 - 1)?;
+        let ranges = top_level_argument_ranges(context.tokens, range.0, range.1 - 1)?;
         return ranges
             .into_iter()
-            .map(|value_range| {
-                source_lookup_value(
-                    program,
-                    module,
-                    line,
-                    tokens,
-                    value_range,
-                    values,
-                    scalar_slots,
-                )
-            })
+            .map(|value_range| source_lookup_value(context, value_range))
             .collect();
     }
-    Some(vec![source_lookup_value(
-        program,
-        module,
-        line,
-        tokens,
-        range,
-        values,
-        scalar_slots,
-    )?])
+    Some(vec![source_lookup_value(context, range)?])
 }
 
 fn source_lookup_value(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
-    line: &str,
-    tokens: &[Token],
+    context: &SourceLookupLowering<'_>,
     range: (usize, usize),
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-    scalar_slots: &SourceScalarSlots,
 ) -> Option<HintValueInfo> {
     Some(HintValueInfo {
         positions: Vec::new(),
-        payload: source_lookup_value_payload(
-            program,
-            module,
-            line,
-            tokens,
-            range,
-            values,
-            scalar_slots,
-        )?,
+        payload: source_lookup_value_payload(context, range)?,
     })
 }
 
 fn source_lookup_value_payload(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
-    line: &str,
-    tokens: &[Token],
+    context: &SourceLookupLowering<'_>,
     range: (usize, usize),
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-    scalar_slots: &SourceScalarSlots,
 ) -> Option<HintPayload> {
-    let expression = parse_source_lookup_expression(module, line, tokens, range)?;
-    if let Some(value) = evaluate_source_static_expression(program, &expression, values) {
+    let expression =
+        parse_source_lookup_expression(context.module, context.line, context.tokens, range)?;
+    if let Some(value) =
+        evaluate_source_static_expression(context.program, &expression, context.values)
+    {
         match value {
             FixedFileTemplateValue::Integer(value) => {
                 return Some(HintPayload::number(canonical_hint_number(value)?));
@@ -399,8 +481,14 @@ fn source_lookup_value_payload(
             FixedFileTemplateValue::String(_) => return None,
         }
     }
-    let operand = source_lookup_scalar_operand(program, &expression, values, scalar_slots)?;
-    hint_payload_from_code_operand(operand)
+    let operand = source_lookup_scalar_operand(
+        context.program,
+        &expression,
+        context.values,
+        context.scalar_slots,
+        0,
+    )?;
+    hint_payload_from_code_operand(operand, context.opening_points)
 }
 
 fn parse_source_lookup_expression(
@@ -424,15 +512,31 @@ fn source_lookup_scalar_operand(
     expression: &Expression,
     values: &BTreeMap<String, FixedFileTemplateValue>,
     scalar_slots: &SourceScalarSlots,
+    row_offset: i64,
 ) -> Option<CodeOperand> {
     match &strip_group_expression(expression).kind {
-        ExpressionKind::Name(name) => scalar_slots.operand(name).ok(),
+        ExpressionKind::Name(name) => {
+            if row_offset == 0 {
+                scalar_slots.operand(name).ok()
+            } else {
+                scalar_slots.operand_at(name, row_offset).ok()
+            }
+        }
         ExpressionKind::Index { target, index } => {
             let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
                 return None;
             };
             let index = source_lookup_index(program, index, values)?;
-            scalar_slots.operand_index_at(name, index, 0).ok()
+            scalar_slots.operand_index_at(name, index, row_offset).ok()
+        }
+        ExpressionKind::RowOffset {
+            target,
+            offset,
+            prior,
+        } => {
+            let signed_offset = source_lookup_row_offset_value(program, offset, *prior, values)?;
+            let combined_offset = row_offset.checked_add(signed_offset)?;
+            source_lookup_scalar_operand(program, target, values, scalar_slots, combined_offset)
         }
         _ => None,
     }
@@ -457,36 +561,72 @@ fn source_lookup_index(
     }
 }
 
+fn source_lookup_row_offset_value(
+    program: &SourceProgram,
+    expression: &Expression,
+    prior: bool,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<i64> {
+    let FixedFileTemplateValue::Integer(offset) =
+        evaluate_source_static_expression(program, expression, values)?
+    else {
+        return None;
+    };
+    let signed = if prior { offset.checked_neg()? } else { offset };
+    i64::try_from(signed).ok()
+}
+
 fn canonical_hint_number(value: i128) -> Option<u64> {
     let modulus = i128::from(MODULUS);
     u64::try_from(value.rem_euclid(modulus)).ok()
 }
 
-fn hint_payload_from_code_operand(operand: CodeOperand) -> Option<HintPayload> {
+fn hint_payload_from_code_operand(
+    operand: CodeOperand,
+    opening_points: &[i64],
+) -> Option<HintPayload> {
     match operand {
         CodeOperand::Number { value, .. } => Some(HintPayload::number(value)),
         CodeOperand::Commitment {
             id,
-            prime: None,
+            prime,
             dimension,
-        } => Some(HintPayload::Commitment {
-            id,
-            row_offset_index: Some(0),
-            row_offset: Some(0),
-            stage: None,
-            stage_id: None,
-            dimension: Some(dimension),
-            air_group_id: None,
-            air_id: None,
-        }),
+        } => {
+            let row_offset = prime.unwrap_or(0);
+            Some(HintPayload::Commitment {
+                id,
+                row_offset_index: Some(opening_point_index(opening_points, row_offset)?),
+                row_offset: Some(row_offset),
+                stage: None,
+                stage_id: None,
+                dimension: Some(dimension),
+                air_group_id: None,
+                air_id: None,
+            })
+        }
         CodeOperand::Constant { id, dimension } => Some(HintPayload::constant(
             id,
-            Some(0),
+            Some(opening_point_index(opening_points, 0)?),
             Some(0),
             Some(dimension),
             None,
             None,
         )),
+        CodeOperand::ConstantAt {
+            id,
+            prime,
+            dimension,
+        } => {
+            let row_offset = prime.unwrap_or(0);
+            Some(HintPayload::constant(
+                id,
+                Some(opening_point_index(opening_points, row_offset)?),
+                Some(row_offset),
+                Some(dimension),
+                None,
+                None,
+            ))
+        }
         CodeOperand::AirValue {
             id,
             stage,
@@ -518,6 +658,13 @@ fn hint_payload_from_code_operand(operand: CodeOperand) -> Option<HintPayload> {
         } => Some(HintPayload::proof_value(id, stage, Some(dimension))),
         _ => None,
     }
+}
+
+fn opening_point_index(opening_points: &[i64], row_offset: i64) -> Option<u32> {
+    opening_points
+        .iter()
+        .position(|point| *point == row_offset)
+        .and_then(|index| u32::try_from(index).ok())
 }
 
 fn hint_number_field(name: &str, value: u64) -> HintFieldInfo {
