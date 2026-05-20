@@ -13,11 +13,14 @@ use lzvm_field::MODULUS;
 use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
     ColumnInitializer, ColumnInitializerKind, ColumnItem, ColumnKind, ConstantDeclaration,
-    ExpressionKind, FixedFileTemplateValue, LexError, ParseError, SourceFile, SourceLoaderConfig,
-    SourceProgram, SourceProgramError, SourceProgramLoader, SourceSpan, Token, TokenKind,
+    FixedFileTemplateValue, LexError, ParseError, SourceFile, SourceLoaderConfig, SourceProgram,
+    SourceProgramError, SourceProgramLoader, SourceSpan, Token, TokenKind,
 };
 
-use crate::{publish_staging_bytes, write_staging_bytes, SetupError};
+use crate::{
+    publish_staging_bytes, source_fixed_expression::source_fixed_column_expression_values,
+    write_staging_bytes, SetupError,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceFixedColumnsWriteRequest {
@@ -597,54 +600,16 @@ fn source_fixed_column_values_from_initializer(
             )
             .map(Some)
         }
-        ColumnInitializerKind::Expression => source_fixed_column_reference_values(
+        ColumnInitializerKind::Expression => source_fixed_column_expression_values(
             source_name,
+            source,
             column_name,
             initializer,
+            row_count,
+            constant_values,
             column_values,
         ),
     }
-}
-
-fn source_fixed_column_reference_values(
-    source_name: &str,
-    column_name: &str,
-    initializer: &ColumnInitializer,
-    column_values: &BTreeMap<String, Vec<u64>>,
-) -> Result<Option<Vec<u64>>, SourceFixedColumnsWriteError> {
-    let Some(expression) = initializer.expression.as_ref() else {
-        return Err(SourceFixedColumnsWriteError::UnsupportedInitializer {
-            source_name: source_name.to_owned(),
-            column: column_name.to_owned(),
-        });
-    };
-    let ExpressionKind::Name(reference) = &expression.kind else {
-        return Err(SourceFixedColumnsWriteError::UnsupportedInitializer {
-            source_name: source_name.to_owned(),
-            column: column_name.to_owned(),
-        });
-    };
-
-    for candidate in fixed_column_reference_candidates(column_name, reference) {
-        if let Some(values) = column_values.get(&candidate) {
-            return Ok(Some(values.clone()));
-        }
-    }
-
-    Ok(None)
-}
-
-fn fixed_column_reference_candidates(column_name: &str, reference: &str) -> Vec<String> {
-    if reference.contains('.') {
-        return vec![reference.to_owned()];
-    }
-
-    let mut candidates = Vec::new();
-    if let Some((scope, _)) = column_name.rsplit_once('.') {
-        candidates.push(format!("{scope}.{reference}"));
-    }
-    candidates.push(reference.to_owned());
-    candidates
 }
 
 fn source_fixed_column_dimensions(

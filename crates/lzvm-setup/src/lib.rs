@@ -31,6 +31,7 @@ mod program_image;
 mod reports;
 mod source_companions;
 mod source_fixed_columns;
+mod source_fixed_expression;
 mod source_fixed_file_manifest;
 mod source_program_archive;
 mod staging;
