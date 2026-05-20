@@ -482,6 +482,22 @@ fn skips_destructuring_const_declarations() {
 }
 
 #[test]
+fn skips_comma_separated_const_declarations() {
+    let source = source(
+        "function f(const int n) {\n\
+           const expr left[n], right[n];\n\
+           const int LIMIT = 4;\n\
+         }",
+    );
+
+    let declarations =
+        parse_constant_declarations(&source).expect("constant declarations should parse");
+
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(declarations[0].name, "LIMIT");
+}
+
+#[test]
 fn parses_variable_declarations_and_skips_signature_types() {
     let source = source(
         "function f(expr input): expr {\n\

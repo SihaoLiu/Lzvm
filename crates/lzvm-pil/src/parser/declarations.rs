@@ -54,7 +54,7 @@ pub fn parse_constant_declarations(
     let mut stack = Vec::new();
 
     while index < tokens.len() {
-        if constant_declaration_context(&tokens, index, &stack) {
+        if constant_declaration_context(&tokens, index, &stack, source)? {
             let parsed = parse_constant_declaration_at(&tokens, index, source)?;
             index = parsed.next_index;
             declarations.push(parsed.declaration);
@@ -1067,25 +1067,42 @@ fn declaration_statement_context(stack: &[TokenKind]) -> bool {
         .all(|kind| !matches!(kind, TokenKind::RParen | TokenKind::RBracket))
 }
 
-fn constant_declaration_context(tokens: &[Token], index: usize, stack: &[TokenKind]) -> bool {
+fn constant_declaration_context(
+    tokens: &[Token],
+    index: usize,
+    stack: &[TokenKind],
+    source: &SourceFile,
+) -> Result<bool, ParseError> {
     if !declaration_statement_context(stack) {
-        return false;
+        return Ok(false);
     }
 
-    match tokens.get(index).map(|token| token.kind) {
-        Some(TokenKind::Constant) => tokens
-            .get(index + 1)
-            .is_some_and(|token| name_reference_start(token.kind)),
+    let name_index = match tokens.get(index).map(|token| token.kind) {
+        Some(TokenKind::Constant) => index + 1,
         Some(TokenKind::Const) => {
-            tokens
+            if tokens
                 .get(index + 1)
-                .is_some_and(|token| constant_type_name(token).is_some())
-                && tokens
-                    .get(index + 2)
-                    .is_some_and(|token| name_reference_start(token.kind))
+                .is_none_or(|token| constant_type_name(token).is_none())
+            {
+                return Ok(false);
+            }
+            index + 2
         }
-        _ => false,
+        _ => return Ok(false),
+    };
+
+    if !tokens
+        .get(name_index)
+        .is_some_and(|token| name_reference_start(token.kind))
+    {
+        return Ok(false);
     }
+
+    let (_, after_name) = parse_name_reference(tokens, name_index, source)?;
+    let array_parse = parse_array_dimensions(tokens, after_name, source)?;
+    Ok(!tokens
+        .get(array_parse.next_index)
+        .is_some_and(|token| token.kind == TokenKind::Comma))
 }
 
 fn name_reference_start(kind: TokenKind) -> bool {
