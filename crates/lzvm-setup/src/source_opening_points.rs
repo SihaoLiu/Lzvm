@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_pil::{
-    Expression, ExpressionKind, FixedFileTemplateValue, FunctionStatement,
-    FunctionStatementDeclaration, FunctionStatementKind, SourceProgram, SourceProgramModule,
+    lex_source, Expression, ExpressionKind, FixedFileTemplateValue, FunctionStatement,
+    FunctionStatementDeclaration, FunctionStatementKind, SourceProgram, SourceProgramModule, Token,
     UnaryOperator,
 };
 
@@ -13,8 +13,8 @@ use crate::{
         evaluate_source_static_expression, source_declaration_constant_values_from_cache,
         SourceTemplateConstantValueCache,
     },
-    source_template_for::source_static_for_loop,
-    source_template_if::source_static_if_body_statements,
+    source_template_for::source_static_for_loop_with_tokens,
+    source_template_if::source_static_if_body_statements_with_tokens,
 };
 
 pub(crate) fn source_opening_points(
@@ -25,6 +25,12 @@ pub(crate) fn source_opening_points(
 ) -> Result<Vec<i64>, SourceKeyDirectoryMetadataError> {
     let mut points = vec![0_i64];
     for module in &program.modules {
+        let tokens = lex_source(&module.source.contents).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: module.source_name.clone(),
+                source,
+            }
+        })?;
         for template in &module.air_templates {
             if !active_templates.contains(&template.name) {
                 continue;
@@ -33,6 +39,7 @@ pub(crate) fn source_opening_points(
             let context = SourceOpeningPointContext {
                 program,
                 module,
+                tokens: &tokens,
                 constant_values,
                 template_values,
             };
@@ -62,6 +69,7 @@ pub(crate) fn source_opening_points(
 struct SourceOpeningPointContext<'a> {
     program: &'a SourceProgram,
     module: &'a SourceProgramModule,
+    tokens: &'a [Token],
     constant_values: &'a BTreeMap<String, FixedFileTemplateValue>,
     template_values: &'a SourceTemplateConstantValueCache,
 }
@@ -77,7 +85,13 @@ fn collect_source_statement_opening_points(
         return Ok(());
     }
     if statement.kind == FunctionStatementKind::If {
-        match source_static_if_body_statements(context.program, context.module, statement, values) {
+        match source_static_if_body_statements_with_tokens(
+            context.program,
+            context.module,
+            context.tokens,
+            statement,
+            values,
+        ) {
             Ok(Some(body_statements)) => {
                 let mut body_aliases = expression_aliases.clone();
                 for body_statement in &body_statements {
@@ -102,7 +116,13 @@ fn collect_source_statement_opening_points(
         }
     }
     if statement.kind == FunctionStatementKind::For {
-        match source_static_for_loop(context.program, context.module, statement, values) {
+        match source_static_for_loop_with_tokens(
+            context.program,
+            context.module,
+            context.tokens,
+            statement,
+            values,
+        ) {
             Ok(Some(loop_info)) => {
                 for iteration_values in &loop_info.iteration_values {
                     let mut loop_aliases = expression_aliases.clone();

@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
 use lzvm_pil::{
-    lex_source, parse_expression, parse_function_body_statements, BinaryOperator, Expression,
-    ExpressionKind, FixedFileTemplateValue, FunctionStatement, FunctionStatementDeclaration,
-    FunctionStatementKind, SourceProgram, SourceProgramModule, SourceSpan, Token, TokenKind,
-    UnaryOperator,
+    lex_source, parse_expression_tokens, parse_function_body_statements, BinaryOperator,
+    Expression, ExpressionKind, FixedFileTemplateValue, FunctionStatement,
+    FunctionStatementDeclaration, FunctionStatementKind, SourceProgram, SourceProgramModule,
+    SourceSpan, Token, TokenKind, UnaryOperator,
 };
 
 use crate::{
@@ -26,6 +26,22 @@ pub(crate) fn source_static_for_loop(
     statement: &FunctionStatement,
     base_values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<Option<SourceStaticForLoop>, SourceKeyDirectoryMetadataError> {
+    let tokens = lex_source(&module.source.contents).map_err(|source| {
+        SourceKeyDirectoryMetadataError::Lex {
+            source_name: module.source_name.clone(),
+            source,
+        }
+    })?;
+    source_static_for_loop_with_tokens(program, module, &tokens, statement, base_values)
+}
+
+pub(crate) fn source_static_for_loop_with_tokens(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    statement: &FunctionStatement,
+    base_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<Option<SourceStaticForLoop>, SourceKeyDirectoryMetadataError> {
     if statement.kind != FunctionStatementKind::For {
         return Ok(None);
     }
@@ -42,19 +58,13 @@ pub(crate) fn source_static_for_loop(
         return Ok(None);
     };
 
-    let tokens = lex_source(&module.source.contents).map_err(|source| {
-        SourceKeyDirectoryMetadataError::Lex {
-            source_name: module.source_name.clone(),
-            source,
-        }
-    })?;
     let Some(header) = statement.header else {
         return Ok(None);
     };
-    let Some((condition, update)) = source_for_loop_header(&tokens, header, module)? else {
+    let Some((condition, update)) = source_for_loop_header(tokens, header, module)? else {
         return Ok(None);
     };
-    let body_statements = parse_function_body_statements(&tokens, body, &module.source)?;
+    let body_statements = parse_function_body_statements(tokens, body, &module.source)?;
 
     let mut values = base_values.clone();
     values.insert(
@@ -108,8 +118,12 @@ fn source_for_loop_header(
     let [first_semicolon, second_semicolon] = semicolons.as_slice() else {
         return Ok(None);
     };
-    let (condition, consumed) =
-        parse_expression(&module.source, first_semicolon + 1, *second_semicolon)?;
+    let (condition, consumed) = parse_expression_tokens(
+        tokens,
+        first_semicolon + 1,
+        *second_semicolon,
+        &module.source,
+    )?;
     if consumed != *second_semicolon {
         return Ok(None);
     }
@@ -169,7 +183,7 @@ fn source_for_loop_update(
             postfix: Some(postfix),
         }));
     }
-    let (expression, consumed) = parse_expression(&module.source, start, end)?;
+    let (expression, consumed) = parse_expression_tokens(tokens, start, end, &module.source)?;
     if consumed != end {
         return Ok(None);
     }

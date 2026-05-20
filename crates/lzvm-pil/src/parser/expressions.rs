@@ -16,7 +16,7 @@ pub fn parse_expression(
     parse_expression_tokens(&tokens, start_index, end_index, source)
 }
 
-pub(crate) fn parse_expression_tokens(
+pub fn parse_expression_tokens(
     tokens: &[Token],
     start_index: usize,
     end_index: usize,

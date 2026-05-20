@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use lzvm_pil::{
-    lex_source, parse_expression, parse_function_body_statements, FixedFileTemplateValue,
+    lex_source, parse_expression_tokens, parse_function_body_statements, FixedFileTemplateValue,
     FunctionStatement, FunctionStatementKind, SourceProgram, SourceProgramModule, SourceSpan,
     Token, TokenKind,
 };
@@ -17,15 +17,25 @@ pub(crate) fn source_static_if_body_statements(
     statement: &FunctionStatement,
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<Option<Vec<FunctionStatement>>, SourceKeyDirectoryMetadataError> {
-    if statement.kind != FunctionStatementKind::If {
-        return Ok(None);
-    }
     let tokens = lex_source(&module.source.contents).map_err(|source| {
         SourceKeyDirectoryMetadataError::Lex {
             source_name: module.source_name.clone(),
             source,
         }
     })?;
+    source_static_if_body_statements_with_tokens(program, module, &tokens, statement, values)
+}
+
+pub(crate) fn source_static_if_body_statements_with_tokens(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    statement: &FunctionStatement,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<Option<Vec<FunctionStatement>>, SourceKeyDirectoryMetadataError> {
+    if statement.kind != FunctionStatementKind::If {
+        return Ok(None);
+    }
     let Some(start) = tokens
         .iter()
         .position(|token| token.start == statement.start)
@@ -39,7 +49,7 @@ pub(crate) fn source_static_if_body_statements(
     else {
         return Ok(None);
     };
-    let Some(selection) = source_static_if_body_span(program, module, &tokens, start, end, values)?
+    let Some(selection) = source_static_if_body_span(program, module, tokens, start, end, values)?
     else {
         return Ok(None);
     };
@@ -47,7 +57,7 @@ pub(crate) fn source_static_if_body_statements(
         return Ok(Some(Vec::new()));
     };
     Ok(Some(parse_function_body_statements(
-        &tokens,
+        tokens,
         body,
         &module.source,
     )?))
@@ -73,7 +83,8 @@ fn source_static_if_body_span(
     let Some(close) = matching_closing_token(tokens, open, end) else {
         return Ok(None);
     };
-    let Some(condition) = source_static_token_value(program, module, open + 1, close, values)
+    let Some(condition) =
+        source_static_token_value_with_tokens(program, module, tokens, open + 1, close, values)
     else {
         return Ok(None);
     };
@@ -122,14 +133,16 @@ fn source_static_else_body_span(
     }
 }
 
-fn source_static_token_value(
+fn source_static_token_value_with_tokens(
     program: &SourceProgram,
     module: &SourceProgramModule,
+    tokens: &[Token],
     start: usize,
     end: usize,
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Option<FixedFileTemplateValue> {
-    let (expression, consumed) = parse_expression(&module.source, start, end).ok()?;
+    let (expression, consumed) =
+        parse_expression_tokens(tokens, start, end, &module.source).ok()?;
     if consumed != end {
         return None;
     }

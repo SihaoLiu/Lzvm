@@ -35,8 +35,8 @@ use crate::{
         source_template_constant_value_cache,
     },
     source_template_context::SourceTemplateLoweringContext,
-    source_template_for::source_static_for_loop,
-    source_template_if::source_static_if_body_statements,
+    source_template_for::source_static_for_loop_with_tokens,
+    source_template_if::source_static_if_body_statements_with_tokens,
 };
 
 pub(crate) fn source_expression_info(
@@ -55,6 +55,12 @@ pub(crate) fn source_expression_info(
     let mut hints = Vec::new();
     let mut constraints = Vec::new();
     for module in &program.modules {
+        let tokens = lex_source(&module.source.contents).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: module.source_name.clone(),
+                source,
+            }
+        })?;
         for template in &module.air_templates {
             if !active_templates.contains(&template.name) {
                 continue;
@@ -62,6 +68,7 @@ pub(crate) fn source_expression_info(
             let context = SourceTemplateLoweringContext {
                 program,
                 module,
+                tokens: &tokens,
                 scalar_slots: &scalar_slots,
                 fixed_columns: &fixed_assignment_columns,
                 constant_values: &constant_values,
@@ -131,7 +138,13 @@ fn lower_source_template_statement(
         return Ok(());
     }
     if statement.kind == FunctionStatementKind::If {
-        match source_static_if_body_statements(context.program, context.module, statement, values) {
+        match source_static_if_body_statements_with_tokens(
+            context.program,
+            context.module,
+            context.tokens,
+            statement,
+            values,
+        ) {
             Ok(Some(body_statements)) => {
                 let mut body_aliases = expression_aliases.clone();
                 for body_statement in &body_statements {
@@ -158,7 +171,13 @@ fn lower_source_template_statement(
         }
     }
     if statement.kind == FunctionStatementKind::For {
-        match source_static_for_loop(context.program, context.module, statement, values) {
+        match source_static_for_loop_with_tokens(
+            context.program,
+            context.module,
+            context.tokens,
+            statement,
+            values,
+        ) {
             Ok(Some(loop_info)) => {
                 for iteration_values in &loop_info.iteration_values {
                     let mut loop_aliases = expression_aliases.clone();

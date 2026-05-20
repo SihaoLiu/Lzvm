@@ -43,6 +43,32 @@ fn static_value_table_source(value_count: usize, loop_count: usize) -> String {
     source
 }
 
+fn many_static_for_loops_source(loop_count: usize) -> String {
+    let mut source = String::from("airtemplate UnitA() {\n    col witness values[1];\n");
+    for index in 0..loop_count {
+        source.push_str(&format!(
+            "    for (int index{index} = 0; index{index} < 1; ++index{index}) {{\n\
+                 values[0] === 0;\n\
+             }}\n"
+        ));
+    }
+    source.push_str("}\nairgroup GroupA { UnitA(); }\ncol fixed main.left = [0, 0];");
+    source
+}
+
+fn many_static_if_statements_source(statement_count: usize) -> String {
+    let mut source = String::from("airtemplate UnitA() {\n    col witness values[1];\n");
+    for _ in 0..statement_count {
+        source.push_str(
+            "    if (1) {\n\
+                 values[0] === 0;\n\
+             }\n",
+        );
+    }
+    source.push_str("}\nairgroup GroupA { UnitA(); }\ncol fixed main.left = [0, 0];");
+    source
+}
+
 #[test]
 fn generate_key_unrolls_static_source_for_loop_constraints() {
     let dir = temp_dir("static-for-loop-constraint");
@@ -413,6 +439,96 @@ fn generate_key_keeps_large_static_value_tables_responsive() {
     )
     .expect("expression metadata should parse");
     assert_eq!(expressions.constraints.len(), 128);
+    assert!(expressions.hints.is_empty());
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_keeps_many_static_for_loops_responsive() {
+    let dir = temp_dir("many-static-for-loops");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(&source_path, many_static_for_loops_source(300));
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let started = Instant::now();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    let elapsed = started.elapsed();
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(
+        elapsed < Duration::from_secs(8),
+        "source setup took {elapsed:?}"
+    );
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert_eq!(expressions.constraints.len(), 300);
+    assert!(expressions.hints.is_empty());
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_keeps_many_static_if_statements_responsive() {
+    let dir = temp_dir("many-static-if-statements");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(&source_path, many_static_if_statements_source(300));
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let started = Instant::now();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    let elapsed = started.elapsed();
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(
+        elapsed < Duration::from_secs(6),
+        "source setup took {elapsed:?}"
+    );
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert_eq!(expressions.constraints.len(), 300);
     assert!(expressions.hints.is_empty());
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");

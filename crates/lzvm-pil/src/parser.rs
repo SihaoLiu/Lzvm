@@ -12,7 +12,6 @@ use std::collections::BTreeMap;
 
 use crate::{lex_source, SourceFile, Token, TokenKind};
 use declarations::{include_header, parse_named_statement};
-use expressions::parse_expression_tokens;
 
 const DEFAULT_CHALLENGE_STAGE: u32 = 2;
 const DEFAULT_VALUE_STAGE: u32 = 1;
@@ -474,7 +473,8 @@ fn evaluate_template_expression(
     };
     let tokens = lex_source(&expression_source.contents).map_err(|_| ())?;
     let (parsed, next_index) =
-        parse_expression_tokens(&tokens, 0, tokens.len(), &expression_source).map_err(|_| ())?;
+        expressions::parse_expression_tokens(&tokens, 0, tokens.len(), &expression_source)
+            .map_err(|_| ())?;
     if next_index != tokens.len() {
         return Err(());
     }
