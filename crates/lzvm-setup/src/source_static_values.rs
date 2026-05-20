@@ -87,5 +87,26 @@ pub(crate) fn source_declaration_constant_values(
         values.insert(parameter.name.clone(), value);
     }
 
+    for declaration in &module.constants {
+        if declaration.start < template.body.start || declaration.end > template.body.end {
+            continue;
+        }
+        if declaration.end > start
+            || !declaration.array_dims.is_empty()
+            || values.contains_key(&declaration.name)
+        {
+            continue;
+        }
+        let Some(expression) = declaration.initializer_expression.as_ref() else {
+            continue;
+        };
+        let Some(value) =
+            evaluate_fixed_file_template_value_expression_with_values(expression, &values)
+        else {
+            continue;
+        };
+        values.insert(declaration.name.clone(), value);
+    }
+
     values
 }
