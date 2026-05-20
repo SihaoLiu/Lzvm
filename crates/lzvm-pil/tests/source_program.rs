@@ -151,6 +151,40 @@ fn loads_source_program_with_declarations_from_graph_sources() {
 }
 
 #[test]
+fn loads_require_directives_terminated_by_newline() {
+    let root = case_dir("newline-require");
+    write_file(
+        &root,
+        "main.pil",
+        "require \"shared.pil\"\n\
+         col witness main.trace;",
+    );
+    write_file(&root, "shared.pil", "col fixed shared = [1, 2];");
+    let mut loader = SourceProgramLoader::new(SourceLoaderConfig {
+        working_dir: root.clone(),
+        ..SourceLoaderConfig::default()
+    });
+
+    let program = loader
+        .load_main("main.pil")
+        .expect("source program should load");
+
+    assert_eq!(
+        program
+            .modules
+            .iter()
+            .map(|module| module.source_name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["main.pil", "shared.pil"]
+    );
+    assert_eq!(program.modules[0].includes.len(), 1);
+    assert_eq!(program.modules[0].columns.len(), 1);
+    assert_eq!(program.modules[1].columns.len(), 1);
+
+    fs::remove_dir_all(&root).expect("case directory should be removed");
+}
+
+#[test]
 fn indexes_air_units_with_group_and_unit_context() {
     let root = case_dir("air-units");
     write_file(

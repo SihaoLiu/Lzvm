@@ -170,18 +170,23 @@ pub fn parse_include_directives(source: &SourceFile) -> Result<Vec<IncludeDirect
         let file = resolve_include_path(source, path_token)?;
 
         let terminator_index = path_index + 1;
-        let Some(terminator) = tokens.get(terminator_index) else {
-            return Err(ParseError::ExpectedTerminator {
-                source_name: source.source_name.clone(),
-                start: path_token.end,
-            });
+        let (end, next_index) = match tokens.get(terminator_index) {
+            Some(terminator) if terminator.kind == TokenKind::Semicolon => {
+                (terminator.end, terminator_index + 1)
+            }
+            Some(terminator)
+                if has_line_break_between(&source.contents, path_token.end, terminator.start) =>
+            {
+                (path_token.end, terminator_index)
+            }
+            Some(terminator) => {
+                return Err(ParseError::ExpectedTerminator {
+                    source_name: source.source_name.clone(),
+                    start: terminator.start,
+                });
+            }
+            None => (source.contents.len(), tokens.len()),
         };
-        if terminator.kind != TokenKind::Semicolon {
-            return Err(ParseError::ExpectedTerminator {
-                source_name: source.source_name.clone(),
-                start: terminator.start,
-            });
-        }
 
         directives.push(IncludeDirective {
             kind: header.kind,
@@ -189,12 +194,19 @@ pub fn parse_include_directives(source: &SourceFile) -> Result<Vec<IncludeDirect
             file,
             source_name: source.source_name.clone(),
             start: tokens[header.start_index].start,
-            end: terminator.end,
+            end,
         });
-        index = terminator_index + 1;
+        index = next_index;
     }
 
     Ok(directives)
+}
+
+fn has_line_break_between(source: &str, start: usize, end: usize) -> bool {
+    source
+        .as_bytes()
+        .get(start..end)
+        .is_some_and(|bytes| bytes.iter().any(|byte| matches!(byte, b'\n' | b'\r')))
 }
 
 fn resolve_include_path(source: &SourceFile, token: &Token) -> Result<String, ParseError> {

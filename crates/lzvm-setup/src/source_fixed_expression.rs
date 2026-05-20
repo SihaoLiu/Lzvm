@@ -30,19 +30,17 @@ pub(crate) fn source_fixed_column_expression_values(
         });
     };
 
+    let context = SourceFixedExpressionContext {
+        source_name,
+        source,
+        column_name,
+        row_count,
+        constant_values,
+        column_values,
+    };
     let mut values = Vec::with_capacity(row_count);
     for row in 0..row_count {
-        let Some(value) = evaluate_source_fixed_expression(
-            source_name,
-            source,
-            column_name,
-            expression,
-            row,
-            row_count,
-            constant_values,
-            column_values,
-        )?
-        else {
+        let Some(value) = evaluate_source_fixed_expression_inner(&context, expression, row)? else {
             return Ok(None);
         };
         values.push(value);
@@ -58,27 +56,6 @@ struct SourceFixedExpressionContext<'a> {
     row_count: usize,
     constant_values: &'a SourceFixedConstantValues,
     column_values: &'a BTreeMap<String, Vec<u64>>,
-}
-
-fn evaluate_source_fixed_expression(
-    source_name: &str,
-    source: &str,
-    column_name: &str,
-    expression: &Expression,
-    row: usize,
-    row_count: usize,
-    constant_values: &SourceFixedConstantValues,
-    column_values: &BTreeMap<String, Vec<u64>>,
-) -> Result<Option<u64>, SourceFixedColumnsWriteError> {
-    let context = SourceFixedExpressionContext {
-        source_name,
-        source,
-        column_name,
-        row_count,
-        constant_values,
-        column_values,
-    };
-    evaluate_source_fixed_expression_inner(&context, expression, row)
 }
 
 fn evaluate_source_fixed_expression_inner(
