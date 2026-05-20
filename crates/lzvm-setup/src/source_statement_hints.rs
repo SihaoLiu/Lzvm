@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use lzvm_artifacts::expression_info::{
@@ -16,6 +16,7 @@ use lzvm_pil::{
 };
 
 use crate::{
+    source_constraint_lowering::SourceExpressionAliases,
     source_scalar_slots::SourceScalarSlots,
     source_static_values::{
         evaluate_source_static_expression, source_static_array_element, source_static_array_values,
@@ -56,6 +57,7 @@ pub(crate) fn lower_source_lookup_statement(
     module: &SourceProgramModule,
     statement: &FunctionStatement,
     values: &BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: &SourceExpressionAliases,
     scalar_slots: &SourceScalarSlots,
     opening_points: &[i64],
 ) -> Result<Option<HintInfo>, LexError> {
@@ -63,15 +65,15 @@ pub(crate) fn lower_source_lookup_statement(
         return Ok(None);
     };
     let line = source_statement_line(module, statement);
-    if let Some(hint) = lower_structured_source_lookup_hint(
+    let inputs = SourceLookupInputs {
         program,
         module,
         values,
+        expression_aliases,
         scalar_slots,
         opening_points,
-        name,
-        &line,
-    )? {
+    };
+    if let Some(hint) = lower_structured_source_lookup_hint(&inputs, name, &line)? {
         return Ok(Some(hint));
     }
     Ok(Some(source_lookup_line_hint(name, line)))
@@ -188,12 +190,17 @@ fn source_lookup_value_expressions(
     true
 }
 
+struct SourceLookupInputs<'a> {
+    program: &'a SourceProgram,
+    module: &'a SourceProgramModule,
+    values: &'a BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: &'a SourceExpressionAliases,
+    scalar_slots: &'a SourceScalarSlots,
+    opening_points: &'a [i64],
+}
+
 fn lower_structured_source_lookup_hint(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-    scalar_slots: &SourceScalarSlots,
-    opening_points: &[i64],
+    inputs: &SourceLookupInputs<'_>,
     name: &str,
     line: &str,
 ) -> Result<Option<HintInfo>, LexError> {
@@ -226,13 +233,14 @@ fn lower_structured_source_lookup_hint(
         return Ok(None);
     }
     let context = SourceLookupLowering {
-        program,
-        module,
+        program: inputs.program,
+        module: inputs.module,
         line,
         tokens: &tokens,
-        values,
-        scalar_slots,
-        opening_points,
+        values: inputs.values,
+        expression_aliases: inputs.expression_aliases,
+        scalar_slots: inputs.scalar_slots,
+        opening_points: inputs.opening_points,
     };
 
     let first_argument = split_named_argument(&tokens, arguments[0]);
@@ -240,12 +248,12 @@ fn lower_structured_source_lookup_hint(
         return Ok(None);
     }
     let Some(bus_id) = parse_unsigned_argument(
-        program,
-        module,
+        inputs.program,
+        inputs.module,
         line,
         &tokens,
         first_argument.value_range,
-        values,
+        inputs.values,
     ) else {
         return Ok(None);
     };
@@ -389,6 +397,7 @@ struct SourceLookupLowering<'a> {
     line: &'a str,
     tokens: &'a [Token],
     values: &'a BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: &'a SourceExpressionAliases,
     scalar_slots: &'a SourceScalarSlots,
     opening_points: &'a [i64],
 }
@@ -589,6 +598,7 @@ fn source_lookup_value_payload(
         context.program,
         &expression,
         context.values,
+        context.expression_aliases,
         context.scalar_slots,
         0,
     )?;
@@ -620,6 +630,14 @@ fn hint_payload_from_static_value(value: FixedFileTemplateValue) -> Option<HintP
     }
 }
 
+fn canonical_hint_number_from_value(value: FixedFileTemplateValue) -> Option<u64> {
+    match value {
+        FixedFileTemplateValue::Integer(value) => canonical_hint_number(value),
+        FixedFileTemplateValue::Boolean(value) => Some(u64::from(value)),
+        FixedFileTemplateValue::String(_) => None,
+    }
+}
+
 fn parse_source_lookup_expression(
     module: &SourceProgramModule,
     line: &str,
@@ -640,11 +658,55 @@ fn source_lookup_scalar_operand(
     program: &SourceProgram,
     expression: &Expression,
     values: &BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: &SourceExpressionAliases,
     scalar_slots: &SourceScalarSlots,
     row_offset: i64,
 ) -> Option<CodeOperand> {
+    let mut resolving_aliases = BTreeSet::new();
+    source_lookup_scalar_operand_inner(
+        program,
+        expression,
+        values,
+        expression_aliases,
+        scalar_slots,
+        row_offset,
+        &mut resolving_aliases,
+    )
+}
+
+fn source_lookup_scalar_operand_inner(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: &SourceExpressionAliases,
+    scalar_slots: &SourceScalarSlots,
+    row_offset: i64,
+    resolving_aliases: &mut BTreeSet<String>,
+) -> Option<CodeOperand> {
+    if let Some(value) = evaluate_source_static_expression(program, expression, values) {
+        return Some(CodeOperand::number(
+            canonical_hint_number_from_value(value)?,
+            1,
+        ));
+    }
     match &strip_group_expression(expression).kind {
         ExpressionKind::Name(name) => {
+            if let Some(alias) = expression_aliases.get(name) {
+                if !resolving_aliases.insert(name.clone()) {
+                    return None;
+                }
+                let operand = source_lookup_scalar_operand_inner(
+                    program,
+                    alias,
+                    values,
+                    expression_aliases,
+                    scalar_slots,
+                    row_offset,
+                    resolving_aliases,
+                );
+                resolving_aliases.remove(name);
+                return operand;
+            }
             if row_offset == 0 {
                 scalar_slots.operand(name).ok()
             } else {
@@ -665,7 +727,15 @@ fn source_lookup_scalar_operand(
         } => {
             let signed_offset = source_lookup_row_offset_value(program, offset, *prior, values)?;
             let combined_offset = row_offset.checked_add(signed_offset)?;
-            source_lookup_scalar_operand(program, target, values, scalar_slots, combined_offset)
+            source_lookup_scalar_operand_inner(
+                program,
+                target,
+                values,
+                expression_aliases,
+                scalar_slots,
+                combined_offset,
+                resolving_aliases,
+            )
         }
         _ => None,
     }

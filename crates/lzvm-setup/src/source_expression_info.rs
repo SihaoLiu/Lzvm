@@ -290,6 +290,7 @@ fn lower_source_template_statement(
         context.module,
         statement,
         values,
+        expression_aliases,
         context.scalar_slots,
         context.opening_points,
     )
@@ -368,7 +369,14 @@ fn lower_source_template_statement(
         }
         Err(error) => return Err(error),
     }
-    if lower_source_template_function_call(context, statement, values, hints, constraints)? {
+    if lower_source_template_function_call(
+        context,
+        statement,
+        values,
+        expression_aliases,
+        hints,
+        constraints,
+    )? {
         return Ok(());
     }
     if let Some(hint) =
@@ -392,6 +400,7 @@ fn lower_source_template_function_call(
     context: &SourceTemplateLoweringContext<'_>,
     statement: &FunctionStatement,
     values: &BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: &SourceExpressionAliases,
     hints: &mut Vec<HintInfo>,
     constraints: &mut Vec<ConstraintCode>,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
@@ -410,9 +419,14 @@ fn lower_source_template_function_call(
     if function.return_type.is_some() {
         return Ok(false);
     }
-    let Some(mut function_values) =
-        source_function_call_values(context.program, context.module, function, arguments, values)
-    else {
+    let Some(mut bindings) = source_function_call_bindings(
+        context.program,
+        context.module,
+        function,
+        arguments,
+        values,
+        expression_aliases,
+    ) else {
         return Ok(false);
     };
 
@@ -422,7 +436,8 @@ fn lower_source_template_function_call(
         if !lower_source_function_body_statement(
             context,
             body_statement,
-            &mut function_values,
+            &mut bindings.values,
+            &bindings.expression_aliases,
             &mut function_hints,
             &mut function_constraints,
         )? {
@@ -435,19 +450,23 @@ fn lower_source_template_function_call(
     Ok(true)
 }
 
-fn source_function_call_values(
+struct SourceFunctionCallBindings {
+    values: BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: SourceExpressionAliases,
+}
+
+fn source_function_call_bindings(
     program: &SourceProgram,
     module: &SourceProgramModule,
     function: &FunctionDeclaration,
     arguments: &[CallArgument],
     values: &BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<BTreeMap<String, FixedFileTemplateValue>> {
+    expression_aliases: &SourceExpressionAliases,
+) -> Option<SourceFunctionCallBindings> {
     let mut function_values = values.clone();
+    let mut function_aliases = expression_aliases.clone();
     for parameter in &function.parameters {
-        if !source_const_parameter(parameter) {
-            return None;
-        }
-        if parameter.array_dims.is_empty() {
+        if source_const_parameter(parameter) && parameter.array_dims.is_empty() {
             let Some(expression) = parameter.default_expression.as_ref() else {
                 continue;
             };
@@ -455,10 +474,21 @@ fn source_function_call_values(
             function_values.insert(parameter.name.clone(), value);
             continue;
         }
-        if let Some(span) = parameter.default_value {
-            let elements = source_static_array_literal(program, module, span, &function_values)?;
-            insert_source_static_array(&mut function_values, &parameter.name, elements)?;
+        if source_const_parameter(parameter) {
+            if let Some(span) = parameter.default_value {
+                let elements =
+                    source_static_array_literal(program, module, span, &function_values)?;
+                insert_source_static_array(&mut function_values, &parameter.name, elements)?;
+            }
+            continue;
         }
+        if source_expr_parameter(parameter) {
+            if let Some(expression) = parameter.default_expression.as_ref() {
+                function_aliases.insert(parameter.name.clone(), expression.clone());
+            }
+            continue;
+        }
+        return None;
     }
 
     let mut positional_index = 0;
@@ -468,26 +498,30 @@ fn source_function_call_values(
                 .parameters
                 .iter()
                 .find(|parameter| parameter.name == *name)?;
-            if !source_const_parameter(parameter) {
-                return None;
-            }
             source_bind_function_argument(
                 program,
                 parameter,
                 &argument.value,
                 &mut function_values,
+                &mut function_aliases,
             )?;
             continue;
         }
         let parameter = function.parameters.get(positional_index)?;
-        if !source_const_parameter(parameter) {
-            return None;
-        }
-        source_bind_function_argument(program, parameter, &argument.value, &mut function_values)?;
+        source_bind_function_argument(
+            program,
+            parameter,
+            &argument.value,
+            &mut function_values,
+            &mut function_aliases,
+        )?;
         positional_index += 1;
     }
 
-    Some(function_values)
+    Some(SourceFunctionCallBindings {
+        values: function_values,
+        expression_aliases: function_aliases,
+    })
 }
 
 fn source_bind_function_argument(
@@ -495,11 +529,19 @@ fn source_bind_function_argument(
     parameter: &lzvm_pil::FunctionParameter,
     expression: &Expression,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: &mut SourceExpressionAliases,
 ) -> Option<()> {
-    if parameter.array_dims.is_empty() {
+    if source_const_parameter(parameter) && parameter.array_dims.is_empty() {
         let value = evaluate_source_static_expression(program, expression, values)?;
         values.insert(parameter.name.clone(), value);
         return Some(());
+    }
+    if source_expr_parameter(parameter) {
+        expression_aliases.insert(parameter.name.clone(), expression.clone());
+        return Some(());
+    }
+    if !source_const_parameter(parameter) {
+        return None;
     }
     if let Some(elements) = source_static_array_expression(program, expression, values) {
         return insert_source_static_array(values, &parameter.name, elements);
@@ -511,6 +553,13 @@ fn source_bind_function_argument(
 
 fn source_const_parameter(parameter: &lzvm_pil::FunctionParameter) -> bool {
     parameter.is_const && !parameter.by_reference
+}
+
+fn source_expr_parameter(parameter: &lzvm_pil::FunctionParameter) -> bool {
+    !parameter.is_const
+        && !parameter.by_reference
+        && parameter.array_dims.is_empty()
+        && parameter.type_name == "expr"
 }
 
 fn source_static_array_expression(
@@ -700,6 +749,7 @@ fn lower_source_function_body_statement(
     context: &SourceTemplateLoweringContext<'_>,
     statement: &FunctionStatement,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: &SourceExpressionAliases,
     hints: &mut Vec<HintInfo>,
     constraints: &mut Vec<ConstraintCode>,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
@@ -726,6 +776,7 @@ fn lower_source_function_body_statement(
         context.module,
         statement,
         values,
+        expression_aliases,
         context.scalar_slots,
         context.opening_points,
     )
@@ -742,7 +793,7 @@ fn lower_source_function_body_statement(
         statement,
         context.scalar_slots,
         values,
-        &SourceExpressionAliases::new(),
+        expression_aliases,
     ) {
         Ok(Some(constraint)) => {
             constraints.push(constraint);
