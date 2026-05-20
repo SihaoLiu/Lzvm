@@ -5,7 +5,7 @@ use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
     BinaryOperator, Expression, ExpressionKind, FixedFileTemplateValue, FunctionDeclaration,
     FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind, SourceFile,
-    SourceProgram, SourceProgramModule, TokenKind, UnaryOperator,
+    SourceProgram, SourceProgramModule, SourceSpan, Token, TokenKind, UnaryOperator,
 };
 
 pub(crate) fn source_scalar_constant_values(
@@ -143,7 +143,7 @@ fn evaluate_static_binary(
         BinaryOperator::Add => left.checked_add(right),
         BinaryOperator::Subtract => left.checked_sub(right),
         BinaryOperator::Multiply => left.checked_mul(right),
-        BinaryOperator::Divide if right != 0 => Some(left / right),
+        BinaryOperator::Divide | BinaryOperator::Backslash if right != 0 => Some(left / right),
         BinaryOperator::Modulo if right != 0 => Some(left % right),
         BinaryOperator::Power => u32::try_from(right)
             .ok()
@@ -162,6 +162,9 @@ fn evaluate_static_binary(
             Some(static_bool(left == right))
         }
         BinaryOperator::NotEqual => Some(static_bool(left != right)),
+        BinaryOperator::BitAnd => Some(left & right),
+        BinaryOperator::BitXor => Some(left ^ right),
+        BinaryOperator::BitOr => Some(left | right),
         _ => None,
     }
 }
@@ -395,7 +398,496 @@ fn parse_i128(value: &str) -> Option<i128> {
     value.parse::<i128>().ok()
 }
 
+fn evaluate_source_static_expression_or_span(
+    program: &SourceProgram,
+    source: &SourceFile,
+    expression: Option<&Expression>,
+    span: Option<SourceSpan>,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<FixedFileTemplateValue> {
+    if let Some(expression) = expression {
+        if let Some(value) = evaluate_source_static_expression(program, expression, values) {
+            return Some(value);
+        }
+    }
+    evaluate_source_static_span(program, source, span?, values)
+}
+
+fn evaluate_source_static_span(
+    program: &SourceProgram,
+    source: &SourceFile,
+    span: SourceSpan,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<FixedFileTemplateValue> {
+    let tokens = lex_source(&source.contents).ok()?;
+    let start = source_token_index_at_start(&tokens, span.start)?;
+    let end = source_token_index_after_end(&tokens, span.end)?;
+    evaluate_source_static_token_range(program, source, &tokens, start, end, values)
+}
+
+fn evaluate_source_static_token_range(
+    program: &SourceProgram,
+    source: &SourceFile,
+    tokens: &[Token],
+    start: usize,
+    end: usize,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<FixedFileTemplateValue> {
+    if let Some((question, colon)) = top_level_ternary(tokens, start, end) {
+        let condition =
+            evaluate_source_static_token_range(program, source, tokens, start, question, values)?;
+        let branch = if static_value_truthy(&condition) {
+            question + 1..colon
+        } else {
+            colon + 1..end
+        };
+        return evaluate_source_static_token_range(
+            program,
+            source,
+            tokens,
+            branch.start,
+            branch.end,
+            values,
+        );
+    }
+
+    let (expression, consumed) = parse_expression(source, start, end).ok()?;
+    if consumed != end {
+        return None;
+    }
+    evaluate_source_static_expression(program, &expression, values)
+}
+
+fn top_level_ternary(tokens: &[Token], start: usize, end: usize) -> Option<(usize, usize)> {
+    let mut expected = Vec::<TokenKind>::new();
+    let mut question = None;
+    for (index, token) in tokens.iter().enumerate().take(end).skip(start) {
+        match token.kind {
+            TokenKind::LParen => expected.push(TokenKind::RParen),
+            TokenKind::LBracket => expected.push(TokenKind::RBracket),
+            TokenKind::LBrace => expected.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                if expected.pop()? != token.kind {
+                    return None;
+                }
+            }
+            TokenKind::Question if expected.is_empty() => {
+                if question.is_some() {
+                    return None;
+                }
+                question = Some(index);
+            }
+            TokenKind::Colon if expected.is_empty() => {
+                return question.map(|question| (question, index));
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn static_value_truthy(value: &FixedFileTemplateValue) -> bool {
+    match value {
+        FixedFileTemplateValue::Integer(value) => *value != 0,
+        FixedFileTemplateValue::Boolean(value) => *value,
+        FixedFileTemplateValue::String(value) => !value.is_empty(),
+    }
+}
+
+fn static_value_integer(value: &FixedFileTemplateValue) -> Option<i128> {
+    match value {
+        FixedFileTemplateValue::Integer(value) => Some(*value),
+        FixedFileTemplateValue::Boolean(value) => Some(static_bool(*value)),
+        FixedFileTemplateValue::String(_) => None,
+    }
+}
+
+fn execute_static_template_range(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    start: usize,
+    end: usize,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<()> {
+    let tokens = lex_source(&module.source.contents).ok()?;
+    let start = tokens
+        .iter()
+        .position(|token| token.start >= start)
+        .unwrap_or(tokens.len());
+    let end = tokens
+        .iter()
+        .position(|token| token.start >= end)
+        .unwrap_or(tokens.len());
+    execute_static_template_tokens(program, module, &tokens, start, end, values)
+}
+
+fn execute_static_template_tokens(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    mut index: usize,
+    end: usize,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<()> {
+    while index < end {
+        match tokens.get(index).map(|token| token.kind) {
+            Some(TokenKind::LBrace | TokenKind::RBrace | TokenKind::Semicolon) => {
+                index += 1;
+            }
+            Some(TokenKind::EndOfInput) | None => break,
+            _ => {
+                let next =
+                    execute_static_template_statement(program, module, tokens, index, end, values)
+                        .or_else(|| skip_static_template_statement(tokens, index, end))
+                        .filter(|next| *next > index)
+                        .unwrap_or(index + 1);
+                index = next;
+            }
+        }
+    }
+    Some(())
+}
+
+fn execute_static_template_statement(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    index: usize,
+    end: usize,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<usize> {
+    match tokens.get(index)?.kind {
+        TokenKind::If => execute_static_template_if(program, module, tokens, index, end, values),
+        kind if static_declaration_start(kind) => {
+            execute_static_template_declaration(program, module, tokens[index].start, values);
+            skip_static_template_statement(tokens, index, end)
+        }
+        _ => {
+            let semicolon = next_static_semicolon_limited(tokens, index, end)?;
+            let (expression, consumed) = parse_expression(&module.source, index, semicolon).ok()?;
+            if consumed == semicolon {
+                execute_source_static_expression_statement(program, &expression, values);
+            }
+            Some(semicolon + 1)
+        }
+    }
+}
+
+fn execute_static_template_if(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    index: usize,
+    end: usize,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<usize> {
+    let open = next_token_kind(tokens, index + 1, end, TokenKind::LParen)?;
+    let close = matching_closing_token(tokens, open, end)?;
+    let condition = evaluate_source_static_token_range(
+        program,
+        &module.source,
+        tokens,
+        open + 1,
+        close,
+        values,
+    )?;
+    let (body_start, body_end, after_body) = control_body_range(tokens, close + 1, end)?;
+    if static_value_truthy(&condition) {
+        execute_static_template_tokens(program, module, tokens, body_start, body_end, values);
+        return skip_static_else_tail(tokens, after_body, end);
+    }
+    execute_static_else_tail(program, module, tokens, after_body, end, values)
+}
+
+fn execute_static_else_tail(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    index: usize,
+    end: usize,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<usize> {
+    match tokens.get(index).map(|token| token.kind) {
+        Some(TokenKind::ElseIf) => {
+            execute_static_template_if(program, module, tokens, index, end, values)
+        }
+        Some(TokenKind::Else)
+            if tokens
+                .get(index + 1)
+                .is_some_and(|token| token.kind == TokenKind::If) =>
+        {
+            execute_static_template_if(program, module, tokens, index + 1, end, values)
+        }
+        Some(TokenKind::Else) => {
+            let (body_start, body_end, after_body) = control_body_range(tokens, index + 1, end)?;
+            execute_static_template_tokens(program, module, tokens, body_start, body_end, values);
+            Some(after_body)
+        }
+        _ => Some(index),
+    }
+}
+
+fn skip_static_else_tail(tokens: &[Token], index: usize, end: usize) -> Option<usize> {
+    match tokens.get(index).map(|token| token.kind) {
+        Some(TokenKind::ElseIf) => skip_static_if_statement(tokens, index, end),
+        Some(TokenKind::Else)
+            if tokens
+                .get(index + 1)
+                .is_some_and(|token| token.kind == TokenKind::If) =>
+        {
+            skip_static_if_statement(tokens, index + 1, end)
+        }
+        Some(TokenKind::Else) => {
+            let (_, _, after_body) = control_body_range(tokens, index + 1, end)?;
+            Some(after_body)
+        }
+        _ => Some(index),
+    }
+}
+
+fn skip_static_template_statement(tokens: &[Token], index: usize, end: usize) -> Option<usize> {
+    match tokens.get(index)?.kind {
+        TokenKind::If | TokenKind::ElseIf => skip_static_if_statement(tokens, index, end),
+        TokenKind::Else
+            if tokens
+                .get(index + 1)
+                .is_some_and(|token| token.kind == TokenKind::If) =>
+        {
+            skip_static_if_statement(tokens, index + 1, end)
+        }
+        TokenKind::Else => {
+            let (_, _, after_body) = control_body_range(tokens, index + 1, end)?;
+            Some(after_body)
+        }
+        TokenKind::For | TokenKind::While | TokenKind::Switch => {
+            let open = next_token_kind(tokens, index + 1, end, TokenKind::LParen)?;
+            let close = matching_closing_token(tokens, open, end)?;
+            let (_, _, after_body) = control_body_range(tokens, close + 1, end)?;
+            Some(after_body)
+        }
+        _ => next_static_semicolon_limited(tokens, index, end).map(|semicolon| semicolon + 1),
+    }
+}
+
+fn skip_static_if_statement(tokens: &[Token], index: usize, end: usize) -> Option<usize> {
+    let open = next_token_kind(tokens, index + 1, end, TokenKind::LParen)?;
+    let close = matching_closing_token(tokens, open, end)?;
+    let (_, _, after_body) = control_body_range(tokens, close + 1, end)?;
+    skip_static_else_tail(tokens, after_body, end)
+}
+
+fn execute_static_template_declaration(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    start: usize,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<()> {
+    if let Some(declaration) = module
+        .constants
+        .iter()
+        .find(|declaration| declaration.start == start)
+    {
+        if !declaration.array_dims.is_empty() || values.contains_key(&declaration.name) {
+            return Some(());
+        }
+        let value = evaluate_source_static_expression_or_span(
+            program,
+            &module.source,
+            declaration.initializer_expression.as_ref(),
+            declaration.initializer,
+            values,
+        )?;
+        values.insert(declaration.name.clone(), value);
+        return Some(());
+    }
+
+    let declaration = module
+        .variables
+        .iter()
+        .find(|declaration| declaration.start == start)?;
+    if !declaration.array_dims.is_empty() {
+        return Some(());
+    }
+    let value = evaluate_source_static_expression_or_span(
+        program,
+        &module.source,
+        declaration.initializer_expression.as_ref(),
+        declaration.initializer,
+        values,
+    )?;
+    values.insert(declaration.name.clone(), value);
+    Some(())
+}
+
+fn execute_source_static_expression_statement(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<()> {
+    let ExpressionKind::Binary { op, left, right } = &expression.kind else {
+        return None;
+    };
+    let name = expression_name(left)?.to_owned();
+    let right = evaluate_source_static_expression(program, right, values)?;
+    let value = match op {
+        BinaryOperator::Assign => right,
+        BinaryOperator::PlusAssign => {
+            let current = static_value_integer(
+                values
+                    .get(&name)
+                    .unwrap_or(&FixedFileTemplateValue::Integer(0)),
+            )?;
+            FixedFileTemplateValue::Integer(current.checked_add(static_value_integer(&right)?)?)
+        }
+        BinaryOperator::MinusAssign => {
+            let current = static_value_integer(
+                values
+                    .get(&name)
+                    .unwrap_or(&FixedFileTemplateValue::Integer(0)),
+            )?;
+            FixedFileTemplateValue::Integer(current.checked_sub(static_value_integer(&right)?)?)
+        }
+        BinaryOperator::StarAssign => {
+            let current = static_value_integer(
+                values
+                    .get(&name)
+                    .unwrap_or(&FixedFileTemplateValue::Integer(0)),
+            )?;
+            FixedFileTemplateValue::Integer(current.checked_mul(static_value_integer(&right)?)?)
+        }
+        _ => return None,
+    };
+    values.insert(name, value);
+    Some(())
+}
+
+pub(crate) fn source_static_assignment_expression(
+    module: &SourceProgramModule,
+    expression: Option<&Expression>,
+) -> bool {
+    let Some(expression) = expression else {
+        return false;
+    };
+    let ExpressionKind::Binary { op, left, .. } = &expression.kind else {
+        return false;
+    };
+    if !matches!(
+        op,
+        BinaryOperator::Assign
+            | BinaryOperator::PlusAssign
+            | BinaryOperator::MinusAssign
+            | BinaryOperator::StarAssign
+    ) {
+        return false;
+    }
+    expression_name(left).is_some_and(|name| {
+        module
+            .constants
+            .iter()
+            .any(|declaration| declaration.name == name)
+            || module
+                .variables
+                .iter()
+                .any(|declaration| declaration.name == name)
+    })
+}
+
+fn static_declaration_start(kind: TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Const
+            | TokenKind::Constant
+            | TokenKind::Int
+            | TokenKind::Fe
+            | TokenKind::Expr
+            | TokenKind::String
+    )
+}
+
+fn control_body_range(tokens: &[Token], index: usize, end: usize) -> Option<(usize, usize, usize)> {
+    match tokens.get(index)?.kind {
+        TokenKind::LBrace => {
+            let close = matching_closing_token(tokens, index, end)?;
+            Some((index + 1, close, close + 1))
+        }
+        _ => {
+            let semicolon = next_static_semicolon_limited(tokens, index, end)?;
+            Some((index, semicolon + 1, semicolon + 1))
+        }
+    }
+}
+
+fn next_token_kind(tokens: &[Token], start: usize, end: usize, kind: TokenKind) -> Option<usize> {
+    tokens
+        .iter()
+        .enumerate()
+        .take(end)
+        .skip(start)
+        .find_map(|(index, token)| (token.kind == kind).then_some(index))
+}
+
+fn matching_closing_token(tokens: &[Token], open: usize, end: usize) -> Option<usize> {
+    let close_kind = match tokens.get(open)?.kind {
+        TokenKind::LParen => TokenKind::RParen,
+        TokenKind::LBracket => TokenKind::RBracket,
+        TokenKind::LBrace => TokenKind::RBrace,
+        _ => return None,
+    };
+    let mut expected = vec![close_kind];
+    for (index, token) in tokens.iter().enumerate().take(end).skip(open + 1) {
+        match token.kind {
+            TokenKind::LParen => expected.push(TokenKind::RParen),
+            TokenKind::LBracket => expected.push(TokenKind::RBracket),
+            TokenKind::LBrace => expected.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                if expected.pop()? != token.kind {
+                    return None;
+                }
+                if expected.is_empty() {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn next_static_semicolon_limited(tokens: &[Token], index: usize, end: usize) -> Option<usize> {
+    let mut expected = Vec::<TokenKind>::new();
+    for (cursor, token) in tokens.iter().enumerate().take(end).skip(index) {
+        match token.kind {
+            TokenKind::LParen => expected.push(TokenKind::RParen),
+            TokenKind::LBracket => expected.push(TokenKind::RBracket),
+            TokenKind::LBrace => expected.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                if expected.pop()? != token.kind {
+                    return None;
+                }
+            }
+            TokenKind::Semicolon if expected.is_empty() => return Some(cursor),
+            TokenKind::EndOfInput => return None,
+            _ => {}
+        }
+    }
+    None
+}
+
+fn source_token_index_at_start(tokens: &[Token], start: usize) -> Option<usize> {
+    tokens
+        .iter()
+        .position(|token| token.start == start && token.kind != TokenKind::EndOfInput)
+}
+
+fn source_token_index_after_end(tokens: &[Token], end: usize) -> Option<usize> {
+    tokens
+        .iter()
+        .position(|token| token.end == end)
+        .and_then(|index| index.checked_add(1))
+}
+
 pub(crate) fn source_declaration_constant_values(
+    program: &SourceProgram,
     module: &SourceProgramModule,
     start: usize,
     end: usize,
@@ -417,34 +909,13 @@ pub(crate) fn source_declaration_constant_values(
         let Some(expression) = parameter.default_expression.as_ref() else {
             continue;
         };
-        let Some(value) =
-            evaluate_fixed_file_template_value_expression_with_values(expression, &values)
-        else {
+        let Some(value) = evaluate_source_static_expression(program, expression, &values) else {
             continue;
         };
         values.insert(parameter.name.clone(), value);
     }
 
-    for declaration in &module.constants {
-        if declaration.start < template.body.start || declaration.end > template.body.end {
-            continue;
-        }
-        if declaration.end > start
-            || !declaration.array_dims.is_empty()
-            || values.contains_key(&declaration.name)
-        {
-            continue;
-        }
-        let Some(expression) = declaration.initializer_expression.as_ref() else {
-            continue;
-        };
-        let Some(value) =
-            evaluate_fixed_file_template_value_expression_with_values(expression, &values)
-        else {
-            continue;
-        };
-        values.insert(declaration.name.clone(), value);
-    }
+    execute_static_template_range(program, module, template.body.start, start, &mut values);
 
     values
 }

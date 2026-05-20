@@ -37,7 +37,10 @@ use crate::{
         concrete_template_names, declaration_in_function_body, declaration_in_inactive_template,
         global_constraint_source_names,
     },
-    source_static_values::{source_declaration_constant_values, source_scalar_constant_values},
+    source_static_values::{
+        source_declaration_constant_values, source_scalar_constant_values,
+        source_static_assignment_expression,
+    },
     write_staging_bytes, SetupError,
 };
 
@@ -441,7 +444,9 @@ fn lower_source_template_statement(
     {
         return Ok(());
     }
-    if source_expression_assigns_fixed_index(statement.value_expression.as_ref(), fixed_columns) {
+    if source_expression_assigns_fixed_index(statement.value_expression.as_ref(), fixed_columns)
+        || source_static_assignment_expression(module, statement.value_expression.as_ref())
+    {
         return Ok(());
     }
     if let Some(constraint) =
@@ -1464,6 +1469,7 @@ fn source_constant_columns(
                 continue;
             }
             let declaration_values = source_declaration_constant_values(
+                program,
                 module,
                 declaration.start,
                 declaration.end,
@@ -1523,6 +1529,7 @@ fn source_commitment_columns(
                 continue;
             }
             let declaration_values = source_declaration_constant_values(
+                program,
                 module,
                 declaration.start,
                 declaration.end,
