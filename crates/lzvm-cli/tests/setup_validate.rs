@@ -11075,7 +11075,16 @@ fn verifies_contribution_challenge_from_proof_artifact() {
     let proof = ProofArtifact {
         setup_hash,
         public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
-        segments: vec![contribution_segment],
+        segments: vec![
+            contribution_segment,
+            ProofSegment {
+                id: CHALLENGE_VALUES_SEGMENT_ID,
+                data: encode_challenge_values_segment(&ChallengeValuesSegment {
+                    values: vec![[1, 2, 3]],
+                })
+                .expect("challenge values segment should encode"),
+            },
+        ],
     };
     let proof_path = dir.join("proof.bin");
     let public_values_path = dir.join("public_values.bin");
@@ -11095,7 +11104,7 @@ fn verifies_contribution_challenge_from_proof_artifact() {
         &catalog.layout.global_info,
         &public_fields,
         &[],
-        &proof.segments,
+        &[proof.segments[0].clone()],
     )
     .expect("challenge should derive");
 
@@ -11120,7 +11129,7 @@ fn verifies_contribution_challenge_from_proof_artifact() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\nsegments=1\npublic_values=1\npublic_values_hash={}\npublic_value_fields=1\nproof_values=0\ncontributions=2\ncontribution_challenge={},{},{}\n",
+            "status=ok\nsegments=2\npublic_values=1\npublic_values_hash={}\npublic_value_fields=1\nproof_values=0\ncontributions=2\ncontribution_challenge={},{},{}\n",
             format_hash(&public_values_hash),
             expected_challenge.c0.to_u64(),
             expected_challenge.c1.to_u64(),
@@ -11156,11 +11165,8 @@ fn rejects_verify_contribution_with_unexpected_segment() {
         segments: vec![
             contribution_segment,
             ProofSegment {
-                id: CHALLENGE_VALUES_SEGMENT_ID,
-                data: encode_challenge_values_segment(&ChallengeValuesSegment {
-                    values: vec![[1, 2, 3]],
-                })
-                .expect("challenge values segment should encode"),
+                id: 99_999,
+                data: vec![1],
             },
         ],
     };
@@ -11195,7 +11201,7 @@ fn rejects_verify_contribution_with_unexpected_segment() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "verify contribution failed: unexpected contribution proof segment id 10012\n"
+        "verify contribution failed: unexpected contribution proof segment id 99999\n"
     );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }

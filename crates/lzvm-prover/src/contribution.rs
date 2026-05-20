@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use lzvm_artifacts::challenge_values_segment::CHALLENGE_VALUES_SEGMENT_ID;
 use lzvm_artifacts::contribution_segment::{
     encode_contribution_segment, parse_contribution_segment, ContributionEntry,
     ContributionSegment, ContributionSegmentError, CONTRIBUTION_SEGMENT_ID,
@@ -674,6 +675,7 @@ fn validate_contribution_proof_segment_ids(
                 | PCS_PROOF_VALUES_SEGMENT_ID
                 | PROGRAM_IMAGE_CACHE_SEGMENT_ID
                 | ETH_BLOCK_INPUT_SEGMENT_ID
+                | CHALLENGE_VALUES_SEGMENT_ID
         ) {
             continue;
         }
@@ -918,6 +920,7 @@ fn raw_contribution_entry(
 
 #[cfg(test)]
 mod tests {
+    use lzvm_artifacts::challenge_values_segment::CHALLENGE_VALUES_SEGMENT_ID;
     use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
     use lzvm_artifacts::pcs_proof_values_segment::PCS_PROOF_VALUES_SEGMENT_ID;
     use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
@@ -944,6 +947,10 @@ mod tests {
             ProofSegment {
                 id: ETH_BLOCK_INPUT_SEGMENT_ID,
                 data: vec![4],
+            },
+            ProofSegment {
+                id: CHALLENGE_VALUES_SEGMENT_ID,
+                data: vec![5],
             },
         ];
 
