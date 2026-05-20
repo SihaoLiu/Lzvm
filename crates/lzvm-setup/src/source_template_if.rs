@@ -8,7 +8,9 @@ use lzvm_pil::{
 use crate::{
     source_control_body_cache::SourceControlBodyCache,
     source_key_directory::SourceKeyDirectoryMetadataError,
-    source_static_values::{evaluate_source_static_expression, static_value_truthy},
+    source_static_values::{
+        evaluate_source_static_expression_with_lookup, static_value_truthy, SourceStaticValueLookup,
+    },
 };
 
 pub(crate) fn source_static_if_body_statements_with_tokens(
@@ -19,20 +21,29 @@ pub(crate) fn source_static_if_body_statements_with_tokens(
     values: &BTreeMap<String, FixedFileTemplateValue>,
     body_cache: &mut SourceControlBodyCache,
 ) -> Result<Option<Vec<FunctionStatement>>, SourceKeyDirectoryMetadataError> {
+    source_static_if_body_statements_with_lookup(
+        program, module, tokens, statement, values, body_cache,
+    )
+}
+
+pub(crate) fn source_static_if_body_statements_with_lookup(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    statement: &FunctionStatement,
+    values: &(impl SourceStaticValueLookup + ?Sized),
+    body_cache: &mut SourceControlBodyCache,
+) -> Result<Option<Vec<FunctionStatement>>, SourceKeyDirectoryMetadataError> {
     if statement.kind != FunctionStatementKind::If {
         return Ok(None);
     }
-    let Some(start) = tokens
-        .iter()
-        .position(|token| token.start == statement.start)
-    else {
-        return Ok(None);
-    };
-    let Some(end) = tokens
-        .iter()
-        .position(|token| token.end == statement.end)
-        .map(|index| index + 1)
-    else {
+    let Some((start, end)) = body_cache.span_token_bounds(
+        tokens,
+        SourceSpan {
+            start: statement.start,
+            end: statement.end,
+        },
+    ) else {
         return Ok(None);
     };
     let Some(selection) = source_static_if_body_span(program, module, tokens, start, end, values)?
@@ -55,7 +66,7 @@ fn source_static_if_body_span(
     tokens: &[Token],
     index: usize,
     end: usize,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
+    values: &(impl SourceStaticValueLookup + ?Sized),
 ) -> Result<Option<Option<SourceSpan>>, SourceKeyDirectoryMetadataError> {
     if !matches!(
         tokens.get(index).map(|token| token.kind),
@@ -92,7 +103,7 @@ fn source_static_else_body_span(
     tokens: &[Token],
     index: usize,
     end: usize,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
+    values: &(impl SourceStaticValueLookup + ?Sized),
 ) -> Result<Option<Option<SourceSpan>>, SourceKeyDirectoryMetadataError> {
     match tokens.get(index).map(|token| token.kind) {
         Some(TokenKind::ElseIf) => {
@@ -125,14 +136,14 @@ fn source_static_token_value_with_tokens(
     tokens: &[Token],
     start: usize,
     end: usize,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
+    values: &(impl SourceStaticValueLookup + ?Sized),
 ) -> Option<FixedFileTemplateValue> {
     let (expression, consumed) =
         parse_expression_tokens(tokens, start, end, &module.source).ok()?;
     if consumed != end {
         return None;
     }
-    evaluate_source_static_expression(program, &expression, values)
+    evaluate_source_static_expression_with_lookup(program, &expression, values)
 }
 
 struct SourceIfBody {

@@ -69,18 +69,41 @@ pub(crate) fn source_scalar_constant_values(
 
 const STATIC_LOOP_LIMIT: usize = 10_000;
 
+pub(crate) trait SourceStaticValueLookup {
+    fn source_static_value(&self, name: &str) -> Option<&FixedFileTemplateValue>;
+    fn source_static_integer_values(&self) -> BTreeMap<String, i128>;
+}
+
+impl SourceStaticValueLookup for BTreeMap<String, FixedFileTemplateValue> {
+    fn source_static_value(&self, name: &str) -> Option<&FixedFileTemplateValue> {
+        self.get(name)
+    }
+
+    fn source_static_integer_values(&self) -> BTreeMap<String, i128> {
+        integer_values(self)
+    }
+}
+
 pub(crate) fn evaluate_source_static_expression(
     program: &SourceProgram,
     expression: &Expression,
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Option<FixedFileTemplateValue> {
-    if let Some(value) = evaluate_source_template_value_expression(expression, values) {
+    evaluate_source_static_expression_with_lookup(program, expression, values)
+}
+
+pub(crate) fn evaluate_source_static_expression_with_lookup(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &(impl SourceStaticValueLookup + ?Sized),
+) -> Option<FixedFileTemplateValue> {
+    if let Some(value) = evaluate_source_template_value_expression_with_lookup(expression, values) {
         return Some(value);
     }
     if !source_expression_needs_integer_env(expression) {
         return None;
     }
-    let env = integer_values(values);
+    let env = values.source_static_integer_values();
     evaluate_static_i128(program, expression, &env).map(FixedFileTemplateValue::Integer)
 }
 
@@ -114,6 +137,13 @@ fn evaluate_source_template_value_expression(
     expression: &Expression,
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Option<FixedFileTemplateValue> {
+    evaluate_source_template_value_expression_with_lookup(expression, values)
+}
+
+fn evaluate_source_template_value_expression_with_lookup(
+    expression: &Expression,
+    values: &(impl SourceStaticValueLookup + ?Sized),
+) -> Option<FixedFileTemplateValue> {
     match &expression.kind {
         ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
             parse_i128(value).map(FixedFileTemplateValue::Integer)
@@ -121,10 +151,12 @@ fn evaluate_source_template_value_expression(
         ExpressionKind::StringLiteral(value) | ExpressionKind::TemplateLiteral(value) => {
             Some(FixedFileTemplateValue::String(value.clone()))
         }
-        ExpressionKind::Name(name) => values.get(name).cloned(),
-        ExpressionKind::Group(inner) => evaluate_source_template_value_expression(inner, values),
+        ExpressionKind::Name(name) => values.source_static_value(name).cloned(),
+        ExpressionKind::Group(inner) => {
+            evaluate_source_template_value_expression_with_lookup(inner, values)
+        }
         ExpressionKind::Unary { op, expr } => {
-            let value = evaluate_source_template_value_expression(expr, values)?;
+            let value = evaluate_source_template_value_expression_with_lookup(expr, values)?;
             match op {
                 UnaryOperator::Plus => {
                     static_value_integer(&value).map(FixedFileTemplateValue::Integer)
@@ -139,11 +171,11 @@ fn evaluate_source_template_value_expression(
             }
         }
         ExpressionKind::Binary { op, left, right } => {
-            let left = evaluate_source_template_value_expression(left, values)?;
+            let left = evaluate_source_template_value_expression_with_lookup(left, values)?;
             match op {
                 BinaryOperator::LogicalAnd => {
                     if static_value_truthy(&left) {
-                        evaluate_source_template_value_expression(right, values)
+                        evaluate_source_template_value_expression_with_lookup(right, values)
                     } else {
                         Some(left)
                     }
@@ -152,11 +184,12 @@ fn evaluate_source_template_value_expression(
                     if static_value_truthy(&left) {
                         Some(left)
                     } else {
-                        evaluate_source_template_value_expression(right, values)
+                        evaluate_source_template_value_expression_with_lookup(right, values)
                     }
                 }
                 _ => {
-                    let right = evaluate_source_template_value_expression(right, values)?;
+                    let right =
+                        evaluate_source_template_value_expression_with_lookup(right, values)?;
                     evaluate_source_template_binary(*op, left, right)
                 }
             }

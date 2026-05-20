@@ -18,9 +18,33 @@ impl SourceControlBodyCaches {
 #[derive(Debug, Default)]
 pub(crate) struct SourceControlBodyCache {
     statements: BTreeMap<(usize, usize), Vec<FunctionStatement>>,
+    token_bounds: BTreeMap<(usize, usize), Option<(usize, usize)>>,
 }
 
 impl SourceControlBodyCache {
+    pub(crate) fn span_token_bounds(
+        &mut self,
+        tokens: &[Token],
+        span: SourceSpan,
+    ) -> Option<(usize, usize)> {
+        let key = (span.start, span.end);
+        if let Some(bounds) = self.token_bounds.get(&key) {
+            return *bounds;
+        }
+
+        let bounds = tokens
+            .iter()
+            .position(|token| token.start == span.start)
+            .zip(
+                tokens
+                    .iter()
+                    .position(|token| token.end == span.end)
+                    .map(|index| index + 1),
+            );
+        self.token_bounds.insert(key, bounds);
+        bounds
+    }
+
     pub(crate) fn body_statements(
         &mut self,
         tokens: &[Token],

@@ -9,7 +9,9 @@ use lzvm_pil::{
 use crate::{
     source_control_body_cache::SourceControlBodyCache,
     source_key_directory::SourceKeyDirectoryMetadataError,
-    source_static_values::{evaluate_source_static_expression, static_value_truthy},
+    source_static_values::{
+        evaluate_source_static_expression_with_lookup, static_value_truthy, SourceStaticValueLookup,
+    },
 };
 
 const STATIC_FOR_LOOP_LIMIT: usize = 10_000;
@@ -26,6 +28,17 @@ pub(crate) fn source_static_for_loop_with_tokens(
     tokens: &[Token],
     statement: &FunctionStatement,
     base_values: &BTreeMap<String, FixedFileTemplateValue>,
+    body_cache: &mut SourceControlBodyCache,
+) -> Result<Option<SourceStaticForLoop>, SourceKeyDirectoryMetadataError> {
+    source_static_for_loop_with_lookup(program, module, tokens, statement, base_values, body_cache)
+}
+
+pub(crate) fn source_static_for_loop_with_lookup(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    statement: &FunctionStatement,
+    base_values: &(impl SourceStaticValueLookup + ?Sized),
     body_cache: &mut SourceControlBodyCache,
 ) -> Result<Option<SourceStaticForLoop>, SourceKeyDirectoryMetadataError> {
     if statement.kind != FunctionStatementKind::For {
@@ -47,19 +60,21 @@ pub(crate) fn source_static_for_loop_with_tokens(
     let Some(header) = statement.header else {
         return Ok(None);
     };
-    let Some((condition, update)) = source_for_loop_header(tokens, header, module)? else {
+    let Some((condition, update)) = source_for_loop_header(tokens, header, module, body_cache)?
+    else {
         return Ok(None);
     };
     let body_statements = body_cache.body_statements(tokens, body, &module.source)?;
 
-    let mut values = base_values.clone();
-    values.insert(
-        variable.name.clone(),
+    let mut values = SourceForLoopValues::new(
+        base_values,
+        &variable.name,
         FixedFileTemplateValue::Integer(initial_value),
     );
     let mut iteration_values = Vec::new();
     for _ in 0..STATIC_FOR_LOOP_LIMIT {
-        let Some(condition_value) = evaluate_source_static_expression(program, &condition, &values)
+        let Some(condition_value) =
+            evaluate_source_static_expression_with_lookup(program, &condition, &values)
         else {
             return Ok(None);
         };
@@ -70,15 +85,62 @@ pub(crate) fn source_static_for_loop_with_tokens(
                 variable_name: variable.name.clone(),
             }));
         }
-        let Some(iteration_value) = values.get(&variable.name).cloned() else {
-            return Ok(None);
-        };
-        iteration_values.push(iteration_value);
+        iteration_values.push(values.variable_value().clone());
         if !apply_source_for_loop_update(program, &update, &variable.name, &mut values) {
             return Ok(None);
         }
     }
     Ok(None)
+}
+
+struct SourceForLoopValues<'a, V: SourceStaticValueLookup + ?Sized> {
+    base_values: &'a V,
+    variable_name: &'a str,
+    variable_value: FixedFileTemplateValue,
+}
+
+impl<'a, V: SourceStaticValueLookup + ?Sized> SourceForLoopValues<'a, V> {
+    fn new(
+        base_values: &'a V,
+        variable_name: &'a str,
+        variable_value: FixedFileTemplateValue,
+    ) -> Self {
+        Self {
+            base_values,
+            variable_name,
+            variable_value,
+        }
+    }
+
+    fn variable_value(&self) -> &FixedFileTemplateValue {
+        &self.variable_value
+    }
+
+    fn set_variable_value(&mut self, value: FixedFileTemplateValue) {
+        self.variable_value = value;
+    }
+}
+
+impl<V: SourceStaticValueLookup + ?Sized> SourceStaticValueLookup for SourceForLoopValues<'_, V> {
+    fn source_static_value(&self, name: &str) -> Option<&FixedFileTemplateValue> {
+        if name == self.variable_name {
+            return Some(&self.variable_value);
+        }
+        self.base_values.source_static_value(name)
+    }
+
+    fn source_static_integer_values(&self) -> BTreeMap<String, i128> {
+        let mut values = self.base_values.source_static_integer_values();
+        match &self.variable_value {
+            FixedFileTemplateValue::Integer(value) => {
+                values.insert(self.variable_name.to_owned(), *value);
+            }
+            _ => {
+                values.remove(self.variable_name);
+            }
+        }
+        values
+    }
 }
 
 fn source_for_loop_variable(
@@ -99,8 +161,9 @@ fn source_for_loop_header(
     tokens: &[Token],
     header: SourceSpan,
     module: &SourceProgramModule,
+    body_cache: &mut SourceControlBodyCache,
 ) -> Result<Option<(Expression, SourceForLoopUpdate)>, SourceKeyDirectoryMetadataError> {
-    let Some((open, close)) = source_header_token_bounds(tokens, header) else {
+    let Some((open, close)) = source_header_token_bounds(tokens, header, body_cache) else {
         return Ok(None);
     };
     let semicolons = source_for_header_semicolons(tokens, open + 1, close);
@@ -122,13 +185,13 @@ fn source_for_loop_header(
     Ok(Some((condition, update)))
 }
 
-fn source_header_token_bounds(tokens: &[Token], header: SourceSpan) -> Option<(usize, usize)> {
-    let open = tokens
-        .iter()
-        .position(|token| token.kind == TokenKind::LParen && token.start == header.start)?;
-    let close = tokens
-        .iter()
-        .rposition(|token| token.kind == TokenKind::RParen && token.end == header.end)?;
+fn source_header_token_bounds(
+    tokens: &[Token],
+    header: SourceSpan,
+    body_cache: &mut SourceControlBodyCache,
+) -> Option<(usize, usize)> {
+    let (open, close) = body_cache.span_token_bounds(tokens, header)?;
+    let close = close.checked_sub(1)?;
     (open < close).then_some((open, close))
 }
 
@@ -205,11 +268,11 @@ fn source_for_loop_postfix_update(
     }
 }
 
-fn apply_source_for_loop_update(
+fn apply_source_for_loop_update<V: SourceStaticValueLookup + ?Sized>(
     program: &SourceProgram,
     update: &SourceForLoopUpdate,
     variable_name: &str,
-    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    values: &mut SourceForLoopValues<'_, V>,
 ) -> bool {
     if let Some(postfix) = &update.postfix {
         return apply_source_for_loop_delta(variable_name, &postfix.name, postfix.delta, values);
@@ -239,7 +302,9 @@ fn apply_source_for_loop_update(
             let Some(right) = source_static_integer(program, right, values) else {
                 return false;
             };
-            let Some(current) = source_static_integer_value(values.get(variable_name)) else {
+            let Some(current) =
+                source_static_integer_value(values.source_static_value(variable_name))
+            else {
                 return false;
             };
             let next = match op {
@@ -252,45 +317,40 @@ fn apply_source_for_loop_update(
             let Some(next) = next else {
                 return false;
             };
-            values.insert(
-                variable_name.to_owned(),
-                FixedFileTemplateValue::Integer(next),
-            );
+            values.set_variable_value(FixedFileTemplateValue::Integer(next));
             true
         }
         _ => false,
     }
 }
 
-fn apply_source_for_loop_delta(
+fn apply_source_for_loop_delta<V: SourceStaticValueLookup + ?Sized>(
     variable_name: &str,
     update_name: &str,
     delta: i128,
-    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    values: &mut SourceForLoopValues<'_, V>,
 ) -> bool {
     if update_name != variable_name {
         return false;
     }
-    let Some(current) = source_static_integer_value(values.get(variable_name)) else {
+    let Some(current) = source_static_integer_value(values.source_static_value(variable_name))
+    else {
         return false;
     };
     let Some(next) = current.checked_add(delta) else {
         return false;
     };
-    values.insert(
-        variable_name.to_owned(),
-        FixedFileTemplateValue::Integer(next),
-    );
+    values.set_variable_value(FixedFileTemplateValue::Integer(next));
     true
 }
 
 fn source_static_integer(
     program: &SourceProgram,
     expression: &Expression,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
+    values: &(impl SourceStaticValueLookup + ?Sized),
 ) -> Option<i128> {
     source_static_integer_value(
-        evaluate_source_static_expression(program, expression, values).as_ref(),
+        evaluate_source_static_expression_with_lookup(program, expression, values).as_ref(),
     )
 }
 

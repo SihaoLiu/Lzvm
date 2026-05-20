@@ -443,3 +443,58 @@ fn generate_key_reuses_fixed_control_scalar_maps() {
         .contains("status=ok\n"));
     assert!(stderr.is_empty());
 }
+
+#[test]
+fn generate_key_avoids_fixed_control_scope_maps() {
+    let dir = temp_dir("many-scalar-static-if-fixed-control-scope");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        many_scalar_static_if_fixed_assignment_source(8000, 1024, 8),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let started = Instant::now();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    let elapsed = started.elapsed();
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(
+        elapsed < Duration::from_secs(12),
+        "source setup took {elapsed:?}"
+    );
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    let columns = parse_raw_fixed_columns(
+        &fs::read(&unit.fixed_columns).expect("fixed columns should read"),
+        &setup,
+        unit.group_name.as_deref().unwrap_or("raw"),
+        unit.unit_name.as_deref().unwrap_or("unit"),
+    )
+    .expect("fixed columns should parse");
+    assert_eq!(columns.row_count, 8192);
+    assert_eq!(columns.columns[0].values[0], 0);
+    assert_eq!(columns.columns[0].values[8191], 1030);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}

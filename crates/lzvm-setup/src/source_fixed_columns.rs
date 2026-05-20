@@ -1,4 +1,3 @@
-use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::PathBuf;
@@ -32,10 +31,11 @@ use crate::{
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_static_values::{
         evaluate_source_static_expression, source_declaration_constant_values_from_cache,
-        source_template_constant_value_cache, SourceTemplateConstantValueCache,
+        source_template_constant_value_cache, SourceStaticValueLookup,
+        SourceTemplateConstantValueCache,
     },
-    source_template_for::source_static_for_loop_with_tokens,
-    source_template_if::source_static_if_body_statements_with_tokens,
+    source_template_for::source_static_for_loop_with_lookup,
+    source_template_if::source_static_if_body_statements_with_lookup,
     write_staging_bytes, SetupError,
 };
 
@@ -704,7 +704,6 @@ struct SourceFixedTemplateAssignmentContext<'a> {
 struct SourceFixedAssignmentValues<'a> {
     base_scalars: &'a BTreeMap<String, FixedFileTemplateValue>,
     overlays: Vec<(String, FixedFileTemplateValue)>,
-    scalar_map: OnceCell<BTreeMap<String, FixedFileTemplateValue>>,
     arrays: &'a BTreeMap<String, Vec<u64>>,
 }
 
@@ -713,7 +712,6 @@ impl<'a> SourceFixedAssignmentValues<'a> {
         Self {
             base_scalars: &constant_values.scalars,
             overlays: Vec::new(),
-            scalar_map: OnceCell::new(),
             arrays: &constant_values.arrays,
         }
     }
@@ -728,27 +726,44 @@ impl<'a> SourceFixedAssignmentValues<'a> {
         Self {
             base_scalars: base.base_scalars,
             overlays,
-            scalar_map: OnceCell::new(),
             arrays: base.arrays,
         }
     }
 
     fn scalar_value(&self, name: &str) -> Option<FixedFileTemplateValue> {
+        self.source_static_value(name).cloned()
+    }
+}
+
+impl SourceStaticValueLookup for SourceFixedAssignmentValues<'_> {
+    fn source_static_value(&self, name: &str) -> Option<&FixedFileTemplateValue> {
         self.overlays
             .iter()
             .rev()
-            .find_map(|(candidate, value)| (candidate == name).then(|| value.clone()))
-            .or_else(|| self.base_scalars.get(name).cloned())
+            .find_map(|(candidate, value)| (candidate == name).then_some(value))
+            .or_else(|| self.base_scalars.get(name))
     }
 
-    fn scalar_map(&self) -> &BTreeMap<String, FixedFileTemplateValue> {
-        self.scalar_map.get_or_init(|| {
-            let mut scalars = self.base_scalars.clone();
-            for (name, value) in &self.overlays {
-                scalars.insert(name.clone(), value.clone());
+    fn source_static_integer_values(&self) -> BTreeMap<String, i128> {
+        let mut values = self
+            .base_scalars
+            .iter()
+            .filter_map(|(name, value)| match value {
+                FixedFileTemplateValue::Integer(value) => Some((name.clone(), *value)),
+                _ => None,
+            })
+            .collect::<BTreeMap<_, _>>();
+        for (name, value) in &self.overlays {
+            match value {
+                FixedFileTemplateValue::Integer(value) => {
+                    values.insert(name.clone(), *value);
+                }
+                _ => {
+                    values.remove(name);
+                }
             }
-            scalars
-        })
+        }
+        values
     }
 }
 
@@ -760,12 +775,12 @@ fn collect_source_fixed_template_assignment(
     partial_values: &mut BTreeMap<String, Vec<Option<u64>>>,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     if statement.kind == FunctionStatementKind::If {
-        match source_static_if_body_statements_with_tokens(
+        match source_static_if_body_statements_with_lookup(
             context.program,
             context.module,
             context.tokens,
             statement,
-            assignment_values.scalar_map(),
+            assignment_values,
             body_cache,
         ) {
             Ok(Some(body_statements)) => {
@@ -787,12 +802,12 @@ fn collect_source_fixed_template_assignment(
         return Ok(());
     }
     if statement.kind == FunctionStatementKind::For {
-        match source_static_for_loop_with_tokens(
+        match source_static_for_loop_with_lookup(
             context.program,
             context.module,
             context.tokens,
             statement,
-            assignment_values.scalar_map(),
+            assignment_values,
             body_cache,
         ) {
             Ok(Some(loop_info)) => {
