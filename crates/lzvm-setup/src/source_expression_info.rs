@@ -44,6 +44,12 @@ use crate::{
     source_template_if::source_static_if_body_statements_with_tokens,
 };
 
+#[derive(Clone, Default)]
+struct SourceExpressionAliasScope {
+    expressions: SourceExpressionAliases,
+    expression_arrays: SourceExpressionArrayAliases,
+}
+
 pub(crate) fn source_expression_info(
     program: &SourceProgram,
     setup: &UnitSetupInfo,
@@ -82,7 +88,7 @@ pub(crate) fn source_expression_info(
                 constant_values: &constant_values,
                 template_values: &template_values,
             };
-            let mut expression_aliases = SourceExpressionAliases::new();
+            let mut alias_scope = SourceExpressionAliasScope::default();
             let mut statement_values = source_declaration_constant_values_from_cache(
                 context.module,
                 template.body.start,
@@ -96,12 +102,16 @@ pub(crate) fn source_expression_info(
                     &context,
                     statement,
                     &mut statement_values,
-                    &expression_aliases,
+                    &alias_scope,
                     body_cache,
                     &mut hints,
                     &mut constraints,
                 )?;
-                collect_source_template_expression_alias(statement, &mut expression_aliases);
+                collect_source_template_expression_alias(statement, &mut alias_scope.expressions);
+                collect_source_template_expression_array_alias(
+                    statement,
+                    &mut alias_scope.expression_arrays,
+                );
             }
         }
     }
@@ -138,7 +148,7 @@ fn lower_source_template_statement(
     context: &SourceTemplateLoweringContext<'_>,
     statement: &FunctionStatement,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
-    expression_aliases: &SourceExpressionAliases,
+    alias_scope: &SourceExpressionAliasScope,
     body_cache: &mut SourceControlBodyCache,
     hints: &mut Vec<HintInfo>,
     constraints: &mut Vec<ConstraintCode>,
@@ -157,18 +167,25 @@ fn lower_source_template_statement(
             body_cache,
         ) {
             Ok(Some(body_statements)) => {
-                let mut body_aliases = expression_aliases.clone();
+                let mut body_alias_scope = alias_scope.clone();
                 for body_statement in body_statements.iter() {
                     lower_source_template_statement(
                         context,
                         body_statement,
                         values,
-                        &body_aliases,
+                        &body_alias_scope,
                         body_cache,
                         hints,
                         constraints,
                     )?;
-                    collect_source_template_expression_alias(body_statement, &mut body_aliases);
+                    collect_source_template_expression_alias(
+                        body_statement,
+                        &mut body_alias_scope.expressions,
+                    );
+                    collect_source_template_expression_array_alias(
+                        body_statement,
+                        &mut body_alias_scope.expression_arrays,
+                    );
                 }
                 return Ok(());
             }
@@ -193,19 +210,26 @@ fn lower_source_template_statement(
         ) {
             Ok(Some(loop_info)) => {
                 for iteration_value in &loop_info.iteration_values {
-                    let mut loop_aliases = expression_aliases.clone();
+                    let mut loop_alias_scope = alias_scope.clone();
                     values.insert(loop_info.variable_name.clone(), iteration_value.clone());
                     for body_statement in loop_info.body_statements.iter() {
                         lower_source_template_statement(
                             context,
                             body_statement,
                             values,
-                            &loop_aliases,
+                            &loop_alias_scope,
                             body_cache,
                             hints,
                             constraints,
                         )?;
-                        collect_source_template_expression_alias(body_statement, &mut loop_aliases);
+                        collect_source_template_expression_alias(
+                            body_statement,
+                            &mut loop_alias_scope.expressions,
+                        );
+                        collect_source_template_expression_array_alias(
+                            body_statement,
+                            &mut loop_alias_scope.expression_arrays,
+                        );
                     }
                 }
                 return Ok(());
@@ -286,13 +310,12 @@ fn lower_source_template_statement(
     if source_static_assignment_expression(context.module, statement.value_expression.as_ref()) {
         return Ok(());
     }
-    let expression_array_aliases = SourceExpressionArrayAliases::new();
     let lookup_inputs = SourceLookupInputs {
         program: context.program,
         module: context.module,
         values,
-        expression_aliases,
-        expression_array_aliases: &expression_array_aliases,
+        expression_aliases: &alias_scope.expressions,
+        expression_array_aliases: &alias_scope.expression_arrays,
         scalar_slots: context.scalar_slots,
         opening_points: context.opening_points,
     };
@@ -314,7 +337,7 @@ fn lower_source_template_statement(
             statement,
             context.scalar_slots,
             values,
-            expression_aliases,
+            &alias_scope.expressions,
         );
         match lowered {
             Ok(Some(constraint)) => constraints.push(constraint),
@@ -350,7 +373,7 @@ fn lower_source_template_statement(
         statement,
         context.scalar_slots,
         values,
-        expression_aliases,
+        &alias_scope.expressions,
     ) {
         Ok(Some(constraint)) => {
             constraints.push(constraint);
@@ -379,7 +402,7 @@ fn lower_source_template_statement(
         context,
         statement,
         values,
-        expression_aliases,
+        alias_scope,
         hints,
         constraints,
     )? {
@@ -406,7 +429,7 @@ fn lower_source_template_function_call(
     context: &SourceTemplateLoweringContext<'_>,
     statement: &FunctionStatement,
     values: &BTreeMap<String, FixedFileTemplateValue>,
-    expression_aliases: &SourceExpressionAliases,
+    alias_scope: &SourceExpressionAliasScope,
     hints: &mut Vec<HintInfo>,
     constraints: &mut Vec<ConstraintCode>,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
@@ -431,25 +454,30 @@ fn lower_source_template_function_call(
         function,
         arguments,
         values,
-        expression_aliases,
+        alias_scope,
     ) else {
         return Ok(false);
     };
 
     let mut function_hints = Vec::new();
     let mut function_constraints = Vec::new();
+    let mut body_alias_scope = bindings.alias_scope;
     for body_statement in &function.statements {
         if !lower_source_function_body_statement(
             context,
             body_statement,
             &mut bindings.values,
-            &bindings.expression_aliases,
-            &bindings.expression_array_aliases,
+            &body_alias_scope,
             &mut function_hints,
             &mut function_constraints,
         )? {
             return Ok(false);
         }
+        collect_source_template_expression_alias(body_statement, &mut body_alias_scope.expressions);
+        collect_source_template_expression_array_alias(
+            body_statement,
+            &mut body_alias_scope.expression_arrays,
+        );
     }
 
     hints.extend(function_hints);
@@ -459,8 +487,7 @@ fn lower_source_template_function_call(
 
 struct SourceFunctionCallBindings {
     values: BTreeMap<String, FixedFileTemplateValue>,
-    expression_aliases: SourceExpressionAliases,
-    expression_array_aliases: SourceExpressionArrayAliases,
+    alias_scope: SourceExpressionAliasScope,
 }
 
 fn source_function_call_bindings(
@@ -469,15 +496,16 @@ fn source_function_call_bindings(
     function: &FunctionDeclaration,
     arguments: &[CallArgument],
     values: &BTreeMap<String, FixedFileTemplateValue>,
-    expression_aliases: &SourceExpressionAliases,
+    alias_scope: &SourceExpressionAliasScope,
 ) -> Option<SourceFunctionCallBindings> {
     let mut function_values = values.clone();
-    let mut function_aliases = expression_aliases.clone();
-    let mut function_array_aliases = SourceExpressionArrayAliases::new();
+    let mut function_alias_scope = alias_scope.clone();
     for parameter in &function.parameters {
         if source_expr_parameter(parameter) {
             if let Some(expression) = parameter.default_expression.as_ref() {
-                function_aliases.insert(parameter.name.clone(), expression.clone());
+                function_alias_scope
+                    .expressions
+                    .insert(parameter.name.clone(), expression.clone());
             }
             continue;
         }
@@ -490,7 +518,9 @@ fn source_function_call_bindings(
                     &parameter.name,
                 )?;
                 let alias = source_expression_array_alias(expression)?;
-                function_array_aliases.insert(parameter.name.clone(), alias);
+                function_alias_scope
+                    .expression_arrays
+                    .insert(parameter.name.clone(), alias);
             }
             continue;
         }
@@ -525,8 +555,8 @@ fn source_function_call_bindings(
                 parameter,
                 &argument.value,
                 &mut function_values,
-                &mut function_aliases,
-                &mut function_array_aliases,
+                &mut function_alias_scope.expressions,
+                &mut function_alias_scope.expression_arrays,
             )?;
             continue;
         }
@@ -536,16 +566,15 @@ fn source_function_call_bindings(
             parameter,
             &argument.value,
             &mut function_values,
-            &mut function_aliases,
-            &mut function_array_aliases,
+            &mut function_alias_scope.expressions,
+            &mut function_alias_scope.expression_arrays,
         )?;
         positional_index += 1;
     }
 
     Some(SourceFunctionCallBindings {
         values: function_values,
-        expression_aliases: function_aliases,
-        expression_array_aliases: function_array_aliases,
+        alias_scope: function_alias_scope,
     })
 }
 
@@ -620,6 +649,25 @@ fn source_expression_array_alias(expression: &Expression) -> Option<SourceExpres
             Some(SourceExpressionArrayAlias::Values(expressions.clone()))
         }
         _ => None,
+    }
+}
+
+fn collect_source_template_expression_array_alias(
+    statement: &FunctionStatement,
+    expression_array_aliases: &mut SourceExpressionArrayAliases,
+) {
+    let Some(FunctionStatementDeclaration::Constant(declaration)) = statement.declaration.as_ref()
+    else {
+        return;
+    };
+    if declaration.type_name.as_deref() != Some("expr") || declaration.array_dims.is_empty() {
+        return;
+    }
+    let Some(expression) = declaration.initializer_expression.as_ref() else {
+        return;
+    };
+    if let Some(alias) = source_expression_array_alias(expression) {
+        expression_array_aliases.insert(declaration.name.clone(), alias);
     }
 }
 
@@ -810,17 +858,13 @@ fn lower_source_function_body_statement(
     context: &SourceTemplateLoweringContext<'_>,
     statement: &FunctionStatement,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
-    expression_aliases: &SourceExpressionAliases,
-    expression_array_aliases: &SourceExpressionArrayAliases,
+    alias_scope: &SourceExpressionAliasScope,
     hints: &mut Vec<HintInfo>,
     constraints: &mut Vec<ConstraintCode>,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
-        return Ok(apply_source_static_declaration(
-            context.program,
-            statement,
-            values,
-        ));
+        let applied = apply_source_static_declaration(context.program, statement, values);
+        return Ok(applied || source_expr_alias_declaration(statement));
     }
     if statement.kind != FunctionStatementKind::Expression {
         return Ok(false);
@@ -837,8 +881,8 @@ fn lower_source_function_body_statement(
         program: context.program,
         module: context.module,
         values,
-        expression_aliases,
-        expression_array_aliases,
+        expression_aliases: &alias_scope.expressions,
+        expression_array_aliases: &alias_scope.expression_arrays,
         scalar_slots: context.scalar_slots,
         opening_points: context.opening_points,
     };
@@ -859,7 +903,7 @@ fn lower_source_function_body_statement(
         statement,
         context.scalar_slots,
         values,
-        expression_aliases,
+        &alias_scope.expressions,
     ) {
         Ok(Some(constraint)) => {
             constraints.push(constraint);
@@ -870,6 +914,14 @@ fn lower_source_function_body_statement(
         }
         Err(error) => Err(error),
     }
+}
+
+fn source_expr_alias_declaration(statement: &FunctionStatement) -> bool {
+    let Some(FunctionStatementDeclaration::Constant(declaration)) = statement.declaration.as_ref()
+    else {
+        return false;
+    };
+    declaration.type_name.as_deref() == Some("expr") && declaration.initializer_expression.is_some()
 }
 
 fn apply_source_static_declaration(

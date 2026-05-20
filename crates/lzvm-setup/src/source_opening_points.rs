@@ -10,7 +10,10 @@ use crate::{
     source_constraint_lowering::SourceExpressionAliases,
     source_control_body_cache::{SourceControlBodyCache, SourceControlBodyCaches},
     source_key_directory::SourceKeyDirectoryMetadataError,
-    source_statement_hints::source_lookup_statement_expressions,
+    source_statement_hints::{
+        source_lookup_statement_expressions, SourceExpressionArrayAlias,
+        SourceExpressionArrayAliases,
+    },
     source_static_values::{
         evaluate_source_static_expression, source_declaration_constant_values_from_cache,
         SourceTemplateConstantValueCache,
@@ -39,7 +42,7 @@ pub(crate) fn source_opening_points(
             if !active_templates.contains(&template.name) {
                 continue;
             }
-            let mut expression_aliases = SourceExpressionAliases::new();
+            let mut alias_scope = SourceOpeningAliasScope::default();
             let context = SourceOpeningPointContext {
                 program,
                 module,
@@ -61,12 +64,19 @@ pub(crate) fn source_opening_points(
                     &context,
                     statement,
                     &mut statement_values,
-                    &expression_aliases,
+                    &alias_scope,
                     body_cache,
                     &mut function_call_stack,
                     &mut points,
                 )?;
-                collect_source_opening_point_expression_alias(statement, &mut expression_aliases);
+                collect_source_opening_point_expression_alias(
+                    statement,
+                    &mut alias_scope.expressions,
+                );
+                collect_source_opening_point_expression_array_alias(
+                    statement,
+                    &mut alias_scope.expression_arrays,
+                );
             }
         }
     }
@@ -81,11 +91,17 @@ struct SourceOpeningPointContext<'a> {
     template_values: &'a SourceTemplateConstantValueCache,
 }
 
+#[derive(Clone, Default)]
+struct SourceOpeningAliasScope {
+    expressions: SourceExpressionAliases,
+    expression_arrays: SourceExpressionArrayAliases,
+}
+
 fn collect_source_statement_opening_points(
     context: &SourceOpeningPointContext<'_>,
     statement: &FunctionStatement,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
-    expression_aliases: &SourceExpressionAliases,
+    alias_scope: &SourceOpeningAliasScope,
     body_cache: &mut SourceControlBodyCache,
     function_call_stack: &mut BTreeSet<String>,
     points: &mut Vec<i64>,
@@ -104,20 +120,24 @@ fn collect_source_statement_opening_points(
             body_cache,
         ) {
             Ok(Some(body_statements)) => {
-                let mut body_aliases = expression_aliases.clone();
+                let mut body_alias_scope = alias_scope.clone();
                 for body_statement in body_statements.iter() {
                     collect_source_statement_opening_points(
                         context,
                         body_statement,
                         values,
-                        &body_aliases,
+                        &body_alias_scope,
                         body_cache,
                         function_call_stack,
                         points,
                     )?;
                     collect_source_opening_point_expression_alias(
                         body_statement,
-                        &mut body_aliases,
+                        &mut body_alias_scope.expressions,
+                    );
+                    collect_source_opening_point_expression_array_alias(
+                        body_statement,
+                        &mut body_alias_scope.expression_arrays,
                     );
                 }
                 return Ok(());
@@ -139,21 +159,25 @@ fn collect_source_statement_opening_points(
         ) {
             Ok(Some(loop_info)) => {
                 for iteration_value in &loop_info.iteration_values {
-                    let mut loop_aliases = expression_aliases.clone();
+                    let mut loop_alias_scope = alias_scope.clone();
                     values.insert(loop_info.variable_name.clone(), iteration_value.clone());
                     for body_statement in loop_info.body_statements.iter() {
                         collect_source_statement_opening_points(
                             context,
                             body_statement,
                             values,
-                            &loop_aliases,
+                            &loop_alias_scope,
                             body_cache,
                             function_call_stack,
                             points,
                         )?;
                         collect_source_opening_point_expression_alias(
                             body_statement,
-                            &mut loop_aliases,
+                            &mut loop_alias_scope.expressions,
+                        );
+                        collect_source_opening_point_expression_array_alias(
+                            body_statement,
+                            &mut loop_alias_scope.expression_arrays,
                         );
                     }
                 }
@@ -170,13 +194,15 @@ fn collect_source_statement_opening_points(
     }
     if let Some(expression) = statement.value_expression.as_ref() {
         let mut resolving_aliases = BTreeSet::new();
+        let mut resolving_array_aliases = BTreeSet::new();
         collect_source_opening_points(
             context.program,
             expression,
             values,
-            expression_aliases,
+            alias_scope,
             points,
             &mut resolving_aliases,
+            &mut resolving_array_aliases,
         )?;
     }
     if let Some(expressions) = source_lookup_statement_expressions(context.module, statement)
@@ -187,13 +213,15 @@ fn collect_source_statement_opening_points(
     {
         for expression in expressions {
             let mut resolving_aliases = BTreeSet::new();
+            let mut resolving_array_aliases = BTreeSet::new();
             collect_source_opening_points(
                 context.program,
                 &expression,
                 values,
-                expression_aliases,
+                alias_scope,
                 points,
                 &mut resolving_aliases,
+                &mut resolving_array_aliases,
             )?;
         }
     }
@@ -201,7 +229,7 @@ fn collect_source_statement_opening_points(
         context,
         statement,
         values,
-        expression_aliases,
+        alias_scope,
         body_cache,
         function_call_stack,
         points,
@@ -213,7 +241,7 @@ fn collect_source_function_call_opening_points(
     context: &SourceOpeningPointContext<'_>,
     statement: &FunctionStatement,
     values: &BTreeMap<String, FixedFileTemplateValue>,
-    expression_aliases: &SourceExpressionAliases,
+    alias_scope: &SourceOpeningAliasScope,
     body_cache: &mut SourceControlBodyCache,
     function_call_stack: &mut BTreeSet<String>,
     points: &mut Vec<i64>,
@@ -243,25 +271,32 @@ fn collect_source_function_call_opening_points(
         function,
         arguments,
         values,
-        expression_aliases,
+        alias_scope,
     ) else {
         function_call_stack.remove(&function_name);
         return Ok(false);
     };
 
-    let mut body_aliases = bindings.expression_aliases;
+    let mut body_alias_scope = bindings.alias_scope;
     let result: Result<(), SourceKeyDirectoryMetadataError> = (|| {
         for body_statement in &function.statements {
             collect_source_statement_opening_points(
                 context,
                 body_statement,
                 &mut bindings.values,
-                &body_aliases,
+                &body_alias_scope,
                 body_cache,
                 function_call_stack,
                 points,
             )?;
-            collect_source_opening_point_expression_alias(body_statement, &mut body_aliases);
+            collect_source_opening_point_expression_alias(
+                body_statement,
+                &mut body_alias_scope.expressions,
+            );
+            collect_source_opening_point_expression_array_alias(
+                body_statement,
+                &mut body_alias_scope.expression_arrays,
+            );
         }
         Ok(())
     })();
@@ -272,7 +307,7 @@ fn collect_source_function_call_opening_points(
 
 struct SourceOpeningFunctionCallBindings {
     values: BTreeMap<String, FixedFileTemplateValue>,
-    expression_aliases: SourceExpressionAliases,
+    alias_scope: SourceOpeningAliasScope,
 }
 
 fn source_opening_function_call_bindings(
@@ -280,14 +315,25 @@ fn source_opening_function_call_bindings(
     function: &FunctionDeclaration,
     arguments: &[CallArgument],
     values: &BTreeMap<String, FixedFileTemplateValue>,
-    expression_aliases: &SourceExpressionAliases,
+    alias_scope: &SourceOpeningAliasScope,
 ) -> Option<SourceOpeningFunctionCallBindings> {
     let mut function_values = values.clone();
-    let mut function_aliases = expression_aliases.clone();
+    let mut function_alias_scope = alias_scope.clone();
     for parameter in &function.parameters {
         if source_opening_expr_scalar_parameter(parameter) {
             if let Some(expression) = parameter.default_expression.as_ref() {
-                function_aliases.insert(parameter.name.clone(), expression.clone());
+                function_alias_scope
+                    .expressions
+                    .insert(parameter.name.clone(), expression.clone());
+            }
+            continue;
+        }
+        if source_opening_expr_array_parameter(parameter) {
+            if let Some(expression) = parameter.default_expression.as_ref() {
+                let alias = source_opening_expression_array_alias(expression)?;
+                function_alias_scope
+                    .expression_arrays
+                    .insert(parameter.name.clone(), alias);
             }
             continue;
         }
@@ -314,7 +360,8 @@ fn source_opening_function_call_bindings(
                 parameter,
                 &argument.value,
                 &mut function_values,
-                &mut function_aliases,
+                &mut function_alias_scope.expressions,
+                &mut function_alias_scope.expression_arrays,
             )?;
             continue;
         }
@@ -324,14 +371,15 @@ fn source_opening_function_call_bindings(
             parameter,
             &argument.value,
             &mut function_values,
-            &mut function_aliases,
+            &mut function_alias_scope.expressions,
+            &mut function_alias_scope.expression_arrays,
         )?;
         positional_index += 1;
     }
 
     Some(SourceOpeningFunctionCallBindings {
         values: function_values,
-        expression_aliases: function_aliases,
+        alias_scope: function_alias_scope,
     })
 }
 
@@ -341,9 +389,15 @@ fn source_bind_opening_function_argument(
     expression: &Expression,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: &mut SourceExpressionAliases,
+    expression_array_aliases: &mut SourceExpressionArrayAliases,
 ) -> Option<()> {
     if source_opening_expr_scalar_parameter(parameter) {
         expression_aliases.insert(parameter.name.clone(), expression.clone());
+        return Some(());
+    }
+    if source_opening_expr_array_parameter(parameter) {
+        let alias = source_opening_expression_array_alias(expression)?;
+        expression_array_aliases.insert(parameter.name.clone(), alias);
         return Some(());
     }
     if source_opening_const_scalar_parameter(parameter) {
@@ -360,6 +414,22 @@ fn source_opening_const_scalar_parameter(parameter: &lzvm_pil::FunctionParameter
 
 fn source_opening_expr_scalar_parameter(parameter: &lzvm_pil::FunctionParameter) -> bool {
     !parameter.by_reference && parameter.array_dims.is_empty() && parameter.type_name == "expr"
+}
+
+fn source_opening_expr_array_parameter(parameter: &lzvm_pil::FunctionParameter) -> bool {
+    !parameter.by_reference && !parameter.array_dims.is_empty() && parameter.type_name == "expr"
+}
+
+fn source_opening_expression_array_alias(
+    expression: &Expression,
+) -> Option<SourceExpressionArrayAlias> {
+    match &strip_source_group_expression(expression).kind {
+        ExpressionKind::Name(name) => Some(SourceExpressionArrayAlias::Name(name.clone())),
+        ExpressionKind::Array(expressions) => {
+            Some(SourceExpressionArrayAlias::Values(expressions.clone()))
+        }
+        _ => None,
+    }
 }
 
 fn source_call_expression(expression: Option<&Expression>) -> Option<(&str, &[CallArgument])> {
@@ -384,43 +454,48 @@ fn collect_source_opening_points(
     program: &SourceProgram,
     expression: &Expression,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
-    expression_aliases: &SourceExpressionAliases,
+    alias_scope: &SourceOpeningAliasScope,
     points: &mut Vec<i64>,
     resolving_aliases: &mut BTreeSet<String>,
+    resolving_array_aliases: &mut BTreeSet<String>,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     match &expression.kind {
         ExpressionKind::Group(inner) => collect_source_opening_points(
             program,
             inner,
             constant_values,
-            expression_aliases,
+            alias_scope,
             points,
             resolving_aliases,
+            resolving_array_aliases,
         ),
         ExpressionKind::Unary { expr, .. } => collect_source_opening_points(
             program,
             expr,
             constant_values,
-            expression_aliases,
+            alias_scope,
             points,
             resolving_aliases,
+            resolving_array_aliases,
         ),
         ExpressionKind::Binary { left, right, .. } => {
             collect_source_opening_points(
                 program,
                 left,
                 constant_values,
-                expression_aliases,
+                alias_scope,
                 points,
                 resolving_aliases,
+                resolving_array_aliases,
             )?;
             collect_source_opening_points(
                 program,
                 right,
                 constant_values,
-                expression_aliases,
+                alias_scope,
                 points,
                 resolving_aliases,
+                resolving_array_aliases,
             )
         }
         ExpressionKind::Array(values) => {
@@ -429,9 +504,10 @@ fn collect_source_opening_points(
                     program,
                     value,
                     constant_values,
-                    expression_aliases,
+                    alias_scope,
                     points,
                     resolving_aliases,
+                    resolving_array_aliases,
                 )?;
             }
             Ok(())
@@ -441,18 +517,20 @@ fn collect_source_opening_points(
                 program,
                 callee,
                 constant_values,
-                expression_aliases,
+                alias_scope,
                 points,
                 resolving_aliases,
+                resolving_array_aliases,
             )?;
             for arg in args {
                 collect_source_opening_points(
                     program,
                     &arg.value,
                     constant_values,
-                    expression_aliases,
+                    alias_scope,
                     points,
                     resolving_aliases,
+                    resolving_array_aliases,
                 )?;
             }
             Ok(())
@@ -462,17 +540,19 @@ fn collect_source_opening_points(
                 program,
                 target,
                 constant_values,
-                expression_aliases,
+                alias_scope,
                 points,
                 resolving_aliases,
+                resolving_array_aliases,
             )?;
             collect_source_opening_points(
                 program,
                 index,
                 constant_values,
-                expression_aliases,
+                alias_scope,
                 points,
                 resolving_aliases,
+                resolving_array_aliases,
             )
         }
         ExpressionKind::RowOffset {
@@ -484,17 +564,19 @@ fn collect_source_opening_points(
                 program,
                 target,
                 constant_values,
-                expression_aliases,
+                alias_scope,
                 points,
                 resolving_aliases,
+                resolving_array_aliases,
             )?;
             collect_source_opening_points(
                 program,
                 offset,
                 constant_values,
-                expression_aliases,
+                alias_scope,
                 points,
                 resolving_aliases,
+                resolving_array_aliases,
             )?;
             let signed_offset = source_row_offset_value(program, offset, *prior, constant_values)?;
             if !points.contains(&signed_offset) {
@@ -503,28 +585,91 @@ fn collect_source_opening_points(
             Ok(())
         }
         ExpressionKind::Name(name) => {
-            let Some(alias) = expression_aliases.get(name) else {
-                return Ok(());
-            };
-            if !resolving_aliases.insert(name.clone()) {
-                return unsupported("source opening point expression alias cycle");
+            if let Some(alias) = alias_scope.expressions.get(name) {
+                if !resolving_aliases.insert(name.clone()) {
+                    return unsupported("source opening point expression alias cycle");
+                }
+                let result = collect_source_opening_points(
+                    program,
+                    alias,
+                    constant_values,
+                    alias_scope,
+                    points,
+                    resolving_aliases,
+                    resolving_array_aliases,
+                );
+                resolving_aliases.remove(name);
+                return result;
             }
-            let result = collect_source_opening_points(
-                program,
-                alias,
-                constant_values,
-                expression_aliases,
-                points,
-                resolving_aliases,
-            );
-            resolving_aliases.remove(name);
-            result
+            if let Some(alias) = alias_scope.expression_arrays.get(name) {
+                if !resolving_array_aliases.insert(name.clone()) {
+                    return unsupported("source opening point expression array alias cycle");
+                }
+                let result = collect_source_opening_points_from_array_alias(
+                    program,
+                    alias,
+                    constant_values,
+                    alias_scope,
+                    points,
+                    resolving_aliases,
+                    resolving_array_aliases,
+                );
+                resolving_array_aliases.remove(name);
+                return result;
+            }
+            Ok(())
         }
         ExpressionKind::Integer(_)
         | ExpressionKind::HexInteger(_)
         | ExpressionKind::StringLiteral(_)
         | ExpressionKind::TemplateLiteral(_)
         | ExpressionKind::PositionalParam(_) => Ok(()),
+    }
+}
+
+fn collect_source_opening_points_from_array_alias(
+    program: &SourceProgram,
+    alias: &SourceExpressionArrayAlias,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceOpeningAliasScope,
+    points: &mut Vec<i64>,
+    resolving_aliases: &mut BTreeSet<String>,
+    resolving_array_aliases: &mut BTreeSet<String>,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    match alias {
+        SourceExpressionArrayAlias::Name(name) => {
+            let Some(next_alias) = alias_scope.expression_arrays.get(name) else {
+                return Ok(());
+            };
+            if !resolving_array_aliases.insert(name.clone()) {
+                return unsupported("source opening point expression array alias cycle");
+            }
+            let result = collect_source_opening_points_from_array_alias(
+                program,
+                next_alias,
+                constant_values,
+                alias_scope,
+                points,
+                resolving_aliases,
+                resolving_array_aliases,
+            );
+            resolving_array_aliases.remove(name);
+            result
+        }
+        SourceExpressionArrayAlias::Values(expressions) => {
+            for expression in expressions {
+                collect_source_opening_points(
+                    program,
+                    expression,
+                    constant_values,
+                    alias_scope,
+                    points,
+                    resolving_aliases,
+                    resolving_array_aliases,
+                )?;
+            }
+            Ok(())
+        }
     }
 }
 
@@ -543,6 +688,25 @@ fn collect_source_opening_point_expression_alias(
         return;
     };
     expression_aliases.insert(declaration.name.clone(), expression.clone());
+}
+
+fn collect_source_opening_point_expression_array_alias(
+    statement: &FunctionStatement,
+    expression_array_aliases: &mut SourceExpressionArrayAliases,
+) {
+    let Some(FunctionStatementDeclaration::Constant(declaration)) = statement.declaration.as_ref()
+    else {
+        return;
+    };
+    if declaration.type_name.as_deref() != Some("expr") || declaration.array_dims.is_empty() {
+        return;
+    }
+    let Some(expression) = declaration.initializer_expression.as_ref() else {
+        return;
+    };
+    if let Some(alias) = source_opening_expression_array_alias(expression) {
+        expression_array_aliases.insert(declaration.name.clone(), alias);
+    }
 }
 
 fn apply_source_opening_static_declaration(
