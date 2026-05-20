@@ -32,14 +32,16 @@ use lzvm_pil::{
 
 use crate::{
     publish_staging_bytes,
+    source_expression_filters::source_expression_assigns_fixed_index,
     source_row_count::{infer_source_row_counts, SourceUnitRowCounts},
     source_scope::{
         concrete_template_names, declaration_in_function_body, declaration_in_inactive_template,
         global_constraint_source_names,
     },
     source_static_values::{
-        source_declaration_constant_values, source_scalar_constant_values,
-        source_static_assignment_expression,
+        source_declaration_constant_values, source_declaration_in_static_false_branch,
+        source_scalar_constant_values, source_static_assignment_expression,
+        source_static_if_statement_is_false,
     },
     write_staging_bytes, SetupError,
 };
@@ -355,6 +357,7 @@ fn source_expression_info(
     let commitment_slots = source_commitment_slots(setup)?;
     let fixed_assignment_columns = source_fixed_assignment_column_names(program);
     let active_templates = concrete_template_names(program);
+    let constant_values = source_scalar_constant_values(program, 1_u64 << setup.stark.n_bits);
     let mut constraints = Vec::new();
     for module in &program.modules {
         for template in &module.air_templates {
@@ -363,10 +366,12 @@ fn source_expression_info(
             }
             for statement in &template.statements {
                 lower_source_template_statement(
+                    program,
                     module,
                     statement,
                     &commitment_slots,
                     &fixed_assignment_columns,
+                    &constant_values,
                     &mut constraints,
                 )?;
             }
@@ -426,13 +431,18 @@ fn source_fixed_assignment_column_names(program: &SourceProgram) -> BTreeSet<Str
 }
 
 fn lower_source_template_statement(
+    program: &SourceProgram,
     module: &SourceProgramModule,
     statement: &FunctionStatement,
     commitment_slots: &BTreeMap<String, SourceCommitmentSlot>,
     fixed_columns: &BTreeSet<String>,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
     constraints: &mut Vec<ConstraintCode>,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
+        return Ok(());
+    }
+    if source_static_if_statement_is_false(program, module, statement, constant_values) {
         return Ok(());
     }
     if statement.kind != FunctionStatementKind::Expression {
@@ -456,32 +466,6 @@ fn lower_source_template_statement(
         return Ok(());
     }
     unsupported("air template statements need constraint lowering support")
-}
-
-fn source_expression_assigns_fixed_index(
-    expression: Option<&Expression>,
-    fixed_columns: &BTreeSet<String>,
-) -> bool {
-    let Some(expression) = expression else {
-        return false;
-    };
-    let ExpressionKind::Binary { op, left, .. } = &strip_group_expression(expression).kind else {
-        return false;
-    };
-    if *op != BinaryOperator::Assign {
-        return false;
-    }
-    source_fixed_index_assignment_name(left).is_some_and(|name| fixed_columns.contains(name))
-}
-
-fn source_fixed_index_assignment_name(expression: &Expression) -> Option<&str> {
-    let ExpressionKind::Index { target, .. } = &strip_group_expression(expression).kind else {
-        return None;
-    };
-    let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
-        return None;
-    };
-    Some(name)
 }
 
 fn source_statement_first_token_kind(
@@ -1277,12 +1261,30 @@ fn source_unit_values(
     let mut values = Vec::new();
     for module in &program.modules {
         for declaration in &module.values {
-            if declaration.kind != ValueDeclarationKind::AirValue {
+            if declaration.kind != ValueDeclarationKind::AirValue
+                || declaration_in_function_body(module, declaration.start, declaration.end)
+            {
+                continue;
+            }
+            if source_declaration_in_static_false_branch(
+                program,
+                module,
+                declaration.start,
+                declaration.end,
+                constant_values,
+            ) {
                 continue;
             }
             if declaration.stage == 0 {
                 return unsupported("source air value stage must be positive");
             }
+            let declaration_values = source_declaration_constant_values(
+                program,
+                module,
+                declaration.start,
+                declaration.end,
+                constant_values,
+            );
             for item in &declaration.items {
                 if item.template {
                     return unsupported("template air-value names need instance lowering support");
@@ -1293,7 +1295,7 @@ fn source_unit_values(
                 values.push(StageValue {
                     name: item.name.clone(),
                     stage: declaration.stage,
-                    lengths: source_item_lengths(item, "source air value", constant_values)?,
+                    lengths: source_item_lengths(item, "source air value", &declaration_values)?,
                 });
             }
         }
@@ -1310,6 +1312,9 @@ fn source_air_group_values(
     let mut aggregation_types = Vec::new();
     for module in &program.modules {
         for declaration in &module.air_group_values {
+            if declaration_in_function_body(module, declaration.start, declaration.end) {
+                continue;
+            }
             if declaration.stage == 0 {
                 return unsupported("source air group value stage must be positive");
             }

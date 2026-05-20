@@ -30,6 +30,7 @@ mod pcs;
 mod program_image;
 mod reports;
 mod source_companions;
+mod source_expression_filters;
 mod source_fixed_columns;
 mod source_fixed_expression;
 mod source_fixed_file_manifest;

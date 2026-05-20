@@ -792,6 +792,51 @@ pub(crate) fn source_static_assignment_expression(
     })
 }
 
+pub(crate) fn source_static_if_statement_is_false(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    statement: &FunctionStatement,
+    base_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> bool {
+    if statement.kind != FunctionStatementKind::If {
+        return false;
+    }
+    let values = source_declaration_constant_values(
+        program,
+        module,
+        statement.start,
+        statement.end,
+        base_values,
+    );
+    statement
+        .header_expression
+        .as_ref()
+        .and_then(|expression| evaluate_source_static_expression(program, expression, &values))
+        .is_some_and(|value| !static_value_truthy(&value))
+}
+
+pub(crate) fn source_declaration_in_static_false_branch(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    start: usize,
+    end: usize,
+    base_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> bool {
+    let Some(template) = module
+        .air_templates
+        .iter()
+        .find(|template| template.body.start <= start && end <= template.body.end)
+    else {
+        return false;
+    };
+    template.statements.iter().any(|statement| {
+        statement
+            .body
+            .is_some_and(|body| body.start <= start && end <= body.end)
+            && source_static_if_statement_is_false(program, module, statement, base_values)
+    })
+}
+
 fn static_declaration_start(kind: TokenKind) -> bool {
     matches!(
         kind,
