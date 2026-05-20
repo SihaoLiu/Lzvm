@@ -29,6 +29,8 @@ pub(crate) fn source_statement_contains_assignment_operator(
                 | TokenKind::PlusEqual
                 | TokenKind::MinusEqual
                 | TokenKind::StarEqual
+                | TokenKind::Increment
+                | TokenKind::Decrement
         )
     }))
 }

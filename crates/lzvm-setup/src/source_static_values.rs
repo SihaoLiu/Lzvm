@@ -371,20 +371,41 @@ fn execute_static_expression_statement(
     expression: &Expression,
     values: &mut BTreeMap<String, i128>,
 ) -> Option<()> {
-    let ExpressionKind::Binary { op, left, right } = &expression.kind else {
-        return None;
-    };
-    let name = expression_name(left)?.to_owned();
-    let right = evaluate_static_i128(program, right, values)?;
-    let current = values.get(&name).copied().unwrap_or_default();
-    let value = match op {
-        BinaryOperator::Assign => right,
-        BinaryOperator::PlusAssign => current.checked_add(right)?,
-        BinaryOperator::MinusAssign => current.checked_sub(right)?,
-        BinaryOperator::StarAssign => current.checked_mul(right)?,
-        _ => return None,
-    };
-    values.insert(name, value);
+    match &expression.kind {
+        ExpressionKind::Unary { op, expr } => {
+            let name = expression_name(expr)?;
+            let delta = match op {
+                UnaryOperator::Increment => 1,
+                UnaryOperator::Decrement => -1,
+                _ => return None,
+            };
+            execute_static_delta(name, delta, values)
+        }
+        ExpressionKind::Binary { op, left, right } => {
+            let name = expression_name(left)?.to_owned();
+            let right = evaluate_static_i128(program, right, values)?;
+            let current = values.get(&name).copied().unwrap_or_default();
+            let value = match op {
+                BinaryOperator::Assign => right,
+                BinaryOperator::PlusAssign => current.checked_add(right)?,
+                BinaryOperator::MinusAssign => current.checked_sub(right)?,
+                BinaryOperator::StarAssign => current.checked_mul(right)?,
+                _ => return None,
+            };
+            values.insert(name, value);
+            Some(())
+        }
+        _ => None,
+    }
+}
+
+fn execute_static_delta(
+    name: &str,
+    delta: i128,
+    values: &mut BTreeMap<String, i128>,
+) -> Option<()> {
+    let current = values.get(name).copied().unwrap_or_default();
+    values.insert(name.to_owned(), current.checked_add(delta)?);
     Some(())
 }
 
@@ -579,6 +600,9 @@ fn execute_static_template_statement(
             if unsupported_static_assignment_statement(tokens, index, semicolon) {
                 return Some(semicolon + 1);
             }
+            if execute_source_static_postfix_update(tokens, index, semicolon, values).is_some() {
+                return Some(semicolon + 1);
+            }
             let (expression, consumed) = parse_expression(&module.source, index, semicolon).ok()?;
             if consumed == semicolon {
                 execute_source_static_expression_statement(program, &expression, values);
@@ -746,7 +770,12 @@ fn static_statement_contains_assignment_operator(
     tokens.iter().take(end).skip(index).any(|token| {
         matches!(
             token.kind,
-            TokenKind::Assign | TokenKind::PlusEqual | TokenKind::MinusEqual | TokenKind::StarEqual
+            TokenKind::Assign
+                | TokenKind::PlusEqual
+                | TokenKind::MinusEqual
+                | TokenKind::StarEqual
+                | TokenKind::Increment
+                | TokenKind::Decrement
         )
     })
 }
@@ -760,11 +789,49 @@ fn unsupported_static_assignment_statement(tokens: &[Token], index: usize, end: 
             | TokenKind::ConstrainedAssign
             | TokenKind::PlusEqual
             | TokenKind::MinusEqual
-            | TokenKind::StarEqual => return has_bracket,
+            | TokenKind::StarEqual
+            | TokenKind::Increment
+            | TokenKind::Decrement => return has_bracket,
             _ => {}
         }
     }
     false
+}
+
+fn execute_source_static_postfix_update(
+    tokens: &[Token],
+    index: usize,
+    end: usize,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<()> {
+    let name = tokens.get(index)?;
+    let update = tokens.get(index + 1)?;
+    if index + 2 != end || name.kind != TokenKind::Identifier {
+        return None;
+    }
+    let delta = match update.kind {
+        TokenKind::Increment => 1,
+        TokenKind::Decrement => -1,
+        _ => return None,
+    };
+    execute_source_static_delta(&name.lexeme, delta, values)
+}
+
+fn execute_source_static_delta(
+    name: &str,
+    delta: i128,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<()> {
+    let current = static_value_integer(
+        values
+            .get(name)
+            .unwrap_or(&FixedFileTemplateValue::Integer(0)),
+    )?;
+    values.insert(
+        name.to_owned(),
+        FixedFileTemplateValue::Integer(current.checked_add(delta)?),
+    );
+    Some(())
 }
 
 fn execute_source_static_expression_statement(
@@ -772,41 +839,58 @@ fn execute_source_static_expression_statement(
     expression: &Expression,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
 ) -> Option<()> {
-    let ExpressionKind::Binary { op, left, right } = &expression.kind else {
-        return None;
-    };
-    let name = expression_name(left)?.to_owned();
-    let right = evaluate_source_static_expression(program, right, values)?;
-    let value = match op {
-        BinaryOperator::Assign => right,
-        BinaryOperator::PlusAssign => {
-            let current = static_value_integer(
-                values
-                    .get(&name)
-                    .unwrap_or(&FixedFileTemplateValue::Integer(0)),
-            )?;
-            FixedFileTemplateValue::Integer(current.checked_add(static_value_integer(&right)?)?)
+    match &expression.kind {
+        ExpressionKind::Unary { op, expr } => {
+            let name = expression_name(expr)?;
+            let delta = match op {
+                UnaryOperator::Increment => 1,
+                UnaryOperator::Decrement => -1,
+                _ => return None,
+            };
+            execute_source_static_delta(name, delta, values)
         }
-        BinaryOperator::MinusAssign => {
-            let current = static_value_integer(
-                values
-                    .get(&name)
-                    .unwrap_or(&FixedFileTemplateValue::Integer(0)),
-            )?;
-            FixedFileTemplateValue::Integer(current.checked_sub(static_value_integer(&right)?)?)
+        ExpressionKind::Binary { op, left, right } => {
+            let name = expression_name(left)?.to_owned();
+            let right = evaluate_source_static_expression(program, right, values)?;
+            let value = match op {
+                BinaryOperator::Assign => right,
+                BinaryOperator::PlusAssign => {
+                    let current = static_value_integer(
+                        values
+                            .get(&name)
+                            .unwrap_or(&FixedFileTemplateValue::Integer(0)),
+                    )?;
+                    FixedFileTemplateValue::Integer(
+                        current.checked_add(static_value_integer(&right)?)?,
+                    )
+                }
+                BinaryOperator::MinusAssign => {
+                    let current = static_value_integer(
+                        values
+                            .get(&name)
+                            .unwrap_or(&FixedFileTemplateValue::Integer(0)),
+                    )?;
+                    FixedFileTemplateValue::Integer(
+                        current.checked_sub(static_value_integer(&right)?)?,
+                    )
+                }
+                BinaryOperator::StarAssign => {
+                    let current = static_value_integer(
+                        values
+                            .get(&name)
+                            .unwrap_or(&FixedFileTemplateValue::Integer(0)),
+                    )?;
+                    FixedFileTemplateValue::Integer(
+                        current.checked_mul(static_value_integer(&right)?)?,
+                    )
+                }
+                _ => return None,
+            };
+            values.insert(name, value);
+            Some(())
         }
-        BinaryOperator::StarAssign => {
-            let current = static_value_integer(
-                values
-                    .get(&name)
-                    .unwrap_or(&FixedFileTemplateValue::Integer(0)),
-            )?;
-            FixedFileTemplateValue::Integer(current.checked_mul(static_value_integer(&right)?)?)
-        }
-        _ => return None,
-    };
-    values.insert(name, value);
-    Some(())
+        _ => None,
+    }
 }
 
 pub(crate) fn source_static_assignment_expression(
@@ -816,28 +900,39 @@ pub(crate) fn source_static_assignment_expression(
     let Some(expression) = expression else {
         return false;
     };
-    let ExpressionKind::Binary { op, left, .. } = &expression.kind else {
-        return false;
+    let name = match &expression.kind {
+        ExpressionKind::Unary { op, expr } => {
+            if !matches!(op, UnaryOperator::Increment | UnaryOperator::Decrement) {
+                return false;
+            }
+            expression_name(expr)
+        }
+        ExpressionKind::Binary { op, left, .. } => {
+            if !matches!(
+                op,
+                BinaryOperator::Assign
+                    | BinaryOperator::PlusAssign
+                    | BinaryOperator::MinusAssign
+                    | BinaryOperator::StarAssign
+            ) {
+                return false;
+            }
+            expression_name(left)
+        }
+        _ => None,
     };
-    if !matches!(
-        op,
-        BinaryOperator::Assign
-            | BinaryOperator::PlusAssign
-            | BinaryOperator::MinusAssign
-            | BinaryOperator::StarAssign
-    ) {
-        return false;
-    }
-    expression_name(left).is_some_and(|name| {
-        module
-            .constants
+    name.is_some_and(|name| source_static_name(module, name))
+}
+
+fn source_static_name(module: &SourceProgramModule, name: &str) -> bool {
+    module
+        .constants
+        .iter()
+        .any(|declaration| declaration.name == name)
+        || module
+            .variables
             .iter()
             .any(|declaration| declaration.name == name)
-            || module
-                .variables
-                .iter()
-                .any(|declaration| declaration.name == name)
-    })
 }
 
 pub(crate) fn source_static_if_statement_is_false(

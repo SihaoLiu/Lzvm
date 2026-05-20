@@ -4,8 +4,9 @@ use lzvm_artifacts::expression_info::{ConstraintCode, ExpressionInfo, HintInfo};
 use lzvm_artifacts::global_info::{NamedStageValue, PublicValue};
 use lzvm_artifacts::setup_info::UnitSetupInfo;
 use lzvm_pil::{
-    ColumnKind, FixedFileTemplateValue, FunctionStatement, FunctionStatementKind, SourceProgram,
-    TokenKind,
+    lex_source, BinaryOperator, ColumnKind, Expression, ExpressionKind, FixedFileTemplateValue,
+    FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind, SourceProgram,
+    SourceProgramModule, TokenKind, UnaryOperator,
 };
 
 use crate::{
@@ -29,8 +30,9 @@ use crate::{
         source_statement_first_token_kind, source_statement_line,
     },
     source_static_values::{
-        source_declaration_constant_values_from_cache, source_scalar_constant_values,
-        source_static_assignment_expression, source_template_constant_value_cache,
+        evaluate_source_static_expression, source_declaration_constant_values_from_cache,
+        source_scalar_constant_values, source_static_assignment_expression,
+        source_template_constant_value_cache,
     },
     source_template_context::SourceTemplateLoweringContext,
     source_template_for::source_static_for_loop,
@@ -66,12 +68,12 @@ pub(crate) fn source_expression_info(
                 template_values: &template_values,
             };
             let mut expression_aliases = SourceExpressionAliases::new();
-            let local_values = BTreeMap::new();
+            let mut local_values = BTreeMap::new();
             for statement in &template.statements {
                 lower_source_template_statement(
                     &context,
                     statement,
-                    &local_values,
+                    &mut local_values,
                     &expression_aliases,
                     &mut hints,
                     &mut constraints,
@@ -112,14 +114,11 @@ fn source_fixed_assignment_column_names(program: &SourceProgram) -> BTreeSet<Str
 fn lower_source_template_statement(
     context: &SourceTemplateLoweringContext<'_>,
     statement: &FunctionStatement,
-    local_values: &BTreeMap<String, FixedFileTemplateValue>,
+    local_values: &mut BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: &SourceExpressionAliases,
     hints: &mut Vec<HintInfo>,
     constraints: &mut Vec<ConstraintCode>,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
-    if statement.kind == FunctionStatementKind::Declaration {
-        return Ok(());
-    }
     let declaration_values = source_declaration_constant_values_from_cache(
         context.module,
         statement.start,
@@ -138,6 +137,15 @@ fn lower_source_template_statement(
         };
         &merged_declaration_values
     };
+    if statement.kind == FunctionStatementKind::Declaration {
+        apply_source_static_declaration(
+            context.program,
+            statement,
+            declaration_values,
+            local_values,
+        );
+        return Ok(());
+    }
     if statement.kind == FunctionStatementKind::If {
         match source_static_if_body_statements(
             context.program,
@@ -180,17 +188,22 @@ fn lower_source_template_statement(
             Ok(Some(loop_info)) => {
                 for iteration_values in &loop_info.iteration_values {
                     let mut loop_aliases = expression_aliases.clone();
+                    let mut loop_values = local_values.clone();
+                    if let Some(value) = iteration_values.get(&loop_info.variable_name) {
+                        loop_values.insert(loop_info.variable_name.clone(), value.clone());
+                    }
                     for body_statement in &loop_info.body_statements {
                         lower_source_template_statement(
                             context,
                             body_statement,
-                            iteration_values,
+                            &mut loop_values,
                             &loop_aliases,
                             hints,
                             constraints,
                         )?;
                         collect_source_template_expression_alias(body_statement, &mut loop_aliases);
                     }
+                    *local_values = loop_values;
                 }
                 return Ok(());
             }
@@ -237,8 +250,38 @@ fn lower_source_template_statement(
     if source_expression_assigns_fixed_index(
         statement.value_expression.as_ref(),
         context.fixed_columns,
-    ) || source_static_assignment_expression(context.module, statement.value_expression.as_ref())
+    ) {
+        return Ok(());
+    }
+    if apply_source_static_expression_statement(
+        context.program,
+        statement.value_expression.as_ref(),
+        declaration_values,
+        local_values,
+    ) {
+        return Ok(());
+    }
+    if let Some(update) =
+        source_static_postfix_update(context.module, statement).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: context.module.source_name.clone(),
+                source,
+            }
+        })?
     {
+        if apply_source_static_delta(&update.name, update.delta, declaration_values, local_values) {
+            return Ok(());
+        }
+        if source_static_name(context.module, &update.name) {
+            return Ok(());
+        }
+        hints.push(lower_unsupported_source_assignment_statement(
+            context.module,
+            statement,
+        ));
+        return Ok(());
+    }
+    if source_static_assignment_expression(context.module, statement.value_expression.as_ref()) {
         return Ok(());
     }
     if let Some(hint) =
@@ -335,6 +378,206 @@ fn lower_source_template_statement(
         "air template statements need constraint lowering support: {}",
         source_statement_line(context.module, statement)
     ))
+}
+
+fn apply_source_static_declaration(
+    program: &SourceProgram,
+    statement: &FunctionStatement,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    local_values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> bool {
+    match statement.declaration.as_ref() {
+        Some(FunctionStatementDeclaration::Constant(declaration)) => {
+            if !declaration.array_dims.is_empty() {
+                return false;
+            }
+            let Some(expression) = declaration.initializer_expression.as_ref() else {
+                return false;
+            };
+            let Some(value) = evaluate_source_static_expression(program, expression, values) else {
+                return false;
+            };
+            local_values.insert(declaration.name.clone(), value);
+            true
+        }
+        Some(FunctionStatementDeclaration::Variable(declaration)) => {
+            if !declaration.array_dims.is_empty() {
+                return false;
+            }
+            let Some(expression) = declaration.initializer_expression.as_ref() else {
+                return false;
+            };
+            let Some(value) = evaluate_source_static_expression(program, expression, values) else {
+                return false;
+            };
+            local_values.insert(declaration.name.clone(), value);
+            true
+        }
+        _ => false,
+    }
+}
+
+fn apply_source_static_expression_statement(
+    program: &SourceProgram,
+    expression: Option<&Expression>,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    local_values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> bool {
+    let Some(expression) = expression else {
+        return false;
+    };
+    match &expression.kind {
+        ExpressionKind::Unary { op, expr } => {
+            let delta = match op {
+                UnaryOperator::Increment => 1,
+                UnaryOperator::Decrement => -1,
+                _ => return false,
+            };
+            let Some(name) = source_expression_name(expr) else {
+                return false;
+            };
+            apply_source_static_delta(name, delta, values, local_values)
+        }
+        ExpressionKind::Binary { op, left, right } => {
+            let Some(name) = source_expression_name(left) else {
+                return false;
+            };
+            if !values.contains_key(name) && !local_values.contains_key(name) {
+                return false;
+            }
+            let Some(right) = evaluate_source_static_expression(program, right, values) else {
+                return false;
+            };
+            let value = match op {
+                BinaryOperator::Assign => right,
+                BinaryOperator::PlusAssign => {
+                    let Some(current) = source_static_integer_value(
+                        local_values.get(name).or_else(|| values.get(name)),
+                    ) else {
+                        return false;
+                    };
+                    let Some(right) = source_static_integer_value(Some(&right)) else {
+                        return false;
+                    };
+                    let Some(value) = current.checked_add(right) else {
+                        return false;
+                    };
+                    FixedFileTemplateValue::Integer(value)
+                }
+                BinaryOperator::MinusAssign => {
+                    let Some(current) = source_static_integer_value(
+                        local_values.get(name).or_else(|| values.get(name)),
+                    ) else {
+                        return false;
+                    };
+                    let Some(right) = source_static_integer_value(Some(&right)) else {
+                        return false;
+                    };
+                    let Some(value) = current.checked_sub(right) else {
+                        return false;
+                    };
+                    FixedFileTemplateValue::Integer(value)
+                }
+                BinaryOperator::StarAssign => {
+                    let Some(current) = source_static_integer_value(
+                        local_values.get(name).or_else(|| values.get(name)),
+                    ) else {
+                        return false;
+                    };
+                    let Some(right) = source_static_integer_value(Some(&right)) else {
+                        return false;
+                    };
+                    let Some(value) = current.checked_mul(right) else {
+                        return false;
+                    };
+                    FixedFileTemplateValue::Integer(value)
+                }
+                _ => return false,
+            };
+            local_values.insert(name.to_owned(), value);
+            true
+        }
+        _ => false,
+    }
+}
+
+struct SourceStaticPostfixUpdate {
+    name: String,
+    delta: i128,
+}
+
+fn source_static_postfix_update(
+    module: &SourceProgramModule,
+    statement: &FunctionStatement,
+) -> Result<Option<SourceStaticPostfixUpdate>, lzvm_pil::LexError> {
+    let text = &module.source.contents[statement.start..statement.end];
+    let tokens = lex_source(text)?;
+    let tokens = tokens
+        .iter()
+        .filter(|token| token.kind != TokenKind::EndOfInput)
+        .collect::<Vec<_>>();
+    let (name, update) = match tokens.as_slice() {
+        [name, update] => (*name, *update),
+        [name, update, semicolon] if semicolon.kind == TokenKind::Semicolon => (*name, *update),
+        _ => return Ok(None),
+    };
+    if name.kind != TokenKind::Identifier {
+        return Ok(None);
+    }
+    let delta = match update.kind {
+        TokenKind::Increment => 1,
+        TokenKind::Decrement => -1,
+        _ => return Ok(None),
+    };
+    Ok(Some(SourceStaticPostfixUpdate {
+        name: name.lexeme.clone(),
+        delta,
+    }))
+}
+
+fn apply_source_static_delta(
+    name: &str,
+    delta: i128,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    local_values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> bool {
+    let Some(current) =
+        source_static_integer_value(local_values.get(name).or_else(|| values.get(name)))
+    else {
+        return false;
+    };
+    let Some(value) = current.checked_add(delta) else {
+        return false;
+    };
+    local_values.insert(name.to_owned(), FixedFileTemplateValue::Integer(value));
+    true
+}
+
+fn source_expression_name(expression: &Expression) -> Option<&str> {
+    match &expression.kind {
+        ExpressionKind::Name(name) => Some(name),
+        ExpressionKind::Group(inner) => source_expression_name(inner),
+        _ => None,
+    }
+}
+
+fn source_static_integer_value(value: Option<&FixedFileTemplateValue>) -> Option<i128> {
+    match value {
+        Some(FixedFileTemplateValue::Integer(value)) => Some(*value),
+        Some(FixedFileTemplateValue::Boolean(value)) => Some(if *value { 1 } else { 0 }),
+        _ => None,
+    }
+}
+
+fn source_static_name(module: &SourceProgramModule, name: &str) -> bool {
+    module
+        .constants
+        .iter()
+        .any(|declaration| declaration.name == name)
+        || module
+            .variables
+            .iter()
+            .any(|declaration| declaration.name == name)
 }
 
 fn unsupported<T>(message: impl Into<String>) -> Result<T, SourceKeyDirectoryMetadataError> {
