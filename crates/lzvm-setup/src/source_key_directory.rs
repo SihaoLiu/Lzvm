@@ -42,6 +42,8 @@ use crate::{
     write_staging_bytes, SetupError,
 };
 
+const SOURCE_GLOBAL_LATTICE_SIZE: u64 = 368;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceKeyDirectoryMetadataRequest {
     pub working_dir: PathBuf,
@@ -860,7 +862,7 @@ fn source_global_info(
         air_groups,
         airs,
         curve: CurveKind::None,
-        lattice_size: None,
+        lattice_size: Some(SOURCE_GLOBAL_LATTICE_SIZE),
         aggregation_types,
         n_publics: u64::try_from(publics_map.len())
             .map_err(|_| unsupported_source_message("too many source public values"))?,
