@@ -20,8 +20,9 @@ use lzvm_artifacts::verifier_info::{
     VerifierOperand, VerifierOperation, VerifierOperationKind,
 };
 use lzvm_pil::{
-    BinaryOperator, ColumnInitializerKind, ColumnItem, ColumnKind, Expression, ExpressionKind,
-    SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader, UnaryOperator,
+    lex_source, BinaryOperator, ColumnInitializerKind, ColumnItem, ColumnKind, Expression,
+    ExpressionKind, LexError, SourceLoaderConfig, SourceProgram, SourceProgramError,
+    SourceProgramLoader, Token, TokenKind, UnaryOperator,
 };
 
 use crate::{publish_staging_bytes, write_staging_bytes, SetupError};
@@ -52,7 +53,13 @@ pub enum SourceKeyDirectoryMetadataError {
     VerifierInfo(VerifierInfoError),
     KeyDirectory(KeyDirectoryError),
     Setup(SetupError),
-    UnsupportedSourceProgram { message: String },
+    Lex {
+        source_name: String,
+        source: LexError,
+    },
+    UnsupportedSourceProgram {
+        message: String,
+    },
 }
 
 impl fmt::Display for SourceKeyDirectoryMetadataError {
@@ -66,6 +73,15 @@ impl fmt::Display for SourceKeyDirectoryMetadataError {
             Self::VerifierInfo(error) => write!(f, "{error}"),
             Self::KeyDirectory(error) => write!(f, "{error}"),
             Self::Setup(error) => write!(f, "{error}"),
+            Self::Lex {
+                source_name,
+                source,
+            } => {
+                write!(
+                    f,
+                    "source setup metadata lexing failed in {source_name}: {source}"
+                )
+            }
             Self::UnsupportedSourceProgram { message } => {
                 write!(f, "unsupported source setup metadata: {message}")
             }
@@ -84,6 +100,7 @@ impl std::error::Error for SourceKeyDirectoryMetadataError {
             Self::VerifierInfo(error) => Some(error),
             Self::KeyDirectory(error) => Some(error),
             Self::Setup(error) => Some(error),
+            Self::Lex { source, .. } => Some(source),
             Self::UnsupportedSourceProgram { .. } => None,
         }
     }
@@ -231,6 +248,7 @@ fn validate_supported_source_program(
     program: &SourceProgram,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     for module in &program.modules {
+        validate_no_top_level_semantic_statements(&module.source_name, &module.source.contents)?;
         if !module
             .air_templates
             .iter()
@@ -266,6 +284,127 @@ fn validate_supported_source_program(
         }
     }
     Ok(())
+}
+
+fn validate_no_top_level_semantic_statements(
+    source_name: &str,
+    source: &str,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    let tokens = lex_source(source).map_err(|source| SourceKeyDirectoryMetadataError::Lex {
+        source_name: source_name.to_owned(),
+        source,
+    })?;
+    let mut index = 0;
+    while index < tokens.len() {
+        let token = &tokens[index];
+        match token.kind {
+            TokenKind::Pragma => {
+                index += 1;
+            }
+            kind if top_level_declaration_start(kind) => {
+                index = skip_top_level_item(&tokens, index)?;
+            }
+            TokenKind::Public | TokenKind::Private
+                if tokens.get(index + 1).is_some_and(|next| {
+                    matches!(
+                        next.kind,
+                        TokenKind::Include | TokenKind::Require | TokenKind::Function
+                    )
+                }) =>
+            {
+                index = skip_top_level_item(&tokens, index)?;
+            }
+            _ => {
+                return unsupported("top-level statements need global constraint lowering support");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn top_level_declaration_start(kind: TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::AirGroup
+            | TokenKind::AirTemplate
+            | TokenKind::Challenge
+            | TokenKind::Col
+            | TokenKind::Commit
+            | TokenKind::Const
+            | TokenKind::Constant
+            | TokenKind::Container
+            | TokenKind::Declare
+            | TokenKind::Function
+            | TokenKind::Include
+            | TokenKind::Package
+            | TokenKind::ProofValue
+            | TokenKind::Public
+            | TokenKind::PublicTable
+            | TokenKind::Require
+            | TokenKind::Use
+    )
+}
+
+fn skip_top_level_item(
+    tokens: &[Token],
+    index: usize,
+) -> Result<usize, SourceKeyDirectoryMetadataError> {
+    let mut stack = Vec::<TokenKind>::new();
+    let mut cursor = index;
+    while let Some(token) = tokens.get(cursor) {
+        if stack.is_empty() && token.kind == TokenKind::Semicolon {
+            return Ok(cursor + 1);
+        }
+        if stack.is_empty() && token.kind == TokenKind::LBrace {
+            return skip_balanced_delimiter(tokens, cursor, TokenKind::RBrace);
+        }
+
+        match token.kind {
+            TokenKind::LParen => stack.push(TokenKind::RParen),
+            TokenKind::LBracket => stack.push(TokenKind::RBracket),
+            TokenKind::LBrace => stack.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                let Some(expected) = stack.pop() else {
+                    return unsupported("source declaration has an unmatched closing delimiter");
+                };
+                if token.kind != expected {
+                    return unsupported("source declaration delimiters are not balanced");
+                }
+            }
+            _ => {}
+        }
+        cursor += 1;
+    }
+    unsupported("source declaration has no terminator")
+}
+
+fn skip_balanced_delimiter(
+    tokens: &[Token],
+    index: usize,
+    close_kind: TokenKind,
+) -> Result<usize, SourceKeyDirectoryMetadataError> {
+    let open_kind = tokens
+        .get(index)
+        .map(|token| token.kind)
+        .ok_or_else(|| unsupported_source_message("source declaration has no body"))?;
+    let mut depth = 0_usize;
+    let mut cursor = index;
+    while let Some(token) = tokens.get(cursor) {
+        if token.kind == open_kind {
+            depth = depth
+                .checked_add(1)
+                .ok_or_else(|| unsupported_source_message("source declaration nesting overflow"))?;
+        } else if token.kind == close_kind {
+            depth = depth
+                .checked_sub(1)
+                .ok_or_else(|| unsupported_source_message("source declaration body underflow"))?;
+            if depth == 0 {
+                return Ok(cursor + 1);
+            }
+        }
+        cursor += 1;
+    }
+    unsupported("source declaration body is not closed")
 }
 
 fn unsupported<T>(message: impl Into<String>) -> Result<T, SourceKeyDirectoryMetadataError> {

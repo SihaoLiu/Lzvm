@@ -209,3 +209,38 @@ fn generate_key_rejects_source_metadata_that_requires_lowering() {
     assert!(!dir.join("pilout.globalInfo.bin").exists());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
+
+#[test]
+fn generate_key_rejects_top_level_expression_statements() {
+    let dir = temp_dir("top-level-expression");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "enable_range_stats();\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    let stderr = String::from_utf8(stderr).expect("stderr should be utf-8");
+    assert!(stderr.contains("top-level statements need global constraint lowering support"));
+    assert!(!dir.join("pilout.globalInfo.bin").exists());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
