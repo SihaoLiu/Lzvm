@@ -1000,7 +1000,16 @@ fn execute_static_template_declaration(
         .iter()
         .find(|declaration| declaration.start == start)
     {
-        if !declaration.array_dims.is_empty() || values.contains_key(&declaration.name) {
+        if values.contains_key(&declaration.name) {
+            return Some(());
+        }
+        if !declaration.array_dims.is_empty() {
+            let elements = source_static_array_expression(
+                program,
+                declaration.initializer_expression.as_ref()?,
+                values,
+            )?;
+            insert_source_static_array(values, &declaration.name, elements)?;
             return Some(());
         }
         let value = evaluate_source_static_expression_or_token_span(
@@ -1020,6 +1029,12 @@ fn execute_static_template_declaration(
         .iter()
         .find(|declaration| declaration.start == start)?;
     if !declaration.array_dims.is_empty() {
+        let elements = source_static_array_expression(
+            program,
+            declaration.initializer_expression.as_ref()?,
+            values,
+        )?;
+        insert_source_static_array(values, &declaration.name, elements)?;
         return Some(());
     }
     let value = evaluate_source_static_expression_or_token_span(
@@ -1355,6 +1370,22 @@ fn source_token_index_after_end(tokens: &[Token], end: usize) -> Option<usize> {
         .iter()
         .position(|token| token.end == end)
         .and_then(|index| index.checked_add(1))
+}
+
+fn source_static_array_expression(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<Vec<FixedFileTemplateValue>> {
+    match &expression.kind {
+        ExpressionKind::Array(elements) => elements
+            .iter()
+            .map(|element| evaluate_source_static_expression(program, element, values))
+            .collect(),
+        ExpressionKind::Group(inner) => source_static_array_expression(program, inner, values),
+        ExpressionKind::Name(name) => source_static_array_values(values, name),
+        _ => None,
+    }
 }
 
 pub(crate) fn source_declaration_constant_values(
