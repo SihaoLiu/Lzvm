@@ -2,7 +2,9 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::fixed::FixedColumns;
-use lzvm_artifacts::hint_program::{source_unimplemented_hint_name, HintProgram};
+use lzvm_artifacts::hint_program::{
+    source_unimplemented_hint_name, HintProgram, SOURCE_UNSUPPORTED_ASSIGNMENT_HINT,
+};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValues, PublicValuesError};
 use lzvm_artifacts::trace_bundle::TraceBundle;
 use lzvm_field::{Ext3, Felt, FieldError};
@@ -788,11 +790,10 @@ fn reject_unsupported_regular_hints(
     program: &HintProgram,
     unit_index: usize,
 ) -> Result<(), ProveWitnessCommitmentError> {
-    if let Some(hint) = program
-        .hints
-        .iter()
-        .find(|hint| source_unimplemented_hint_name(&hint.name))
-    {
+    if let Some(hint) = program.hints.iter().find(|hint| {
+        source_unimplemented_hint_name(&hint.name)
+            && hint.name != SOURCE_UNSUPPORTED_ASSIGNMENT_HINT
+    }) {
         return Err(ProveWitnessCommitmentError::UnsupportedRegularHint {
             unit_index,
             name: hint.name.clone(),
@@ -955,7 +956,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unsupported_source_assignment_regular_hints() {
+    fn accepts_unsupported_source_assignment_regular_hints() {
         let program = HintProgram {
             hints: vec![Hint {
                 name: SOURCE_UNSUPPORTED_ASSIGNMENT_HINT.to_owned(),
@@ -969,16 +970,8 @@ mod tests {
             }],
         };
 
-        let error = reject_unsupported_regular_hints(&program, 7)
-            .expect_err("unsupported source assignment hints should be rejected before evaluation");
-
-        assert_eq!(
-            error,
-            ProveWitnessCommitmentError::UnsupportedRegularHint {
-                unit_index: 7,
-                name: SOURCE_UNSUPPORTED_ASSIGNMENT_HINT.to_owned(),
-            }
-        );
+        reject_unsupported_regular_hints(&program, 7)
+            .expect("source assignment hints should not block trace validation");
     }
 
     #[test]

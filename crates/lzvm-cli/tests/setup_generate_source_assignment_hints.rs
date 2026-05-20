@@ -27,6 +27,29 @@ fn write_file(path: &Path, contents: impl AsRef<[u8]>) {
     fs::write(path, contents).expect("fixture should be written");
 }
 
+fn sample_guest_image() -> Vec<u8> {
+    let mut bytes = vec![0_u8; 64];
+    bytes[0..4].copy_from_slice(b"\x7fELF");
+    bytes[4] = 2;
+    bytes[5] = 1;
+    bytes[6] = 1;
+    bytes[16..18].copy_from_slice(&2_u16.to_le_bytes());
+    bytes[18..20].copy_from_slice(&243_u16.to_le_bytes());
+    bytes[20..24].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[24..32].copy_from_slice(&0x8000_0000_u64.to_le_bytes());
+    bytes[32..40].copy_from_slice(&64_u64.to_le_bytes());
+    bytes[52..54].copy_from_slice(&64_u16.to_le_bytes());
+    bytes
+}
+
+fn sample_trace_bytes(values: &[u64]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(values.len() * 8);
+    for value in values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes
+}
+
 #[test]
 fn generate_key_records_unsupported_source_assignments_as_regular_hints() {
     let dir = temp_dir("unsupported-source-assignment");
@@ -145,6 +168,72 @@ fn generate_key_records_unsupported_source_compound_assignments_as_regular_hints
         .expect("stdout should be utf-8")
         .contains("status=ok\n"));
     assert!(stderr.is_empty());
+}
+
+#[test]
+fn prove_witness_accepts_source_assignment_hints_with_trace_bytes() {
+    let dir = temp_dir("source-assignment-witness");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    let guest_image = dir.join("guest.elf");
+    let trace_path = dir.join("trace.bin");
+    let output_dir = dir.join("proof-out");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col witness value;\n\
+             col witness out[1];\n\
+             out[0] = value + 1;\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+    write_file(&guest_image, sample_guest_image());
+    write_file(&trace_path, sample_trace_bytes(&[4, 5, 6, 7]));
+
+    let mut setup_stdout = Vec::new();
+    let mut setup_stderr = Vec::new();
+    let setup_code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut setup_stdout,
+        &mut setup_stderr,
+    );
+    assert_eq!(
+        setup_code,
+        0,
+        "stderr={}",
+        String::from_utf8_lossy(&setup_stderr)
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--trace-bytes",
+            trace_path.to_str().expect("trace path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .starts_with("status=ok\n"));
 }
 
 #[test]
