@@ -36,3 +36,14 @@ pub(crate) fn declaration_in_inactive_template(
         .find(|template| template.body.start <= start && end <= template.body.end)
         .is_some_and(|template| !active_templates.contains(&template.name))
 }
+
+pub(crate) fn declaration_in_function_body(
+    module: &SourceProgramModule,
+    start: usize,
+    end: usize,
+) -> bool {
+    module
+        .functions
+        .iter()
+        .any(|function| function.body.start <= start && end <= function.body.end)
+}

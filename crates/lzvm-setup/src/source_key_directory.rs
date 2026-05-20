@@ -34,7 +34,8 @@ use crate::{
     publish_staging_bytes,
     source_row_count::{infer_source_row_counts, SourceUnitRowCounts},
     source_scope::{
-        concrete_template_names, declaration_in_inactive_template, global_constraint_source_names,
+        concrete_template_names, declaration_in_function_body, declaration_in_inactive_template,
+        global_constraint_source_names,
     },
     source_static_values::source_scalar_constant_values,
     write_staging_bytes, SetupError,
@@ -400,12 +401,22 @@ fn source_commitment_slots(
 }
 
 fn source_fixed_assignment_column_names(program: &SourceProgram) -> BTreeSet<String> {
+    let active_templates = concrete_template_names(program);
     program
         .modules
         .iter()
-        .flat_map(|module| module.columns.iter())
-        .filter(|declaration| {
-            declaration.kind == ColumnKind::Fixed && declaration.initializer.is_none()
+        .flat_map(|module| {
+            module.columns.iter().filter(|declaration| {
+                declaration.kind == ColumnKind::Fixed
+                    && declaration.initializer.is_none()
+                    && !declaration_in_function_body(module, declaration.start, declaration.end)
+                    && !declaration_in_inactive_template(
+                        module,
+                        declaration.start,
+                        declaration.end,
+                        &active_templates,
+                    )
+            })
         })
         .flat_map(|declaration| declaration.items.iter().map(|item| item.name.clone()))
         .collect()
@@ -1441,6 +1452,9 @@ fn source_constant_columns(
             if declaration.kind != ColumnKind::Fixed {
                 continue;
             }
+            if declaration_in_function_body(module, declaration.start, declaration.end) {
+                continue;
+            }
             if declaration_in_inactive_template(
                 module,
                 declaration.start,
@@ -1451,9 +1465,10 @@ fn source_constant_columns(
             }
             for item in &declaration.items {
                 if item.template {
-                    return unsupported(
-                        "template fixed-column names need instance lowering support",
-                    );
+                    return unsupported(format!(
+                        "template fixed-column names need instance lowering support in {} at {}",
+                        declaration.source_name, declaration.start
+                    ));
                 }
                 if !seen.insert(item.name.clone()) {
                     continue;
@@ -1489,6 +1504,9 @@ fn source_commitment_columns(
             if matches!(declaration.kind, ColumnKind::Fixed) {
                 continue;
             }
+            if declaration_in_function_body(module, declaration.start, declaration.end) {
+                continue;
+            }
             if declaration_in_inactive_template(
                 module,
                 declaration.start,
@@ -1500,9 +1518,10 @@ fn source_commitment_columns(
             let stage = source_column_stage(declaration, constant_values)?;
             for item in &declaration.items {
                 if item.template {
-                    return unsupported(
-                        "template commitment-column names need instance lowering support",
-                    );
+                    return unsupported(format!(
+                        "template commitment-column names need instance lowering support in {} at {}",
+                        declaration.source_name, declaration.start
+                    ));
                 }
                 if !seen.insert(item.name.clone()) {
                     continue;
