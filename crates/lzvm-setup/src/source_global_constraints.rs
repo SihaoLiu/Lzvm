@@ -1,12 +1,12 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_artifacts::constraint_program::{GlobalConstraintEntry, GlobalConstraintProgram};
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::global_program::GlobalProgram;
 use lzvm_artifacts::hint_program::HintProgram;
 use lzvm_pil::{
-    lex_source, parse_expression, BinaryOperator, Expression, ExpressionKind, SourceProgram,
-    SourceProgramModule, Token, TokenKind,
+    lex_source, parse_expression, BinaryOperator, ConstantDeclaration, Expression, ExpressionKind,
+    SourceProgram, SourceProgramModule, Token, TokenKind,
 };
 
 use crate::{
@@ -45,6 +45,7 @@ fn lower_module_top_level_global_constraints(
     public_value_slots: &BTreeMap<String, SourcePublicValueSlot>,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
+    let expression_aliases = top_level_global_expression_aliases(module);
     let tokens = lex_source(&module.source.contents).map_err(|source| {
         SourceKeyDirectoryMetadataError::Lex {
             source_name: module.source_name.clone(),
@@ -71,6 +72,7 @@ fn lower_module_top_level_global_constraints(
                         index,
                         proof_value_slots,
                         public_value_slots,
+                        &expression_aliases,
                         constraints,
                     )?;
                 }
@@ -92,6 +94,7 @@ fn lower_module_top_level_global_constraints(
                     index,
                     proof_value_slots,
                     public_value_slots,
+                    &expression_aliases,
                     constraints,
                 )?;
             }
@@ -106,6 +109,7 @@ fn lower_top_level_expression_statement(
     index: usize,
     proof_value_slots: &BTreeMap<String, SourceProofValueSlot>,
     public_value_slots: &BTreeMap<String, SourcePublicValueSlot>,
+    expression_aliases: &SourceGlobalExpressionAliases,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<usize, SourceKeyDirectoryMetadataError> {
     let next_index = skip_top_level_statement(tokens, index)?;
@@ -121,6 +125,7 @@ fn lower_top_level_expression_statement(
         &module.source.contents[expression.start..expression.end],
         proof_value_slots,
         public_value_slots,
+        expression_aliases,
         constraints,
     )?;
     Ok(next_index)
@@ -131,9 +136,15 @@ fn lower_top_level_global_constraint(
     source_line: &str,
     proof_value_slots: &BTreeMap<String, SourceProofValueSlot>,
     public_value_slots: &BTreeMap<String, SourcePublicValueSlot>,
+    expression_aliases: &SourceGlobalExpressionAliases,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
-    let Some(target) = proof_value_boolean_constraint_target(expression) else {
+    let mut resolving_aliases = BTreeSet::new();
+    let Some(target) = proof_value_boolean_constraint_target(
+        expression,
+        expression_aliases,
+        &mut resolving_aliases,
+    ) else {
         return unsupported(format!(
             "top-level statements need global constraint lowering support: {}",
             source_line.trim()
@@ -177,6 +188,81 @@ struct SourcePublicValueSlot {
 struct SourceBooleanTarget {
     name: String,
     index: Option<u32>,
+}
+
+type SourceGlobalExpressionAliases = BTreeMap<String, Expression>;
+
+fn top_level_global_expression_aliases(
+    module: &SourceProgramModule,
+) -> SourceGlobalExpressionAliases {
+    module
+        .constants
+        .iter()
+        .filter(|declaration| source_top_level_expr_alias_declaration(module, declaration))
+        .filter_map(|declaration| {
+            Some((
+                declaration.name.clone(),
+                declaration.initializer_expression.as_ref()?.clone(),
+            ))
+        })
+        .collect()
+}
+
+fn source_top_level_expr_alias_declaration(
+    module: &SourceProgramModule,
+    declaration: &ConstantDeclaration,
+) -> bool {
+    declaration.type_name.as_deref() == Some("expr")
+        && declaration.array_dims.is_empty()
+        && !source_global_declaration_in_template_body(module, declaration.start, declaration.end)
+        && !source_global_declaration_in_group_body(module, declaration.start, declaration.end)
+        && !source_global_declaration_in_container_body(module, declaration.start, declaration.end)
+        && !source_global_declaration_in_function_body(module, declaration.start, declaration.end)
+}
+
+fn source_global_declaration_in_template_body(
+    module: &SourceProgramModule,
+    start: usize,
+    end: usize,
+) -> bool {
+    module
+        .air_templates
+        .iter()
+        .any(|template| template.body.start <= start && end <= template.body.end)
+}
+
+fn source_global_declaration_in_group_body(
+    module: &SourceProgramModule,
+    start: usize,
+    end: usize,
+) -> bool {
+    module
+        .air_groups
+        .iter()
+        .any(|group| group.body.start <= start && end <= group.body.end)
+}
+
+fn source_global_declaration_in_container_body(
+    module: &SourceProgramModule,
+    start: usize,
+    end: usize,
+) -> bool {
+    module.containers.iter().any(|container| {
+        container
+            .body
+            .is_some_and(|body| body.start <= start && end <= body.end)
+    })
+}
+
+fn source_global_declaration_in_function_body(
+    module: &SourceProgramModule,
+    start: usize,
+    end: usize,
+) -> bool {
+    module
+        .functions
+        .iter()
+        .any(|function| function.body.start <= start && end <= function.body.end)
 }
 
 fn source_proof_value_slots(
@@ -240,7 +326,11 @@ fn public_value_target_offset(
         .ok_or_else(|| unsupported_source_message("source public value offset overflow"))
 }
 
-fn proof_value_boolean_constraint_target(expression: &Expression) -> Option<SourceBooleanTarget> {
+fn proof_value_boolean_constraint_target(
+    expression: &Expression,
+    expression_aliases: &SourceGlobalExpressionAliases,
+    resolving_aliases: &mut BTreeSet<String>,
+) -> Option<SourceBooleanTarget> {
     let ExpressionKind::Binary { op, left, right } = &strip_group_expression(expression).kind
     else {
         return None;
@@ -249,13 +339,17 @@ fn proof_value_boolean_constraint_target(expression: &Expression) -> Option<Sour
         return None;
     }
 
-    if let Some(target) = expression_target(left) {
-        if one_minus_target(right, &target) || target_minus_one(right, &target) {
+    if let Some(target) = expression_target(left, expression_aliases, resolving_aliases) {
+        if one_minus_target(right, &target, expression_aliases, resolving_aliases)
+            || target_minus_one(right, &target, expression_aliases, resolving_aliases)
+        {
             return Some(target);
         }
     }
-    if let Some(target) = expression_target(right) {
-        if one_minus_target(left, &target) || target_minus_one(left, &target) {
+    if let Some(target) = expression_target(right, expression_aliases, resolving_aliases) {
+        if one_minus_target(left, &target, expression_aliases, resolving_aliases)
+            || target_minus_one(left, &target, expression_aliases, resolving_aliases)
+        {
             return Some(target);
         }
     }
@@ -269,12 +363,26 @@ fn strip_group_expression(expression: &Expression) -> &Expression {
     }
 }
 
-fn expression_target(expression: &Expression) -> Option<SourceBooleanTarget> {
+fn expression_target(
+    expression: &Expression,
+    expression_aliases: &SourceGlobalExpressionAliases,
+    resolving_aliases: &mut BTreeSet<String>,
+) -> Option<SourceBooleanTarget> {
     match &strip_group_expression(expression).kind {
-        ExpressionKind::Name(name) => Some(SourceBooleanTarget {
-            name: name.clone(),
-            index: None,
-        }),
+        ExpressionKind::Name(name) => {
+            if let Some(alias) = expression_aliases.get(name) {
+                if !resolving_aliases.insert(name.clone()) {
+                    return None;
+                }
+                let target = expression_target(alias, expression_aliases, resolving_aliases);
+                resolving_aliases.remove(name);
+                return target;
+            }
+            Some(SourceBooleanTarget {
+                name: name.clone(),
+                index: None,
+            })
+        }
         ExpressionKind::Index { target, index } => {
             let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
                 return None;
@@ -288,23 +396,33 @@ fn expression_target(expression: &Expression) -> Option<SourceBooleanTarget> {
     }
 }
 
-fn one_minus_target(expression: &Expression, target: &SourceBooleanTarget) -> bool {
+fn one_minus_target(
+    expression: &Expression,
+    target: &SourceBooleanTarget,
+    expression_aliases: &SourceGlobalExpressionAliases,
+    resolving_aliases: &mut BTreeSet<String>,
+) -> bool {
     let ExpressionKind::Binary { op, left, right } = &strip_group_expression(expression).kind
     else {
         return false;
     };
     *op == BinaryOperator::Subtract
         && expression_is_one(left)
-        && expression_target(right).as_ref() == Some(target)
+        && expression_target(right, expression_aliases, resolving_aliases).as_ref() == Some(target)
 }
 
-fn target_minus_one(expression: &Expression, target: &SourceBooleanTarget) -> bool {
+fn target_minus_one(
+    expression: &Expression,
+    target: &SourceBooleanTarget,
+    expression_aliases: &SourceGlobalExpressionAliases,
+    resolving_aliases: &mut BTreeSet<String>,
+) -> bool {
     let ExpressionKind::Binary { op, left, right } = &strip_group_expression(expression).kind
     else {
         return false;
     };
     *op == BinaryOperator::Subtract
-        && expression_target(left).as_ref() == Some(target)
+        && expression_target(left, expression_aliases, resolving_aliases).as_ref() == Some(target)
         && expression_is_one(right)
 }
 
