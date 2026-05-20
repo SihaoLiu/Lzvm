@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_pil::{
-    lex_source, Expression, ExpressionKind, FixedFileTemplateValue, FunctionStatement,
-    FunctionStatementDeclaration, FunctionStatementKind, SourceProgram, SourceProgramModule, Token,
-    UnaryOperator,
+    lex_source, CallArgument, Expression, ExpressionKind, FixedFileTemplateValue,
+    FunctionDeclaration, FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind,
+    SourceProgram, SourceProgramModule, Token, UnaryOperator,
 };
 
 use crate::{
@@ -47,6 +47,7 @@ pub(crate) fn source_opening_points(
                 constant_values,
                 template_values,
             };
+            let mut function_call_stack = BTreeSet::new();
             let mut statement_values = source_declaration_constant_values_from_cache(
                 context.module,
                 template.body.start,
@@ -62,6 +63,7 @@ pub(crate) fn source_opening_points(
                     &mut statement_values,
                     &expression_aliases,
                     body_cache,
+                    &mut function_call_stack,
                     &mut points,
                 )?;
                 collect_source_opening_point_expression_alias(statement, &mut expression_aliases);
@@ -85,6 +87,7 @@ fn collect_source_statement_opening_points(
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: &SourceExpressionAliases,
     body_cache: &mut SourceControlBodyCache,
+    function_call_stack: &mut BTreeSet<String>,
     points: &mut Vec<i64>,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
@@ -109,6 +112,7 @@ fn collect_source_statement_opening_points(
                         values,
                         &body_aliases,
                         body_cache,
+                        function_call_stack,
                         points,
                     )?;
                     collect_source_opening_point_expression_alias(
@@ -144,6 +148,7 @@ fn collect_source_statement_opening_points(
                             values,
                             &loop_aliases,
                             body_cache,
+                            function_call_stack,
                             points,
                         )?;
                         collect_source_opening_point_expression_alias(
@@ -192,7 +197,190 @@ fn collect_source_statement_opening_points(
             )?;
         }
     }
+    collect_source_function_call_opening_points(
+        context,
+        statement,
+        values,
+        expression_aliases,
+        body_cache,
+        function_call_stack,
+        points,
+    )?;
     Ok(())
+}
+
+fn collect_source_function_call_opening_points(
+    context: &SourceOpeningPointContext<'_>,
+    statement: &FunctionStatement,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: &SourceExpressionAliases,
+    body_cache: &mut SourceControlBodyCache,
+    function_call_stack: &mut BTreeSet<String>,
+    points: &mut Vec<i64>,
+) -> Result<bool, SourceKeyDirectoryMetadataError> {
+    let Some((name, arguments)) = source_call_expression(statement.value_expression.as_ref())
+    else {
+        return Ok(false);
+    };
+    let Some(function) = context
+        .module
+        .functions
+        .iter()
+        .find(|function| function.name == name)
+    else {
+        return Ok(false);
+    };
+    if function.return_type.is_some() {
+        return Ok(false);
+    }
+
+    let function_name = function.name.clone();
+    if !function_call_stack.insert(function_name.clone()) {
+        return unsupported("source opening point function call cycle");
+    }
+    let Some(mut bindings) = source_opening_function_call_bindings(
+        context.program,
+        function,
+        arguments,
+        values,
+        expression_aliases,
+    ) else {
+        function_call_stack.remove(&function_name);
+        return Ok(false);
+    };
+
+    let mut body_aliases = bindings.expression_aliases;
+    let result: Result<(), SourceKeyDirectoryMetadataError> = (|| {
+        for body_statement in &function.statements {
+            collect_source_statement_opening_points(
+                context,
+                body_statement,
+                &mut bindings.values,
+                &body_aliases,
+                body_cache,
+                function_call_stack,
+                points,
+            )?;
+            collect_source_opening_point_expression_alias(body_statement, &mut body_aliases);
+        }
+        Ok(())
+    })();
+    function_call_stack.remove(&function_name);
+    result?;
+    Ok(true)
+}
+
+struct SourceOpeningFunctionCallBindings {
+    values: BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: SourceExpressionAliases,
+}
+
+fn source_opening_function_call_bindings(
+    program: &SourceProgram,
+    function: &FunctionDeclaration,
+    arguments: &[CallArgument],
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: &SourceExpressionAliases,
+) -> Option<SourceOpeningFunctionCallBindings> {
+    let mut function_values = values.clone();
+    let mut function_aliases = expression_aliases.clone();
+    for parameter in &function.parameters {
+        if source_opening_const_scalar_parameter(parameter) {
+            if let Some(expression) = parameter.default_expression.as_ref() {
+                let value =
+                    evaluate_source_static_expression(program, expression, &function_values)?;
+                function_values.insert(parameter.name.clone(), value);
+            }
+            continue;
+        }
+        if source_opening_expr_scalar_parameter(parameter) {
+            if let Some(expression) = parameter.default_expression.as_ref() {
+                function_aliases.insert(parameter.name.clone(), expression.clone());
+            }
+            continue;
+        }
+        return None;
+    }
+
+    let mut positional_index = 0;
+    for argument in arguments {
+        if let Some(name) = argument.name.as_ref() {
+            let parameter = function
+                .parameters
+                .iter()
+                .find(|parameter| parameter.name == *name)?;
+            source_bind_opening_function_argument(
+                program,
+                parameter,
+                &argument.value,
+                &mut function_values,
+                &mut function_aliases,
+            )?;
+            continue;
+        }
+        let parameter = function.parameters.get(positional_index)?;
+        source_bind_opening_function_argument(
+            program,
+            parameter,
+            &argument.value,
+            &mut function_values,
+            &mut function_aliases,
+        )?;
+        positional_index += 1;
+    }
+
+    Some(SourceOpeningFunctionCallBindings {
+        values: function_values,
+        expression_aliases: function_aliases,
+    })
+}
+
+fn source_bind_opening_function_argument(
+    program: &SourceProgram,
+    parameter: &lzvm_pil::FunctionParameter,
+    expression: &Expression,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: &mut SourceExpressionAliases,
+) -> Option<()> {
+    if source_opening_const_scalar_parameter(parameter) {
+        let value = evaluate_source_static_expression(program, expression, values)?;
+        values.insert(parameter.name.clone(), value);
+        return Some(());
+    }
+    if source_opening_expr_scalar_parameter(parameter) {
+        expression_aliases.insert(parameter.name.clone(), expression.clone());
+        return Some(());
+    }
+    None
+}
+
+fn source_opening_const_scalar_parameter(parameter: &lzvm_pil::FunctionParameter) -> bool {
+    parameter.is_const && !parameter.by_reference && parameter.array_dims.is_empty()
+}
+
+fn source_opening_expr_scalar_parameter(parameter: &lzvm_pil::FunctionParameter) -> bool {
+    !parameter.is_const
+        && !parameter.by_reference
+        && parameter.array_dims.is_empty()
+        && parameter.type_name == "expr"
+}
+
+fn source_call_expression(expression: Option<&Expression>) -> Option<(&str, &[CallArgument])> {
+    let ExpressionKind::Call { callee, args } = &strip_source_group_expression(expression?).kind
+    else {
+        return None;
+    };
+    let ExpressionKind::Name(name) = &strip_source_group_expression(callee).kind else {
+        return None;
+    };
+    Some((name.as_str(), args.as_slice()))
+}
+
+fn strip_source_group_expression(expression: &Expression) -> &Expression {
+    match &expression.kind {
+        ExpressionKind::Group(inner) => strip_source_group_expression(inner),
+        _ => expression,
+    }
 }
 
 fn collect_source_opening_points(
