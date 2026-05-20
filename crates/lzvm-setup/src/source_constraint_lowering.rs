@@ -80,13 +80,13 @@ fn lower_source_constraint_residual(
         return Ok(None);
     }
     if expression_is_zero(right) {
-        return lower_source_scalar_expression(left, state).map(Some);
+        return lower_source_scalar_expression_at(left, state, 0).map(Some);
     } else if expression_is_zero(left) {
-        return lower_source_scalar_expression(right, state).map(Some);
+        return lower_source_scalar_expression_at(right, state, 0).map(Some);
     }
 
-    let left = lower_source_scalar_expression(left, state)?;
-    let right = lower_source_scalar_expression(right, state)?;
+    let left = lower_source_scalar_expression_at(left, state, 0)?;
+    let right = lower_source_scalar_expression_at(right, state, 0)?;
     let id = state.next_temporary;
     state.next_temporary = state
         .next_temporary
@@ -100,9 +100,10 @@ fn lower_source_constraint_residual(
     Ok(Some(CodeOperand::temporary(id, 1)))
 }
 
-fn lower_source_scalar_expression(
+fn lower_source_scalar_expression_at(
     expression: &Expression,
     state: &mut SourceConstraintLoweringState<'_>,
+    row_offset: i64,
 ) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
     let expression = strip_group_expression(expression);
     if let Some(value) = static_scalar_integer(expression, state.constant_values)? {
@@ -114,9 +115,16 @@ fn lower_source_scalar_expression(
                 if !state.resolving_aliases.insert(name.clone()) {
                     return unsupported("source scalar constraint expression alias cycle");
                 }
-                let operand = lower_source_scalar_expression(alias, state);
+                let operand = lower_source_scalar_expression_at(alias, state, row_offset);
                 state.resolving_aliases.remove(name);
                 return operand;
+            }
+            if row_offset != 0 {
+                state.frame_offsets.include(row_offset);
+                return state
+                    .scalar_slots
+                    .operand_at(name, row_offset)
+                    .map_err(|error| unsupported_source_message(error.to_string()));
             }
             state
                 .scalar_slots
@@ -124,7 +132,7 @@ fn lower_source_scalar_expression(
                 .map_err(|error| unsupported_source_message(error.to_string()))
         }
         ExpressionKind::Unary { op, expr } => {
-            let value = lower_source_scalar_expression(expr, state)?;
+            let value = lower_source_scalar_expression_at(expr, state, row_offset)?;
             match op {
                 UnaryOperator::Plus => Ok(value),
                 UnaryOperator::Minus => {
@@ -151,12 +159,10 @@ fn lower_source_scalar_expression(
             prior,
         } => {
             let signed_offset = source_row_offset_value(offset, *prior, state.constant_values)?;
-            let name = source_row_offset_target_name(target, state)?;
-            state.frame_offsets.include(signed_offset);
-            state
-                .scalar_slots
-                .operand_at(&name, signed_offset)
-                .map_err(|error| unsupported_source_message(error.to_string()))
+            let combined_offset = row_offset
+                .checked_add(signed_offset)
+                .ok_or_else(|| unsupported_source_message("source row offset overflow"))?;
+            lower_source_scalar_expression_at(target, state, combined_offset)
         }
         ExpressionKind::Binary { op, left, right } => {
             let op = match op {
@@ -165,8 +171,8 @@ fn lower_source_scalar_expression(
                 BinaryOperator::Multiply => OperationKind::Mul,
                 _ => return unsupported("unsupported source scalar constraint expression"),
             };
-            let left = lower_source_scalar_expression(left, state)?;
-            let right = lower_source_scalar_expression(right, state)?;
+            let left = lower_source_scalar_expression_at(left, state, row_offset)?;
+            let right = lower_source_scalar_expression_at(right, state, row_offset)?;
             let id = state.next_temporary;
             state.next_temporary = state.next_temporary.checked_add(1).ok_or_else(|| {
                 unsupported_source_message("source scalar constraint temporary overflow")
@@ -179,26 +185,6 @@ fn lower_source_scalar_expression(
             Ok(CodeOperand::temporary(id, 1))
         }
         _ => unsupported("unsupported source scalar constraint expression"),
-    }
-}
-
-fn source_row_offset_target_name(
-    expression: &Expression,
-    state: &mut SourceConstraintLoweringState<'_>,
-) -> Result<String, SourceKeyDirectoryMetadataError> {
-    match &strip_group_expression(expression).kind {
-        ExpressionKind::Name(name) => {
-            let Some(alias) = state.expression_aliases.get(name).cloned() else {
-                return Ok(name.clone());
-            };
-            if !state.resolving_aliases.insert(name.clone()) {
-                return unsupported("source scalar constraint expression alias cycle");
-            }
-            let target = source_row_offset_target_name(&alias, state);
-            state.resolving_aliases.remove(name);
-            target
-        }
-        _ => unsupported("source row offsets require named scalar values"),
     }
 }
 
