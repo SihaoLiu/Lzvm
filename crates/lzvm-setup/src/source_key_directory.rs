@@ -25,14 +25,18 @@ use lzvm_artifacts::verifier_info::{
 use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
     BinaryOperator, ColumnDeclaration, ColumnItem, ColumnKind, Expression, ExpressionKind,
-    FixedFileTemplateValue, FunctionStatement, FunctionStatementKind, IncludeKind, LexError,
-    ParseError, SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader,
+    FixedFileTemplateValue, FunctionStatement, FunctionStatementKind, LexError, ParseError,
+    SourceLoaderConfig, SourceProgram, SourceProgramError, SourceProgramLoader,
     SourceProgramModule, Token, TokenKind, UnaryOperator, ValueDeclarationKind,
 };
 
 use crate::{
     publish_staging_bytes,
     source_row_count::{infer_source_row_counts, SourceUnitRowCounts},
+    source_scope::{
+        concrete_template_names, declaration_in_inactive_template, global_constraint_source_names,
+    },
+    source_static_values::source_scalar_constant_values,
     write_staging_bytes, SetupError,
 };
 
@@ -346,9 +350,13 @@ fn source_expression_info(
 ) -> Result<ExpressionInfo, SourceKeyDirectoryMetadataError> {
     let commitment_slots = source_commitment_slots(setup)?;
     let fixed_assignment_columns = source_fixed_assignment_column_names(program);
+    let active_templates = concrete_template_names(program);
     let mut constraints = Vec::new();
     for module in &program.modules {
         for template in &module.air_templates {
+            if !active_templates.contains(&template.name) {
+                continue;
+            }
             for statement in &template.statements {
                 lower_source_template_statement(
                     module,
@@ -591,7 +599,7 @@ fn source_global_program(
     global_info: &GlobalInfo,
 ) -> Result<GlobalProgram, SourceKeyDirectoryMetadataError> {
     let proof_value_slots = source_proof_value_slots(global_info)?;
-    let global_source_names = source_global_constraint_source_names(program);
+    let global_source_names = global_constraint_source_names(program);
     let mut constraints = SourceGlobalConstraintBuilder::default();
     for module in &program.modules {
         if !global_source_names.contains(&module.source_name) {
@@ -603,19 +611,6 @@ fn source_global_program(
         constraints: constraints.finish(),
         hints: HintProgram { hints: Vec::new() },
     })
-}
-
-fn source_global_constraint_source_names(program: &SourceProgram) -> BTreeSet<String> {
-    let mut names = BTreeSet::new();
-    if let Some(source) = program.graph.sources.first() {
-        names.insert(source.source_name.clone());
-    }
-    for edge in &program.graph.edges {
-        if edge.kind == IncludeKind::Require {
-            names.insert(edge.to.clone());
-        }
-    }
-    names
 }
 
 fn lower_module_top_level_global_constraints(
@@ -1375,8 +1370,10 @@ fn source_unit_setup_info(
         .checked_add(1)
         .ok_or_else(|| unsupported_source_message("source domain is too large"))?;
     let constant_values = source_scalar_constant_values(program, row_count);
-    let constant_columns = source_constant_columns(program, &constant_values)?;
-    let commitment_columns = source_commitment_columns(program, &constant_values)?;
+    let active_templates = concrete_template_names(program);
+    let constant_columns = source_constant_columns(program, &constant_values, &active_templates)?;
+    let commitment_columns =
+        source_commitment_columns(program, &constant_values, &active_templates)?;
     let (n_stages, commitment_widths) = source_commitment_section_widths(&commitment_columns)?;
     let unit_value_map = source_unit_values(program, &constant_values)?;
     let (group_value_map, _) = source_air_group_values(program, &constant_values)?;
@@ -1435,12 +1432,21 @@ fn source_unit_setup_info(
 fn source_constant_columns(
     program: &SourceProgram,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    active_templates: &BTreeSet<String>,
 ) -> Result<Vec<ConstantColumn>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut columns = Vec::new();
     for module in &program.modules {
         for declaration in &module.columns {
             if declaration.kind != ColumnKind::Fixed {
+                continue;
+            }
+            if declaration_in_inactive_template(
+                module,
+                declaration.start,
+                declaration.end,
+                active_templates,
+            ) {
                 continue;
             }
             for item in &declaration.items {
@@ -1473,6 +1479,7 @@ fn source_constant_columns(
 fn source_commitment_columns(
     program: &SourceProgram,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    active_templates: &BTreeSet<String>,
 ) -> Result<Vec<CommitmentColumn>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut columns = Vec::new();
@@ -1480,6 +1487,14 @@ fn source_commitment_columns(
     for module in &program.modules {
         for declaration in &module.columns {
             if matches!(declaration.kind, ColumnKind::Fixed) {
+                continue;
+            }
+            if declaration_in_inactive_template(
+                module,
+                declaration.start,
+                declaration.end,
+                active_templates,
+            ) {
                 continue;
             }
             let stage = source_column_stage(declaration, constant_values)?;
@@ -1630,58 +1645,6 @@ fn source_item_lengths(
     Ok(lengths)
 }
 
-fn source_scalar_constant_values(
-    program: &SourceProgram,
-    row_count: u64,
-) -> BTreeMap<String, FixedFileTemplateValue> {
-    let mut values = BTreeMap::from([
-        (
-            "BITS".to_owned(),
-            FixedFileTemplateValue::Integer(i128::from(row_count.trailing_zeros())),
-        ),
-        (
-            "N".to_owned(),
-            FixedFileTemplateValue::Integer(i128::from(row_count)),
-        ),
-    ]);
-    let declarations = program
-        .modules
-        .iter()
-        .flat_map(|module| module.constants.iter())
-        .collect::<Vec<_>>();
-    let mut resolved = vec![false; declarations.len()];
-
-    loop {
-        let mut progressed = false;
-        for (index, declaration) in declarations.iter().enumerate() {
-            if resolved[index] {
-                continue;
-            }
-            if !declaration.array_dims.is_empty() || values.contains_key(&declaration.name) {
-                resolved[index] = true;
-                progressed = true;
-                continue;
-            }
-            let Some(expression) = declaration.initializer_expression.as_ref() else {
-                continue;
-            };
-            let Some(value) =
-                evaluate_fixed_file_template_value_expression_with_values(expression, &values)
-            else {
-                continue;
-            };
-            values.insert(declaration.name.clone(), value);
-            resolved[index] = true;
-            progressed = true;
-        }
-        if !progressed {
-            break;
-        }
-    }
-
-    values
-}
-
 fn eval_u32_expression(expression: &Expression) -> Result<u32, SourceKeyDirectoryMetadataError> {
     let value = eval_i128_expression(expression)?;
     u32::try_from(value)
@@ -1735,7 +1698,10 @@ fn eval_i128_expression(expression: &Expression) -> Result<i128, SourceKeyDirect
                 _ => unsupported("unsupported source binary expression"),
             }
         }
-        _ => unsupported("unsupported source expression"),
+        _ => unsupported(format!(
+            "unsupported source expression in {} at {}",
+            expression.source_name, expression.start
+        )),
     }
 }
 
