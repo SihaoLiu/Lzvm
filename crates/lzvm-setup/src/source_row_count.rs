@@ -238,6 +238,13 @@ fn count_source_sequence_items(
     text: &str,
     constants: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<u64, SourceKeyDirectoryMetadataError> {
+    count_source_sequence_items_with_last(text, constants).map(|count| count.len)
+}
+
+fn count_source_sequence_items_with_last(
+    text: &str,
+    constants: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<SequenceItemCount, SourceKeyDirectoryMetadataError> {
     let text = text.trim();
     if text.ends_with("...") {
         return unsupported("source fixed-column fill sequences need explicit metadata");
@@ -249,16 +256,28 @@ fn count_source_sequence_items(
             unsupported_source_message("source fixed-column sequence must use brackets")
         })?;
     let mut count = 0_u64;
+    let mut previous_value = None;
     for item in split_top_level_commas(inner) {
         let item = item.trim();
         if item.is_empty() {
             continue;
         }
+        let item_count = sequence_item_count(item, constants, previous_value)?;
         count = count
-            .checked_add(sequence_item_len(item, constants)?)
+            .checked_add(item_count.len)
             .ok_or_else(|| unsupported_source_message("source sequence length overflow"))?;
+        previous_value = item_count.last_value;
     }
-    Ok(count)
+    Ok(SequenceItemCount {
+        len: count,
+        last_value: previous_value,
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SequenceItemCount {
+    len: u64,
+    last_value: Option<i128>,
 }
 
 fn split_top_level_commas(value: &str) -> Vec<&str> {
@@ -299,11 +318,14 @@ fn split_top_level_commas(value: &str) -> Vec<&str> {
     items
 }
 
-fn sequence_item_len(
+fn sequence_item_count(
     item: &str,
     constants: &BTreeMap<String, FixedFileTemplateValue>,
-) -> Result<u64, SourceKeyDirectoryMetadataError> {
-    if let Some(index) = top_level_range_index(item) {
+    previous_value: Option<i128>,
+) -> Result<SequenceItemCount, SourceKeyDirectoryMetadataError> {
+    if let Some((index, kind)) = top_level_progression_index(item) {
+        sequence_progression_count(item, index, kind, constants, previous_value)
+    } else if let Some(index) = top_level_range_index(item) {
         if item[index..].starts_with("...") || item[index + 2..].contains("..") {
             return unsupported("source fixed-column sequence ranges must be finite");
         }
@@ -321,29 +343,181 @@ fn sequence_item_len(
         .ok_or_else(|| unsupported_source_message("source range length overflow"))?;
         let range_length = u64::try_from(range_length)
             .map_err(|_| unsupported_source_message("source range length overflow"))?;
-        range_length
+        let len = range_length
             .checked_mul(start_repeat)
-            .ok_or_else(|| unsupported_source_message("source range length overflow"))
+            .ok_or_else(|| unsupported_source_message("source range length overflow"))?;
+        Ok(SequenceItemCount {
+            len,
+            last_value: Some(end),
+        })
     } else if let Some(index) = top_level_delimiter_index(item, ':') {
-        let value_len = sequence_repeat_value_len(item[..index].trim(), constants)?;
+        let value_count = sequence_repeat_value_count(item[..index].trim(), constants)?;
         let repeat = parse_u64_static_integer(item[index + 1..].trim(), constants)?;
-        value_len
+        let len = value_count
+            .len
             .checked_mul(repeat)
-            .ok_or_else(|| unsupported_source_message("source sequence length overflow"))
+            .ok_or_else(|| unsupported_source_message("source sequence length overflow"))?;
+        Ok(SequenceItemCount {
+            len,
+            last_value: if repeat == 0 {
+                None
+            } else {
+                value_count.last_value
+            },
+        })
     } else {
-        Ok(1)
+        Ok(SequenceItemCount {
+            len: 1,
+            last_value: parse_i128_static_integer(item, constants).ok(),
+        })
     }
 }
 
-fn sequence_repeat_value_len(
+fn sequence_repeat_value_count(
     value: &str,
     constants: &BTreeMap<String, FixedFileTemplateValue>,
-) -> Result<u64, SourceKeyDirectoryMetadataError> {
+) -> Result<SequenceItemCount, SourceKeyDirectoryMetadataError> {
     if value.starts_with('[') && value.ends_with(']') {
-        count_source_sequence_items(value, constants)
+        count_source_sequence_items_with_last(value, constants)
     } else {
-        Ok(1)
+        Ok(SequenceItemCount {
+            len: 1,
+            last_value: parse_i128_static_integer(value, constants).ok(),
+        })
     }
+}
+
+fn sequence_progression_count(
+    item: &str,
+    progression_index: usize,
+    kind: SequenceProgressionKind,
+    constants: &BTreeMap<String, FixedFileTemplateValue>,
+    previous_value: Option<i128>,
+) -> Result<SequenceItemCount, SourceKeyDirectoryMetadataError> {
+    let previous = previous_value.ok_or_else(|| {
+        unsupported_source_message("source fixed-column progression needs explicit metadata")
+    })?;
+    let current = parse_i128_static_integer(item[..progression_index].trim(), constants)?;
+    let last_start = progression_index + kind.marker_len();
+    let last = item.get(last_start..).unwrap_or_default().trim();
+    if last.is_empty() {
+        return unsupported("source fixed-column progression needs explicit metadata");
+    }
+    let last = parse_i128_static_integer(last, constants)?;
+    let len = match kind {
+        SequenceProgressionKind::Add => {
+            let step = current
+                .checked_sub(previous)
+                .ok_or_else(|| unsupported_source_message("source progression length overflow"))?;
+            sequence_add_progression_len(current, last, step)?
+        }
+        SequenceProgressionKind::Mul => {
+            sequence_mul_or_div_progression_len(previous, current, last)?
+        }
+    };
+    Ok(SequenceItemCount {
+        len,
+        last_value: Some(last),
+    })
+}
+
+fn sequence_add_progression_len(
+    current: i128,
+    last: i128,
+    step: i128,
+) -> Result<u64, SourceKeyDirectoryMetadataError> {
+    if (step > 0 && current > last)
+        || (step < 0 && current < last)
+        || (step == 0 && current != last)
+    {
+        return unsupported("source fixed-column progression needs explicit metadata");
+    }
+    let mut value = current;
+    let mut len = 0_u64;
+    loop {
+        len = len
+            .checked_add(1)
+            .ok_or_else(|| unsupported_source_message("source progression length overflow"))?;
+        if value == last {
+            break;
+        }
+        value = value
+            .checked_add(step)
+            .ok_or_else(|| unsupported_source_message("source progression length overflow"))?;
+        if (step > 0 && value > last) || (step < 0 && value < last) {
+            return unsupported("source fixed-column progression needs explicit metadata");
+        }
+    }
+    Ok(len)
+}
+
+fn sequence_mul_or_div_progression_len(
+    previous: i128,
+    current: i128,
+    last: i128,
+) -> Result<u64, SourceKeyDirectoryMetadataError> {
+    if previous > 0 && current >= previous && current % previous == 0 {
+        return sequence_mul_progression_len(current, last, current / previous);
+    }
+    if current > 0 && previous > current && previous % current == 0 {
+        return sequence_div_progression_len(current, last, previous / current);
+    }
+    unsupported("source fixed-column progression needs explicit metadata")
+}
+
+fn sequence_mul_progression_len(
+    current: i128,
+    last: i128,
+    factor: i128,
+) -> Result<u64, SourceKeyDirectoryMetadataError> {
+    if factor <= 1 && current != last {
+        return unsupported("source fixed-column progression needs explicit metadata");
+    }
+    let mut value = current;
+    let mut len = 0_u64;
+    loop {
+        len = len
+            .checked_add(1)
+            .ok_or_else(|| unsupported_source_message("source progression length overflow"))?;
+        if value == last {
+            break;
+        }
+        value = value
+            .checked_mul(factor)
+            .ok_or_else(|| unsupported_source_message("source progression length overflow"))?;
+        if value > last {
+            return unsupported("source fixed-column progression needs explicit metadata");
+        }
+    }
+    Ok(len)
+}
+
+fn sequence_div_progression_len(
+    current: i128,
+    last: i128,
+    divisor: i128,
+) -> Result<u64, SourceKeyDirectoryMetadataError> {
+    if divisor <= 1 && current != last {
+        return unsupported("source fixed-column progression needs explicit metadata");
+    }
+    let mut value = current;
+    let mut len = 0_u64;
+    loop {
+        len = len
+            .checked_add(1)
+            .ok_or_else(|| unsupported_source_message("source progression length overflow"))?;
+        if value == last {
+            break;
+        }
+        if value % divisor != 0 {
+            return unsupported("source fixed-column progression needs explicit metadata");
+        }
+        value /= divisor;
+        if value < last {
+            return unsupported("source fixed-column progression needs explicit metadata");
+        }
+    }
+    Ok(len)
 }
 
 fn parse_range_endpoint_count(
@@ -356,6 +530,35 @@ fn parse_range_endpoint_count(
     let value = parse_i128_static_integer(value.trim(), constants)?;
     let repeat = parse_u64_static_integer(repeat.trim(), constants)?;
     Ok((value, repeat))
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SequenceProgressionKind {
+    Add,
+    Mul,
+}
+
+impl SequenceProgressionKind {
+    fn marker_len(self) -> usize {
+        match self {
+            Self::Add | Self::Mul => 5,
+        }
+    }
+}
+
+fn top_level_progression_index(value: &str) -> Option<(usize, SequenceProgressionKind)> {
+    let mut cursor = 0;
+    while let Some(index) = top_level_delimiter_index(&value[cursor..], '.') {
+        let index = cursor + index;
+        if value[index..].starts_with("..+..") {
+            return Some((index, SequenceProgressionKind::Add));
+        }
+        if value[index..].starts_with("..*..") {
+            return Some((index, SequenceProgressionKind::Mul));
+        }
+        cursor = index + 1;
+    }
+    None
 }
 
 fn top_level_range_index(value: &str) -> Option<usize> {
