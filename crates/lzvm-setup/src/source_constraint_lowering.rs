@@ -94,6 +94,7 @@ fn lower_source_constraint_residual(
 
     let left = lower_source_scalar_expression_at(left, state, 0)?;
     let right = lower_source_scalar_expression_at(right, state, 0)?;
+    let dimension = source_binary_result_dimension(&left, &right)?;
     let id = state.next_temporary;
     state.next_temporary = state
         .next_temporary
@@ -101,10 +102,10 @@ fn lower_source_constraint_residual(
         .ok_or_else(|| unsupported_source_message("source scalar constraint temporary overflow"))?;
     state.operations.push(CodeOperation {
         op: OperationKind::Sub,
-        destination: CodeDestination::temporary(id, 1),
+        destination: CodeDestination::temporary(id, dimension),
         sources: vec![left, right],
     });
-    Ok(Some(CodeOperand::temporary(id, 1)))
+    Ok(Some(CodeOperand::temporary(id, dimension)))
 }
 
 fn lower_source_scalar_expression_at(
@@ -143,6 +144,7 @@ fn lower_source_scalar_expression_at(
             match op {
                 UnaryOperator::Plus => Ok(value),
                 UnaryOperator::Minus => {
+                    let dimension = source_operand_dimension(&value)?;
                     let id = state.next_temporary;
                     state.next_temporary =
                         state.next_temporary.checked_add(1).ok_or_else(|| {
@@ -152,10 +154,10 @@ fn lower_source_scalar_expression_at(
                         })?;
                     state.operations.push(CodeOperation {
                         op: OperationKind::Sub,
-                        destination: CodeDestination::temporary(id, 1),
+                        destination: CodeDestination::temporary(id, dimension),
                         sources: vec![CodeOperand::number(0, 1), value],
                     });
-                    Ok(CodeOperand::temporary(id, 1))
+                    Ok(CodeOperand::temporary(id, dimension))
                 }
                 _ => unsupported("unsupported source scalar constraint expression"),
             }
@@ -199,16 +201,17 @@ fn lower_source_scalar_expression_at(
             };
             let left = lower_source_scalar_expression_at(left, state, row_offset)?;
             let right = lower_source_scalar_expression_at(right, state, row_offset)?;
+            let dimension = source_binary_result_dimension(&left, &right)?;
             let id = state.next_temporary;
             state.next_temporary = state.next_temporary.checked_add(1).ok_or_else(|| {
                 unsupported_source_message("source scalar constraint temporary overflow")
             })?;
             state.operations.push(CodeOperation {
                 op,
-                destination: CodeDestination::temporary(id, 1),
+                destination: CodeDestination::temporary(id, dimension),
                 sources: vec![left, right],
             });
-            Ok(CodeOperand::temporary(id, 1))
+            Ok(CodeOperand::temporary(id, dimension))
         }
         _ => unsupported("unsupported source scalar constraint expression"),
     }
@@ -228,6 +231,7 @@ fn lower_source_static_divisor_expression(
         .inverse()
         .ok_or_else(|| unsupported_source_message("source scalar constraint division by zero"))?;
     let left = lower_source_scalar_expression_at(left, state, row_offset)?;
+    let dimension = source_operand_dimension(&left)?;
     let id = state.next_temporary;
     state.next_temporary = state
         .next_temporary
@@ -235,10 +239,10 @@ fn lower_source_static_divisor_expression(
         .ok_or_else(|| unsupported_source_message("source scalar constraint temporary overflow"))?;
     state.operations.push(CodeOperation {
         op: OperationKind::Mul,
-        destination: CodeDestination::temporary(id, 1),
+        destination: CodeDestination::temporary(id, dimension),
         sources: vec![left, CodeOperand::number(inverse.to_u64(), 1)],
     });
-    Ok(CodeOperand::temporary(id, 1))
+    Ok(CodeOperand::temporary(id, dimension))
 }
 
 fn lower_source_static_exponent_expression(
@@ -277,6 +281,7 @@ fn push_source_mul_operation(
     left: CodeOperand,
     right: CodeOperand,
 ) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
+    let dimension = source_binary_result_dimension(&left, &right)?;
     let id = state.next_temporary;
     state.next_temporary = state
         .next_temporary
@@ -284,16 +289,17 @@ fn push_source_mul_operation(
         .ok_or_else(|| unsupported_source_message("source scalar constraint temporary overflow"))?;
     state.operations.push(CodeOperation {
         op: OperationKind::Mul,
-        destination: CodeDestination::temporary(id, 1),
+        destination: CodeDestination::temporary(id, dimension),
         sources: vec![left, right],
     });
-    Ok(CodeOperand::temporary(id, 1))
+    Ok(CodeOperand::temporary(id, dimension))
 }
 
 fn push_source_copy_operation(
     state: &mut SourceConstraintLoweringState<'_>,
     source: CodeOperand,
 ) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
+    let dimension = source_operand_dimension(&source)?;
     let id = state.next_temporary;
     state.next_temporary = state
         .next_temporary
@@ -301,10 +307,47 @@ fn push_source_copy_operation(
         .ok_or_else(|| unsupported_source_message("source scalar constraint temporary overflow"))?;
     state.operations.push(CodeOperation {
         op: OperationKind::Copy,
-        destination: CodeDestination::temporary(id, 1),
+        destination: CodeDestination::temporary(id, dimension),
         sources: vec![source],
     });
-    Ok(CodeOperand::temporary(id, 1))
+    Ok(CodeOperand::temporary(id, dimension))
+}
+
+fn source_binary_result_dimension(
+    left: &CodeOperand,
+    right: &CodeOperand,
+) -> Result<u32, SourceKeyDirectoryMetadataError> {
+    let left = source_operand_dimension(left)?;
+    let right = source_operand_dimension(right)?;
+    match (left, right) {
+        (1, 1) => Ok(1),
+        (1, 3) | (3, 1) | (3, 3) => Ok(3),
+        _ => unsupported("unsupported source scalar constraint expression dimension"),
+    }
+}
+
+fn source_operand_dimension(operand: &CodeOperand) -> Result<u32, SourceKeyDirectoryMetadataError> {
+    let dimension = match operand {
+        CodeOperand::Temporary { dimension, .. }
+        | CodeOperand::Number { dimension, .. }
+        | CodeOperand::Evaluation { dimension, .. }
+        | CodeOperand::Challenge { dimension, .. }
+        | CodeOperand::Public { dimension, .. }
+        | CodeOperand::Constant { dimension, .. }
+        | CodeOperand::ConstantAt { dimension, .. }
+        | CodeOperand::Commitment { dimension, .. }
+        | CodeOperand::CommitmentElement { dimension, .. }
+        | CodeOperand::BoundaryZerofier { dimension, .. }
+        | CodeOperand::ProofValue { dimension, .. }
+        | CodeOperand::OpeningDenominator { dimension, .. }
+        | CodeOperand::CustomCommitment { dimension, .. }
+        | CodeOperand::AirGroupValue { dimension, .. }
+        | CodeOperand::AirValue { dimension, .. } => *dimension,
+    };
+    match dimension {
+        1 | 3 => Ok(dimension),
+        _ => unsupported("unsupported source scalar constraint expression dimension"),
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]

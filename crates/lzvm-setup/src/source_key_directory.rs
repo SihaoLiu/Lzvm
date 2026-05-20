@@ -28,6 +28,7 @@ use crate::{
     source_expression_info::source_expression_info,
     source_opening_points::source_opening_points,
     source_row_count::{infer_source_row_counts, SourceUnitRowCounts},
+    source_scalar_slots::SourceChallengeSlotMetadata,
     source_scope::{
         concrete_template_names, declaration_in_function_body, declaration_in_inactive_template,
         global_constraint_source_names,
@@ -225,8 +226,14 @@ pub fn write_source_key_directory_metadata(
             };
             let row_count = source_layout_unit_row_count(unit, &row_counts)?;
             let mut setup_info = source_unit_setup_info(&program, row_count)?;
-            let expression_info =
-                source_expression_info(&program, &setup_info, &global_info.publics_map)?;
+            let unit_constant_values = source_scalar_constant_values(&program, row_count);
+            let challenge_slots = source_challenge_slots(&program, &unit_constant_values)?;
+            let expression_info = source_expression_info(
+                &program,
+                &setup_info,
+                &global_info.publics_map,
+                &challenge_slots,
+            )?;
             setup_info.n_constraints = Some(
                 u32::try_from(expression_info.constraints.len())
                     .map_err(|_| unsupported_source_message("too many source constraints"))?,
@@ -970,8 +977,30 @@ fn source_challenge_counts(
     program: &SourceProgram,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<Vec<u64>, SourceKeyDirectoryMetadataError> {
-    let mut seen = BTreeMap::<String, SourceChallengeShape>::new();
+    let slots = source_challenge_slots(program, constant_values)?;
     let mut counts_by_stage = Vec::<u64>::new();
+    for slot in slots {
+        let stage_index = usize::try_from(slot.stage)
+            .map_err(|_| unsupported_source_message("source challenge stage overflow"))?
+            .checked_sub(1)
+            .ok_or_else(|| unsupported_source_message("source challenge stage underflow"))?;
+        if counts_by_stage.len() <= stage_index {
+            counts_by_stage.resize(stage_index + 1, 0);
+        }
+        counts_by_stage[stage_index] = counts_by_stage[stage_index]
+            .checked_add(u64::from(slot.dimension))
+            .ok_or_else(|| unsupported_source_message("source challenge count overflow"))?;
+    }
+    Ok(counts_by_stage)
+}
+
+fn source_challenge_slots(
+    program: &SourceProgram,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<Vec<SourceChallengeSlotMetadata>, SourceKeyDirectoryMetadataError> {
+    let mut seen = BTreeMap::<String, SourceChallengeShape>::new();
+    let mut slots = Vec::<SourceChallengeSlotMetadata>::new();
+    let mut next_stage_ids = BTreeMap::<usize, u32>::new();
     for module in &program.modules {
         for declaration in &module.values {
             if declaration.kind != ValueDeclarationKind::Challenge {
@@ -981,9 +1010,6 @@ fn source_challenge_counts(
                 .map_err(|_| unsupported_source_message("source challenge stage overflow"))?;
             if stage == 0 {
                 return unsupported("source challenge stage must be positive");
-            }
-            if counts_by_stage.len() < stage {
-                counts_by_stage.resize(stage, 0);
             }
             for item in &declaration.items {
                 if item.template {
@@ -1000,13 +1026,50 @@ fn source_challenge_counts(
                     continue;
                 }
                 seen.insert(item.name.clone(), shape);
-                counts_by_stage[stage - 1] = counts_by_stage[stage - 1]
-                    .checked_add(u64::from(dimension))
-                    .ok_or_else(|| unsupported_source_message("source challenge count overflow"))?;
+                let stage_id = *next_stage_ids.get(&stage).unwrap_or(&0);
+                next_stage_ids.insert(
+                    stage,
+                    stage_id.checked_add(dimension).ok_or_else(|| {
+                        unsupported_source_message("source challenge id overflow")
+                    })?,
+                );
+                slots.push(SourceChallengeSlotMetadata {
+                    name: item.name.clone(),
+                    id: 0,
+                    stage: u32::try_from(stage).map_err(|_| {
+                        unsupported_source_message("source challenge stage overflow")
+                    })?,
+                    stage_id,
+                    dimension,
+                });
             }
         }
     }
-    Ok(counts_by_stage)
+
+    let max_stage = next_stage_ids.keys().copied().max().unwrap_or(0);
+    let mut stage_bases = vec![0_u32; max_stage];
+    let mut cursor = 0_u32;
+    for stage in 1..=max_stage {
+        stage_bases[stage - 1] = cursor;
+        cursor = cursor
+            .checked_add(*next_stage_ids.get(&stage).unwrap_or(&0))
+            .ok_or_else(|| unsupported_source_message("source challenge id overflow"))?;
+    }
+
+    for slot in &mut slots {
+        let stage_index = usize::try_from(slot.stage)
+            .map_err(|_| unsupported_source_message("source challenge stage overflow"))?
+            .checked_sub(1)
+            .ok_or_else(|| unsupported_source_message("source challenge stage underflow"))?;
+        slot.id = stage_bases
+            .get(stage_index)
+            .copied()
+            .ok_or_else(|| unsupported_source_message("source challenge stage overflow"))?
+            .checked_add(slot.stage_id)
+            .ok_or_else(|| unsupported_source_message("source challenge id overflow"))?;
+    }
+
+    Ok(slots)
 }
 
 fn source_unit_values(

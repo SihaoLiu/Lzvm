@@ -18,7 +18,7 @@ use crate::{
         source_expression_is_constrained_assignment, source_expression_is_equality_constraint,
     },
     source_key_directory::SourceKeyDirectoryMetadataError,
-    source_scalar_slots::SourceScalarSlots,
+    source_scalar_slots::{SourceChallengeSlotMetadata, SourceScalarSlots},
     source_scope::{
         concrete_template_names, declaration_in_function_body, declaration_in_inactive_template,
     },
@@ -41,8 +41,9 @@ pub(crate) fn source_expression_info(
     program: &SourceProgram,
     setup: &UnitSetupInfo,
     publics: &[PublicValue],
+    challenges: &[SourceChallengeSlotMetadata],
 ) -> Result<ExpressionInfo, SourceKeyDirectoryMetadataError> {
-    let scalar_slots = SourceScalarSlots::from_setup(setup, publics)
+    let scalar_slots = SourceScalarSlots::from_setup(setup, publics, challenges)
         .map_err(|error| unsupported_source_message(error.to_string()))?;
     let fixed_assignment_columns = source_fixed_assignment_column_names(program);
     let active_templates = concrete_template_names(program);

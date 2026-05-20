@@ -6,6 +6,15 @@ use lzvm_artifacts::global_info::PublicValue;
 use lzvm_artifacts::setup_info::UnitSetupInfo;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SourceChallengeSlotMetadata {
+    pub(crate) name: String,
+    pub(crate) id: u32,
+    pub(crate) stage: u32,
+    pub(crate) stage_id: u32,
+    pub(crate) dimension: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SourceScalarSlotError {
     LengthOverflow(&'static str),
     UnknownValue {
@@ -55,18 +64,28 @@ struct SourcePublicSlot {
     dimension: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SourceChallengeSlot {
+    id: u32,
+    stage: u32,
+    stage_id: u32,
+    dimension: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SourceScalarSlots {
     commitments: BTreeMap<String, SourceCommitmentSlot>,
     unit_values: BTreeMap<String, SourceUnitValueSlot>,
     constants: BTreeMap<String, SourceConstantSlot>,
     publics: BTreeMap<String, SourcePublicSlot>,
+    challenges: BTreeMap<String, SourceChallengeSlot>,
 }
 
 impl SourceScalarSlots {
     pub(crate) fn from_setup(
         setup: &UnitSetupInfo,
         public_values: &[PublicValue],
+        challenge_values: &[SourceChallengeSlotMetadata],
     ) -> Result<Self, SourceScalarSlotError> {
         let mut commitments = BTreeMap::new();
         for (index, column) in setup.commitment_columns.iter().enumerate() {
@@ -121,11 +140,27 @@ impl SourceScalarSlots {
             )?;
         }
 
+        let challenges = challenge_values
+            .iter()
+            .map(|value| {
+                (
+                    value.name.clone(),
+                    SourceChallengeSlot {
+                        id: value.id,
+                        stage: value.stage,
+                        stage_id: value.stage_id,
+                        dimension: value.dimension,
+                    },
+                )
+            })
+            .collect();
+
         Ok(Self {
             commitments,
             unit_values,
             constants,
             publics,
+            challenges,
         })
     }
 
@@ -164,6 +199,20 @@ impl SourceScalarSlots {
                 });
             }
             return Ok(CodeOperand::public(slot.offset, 1));
+        }
+
+        if let Some(slot) = self.challenges.get(name) {
+            if slot.dimension != 1 {
+                return Err(SourceScalarSlotError::UnsupportedValueShape {
+                    name: name.to_owned(),
+                });
+            }
+            return Ok(CodeOperand::challenge(
+                slot.id,
+                Some(slot.stage),
+                Some(slot.stage_id),
+                3,
+            ));
         }
 
         Err(SourceScalarSlotError::UnknownValue {
@@ -260,6 +309,39 @@ impl SourceScalarSlots {
             return Ok(CodeOperand::public(offset, 1));
         }
 
+        if let Some(slot) = self.challenges.get(name) {
+            if row_offset != 0 {
+                return Err(SourceScalarSlotError::UnsupportedRowOffset {
+                    name: name.to_owned(),
+                });
+            }
+            if index >= slot.dimension {
+                return Err(SourceScalarSlotError::IndexOutOfRange {
+                    name: name.to_owned(),
+                    index,
+                    dimension: slot.dimension,
+                });
+            }
+            let id = slot
+                .id
+                .checked_add(index)
+                .ok_or(SourceScalarSlotError::LengthOverflow(
+                    "source challenge id overflow",
+                ))?;
+            let stage_id =
+                slot.stage_id
+                    .checked_add(index)
+                    .ok_or(SourceScalarSlotError::LengthOverflow(
+                        "source challenge stage id overflow",
+                    ))?;
+            return Ok(CodeOperand::challenge(
+                id,
+                Some(slot.stage),
+                Some(stage_id),
+                3,
+            ));
+        }
+
         Err(SourceScalarSlotError::UnsupportedIndex {
             name: name.to_owned(),
         })
@@ -286,7 +368,7 @@ impl fmt::Display for SourceScalarSlotError {
             Self::UnsupportedIndex { name } => {
                 write!(
                     f,
-                    "source indexed constraints require commitment values: {name}"
+                    "source indexed constraints require indexed source values: {name}"
                 )
             }
             Self::IndexOutOfRange {
