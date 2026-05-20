@@ -578,7 +578,7 @@ fn one_minus_target(
         return false;
     };
     *op == BinaryOperator::Subtract
-        && expression_is_one(left)
+        && expression_is_one(left, alias_scope)
         && expression_target(
             right,
             alias_scope,
@@ -609,15 +609,18 @@ fn target_minus_one(
         )
         .as_ref()
             == Some(target)
-        && expression_is_one(right)
+        && expression_is_one(right, alias_scope)
 }
 
-fn expression_is_one(expression: &Expression) -> bool {
-    match &strip_group_expression(expression).kind {
-        ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
-            parse_i128_literal(value).is_ok_and(|value| value == 1)
-        }
-        _ => false,
+fn expression_is_one(expression: &Expression, alias_scope: &SourceGlobalAliasScope<'_>) -> bool {
+    match evaluate_source_static_expression(
+        alias_scope.program,
+        expression,
+        &alias_scope.static_values,
+    ) {
+        Some(FixedFileTemplateValue::Integer(value)) => value == 1,
+        Some(FixedFileTemplateValue::Boolean(value)) => value,
+        Some(FixedFileTemplateValue::String(_)) | None => false,
     }
 }
 
@@ -958,30 +961,6 @@ fn skip_balanced_delimiter(
         cursor += 1;
     }
     unsupported("source declaration body is not closed")
-}
-
-fn parse_i128_literal(value: &str) -> Result<i128, SourceKeyDirectoryMetadataError> {
-    let value = value.trim().replace('_', "");
-    if let Some(hex) = value
-        .strip_prefix("-0x")
-        .or_else(|| value.strip_prefix("-0X"))
-    {
-        let parsed = i128::from_str_radix(hex, 16)
-            .map_err(|_| unsupported_source_message("invalid source integer literal"))?;
-        parsed
-            .checked_neg()
-            .ok_or_else(|| unsupported_source_message("source integer literal overflow"))
-    } else if let Some(hex) = value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-    {
-        i128::from_str_radix(hex, 16)
-            .map_err(|_| unsupported_source_message("invalid source integer literal"))
-    } else {
-        value
-            .parse::<i128>()
-            .map_err(|_| unsupported_source_message("invalid source integer literal"))
-    }
 }
 
 fn unsupported<T>(message: impl Into<String>) -> Result<T, SourceKeyDirectoryMetadataError> {

@@ -295,6 +295,69 @@ fn generate_key_lowers_public_static_index_boolean_global_constraints() {
 }
 
 #[test]
+fn generate_key_lowers_public_static_one_boolean_global_constraints() {
+    let dir = temp_dir("public-static-one-boolean");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "public flags[2];\n\
+         const int SELECTED = 1;\n\
+         const int UNITY = 1;\n\
+         flags[SELECTED] * (UNITY - flags[SELECTED]);\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let program = read_global_program_file(dir.join("pilout.globalConstraints.bin"))
+        .expect("source global program should parse");
+    assert_eq!(program.constraints.entries.len(), 1);
+    assert_eq!(program.constraints.entries[0].destination_dimension, 1);
+
+    let satisfied = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            publics: &[Felt::from_u64(7), Felt::ONE],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("selected public element should evaluate");
+    assert_eq!(satisfied, [Ext3::ZERO]);
+
+    let unsatisfied = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            publics: &[Felt::ONE, Felt::from_u64(2)],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("selected non-boolean public element should evaluate");
+    assert_ne!(unsatisfied, [Ext3::ZERO]);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_lowers_public_value_alias_boolean_global_constraints() {
     let dir = temp_dir("public-value-alias-boolean");
     let _ = fs::remove_dir_all(&dir);
