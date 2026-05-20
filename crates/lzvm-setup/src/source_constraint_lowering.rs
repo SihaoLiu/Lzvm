@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use lzvm_artifacts::expression_info::{
     BoundaryKind, CodeDestination, CodeOperand, CodeOperation, ConstraintCode, OperationKind,
 };
-use lzvm_field::MODULUS;
+use lzvm_field::{Felt, MODULUS};
 use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, BinaryOperator, Expression,
     ExpressionKind, FixedFileTemplateValue, FunctionStatement, SourceProgramModule, UnaryOperator,
@@ -165,6 +165,9 @@ fn lower_source_scalar_expression_at(
             lower_source_scalar_expression_at(target, state, combined_offset)
         }
         ExpressionKind::Binary { op, left, right } => {
+            if *op == BinaryOperator::Divide {
+                return lower_source_static_divisor_expression(left, right, state, row_offset);
+            }
             let op = match op {
                 BinaryOperator::Add => OperationKind::Add,
                 BinaryOperator::Subtract => OperationKind::Sub,
@@ -186,6 +189,33 @@ fn lower_source_scalar_expression_at(
         }
         _ => unsupported("unsupported source scalar constraint expression"),
     }
+}
+
+fn lower_source_static_divisor_expression(
+    left: &Expression,
+    right: &Expression,
+    state: &mut SourceConstraintLoweringState<'_>,
+    row_offset: i64,
+) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
+    let Some(divisor) = static_scalar_integer(right, state.constant_values)? else {
+        return unsupported("unsupported source scalar constraint expression");
+    };
+    let divisor = Felt::from_u64(canonical_field_value(divisor)?);
+    let inverse = divisor
+        .inverse()
+        .ok_or_else(|| unsupported_source_message("source scalar constraint division by zero"))?;
+    let left = lower_source_scalar_expression_at(left, state, row_offset)?;
+    let id = state.next_temporary;
+    state.next_temporary = state
+        .next_temporary
+        .checked_add(1)
+        .ok_or_else(|| unsupported_source_message("source scalar constraint temporary overflow"))?;
+    state.operations.push(CodeOperation {
+        op: OperationKind::Mul,
+        destination: CodeDestination::temporary(id, 1),
+        sources: vec![left, CodeOperand::number(inverse.to_u64(), 1)],
+    });
+    Ok(CodeOperand::temporary(id, 1))
 }
 
 #[derive(Debug, Clone, Copy, Default)]

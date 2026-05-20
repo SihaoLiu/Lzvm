@@ -237,6 +237,109 @@ fn generate_key_lowers_source_signed_literal_constraints() {
 }
 
 #[test]
+fn generate_key_lowers_source_static_divisor_constraints() {
+    let dir = temp_dir("static-divisor-constraint");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col witness value;\n\
+             value / 2 === check;\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed check = [3, 5];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert_eq!(expressions.constraints.len(), 1);
+    assert!(expressions.hints.is_empty());
+    let constraint = &expressions.constraints[0];
+    assert_eq!(constraint.operations.len(), 2);
+    assert_eq!(constraint.operations[0].op, OperationKind::Mul);
+    assert!(matches!(
+        constraint.operations[0].sources[0],
+        CodeOperand::Commitment {
+            id: 0,
+            prime: None,
+            dimension: 1,
+        }
+    ));
+    let inv_two = Felt::from_u64(2)
+        .inverse()
+        .expect("nonzero divisor should invert")
+        .to_u64();
+    assert!(matches!(
+        constraint.operations[0].sources[1],
+        CodeOperand::Number {
+            value,
+            dimension: 1,
+        } if value == inv_two
+    ));
+    assert_eq!(constraint.operations[1].op, OperationKind::Sub);
+    let regular = read_regular_program_file(
+        unit.expression_program()
+            .expect("regular program path should derive"),
+    )
+    .expect("regular program should parse");
+    assert_eq!(regular.constraints.entries.len(), 1);
+    let fixed_values = [3, 5].map(Felt::from_u64);
+    let stage_values = [6, 10].map(Felt::from_u64);
+    let stage_columns = [RegularStageColumns {
+        stage_index: 1,
+        column_count: 1,
+        values: &stage_values,
+    }];
+    let results = evaluate_regular_constraints(
+        &regular.constraints,
+        RegularConstraintInputs {
+            domain_size: 2,
+            stage_count: u16::try_from(setup.n_stages).expect("stage count should fit"),
+            fixed_columns: RegularColumnMatrix {
+                column_count: 1,
+                values: &fixed_values,
+            },
+            stage_columns: &stage_columns,
+            opening_point_offsets: &setup.opening_points,
+            ..RegularConstraintInputs::default()
+        },
+    )
+    .expect("regular constraints should evaluate");
+    assert!(results[0].invalid_rows.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_lowers_source_constant_scalar_constraints() {
     let dir = temp_dir("constant-scalar-constraint");
     let _ = fs::remove_dir_all(&dir);
