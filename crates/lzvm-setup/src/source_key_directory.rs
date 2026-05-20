@@ -304,6 +304,15 @@ fn validate_no_top_level_semantic_statements(
             kind if top_level_declaration_start(kind) => {
                 index = skip_top_level_item(&tokens, index)?;
             }
+            TokenKind::Identifier => {
+                if let Some(next_index) = skip_known_top_level_metadata_directive(&tokens, index) {
+                    index = next_index;
+                } else {
+                    return unsupported(
+                        "top-level statements need global constraint lowering support",
+                    );
+                }
+            }
             TokenKind::Public | TokenKind::Private
                 if tokens.get(index + 1).is_some_and(|next| {
                     matches!(
@@ -320,6 +329,22 @@ fn validate_no_top_level_semantic_statements(
         }
     }
     Ok(())
+}
+
+fn skip_known_top_level_metadata_directive(tokens: &[Token], index: usize) -> Option<usize> {
+    let name = tokens.get(index)?;
+    let open = tokens.get(index + 1)?;
+    let close = tokens.get(index + 2)?;
+    let semicolon = tokens.get(index + 3)?;
+    if name.lexeme == "enable_range_stats"
+        && open.kind == TokenKind::LParen
+        && close.kind == TokenKind::RParen
+        && semicolon.kind == TokenKind::Semicolon
+    {
+        Some(index + 4)
+    } else {
+        None
+    }
 }
 
 fn top_level_declaration_start(kind: TokenKind) -> bool {
