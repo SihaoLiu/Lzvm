@@ -17,13 +17,17 @@ pub(crate) fn lower_source_template_boolean_constraint(
     let Some(expression) = statement.value_expression.as_ref() else {
         return Ok(None);
     };
-    let Some(body) = source_zero_constraint_body(expression) else {
-        return Ok(None);
-    };
     let mut operations = Vec::new();
     let mut next_temporary = 0_u32;
-    let result =
-        lower_source_scalar_expression(body, scalar_slots, &mut operations, &mut next_temporary)?;
+    let Some(result) = lower_source_constraint_residual(
+        expression,
+        scalar_slots,
+        &mut operations,
+        &mut next_temporary,
+    )?
+    else {
+        return Ok(None);
+    };
     if operations.is_empty() {
         return Ok(None);
     }
@@ -44,21 +48,39 @@ pub(crate) fn lower_source_template_boolean_constraint(
     }))
 }
 
-fn source_zero_constraint_body(expression: &Expression) -> Option<&Expression> {
+fn lower_source_constraint_residual(
+    expression: &Expression,
+    scalar_slots: &SourceScalarSlots,
+    operations: &mut Vec<CodeOperation>,
+    next_temporary: &mut u32,
+) -> Result<Option<CodeOperand>, SourceKeyDirectoryMetadataError> {
     let ExpressionKind::Binary { op, left, right } = &strip_group_expression(expression).kind
     else {
-        return None;
+        return Ok(None);
     };
     if *op != BinaryOperator::TripleEqual {
-        return None;
+        return Ok(None);
     }
     if expression_is_zero(right) {
-        Some(left)
+        return lower_source_scalar_expression(left, scalar_slots, operations, next_temporary)
+            .map(Some);
     } else if expression_is_zero(left) {
-        Some(right)
-    } else {
-        None
+        return lower_source_scalar_expression(right, scalar_slots, operations, next_temporary)
+            .map(Some);
     }
+
+    let left = lower_source_scalar_expression(left, scalar_slots, operations, next_temporary)?;
+    let right = lower_source_scalar_expression(right, scalar_slots, operations, next_temporary)?;
+    let id = *next_temporary;
+    *next_temporary = next_temporary
+        .checked_add(1)
+        .ok_or_else(|| unsupported_source_message("source scalar constraint temporary overflow"))?;
+    operations.push(CodeOperation {
+        op: OperationKind::Sub,
+        destination: CodeDestination::temporary(id, 1),
+        sources: vec![left, right],
+    });
+    Ok(Some(CodeOperand::temporary(id, 1)))
 }
 
 fn lower_source_scalar_expression(

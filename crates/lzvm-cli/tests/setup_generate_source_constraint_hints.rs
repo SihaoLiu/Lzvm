@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use lzvm_artifacts::expression_info::read_expression_info_binary_file;
+use lzvm_artifacts::expression_info::{
+    read_expression_info_binary_file, CodeOperand, OperationKind,
+};
 use lzvm_artifacts::key_directory::read_key_directory_layout;
 use lzvm_artifacts::regular_program::read_regular_program_file;
 use lzvm_cli::run_cli;
@@ -76,8 +78,8 @@ fn generate_key_records_unsupported_source_constraints_as_regular_hints() {
 }
 
 #[test]
-fn generate_key_records_nonzero_equality_constraints_as_regular_hints() {
-    let dir = temp_dir("unsupported-source-equality");
+fn generate_key_lowers_nonzero_equality_constraints() {
+    let dir = temp_dir("source-equality");
     let _ = fs::remove_dir_all(&dir);
     let source_path = dir.join("source").join("main.pil");
     write_file(
@@ -113,17 +115,33 @@ fn generate_key_records_nonzero_equality_constraints_as_regular_hints() {
             .expect("expression metadata path should derive"),
     )
     .expect("expression metadata should parse");
-    assert_eq!(expressions.constraints.len(), 0);
-    assert_eq!(expressions.hints.len(), 1);
-    assert_eq!(expressions.hints[0].name, "source.constraint.unsupported");
+    assert_eq!(expressions.constraints.len(), 1);
+    assert!(expressions.hints.is_empty());
+    let operations = &expressions.constraints[0].operations;
+    assert_eq!(operations.len(), 2);
+    assert_eq!(operations[1].op, OperationKind::Sub);
+    assert!(matches!(
+        operations[1].sources[0],
+        CodeOperand::Commitment {
+            id: 1,
+            dimension: 1,
+            ..
+        }
+    ));
+    assert!(matches!(
+        operations[1].sources[1],
+        CodeOperand::Temporary {
+            id: 0,
+            dimension: 1,
+        }
+    ));
     let regular = read_regular_program_file(
         unit.expression_program()
             .expect("regular program path should derive"),
     )
     .expect("regular program should parse");
-    assert_eq!(regular.constraints.entries.len(), 0);
-    assert_eq!(regular.hints.hints.len(), 1);
-    assert_eq!(regular.hints.hints[0].name, "source.constraint.unsupported");
+    assert_eq!(regular.constraints.entries.len(), 1);
+    assert!(regular.hints.hints.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
     assert!(String::from_utf8(stdout)
         .expect("stdout should be utf-8")
