@@ -23,6 +23,7 @@ use crate::{
     source_fixed_expression::SourceFixedConstantValues,
     source_fixed_expression::{
         evaluate_source_fixed_template_value_expression, source_fixed_column_expression_values,
+        SourceFixedExpressionValuesRequest,
     },
     source_fixed_sequence::{
         canonical_fixed_value, parse_literal_sequence, parse_literal_sequence_values,
@@ -926,15 +927,18 @@ fn source_fixed_column_values_from_initializer(
             )
             .map(Some)
         }
-        ColumnInitializerKind::Expression => source_fixed_column_expression_values(
-            &declaration.source_name,
-            &declaration.source,
-            &declaration.item.name,
-            initializer,
-            row_count,
-            &declaration.constant_values,
-            column_values,
-        ),
+        ColumnInitializerKind::Expression => {
+            source_fixed_column_expression_values(&SourceFixedExpressionValuesRequest {
+                program,
+                source_name: &declaration.source_name,
+                source: &declaration.source,
+                column_name: &declaration.item.name,
+                initializer,
+                row_count,
+                constant_values: &declaration.constant_values,
+                column_values,
+            })
+        }
     }
 }
 
