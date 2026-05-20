@@ -921,7 +921,7 @@ fn parses_air_group_declarations_with_nested_body_spans() {
 }
 
 #[test]
-fn parses_air_group_statements_with_array_call_arguments_as_spans() {
+fn parses_air_group_statements_with_array_call_arguments() {
     let source = source("airgroup Main { configure(table_ids: [TABLE_A, TABLE_B]); }");
 
     let declarations = parse_air_group_declarations(&source).expect("air groups should parse");
@@ -937,7 +937,23 @@ fn parses_air_group_statements_with_array_call_arguments_as_spans() {
             .start..statement.value.unwrap().end],
         "configure(table_ids: [TABLE_A, TABLE_B])"
     );
-    assert!(statement.value_expression.is_none());
+    let ExpressionKind::Call { args, .. } = &statement
+        .value_expression
+        .as_ref()
+        .expect("value expression should be recorded")
+        .kind
+    else {
+        panic!("statement should be a call expression");
+    };
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0].name.as_deref(), Some("table_ids"));
+    assert!(matches!(
+        &args[0].value.kind,
+        ExpressionKind::Array(values)
+            if values.len() == 2
+                && matches!(&values[0].kind, ExpressionKind::Name(name) if name == "TABLE_A")
+                && matches!(&values[1].kind, ExpressionKind::Name(name) if name == "TABLE_B")
+    ));
 }
 
 #[test]

@@ -501,6 +501,9 @@ fn source_bind_function_argument(
         values.insert(parameter.name.clone(), value);
         return Some(());
     }
+    if let Some(elements) = source_static_array_expression(program, expression, values) {
+        return insert_source_static_array(values, &parameter.name, elements);
+    }
     let name = source_expression_name(expression)?;
     let elements = source_static_array_values(values, name)?;
     insert_source_static_array(values, &parameter.name, elements)
@@ -508,6 +511,21 @@ fn source_bind_function_argument(
 
 fn source_const_parameter(parameter: &lzvm_pil::FunctionParameter) -> bool {
     parameter.is_const && !parameter.by_reference
+}
+
+fn source_static_array_expression(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<Vec<FixedFileTemplateValue>> {
+    let expression = strip_source_group_expression(expression);
+    let ExpressionKind::Array(elements) = &expression.kind else {
+        return None;
+    };
+    elements
+        .iter()
+        .map(|element| evaluate_source_static_expression(program, element, values))
+        .collect()
 }
 
 fn source_static_array_literal(

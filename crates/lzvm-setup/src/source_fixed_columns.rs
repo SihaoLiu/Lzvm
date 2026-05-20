@@ -983,6 +983,7 @@ fn evaluate_source_fixed_assignment_value_expression(
                 .map(|value| FixedFileTemplateValue::Integer(i128::from(value)))
         }
         ExpressionKind::Call { .. }
+        | ExpressionKind::Array(_)
         | ExpressionKind::RowOffset { .. }
         | ExpressionKind::PositionalParam(_) => None,
     }

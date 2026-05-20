@@ -154,6 +154,7 @@ fn evaluate_source_fixed_expression_inner(
         ExpressionKind::StringLiteral(_)
         | ExpressionKind::TemplateLiteral(_)
         | ExpressionKind::PositionalParam(_)
+        | ExpressionKind::Array(_)
         | ExpressionKind::Call { .. } => {
             Err(source_fixed_expression_unsupported(context, expression))
         }

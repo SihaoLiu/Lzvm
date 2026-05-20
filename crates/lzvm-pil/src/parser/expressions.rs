@@ -310,6 +310,7 @@ impl ExpressionParser<'_> {
                 self.parse_name()
             }
             TokenKind::LParen => self.parse_group(),
+            TokenKind::LBracket => self.parse_array(),
             _ => Err(ParseError::ExpectedName {
                 source_name: self.source.source_name.clone(),
                 start: token.start,
@@ -392,6 +393,50 @@ impl ExpressionParser<'_> {
 
         Ok(Expression {
             kind: ExpressionKind::Group(Box::new(inner)),
+            source_name: self.source.source_name.clone(),
+            start: open.start,
+            end: self.tokens[close_index].end,
+        })
+    }
+
+    fn parse_array(&mut self) -> Result<Expression, ParseError> {
+        let open_index = self.cursor;
+        let open = self.current_token()?;
+        let close_index = self.find_delimited_close(open_index, TokenKind::RBracket)?;
+
+        self.cursor = open_index + 1;
+        let mut values = Vec::new();
+        if self.cursor != close_index {
+            loop {
+                values.push(self.parse_expression(0)?);
+                if self.cursor == close_index {
+                    break;
+                }
+                let token = self
+                    .peek()
+                    .ok_or_else(|| ParseError::ExpectedCloseBracket {
+                        source_name: self.source.source_name.clone(),
+                        start: missing_start(self.tokens, self.cursor),
+                    })?;
+                if token.kind != TokenKind::Comma {
+                    return Err(ParseError::ExpectedCloseBracket {
+                        source_name: self.source.source_name.clone(),
+                        start: token.start,
+                    });
+                }
+                self.cursor += 1;
+                if self.cursor == close_index {
+                    return Err(ParseError::ExpectedName {
+                        source_name: self.source.source_name.clone(),
+                        start: self.tokens[close_index].start,
+                    });
+                }
+            }
+        }
+        self.cursor = close_index + 1;
+
+        Ok(Expression {
+            kind: ExpressionKind::Array(values),
             source_name: self.source.source_name.clone(),
             start: open.start,
             end: self.tokens[close_index].end,
@@ -832,6 +877,31 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn parses_array_literal_call_arguments() {
+        let expression = parse("sum(values: [a, b + 1], empty: [])");
+
+        let ExpressionKind::Call { args, .. } = expression.kind else {
+            panic!("root should be call");
+        };
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0].name.as_deref(), Some("values"));
+        let ExpressionKind::Array(values) = &args[0].value.kind else {
+            panic!("values argument should be an array");
+        };
+        assert_eq!(values.len(), 2);
+        assert!(matches!(&values[0].kind, ExpressionKind::Name(name) if name == "a"));
+        assert!(matches!(
+            &values[1].kind,
+            ExpressionKind::Binary {
+                op: BinaryOperator::Add,
+                ..
+            }
+        ));
+        assert_eq!(args[1].name.as_deref(), Some("empty"));
+        assert!(matches!(&args[1].value.kind, ExpressionKind::Array(values) if values.is_empty()));
     }
 
     #[test]

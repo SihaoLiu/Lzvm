@@ -238,6 +238,19 @@ fn collect_source_opening_points(
                 resolving_aliases,
             )
         }
+        ExpressionKind::Array(values) => {
+            for value in values {
+                collect_source_opening_points(
+                    program,
+                    value,
+                    constant_values,
+                    expression_aliases,
+                    points,
+                    resolving_aliases,
+                )?;
+            }
+            Ok(())
+        }
         ExpressionKind::Call { callee, args } => {
             collect_source_opening_points(
                 program,

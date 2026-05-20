@@ -282,6 +282,7 @@ pub enum ExpressionKind {
     Name(String),
     PositionalParam(String),
     Group(Box<Expression>),
+    Array(Vec<Expression>),
     Unary {
         op: UnaryOperator,
         expr: Box<Expression>,

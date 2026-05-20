@@ -185,6 +185,7 @@ fn source_expression_needs_integer_env(expression: &Expression) -> bool {
         ExpressionKind::Binary { left, right, .. } => {
             source_expression_needs_integer_env(left) || source_expression_needs_integer_env(right)
         }
+        ExpressionKind::Array(values) => values.iter().any(source_expression_needs_integer_env),
         _ => false,
     }
 }
