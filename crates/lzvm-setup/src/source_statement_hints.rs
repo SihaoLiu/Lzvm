@@ -23,6 +23,14 @@ use crate::{
     },
 };
 
+#[derive(Clone)]
+pub(crate) enum SourceExpressionArrayAlias {
+    Name(String),
+    Values(Vec<Expression>),
+}
+
+pub(crate) type SourceExpressionArrayAliases = BTreeMap<String, SourceExpressionArrayAlias>;
+
 pub(crate) fn source_statement_first_token_kind(
     module: &SourceProgramModule,
     statement: &FunctionStatement,
@@ -53,27 +61,14 @@ pub(crate) fn source_statement_contains_assignment_operator(
 }
 
 pub(crate) fn lower_source_lookup_statement(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
+    inputs: &SourceLookupInputs<'_>,
     statement: &FunctionStatement,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-    expression_aliases: &SourceExpressionAliases,
-    scalar_slots: &SourceScalarSlots,
-    opening_points: &[i64],
 ) -> Result<Option<HintInfo>, LexError> {
-    let Some(name) = source_lookup_hint_name(module, statement)? else {
+    let Some(name) = source_lookup_hint_name(inputs.module, statement)? else {
         return Ok(None);
     };
-    let line = source_statement_line(module, statement);
-    let inputs = SourceLookupInputs {
-        program,
-        module,
-        values,
-        expression_aliases,
-        scalar_slots,
-        opening_points,
-    };
-    if let Some(hint) = lower_structured_source_lookup_hint(&inputs, name, &line)? {
+    let line = source_statement_line(inputs.module, statement);
+    if let Some(hint) = lower_structured_source_lookup_hint(inputs, name, &line)? {
         return Ok(Some(hint));
     }
     Ok(Some(source_lookup_line_hint(name, line)))
@@ -190,13 +185,14 @@ fn source_lookup_value_expressions(
     true
 }
 
-struct SourceLookupInputs<'a> {
-    program: &'a SourceProgram,
-    module: &'a SourceProgramModule,
-    values: &'a BTreeMap<String, FixedFileTemplateValue>,
-    expression_aliases: &'a SourceExpressionAliases,
-    scalar_slots: &'a SourceScalarSlots,
-    opening_points: &'a [i64],
+pub(crate) struct SourceLookupInputs<'a> {
+    pub(crate) program: &'a SourceProgram,
+    pub(crate) module: &'a SourceProgramModule,
+    pub(crate) values: &'a BTreeMap<String, FixedFileTemplateValue>,
+    pub(crate) expression_aliases: &'a SourceExpressionAliases,
+    pub(crate) expression_array_aliases: &'a SourceExpressionArrayAliases,
+    pub(crate) scalar_slots: &'a SourceScalarSlots,
+    pub(crate) opening_points: &'a [i64],
 }
 
 fn lower_structured_source_lookup_hint(
@@ -239,6 +235,7 @@ fn lower_structured_source_lookup_hint(
         tokens: &tokens,
         values: inputs.values,
         expression_aliases: inputs.expression_aliases,
+        expression_array_aliases: inputs.expression_array_aliases,
         scalar_slots: inputs.scalar_slots,
         opening_points: inputs.opening_points,
     };
@@ -398,6 +395,7 @@ struct SourceLookupLowering<'a> {
     tokens: &'a [Token],
     values: &'a BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: &'a SourceExpressionAliases,
+    expression_array_aliases: &'a SourceExpressionArrayAliases,
     scalar_slots: &'a SourceScalarSlots,
     opening_points: &'a [i64],
 }
@@ -520,6 +518,42 @@ fn source_lookup_spread_values(
     context: &SourceLookupLowering<'_>,
     name: &str,
 ) -> Option<Vec<HintValueInfo>> {
+    if let Some(alias) = context.expression_array_aliases.get(name) {
+        let mut resolving_aliases = BTreeSet::new();
+        return source_lookup_spread_alias_values(context, alias, &mut resolving_aliases);
+    }
+    source_lookup_named_spread_values(context, name)
+}
+
+fn source_lookup_spread_alias_values(
+    context: &SourceLookupLowering<'_>,
+    alias: &SourceExpressionArrayAlias,
+    resolving_aliases: &mut BTreeSet<String>,
+) -> Option<Vec<HintValueInfo>> {
+    match alias {
+        SourceExpressionArrayAlias::Name(name) => {
+            if let Some(next_alias) = context.expression_array_aliases.get(name) {
+                if !resolving_aliases.insert(name.clone()) {
+                    return None;
+                }
+                let values =
+                    source_lookup_spread_alias_values(context, next_alias, resolving_aliases);
+                resolving_aliases.remove(name);
+                return values;
+            }
+            source_lookup_named_spread_values(context, name)
+        }
+        SourceExpressionArrayAlias::Values(expressions) => expressions
+            .iter()
+            .map(|expression| source_lookup_value_from_expression(context, expression))
+            .collect(),
+    }
+}
+
+fn source_lookup_named_spread_values(
+    context: &SourceLookupLowering<'_>,
+    name: &str,
+) -> Option<Vec<HintValueInfo>> {
     if let Some(values) = source_static_array_values(context.values, name) {
         return values
             .into_iter()
@@ -555,6 +589,16 @@ fn source_lookup_value(
     })
 }
 
+fn source_lookup_value_from_expression(
+    context: &SourceLookupLowering<'_>,
+    expression: &Expression,
+) -> Option<HintValueInfo> {
+    Some(HintValueInfo {
+        positions: Vec::new(),
+        payload: source_lookup_value_payload_from_expression(context, expression)?,
+    })
+}
+
 fn source_lookup_static_value(
     context: &SourceLookupLowering<'_>,
     range: (usize, usize),
@@ -586,17 +630,24 @@ fn source_lookup_value_payload(
 ) -> Option<HintPayload> {
     let expression =
         parse_source_lookup_expression(context.module, context.line, context.tokens, range)?;
-    if let Some(value) = source_lookup_static_array_element(context, &expression) {
+    source_lookup_value_payload_from_expression(context, &expression)
+}
+
+fn source_lookup_value_payload_from_expression(
+    context: &SourceLookupLowering<'_>,
+    expression: &Expression,
+) -> Option<HintPayload> {
+    if let Some(value) = source_lookup_static_array_element(context, expression) {
         return hint_payload_from_static_value(value);
     }
     if let Some(value) =
-        evaluate_source_static_expression(context.program, &expression, context.values)
+        evaluate_source_static_expression(context.program, expression, context.values)
     {
         return hint_payload_from_static_value(value);
     }
     let operand = source_lookup_scalar_operand(
         context.program,
-        &expression,
+        expression,
         context.values,
         context.expression_aliases,
         context.scalar_slots,

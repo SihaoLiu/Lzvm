@@ -30,7 +30,8 @@ use crate::{
         lower_source_lookup_statement, lower_unsupported_source_assignment_statement,
         lower_unsupported_source_call_statement, lower_unsupported_source_constraint_statement,
         lower_unsupported_source_template_statement, source_statement_contains_assignment_operator,
-        source_statement_first_token_kind, source_statement_line,
+        source_statement_first_token_kind, source_statement_line, SourceExpressionArrayAlias,
+        SourceExpressionArrayAliases, SourceLookupInputs,
     },
     source_static_values::{
         evaluate_source_static_expression, insert_source_static_array,
@@ -285,19 +286,24 @@ fn lower_source_template_statement(
     if source_static_assignment_expression(context.module, statement.value_expression.as_ref()) {
         return Ok(());
     }
-    if let Some(hint) = lower_source_lookup_statement(
-        context.program,
-        context.module,
-        statement,
+    let expression_array_aliases = SourceExpressionArrayAliases::new();
+    let lookup_inputs = SourceLookupInputs {
+        program: context.program,
+        module: context.module,
         values,
         expression_aliases,
-        context.scalar_slots,
-        context.opening_points,
-    )
-    .map_err(|source| SourceKeyDirectoryMetadataError::Lex {
-        source_name: context.module.source_name.clone(),
-        source,
-    })? {
+        expression_array_aliases: &expression_array_aliases,
+        scalar_slots: context.scalar_slots,
+        opening_points: context.opening_points,
+    };
+    if let Some(hint) =
+        lower_source_lookup_statement(&lookup_inputs, statement).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: context.module.source_name.clone(),
+                source,
+            }
+        })?
+    {
         hints.push(hint);
         return Ok(());
     }
@@ -438,6 +444,7 @@ fn lower_source_template_function_call(
             body_statement,
             &mut bindings.values,
             &bindings.expression_aliases,
+            &bindings.expression_array_aliases,
             &mut function_hints,
             &mut function_constraints,
         )? {
@@ -453,6 +460,7 @@ fn lower_source_template_function_call(
 struct SourceFunctionCallBindings {
     values: BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: SourceExpressionAliases,
+    expression_array_aliases: SourceExpressionArrayAliases,
 }
 
 fn source_function_call_bindings(
@@ -465,6 +473,7 @@ fn source_function_call_bindings(
 ) -> Option<SourceFunctionCallBindings> {
     let mut function_values = values.clone();
     let mut function_aliases = expression_aliases.clone();
+    let mut function_array_aliases = SourceExpressionArrayAliases::new();
     for parameter in &function.parameters {
         if source_const_parameter(parameter) && parameter.array_dims.is_empty() {
             let Some(expression) = parameter.default_expression.as_ref() else {
@@ -488,6 +497,13 @@ fn source_function_call_bindings(
             }
             continue;
         }
+        if source_expr_array_parameter(parameter) {
+            if let Some(expression) = parameter.default_expression.as_ref() {
+                let alias = source_expression_array_alias(expression)?;
+                function_array_aliases.insert(parameter.name.clone(), alias);
+            }
+            continue;
+        }
         return None;
     }
 
@@ -504,6 +520,7 @@ fn source_function_call_bindings(
                 &argument.value,
                 &mut function_values,
                 &mut function_aliases,
+                &mut function_array_aliases,
             )?;
             continue;
         }
@@ -514,6 +531,7 @@ fn source_function_call_bindings(
             &argument.value,
             &mut function_values,
             &mut function_aliases,
+            &mut function_array_aliases,
         )?;
         positional_index += 1;
     }
@@ -521,6 +539,7 @@ fn source_function_call_bindings(
     Some(SourceFunctionCallBindings {
         values: function_values,
         expression_aliases: function_aliases,
+        expression_array_aliases: function_array_aliases,
     })
 }
 
@@ -530,6 +549,7 @@ fn source_bind_function_argument(
     expression: &Expression,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: &mut SourceExpressionAliases,
+    expression_array_aliases: &mut SourceExpressionArrayAliases,
 ) -> Option<()> {
     if source_const_parameter(parameter) && parameter.array_dims.is_empty() {
         let value = evaluate_source_static_expression(program, expression, values)?;
@@ -538,6 +558,11 @@ fn source_bind_function_argument(
     }
     if source_expr_parameter(parameter) {
         expression_aliases.insert(parameter.name.clone(), expression.clone());
+        return Some(());
+    }
+    if source_expr_array_parameter(parameter) {
+        let alias = source_expression_array_alias(expression)?;
+        expression_array_aliases.insert(parameter.name.clone(), alias);
         return Some(());
     }
     if !source_const_parameter(parameter) {
@@ -560,6 +585,23 @@ fn source_expr_parameter(parameter: &lzvm_pil::FunctionParameter) -> bool {
         && !parameter.by_reference
         && parameter.array_dims.is_empty()
         && parameter.type_name == "expr"
+}
+
+fn source_expr_array_parameter(parameter: &lzvm_pil::FunctionParameter) -> bool {
+    !parameter.is_const
+        && !parameter.by_reference
+        && !parameter.array_dims.is_empty()
+        && parameter.type_name == "expr"
+}
+
+fn source_expression_array_alias(expression: &Expression) -> Option<SourceExpressionArrayAlias> {
+    match &strip_source_group_expression(expression).kind {
+        ExpressionKind::Name(name) => Some(SourceExpressionArrayAlias::Name(name.clone())),
+        ExpressionKind::Array(expressions) => {
+            Some(SourceExpressionArrayAlias::Values(expressions.clone()))
+        }
+        _ => None,
+    }
 }
 
 fn source_static_array_expression(
@@ -750,6 +792,7 @@ fn lower_source_function_body_statement(
     statement: &FunctionStatement,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: &SourceExpressionAliases,
+    expression_array_aliases: &SourceExpressionArrayAliases,
     hints: &mut Vec<HintInfo>,
     constraints: &mut Vec<ConstraintCode>,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
@@ -771,19 +814,23 @@ fn lower_source_function_body_statement(
     {
         return Ok(true);
     }
-    if let Some(hint) = lower_source_lookup_statement(
-        context.program,
-        context.module,
-        statement,
+    let lookup_inputs = SourceLookupInputs {
+        program: context.program,
+        module: context.module,
         values,
         expression_aliases,
-        context.scalar_slots,
-        context.opening_points,
-    )
-    .map_err(|source| SourceKeyDirectoryMetadataError::Lex {
-        source_name: context.module.source_name.clone(),
-        source,
-    })? {
+        expression_array_aliases,
+        scalar_slots: context.scalar_slots,
+        opening_points: context.opening_points,
+    };
+    if let Some(hint) =
+        lower_source_lookup_statement(&lookup_inputs, statement).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: context.module.source_name.clone(),
+                source,
+            }
+        })?
+    {
         hints.push(hint);
         return Ok(true);
     }
