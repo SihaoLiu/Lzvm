@@ -129,7 +129,8 @@ use lzvm_prover::witness_loader::TraceBytesBackend;
 use lzvm_prover::{
     build_constant_opening_segment, build_pcs_material_manifest_segment,
     build_pcs_query_nonce_segment_from_transcript_segments, build_pcs_query_plan_segment,
-    build_pcs_query_plan_segment_from_transcript_segments, build_witness_commitment_segment,
+    build_pcs_query_plan_segment_from_transcript_segments,
+    build_pcs_query_plan_segment_with_bindings, build_witness_commitment_segment,
     build_witness_opening_segment, derive_prove_execution_plan, derive_prove_schedule,
     derive_prove_schedule_from_directory, run_prove_witness_commitments,
     run_prove_witness_commitments_with_trace_backend, GpuRunOptions, ProveExecutionInputArtifacts,
@@ -8838,6 +8839,7 @@ fn passes_challenge_values_segment_to_witness_regular_constraints() {
             "prove",
             "witness",
             "--save-outputs",
+            "--no-verify-outputs",
             "--challenge-values-segment",
             challenge_values_segment_path
                 .to_str()
@@ -9509,6 +9511,109 @@ fn rejects_setup_aware_verify_preflight_with_invalid_contribution_segment() {
     );
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_setup_aware_verify_preflight_with_mismatched_contribution_challenge() {
+    let dir = temp_dir("verify-setup-preflight-bad-contribution-challenge");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let public_value_fields =
+        public_values_as_fields(&public_values).expect("public values should flatten");
+    let schedule = derive_prove_schedule(&catalog).expect("schedule should derive");
+    let material_segment =
+        build_pcs_material_manifest_segment(&schedule).expect("material segment should build");
+    let witness_segment = sample_witness_proof_segment(&schedule, 0);
+    let entries = sample_contribution_entries(
+        catalog
+            .layout
+            .global_info
+            .lattice_size
+            .expect("lattice size should exist") as usize,
+    );
+    let contribution_segment = build_contribution_segment(&entries)
+        .expect("contribution segment should build")
+        .expect("contribution segment should exist");
+    let expected_challenge = derive_global_challenge_from_contributions(
+        &catalog.layout.global_info,
+        &public_value_fields,
+        &[],
+        &entries,
+    )
+    .expect("challenge should derive");
+    let bad_challenge_segment = ProofSegment {
+        id: CHALLENGE_VALUES_SEGMENT_ID,
+        data: encode_challenge_values_segment(&ChallengeValuesSegment {
+            values: vec![[
+                expected_challenge.c0.to_u64() + 1,
+                expected_challenge.c1.to_u64(),
+                expected_challenge.c2.to_u64(),
+            ]],
+        })
+        .expect("challenge values segment should encode"),
+    };
+    let query_segment = build_pcs_query_plan_segment_with_bindings(
+        &schedule,
+        public_values_digest(&public_values).expect("digest should compute"),
+        &material_segment,
+        std::slice::from_ref(&witness_segment),
+        std::slice::from_ref(&bad_challenge_segment),
+    )
+    .expect("query segment should build");
+    let constant_opening_segment =
+        build_constant_opening_segment(&catalog, &schedule, &query_segment)
+            .expect("constant opening segment should build");
+    let opening_segment = sample_witness_opening_segment(&schedule, &query_segment, 0);
+    let proof = ProofArtifact {
+        setup_hash: public_values.setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            material_segment,
+            query_segment,
+            constant_opening_segment,
+            opening_segment,
+            witness_segment,
+            contribution_segment,
+            bad_challenge_segment,
+        ],
+    };
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: contribution challenge values mismatch\n"
+    );
 }
 
 #[test]
@@ -11310,6 +11415,7 @@ fn rounds_trip_contribution_challenge_through_witness_run() {
             "prove",
             "witness",
             "--contributions",
+            "--aggregate",
             "--save-outputs",
             "--unit-values",
             unit_values_path

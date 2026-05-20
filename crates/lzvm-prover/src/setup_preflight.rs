@@ -36,8 +36,8 @@ use crate::constant_opening::{
     validate_constant_opening_segments, ValidateConstantOpeningSegmentsError,
 };
 use crate::contribution::{
-    aggregate_contribution_values, load_contribution_segment_from_segments,
-    ContributionChallengeError,
+    aggregate_contribution_values, derive_global_challenge_from_contributions,
+    load_contribution_segment_from_segments, ContributionChallengeError,
 };
 use crate::global_constraints::{
     validate_global_constraints_from_proof_segments, ValidateGlobalConstraintProofSegmentsError,
@@ -65,7 +65,10 @@ use crate::proof_preflight::{
     public_values_as_fields, validate_proof_public_values, ProofPreflightError,
     ProofPreflightReport, PublicValueFieldError,
 };
-use crate::proof_values::{load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError};
+use crate::proof_values::{
+    flatten_pcs_proof_values, load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError,
+    ProvePcsProofValuesSegmentError,
+};
 use crate::unit_values::{load_unit_values_from_segments, LoadUnitValuesSegmentError};
 use crate::witness_commitment::{
     load_witness_commitment_segments, LoadWitnessCommitmentSegmentsError,
@@ -143,9 +146,11 @@ pub enum SetupPreflightError {
     Contribution(ContributionChallengeError),
     ChallengeValues(ChallengeValuesSegmentError),
     ProofValues(LoadPcsProofValuesSegmentError),
+    ProofValuePacking(ProvePcsProofValuesSegmentError),
     GroupValues(LoadGroupValuesSegmentError),
     UnitValues(LoadUnitValuesSegmentError),
     UnitValueQueryPlan(LoadPcsQueryPlanSegmentError),
+    ContributionChallengeValuesMismatch,
     UnexpectedProofSegment { id: u32 },
 }
 
@@ -180,9 +185,13 @@ impl fmt::Display for SetupPreflightError {
             Self::Contribution(error) => write!(f, "{error}"),
             Self::ChallengeValues(error) => write!(f, "{error}"),
             Self::ProofValues(error) => write!(f, "{error}"),
+            Self::ProofValuePacking(error) => write!(f, "{error}"),
             Self::GroupValues(error) => write!(f, "{error}"),
             Self::UnitValues(error) => write!(f, "{error}"),
             Self::UnitValueQueryPlan(error) => write!(f, "{error}"),
+            Self::ContributionChallengeValuesMismatch => {
+                write!(f, "contribution challenge values mismatch")
+            }
             Self::UnexpectedProofSegment { id } => {
                 write!(f, "unexpected setup proof segment id {id}")
             }
@@ -220,11 +229,13 @@ impl std::error::Error for SetupPreflightError {
             Self::Contribution(error) => Some(error),
             Self::ChallengeValues(error) => Some(error),
             Self::ProofValues(error) => Some(error),
+            Self::ProofValuePacking(error) => Some(error),
             Self::GroupValues(error) => Some(error),
             Self::UnitValues(error) => Some(error),
             Self::UnitValueQueryPlan(error) => Some(error),
             Self::CatalogHashMismatch
             | Self::ProgramImageCacheSetupHashMismatch
+            | Self::ContributionChallengeValuesMismatch
             | Self::UnexpectedProofSegment { .. } => None,
         }
     }
@@ -402,6 +413,7 @@ pub fn validate_setup_preflight(
     validate_setup_proof_segment_ids(&proof.segments)?;
     validate_optional_contribution_segment(catalog, proof)?;
     validate_optional_challenge_values_segment(proof)?;
+    validate_optional_contribution_challenge_values(catalog, proof, public_values)?;
     validate_optional_global_value_segments(catalog, proof)?;
     let uses_transcript_inputs = uses_transcript_pcs_query_plan_inputs(&proof.segments);
     let needs_public_fields = uses_transcript_inputs
@@ -602,6 +614,52 @@ fn validate_optional_challenge_values_segment(
         parse_challenge_values_segment(&segment.data)
             .map(|_| ())
             .map_err(SetupPreflightError::ChallengeValues)?;
+    }
+    Ok(())
+}
+
+fn validate_optional_contribution_challenge_values(
+    catalog: &KeyDirectoryCatalog,
+    proof: &ProofArtifact,
+    public_values: &PublicValues,
+) -> Result<(), SetupPreflightError> {
+    let Some(challenge_segment) = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID)
+    else {
+        return Ok(());
+    };
+    if !proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == CONTRIBUTION_SEGMENT_ID)
+    {
+        return Ok(());
+    }
+
+    let challenge_values = parse_challenge_values_segment(&challenge_segment.data)
+        .map_err(SetupPreflightError::ChallengeValues)?
+        .values;
+    let public_fields =
+        public_values_as_fields(public_values).map_err(SetupPreflightError::PublicValues)?;
+    let proof_values =
+        load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
+            .map_err(SetupPreflightError::ProofValues)?;
+    let packed_proof_values = flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)
+        .map_err(SetupPreflightError::ProofValuePacking)?;
+    let entries = load_contribution_segment_from_segments(&proof.segments)
+        .map_err(ContributionChallengeError::from)
+        .map_err(SetupPreflightError::Contribution)?;
+    let expected = derive_global_challenge_from_contributions(
+        &catalog.layout.global_info,
+        &public_fields,
+        &packed_proof_values,
+        &entries,
+    )
+    .map_err(SetupPreflightError::Contribution)?;
+    if challenge_values.as_slice() != [expected.to_u64s()] {
+        return Err(SetupPreflightError::ContributionChallengeValuesMismatch);
     }
     Ok(())
 }
