@@ -238,9 +238,6 @@ fn validate_supported_source_program(
         {
             return unsupported("air template statements need constraint lowering support");
         }
-        if !module.functions.is_empty() {
-            return unsupported("function declarations need lowering support");
-        }
         if module
             .columns
             .iter()
