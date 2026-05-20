@@ -267,16 +267,12 @@ fn validate_supported_source_program(
                 "fixed columns without source initializers need external fixed input support",
             );
         }
-        if module
-            .values
-            .iter()
-            .any(|value| value.kind == ValueDeclarationKind::AirValue)
-            || !module.commits.is_empty()
+        if !module.commits.is_empty()
             || !module.public_tables.is_empty()
             || !module.air_group_values.is_empty()
         {
             return unsupported(
-                "air values, public tables, and commits need metadata lowering support",
+                "air group values, public tables, and commits need metadata lowering support",
             );
         }
     }
@@ -625,6 +621,7 @@ fn top_level_declaration_start(kind: TokenKind) -> bool {
         kind,
         TokenKind::AirGroup
             | TokenKind::AirTemplate
+            | TokenKind::AirValue
             | TokenKind::Challenge
             | TokenKind::Col
             | TokenKind::Commit
@@ -903,6 +900,38 @@ fn source_challenge_counts(
     Ok(counts_by_stage)
 }
 
+fn source_unit_values(
+    program: &SourceProgram,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<Vec<StageValue>, SourceKeyDirectoryMetadataError> {
+    let mut seen = BTreeSet::new();
+    let mut values = Vec::new();
+    for module in &program.modules {
+        for declaration in &module.values {
+            if declaration.kind != ValueDeclarationKind::AirValue {
+                continue;
+            }
+            if declaration.stage == 0 {
+                return unsupported("source air value stage must be positive");
+            }
+            for item in &declaration.items {
+                if item.template {
+                    return unsupported("template air-value names need instance lowering support");
+                }
+                if !seen.insert(item.name.clone()) {
+                    return unsupported("duplicate source air value name");
+                }
+                values.push(StageValue {
+                    name: item.name.clone(),
+                    stage: declaration.stage,
+                    lengths: source_item_lengths(item, "source air value", constant_values)?,
+                });
+            }
+        }
+    }
+    Ok(values)
+}
+
 fn unsupported_source_message(message: impl Into<String>) -> SourceKeyDirectoryMetadataError {
     SourceKeyDirectoryMetadataError::UnsupportedSourceProgram {
         message: message.into(),
@@ -921,6 +950,7 @@ fn source_unit_setup_info(
     let constant_columns = source_constant_columns(program, &constant_values)?;
     let commitment_columns = source_commitment_columns(program, &constant_values)?;
     let (n_stages, commitment_widths) = source_commitment_section_widths(&commitment_columns)?;
+    let unit_value_map = source_unit_values(program, &constant_values)?;
     let challenge_count = source_challenge_counts(program, &constant_values)?
         .into_iter()
         .try_fold(0_usize, |acc, count| {
@@ -955,7 +985,7 @@ fn source_unit_setup_info(
         evaluation_map: Vec::<EvaluationMapEntry>::new(),
         boundaries: Vec::<Boundary>::new(),
         commitment_columns,
-        unit_value_map: Vec::<StageValue>::new(),
+        unit_value_map,
         group_value_map: Vec::<StageValue>::new(),
         stark: StarkStruct {
             n_bits,

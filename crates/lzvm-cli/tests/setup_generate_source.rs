@@ -304,6 +304,55 @@ fn generate_key_writes_source_challenge_counts_to_metadata() {
 }
 
 #[test]
+fn generate_key_writes_source_air_values_to_unit_metadata() {
+    let dir = temp_dir("air-value-metadata");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "const int WIDTH = 2;\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];\n\
+         airval stage(1) air.flag;\n\
+         airval stage(2) air.acc[WIDTH];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let setup_path = layout.units[0]
+        .setup_info_binary()
+        .expect("setup metadata path should derive");
+    let setup = read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+    assert_eq!(setup.unit_value_map.len(), 2);
+    assert_eq!(setup.unit_value_map[0].name, "air.flag");
+    assert_eq!(setup.unit_value_map[0].stage, 1);
+    assert!(setup.unit_value_map[0].lengths.is_empty());
+    assert_eq!(setup.unit_value_map[1].name, "air.acc");
+    assert_eq!(setup.unit_value_map[1].stage, 2);
+    assert_eq!(setup.unit_value_map[1].lengths, [2]);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_writes_later_stage_source_proof_values_to_global_metadata() {
     let dir = temp_dir("later-proof-value-metadata");
     let _ = fs::remove_dir_all(&dir);
