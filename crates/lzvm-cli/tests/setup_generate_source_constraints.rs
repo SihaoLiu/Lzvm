@@ -9,7 +9,7 @@ use lzvm_artifacts::key_directory::read_key_directory_layout;
 use lzvm_artifacts::regular_program::read_regular_program_file;
 use lzvm_artifacts::setup_info::read_unit_setup_info_binary_file;
 use lzvm_cli::run_cli;
-use lzvm_field::Felt;
+use lzvm_field::{Felt, MODULUS};
 use lzvm_prover::regular_constraints::{
     evaluate_regular_constraints, RegularColumnMatrix, RegularConstraintInputs, RegularStageColumns,
 };
@@ -137,6 +137,98 @@ fn generate_key_lowers_source_fixed_column_boolean_constraints() {
     )
     .expect("regular program should parse");
     assert_eq!(regular.constraints.entries.len(), 1);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_lowers_source_signed_literal_constraints() {
+    let dir = temp_dir("signed-literal-constraint");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col witness value;\n\
+             value === -1;\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed check = [0, 0];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert_eq!(expressions.constraints.len(), 1);
+    assert!(expressions.hints.is_empty());
+    let constraint = &expressions.constraints[0];
+    assert_eq!(constraint.operations.len(), 1);
+    assert_eq!(constraint.operations[0].op, OperationKind::Sub);
+    assert!(matches!(
+        constraint.operations[0].sources[0],
+        CodeOperand::Commitment {
+            id: 0,
+            prime: None,
+            dimension: 1,
+        }
+    ));
+    assert!(matches!(
+        constraint.operations[0].sources[1],
+        CodeOperand::Number {
+            value,
+            dimension: 1,
+        } if value == MODULUS - 1
+    ));
+    let regular = read_regular_program_file(
+        unit.expression_program()
+            .expect("regular program path should derive"),
+    )
+    .expect("regular program should parse");
+    let stage_values = [MODULUS - 1, MODULUS - 1].map(Felt::from_u64);
+    let stage_columns = [RegularStageColumns {
+        stage_index: 1,
+        column_count: 1,
+        values: &stage_values,
+    }];
+    let results = evaluate_regular_constraints(
+        &regular.constraints,
+        RegularConstraintInputs {
+            domain_size: 2,
+            stage_count: u16::try_from(setup.n_stages).expect("stage count should fit"),
+            stage_columns: &stage_columns,
+            opening_point_offsets: &setup.opening_points,
+            ..RegularConstraintInputs::default()
+        },
+    )
+    .expect("regular constraints should evaluate");
+    assert!(results[0].invalid_rows.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
     assert!(String::from_utf8(stdout)
         .expect("stdout should be utf-8")

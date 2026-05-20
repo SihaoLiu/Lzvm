@@ -1,6 +1,7 @@
 use lzvm_artifacts::expression_info::{
     BoundaryKind, CodeDestination, CodeOperand, CodeOperation, ConstraintCode, OperationKind,
 };
+use lzvm_field::MODULUS;
 use lzvm_pil::{
     BinaryOperator, Expression, ExpressionKind, FunctionStatement, SourceProgramModule,
     UnaryOperator,
@@ -119,10 +120,39 @@ fn lower_source_scalar_expression(
     next_temporary: &mut u32,
     frame_offsets: &mut SourceConstraintFrameOffsets,
 ) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
-    match &strip_group_expression(expression).kind {
+    let expression = strip_group_expression(expression);
+    if let Some(value) = static_scalar_integer(expression)? {
+        return Ok(CodeOperand::number(canonical_field_value(value)?, 1));
+    }
+    match &expression.kind {
         ExpressionKind::Name(name) => scalar_slots
             .operand(name)
             .map_err(|error| unsupported_source_message(error.to_string())),
+        ExpressionKind::Unary { op, expr } => {
+            let value = lower_source_scalar_expression(
+                expr,
+                scalar_slots,
+                operations,
+                next_temporary,
+                frame_offsets,
+            )?;
+            match op {
+                UnaryOperator::Plus => Ok(value),
+                UnaryOperator::Minus => {
+                    let id = *next_temporary;
+                    *next_temporary = next_temporary.checked_add(1).ok_or_else(|| {
+                        unsupported_source_message("source scalar constraint temporary overflow")
+                    })?;
+                    operations.push(CodeOperation {
+                        op: OperationKind::Sub,
+                        destination: CodeDestination::temporary(id, 1),
+                        sources: vec![CodeOperand::number(0, 1), value],
+                    });
+                    Ok(CodeOperand::temporary(id, 1))
+                }
+                _ => unsupported("unsupported source scalar constraint expression"),
+            }
+        }
         ExpressionKind::RowOffset {
             target,
             offset,
@@ -136,13 +166,6 @@ fn lower_source_scalar_expression(
             scalar_slots
                 .operand_at(name, signed_offset)
                 .map_err(|error| unsupported_source_message(error.to_string()))
-        }
-        ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
-            let value = parse_i128_literal(value)
-                .ok()
-                .and_then(|value| u64::try_from(value).ok())
-                .ok_or_else(|| unsupported_source_message("source scalar literal overflow"))?;
-            Ok(CodeOperand::number(value, 1))
         }
         ExpressionKind::Binary { op, left, right } => {
             let op = match op {
@@ -227,6 +250,10 @@ fn expression_is_zero(expression: &Expression) -> bool {
         ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
             parse_i128_literal(value).is_ok_and(|value| value == 0)
         }
+        ExpressionKind::Unary {
+            op: UnaryOperator::Plus | UnaryOperator::Minus,
+            expr,
+        } => expression_is_zero(expr),
         _ => false,
     }
 }
@@ -263,6 +290,37 @@ fn eval_i128_expression(expression: &Expression) -> Result<i128, SourceKeyDirect
         }
         _ => unsupported("source row offset must be a static integer"),
     }
+}
+
+fn static_scalar_integer(
+    expression: &Expression,
+) -> Result<Option<i128>, SourceKeyDirectoryMetadataError> {
+    match &strip_group_expression(expression).kind {
+        ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
+            parse_i128_literal(value).map(Some)
+        }
+        ExpressionKind::Unary { op, expr } => {
+            let Some(value) = static_scalar_integer(expr)? else {
+                return Ok(None);
+            };
+            match op {
+                UnaryOperator::Plus => Ok(Some(value)),
+                UnaryOperator::Minus => value
+                    .checked_neg()
+                    .map(Some)
+                    .ok_or_else(|| unsupported_source_message("source scalar literal overflow")),
+                _ => Ok(None),
+            }
+        }
+        _ => Ok(None),
+    }
+}
+
+fn canonical_field_value(value: i128) -> Result<u64, SourceKeyDirectoryMetadataError> {
+    let modulus = i128::from(MODULUS);
+    let canonical = value.rem_euclid(modulus);
+    u64::try_from(canonical)
+        .map_err(|_| unsupported_source_message("source scalar literal overflow"))
 }
 
 fn parse_i128_literal(value: &str) -> Result<i128, SourceKeyDirectoryMetadataError> {
