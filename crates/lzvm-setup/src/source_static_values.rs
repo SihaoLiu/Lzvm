@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, FixedFileTemplateValue,
-    SourceProgram,
+    SourceProgram, SourceProgramModule,
 };
 
 pub(crate) fn source_scalar_constant_values(
@@ -52,6 +52,39 @@ pub(crate) fn source_scalar_constant_values(
         if !progressed {
             break;
         }
+    }
+
+    values
+}
+
+pub(crate) fn source_declaration_constant_values(
+    module: &SourceProgramModule,
+    start: usize,
+    end: usize,
+    base_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> BTreeMap<String, FixedFileTemplateValue> {
+    let mut values = base_values.clone();
+    let Some(template) = module
+        .air_templates
+        .iter()
+        .find(|template| template.body.start <= start && end <= template.body.end)
+    else {
+        return values;
+    };
+
+    for parameter in &template.parameters {
+        if values.contains_key(&parameter.name) {
+            continue;
+        }
+        let Some(expression) = parameter.default_expression.as_ref() else {
+            continue;
+        };
+        let Some(value) =
+            evaluate_fixed_file_template_value_expression_with_values(expression, &values)
+        else {
+            continue;
+        };
+        values.insert(parameter.name.clone(), value);
     }
 
     values

@@ -37,7 +37,7 @@ use crate::{
         concrete_template_names, declaration_in_function_body, declaration_in_inactive_template,
         global_constraint_source_names,
     },
-    source_static_values::source_scalar_constant_values,
+    source_static_values::{source_declaration_constant_values, source_scalar_constant_values},
     write_staging_bytes, SetupError,
 };
 
@@ -1463,6 +1463,12 @@ fn source_constant_columns(
             ) {
                 continue;
             }
+            let declaration_values = source_declaration_constant_values(
+                module,
+                declaration.start,
+                declaration.end,
+                constant_values,
+            );
             for item in &declaration.items {
                 if item.template {
                     return unsupported(format!(
@@ -1473,7 +1479,8 @@ fn source_constant_columns(
                 if !seen.insert(item.name.clone()) {
                     continue;
                 }
-                let lengths = source_item_lengths(item, "source fixed-column", constant_values)?;
+                let lengths =
+                    source_item_lengths(item, "source fixed-column", &declaration_values)?;
                 let dimension = source_column_dimension(&lengths, "source fixed-column")?;
                 let id = u32::try_from(columns.len())
                     .map_err(|_| unsupported_source_message("too many source fixed columns"))?;
@@ -1515,7 +1522,13 @@ fn source_commitment_columns(
             ) {
                 continue;
             }
-            let stage = source_column_stage(declaration, constant_values)?;
+            let declaration_values = source_declaration_constant_values(
+                module,
+                declaration.start,
+                declaration.end,
+                constant_values,
+            );
+            let stage = source_column_stage(declaration, &declaration_values)?;
             for item in &declaration.items {
                 if item.template {
                     return unsupported(format!(
@@ -1527,7 +1540,7 @@ fn source_commitment_columns(
                     continue;
                 }
                 let lengths =
-                    source_item_lengths(item, "source commitment-column", constant_values)?;
+                    source_item_lengths(item, "source commitment-column", &declaration_values)?;
                 let dimension = source_column_dimension(&lengths, "source commitment-column")?;
                 let cursor = stages.entry(stage).or_default();
                 let stage_id = cursor.next_id;
