@@ -49,6 +49,7 @@ mod source_statement_hints;
 mod source_static_values;
 mod source_template_context;
 mod source_template_for;
+mod source_template_if;
 mod source_verifier_info;
 mod staging;
 

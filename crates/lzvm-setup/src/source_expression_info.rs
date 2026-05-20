@@ -34,6 +34,7 @@ use crate::{
     },
     source_template_context::SourceTemplateLoweringContext,
     source_template_for::source_static_for_loop,
+    source_template_if::source_static_if_body_statements,
 };
 
 pub(crate) fn source_expression_info(
@@ -141,6 +142,38 @@ fn lower_source_template_statement(
         declaration_values,
     ) {
         return Ok(());
+    }
+    if statement.kind == FunctionStatementKind::If {
+        match source_static_if_body_statements(
+            context.program,
+            context.module,
+            statement,
+            declaration_values,
+        ) {
+            Ok(Some(body_statements)) => {
+                let mut body_aliases = expression_aliases.clone();
+                for body_statement in &body_statements {
+                    lower_source_template_statement(
+                        context,
+                        body_statement,
+                        local_values,
+                        &body_aliases,
+                        hints,
+                        constraints,
+                    )?;
+                    collect_source_template_expression_alias(body_statement, &mut body_aliases);
+                }
+                return Ok(());
+            }
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
+                hints.push(lower_unsupported_source_template_statement(
+                    context.module,
+                    statement,
+                ));
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        }
     }
     if statement.kind == FunctionStatementKind::For {
         match source_static_for_loop(
