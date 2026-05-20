@@ -9,6 +9,7 @@ use lzvm_artifacts::fixed::{
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyDirectoryError, KeyUnitKind};
 use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, SetupInfoError, UnitSetupInfo};
+use lzvm_field::Felt;
 use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, ColumnInitializer,
     ColumnInitializerKind, ColumnItem, ColumnKind, ConstantDeclaration, FixedFileTemplateValue,
@@ -726,7 +727,7 @@ fn source_fixed_domain_constant_values(
     setup: &UnitSetupInfo,
     row_count: u64,
 ) -> BTreeMap<String, FixedFileTemplateValue> {
-    BTreeMap::from([
+    let mut values = BTreeMap::from([
         (
             "BITS".to_owned(),
             FixedFileTemplateValue::Integer(i128::from(setup.stark.n_bits)),
@@ -735,7 +736,14 @@ fn source_fixed_domain_constant_values(
             "N".to_owned(),
             FixedFileTemplateValue::Integer(i128::from(row_count)),
         ),
-    ])
+    ]);
+    if let Some(root) = Felt::root_of_unity(setup.stark.n_bits as usize) {
+        values.insert(
+            "omega".to_owned(),
+            FixedFileTemplateValue::Integer(i128::from(root.to_u64())),
+        );
+    }
+    values
 }
 
 fn source_fixed_constant_value(

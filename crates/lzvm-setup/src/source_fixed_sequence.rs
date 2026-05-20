@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use lzvm_field::MODULUS;
+use lzvm_field::{Felt, MODULUS};
 use lzvm_pil::{
     lex_source, parse_expression, FixedFileTemplateValue, SourceFile, SourceSpan, Token, TokenKind,
 };
@@ -465,6 +465,9 @@ fn append_comma_mul_progression_values(
     current: i128,
     last: i128,
 ) -> Result<(), SourceFixedColumnsWriteError> {
+    if progression_uses_omega(segment) {
+        return append_comma_mul_progression_values_field(values, segment, previous, current, last);
+    }
     if let Some(factor) = comma_mul_factor(previous, current, segment)? {
         return append_comma_mul_factor_values(values, segment, current, last, factor);
     }
@@ -480,6 +483,9 @@ fn append_comma_mul_progression_fill(
     previous: i128,
     current: i128,
 ) -> Result<(), SourceFixedColumnsWriteError> {
+    if progression_uses_omega(segment) {
+        return append_comma_mul_progression_fill_field(values, segment, previous, current);
+    }
     if let Some(factor) = comma_mul_factor(previous, current, segment)? {
         return append_comma_mul_factor_fill(values, segment, current, factor);
     }
@@ -487,6 +493,38 @@ fn append_comma_mul_progression_fill(
         return Err(progression_unsupported(segment));
     };
     append_comma_div_progression_fill(values, segment, current, divisor)
+}
+
+fn append_comma_mul_progression_fill_field(
+    values: &mut Vec<i128>,
+    segment: &ProgressionSegment<'_, '_>,
+    previous: i128,
+    current: i128,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    let factor = field_progression_factor(previous, current, segment)?;
+    let mut value = field_progression_value(current, segment)?;
+    while values.len() < segment.row_count {
+        value = value * factor;
+        push_progression_value(values, segment, i128::from(value.to_u64()))?;
+    }
+    Ok(())
+}
+
+fn append_comma_mul_progression_values_field(
+    values: &mut Vec<i128>,
+    segment: &ProgressionSegment<'_, '_>,
+    previous: i128,
+    current: i128,
+    last: i128,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    let factor = field_progression_factor(previous, current, segment)?;
+    let mut value = field_progression_value(current, segment)?;
+    let last = field_progression_value(last, segment)?;
+    while value != last {
+        value = value * factor;
+        push_progression_value(values, segment, i128::from(value.to_u64()))?;
+    }
+    Ok(())
 }
 
 fn comma_mul_factor(
@@ -771,6 +809,23 @@ fn append_sequence_mul_progression(
             })?;
     let current = parse_sequence_expression(context, start, progression_index)?;
 
+    let segment = ProgressionSegment {
+        context,
+        start,
+        end,
+        row_count,
+    };
+    if progression_uses_omega(&segment) {
+        let factor = field_progression_factor(previous, current, &segment)?;
+        let current = field_progression_value(current, &segment)?.to_u64();
+        if progression_index + 1 == end {
+            return append_mul_progression_fill_field(values, &segment, current, factor);
+        }
+        let last = parse_sequence_expression(context, progression_index + 1, end)?;
+        let last = field_progression_value(last, &segment)?.to_u64();
+        return append_mul_progression_values_field(values, &segment, current, last, factor);
+    }
+
     if previous > 0 && current >= previous && current % previous == 0 {
         let factor = u128::try_from(current / previous).map_err(|_| {
             SourceFixedColumnsWriteError::IntegerOutOfRange {
@@ -779,12 +834,6 @@ fn append_sequence_mul_progression(
                 expression: segment_text(context, start, end),
             }
         })?;
-        let segment = ProgressionSegment {
-            context,
-            start,
-            end,
-            row_count,
-        };
         if progression_index + 1 == end {
             return append_mul_progression_fill(values, &segment, current, factor);
         }
@@ -799,12 +848,6 @@ fn append_sequence_mul_progression(
                 expression: segment_text(context, start, end),
             }
         })?;
-        let segment = ProgressionSegment {
-            context,
-            start,
-            end,
-            row_count,
-        };
         if progression_index + 1 == end {
             return append_div_progression_fill(values, &segment, current, divisor);
         }
@@ -847,6 +890,22 @@ fn append_mul_progression_fill(
     Ok(())
 }
 
+fn append_mul_progression_fill_field(
+    values: &mut Vec<i128>,
+    segment: &ProgressionSegment<'_, '_>,
+    current: u64,
+    factor: Felt,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    let mut value = Felt::from_u64(current);
+    while values.len() < segment.row_count {
+        push_progression_value(values, segment, i128::from(value.to_u64()))?;
+        if values.len() < segment.row_count {
+            value = value * factor;
+        }
+    }
+    Ok(())
+}
+
 fn append_mul_progression_values(
     values: &mut Vec<i128>,
     segment: &ProgressionSegment<'_, '_>,
@@ -879,6 +938,25 @@ fn append_mul_progression_values(
         if value > last {
             return Err(progression_unsupported(segment));
         }
+    }
+    Ok(())
+}
+
+fn append_mul_progression_values_field(
+    values: &mut Vec<i128>,
+    segment: &ProgressionSegment<'_, '_>,
+    current: u64,
+    last: u64,
+    factor: Felt,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    let mut value = Felt::from_u64(current);
+    let last = Felt::from_u64(last);
+    loop {
+        push_progression_value(values, segment, i128::from(value.to_u64()))?;
+        if value == last {
+            break;
+        }
+        value = value * factor;
     }
     Ok(())
 }
@@ -953,12 +1031,42 @@ fn push_progression_value(
     Ok(())
 }
 
+fn field_progression_factor(
+    previous: i128,
+    current: i128,
+    segment: &ProgressionSegment<'_, '_>,
+) -> Result<Felt, SourceFixedColumnsWriteError> {
+    let previous = field_progression_value(previous, segment)?;
+    let current = field_progression_value(current, segment)?;
+    Ok(current
+        * previous
+            .inverse()
+            .ok_or_else(|| progression_unsupported(segment))?)
+}
+
+fn field_progression_value(
+    value: i128,
+    segment: &ProgressionSegment<'_, '_>,
+) -> Result<Felt, SourceFixedColumnsWriteError> {
+    u64::try_from(value)
+        .map(Felt::from_u64)
+        .map_err(|_| progression_unsupported(segment))
+}
+
 fn progression_unsupported(segment: &ProgressionSegment<'_, '_>) -> SourceFixedColumnsWriteError {
     SourceFixedColumnsWriteError::UnsupportedExpression {
         source_name: segment.context.source_name.to_owned(),
         source_span: segment.context.source_span,
         expression: progression_expression(segment),
     }
+}
+
+fn progression_uses_omega(segment: &ProgressionSegment<'_, '_>) -> bool {
+    segment
+        .context
+        .tokens
+        .iter()
+        .any(|token| token.lexeme == "omega")
 }
 
 fn progression_expression(segment: &ProgressionSegment<'_, '_>) -> String {

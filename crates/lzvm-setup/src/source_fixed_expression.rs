@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use lzvm_field::MODULUS;
+use lzvm_field::{Felt, MODULUS};
 use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, BinaryOperator, ColumnInitializer,
     Expression, ExpressionKind, FixedFileTemplateValue, SourceSpan, UnaryOperator,
@@ -184,6 +184,26 @@ pub(crate) fn evaluate_source_fixed_template_value_expression(
         &constant_values.scalars,
     ) {
         return Some(value);
+    }
+
+    if let ExpressionKind::Binary {
+        op: BinaryOperator::Power,
+        left,
+        right,
+    } = &expression.kind
+    {
+        let base = evaluate_source_fixed_template_value_expression(left, constant_values)?;
+        let exponent = evaluate_source_fixed_template_value_expression(right, constant_values)?;
+        let (FixedFileTemplateValue::Integer(base), FixedFileTemplateValue::Integer(exponent)) =
+            (base, exponent)
+        else {
+            return None;
+        };
+        let base = u64::try_from(base).ok()?;
+        let exponent = u64::try_from(exponent).ok()?;
+        return Some(FixedFileTemplateValue::Integer(i128::from(
+            Felt::from_u64(base).pow(exponent).to_u64(),
+        )));
     }
 
     let ExpressionKind::Index { target, index } = &expression.kind else {
