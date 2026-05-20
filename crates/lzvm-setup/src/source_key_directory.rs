@@ -33,6 +33,7 @@ use crate::{
         source_expression_assigns_fixed_index, source_expression_is_assignment,
         source_expression_is_equality_constraint,
     },
+    source_opening_points::source_opening_points,
     source_row_count::{infer_source_row_counts, SourceUnitRowCounts},
     source_scalar_slots::SourceScalarSlots,
     source_scope::{
@@ -1362,6 +1363,7 @@ fn source_unit_setup_info(
     let (n_stages, commitment_widths) = source_commitment_section_widths(&commitment_columns)?;
     let unit_value_map = source_unit_values(program, &constant_values, &template_values)?;
     let (group_value_map, _) = source_air_group_values(program, &constant_values)?;
+    let opening_points = source_opening_points(program, &constant_values, &active_templates)?;
     let challenge_count = source_challenge_counts(program, &constant_values)?
         .into_iter()
         .try_fold(0_usize, |acc, count| {
@@ -1389,7 +1391,7 @@ fn source_unit_setup_info(
         ),
         n_constraints: Some(0),
         q_degree: 3,
-        opening_points: vec![0],
+        opening_points,
         section_widths,
         challenge_count,
         eval_count: 0,

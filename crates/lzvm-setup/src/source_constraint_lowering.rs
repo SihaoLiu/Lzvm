@@ -3,6 +3,7 @@ use lzvm_artifacts::expression_info::{
 };
 use lzvm_pil::{
     BinaryOperator, Expression, ExpressionKind, FunctionStatement, SourceProgramModule,
+    UnaryOperator,
 };
 
 use crate::{
@@ -19,11 +20,13 @@ pub(crate) fn lower_source_template_boolean_constraint(
     };
     let mut operations = Vec::new();
     let mut next_temporary = 0_u32;
+    let mut frame_offsets = SourceConstraintFrameOffsets::default();
     let Some(result) = lower_source_constraint_residual(
         expression,
         scalar_slots,
         &mut operations,
         &mut next_temporary,
+        &mut frame_offsets,
     )?
     else {
         return Ok(None);
@@ -34,11 +37,12 @@ pub(crate) fn lower_source_template_boolean_constraint(
     if !matches!(result, CodeOperand::Temporary { .. }) {
         return Ok(None);
     }
+    let (boundary, offset_min, offset_max) = frame_offsets.boundary();
     Ok(Some(ConstraintCode {
         stage: 1,
-        boundary: BoundaryKind::EveryRow,
-        offset_min: None,
-        offset_max: None,
+        boundary,
+        offset_min,
+        offset_max,
         line: module.source.contents[statement.start..statement.end]
             .trim()
             .to_owned(),
@@ -53,6 +57,7 @@ fn lower_source_constraint_residual(
     scalar_slots: &SourceScalarSlots,
     operations: &mut Vec<CodeOperation>,
     next_temporary: &mut u32,
+    frame_offsets: &mut SourceConstraintFrameOffsets,
 ) -> Result<Option<CodeOperand>, SourceKeyDirectoryMetadataError> {
     let ExpressionKind::Binary { op, left, right } = &strip_group_expression(expression).kind
     else {
@@ -62,15 +67,39 @@ fn lower_source_constraint_residual(
         return Ok(None);
     }
     if expression_is_zero(right) {
-        return lower_source_scalar_expression(left, scalar_slots, operations, next_temporary)
-            .map(Some);
+        return lower_source_scalar_expression(
+            left,
+            scalar_slots,
+            operations,
+            next_temporary,
+            frame_offsets,
+        )
+        .map(Some);
     } else if expression_is_zero(left) {
-        return lower_source_scalar_expression(right, scalar_slots, operations, next_temporary)
-            .map(Some);
+        return lower_source_scalar_expression(
+            right,
+            scalar_slots,
+            operations,
+            next_temporary,
+            frame_offsets,
+        )
+        .map(Some);
     }
 
-    let left = lower_source_scalar_expression(left, scalar_slots, operations, next_temporary)?;
-    let right = lower_source_scalar_expression(right, scalar_slots, operations, next_temporary)?;
+    let left = lower_source_scalar_expression(
+        left,
+        scalar_slots,
+        operations,
+        next_temporary,
+        frame_offsets,
+    )?;
+    let right = lower_source_scalar_expression(
+        right,
+        scalar_slots,
+        operations,
+        next_temporary,
+        frame_offsets,
+    )?;
     let id = *next_temporary;
     *next_temporary = next_temporary
         .checked_add(1)
@@ -88,11 +117,29 @@ fn lower_source_scalar_expression(
     scalar_slots: &SourceScalarSlots,
     operations: &mut Vec<CodeOperation>,
     next_temporary: &mut u32,
+    frame_offsets: &mut SourceConstraintFrameOffsets,
 ) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
     match &strip_group_expression(expression).kind {
         ExpressionKind::Name(name) => scalar_slots
             .operand(name)
             .map_err(|error| unsupported_source_message(error.to_string())),
+        ExpressionKind::RowOffset {
+            target,
+            offset,
+            prior,
+        } => {
+            let signed_offset = source_row_offset_value(offset, *prior)?;
+            if signed_offset < 0 {
+                return unsupported("source prior-row constraints need boundary lowering support");
+            }
+            let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
+                return unsupported("source row offsets require named scalar values");
+            };
+            frame_offsets.include(signed_offset);
+            scalar_slots
+                .operand_at(name, signed_offset)
+                .map_err(|error| unsupported_source_message(error.to_string()))
+        }
         ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
             let value = parse_i128_literal(value)
                 .ok()
@@ -107,10 +154,20 @@ fn lower_source_scalar_expression(
                 BinaryOperator::Multiply => OperationKind::Mul,
                 _ => return unsupported("unsupported source scalar constraint expression"),
             };
-            let left =
-                lower_source_scalar_expression(left, scalar_slots, operations, next_temporary)?;
-            let right =
-                lower_source_scalar_expression(right, scalar_slots, operations, next_temporary)?;
+            let left = lower_source_scalar_expression(
+                left,
+                scalar_slots,
+                operations,
+                next_temporary,
+                frame_offsets,
+            )?;
+            let right = lower_source_scalar_expression(
+                right,
+                scalar_slots,
+                operations,
+                next_temporary,
+                frame_offsets,
+            )?;
             let id = *next_temporary;
             *next_temporary = next_temporary.checked_add(1).ok_or_else(|| {
                 unsupported_source_message("source scalar constraint temporary overflow")
@@ -123,6 +180,27 @@ fn lower_source_scalar_expression(
             Ok(CodeOperand::temporary(id, 1))
         }
         _ => unsupported("unsupported source scalar constraint expression"),
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct SourceConstraintFrameOffsets {
+    min: i64,
+    max: i64,
+}
+
+impl SourceConstraintFrameOffsets {
+    fn include(&mut self, offset: i64) {
+        self.min = self.min.min(offset);
+        self.max = self.max.max(offset);
+    }
+
+    fn boundary(&self) -> (BoundaryKind, Option<i64>, Option<i64>) {
+        if self.min == 0 && self.max == 0 {
+            (BoundaryKind::EveryRow, None, None)
+        } else {
+            (BoundaryKind::EveryFrame, Some(self.min), Some(self.max))
+        }
     }
 }
 
@@ -139,6 +217,40 @@ fn expression_is_zero(expression: &Expression) -> bool {
             parse_i128_literal(value).is_ok_and(|value| value == 0)
         }
         _ => false,
+    }
+}
+
+fn source_row_offset_value(
+    expression: &Expression,
+    prior: bool,
+) -> Result<i64, SourceKeyDirectoryMetadataError> {
+    let offset = eval_i128_expression(expression)?;
+    let signed = if prior {
+        offset
+            .checked_neg()
+            .ok_or_else(|| unsupported_source_message("source row offset overflow"))?
+    } else {
+        offset
+    };
+    i64::try_from(signed).map_err(|_| unsupported_source_message("source row offset overflow"))
+}
+
+fn eval_i128_expression(expression: &Expression) -> Result<i128, SourceKeyDirectoryMetadataError> {
+    match &strip_group_expression(expression).kind {
+        ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
+            parse_i128_literal(value)
+        }
+        ExpressionKind::Unary { op, expr } => {
+            let value = eval_i128_expression(expr)?;
+            match op {
+                UnaryOperator::Plus => Ok(value),
+                UnaryOperator::Minus => value
+                    .checked_neg()
+                    .ok_or_else(|| unsupported_source_message("source expression overflow")),
+                _ => unsupported("unsupported source unary expression"),
+            }
+        }
+        _ => unsupported("source row offset must be a static integer"),
     }
 }
 

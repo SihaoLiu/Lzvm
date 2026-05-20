@@ -9,6 +9,7 @@ pub(crate) enum SourceScalarSlotError {
     LengthOverflow(&'static str),
     UnknownValue { name: String },
     UnsupportedValueShape { name: String },
+    UnsupportedRowOffset { name: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,6 +117,29 @@ impl SourceScalarSlots {
             name: name.to_owned(),
         })
     }
+
+    pub(crate) fn operand_at(
+        &self,
+        name: &str,
+        row_offset: i64,
+    ) -> Result<CodeOperand, SourceScalarSlotError> {
+        if row_offset == 0 {
+            return self.operand(name);
+        }
+
+        if let Some(slot) = self.commitments.get(name) {
+            if slot.stage != 1 || slot.dimension != 1 {
+                return Err(SourceScalarSlotError::UnsupportedValueShape {
+                    name: name.to_owned(),
+                });
+            }
+            return Ok(CodeOperand::commitment_at(slot.id, Some(row_offset), 1));
+        }
+
+        Err(SourceScalarSlotError::UnsupportedRowOffset {
+            name: name.to_owned(),
+        })
+    }
 }
 
 impl fmt::Display for SourceScalarSlotError {
@@ -129,6 +153,12 @@ impl fmt::Display for SourceScalarSlotError {
                 f,
                 "source boolean constraints require scalar source values: {name}"
             ),
+            Self::UnsupportedRowOffset { name } => {
+                write!(
+                    f,
+                    "source row offsets require commitment source values: {name}"
+                )
+            }
         }
     }
 }
