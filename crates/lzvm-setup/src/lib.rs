@@ -39,6 +39,7 @@ mod source_fixed_columns;
 mod source_fixed_expression;
 mod source_fixed_file_manifest;
 mod source_fixed_sequence;
+mod source_global_constraints;
 mod source_key_directory;
 mod source_opening_points;
 mod source_program_archive;
