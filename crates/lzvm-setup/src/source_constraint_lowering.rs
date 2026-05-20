@@ -504,10 +504,12 @@ fn eval_i128_expression_with_values(
     expression: &Expression,
     state: &SourceConstraintLoweringState<'_>,
 ) -> Result<i128, SourceKeyDirectoryMetadataError> {
-    if let Some(FixedFileTemplateValue::Integer(value)) =
+    if let Some(value) =
         evaluate_source_static_expression(state.program, expression, state.constant_values)
     {
-        return Ok(value);
+        if let Some(value) = source_static_integer_value(value) {
+            return Ok(value);
+        }
     }
     eval_i128_expression(expression)
 }
@@ -535,10 +537,10 @@ fn static_scalar_integer(
     expression: &Expression,
     state: &SourceConstraintLoweringState<'_>,
 ) -> Result<Option<i128>, SourceKeyDirectoryMetadataError> {
-    if let Some(FixedFileTemplateValue::Integer(value)) =
+    if let Some(value) =
         evaluate_source_static_expression(state.program, expression, state.constant_values)
     {
-        return Ok(Some(value));
+        return Ok(source_static_integer_value(value));
     }
     match &strip_group_expression(expression).kind {
         ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
@@ -558,6 +560,14 @@ fn static_scalar_integer(
             }
         }
         _ => Ok(None),
+    }
+}
+
+fn source_static_integer_value(value: FixedFileTemplateValue) -> Option<i128> {
+    match value {
+        FixedFileTemplateValue::Integer(value) => Some(value),
+        FixedFileTemplateValue::Boolean(value) => Some(i128::from(value)),
+        FixedFileTemplateValue::String(_) => None,
     }
 }
 
