@@ -4,7 +4,8 @@ use std::path::PathBuf;
 
 use lzvm_artifacts::fixed::{
     encode_fixed_columns, encode_raw_fixed_columns, raw_fixed_column_layout,
-    read_fixed_columns_file, FixedColumn, FixedColumnError, FixedColumns,
+    read_fixed_columns_file, read_fixed_columns_file_for_setup, FixedColumn, FixedColumnError,
+    FixedColumns,
 };
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyDirectoryError, KeyUnitKind};
@@ -325,6 +326,7 @@ pub fn write_fixed_columns_from_source_file(
         &request.group_name,
         &request.unit_name,
         request.output_path.clone(),
+        SourceFixedColumnsOutputFormat::Portable,
     )
 }
 
@@ -360,6 +362,7 @@ pub fn write_fixed_columns_from_source_directory(
             group_name,
             unit_name,
             unit.fixed_columns.clone(),
+            SourceFixedColumnsOutputFormat::Raw,
         )?;
         bytes_written = bytes_written.saturating_add(report.bytes_written);
     }
@@ -459,16 +462,30 @@ fn write_fixed_columns_from_source_program(
     group_name: &str,
     unit_name: &str,
     output_path: PathBuf,
+    output_format: SourceFixedColumnsOutputFormat,
 ) -> Result<SourceFixedColumnsWriteReport, SourceFixedColumnsWriteError> {
     let columns = fixed_columns_from_source_program(program, setup, group_name, unit_name)?;
-    let bytes = encode_fixed_columns(&columns)?;
-    encode_raw_fixed_columns(&columns, setup)?;
+    let bytes = match output_format {
+        SourceFixedColumnsOutputFormat::Portable => {
+            let bytes = encode_fixed_columns(&columns)?;
+            encode_raw_fixed_columns(&columns, setup)?;
+            bytes
+        }
+        SourceFixedColumnsOutputFormat::Raw => encode_raw_fixed_columns(&columns, setup)?,
+    };
     let staging_path = write_staging_bytes(
         &output_path,
         &bytes,
         "write source fixed columns staging file",
     )?;
-    read_fixed_columns_file(&staging_path)?;
+    match output_format {
+        SourceFixedColumnsOutputFormat::Portable => {
+            read_fixed_columns_file(&staging_path)?;
+        }
+        SourceFixedColumnsOutputFormat::Raw => {
+            read_fixed_columns_file_for_setup(&staging_path, setup, group_name, unit_name)?;
+        }
+    }
     let bytes_written =
         publish_staging_bytes(&staging_path, &output_path, "publish source fixed columns")?;
 
@@ -478,6 +495,12 @@ fn write_fixed_columns_from_source_program(
         column_count: columns.columns.len(),
         row_count: columns.row_count,
     })
+}
+
+#[derive(Clone, Copy)]
+enum SourceFixedColumnsOutputFormat {
+    Portable,
+    Raw,
 }
 
 fn fixed_columns_from_source_program(
