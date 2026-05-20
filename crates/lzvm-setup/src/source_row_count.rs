@@ -8,6 +8,7 @@ use lzvm_pil::{
 };
 
 use crate::source_key_directory::SourceKeyDirectoryMetadataError;
+use crate::source_static_values::evaluate_source_static_expression;
 
 pub(crate) type SourceUnitRowCounts = BTreeMap<(usize, usize), u64>;
 
@@ -99,7 +100,7 @@ fn infer_source_row_counts_from_air_units(
         let Some(template) = templates.get(instance.template.as_str()).copied() else {
             continue;
         };
-        let values = source_air_instance_parameter_values(template, instance, &constants);
+        let values = source_air_instance_parameter_values(program, template, instance, &constants);
         let Some(FixedFileTemplateValue::Integer(value)) = values.get("N") else {
             continue;
         };
@@ -112,6 +113,7 @@ fn infer_source_row_counts_from_air_units(
 }
 
 fn source_air_instance_parameter_values(
+    program: &SourceProgram,
     template: &AirTemplateDeclaration,
     instance: &AirInstanceDeclaration,
     constants: &BTreeMap<String, FixedFileTemplateValue>,
@@ -121,28 +123,26 @@ fn source_air_instance_parameter_values(
         if let Some(value) = parameter
             .default_expression
             .as_ref()
-            .and_then(|expression| {
-                evaluate_fixed_file_template_value_expression_with_values(expression, &values)
-            })
+            .and_then(|expression| evaluate_source_static_expression(program, expression, &values))
         {
             values.insert(parameter.name.clone(), value);
         }
     }
     if let Some(arguments) = instance.args_expressions.as_ref() {
-        apply_source_air_instance_arguments(template, arguments, &mut values);
+        apply_source_air_instance_arguments(program, template, arguments, &mut values);
     }
     values
 }
 
 fn apply_source_air_instance_arguments(
+    program: &SourceProgram,
     template: &AirTemplateDeclaration,
     arguments: &[CallArgument],
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
 ) {
     let mut positional_index = 0;
     for argument in arguments {
-        let Some(value) =
-            evaluate_fixed_file_template_value_expression_with_values(&argument.value, values)
+        let Some(value) = evaluate_source_static_expression(program, &argument.value, values)
         else {
             continue;
         };
@@ -182,8 +182,7 @@ fn source_static_constant_values(
             let Some(expression) = declaration.initializer_expression.as_ref() else {
                 continue;
             };
-            let Some(value) =
-                evaluate_fixed_file_template_value_expression_with_values(expression, &values)
+            let Some(value) = evaluate_source_static_expression(program, expression, &values)
             else {
                 continue;
             };
