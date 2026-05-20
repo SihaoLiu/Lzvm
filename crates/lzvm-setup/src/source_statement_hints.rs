@@ -161,7 +161,8 @@ fn source_lookup_value_expressions(
             return false;
         };
         for value_range in ranges {
-            if source_lookup_spread_name(tokens, value_range).is_some() {
+            if let Some(expression) = source_lookup_spread_expression(module, tokens, value_range) {
+                expressions.push(expression);
                 continue;
             }
             let Some(expression) =
@@ -179,6 +180,20 @@ fn source_lookup_value_expressions(
     };
     expressions.push(expression);
     true
+}
+
+fn source_lookup_spread_expression(
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    range: (usize, usize),
+) -> Option<Expression> {
+    let name = source_lookup_spread_name(tokens, range)?;
+    Some(Expression {
+        kind: ExpressionKind::Name(name.to_owned()),
+        source_name: module.source_name.clone(),
+        start: tokens[range.0].start,
+        end: tokens[range.1 - 1].end,
+    })
 }
 
 pub(crate) struct SourceLookupInputs<'a> {
