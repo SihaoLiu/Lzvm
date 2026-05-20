@@ -11,7 +11,8 @@ use crate::{
     source_control_body_cache::SourceControlBodyCache,
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_static_values::{
-        evaluate_source_static_expression_with_lookup, static_value_truthy, SourceStaticValueLookup,
+        evaluate_source_static_expression_with_lookup, static_value_integer, static_value_truthy,
+        SourceStaticValueLookup,
     },
 };
 
@@ -132,13 +133,10 @@ impl<V: SourceStaticValueLookup + ?Sized> SourceStaticValueLookup for SourceForL
 
     fn source_static_integer_values(&self) -> BTreeMap<String, i128> {
         let mut values = self.base_values.source_static_integer_values();
-        match &self.variable_value {
-            FixedFileTemplateValue::Integer(value) => {
-                values.insert(self.variable_name.to_owned(), *value);
-            }
-            _ => {
-                values.remove(self.variable_name);
-            }
+        if let Some(value) = static_value_integer(&self.variable_value) {
+            values.insert(self.variable_name.to_owned(), value);
+        } else {
+            values.remove(self.variable_name);
         }
         values
     }
@@ -356,10 +354,7 @@ fn source_static_integer(
 }
 
 fn source_static_integer_value(value: Option<&FixedFileTemplateValue>) -> Option<i128> {
-    match value {
-        Some(FixedFileTemplateValue::Integer(value)) => Some(*value),
-        _ => None,
-    }
+    value.and_then(static_value_integer)
 }
 
 fn source_expression_name(expression: &Expression) -> Option<&str> {
