@@ -536,6 +536,29 @@ fn collect_source_opening_points(
             Ok(())
         }
         ExpressionKind::Index { target, index } => {
+            if let Some(element) = source_opening_indexed_array_alias_element(
+                program,
+                target,
+                index,
+                constant_values,
+                alias_scope,
+                resolving_array_aliases,
+            ) {
+                return match element {
+                    SourceOpeningArrayAliasElement::Expression(expression) => {
+                        collect_source_opening_points(
+                            program,
+                            expression,
+                            constant_values,
+                            alias_scope,
+                            points,
+                            resolving_aliases,
+                            resolving_array_aliases,
+                        )
+                    }
+                    SourceOpeningArrayAliasElement::NamedArray => Ok(()),
+                };
+            }
             collect_source_opening_points(
                 program,
                 target,
@@ -625,6 +648,75 @@ fn collect_source_opening_points(
         | ExpressionKind::TemplateLiteral(_)
         | ExpressionKind::PositionalParam(_) => Ok(()),
     }
+}
+
+enum SourceOpeningArrayAliasElement<'a> {
+    Expression(&'a Expression),
+    NamedArray,
+}
+
+fn source_opening_indexed_array_alias_element<'a>(
+    program: &SourceProgram,
+    target: &Expression,
+    index: &Expression,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &'a SourceOpeningAliasScope,
+    resolving_array_aliases: &mut BTreeSet<String>,
+) -> Option<SourceOpeningArrayAliasElement<'a>> {
+    let ExpressionKind::Name(name) = &strip_source_group_expression(target).kind else {
+        return None;
+    };
+    let alias = alias_scope.expression_arrays.get(name)?;
+    source_opening_array_alias_element(
+        alias,
+        source_opening_index_value(program, index, constant_values)?,
+        alias_scope,
+        resolving_array_aliases,
+    )
+}
+
+fn source_opening_array_alias_element<'a>(
+    alias: &'a SourceExpressionArrayAlias,
+    index: usize,
+    alias_scope: &'a SourceOpeningAliasScope,
+    resolving_array_aliases: &mut BTreeSet<String>,
+) -> Option<SourceOpeningArrayAliasElement<'a>> {
+    match alias {
+        SourceExpressionArrayAlias::Name(name) => {
+            if let Some(next_alias) = alias_scope.expression_arrays.get(name) {
+                if !resolving_array_aliases.insert(name.clone()) {
+                    return None;
+                }
+                let element = source_opening_array_alias_element(
+                    next_alias,
+                    index,
+                    alias_scope,
+                    resolving_array_aliases,
+                );
+                resolving_array_aliases.remove(name);
+                return element;
+            }
+            Some(SourceOpeningArrayAliasElement::NamedArray)
+        }
+        SourceExpressionArrayAlias::Values(expressions) => expressions
+            .get(index)
+            .map(SourceOpeningArrayAliasElement::Expression),
+    }
+}
+
+fn source_opening_index_value(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<usize> {
+    if let Some(value) = evaluate_source_static_expression(program, expression, values) {
+        return match value {
+            FixedFileTemplateValue::Integer(value) => usize::try_from(value).ok(),
+            FixedFileTemplateValue::Boolean(value) => Some(usize::from(value)),
+            FixedFileTemplateValue::String(_) => None,
+        };
+    }
+    usize::try_from(eval_i128_expression(expression).ok()?).ok()
 }
 
 fn collect_source_opening_points_from_array_alias(

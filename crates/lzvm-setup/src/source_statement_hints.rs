@@ -772,14 +772,7 @@ fn source_lookup_value_payload_from_expression(
     {
         return hint_payload_from_static_value(value);
     }
-    let operand = source_lookup_scalar_operand(
-        context.program,
-        expression,
-        context.values,
-        context.expression_aliases,
-        context.scalar_slots,
-        0,
-    )?;
+    let operand = source_lookup_scalar_operand(context, expression, 0)?;
     hint_payload_from_code_operand(operand, context.opening_points)
 }
 
@@ -833,35 +826,31 @@ fn parse_source_lookup_expression(
 }
 
 fn source_lookup_scalar_operand(
-    program: &SourceProgram,
+    context: &SourceLookupLowering<'_>,
     expression: &Expression,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-    expression_aliases: &SourceExpressionAliases,
-    scalar_slots: &SourceScalarSlots,
     row_offset: i64,
 ) -> Option<CodeOperand> {
     let mut resolving_aliases = BTreeSet::new();
+    let mut resolving_array_aliases = BTreeSet::new();
     source_lookup_scalar_operand_inner(
-        program,
+        context,
         expression,
-        values,
-        expression_aliases,
-        scalar_slots,
         row_offset,
         &mut resolving_aliases,
+        &mut resolving_array_aliases,
     )
 }
 
 fn source_lookup_scalar_operand_inner(
-    program: &SourceProgram,
+    context: &SourceLookupLowering<'_>,
     expression: &Expression,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-    expression_aliases: &SourceExpressionAliases,
-    scalar_slots: &SourceScalarSlots,
     row_offset: i64,
     resolving_aliases: &mut BTreeSet<String>,
+    resolving_array_aliases: &mut BTreeSet<String>,
 ) -> Option<CodeOperand> {
-    if let Some(value) = evaluate_source_static_expression(program, expression, values) {
+    if let Some(value) =
+        evaluate_source_static_expression(context.program, expression, context.values)
+    {
         return Some(CodeOperand::number(
             canonical_hint_number_from_value(value)?,
             1,
@@ -869,53 +858,110 @@ fn source_lookup_scalar_operand_inner(
     }
     match &strip_group_expression(expression).kind {
         ExpressionKind::Name(name) => {
-            if let Some(alias) = expression_aliases.get(name) {
+            if let Some(alias) = context.expression_aliases.get(name) {
                 if !resolving_aliases.insert(name.clone()) {
                     return None;
                 }
                 let operand = source_lookup_scalar_operand_inner(
-                    program,
+                    context,
                     alias,
-                    values,
-                    expression_aliases,
-                    scalar_slots,
                     row_offset,
                     resolving_aliases,
+                    resolving_array_aliases,
                 );
                 resolving_aliases.remove(name);
                 return operand;
             }
             if row_offset == 0 {
-                scalar_slots.operand(name).ok()
+                context.scalar_slots.operand(name).ok()
             } else {
-                scalar_slots.operand_at(name, row_offset).ok()
+                context.scalar_slots.operand_at(name, row_offset).ok()
             }
         }
         ExpressionKind::Index { target, index } => {
             let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
                 return None;
             };
-            let index = source_lookup_index(program, index, values)?;
-            scalar_slots.operand_index_at(name, index, row_offset).ok()
+            let index = source_lookup_index(context.program, index, context.values)?;
+            if let Some(alias) = context.expression_array_aliases.get(name) {
+                let element = source_lookup_array_alias_element(
+                    alias,
+                    usize::try_from(index).ok()?,
+                    context.expression_array_aliases,
+                    resolving_array_aliases,
+                )?;
+                return match element {
+                    SourceLookupArrayAliasElement::Expression(expression) => {
+                        source_lookup_scalar_operand_inner(
+                            context,
+                            expression,
+                            row_offset,
+                            resolving_aliases,
+                            resolving_array_aliases,
+                        )
+                    }
+                    SourceLookupArrayAliasElement::NamedArray(name) => context
+                        .scalar_slots
+                        .operand_index_at(name, index, row_offset)
+                        .ok(),
+                };
+            }
+            context
+                .scalar_slots
+                .operand_index_at(name, index, row_offset)
+                .ok()
         }
         ExpressionKind::RowOffset {
             target,
             offset,
             prior,
         } => {
-            let signed_offset = source_lookup_row_offset_value(program, offset, *prior, values)?;
+            let signed_offset =
+                source_lookup_row_offset_value(context.program, offset, *prior, context.values)?;
             let combined_offset = row_offset.checked_add(signed_offset)?;
             source_lookup_scalar_operand_inner(
-                program,
+                context,
                 target,
-                values,
-                expression_aliases,
-                scalar_slots,
                 combined_offset,
                 resolving_aliases,
+                resolving_array_aliases,
             )
         }
         _ => None,
+    }
+}
+
+enum SourceLookupArrayAliasElement<'a> {
+    Expression(&'a Expression),
+    NamedArray(&'a str),
+}
+
+fn source_lookup_array_alias_element<'a>(
+    alias: &'a SourceExpressionArrayAlias,
+    index: usize,
+    expression_array_aliases: &'a SourceExpressionArrayAliases,
+    resolving_array_aliases: &mut BTreeSet<String>,
+) -> Option<SourceLookupArrayAliasElement<'a>> {
+    match alias {
+        SourceExpressionArrayAlias::Name(name) => {
+            if let Some(next_alias) = expression_array_aliases.get(name) {
+                if !resolving_array_aliases.insert(name.clone()) {
+                    return None;
+                }
+                let element = source_lookup_array_alias_element(
+                    next_alias,
+                    index,
+                    expression_array_aliases,
+                    resolving_array_aliases,
+                );
+                resolving_array_aliases.remove(name);
+                return element;
+            }
+            Some(SourceLookupArrayAliasElement::NamedArray(name))
+        }
+        SourceExpressionArrayAlias::Values(expressions) => expressions
+            .get(index)
+            .map(SourceLookupArrayAliasElement::Expression),
     }
 }
 
