@@ -101,7 +101,8 @@ pub(crate) fn source_lookup_statement_expressions(
     let Some(first) = tokens.first() else {
         return Ok(None);
     };
-    if first.kind != TokenKind::Identifier || first.lexeme.as_str() != source_lookup_call_name(name)
+    if first.kind != TokenKind::Identifier
+        || !source_lookup_call_matches(name, first.lexeme.as_str())
     {
         return Ok(None);
     }
@@ -135,7 +136,7 @@ pub(crate) fn source_lookup_statement_expressions(
             return Ok(None);
         };
         match argument_name {
-            "mul" | "sel" | "table_id" | "surname" => {}
+            "mul" | "sel" | "table_id" | "name" | "surname" => {}
             _ => return Ok(None),
         }
         let Some(value_range) = source_lookup_argument_value_range(&argument) else {
@@ -212,7 +213,8 @@ fn lower_structured_source_lookup_hint(
     let Some(first) = tokens.first() else {
         return Ok(None);
     };
-    if first.kind != TokenKind::Identifier || first.lexeme.as_str() != source_lookup_call_name(name)
+    if first.kind != TokenKind::Identifier
+        || !source_lookup_call_matches(name, first.lexeme.as_str())
     {
         return Ok(None);
     }
@@ -273,13 +275,14 @@ fn lower_structured_source_lookup_hint(
             "mul" => "multiplicity",
             "sel" => "selector",
             "table_id" => "table_id",
+            "name" => "name",
             "surname" => "surname",
             _ => return Ok(None),
         };
         let Some(value_range) = source_lookup_argument_value_range(&argument) else {
             return Ok(None);
         };
-        let value = if matches!(field_name, "table_id" | "surname") {
+        let value = if matches!(field_name, "table_id" | "name" | "surname") {
             source_lookup_static_value(&context, value_range)
         } else {
             source_lookup_value(&context, value_range)
@@ -312,11 +315,23 @@ fn source_lookup_line_hint(name: &str, line: String) -> HintInfo {
     }
 }
 
-fn source_lookup_call_name(name: &str) -> &'static str {
-    match name {
-        SOURCE_LOOKUP_PROVES_HINT => "lookup_proves",
-        SOURCE_LOOKUP_ASSUMES_HINT => "lookup_assumes",
-        _ => "",
+fn source_lookup_call_matches(hint_name: &str, call_name: &str) -> bool {
+    match hint_name {
+        SOURCE_LOOKUP_PROVES_HINT => matches!(
+            call_name,
+            "lookup_proves"
+                | "permutation_proves"
+                | "direct_update_proves"
+                | "direct_global_update_proves"
+        ),
+        SOURCE_LOOKUP_ASSUMES_HINT => matches!(
+            call_name,
+            "lookup_assumes"
+                | "permutation_assumes"
+                | "direct_update_assumes"
+                | "direct_global_update_assumes"
+        ),
+        _ => false,
     }
 }
 
@@ -890,8 +905,14 @@ fn source_lookup_hint_name(
         return Ok(None);
     };
     match name.as_str() {
-        "lookup_proves" => Ok(Some(SOURCE_LOOKUP_PROVES_HINT)),
-        "lookup_assumes" => Ok(Some(SOURCE_LOOKUP_ASSUMES_HINT)),
+        "lookup_proves"
+        | "permutation_proves"
+        | "direct_update_proves"
+        | "direct_global_update_proves" => Ok(Some(SOURCE_LOOKUP_PROVES_HINT)),
+        "lookup_assumes"
+        | "permutation_assumes"
+        | "direct_update_assumes"
+        | "direct_global_update_assumes" => Ok(Some(SOURCE_LOOKUP_ASSUMES_HINT)),
         _ => Ok(None),
     }
 }
