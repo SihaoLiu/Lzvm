@@ -80,6 +80,12 @@ struct SourceUnitMetadataPayload {
     verifier_path: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SourceChallengeShape {
+    stage: usize,
+    dimension: u32,
+}
+
 impl fmt::Display for SourceKeyDirectoryMetadataError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -1188,7 +1194,7 @@ fn source_challenge_counts(
     program: &SourceProgram,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<Vec<u64>, SourceKeyDirectoryMetadataError> {
-    let mut seen = BTreeSet::new();
+    let mut seen = BTreeMap::<String, SourceChallengeShape>::new();
     let mut counts_by_stage = Vec::<u64>::new();
     for module in &program.modules {
         for declaration in &module.values {
@@ -1207,11 +1213,16 @@ fn source_challenge_counts(
                 if item.template {
                     return unsupported("template challenge names need instance lowering support");
                 }
-                if !seen.insert(item.name.clone()) {
-                    return unsupported("duplicate source challenge name");
-                }
                 let lengths = source_item_lengths(item, "source challenge", constant_values)?;
                 let dimension = source_column_dimension(&lengths, "source challenge")?;
+                let shape = SourceChallengeShape { stage, dimension };
+                if let Some(existing) = seen.get(&item.name) {
+                    if *existing != shape {
+                        return unsupported("duplicate source challenge name");
+                    }
+                    continue;
+                }
+                seen.insert(item.name.clone(), shape);
                 counts_by_stage[stage - 1] = counts_by_stage[stage - 1]
                     .checked_add(u64::from(dimension))
                     .ok_or_else(|| unsupported_source_message("source challenge count overflow"))?;
