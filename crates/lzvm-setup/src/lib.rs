@@ -40,6 +40,7 @@ mod source_program_archive;
 mod source_row_count;
 mod source_scope;
 mod source_static_values;
+mod source_verifier_info;
 mod staging;
 
 pub use backend::*;

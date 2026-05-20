@@ -18,10 +18,7 @@ use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, Boundary, CommitmentColumn, ConstantColumn, EvaluationMapEntry,
     FriStep, SetupInfoError, StageValue, StarkStruct, UnitSetupInfo,
 };
-use lzvm_artifacts::verifier_info::{
-    encode_verifier_info, VerifierCode, VerifierDestination, VerifierInfo, VerifierInfoError,
-    VerifierOperand, VerifierOperation, VerifierOperationKind,
-};
+use lzvm_artifacts::verifier_info::{encode_verifier_info, VerifierInfoError};
 use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
     BinaryOperator, ColumnDeclaration, ColumnItem, ColumnKind, Expression, ExpressionKind,
@@ -43,6 +40,7 @@ use crate::{
         source_scalar_constant_values, source_static_assignment_expression,
         source_static_if_statement_is_false,
     },
+    source_verifier_info::source_verifier_info,
     write_staging_bytes, SetupError,
 };
 
@@ -1257,7 +1255,7 @@ fn source_unit_values(
     program: &SourceProgram,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<Vec<StageValue>, SourceKeyDirectoryMetadataError> {
-    let mut seen = BTreeSet::new();
+    let mut seen = BTreeMap::<String, (u32, Vec<u32>)>::new();
     let mut values = Vec::new();
     for module in &program.modules {
         for declaration in &module.values {
@@ -1289,13 +1287,19 @@ fn source_unit_values(
                 if item.template {
                     return unsupported("template air-value names need instance lowering support");
                 }
-                if !seen.insert(item.name.clone()) {
-                    return unsupported("duplicate source air value name");
+                let lengths = source_item_lengths(item, "source air value", &declaration_values)?;
+                let shape = (declaration.stage, lengths.clone());
+                if let Some(existing) = seen.get(&item.name) {
+                    if *existing != shape {
+                        return unsupported("duplicate source air value name");
+                    }
+                    continue;
                 }
+                seen.insert(item.name.clone(), shape);
                 values.push(StageValue {
                     name: item.name.clone(),
                     stage: declaration.stage,
-                    lengths: source_item_lengths(item, "source air value", &declaration_values)?,
+                    lengths,
                 });
             }
         }
@@ -1770,29 +1774,5 @@ fn parse_i128_literal(value: &str) -> Result<i128, SourceKeyDirectoryMetadataErr
         value
             .parse::<i128>()
             .map_err(|_| unsupported_source_message("invalid source integer literal"))
-    }
-}
-
-fn source_verifier_info() -> VerifierInfo {
-    let code = VerifierCode {
-        expression_id: None,
-        stage: None,
-        line: "constant verifier expression".to_owned(),
-        temporary_count: 1,
-        operations: vec![VerifierOperation {
-            op: VerifierOperationKind::Copy,
-            destination: VerifierDestination {
-                temporary_id: 0,
-                dimension: 3,
-            },
-            sources: vec![VerifierOperand::Number {
-                value: 1,
-                dimension: 1,
-            }],
-        }],
-    };
-    VerifierInfo {
-        quotient: code.clone(),
-        query: code,
     }
 }
