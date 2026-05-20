@@ -84,6 +84,62 @@ impl SourceStaticValueLookup for BTreeMap<String, FixedFileTemplateValue> {
     }
 }
 
+pub(crate) fn insert_source_static_array(
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    name: &str,
+    elements: Vec<FixedFileTemplateValue>,
+) -> Option<()> {
+    let length = i128::try_from(elements.len()).ok()?;
+    values.insert(
+        source_static_array_length_key(name),
+        FixedFileTemplateValue::Integer(length),
+    );
+    for (index, value) in elements.into_iter().enumerate() {
+        values.insert(source_static_array_element_key(name, index), value);
+    }
+    Some(())
+}
+
+pub(crate) fn source_static_array_values(
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    name: &str,
+) -> Option<Vec<FixedFileTemplateValue>> {
+    let length = usize::try_from(source_static_array_length(values, name)?).ok()?;
+    (0..length)
+        .map(|index| source_static_array_element(values, name, index))
+        .collect()
+}
+
+pub(crate) fn source_static_array_length(
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    name: &str,
+) -> Option<i128> {
+    let FixedFileTemplateValue::Integer(length) =
+        values.get(&source_static_array_length_key(name))?
+    else {
+        return None;
+    };
+    Some(*length)
+}
+
+pub(crate) fn source_static_array_element(
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    name: &str,
+    index: usize,
+) -> Option<FixedFileTemplateValue> {
+    values
+        .get(&source_static_array_element_key(name, index))
+        .cloned()
+}
+
+fn source_static_array_length_key(name: &str) -> String {
+    format!("__lzvm_array_len::{name}")
+}
+
+fn source_static_array_element_key(name: &str, index: usize) -> String {
+    format!("__lzvm_array_value::{name}::{index}")
+}
+
 pub(crate) fn evaluate_source_static_expression(
     program: &SourceProgram,
     expression: &Expression,

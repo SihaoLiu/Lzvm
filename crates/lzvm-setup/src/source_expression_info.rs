@@ -1,12 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 
 use lzvm_artifacts::expression_info::{ConstraintCode, ExpressionInfo, HintInfo};
 use lzvm_artifacts::global_info::{NamedStageValue, PublicValue};
 use lzvm_artifacts::setup_info::UnitSetupInfo;
 use lzvm_pil::{
-    lex_source, BinaryOperator, CallArgument, ColumnKind, Expression, ExpressionKind,
-    FixedFileTemplateValue, FunctionDeclaration, FunctionStatement, FunctionStatementDeclaration,
-    FunctionStatementKind, SourceProgram, SourceProgramModule, TokenKind, UnaryOperator,
+    lex_source, parse_expression_tokens, BinaryOperator, CallArgument, ColumnKind, Expression,
+    ExpressionKind, FixedFileTemplateValue, FunctionDeclaration, FunctionStatement,
+    FunctionStatementDeclaration, FunctionStatementKind, SourceFile, SourceProgram,
+    SourceProgramModule, SourceSpan, Token, TokenKind, UnaryOperator,
 };
 
 use crate::{
@@ -31,9 +33,10 @@ use crate::{
         source_statement_first_token_kind, source_statement_line,
     },
     source_static_values::{
-        evaluate_source_static_expression, source_declaration_constant_values_from_cache,
-        source_scalar_constant_values, source_static_assignment_expression,
-        source_template_constant_value_cache,
+        evaluate_source_static_expression, insert_source_static_array,
+        source_declaration_constant_values_from_cache, source_scalar_constant_values,
+        source_static_array_length, source_static_array_values,
+        source_static_assignment_expression, source_template_constant_value_cache,
     },
     source_template_context::SourceTemplateLoweringContext,
     source_template_for::source_static_for_loop_with_tokens,
@@ -408,7 +411,7 @@ fn lower_source_template_function_call(
         return Ok(false);
     }
     let Some(mut function_values) =
-        source_function_call_values(context.program, function, arguments, values)
+        source_function_call_values(context.program, context.module, function, arguments, values)
     else {
         return Ok(false);
     };
@@ -434,48 +437,156 @@ fn lower_source_template_function_call(
 
 fn source_function_call_values(
     program: &SourceProgram,
+    module: &SourceProgramModule,
     function: &FunctionDeclaration,
     arguments: &[CallArgument],
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Option<BTreeMap<String, FixedFileTemplateValue>> {
     let mut function_values = values.clone();
     for parameter in &function.parameters {
-        if !source_scalar_const_parameter(parameter) {
+        if !source_const_parameter(parameter) {
             return None;
         }
-        if let Some(expression) = parameter.default_expression.as_ref() {
+        if parameter.array_dims.is_empty() {
+            let Some(expression) = parameter.default_expression.as_ref() else {
+                continue;
+            };
             let value = evaluate_source_static_expression(program, expression, &function_values)?;
             function_values.insert(parameter.name.clone(), value);
+            continue;
+        }
+        if let Some(span) = parameter.default_value {
+            let elements = source_static_array_literal(program, module, span, &function_values)?;
+            insert_source_static_array(&mut function_values, &parameter.name, elements)?;
         }
     }
 
     let mut positional_index = 0;
     for argument in arguments {
-        let value = evaluate_source_static_expression(program, &argument.value, &function_values)?;
         if let Some(name) = argument.name.as_ref() {
             let parameter = function
                 .parameters
                 .iter()
                 .find(|parameter| parameter.name == *name)?;
-            if !source_scalar_const_parameter(parameter) {
+            if !source_const_parameter(parameter) {
                 return None;
             }
-            function_values.insert(name.clone(), value);
+            source_bind_function_argument(
+                program,
+                parameter,
+                &argument.value,
+                &mut function_values,
+            )?;
             continue;
         }
         let parameter = function.parameters.get(positional_index)?;
-        if !source_scalar_const_parameter(parameter) {
+        if !source_const_parameter(parameter) {
             return None;
         }
-        function_values.insert(parameter.name.clone(), value);
+        source_bind_function_argument(program, parameter, &argument.value, &mut function_values)?;
         positional_index += 1;
     }
 
     Some(function_values)
 }
 
-fn source_scalar_const_parameter(parameter: &lzvm_pil::FunctionParameter) -> bool {
-    parameter.is_const && !parameter.by_reference && parameter.array_dims.is_empty()
+fn source_bind_function_argument(
+    program: &SourceProgram,
+    parameter: &lzvm_pil::FunctionParameter,
+    expression: &Expression,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<()> {
+    if parameter.array_dims.is_empty() {
+        let value = evaluate_source_static_expression(program, expression, values)?;
+        values.insert(parameter.name.clone(), value);
+        return Some(());
+    }
+    let name = source_expression_name(expression)?;
+    let elements = source_static_array_values(values, name)?;
+    insert_source_static_array(values, &parameter.name, elements)
+}
+
+fn source_const_parameter(parameter: &lzvm_pil::FunctionParameter) -> bool {
+    parameter.is_const && !parameter.by_reference
+}
+
+fn source_static_array_literal(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    span: SourceSpan,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<Vec<FixedFileTemplateValue>> {
+    let contents = module.source.contents.get(span.start..span.end)?;
+    let tokens = lex_source(contents).ok()?;
+    if tokens.first()?.kind != TokenKind::LBracket {
+        return None;
+    }
+    let close_index = tokens
+        .iter()
+        .position(|token| token.kind == TokenKind::RBracket)?;
+    let ranges = source_top_level_ranges(&tokens, 0, close_index)?;
+    let source = SourceFile {
+        contents: contents.to_owned(),
+        file_dir: PathBuf::new(),
+        full_path: PathBuf::new(),
+        source_name: module.source_name.clone(),
+    };
+    ranges
+        .into_iter()
+        .map(|range| {
+            let (expression, consumed) =
+                parse_expression_tokens(&tokens, range.0, range.1, &source).ok()?;
+            if consumed != range.1 {
+                return None;
+            }
+            evaluate_source_static_expression(program, &expression, values)
+        })
+        .collect()
+}
+
+fn source_top_level_ranges(
+    tokens: &[Token],
+    open_index: usize,
+    close_index: usize,
+) -> Option<Vec<(usize, usize)>> {
+    if open_index >= close_index {
+        return None;
+    }
+    let mut ranges = Vec::new();
+    let mut start = open_index + 1;
+    let mut expected = Vec::<TokenKind>::new();
+    for (index, token) in tokens
+        .iter()
+        .enumerate()
+        .take(close_index)
+        .skip(open_index + 1)
+    {
+        match token.kind {
+            TokenKind::LParen => expected.push(TokenKind::RParen),
+            TokenKind::LBracket => expected.push(TokenKind::RBracket),
+            TokenKind::LBrace => expected.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                if expected.pop()? != token.kind {
+                    return None;
+                }
+            }
+            TokenKind::Comma if expected.is_empty() => {
+                if start == index {
+                    return None;
+                }
+                ranges.push((start, index));
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    if !expected.is_empty() {
+        return None;
+    }
+    if start < close_index {
+        ranges.push((start, close_index));
+    }
+    Some(ranges)
 }
 
 fn source_call_expression(expression: Option<&Expression>) -> Option<(&str, &[CallArgument])> {
@@ -499,14 +610,70 @@ fn source_static_assertion(
     if name != "assert" || arguments.len() != 1 || arguments[0].name.is_some() {
         return false;
     }
-    evaluate_source_static_expression(program, &arguments[0].value, values)
-        .is_some_and(source_static_value_truthy)
+    source_static_condition(program, &arguments[0].value, values).unwrap_or(false)
 }
 
-fn source_static_value_truthy(value: FixedFileTemplateValue) -> bool {
+fn source_static_condition(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<bool> {
+    if let Some(value) = evaluate_source_static_expression(program, expression, values) {
+        return Some(source_static_truthy_value(&value));
+    }
+    let ExpressionKind::Binary { op, left, right } =
+        &strip_source_group_expression(expression).kind
+    else {
+        return None;
+    };
+    let left = source_static_integer_expression(program, left, values)?;
+    let right = source_static_integer_expression(program, right, values)?;
+    match op {
+        BinaryOperator::Less => Some(left < right),
+        BinaryOperator::LessEqual => Some(left <= right),
+        BinaryOperator::Greater => Some(left > right),
+        BinaryOperator::GreaterEqual => Some(left >= right),
+        BinaryOperator::EqualEqual | BinaryOperator::TripleEqual => Some(left == right),
+        BinaryOperator::NotEqual => Some(left != right),
+        _ => None,
+    }
+}
+
+fn source_static_integer_expression(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<i128> {
+    let expression = strip_source_group_expression(expression);
+    if let ExpressionKind::Call { callee, args } = &expression.kind {
+        if args.len() == 1 && args[0].name.is_none() {
+            if let ExpressionKind::Name(callee) = &strip_source_group_expression(callee).kind {
+                if callee == "length" {
+                    let ExpressionKind::Name(name) =
+                        &strip_source_group_expression(&args[0].value).kind
+                    else {
+                        return None;
+                    };
+                    return source_static_array_length(values, name);
+                }
+            }
+        }
+    }
+    let value = evaluate_source_static_expression(program, expression, values)?;
+    source_static_integer_value(Some(&value))
+}
+
+fn strip_source_group_expression(expression: &Expression) -> &Expression {
+    match &expression.kind {
+        ExpressionKind::Group(inner) => strip_source_group_expression(inner),
+        _ => expression,
+    }
+}
+
+fn source_static_truthy_value(value: &FixedFileTemplateValue) -> bool {
     match value {
-        FixedFileTemplateValue::Integer(value) => value != 0,
-        FixedFileTemplateValue::Boolean(value) => value,
+        FixedFileTemplateValue::Integer(value) => *value != 0,
+        FixedFileTemplateValue::Boolean(value) => *value,
         FixedFileTemplateValue::String(value) => !value.is_empty(),
     }
 }

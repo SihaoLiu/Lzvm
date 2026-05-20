@@ -16,7 +16,10 @@ use lzvm_pil::{
 };
 
 use crate::{
-    source_scalar_slots::SourceScalarSlots, source_static_values::evaluate_source_static_expression,
+    source_scalar_slots::SourceScalarSlots,
+    source_static_values::{
+        evaluate_source_static_expression, source_static_array_element, source_static_array_values,
+    },
 };
 
 pub(crate) fn source_statement_first_token_kind(
@@ -492,6 +495,17 @@ fn source_lookup_spread_values(
     context: &SourceLookupLowering<'_>,
     name: &str,
 ) -> Option<Vec<HintValueInfo>> {
+    if let Some(values) = source_static_array_values(context.values, name) {
+        return values
+            .into_iter()
+            .map(|value| {
+                Some(HintValueInfo {
+                    positions: Vec::new(),
+                    payload: hint_payload_from_static_value(value)?,
+                })
+            })
+            .collect();
+    }
     context
         .scalar_slots
         .operand_elements_at(name, 0)
@@ -547,18 +561,13 @@ fn source_lookup_value_payload(
 ) -> Option<HintPayload> {
     let expression =
         parse_source_lookup_expression(context.module, context.line, context.tokens, range)?;
+    if let Some(value) = source_lookup_static_array_element(context, &expression) {
+        return hint_payload_from_static_value(value);
+    }
     if let Some(value) =
         evaluate_source_static_expression(context.program, &expression, context.values)
     {
-        match value {
-            FixedFileTemplateValue::Integer(value) => {
-                return Some(HintPayload::number(canonical_hint_number(value)?));
-            }
-            FixedFileTemplateValue::Boolean(value) => {
-                return Some(HintPayload::number(u64::from(value)));
-            }
-            FixedFileTemplateValue::String(_) => return None,
-        }
+        return hint_payload_from_static_value(value);
     }
     let operand = source_lookup_scalar_operand(
         context.program,
@@ -568,6 +577,31 @@ fn source_lookup_value_payload(
         0,
     )?;
     hint_payload_from_code_operand(operand, context.opening_points)
+}
+
+fn source_lookup_static_array_element(
+    context: &SourceLookupLowering<'_>,
+    expression: &Expression,
+) -> Option<FixedFileTemplateValue> {
+    let ExpressionKind::Index { target, index } = &strip_group_expression(expression).kind else {
+        return None;
+    };
+    let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
+        return None;
+    };
+    let index =
+        usize::try_from(source_lookup_index(context.program, index, context.values)?).ok()?;
+    source_static_array_element(context.values, name, index)
+}
+
+fn hint_payload_from_static_value(value: FixedFileTemplateValue) -> Option<HintPayload> {
+    match value {
+        FixedFileTemplateValue::Integer(value) => {
+            Some(HintPayload::number(canonical_hint_number(value)?))
+        }
+        FixedFileTemplateValue::Boolean(value) => Some(HintPayload::number(u64::from(value))),
+        FixedFileTemplateValue::String(_) => None,
+    }
 }
 
 fn parse_source_lookup_expression(
