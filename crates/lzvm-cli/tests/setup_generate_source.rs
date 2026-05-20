@@ -5,7 +5,9 @@ use lzvm_artifacts::expression_info::read_expression_info_binary_file;
 use lzvm_artifacts::fixed::parse_raw_fixed_columns;
 use lzvm_artifacts::global_info::read_global_info_binary_file;
 use lzvm_artifacts::global_program::read_global_program_file;
-use lzvm_artifacts::key_directory::{read_key_directory_catalog, read_key_directory_layout};
+use lzvm_artifacts::key_directory::{
+    read_key_directory_catalog, read_key_directory_layout, KeyUnitKind,
+};
 use lzvm_artifacts::regular_program::read_regular_program_file;
 use lzvm_artifacts::setup_info::read_unit_setup_info_binary_file;
 use lzvm_artifacts::setup_manifest::SETUP_DIRECTORY_MANIFEST_FILE;
@@ -883,6 +885,65 @@ fn generate_key_uses_source_template_row_count_for_fill_sequences() {
     .expect("fixed columns should parse");
     assert_eq!(columns.row_count, 4);
     assert_eq!(columns.columns[0].values, [1, 0, 0, 0]);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_writes_per_unit_source_row_counts() {
+    let dir = temp_dir("per-unit-row-counts");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(const int N = 2) { }\n\
+         airtemplate UnitB(const int N = 4) { }\n\
+         airgroup GroupA { UnitA(); UnitB(); }",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
+        .expect("source global metadata should parse");
+    assert_eq!(global.airs[0][0].num_rows, 2);
+    assert_eq!(global.airs[0][1].num_rows, 4);
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let basic_units = layout
+        .units
+        .iter()
+        .filter(|unit| unit.kind == KeyUnitKind::Basic)
+        .collect::<Vec<_>>();
+    let first_setup = read_unit_setup_info_binary_file(
+        basic_units[0]
+            .setup_info_binary()
+            .expect("first setup metadata path should derive"),
+    )
+    .expect("first setup metadata should parse");
+    let second_setup = read_unit_setup_info_binary_file(
+        basic_units[1]
+            .setup_info_binary()
+            .expect("second setup metadata path should derive"),
+    )
+    .expect("second setup metadata should parse");
+    assert_eq!(first_setup.stark.n_bits, 1);
+    assert_eq!(second_setup.stark.n_bits, 2);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
     assert!(String::from_utf8(stdout)
         .expect("stdout should be utf-8")

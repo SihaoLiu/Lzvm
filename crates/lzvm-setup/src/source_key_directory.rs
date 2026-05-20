@@ -13,7 +13,7 @@ use lzvm_artifacts::global_info::{
 };
 use lzvm_artifacts::global_program::{encode_global_program, GlobalProgram, GlobalProgramError};
 use lzvm_artifacts::hint_program::HintProgram;
-use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyDirectoryError};
+use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyDirectoryError, KeyUnitPaths};
 use lzvm_artifacts::setup_info::{
     encode_unit_setup_info, Boundary, CommitmentColumn, ConstantColumn, EvaluationMapEntry,
     FriStep, SetupInfoError, StageValue, StarkStruct, UnitSetupInfo,
@@ -31,8 +31,9 @@ use lzvm_pil::{
 };
 
 use crate::{
-    publish_staging_bytes, source_row_count::infer_source_row_count, write_staging_bytes,
-    SetupError,
+    publish_staging_bytes,
+    source_row_count::{infer_source_row_counts, SourceUnitRowCounts},
+    write_staging_bytes, SetupError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,6 +70,14 @@ pub enum SourceKeyDirectoryMetadataError {
     UnsupportedSourceProgram {
         message: String,
     },
+}
+
+struct SourceUnitMetadataPayload {
+    setup_path: PathBuf,
+    setup_bytes: Vec<u8>,
+    expression_path: Option<PathBuf>,
+    expression_bytes: Vec<u8>,
+    verifier_path: Option<PathBuf>,
 }
 
 impl fmt::Display for SourceKeyDirectoryMetadataError {
@@ -178,62 +187,87 @@ pub fn write_source_key_directory_metadata(
         .map_err(SourceKeyDirectoryMetadataError::SourceProgram)?;
     validate_supported_source_program(&program)?;
 
-    let row_count = infer_source_row_count(&program)?;
-    let global_info = source_global_info(&program, row_count)?;
-    let mut setup_info = source_unit_setup_info(&program, row_count)?;
-    let expression_info = source_expression_info(&program, &setup_info)?;
-    setup_info.n_constraints = Some(
-        u32::try_from(expression_info.constraints.len())
-            .map_err(|_| unsupported_source_message("too many source constraints"))?,
-    );
-    if !expression_info.constraints.is_empty() && setup_info.n_stages == 0 {
-        setup_info.n_stages = 1;
-        setup_info
-            .section_widths
-            .entry("cm2".to_owned())
-            .or_insert(1);
-    }
-    let verifier_info = source_verifier_info();
+    let row_counts = infer_source_row_counts(&program)?;
+    let global_info = source_global_info(&program, &row_counts)?;
     let global_program = source_global_program(&program, &global_info)?;
+    let global_info_path = request.setup_dir.join("pilout.globalInfo.bin");
+    let global_info_bytes = encode_global_info(&global_info)?;
+    let global_program_bytes = encode_global_program(&global_program)?;
+    let verifier_bytes = encode_verifier_info(&source_verifier_info())?;
 
     let mut bytes_written = 0_u64;
     bytes_written = bytes_written.saturating_add(write_validated_bytes(
-        &request.setup_dir.join("pilout.globalInfo.bin"),
-        &encode_global_info(&global_info)?,
+        &global_info_path,
+        &global_info_bytes,
         "write source global metadata staging file",
         "publish source global metadata",
     )?);
+
+    let payload_result = (|| {
+        let layout = read_key_directory_layout(&request.setup_dir)?;
+        let mut unit_payloads = Vec::new();
+        for unit in &layout.units {
+            let Some(setup_path) = unit.setup_info_binary() else {
+                continue;
+            };
+            let row_count = source_layout_unit_row_count(unit, &row_counts)?;
+            let mut setup_info = source_unit_setup_info(&program, row_count)?;
+            let expression_info = source_expression_info(&program, &setup_info)?;
+            setup_info.n_constraints = Some(
+                u32::try_from(expression_info.constraints.len())
+                    .map_err(|_| unsupported_source_message("too many source constraints"))?,
+            );
+            if !expression_info.constraints.is_empty() && setup_info.n_stages == 0 {
+                setup_info.n_stages = 1;
+                setup_info
+                    .section_widths
+                    .entry("cm2".to_owned())
+                    .or_insert(1);
+            }
+            let setup_bytes = encode_unit_setup_info(&setup_info)?;
+            let expression_bytes =
+                lzvm_artifacts::expression_info::encode_expression_info(&expression_info)?;
+            unit_payloads.push(SourceUnitMetadataPayload {
+                setup_path,
+                setup_bytes,
+                expression_path: unit.expression_info_binary(),
+                expression_bytes,
+                verifier_path: unit.verifier_info_binary(),
+            });
+        }
+        Ok::<_, SourceKeyDirectoryMetadataError>((layout.units.len(), unit_payloads))
+    })();
+    let (unit_count, unit_payloads) = match payload_result {
+        Ok(payload) => payload,
+        Err(error) => {
+            let _ = std::fs::remove_file(&global_info_path);
+            return Err(error);
+        }
+    };
+
     bytes_written = bytes_written.saturating_add(write_validated_bytes(
         &request.setup_dir.join("pilout.globalConstraints.bin"),
-        &encode_global_program(&global_program)?,
+        &global_program_bytes,
         "write source global program staging file",
         "publish source global program",
     )?);
 
-    let layout = read_key_directory_layout(&request.setup_dir)?;
-    let setup_bytes = encode_unit_setup_info(&setup_info)?;
-    let expression_bytes =
-        lzvm_artifacts::expression_info::encode_expression_info(&expression_info)?;
-    let verifier_bytes = encode_verifier_info(&verifier_info)?;
-    for unit in &layout.units {
-        let Some(setup_path) = unit.setup_info_binary() else {
-            continue;
-        };
+    for payload in unit_payloads {
         bytes_written = bytes_written.saturating_add(write_validated_bytes(
-            &setup_path,
-            &setup_bytes,
+            &payload.setup_path,
+            &payload.setup_bytes,
             "write source setup metadata staging file",
             "publish source setup metadata",
         )?);
-        if let Some(path) = unit.expression_info_binary() {
+        if let Some(path) = payload.expression_path {
             bytes_written = bytes_written.saturating_add(write_validated_bytes(
                 &path,
-                &expression_bytes,
+                &payload.expression_bytes,
                 "write source expression metadata staging file",
                 "publish source expression metadata",
             )?);
         }
-        if let Some(path) = unit.verifier_info_binary() {
+        if let Some(path) = payload.verifier_path {
             bytes_written = bytes_written.saturating_add(write_validated_bytes(
                 &path,
                 &verifier_bytes,
@@ -245,7 +279,7 @@ pub fn write_source_key_directory_metadata(
 
     Ok(SourceKeyDirectoryMetadataReport {
         setup_dir: request.setup_dir.clone(),
-        unit_count: layout.units.len(),
+        unit_count,
         bytes_written,
     })
 }
@@ -258,6 +292,35 @@ fn write_validated_bytes(
 ) -> Result<u64, SourceKeyDirectoryMetadataError> {
     let staging_path = write_staging_bytes(path, bytes, write_role)?;
     publish_staging_bytes(&staging_path, path, publish_role).map_err(Into::into)
+}
+
+fn source_layout_unit_row_count(
+    unit: &KeyUnitPaths,
+    row_counts: &SourceUnitRowCounts,
+) -> Result<u64, SourceKeyDirectoryMetadataError> {
+    if let (Some(group_id), Some(unit_id)) = (unit.group_id, unit.unit_id) {
+        return row_counts
+            .get(&(group_id, unit_id))
+            .copied()
+            .ok_or_else(|| {
+                unsupported_source_message(format!(
+                    "missing source row count for group {group_id} unit {unit_id}"
+                ))
+            });
+    }
+    if let Some(group_id) = unit.group_id {
+        if let Some((_, row_count)) = row_counts
+            .iter()
+            .find(|((candidate_group_id, _), _)| *candidate_group_id == group_id)
+        {
+            return Ok(*row_count);
+        }
+    }
+    row_counts
+        .values()
+        .next()
+        .copied()
+        .ok_or_else(|| unsupported_source_message("source row counts are empty"))
 }
 
 fn validate_supported_source_program(
@@ -958,8 +1021,9 @@ fn unsupported<T>(message: impl Into<String>) -> Result<T, SourceKeyDirectoryMet
 
 fn source_global_info(
     program: &SourceProgram,
-    row_count: u64,
+    row_counts: &SourceUnitRowCounts,
 ) -> Result<GlobalInfo, SourceKeyDirectoryMetadataError> {
+    let row_count = row_counts.values().next().copied().unwrap_or(2);
     let constant_values = source_scalar_constant_values(program, row_count);
     let num_challenges = source_challenge_counts(program, &constant_values)?;
     let (num_proof_values, proof_values_map) = source_proof_values(program, &constant_values)?;
@@ -1002,6 +1066,14 @@ fn source_global_info(
             if expected_unit_id != unit_id {
                 return unsupported("source unit ids must be contiguous within each group");
             }
+            let row_count = row_counts
+                .get(&(group_id, unit_id))
+                .copied()
+                .ok_or_else(|| {
+                    unsupported_source_message(format!(
+                        "missing source row count for group {group_id} unit {unit_id}"
+                    ))
+                })?;
             group_units.push(GlobalAir {
                 name: unit_name,
                 num_rows: row_count,

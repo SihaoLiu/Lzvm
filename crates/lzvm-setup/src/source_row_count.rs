@@ -8,10 +8,12 @@ use lzvm_pil::{
 
 use crate::source_key_directory::SourceKeyDirectoryMetadataError;
 
-pub(crate) fn infer_source_row_count(
+pub(crate) type SourceUnitRowCounts = BTreeMap<(usize, usize), u64>;
+
+pub(crate) fn infer_source_row_counts(
     program: &SourceProgram,
-) -> Result<u64, SourceKeyDirectoryMetadataError> {
-    let mut row_count = infer_source_row_count_from_air_units(program)?;
+) -> Result<SourceUnitRowCounts, SourceKeyDirectoryMetadataError> {
+    let mut row_counts = infer_source_row_counts_from_air_units(program)?;
     for module in &program.modules {
         for declaration in &module.columns {
             if declaration.kind != ColumnKind::Fixed {
@@ -29,18 +31,31 @@ pub(crate) fn infer_source_row_count(
                 .get(initializer.span.start..initializer.span.end)
                 .ok_or_else(|| unsupported_source_message("source fixed-column span is invalid"))?;
             match count_source_sequence_items(text) {
-                Ok(count) => merge_source_row_count(&mut row_count, count)?,
-                Err(_) if row_count.is_some() => {}
+                Ok(count) => merge_source_sequence_count(program, &mut row_counts, count)?,
+                Err(_) if !row_counts.is_empty() => {}
                 Err(error) => return Err(error),
             }
         }
     }
-    Ok(row_count.unwrap_or(2))
+    if row_counts.is_empty() {
+        for unit in program
+            .air_units()
+            .into_iter()
+            .filter(|unit| !unit.virtual_instance)
+        {
+            let group_id = usize::try_from(unit.group_id)
+                .map_err(|_| unsupported_source_message("negative source group id"))?;
+            let unit_id = usize::try_from(unit.unit_id)
+                .map_err(|_| unsupported_source_message("negative source unit id"))?;
+            row_counts.insert((group_id, unit_id), 2);
+        }
+    }
+    Ok(row_counts)
 }
 
-fn infer_source_row_count_from_air_units(
+fn infer_source_row_counts_from_air_units(
     program: &SourceProgram,
-) -> Result<Option<u64>, SourceKeyDirectoryMetadataError> {
+) -> Result<SourceUnitRowCounts, SourceKeyDirectoryMetadataError> {
     let templates = program
         .modules
         .iter()
@@ -48,13 +63,26 @@ fn infer_source_row_count_from_air_units(
         .map(|template| (template.name.as_str(), template))
         .collect::<BTreeMap<_, _>>();
     let constants = source_static_constant_values(program);
-    let mut row_count = None;
-    for instance in program
+    let mut row_counts = SourceUnitRowCounts::new();
+    let units = program
+        .air_units()
+        .into_iter()
+        .filter(|unit| !unit.virtual_instance)
+        .collect::<Vec<_>>();
+    let instances = program
         .modules
         .iter()
         .flat_map(|module| module.air_instances.iter())
         .filter(|instance| !instance.virtual_instance)
-    {
+        .collect::<Vec<_>>();
+    for (unit, instance) in units.into_iter().zip(instances) {
+        let group_id = usize::try_from(unit.group_id)
+            .map_err(|_| unsupported_source_message("negative source group id"))?;
+        let unit_id = usize::try_from(unit.unit_id)
+            .map_err(|_| unsupported_source_message("negative source unit id"))?;
+        if unit.template_name != instance.template {
+            return unsupported("source air unit order mismatch");
+        }
         let Some(template) = templates.get(instance.template.as_str()).copied() else {
             continue;
         };
@@ -64,9 +92,10 @@ fn infer_source_row_count_from_air_units(
         };
         let value = u64::try_from(*value)
             .map_err(|_| unsupported_source_message("source row count is out of range"))?;
-        merge_source_row_count(&mut row_count, value)?;
+        validate_source_row_count(value)?;
+        row_counts.insert((group_id, unit_id), value);
     }
-    Ok(row_count)
+    Ok(row_counts)
 }
 
 fn source_air_instance_parameter_values(
@@ -157,21 +186,39 @@ fn source_static_constant_values(
     values
 }
 
-fn merge_source_row_count(
-    row_count: &mut Option<u64>,
+fn merge_source_sequence_count(
+    program: &SourceProgram,
+    row_counts: &mut SourceUnitRowCounts,
     value: u64,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
+    validate_source_row_count(value)?;
+    if row_counts.is_empty() {
+        for unit in program
+            .air_units()
+            .into_iter()
+            .filter(|unit| !unit.virtual_instance)
+        {
+            let group_id = usize::try_from(unit.group_id)
+                .map_err(|_| unsupported_source_message("negative source group id"))?;
+            let unit_id = usize::try_from(unit.unit_id)
+                .map_err(|_| unsupported_source_message("negative source unit id"))?;
+            row_counts.insert((group_id, unit_id), value);
+        }
+        return Ok(());
+    }
+    for row_count in row_counts.values().copied() {
+        if row_count != value {
+            return unsupported("source row counts must match");
+        }
+    }
+    Ok(())
+}
+
+fn validate_source_row_count(value: u64) -> Result<(), SourceKeyDirectoryMetadataError> {
     if value == 0 || !value.is_power_of_two() {
         return unsupported("source row count must be a power of two");
     }
-    match *row_count {
-        Some(expected) if expected != value => unsupported("source row counts must match"),
-        Some(_) => Ok(()),
-        None => {
-            *row_count = Some(value);
-            Ok(())
-        }
-    }
+    Ok(())
 }
 
 fn count_source_sequence_items(text: &str) -> Result<u64, SourceKeyDirectoryMetadataError> {
