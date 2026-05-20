@@ -236,15 +236,15 @@ fn lower_structured_source_lookup_hint(
     };
 
     let first_argument = split_named_argument(&tokens, arguments[0]);
-    if first_argument.name.is_some() {
+    let Some(bus_id_range) = source_lookup_bus_id_argument_value_range(&first_argument) else {
         return Ok(None);
-    }
+    };
     let Some(bus_id) = parse_unsigned_argument(
         inputs.program,
         inputs.module,
         line,
         &tokens,
-        first_argument.value_range,
+        bus_id_range,
         inputs.values,
     ) else {
         return Ok(None);
@@ -422,6 +422,15 @@ fn source_lookup_argument_value_range(argument: &SourceLookupArgument) -> Option
         return Some(argument.value_range);
     }
     argument.name_range
+}
+
+fn source_lookup_bus_id_argument_value_range(
+    argument: &SourceLookupArgument,
+) -> Option<(usize, usize)> {
+    match argument.name.as_deref() {
+        None | Some("opid") | Some("bus_id") => source_lookup_argument_value_range(argument),
+        _ => None,
+    }
 }
 
 fn source_lookup_extra_field(
