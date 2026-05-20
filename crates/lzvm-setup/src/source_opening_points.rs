@@ -132,11 +132,9 @@ fn collect_source_statement_opening_points(
             body_cache,
         ) {
             Ok(Some(loop_info)) => {
-                for iteration_values in &loop_info.iteration_values {
+                for iteration_value in &loop_info.iteration_values {
                     let mut loop_aliases = expression_aliases.clone();
-                    if let Some(value) = iteration_values.get(&loop_info.variable_name) {
-                        values.insert(loop_info.variable_name.clone(), value.clone());
-                    }
+                    values.insert(loop_info.variable_name.clone(), iteration_value.clone());
                     for body_statement in &loop_info.body_statements {
                         collect_source_statement_opening_points(
                             context,

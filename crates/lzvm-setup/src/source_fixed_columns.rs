@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::PathBuf;
@@ -15,7 +14,7 @@ use lzvm_pil::{
     BinaryOperator, ColumnInitializer, ColumnInitializerKind, ColumnItem, ColumnKind,
     ConstantDeclaration, Expression, ExpressionKind, FixedFileTemplateValue, FunctionStatement,
     FunctionStatementKind, LexError, ParseError, SourceLoaderConfig, SourceProgram,
-    SourceProgramError, SourceProgramLoader, SourceProgramModule, SourceSpan,
+    SourceProgramError, SourceProgramLoader, SourceProgramModule, SourceSpan, UnaryOperator,
 };
 
 use crate::{
@@ -650,7 +649,7 @@ fn source_fixed_values_from_template_assignments(
     let mut partial_values = BTreeMap::<String, Vec<Option<u64>>>::new();
     for module in &program.modules {
         for template in &module.air_templates {
-            let local_values = BTreeMap::new();
+            let assignment_values = SourceFixedAssignmentValues::base(constant_values);
             let context = SourceFixedTemplateAssignmentContext {
                 program,
                 module,
@@ -661,8 +660,7 @@ fn source_fixed_values_from_template_assignments(
                 collect_source_fixed_template_assignment(
                     &context,
                     statement,
-                    constant_values,
-                    &local_values,
+                    &assignment_values,
                     &mut partial_values,
                 )?;
             }
@@ -688,32 +686,71 @@ struct SourceFixedTemplateAssignmentContext<'a> {
 }
 
 struct SourceFixedAssignmentValues<'a> {
-    scalars: Cow<'a, BTreeMap<String, FixedFileTemplateValue>>,
+    base_scalars: &'a BTreeMap<String, FixedFileTemplateValue>,
+    overlays: Vec<(String, FixedFileTemplateValue)>,
     arrays: &'a BTreeMap<String, Vec<u64>>,
+}
+
+impl<'a> SourceFixedAssignmentValues<'a> {
+    fn base(constant_values: &'a SourceFixedConstantValues) -> Self {
+        Self {
+            base_scalars: &constant_values.scalars,
+            overlays: Vec::new(),
+            arrays: &constant_values.arrays,
+        }
+    }
+
+    fn with_loop_value(
+        base: &SourceFixedAssignmentValues<'a>,
+        variable_name: &str,
+        value: &FixedFileTemplateValue,
+    ) -> Self {
+        let mut overlays = base.overlays.clone();
+        overlays.push((variable_name.to_owned(), value.clone()));
+        Self {
+            base_scalars: base.base_scalars,
+            overlays,
+            arrays: base.arrays,
+        }
+    }
+
+    fn scalar_value(&self, name: &str) -> Option<FixedFileTemplateValue> {
+        self.overlays
+            .iter()
+            .rev()
+            .find_map(|(candidate, value)| (candidate == name).then(|| value.clone()))
+            .or_else(|| self.base_scalars.get(name).cloned())
+    }
+
+    fn scalar_map(&self) -> BTreeMap<String, FixedFileTemplateValue> {
+        let mut scalars = self.base_scalars.clone();
+        for (name, value) in &self.overlays {
+            scalars.insert(name.clone(), value.clone());
+        }
+        scalars
+    }
 }
 
 fn collect_source_fixed_template_assignment(
     context: &SourceFixedTemplateAssignmentContext<'_>,
     statement: &FunctionStatement,
-    constant_values: &SourceFixedConstantValues,
-    local_values: &BTreeMap<String, FixedFileTemplateValue>,
+    assignment_values: &SourceFixedAssignmentValues<'_>,
     partial_values: &mut BTreeMap<String, Vec<Option<u64>>>,
 ) -> Result<(), SourceFixedColumnsWriteError> {
-    let assignment_values = source_fixed_assignment_values(constant_values, local_values);
     if statement.kind == FunctionStatementKind::If {
+        let control_scalars = assignment_values.scalar_map();
         match source_static_if_body_statements(
             context.program,
             context.module,
             statement,
-            assignment_values.scalars.as_ref(),
+            &control_scalars,
         ) {
             Ok(Some(body_statements)) => {
                 for body_statement in &body_statements {
                     collect_source_fixed_template_assignment(
                         context,
                         body_statement,
-                        constant_values,
-                        local_values,
+                        assignment_values,
                         partial_values,
                     )?;
                 }
@@ -726,20 +763,20 @@ fn collect_source_fixed_template_assignment(
         return Ok(());
     }
     if statement.kind == FunctionStatementKind::For {
-        match source_static_for_loop(
-            context.program,
-            context.module,
-            statement,
-            assignment_values.scalars.as_ref(),
-        ) {
+        let control_scalars = assignment_values.scalar_map();
+        match source_static_for_loop(context.program, context.module, statement, &control_scalars) {
             Ok(Some(loop_info)) => {
-                for iteration_values in &loop_info.iteration_values {
+                for iteration_value in &loop_info.iteration_values {
+                    let iteration_assignment_values = SourceFixedAssignmentValues::with_loop_value(
+                        assignment_values,
+                        &loop_info.variable_name,
+                        iteration_value,
+                    );
                     for body_statement in &loop_info.body_statements {
                         collect_source_fixed_template_assignment(
                             context,
                             body_statement,
-                            constant_values,
-                            iteration_values,
+                            &iteration_assignment_values,
                             partial_values,
                         )?;
                     }
@@ -771,17 +808,13 @@ fn collect_source_fixed_template_assignment(
         left,
         context.expected_columns,
         context.row_count,
-        &assignment_values,
+        assignment_values,
     )?
     else {
         return Ok(());
     };
     let Some(FixedFileTemplateValue::Integer(value)) =
-        evaluate_source_fixed_template_value_expression_with_parts(
-            right,
-            assignment_values.scalars.as_ref(),
-            assignment_values.arrays,
-        )
+        evaluate_source_fixed_assignment_value_expression(right, assignment_values)
     else {
         return Ok(());
     };
@@ -811,21 +844,253 @@ fn collect_source_fixed_template_assignment(
     }
 }
 
-fn source_fixed_assignment_values<'a>(
-    constant_values: &'a SourceFixedConstantValues,
-    local_values: &BTreeMap<String, FixedFileTemplateValue>,
-) -> SourceFixedAssignmentValues<'a> {
-    let scalars = if local_values.is_empty() {
-        Cow::Borrowed(&constant_values.scalars)
-    } else {
-        let mut scalars = constant_values.scalars.clone();
-        scalars.extend(local_values.clone());
-        Cow::Owned(scalars)
-    };
-    SourceFixedAssignmentValues {
-        scalars,
-        arrays: &constant_values.arrays,
+fn evaluate_source_fixed_assignment_value_expression(
+    expression: &Expression,
+    values: &SourceFixedAssignmentValues<'_>,
+) -> Option<FixedFileTemplateValue> {
+    if values.overlays.is_empty() {
+        return evaluate_source_fixed_template_value_expression_with_parts(
+            expression,
+            values.base_scalars,
+            values.arrays,
+        );
     }
+
+    match &expression.kind {
+        ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
+            parse_source_fixed_assignment_integer(value).map(FixedFileTemplateValue::Integer)
+        }
+        ExpressionKind::StringLiteral(value) | ExpressionKind::TemplateLiteral(value) => {
+            Some(FixedFileTemplateValue::String(value.clone()))
+        }
+        ExpressionKind::Name(name) => values.scalar_value(name),
+        ExpressionKind::Group(inner) => {
+            evaluate_source_fixed_assignment_value_expression(inner, values)
+        }
+        ExpressionKind::Unary { op, expr } => {
+            let value = evaluate_source_fixed_assignment_value_expression(expr, values)?;
+            match op {
+                UnaryOperator::Plus => {
+                    source_fixed_assignment_integer(&value).map(FixedFileTemplateValue::Integer)
+                }
+                UnaryOperator::Minus => source_fixed_assignment_integer(&value)
+                    .and_then(i128::checked_neg)
+                    .map(FixedFileTemplateValue::Integer),
+                UnaryOperator::Not => Some(FixedFileTemplateValue::Boolean(
+                    !source_fixed_assignment_truthy(&value),
+                )),
+                UnaryOperator::Increment | UnaryOperator::Decrement => None,
+            }
+        }
+        ExpressionKind::Binary { op, left, right } => {
+            let left = evaluate_source_fixed_assignment_value_expression(left, values)?;
+            if *op == BinaryOperator::LogicalAnd {
+                if source_fixed_assignment_truthy(&left) {
+                    return evaluate_source_fixed_assignment_value_expression(right, values);
+                }
+                return Some(left);
+            }
+            if *op == BinaryOperator::LogicalOr {
+                if source_fixed_assignment_truthy(&left) {
+                    return Some(left);
+                }
+                return evaluate_source_fixed_assignment_value_expression(right, values);
+            }
+            let right = evaluate_source_fixed_assignment_value_expression(right, values)?;
+            evaluate_source_fixed_assignment_binary(*op, left, right)
+        }
+        ExpressionKind::Index { target, index } => {
+            let ExpressionKind::Name(array_name) =
+                &strip_source_fixed_group_expression(target).kind
+            else {
+                return None;
+            };
+            let array_values = values.arrays.get(array_name)?;
+            let index = evaluate_source_fixed_assignment_value_expression(index, values)?;
+            let index = usize::try_from(source_fixed_assignment_integer(&index)?).ok()?;
+            array_values
+                .get(index)
+                .copied()
+                .map(|value| FixedFileTemplateValue::Integer(i128::from(value)))
+        }
+        ExpressionKind::Call { .. }
+        | ExpressionKind::RowOffset { .. }
+        | ExpressionKind::PositionalParam(_) => None,
+    }
+}
+
+fn evaluate_source_fixed_assignment_binary(
+    op: BinaryOperator,
+    left: FixedFileTemplateValue,
+    right: FixedFileTemplateValue,
+) -> Option<FixedFileTemplateValue> {
+    match op {
+        BinaryOperator::Add => match (left, right) {
+            (FixedFileTemplateValue::Integer(left), FixedFileTemplateValue::Integer(right)) => {
+                left.checked_add(right).map(FixedFileTemplateValue::Integer)
+            }
+            (left, right) => Some(FixedFileTemplateValue::String(format!(
+                "{}{}",
+                source_fixed_assignment_string(left),
+                source_fixed_assignment_string(right)
+            ))),
+        },
+        BinaryOperator::Subtract => {
+            source_fixed_assignment_integer_op(left, right, i128::checked_sub)
+        }
+        BinaryOperator::Multiply => {
+            source_fixed_assignment_integer_op(left, right, i128::checked_mul)
+        }
+        BinaryOperator::Divide | BinaryOperator::Backslash => {
+            let left = source_fixed_assignment_integer(&left)?;
+            let right = source_fixed_assignment_integer(&right)?;
+            (right != 0).then(|| FixedFileTemplateValue::Integer(left / right))
+        }
+        BinaryOperator::Modulo => {
+            let left = source_fixed_assignment_integer(&left)?;
+            let right = source_fixed_assignment_integer(&right)?;
+            (right != 0).then(|| FixedFileTemplateValue::Integer(left % right))
+        }
+        BinaryOperator::Power => {
+            let left = source_fixed_assignment_integer(&left)?;
+            let right = u32::try_from(source_fixed_assignment_integer(&right)?).ok()?;
+            left.checked_pow(right).map(FixedFileTemplateValue::Integer)
+        }
+        BinaryOperator::ShiftLeft => source_fixed_assignment_shift(left, right, true),
+        BinaryOperator::ShiftRight => source_fixed_assignment_shift(left, right, false),
+        BinaryOperator::BitAnd => {
+            source_fixed_assignment_bitwise(left, right, |left, right| left & right)
+        }
+        BinaryOperator::BitXor => {
+            source_fixed_assignment_bitwise(left, right, |left, right| left ^ right)
+        }
+        BinaryOperator::BitOr => {
+            source_fixed_assignment_bitwise(left, right, |left, right| left | right)
+        }
+        BinaryOperator::Less => {
+            source_fixed_assignment_cmp(left, right, |left, right| left < right)
+        }
+        BinaryOperator::LessEqual => {
+            source_fixed_assignment_cmp(left, right, |left, right| left <= right)
+        }
+        BinaryOperator::Greater => {
+            source_fixed_assignment_cmp(left, right, |left, right| left > right)
+        }
+        BinaryOperator::GreaterEqual => {
+            source_fixed_assignment_cmp(left, right, |left, right| left >= right)
+        }
+        BinaryOperator::EqualEqual | BinaryOperator::TripleEqual => Some(
+            FixedFileTemplateValue::Boolean(source_fixed_assignment_value_eq(&left, &right)),
+        ),
+        BinaryOperator::NotEqual => Some(FixedFileTemplateValue::Boolean(
+            !source_fixed_assignment_value_eq(&left, &right),
+        )),
+        _ => None,
+    }
+}
+
+fn source_fixed_assignment_integer_op(
+    left: FixedFileTemplateValue,
+    right: FixedFileTemplateValue,
+    op: impl Fn(i128, i128) -> Option<i128>,
+) -> Option<FixedFileTemplateValue> {
+    let left = source_fixed_assignment_integer(&left)?;
+    let right = source_fixed_assignment_integer(&right)?;
+    op(left, right).map(FixedFileTemplateValue::Integer)
+}
+
+fn source_fixed_assignment_shift(
+    left: FixedFileTemplateValue,
+    right: FixedFileTemplateValue,
+    left_shift: bool,
+) -> Option<FixedFileTemplateValue> {
+    let left = source_fixed_assignment_integer(&left)?;
+    let right = u32::try_from(source_fixed_assignment_integer(&right)?).ok()?;
+    if left_shift {
+        left.checked_shl(right).map(FixedFileTemplateValue::Integer)
+    } else {
+        left.checked_shr(right).map(FixedFileTemplateValue::Integer)
+    }
+}
+
+fn source_fixed_assignment_bitwise(
+    left: FixedFileTemplateValue,
+    right: FixedFileTemplateValue,
+    op: impl Fn(i128, i128) -> i128,
+) -> Option<FixedFileTemplateValue> {
+    let left = source_fixed_assignment_integer(&left)?;
+    let right = source_fixed_assignment_integer(&right)?;
+    Some(FixedFileTemplateValue::Integer(op(left, right)))
+}
+
+fn source_fixed_assignment_cmp(
+    left: FixedFileTemplateValue,
+    right: FixedFileTemplateValue,
+    op: impl Fn(i128, i128) -> bool,
+) -> Option<FixedFileTemplateValue> {
+    let left = source_fixed_assignment_integer(&left)?;
+    let right = source_fixed_assignment_integer(&right)?;
+    Some(FixedFileTemplateValue::Boolean(op(left, right)))
+}
+
+fn source_fixed_assignment_value_eq(
+    left: &FixedFileTemplateValue,
+    right: &FixedFileTemplateValue,
+) -> bool {
+    match (left, right) {
+        (FixedFileTemplateValue::Integer(left), FixedFileTemplateValue::Integer(right)) => {
+            left == right
+        }
+        (FixedFileTemplateValue::Boolean(left), FixedFileTemplateValue::Boolean(right)) => {
+            left == right
+        }
+        (FixedFileTemplateValue::String(left), FixedFileTemplateValue::String(right)) => {
+            left == right
+        }
+        _ => false,
+    }
+}
+
+fn source_fixed_assignment_integer(value: &FixedFileTemplateValue) -> Option<i128> {
+    match value {
+        FixedFileTemplateValue::Integer(value) => Some(*value),
+        _ => None,
+    }
+}
+
+fn source_fixed_assignment_truthy(value: &FixedFileTemplateValue) -> bool {
+    match value {
+        FixedFileTemplateValue::Integer(value) => *value != 0,
+        FixedFileTemplateValue::Boolean(value) => *value,
+        FixedFileTemplateValue::String(value) => !value.is_empty(),
+    }
+}
+
+fn source_fixed_assignment_string(value: FixedFileTemplateValue) -> String {
+    match value {
+        FixedFileTemplateValue::Integer(value) => value.to_string(),
+        FixedFileTemplateValue::Boolean(value) => value.to_string(),
+        FixedFileTemplateValue::String(value) => value,
+    }
+}
+
+fn parse_source_fixed_assignment_integer(value: &str) -> Option<i128> {
+    let value = value.trim().replace('_', "");
+    if let Some(hex) = value
+        .strip_prefix("-0x")
+        .or_else(|| value.strip_prefix("-0X"))
+    {
+        return i128::from_str_radix(hex, 16)
+            .ok()
+            .and_then(i128::checked_neg);
+    }
+    if let Some(hex) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        return i128::from_str_radix(hex, 16).ok();
+    }
+    value.parse::<i128>().ok()
 }
 
 fn source_fixed_template_assignment_error(
@@ -887,11 +1152,7 @@ fn source_fixed_index_assignment_target(
         return Ok(None);
     }
     let Some(FixedFileTemplateValue::Integer(row)) =
-        evaluate_source_fixed_template_value_expression_with_parts(
-            index,
-            constant_values.scalars.as_ref(),
-            constant_values.arrays,
-        )
+        evaluate_source_fixed_assignment_value_expression(index, constant_values)
     else {
         return Ok(None);
     };

@@ -16,7 +16,7 @@ const STATIC_FOR_LOOP_LIMIT: usize = 10_000;
 
 pub(crate) struct SourceStaticForLoop {
     pub(crate) body_statements: Vec<FunctionStatement>,
-    pub(crate) iteration_values: Vec<BTreeMap<String, FixedFileTemplateValue>>,
+    pub(crate) iteration_values: Vec<FixedFileTemplateValue>,
     pub(crate) variable_name: String,
 }
 
@@ -93,7 +93,10 @@ pub(crate) fn source_static_for_loop_with_tokens(
                 variable_name: variable.name.clone(),
             }));
         }
-        iteration_values.push(values.clone());
+        let Some(iteration_value) = values.get(&variable.name).cloned() else {
+            return Ok(None);
+        };
+        iteration_values.push(iteration_value);
         if !apply_source_for_loop_update(program, &update, &variable.name, &mut values) {
             return Ok(None);
         }
