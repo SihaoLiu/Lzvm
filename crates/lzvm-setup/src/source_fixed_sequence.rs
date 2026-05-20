@@ -1303,13 +1303,22 @@ fn parse_sequence_expression(
                     &context.constant_values.scalars,
                 )
             });
-    match value {
-        Some(FixedFileTemplateValue::Integer(value)) => Ok(value),
-        _ => Err(SourceFixedColumnsWriteError::UnsupportedExpression {
+    if let Some(value) = value.and_then(source_fixed_static_integer_value) {
+        Ok(value)
+    } else {
+        Err(SourceFixedColumnsWriteError::UnsupportedExpression {
             source_name: context.source_name.to_owned(),
             source_span: context.source_span,
             expression: expression_text.to_owned(),
-        }),
+        })
+    }
+}
+
+fn source_fixed_static_integer_value(value: FixedFileTemplateValue) -> Option<i128> {
+    match value {
+        FixedFileTemplateValue::Integer(value) => Some(value),
+        FixedFileTemplateValue::Boolean(value) => Some(i128::from(value)),
+        FixedFileTemplateValue::String(_) => None,
     }
 }
 
