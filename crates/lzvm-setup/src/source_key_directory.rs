@@ -34,7 +34,7 @@ use crate::{
     },
     source_expression_filters::{
         source_expression_assigns_fixed_index, source_expression_is_assignment,
-        source_expression_is_equality_constraint,
+        source_expression_is_constrained_assignment, source_expression_is_equality_constraint,
     },
     source_opening_points::source_opening_points,
     source_row_count::{infer_source_row_counts, SourceUnitRowCounts},
@@ -47,7 +47,7 @@ use crate::{
         lower_source_lookup_statement, lower_unsupported_source_assignment_statement,
         lower_unsupported_source_call_statement, lower_unsupported_source_constraint_statement,
         lower_unsupported_source_template_statement, source_statement_contains_assignment_operator,
-        source_statement_first_token_kind,
+        source_statement_first_token_kind, source_statement_line,
     },
     source_static_values::{
         source_declaration_constant_values_from_cache, source_declaration_in_static_false_branch,
@@ -504,6 +504,26 @@ fn lower_source_template_statement(
         hints.push(hint);
         return Ok(());
     }
+    if source_expression_is_constrained_assignment(statement.value_expression.as_ref()) {
+        let lowered = lower_source_template_boolean_constraint(
+            context.module,
+            statement,
+            context.scalar_slots,
+            declaration_values,
+            expression_aliases,
+        );
+        match lowered {
+            Ok(Some(constraint)) => constraints.push(constraint),
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
+                hints.push(lower_unsupported_source_assignment_statement(
+                    context.module,
+                    statement,
+                ));
+            }
+            Err(error) => return Err(error),
+        }
+        return Ok(());
+    }
     let contains_assignment_operator =
         source_statement_contains_assignment_operator(context.module, statement).map_err(
             |source| SourceKeyDirectoryMetadataError::Lex {
@@ -565,16 +585,6 @@ fn lower_source_template_statement(
         "air template statements need constraint lowering support: {}",
         source_statement_line(context.module, statement)
     ))
-}
-
-fn source_statement_line<'a>(
-    module: &'a SourceProgramModule,
-    statement: &FunctionStatement,
-) -> &'a str {
-    module.source.contents[statement.start..statement.end]
-        .trim()
-        .trim_end_matches(';')
-        .trim()
 }
 
 fn collect_source_template_expression_alias(

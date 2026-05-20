@@ -165,7 +165,10 @@ fn source_call_name(
     Ok(Some(name.lexeme.clone()))
 }
 
-fn source_statement_line(module: &SourceProgramModule, statement: &FunctionStatement) -> String {
+pub(crate) fn source_statement_line(
+    module: &SourceProgramModule,
+    statement: &FunctionStatement,
+) -> String {
     module.source.contents[statement.start..statement.end]
         .trim()
         .trim_end_matches(';')

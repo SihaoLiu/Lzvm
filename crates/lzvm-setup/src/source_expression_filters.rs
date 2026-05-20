@@ -35,6 +35,16 @@ pub(crate) fn source_expression_is_assignment(expression: Option<&Expression>) -
     )
 }
 
+pub(crate) fn source_expression_is_constrained_assignment(expression: Option<&Expression>) -> bool {
+    let Some(expression) = expression else {
+        return false;
+    };
+    let ExpressionKind::Binary { op, .. } = &strip_group_expression(expression).kind else {
+        return false;
+    };
+    *op == BinaryOperator::ConstrainedAssign
+}
+
 pub(crate) fn source_expression_is_equality_constraint(expression: Option<&Expression>) -> bool {
     let Some(expression) = expression else {
         return false;

@@ -76,7 +76,10 @@ fn lower_source_constraint_residual(
     else {
         return Ok(None);
     };
-    if *op != BinaryOperator::TripleEqual {
+    if !matches!(
+        op,
+        BinaryOperator::TripleEqual | BinaryOperator::ConstrainedAssign
+    ) {
         return Ok(None);
     }
     if expression_is_zero(right) {
