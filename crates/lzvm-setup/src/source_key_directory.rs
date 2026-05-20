@@ -261,8 +261,8 @@ fn validate_supported_source_program(
     program: &SourceProgram,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     for module in &program.modules {
-        if !module.commits.is_empty() || !module.public_tables.is_empty() {
-            return unsupported("public tables and commits need metadata lowering support");
+        if !module.public_tables.is_empty() {
+            return unsupported("public tables need metadata lowering support");
         }
     }
     Ok(())
@@ -346,7 +346,7 @@ fn lower_source_template_statement(
     }
 
     if source_statement_first_token_kind(module, statement)?
-        .is_some_and(|kind| kind == TokenKind::AirValue)
+        .is_some_and(|kind| matches!(kind, TokenKind::AirValue | TokenKind::Commit))
     {
         return Ok(());
     }
