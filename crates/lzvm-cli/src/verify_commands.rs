@@ -301,6 +301,11 @@ fn parse_verify_proof_args<'a>(
                 let value = args.get(index).ok_or_else(|| {
                     VerifyProofArgError::Invalid("missing --eth-block-input value".to_owned())
                 })?;
+                if value.starts_with("--") {
+                    return Err(VerifyProofArgError::Invalid(
+                        "missing --eth-block-input value".to_owned(),
+                    ));
+                }
                 if eth_block_input.replace(*value).is_some() {
                     return Err(VerifyProofArgError::Invalid(
                         "duplicate --eth-block-input option".to_owned(),
@@ -312,6 +317,11 @@ fn parse_verify_proof_args<'a>(
                 let value = args.get(index).ok_or_else(|| {
                     VerifyProofArgError::Invalid("missing --program-image-cache value".to_owned())
                 })?;
+                if value.starts_with("--") {
+                    return Err(VerifyProofArgError::Invalid(
+                        "missing --program-image-cache value".to_owned(),
+                    ));
+                }
                 if program_image_cache.replace(*value).is_some() {
                     return Err(VerifyProofArgError::Invalid(
                         "duplicate --program-image-cache option".to_owned(),
