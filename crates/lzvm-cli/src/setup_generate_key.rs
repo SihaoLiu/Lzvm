@@ -3,9 +3,10 @@ use std::path::PathBuf;
 
 use lzvm_setup::{
     write_fixed_columns_from_source_directory, write_key_directory, write_source_companions,
-    FixedExtensionBackend, KeyDirectoryWriteReport, SourceCompanionWriteReport,
-    SourceCompanionWriteRequest, SourceFixedColumnsDirectoryWriteReport,
-    SourceFixedColumnsDirectoryWriteRequest,
+    write_source_key_directory_metadata, FixedExtensionBackend, KeyDirectoryWriteReport,
+    SourceCompanionWriteReport, SourceCompanionWriteRequest,
+    SourceFixedColumnsDirectoryWriteReport, SourceFixedColumnsDirectoryWriteRequest,
+    SourceKeyDirectoryMetadataRequest,
 };
 
 pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -19,6 +20,21 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     };
 
     let source_report = if let Some(main_file) = parsed.source.as_ref() {
+        if !parsed.setup_dir.join("pilout.globalInfo.bin").is_file() {
+            match write_source_key_directory_metadata(&SourceKeyDirectoryMetadataRequest {
+                working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+                include_paths: parsed.include_paths.clone(),
+                include_path_first: parsed.include_path_first,
+                main_file: main_file.clone(),
+                setup_dir: parsed.setup_dir.clone(),
+            }) {
+                Ok(_) => {}
+                Err(error) => {
+                    let _ = writeln!(stderr, "setup key generation failed: {error}");
+                    return 1;
+                }
+            }
+        }
         match write_fixed_columns_from_source_directory(&SourceFixedColumnsDirectoryWriteRequest {
             working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             include_paths: parsed.include_paths.clone(),

@@ -34,6 +34,7 @@ mod source_fixed_columns;
 mod source_fixed_expression;
 mod source_fixed_file_manifest;
 mod source_fixed_sequence;
+mod source_key_directory;
 mod source_program_archive;
 mod staging;
 
@@ -77,6 +78,10 @@ pub use source_fixed_file_manifest::{
     source_fixed_file_manifest_from_resolved, write_source_fixed_file_manifest,
     SourceFixedFileManifestWriteError, SourceFixedFileManifestWriteReport,
     SourceFixedFileManifestWriteRequest,
+};
+pub use source_key_directory::{
+    write_source_key_directory_metadata, SourceKeyDirectoryMetadataError,
+    SourceKeyDirectoryMetadataReport, SourceKeyDirectoryMetadataRequest,
 };
 pub use source_program_archive::{
     write_source_program_archive, SourceProgramArchiveWriteError, SourceProgramArchiveWriteReport,
