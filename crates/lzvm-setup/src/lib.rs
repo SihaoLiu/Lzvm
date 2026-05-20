@@ -32,7 +32,9 @@ mod program_image;
 mod reports;
 mod source_companions;
 mod source_constraint_lowering;
+mod source_expression_aliases;
 mod source_expression_filters;
+mod source_expression_info;
 mod source_fixed_columns;
 mod source_fixed_expression;
 mod source_fixed_file_manifest;
@@ -46,6 +48,7 @@ mod source_scope;
 mod source_statement_hints;
 mod source_static_values;
 mod source_template_context;
+mod source_template_for;
 mod source_verifier_info;
 mod staging;
 

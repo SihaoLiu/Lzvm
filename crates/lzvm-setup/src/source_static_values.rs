@@ -69,7 +69,7 @@ pub(crate) fn source_scalar_constant_values(
 
 const STATIC_LOOP_LIMIT: usize = 10_000;
 
-fn evaluate_source_static_expression(
+pub(crate) fn evaluate_source_static_expression(
     program: &SourceProgram,
     expression: &Expression,
     values: &BTreeMap<String, FixedFileTemplateValue>,
@@ -495,7 +495,7 @@ fn top_level_ternary(tokens: &[Token], start: usize, end: usize) -> Option<(usiz
     None
 }
 
-fn static_value_truthy(value: &FixedFileTemplateValue) -> bool {
+pub(crate) fn static_value_truthy(value: &FixedFileTemplateValue) -> bool {
     match value {
         FixedFileTemplateValue::Integer(value) => *value != 0,
         FixedFileTemplateValue::Boolean(value) => *value,

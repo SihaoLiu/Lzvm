@@ -29,7 +29,7 @@ fn generate_key_records_unsupported_source_control_statements_as_regular_hints()
         &source_path,
         "airtemplate UnitA() {\n\
              col witness value;\n\
-             for (int index = 0; index < 2; ++index) {\n\
+             for (int index = 0; index < value; ++index) {\n\
                  value * (1 - value) === 0;\n\
              }\n\
          }\n\

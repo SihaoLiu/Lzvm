@@ -167,7 +167,7 @@ struct ParsedFunctionStatement {
     next_index: usize,
 }
 
-pub(crate) fn parse_function_body_statements(
+pub fn parse_function_body_statements(
     tokens: &[Token],
     body: SourceSpan,
     source: &SourceFile,
