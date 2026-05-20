@@ -3,16 +3,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, Expression, ExpressionKind,
     FixedFileTemplateValue, FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind,
-    SourceProgram, UnaryOperator,
+    SourceProgram, SourceProgramModule, UnaryOperator,
 };
 
 use crate::{
     source_constraint_lowering::SourceExpressionAliases,
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_static_values::{
-        source_declaration_constant_values_from_cache, source_static_if_statement_is_false,
-        SourceTemplateConstantValueCache,
+        source_declaration_constant_values_from_cache, SourceTemplateConstantValueCache,
     },
+    source_template_for::source_static_for_loop,
+    source_template_if::source_static_if_body_statements,
 };
 
 pub(crate) fn source_opening_points(
@@ -28,43 +29,139 @@ pub(crate) fn source_opening_points(
                 continue;
             }
             let mut expression_aliases = SourceExpressionAliases::new();
+            let local_values = BTreeMap::new();
+            let context = SourceOpeningPointContext {
+                program,
+                module,
+                constant_values,
+                template_values,
+            };
             for statement in &template.statements {
-                let declaration_values = source_declaration_constant_values_from_cache(
-                    module,
-                    statement.start,
-                    statement.end,
-                    constant_values,
-                    template_values,
-                );
-                if statement.kind != FunctionStatementKind::Expression
-                    || source_static_if_statement_is_false(
-                        program,
-                        module,
-                        statement,
-                        declaration_values,
-                    )
-                {
-                    collect_source_opening_point_expression_alias(
-                        statement,
-                        &mut expression_aliases,
-                    );
-                    continue;
-                }
-                if let Some(expression) = statement.value_expression.as_ref() {
-                    let mut resolving_aliases = BTreeSet::new();
-                    collect_source_opening_points(
-                        expression,
-                        declaration_values,
-                        &expression_aliases,
-                        &mut points,
-                        &mut resolving_aliases,
-                    )?;
-                }
+                collect_source_statement_opening_points(
+                    &context,
+                    statement,
+                    &local_values,
+                    &expression_aliases,
+                    &mut points,
+                )?;
                 collect_source_opening_point_expression_alias(statement, &mut expression_aliases);
             }
         }
     }
     Ok(points)
+}
+
+struct SourceOpeningPointContext<'a> {
+    program: &'a SourceProgram,
+    module: &'a SourceProgramModule,
+    constant_values: &'a BTreeMap<String, FixedFileTemplateValue>,
+    template_values: &'a SourceTemplateConstantValueCache,
+}
+
+fn collect_source_statement_opening_points(
+    context: &SourceOpeningPointContext<'_>,
+    statement: &FunctionStatement,
+    local_values: &BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: &SourceExpressionAliases,
+    points: &mut Vec<i64>,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    if statement.kind == FunctionStatementKind::Declaration {
+        return Ok(());
+    }
+    let declaration_values = source_declaration_constant_values_from_cache(
+        context.module,
+        statement.start,
+        statement.end,
+        context.constant_values,
+        context.template_values,
+    );
+    let merged_declaration_values;
+    let declaration_values = if local_values.is_empty() {
+        declaration_values
+    } else {
+        merged_declaration_values = {
+            let mut values = declaration_values.clone();
+            values.extend(local_values.clone());
+            values
+        };
+        &merged_declaration_values
+    };
+    if statement.kind == FunctionStatementKind::If {
+        match source_static_if_body_statements(
+            context.program,
+            context.module,
+            statement,
+            declaration_values,
+        ) {
+            Ok(Some(body_statements)) => {
+                let mut body_aliases = expression_aliases.clone();
+                for body_statement in &body_statements {
+                    collect_source_statement_opening_points(
+                        context,
+                        body_statement,
+                        local_values,
+                        &body_aliases,
+                        points,
+                    )?;
+                    collect_source_opening_point_expression_alias(
+                        body_statement,
+                        &mut body_aliases,
+                    );
+                }
+                return Ok(());
+            }
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    if statement.kind == FunctionStatementKind::For {
+        match source_static_for_loop(
+            context.program,
+            context.module,
+            statement,
+            declaration_values,
+        ) {
+            Ok(Some(loop_info)) => {
+                for iteration_values in &loop_info.iteration_values {
+                    let mut loop_aliases = expression_aliases.clone();
+                    for body_statement in &loop_info.body_statements {
+                        collect_source_statement_opening_points(
+                            context,
+                            body_statement,
+                            iteration_values,
+                            &loop_aliases,
+                            points,
+                        )?;
+                        collect_source_opening_point_expression_alias(
+                            body_statement,
+                            &mut loop_aliases,
+                        );
+                    }
+                }
+                return Ok(());
+            }
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    if statement.kind != FunctionStatementKind::Expression {
+        return Ok(());
+    }
+    if let Some(expression) = statement.value_expression.as_ref() {
+        let mut resolving_aliases = BTreeSet::new();
+        collect_source_opening_points(
+            expression,
+            declaration_values,
+            expression_aliases,
+            points,
+            &mut resolving_aliases,
+        )?;
+    }
+    Ok(())
 }
 
 fn collect_source_opening_points(

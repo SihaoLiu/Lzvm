@@ -172,6 +172,9 @@ fn lower_source_scalar_expression_at(
                 return unsupported("unsupported source indexed constraint target");
             };
             let index = source_scalar_index_value(index, state.constant_values)?;
+            if row_offset != 0 {
+                state.frame_offsets.include(row_offset);
+            }
             state
                 .scalar_slots
                 .operand_index_at(name, index, row_offset)
