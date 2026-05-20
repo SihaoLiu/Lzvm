@@ -287,6 +287,9 @@ fn lower_source_template_statement(
     ) {
         return Ok(());
     }
+    if source_static_assertion(context.program, statement.value_expression.as_ref(), values) {
+        return Ok(());
+    }
     if let Some(update) =
         source_static_postfix_update(context.module, statement).map_err(|source| {
             SourceKeyDirectoryMetadataError::Lex {
