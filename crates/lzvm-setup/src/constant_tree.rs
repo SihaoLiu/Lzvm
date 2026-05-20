@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::thread;
 
 #[cfg(all(test, feature = "cuda"))]
 use lzvm_accel::{cuda_poseidon2_width16_device, cuda_poseidon2_width8_device};
@@ -27,6 +28,8 @@ use crate::{
 
 const WORD_BYTES: usize = 8;
 const HASH_WORDS: usize = 4;
+const MAX_CPU_TREE_WORKERS: usize = 8;
+const MIN_PARALLEL_TREE_ROWS: usize = 1 << 14;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ConstantTreeShape {
@@ -294,8 +297,22 @@ pub fn build_constant_tree_from_fixed_columns_with_backend(
     setup: &UnitSetupInfo,
     backend: FixedExtensionBackend,
 ) -> Result<Vec<u8>, SetupError> {
+    build_constant_tree_from_fixed_columns_with_cpu_parallelism(
+        value,
+        setup,
+        backend,
+        default_cpu_tree_parallelism(),
+    )
+}
+
+pub(crate) fn build_constant_tree_from_fixed_columns_with_cpu_parallelism(
+    value: &FixedColumns,
+    setup: &UnitSetupInfo,
+    backend: FixedExtensionBackend,
+    cpu_parallelism: usize,
+) -> Result<Vec<u8>, SetupError> {
     let leaves = extend_fixed_columns_for_constant_tree_with_backend(value, setup, backend)?;
-    build_constant_tree_from_leaves_with_backend(&leaves, setup, backend)
+    build_constant_tree_from_leaves_with_cpu_parallelism(&leaves, setup, backend, cpu_parallelism)
 }
 
 pub fn build_constant_tree_from_leaves(
@@ -310,8 +327,24 @@ pub fn build_constant_tree_from_leaves_with_backend(
     setup: &UnitSetupInfo,
     backend: FixedExtensionBackend,
 ) -> Result<Vec<u8>, SetupError> {
+    build_constant_tree_from_leaves_with_cpu_parallelism(
+        leaves,
+        setup,
+        backend,
+        default_cpu_tree_parallelism(),
+    )
+}
+
+fn build_constant_tree_from_leaves_with_cpu_parallelism(
+    leaves: &[u8],
+    setup: &UnitSetupInfo,
+    backend: FixedExtensionBackend,
+    cpu_parallelism: usize,
+) -> Result<Vec<u8>, SetupError> {
     match backend {
-        FixedExtensionBackend::Cpu => build_constant_tree_from_leaves_on_cpu(leaves, setup),
+        FixedExtensionBackend::Cpu => {
+            build_constant_tree_from_leaves_on_cpu(leaves, setup, cpu_parallelism)
+        }
         FixedExtensionBackend::Cuda => build_constant_tree_from_leaves_on_cuda(leaves, setup),
     }
 }
@@ -319,17 +352,18 @@ pub fn build_constant_tree_from_leaves_with_backend(
 fn build_constant_tree_from_leaves_on_cpu(
     leaves: &[u8],
     setup: &UnitSetupInfo,
+    cpu_parallelism: usize,
 ) -> Result<Vec<u8>, SetupError> {
     let shape = constant_tree_shape(leaves, setup)?;
+    let worker_count = effective_cpu_tree_parallelism(cpu_parallelism, shape.row_count);
 
     let mut out = Vec::with_capacity(shape.expected_tree_len);
     out.extend_from_slice(leaves);
 
-    let mut level = Vec::with_capacity(shape.row_count);
-    for row in 0..shape.row_count {
-        let digest = linear_hash_leaf_row(leaves, shape, row)?;
-        append_digest(&mut out, digest);
-        level.push(digest);
+    let mut level = vec![[Felt::ZERO; HASH_WORDS]; shape.row_count];
+    fill_leaf_level(leaves, shape, &mut level, worker_count)?;
+    for digest in &level {
+        append_digest(&mut out, *digest);
     }
 
     while level.len() > 1 {
@@ -340,11 +374,9 @@ fn build_constant_tree_from_leaves_on_cpu(
             level.push(zero);
         }
 
-        let mut next = Vec::with_capacity(level.len() / shape.arity);
-        for children in level.chunks_exact(shape.arity) {
-            let digest = parent_hash(children, shape.arity)?;
-            append_digest(&mut out, digest);
-            next.push(digest);
+        let next = build_parent_level(&level, shape.arity, worker_count)?;
+        for digest in &next {
+            append_digest(&mut out, *digest);
         }
         level = next;
     }
@@ -724,6 +756,111 @@ fn parent_hash_arity4(children: &[[Felt; HASH_WORDS]]) -> [Felt; HASH_WORDS] {
         children[3][3],
     ]);
     [state[0], state[1], state[2], state[3]]
+}
+
+pub(crate) fn cpu_tree_parallelism_for_base_units(base_unit_parallelism: usize) -> usize {
+    let available = thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1);
+    let base_unit_parallelism = base_unit_parallelism.max(1);
+    available
+        .checked_div(base_unit_parallelism)
+        .unwrap_or(1)
+        .clamp(1, MAX_CPU_TREE_WORKERS)
+}
+
+fn default_cpu_tree_parallelism() -> usize {
+    cpu_tree_parallelism_for_base_units(1)
+}
+
+fn effective_cpu_tree_parallelism(requested: usize, row_count: usize) -> usize {
+    if row_count < MIN_PARALLEL_TREE_ROWS {
+        return 1;
+    }
+    requested.clamp(1, MAX_CPU_TREE_WORKERS).min(row_count)
+}
+
+fn fill_leaf_level(
+    leaves: &[u8],
+    shape: ConstantTreeShape,
+    level: &mut [[Felt; HASH_WORDS]],
+    worker_count: usize,
+) -> Result<(), SetupError> {
+    if worker_count <= 1 {
+        for (row, digest) in level.iter_mut().enumerate() {
+            *digest = linear_hash_leaf_row(leaves, shape, row)?;
+        }
+        return Ok(());
+    }
+
+    let rows_per_worker = level.len().div_ceil(worker_count);
+    thread::scope(|scope| {
+        let handles = level
+            .chunks_mut(rows_per_worker)
+            .enumerate()
+            .map(|(chunk_index, chunk)| {
+                let start = chunk_index * rows_per_worker;
+                scope.spawn(move || {
+                    for (offset, digest) in chunk.iter_mut().enumerate() {
+                        *digest = linear_hash_leaf_row(leaves, shape, start + offset)?;
+                    }
+                    Ok::<(), SetupError>(())
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for handle in handles {
+            match handle.join() {
+                Ok(result) => result?,
+                Err(error) => std::panic::resume_unwind(error),
+            }
+        }
+        Ok::<(), SetupError>(())
+    })
+}
+
+fn build_parent_level(
+    level: &[[Felt; HASH_WORDS]],
+    arity: usize,
+    worker_count: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, SetupError> {
+    let parent_count = level.len() / arity;
+    let mut next = vec![[Felt::ZERO; HASH_WORDS]; parent_count];
+    let worker_count = effective_cpu_tree_parallelism(worker_count, parent_count);
+    if worker_count <= 1 {
+        for (index, digest) in next.iter_mut().enumerate() {
+            let child_start = index * arity;
+            *digest = parent_hash(&level[child_start..child_start + arity], arity)?;
+        }
+        return Ok(next);
+    }
+
+    let parents_per_worker = parent_count.div_ceil(worker_count);
+    thread::scope(|scope| {
+        let handles = next
+            .chunks_mut(parents_per_worker)
+            .enumerate()
+            .map(|(chunk_index, chunk)| {
+                let start = chunk_index * parents_per_worker;
+                scope.spawn(move || {
+                    for (offset, digest) in chunk.iter_mut().enumerate() {
+                        let child_start = (start + offset) * arity;
+                        *digest = parent_hash(&level[child_start..child_start + arity], arity)?;
+                    }
+                    Ok::<(), SetupError>(())
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for handle in handles {
+            match handle.join() {
+                Ok(result) => result?,
+                Err(error) => std::panic::resume_unwind(error),
+            }
+        }
+        Ok::<(), SetupError>(())
+    })?;
+    Ok(next)
 }
 
 #[cfg(feature = "cuda")]

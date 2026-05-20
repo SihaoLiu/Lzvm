@@ -15,3 +15,27 @@ resolver = "2"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/SihaoLiu/Lzvm"
+
+[profile.dev.package.lzvm-field]
+opt-level = 3
+
+[profile.dev.package.lzvm-artifacts]
+opt-level = 3
+
+[profile.dev.package.lzvm-setup]
+opt-level = 3
+
+[profile.dev.package.sha2]
+opt-level = 3
+
+[profile.test.package.lzvm-field]
+opt-level = 3
+
+[profile.test.package.lzvm-artifacts]
+opt-level = 3
+
+[profile.test.package.lzvm-setup]
+opt-level = 3
+
+[profile.test.package.sha2]
+opt-level = 3

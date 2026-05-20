@@ -1,4 +1,6 @@
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 mod fixtures;
@@ -331,6 +333,24 @@ fn writes_base_directory_artifacts_and_derives_keys() {
             verkey_bytes: Some(verkey_bytes)
         }
     );
+}
+
+#[test]
+#[cfg(unix)]
+fn keeps_existing_raw_fixed_column_file_in_place() {
+    let dir = create_base_directory_fixture("keep-raw-fixed");
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let fixed_path = layout.units[0].fixed_columns.clone();
+    let before = fs::metadata(&fixed_path).expect("fixed input should exist");
+
+    write_base_directory(&dir, FixedExtensionBackend::Cpu, true)
+        .expect("base directory should write");
+
+    let after = fs::metadata(&fixed_path).expect("fixed output should exist");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(after.dev(), before.dev());
+    assert_eq!(after.ino(), before.ino());
 }
 
 #[test]

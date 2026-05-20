@@ -4,6 +4,9 @@ use std::ops::{Add, Mul, Neg, Sub};
 pub const MODULUS: u64 = 0xffff_ffff_0000_0001;
 pub const SHIFT: Felt = Felt(7);
 
+const MODULUS_U128: u128 = MODULUS as u128;
+const GOLDILOCKS_EPSILON: u64 = 0xffff_ffff;
+
 const ROOTS_OF_UNITY: [u64; 33] = [
     1,
     18_446_744_069_414_584_320,
@@ -471,8 +474,13 @@ impl Felt {
         }
     }
 
+    #[inline(always)]
     pub fn from_u64(value: u64) -> Self {
-        Self((value as u128 % MODULUS as u128) as u64)
+        if value >= MODULUS {
+            Self(value - MODULUS)
+        } else {
+            Self(value)
+        }
     }
 
     pub fn to_u64(self) -> u64 {
@@ -909,14 +917,21 @@ fn domain_len(bits: usize) -> Result<usize, DomainError> {
 impl Add for Felt {
     type Output = Self;
 
+    #[inline(always)]
     fn add(self, rhs: Self) -> Self::Output {
-        Self(((self.0 as u128 + rhs.0 as u128) % MODULUS as u128) as u64)
+        let sum = self.0 as u128 + rhs.0 as u128;
+        if sum >= MODULUS_U128 {
+            Self((sum - MODULUS_U128) as u64)
+        } else {
+            Self(sum as u64)
+        }
     }
 }
 
 impl Sub for Felt {
     type Output = Self;
 
+    #[inline(always)]
     fn sub(self, rhs: Self) -> Self::Output {
         if self.0 >= rhs.0 {
             Self(self.0 - rhs.0)
@@ -929,6 +944,7 @@ impl Sub for Felt {
 impl Neg for Felt {
     type Output = Self;
 
+    #[inline(always)]
     fn neg(self) -> Self::Output {
         if self == Self::ZERO {
             Self::ZERO
@@ -941,8 +957,38 @@ impl Neg for Felt {
 impl Mul for Felt {
     type Output = Self;
 
+    #[inline(always)]
     fn mul(self, rhs: Self) -> Self::Output {
-        Self(((self.0 as u128 * rhs.0 as u128) % MODULUS as u128) as u64)
+        Self(reduce_goldilocks_product(self.0 as u128 * rhs.0 as u128))
+    }
+}
+
+#[inline(always)]
+fn reduce_goldilocks_product(value: u128) -> u64 {
+    let lo = value as u64;
+    let hi = (value >> 64) as u64;
+    let hi_hi = hi >> 32;
+    let hi_lo = hi & GOLDILOCKS_EPSILON;
+
+    let (mut reduced, borrow) = lo.overflowing_sub(hi_hi);
+    if borrow {
+        reduced = reduced.wrapping_sub(GOLDILOCKS_EPSILON);
+    }
+
+    reduced = add_wrapping_modulus(reduced, hi_lo * GOLDILOCKS_EPSILON);
+    if reduced >= MODULUS {
+        reduced -= MODULUS;
+    }
+    reduced
+}
+
+#[inline(always)]
+fn add_wrapping_modulus(lhs: u64, rhs: u64) -> u64 {
+    let (sum, carry) = lhs.overflowing_add(rhs);
+    if carry {
+        sum.wrapping_add(GOLDILOCKS_EPSILON)
+    } else {
+        sum
     }
 }
 

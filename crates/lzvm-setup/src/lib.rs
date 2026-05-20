@@ -1,12 +1,16 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc;
 use std::thread;
 
 use lzvm_artifacts::expression_info::{
     encode_expression_info, read_expression_info_binary_file, ExpressionInfo,
 };
 use lzvm_artifacts::expression_program::{encode_expression_program, read_expression_program_file};
-use lzvm_artifacts::fixed::{read_fixed_columns_file, read_fixed_columns_file_for_setup};
+use lzvm_artifacts::fixed::{
+    read_fixed_columns_file, read_fixed_columns_file_for_setup, read_raw_fixed_column_layout_file,
+};
 use lzvm_artifacts::global_info::{encode_global_info, read_global_info_binary_file, GlobalInfo};
 use lzvm_artifacts::key_directory::{
     read_key_directory_layout, KeyDirectoryError, KeyDirectoryLayout, KeyUnitPaths,
@@ -251,32 +255,16 @@ fn write_base_units(
     derive_verkey: bool,
 ) -> Result<Vec<BaseUnitWriteReport>, BaseDirectoryWriteError> {
     let parallelism = base_unit_parallelism(layout.units.len());
-    let mut reports = Vec::with_capacity(layout.units.len());
-
-    thread::scope(|scope| {
-        for units in layout.units.chunks(parallelism) {
-            let handles = units
-                .iter()
-                .map(|unit| {
-                    scope.spawn(move || {
-                        write_base_unit(unit, &layout.global_info, backend, derive_verkey)
-                    })
-                })
-                .collect::<Vec<_>>();
-
-            for handle in handles {
-                let report = handle
-                    .join()
-                    .map_err(|_| BaseDirectoryWriteError::Message {
-                        message: "base-directory unit worker panicked".to_owned(),
-                    })??;
-                reports.push(report);
-            }
-        }
-        Ok::<(), BaseDirectoryWriteError>(())
-    })?;
-
-    Ok(reports)
+    let cpu_tree_parallelism = constant_tree::cpu_tree_parallelism_for_base_units(parallelism);
+    run_base_unit_jobs(layout.units.len(), parallelism, |index| {
+        write_base_unit(
+            &layout.units[index],
+            &layout.global_info,
+            backend,
+            derive_verkey,
+            cpu_tree_parallelism,
+        )
+    })
 }
 
 fn base_unit_parallelism(unit_count: usize) -> usize {
@@ -290,11 +278,90 @@ fn base_unit_parallelism(unit_count: usize) -> usize {
         .min(unit_count)
 }
 
+fn run_base_unit_jobs<F>(
+    unit_count: usize,
+    parallelism: usize,
+    job: F,
+) -> Result<Vec<BaseUnitWriteReport>, BaseDirectoryWriteError>
+where
+    F: Fn(usize) -> Result<BaseUnitWriteReport, BaseDirectoryWriteError> + Sync,
+{
+    if unit_count == 0 {
+        return Ok(Vec::new());
+    }
+
+    let worker_count = parallelism.clamp(1, unit_count);
+    let next_unit = AtomicUsize::new(0);
+    let cancelled = AtomicBool::new(false);
+    let (sender, receiver) = mpsc::channel();
+    let mut reports = vec![None; unit_count];
+    let mut first_error = None;
+
+    thread::scope(|scope| {
+        let handles = (0..worker_count)
+            .map(|_| {
+                let sender = sender.clone();
+                let next_unit = &next_unit;
+                let cancelled = &cancelled;
+                let job = &job;
+                scope.spawn(move || {
+                    while !cancelled.load(Ordering::Acquire) {
+                        let index = next_unit.fetch_add(1, Ordering::AcqRel);
+                        if index >= unit_count {
+                            break;
+                        }
+                        if sender.send((index, job(index))).is_err() {
+                            break;
+                        }
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        drop(sender);
+
+        for (index, result) in receiver {
+            match result {
+                Ok(report) => reports[index] = Some(report),
+                Err(error) => {
+                    cancelled.store(true, Ordering::Release);
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                }
+            }
+        }
+
+        for handle in handles {
+            handle
+                .join()
+                .map_err(|_| BaseDirectoryWriteError::Message {
+                    message: "base-directory unit worker panicked".to_owned(),
+                })?;
+        }
+
+        Ok::<(), BaseDirectoryWriteError>(())
+    })?;
+
+    if let Some(error) = first_error {
+        return Err(error);
+    }
+
+    reports
+        .into_iter()
+        .map(|report| {
+            report.ok_or_else(|| BaseDirectoryWriteError::Message {
+                message: "base-directory unit worker stopped before reporting".to_owned(),
+            })
+        })
+        .collect()
+}
+
 fn write_base_unit(
     unit: &KeyUnitPaths,
     global_info: &GlobalInfo,
     backend: FixedExtensionBackend,
     derive_verkey: bool,
+    cpu_tree_parallelism: usize,
 ) -> Result<BaseUnitWriteReport, BaseDirectoryWriteError> {
     let setup_path = require_base_unit_path(unit.setup_info(), "setup metadata path")?;
     let setup = read_unit_setup_info_binary_file(&setup_path)?;
@@ -332,8 +399,20 @@ fn write_base_unit(
             unit.verification_key_binary(),
         )?)
     };
-    let tree = build_constant_tree_from_fixed_columns_with_backend(&columns, &setup, backend)?;
-    let fixed_report = write_base_fixed_columns(&unit.fixed_columns, &columns, &setup)?;
+    let tree = constant_tree::build_constant_tree_from_fixed_columns_with_cpu_parallelism(
+        &columns,
+        &setup,
+        backend,
+        cpu_tree_parallelism,
+    )?;
+    let fixed_report =
+        if read_raw_fixed_column_layout_file(&unit.fixed_columns, &setup, group_name, unit_name)
+            .is_ok()
+        {
+            existing_fixed_column_report(&unit.fixed_columns)?
+        } else {
+            write_base_fixed_columns(&unit.fixed_columns, &columns, &setup)?
+        };
     let tree_report =
         write_base_constant_tree(&unit.constant_tree, &tree, &setup, expected_root.as_ref())?;
 
@@ -352,6 +431,24 @@ fn write_base_unit(
         fixed_bytes: fixed_report.bytes_written,
         tree_bytes: tree_report.bytes_written,
         verkey_bytes,
+    })
+}
+
+fn existing_fixed_column_report(
+    path: &Path,
+) -> Result<FixedColumnWriteReport, BaseDirectoryWriteError> {
+    let bytes_written = std::fs::metadata(path)
+        .map_err(|error| {
+            BaseDirectoryWriteError::Setup(SetupError::Io {
+                role: "read fixed-column metadata",
+                path: path.to_path_buf(),
+                message: error.to_string(),
+            })
+        })?
+        .len();
+    Ok(FixedColumnWriteReport {
+        path: path.to_path_buf(),
+        bytes_written,
     })
 }
 
@@ -536,4 +633,38 @@ fn write_validated_base_directory_bytes(
     let staging_path = write_staging_bytes(path, bytes, write_role)?;
     validate(&staging_path)?;
     publish_staging_bytes(&staging_path, path, publish_role).map_err(Into::into)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use super::*;
+
+    #[test]
+    fn base_unit_jobs_keep_workers_busy_after_short_jobs_finish() {
+        let durations = [80_u64, 5, 5, 5, 80, 5, 5, 5];
+        let started = Instant::now();
+
+        let reports = run_base_unit_jobs(durations.len(), 4, |index| {
+            std::thread::sleep(Duration::from_millis(durations[index]));
+            Ok(BaseUnitWriteReport {
+                fixed_bytes: index as u64,
+                tree_bytes: 0,
+                verkey_bytes: 0,
+            })
+        })
+        .expect("jobs should run");
+
+        let elapsed = started.elapsed();
+        let reported = reports
+            .iter()
+            .map(|report| report.fixed_bytes)
+            .collect::<Vec<_>>();
+        assert_eq!(reported, (0..durations.len() as u64).collect::<Vec<_>>());
+        assert!(
+            elapsed < Duration::from_millis(140),
+            "base unit jobs took {elapsed:?}"
+        );
+    }
 }

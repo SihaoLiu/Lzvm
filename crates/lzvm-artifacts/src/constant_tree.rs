@@ -1,6 +1,9 @@
 use crate::setup_info::UnitSetupInfo;
 use crate::verification_key::VerificationKeyRoot;
+use sha2::{Digest, Sha256};
 use std::fmt;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 const WORD_BYTES: u64 = 8;
@@ -20,6 +23,15 @@ pub struct ConstantTree {
     pub leaf_byte_count: usize,
     pub node_byte_count: usize,
     pub bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstantTreeFileSummary {
+    pub root: VerificationKeyRoot,
+    pub digest: [u8; 32],
+    pub byte_count: u64,
+    pub leaf_byte_count: usize,
+    pub node_byte_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +93,52 @@ pub fn read_constant_tree_file(
     parse_constant_tree_bytes(bytes, setup)
 }
 
+pub fn summarize_constant_tree_file(
+    path: impl AsRef<Path>,
+    setup: &UnitSetupInfo,
+) -> Result<ConstantTreeFileSummary, ConstantTreeError> {
+    let path = path.as_ref();
+    let expected = expected_constant_tree_byte_count(setup)?;
+    let metadata = std::fs::metadata(path).map_err(|error| ConstantTreeError::Io {
+        message: error.to_string(),
+    })?;
+    if !metadata.is_file() {
+        return Err(ConstantTreeError::Io {
+            message: "path is not a file".to_owned(),
+        });
+    }
+    if metadata.len() != u64::try_from(expected).map_err(|_| ConstantTreeError::LengthOverflow)? {
+        return Err(ConstantTreeError::InvalidByteLength {
+            expected,
+            found: usize::try_from(metadata.len())
+                .map_err(|_| ConstantTreeError::LengthOverflow)?,
+        });
+    }
+
+    let mut file = File::open(path).map_err(|error| ConstantTreeError::Io {
+        message: error.to_string(),
+    })?;
+    let digest = sha256_reader(&mut file)?;
+    let root = read_constant_tree_root_from_file(&mut file)?;
+    let extended_row_count = extended_row_count(setup)?;
+    let constant_count = u64::from(setup.n_constants);
+    let leaf_byte_count = checked_usize(checked_mul(
+        checked_mul(extended_row_count, constant_count)?,
+        WORD_BYTES,
+    )?)?;
+    let node_byte_count = expected
+        .checked_sub(leaf_byte_count)
+        .ok_or(ConstantTreeError::LengthOverflow)?;
+
+    Ok(ConstantTreeFileSummary {
+        root,
+        digest,
+        byte_count: metadata.len(),
+        leaf_byte_count,
+        node_byte_count,
+    })
+}
+
 pub fn parse_constant_tree_bytes(
     bytes: Vec<u8>,
     setup: &UnitSetupInfo,
@@ -111,6 +169,50 @@ pub fn parse_constant_tree_bytes(
         node_byte_count,
         bytes,
     })
+}
+
+fn sha256_reader(reader: &mut File) -> Result<[u8; 32], ConstantTreeError> {
+    reader
+        .seek(SeekFrom::Start(0))
+        .map_err(|error| ConstantTreeError::Io {
+            message: error.to_string(),
+        })?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 1024 * 1024];
+    loop {
+        let count = reader
+            .read(&mut buffer)
+            .map_err(|error| ConstantTreeError::Io {
+                message: error.to_string(),
+            })?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(hasher.finalize().into())
+}
+
+fn read_constant_tree_root_from_file(
+    file: &mut File,
+) -> Result<VerificationKeyRoot, ConstantTreeError> {
+    let root_bytes = checked_usize(checked_mul(HASH_WORDS, WORD_BYTES)?)?;
+    file.seek(SeekFrom::End(
+        -i64::try_from(root_bytes).map_err(|_| ConstantTreeError::LengthOverflow)?,
+    ))
+    .map_err(|error| ConstantTreeError::Io {
+        message: error.to_string(),
+    })?;
+    let mut bytes = vec![0_u8; root_bytes];
+    file.read_exact(&mut bytes)
+        .map_err(|error| ConstantTreeError::Io {
+            message: error.to_string(),
+        })?;
+    let values = bytes
+        .chunks_exact(WORD_BYTES as usize)
+        .map(|chunk| u64::from_le_bytes(chunk.try_into().expect("slice length checked")))
+        .collect::<Vec<_>>();
+    Ok(VerificationKeyRoot::FieldElements(values))
 }
 
 pub fn expected_constant_tree_byte_count(

@@ -1,4 +1,6 @@
-use crate::constant_tree::{read_constant_tree_file, ConstantTreeError};
+use crate::constant_tree::{
+    summarize_constant_tree_file, ConstantTreeError, ConstantTreeFileSummary,
+};
 use crate::constraint_program::{
     read_global_constraint_program_file, read_regular_constraint_program_file, ConstraintProgram,
     ConstraintProgramError, GlobalConstraintProgram,
@@ -15,11 +17,10 @@ use crate::hint_program::{
 use crate::metadata_bundle::{
     read_unit_metadata_bundle, MetadataBundleError, UnitMetadataBundle, UnitMetadataPaths,
 };
-use crate::pcs_material::{
-    build_pcs_setup_material, read_pcs_setup_material_file, PcsSetupMaterial, PcsSetupMaterialError,
-};
+use crate::pcs_material::{read_pcs_setup_material_file, PcsSetupMaterial, PcsSetupMaterialError};
 use crate::pcs_plan::{
-    derive_pcs_setup_plan, read_pcs_setup_plan_file, PcsPlanError, PcsSetupPlan,
+    derive_pcs_setup_plan, encode_pcs_setup_plan, read_pcs_setup_plan_file, PcsPlanError,
+    PcsSetupPlan,
 };
 use crate::source_fixed_file_manifest::{
     read_source_fixed_file_manifest_file, SourceFixedFileManifest, SourceFixedFileManifestError,
@@ -32,8 +33,11 @@ use crate::source_program::{
 use crate::verification_key::{
     read_verification_key_binary_file, VerificationKeyError, VerificationKeyRoot,
 };
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 mod digest;
@@ -824,29 +828,32 @@ fn read_key_unit_catalog_entry(
         });
     }
 
+    let constant_tree_summary = if optional_path_exists(&paths.constant_tree, "constant tree")? {
+        let summary = summarize_constant_tree_file(&paths.constant_tree, &metadata.setup)?;
+        if summary.root != verification_key {
+            return Err(KeyDirectoryError::ConstantTreeRootMismatch {
+                kind: paths.kind,
+                expected: verification_key.clone(),
+                found: summary.root,
+            });
+        }
+        Some(summary)
+    } else {
+        None
+    };
     let (constant_tree_present, constant_tree_bytes, constant_tree_root) =
-        if optional_path_exists(&paths.constant_tree, "constant tree")? {
-            let tree = read_constant_tree_file(&paths.constant_tree, &metadata.setup)?;
-            let root = tree.root()?;
-            if root != verification_key {
-                return Err(KeyDirectoryError::ConstantTreeRootMismatch {
-                    kind: paths.kind,
-                    expected: verification_key.clone(),
-                    found: root,
-                });
-            }
-            (
-                true,
-                Some(u64::try_from(tree.bytes.len()).map_err(|_| {
-                    KeyDirectoryError::ConstantTree(ConstantTreeError::LengthOverflow)
-                })?),
-                Some(root),
-            )
+        if let Some(summary) = constant_tree_summary.as_ref() {
+            (true, Some(summary.byte_count), Some(summary.root.clone()))
         } else {
             (false, None, None)
         };
     let (pcs_material_present, pcs_material_bytes, pcs_material) =
-        read_pcs_setup_material_companion(paths, &metadata.setup, &pcs_plan)?;
+        read_pcs_setup_material_companion(
+            paths,
+            &pcs_plan,
+            constant_tree_summary.as_ref(),
+            actual_fixed_bytes,
+        )?;
 
     Ok(KeyUnitCatalogEntry {
         paths: paths.clone(),
@@ -890,8 +897,9 @@ fn validate_pcs_setup_plan_companion(
 
 fn read_pcs_setup_material_companion(
     paths: &KeyUnitPaths,
-    setup: &crate::setup_info::UnitSetupInfo,
     plan: &PcsSetupPlan,
+    constant_tree: Option<&ConstantTreeFileSummary>,
+    fixed_byte_count: u64,
 ) -> Result<(bool, Option<u64>, Option<PcsSetupMaterial>), KeyDirectoryError> {
     let Some(path) = paths.pcs_setup_material() else {
         return Ok((false, None, None));
@@ -901,14 +909,32 @@ fn read_pcs_setup_material_companion(
     }
 
     let found = read_pcs_setup_material_file(&path)?;
-    let fixed_bytes =
-        std::fs::read(&paths.fixed_columns).map_err(|error| KeyDirectoryError::Io {
-            role: "fixed-column material input",
-            message: error.to_string(),
-        })?;
-    let tree = read_constant_tree_file(&paths.constant_tree, setup)?;
-    let expected = build_pcs_setup_material(plan, &fixed_bytes, &tree)?;
-    if found != expected {
+    let Some(constant_tree) = constant_tree else {
+        return Err(KeyDirectoryError::PcsMaterialMismatch {
+            kind: paths.kind,
+            path,
+        });
+    };
+    let plan_digest: [u8; 32] = Sha256::digest(encode_pcs_setup_plan(plan)?).into();
+    let fixed_digest = sha256_file(&paths.fixed_columns, "fixed-column material input")?;
+    let root_matches = match &constant_tree.root {
+        VerificationKeyRoot::FieldElements(values) => {
+            values.as_slice() == found.constant_tree_root.as_slice()
+        }
+    };
+    if found.plan_digest != plan_digest
+        || found.fixed_column_digest != fixed_digest
+        || found.constant_tree_digest != constant_tree.digest
+        || !root_matches
+        || found.fixed_byte_count != fixed_byte_count
+        || found.constant_tree_byte_count != constant_tree.byte_count
+        || found.leaf_byte_count
+            != u64::try_from(constant_tree.leaf_byte_count)
+                .map_err(|_| KeyDirectoryError::ConstantTree(ConstantTreeError::LengthOverflow))?
+        || found.node_byte_count
+            != u64::try_from(constant_tree.node_byte_count)
+                .map_err(|_| KeyDirectoryError::ConstantTree(ConstantTreeError::LengthOverflow))?
+    {
         return Err(KeyDirectoryError::PcsMaterialMismatch {
             kind: paths.kind,
             path,
@@ -921,6 +947,28 @@ fn read_pcs_setup_material_companion(
         })?
         .len();
     Ok((true, Some(bytes), Some(found)))
+}
+
+fn sha256_file(path: &Path, role: &'static str) -> Result<[u8; 32], KeyDirectoryError> {
+    let mut file = File::open(path).map_err(|error| KeyDirectoryError::Io {
+        role,
+        message: error.to_string(),
+    })?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 1024 * 1024];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|error| KeyDirectoryError::Io {
+                role,
+                message: error.to_string(),
+            })?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(hasher.finalize().into())
 }
 
 fn derive_unit_paths(

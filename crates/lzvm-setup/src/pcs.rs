@@ -1,5 +1,8 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc;
+use std::thread;
 
 use lzvm_artifacts::constant_tree::{read_constant_tree_file, ConstantTreeError};
 use lzvm_artifacts::key_directory::{
@@ -184,27 +187,115 @@ pub fn write_pcs_material_directory(
 pub fn write_pcs_material_directory_from_layout(
     layout: &KeyDirectoryLayout,
 ) -> Result<PcsDirectoryWriteReport, PcsDirectoryWriteError> {
-    let mut bytes_written = 0_u64;
-
-    for unit in &layout.units {
-        let setup_path = require_unit_path(unit.setup_info(), "setup metadata path")?;
-        let plan_path = require_unit_path(unit.pcs_setup_plan(), "PCS plan path")?;
-        let output = require_unit_path(unit.pcs_setup_material(), "PCS material output path")?;
-
-        let bytes = encode_pcs_setup_material_from_paths(
-            &setup_path,
-            &plan_path,
-            &unit.fixed_columns,
-            &unit.constant_tree,
-        )?;
-        write_output_bytes(&output, &bytes, PcsOutputKind::Material)?;
-        bytes_written = bytes_written.saturating_add(bytes.len() as u64);
-    }
+    let reports = run_pcs_material_jobs(layout)?;
+    let bytes_written = reports
+        .iter()
+        .fold(0_u64, |acc, bytes| acc.saturating_add(*bytes));
 
     Ok(PcsDirectoryWriteReport {
         unit_count: layout.units.len(),
         bytes_written,
     })
+}
+
+fn run_pcs_material_jobs(layout: &KeyDirectoryLayout) -> Result<Vec<u64>, PcsDirectoryWriteError> {
+    let unit_count = layout.units.len();
+    if unit_count == 0 {
+        return Ok(Vec::new());
+    }
+
+    let parallelism = pcs_material_parallelism(unit_count);
+    let next_unit = AtomicUsize::new(0);
+    let cancelled = AtomicBool::new(false);
+    let (sender, receiver) = mpsc::channel();
+    let mut reports = vec![None; unit_count];
+    let mut first_error = None;
+
+    thread::scope(|scope| {
+        let handles = (0..parallelism)
+            .map(|_| {
+                let sender = sender.clone();
+                let next_unit = &next_unit;
+                let cancelled = &cancelled;
+                scope.spawn(move || {
+                    while !cancelled.load(Ordering::Acquire) {
+                        let index = next_unit.fetch_add(1, Ordering::AcqRel);
+                        if index >= unit_count {
+                            break;
+                        }
+                        if sender
+                            .send((index, write_pcs_material_unit(layout, index)))
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        drop(sender);
+
+        for (index, result) in receiver {
+            match result {
+                Ok(bytes) => reports[index] = Some(bytes),
+                Err(error) => {
+                    cancelled.store(true, Ordering::Release);
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                }
+            }
+        }
+
+        for handle in handles {
+            if let Err(error) = handle.join() {
+                std::panic::resume_unwind(error);
+            }
+        }
+    });
+
+    if let Some(error) = first_error {
+        return Err(error);
+    }
+
+    reports
+        .into_iter()
+        .map(|bytes| {
+            bytes.ok_or_else(|| PcsDirectoryWriteError::Io {
+                message: "PCS material worker stopped before reporting".to_owned(),
+            })
+        })
+        .collect()
+}
+
+fn write_pcs_material_unit(
+    layout: &KeyDirectoryLayout,
+    index: usize,
+) -> Result<u64, PcsDirectoryWriteError> {
+    let unit = &layout.units[index];
+    let setup_path = require_unit_path(unit.setup_info(), "setup metadata path")?;
+    let plan_path = require_unit_path(unit.pcs_setup_plan(), "PCS plan path")?;
+    let output = require_unit_path(unit.pcs_setup_material(), "PCS material output path")?;
+
+    let bytes = encode_pcs_setup_material_from_paths(
+        &setup_path,
+        &plan_path,
+        &unit.fixed_columns,
+        &unit.constant_tree,
+    )?;
+    write_output_bytes(&output, &bytes, PcsOutputKind::Material)?;
+    Ok(bytes.len() as u64)
+}
+
+fn pcs_material_parallelism(unit_count: usize) -> usize {
+    if unit_count <= 1 {
+        return 1;
+    }
+    thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .clamp(1, 4)
+        .min(unit_count)
 }
 
 fn require_unit_path(
