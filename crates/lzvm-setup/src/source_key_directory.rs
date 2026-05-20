@@ -278,12 +278,11 @@ fn validate_supported_source_program(
             .iter()
             .any(|value| value.kind != ValueDeclarationKind::ProofValue)
             || !module.commits.is_empty()
-            || !module.publics.is_empty()
             || !module.public_tables.is_empty()
             || !module.air_group_values.is_empty()
         {
             return unsupported(
-                "public values, commits, and non-proof value maps need metadata lowering support",
+                "public tables, commits, and non-proof value maps need metadata lowering support",
             );
         }
     }
@@ -723,6 +722,7 @@ fn source_global_info(
     row_count: u64,
 ) -> Result<GlobalInfo, SourceKeyDirectoryMetadataError> {
     let (num_proof_values, proof_values_map) = source_proof_values(program)?;
+    let publics_map = source_public_values(program)?;
     let mut groups = BTreeMap::<usize, (String, BTreeMap<usize, String>)>::new();
     for unit in program
         .air_units()
@@ -778,13 +778,47 @@ fn source_global_info(
         curve: CurveKind::None,
         lattice_size: None,
         aggregation_types,
-        n_publics: 0,
+        n_publics: u64::try_from(publics_map.len())
+            .map_err(|_| unsupported_source_message("too many source public values"))?,
         num_challenges: Vec::new(),
         num_proof_values,
         proof_values_map,
-        publics_map: Vec::<PublicValue>::new(),
+        publics_map,
         transcript_arity: 4,
     })
+}
+
+fn source_public_values(
+    program: &SourceProgram,
+) -> Result<Vec<PublicValue>, SourceKeyDirectoryMetadataError> {
+    let mut seen = BTreeSet::new();
+    let mut values = Vec::new();
+    for module in &program.modules {
+        for declaration in &module.publics {
+            if declaration.initializer.is_some() {
+                return unsupported("source public initializers need metadata lowering support");
+            }
+            for item in &declaration.items {
+                if item.template {
+                    return unsupported(
+                        "template public-value names need instance lowering support",
+                    );
+                }
+                if !seen.insert(item.name.clone()) {
+                    return unsupported("duplicate source public value name");
+                }
+                values.push(PublicValue {
+                    name: item.name.clone(),
+                    stage: 1,
+                    lengths: source_item_lengths(item, "source public value")?
+                        .into_iter()
+                        .map(u64::from)
+                        .collect(),
+                });
+            }
+        }
+    }
+    Ok(values)
 }
 
 fn source_proof_values(
@@ -849,6 +883,7 @@ fn source_unit_setup_info(
         .checked_add(1)
         .ok_or_else(|| unsupported_source_message("source domain is too large"))?;
     let constant_columns = source_constant_columns(program)?;
+    let public_count = source_public_values(program)?.len();
     let const_width = constant_columns
         .iter()
         .try_fold(0_u32, |acc, column| acc.checked_add(column.dimension))
@@ -859,7 +894,10 @@ fn source_unit_setup_info(
         n_constants: u32::try_from(constant_columns.len())
             .map_err(|_| unsupported_source_message("too many source fixed columns"))?,
         constant_columns,
-        n_publics: Some(0),
+        n_publics: Some(
+            u32::try_from(public_count)
+                .map_err(|_| unsupported_source_message("too many source public values"))?,
+        ),
         n_constraints: Some(0),
         q_degree: 3,
         opening_points: vec![0],
