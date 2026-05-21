@@ -1377,6 +1377,76 @@ fn generate_key_lowers_source_function_static_if_public_value_boolean_global_con
 }
 
 #[test]
+fn generate_key_lowers_source_function_static_for_public_value_boolean_global_constraints() {
+    let dir = temp_dir("source-function-static-for-public-value-boolean");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "function constrain_flag(expr value, const int count) {\n\
+             for (int i = 0; i < count; ++i) {\n\
+                 value * (1 - value);\n\
+             }\n\
+         }\n\
+         public flag;\n\
+         constrain_flag(flag, 2);\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let program = read_global_program_file(dir.join("pilout.globalConstraints.bin"))
+        .expect("source global program should parse");
+    assert_eq!(program.constraints.entries.len(), 2);
+    assert!(program
+        .constraints
+        .entries
+        .iter()
+        .all(|entry| entry.destination_dimension == 1));
+
+    let satisfied = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            publics: &[Felt::ONE],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("boolean public flag should evaluate");
+    assert_eq!(satisfied, [Ext3::ZERO, Ext3::ZERO]);
+
+    let unsatisfied = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            publics: &[Felt::from_u64(2)],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("non-boolean public flag should evaluate");
+    assert_ne!(unsatisfied, [Ext3::ZERO, Ext3::ZERO]);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_lowers_public_static_index_boolean_global_constraints() {
     let dir = temp_dir("public-static-index-boolean");
     let _ = fs::remove_dir_all(&dir);

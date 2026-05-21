@@ -11,6 +11,7 @@ use crate::{
     source_expression_aliases::collect_source_template_expression_alias,
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_static_values::evaluate_source_static_expression,
+    source_template_for::source_static_for_loop_with_tokens,
     source_template_if::source_static_if_body_statements_with_tokens,
 };
 
@@ -232,6 +233,50 @@ fn lower_function_body_statement(
             Err(error) => Err(error),
         };
     }
+    if statement.kind == FunctionStatementKind::For {
+        return match source_static_for_loop_with_tokens(
+            context.program,
+            context.module,
+            context.tokens,
+            statement,
+            values,
+            body_cache,
+        ) {
+            Ok(Some(loop_info)) => {
+                let variable_name = loop_info.variable_name.clone();
+                let previous = values.get(&variable_name).cloned();
+                for iteration_value in &loop_info.iteration_values {
+                    values.insert(variable_name.clone(), iteration_value.clone());
+                    let mut loop_alias_scope = clone_alias_scope(alias_scope);
+                    for body_statement in loop_info.body_statements.iter() {
+                        loop_alias_scope.static_values = values.clone();
+                        if !lower_function_body_statement(
+                            context,
+                            body_statement,
+                            values,
+                            &loop_alias_scope,
+                            body_cache,
+                            constraints,
+                        )? {
+                            restore_static_value(values, &variable_name, previous.as_ref());
+                            return Ok(false);
+                        }
+                        loop_alias_scope.static_values = values.clone();
+                        collect_source_template_expression_alias(
+                            body_statement,
+                            &mut loop_alias_scope.expressions,
+                        );
+                    }
+                }
+                restore_static_value(values, &variable_name, previous.as_ref());
+                Ok(true)
+            }
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        };
+    }
     if statement.kind != FunctionStatementKind::Expression {
         return Ok(false);
     }
@@ -249,6 +294,18 @@ fn lower_function_body_statement(
         Ok(()) => Ok(true),
         Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => Ok(false),
         Err(error) => Err(error),
+    }
+}
+
+fn restore_static_value(
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    name: &str,
+    value: Option<&FixedFileTemplateValue>,
+) {
+    if let Some(value) = value {
+        values.insert(name.to_owned(), value.clone());
+    } else {
+        values.remove(name);
     }
 }
 
