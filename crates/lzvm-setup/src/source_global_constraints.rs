@@ -8,7 +8,7 @@ use lzvm_field::MODULUS;
 use lzvm_pil::{
     lex_source, parse_expression, BinaryOperator, ConstantDeclaration, Expression, ExpressionKind,
     FixedFileTemplateValue, PublicDeclaration, SourceProgram, SourceProgramModule, Token,
-    TokenKind,
+    TokenKind, UnaryOperator,
 };
 
 use crate::{
@@ -314,36 +314,44 @@ fn lower_top_level_global_constraint(
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     let mut resolving_aliases = BTreeSet::new();
     let mut resolving_array_aliases = BTreeSet::new();
-    let Some(target) = proof_value_boolean_constraint_target(
+    if let Some(target) = proof_value_boolean_constraint_target(
         expression,
         alias_scope,
         &mut resolving_aliases,
         &mut resolving_array_aliases,
-    ) else {
-        return unsupported(format!(
-            "top-level statements need global constraint lowering support: {}",
-            source_line.trim()
-        ));
-    };
-    if let Some(slot) = proof_value_slots.get(&target.name).copied() {
-        if target.index.is_some() {
-            return unsupported("top-level proof value constraints require scalar values");
+    ) {
+        if let Some(slot) = proof_value_slots.get(&target.name).copied() {
+            if target.index.is_some() {
+                return unsupported("top-level proof value constraints require scalar values");
+            }
+            return constraints.append_proof_value_boolean_constraint(
+                slot.offset,
+                proof_value_operand_dimension(slot.stage),
+                source_line.trim().to_owned(),
+            );
         }
-        return constraints.append_proof_value_boolean_constraint(
-            slot.offset,
-            proof_value_operand_dimension(slot.stage),
-            source_line.trim().to_owned(),
-        );
-    }
-    if let Some(slot) = public_value_slots.get(&target.name).copied() {
-        if slot.stage != 1 {
-            return unsupported("top-level public value constraints require scalar values");
+        if let Some(slot) = public_value_slots.get(&target.name).copied() {
+            if slot.stage != 1 {
+                return unsupported("top-level public value constraints require scalar values");
+            }
+            let offset = public_value_target_offset(slot, target.index)?;
+            return constraints
+                .append_public_value_boolean_constraint(offset, source_line.trim().to_owned());
         }
-        let offset = public_value_target_offset(slot, target.index)?;
-        return constraints
-            .append_public_value_boolean_constraint(offset, source_line.trim().to_owned());
     }
-    unsupported("top-level boolean constraint references an unknown value")
+    if constraints.append_base_residual_constraint(
+        expression,
+        proof_value_slots,
+        public_value_slots,
+        alias_scope,
+        source_line.trim().to_owned(),
+    )? {
+        return Ok(());
+    }
+    unsupported(format!(
+        "top-level statements need global constraint lowering support: {}",
+        source_line.trim()
+    ))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -357,6 +365,12 @@ struct SourcePublicValueSlot {
     offset: u32,
     stage: u64,
     dimension: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SourceGlobalBaseOperand {
+    buffer: u16,
+    offset: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -833,6 +847,58 @@ struct SourceGlobalConstraintBuilder {
 }
 
 impl SourceGlobalConstraintBuilder {
+    fn append_base_residual_constraint(
+        &mut self,
+        expression: &Expression,
+        proof_value_slots: &BTreeMap<String, SourceProofValueSlot>,
+        public_value_slots: &BTreeMap<String, SourcePublicValueSlot>,
+        alias_scope: &SourceGlobalAliasScope<'_>,
+        source_line: String,
+    ) -> Result<bool, SourceKeyDirectoryMetadataError> {
+        let ops_offset = source_usize_to_u32(self.ops.len(), "source global op offset overflow")?;
+        let args_offset =
+            source_usize_to_u32(self.args.len(), "source global argument offset overflow")?;
+        let ops_start = self.ops.len();
+        let args_start = self.args.len();
+        let (destination_id, temp1_count) = {
+            let mut context = SourceGlobalBaseLoweringContext {
+                builder: self,
+                proof_value_slots,
+                public_value_slots,
+                alias_scope,
+                resolving_aliases: BTreeSet::new(),
+                resolving_array_aliases: BTreeSet::new(),
+                next_temp: 0,
+            };
+            let Some(operand) = lower_global_base_residual_operand(expression, &mut context)?
+            else {
+                return Ok(false);
+            };
+            let destination = context.ensure_temp_operand(operand)?;
+            (destination.offset, context.next_temp)
+        };
+        let ops_count = source_usize_to_u32(
+            self.ops.len().saturating_sub(ops_start),
+            "source global op count overflow",
+        )?;
+        let args_count = source_usize_to_u32(
+            self.args.len().saturating_sub(args_start),
+            "source global argument count overflow",
+        )?;
+        self.entries.push(GlobalConstraintEntry {
+            destination_dimension: 1,
+            destination_id,
+            temp1_count,
+            temp3_count: 0,
+            ops_count,
+            ops_offset,
+            args_count,
+            args_offset,
+            source_line,
+        });
+        Ok(true)
+    }
+
     fn append_public_value_constant_constraint(
         &mut self,
         public_value_offset: u32,
@@ -1005,6 +1071,194 @@ impl SourceGlobalConstraintBuilder {
             numbers: self.numbers,
         }
     }
+}
+
+struct SourceGlobalBaseLoweringContext<'a, 'b> {
+    builder: &'a mut SourceGlobalConstraintBuilder,
+    proof_value_slots: &'b BTreeMap<String, SourceProofValueSlot>,
+    public_value_slots: &'b BTreeMap<String, SourcePublicValueSlot>,
+    alias_scope: &'b SourceGlobalAliasScope<'b>,
+    resolving_aliases: BTreeSet<String>,
+    resolving_array_aliases: BTreeSet<String>,
+    next_temp: u32,
+}
+
+impl SourceGlobalBaseLoweringContext<'_, '_> {
+    fn number_operand(
+        &mut self,
+        value: u64,
+    ) -> Result<SourceGlobalBaseOperand, SourceKeyDirectoryMetadataError> {
+        Ok(SourceGlobalBaseOperand {
+            buffer: 2,
+            offset: self.builder.intern_number(value)?,
+        })
+    }
+
+    fn zero_operand(&mut self) -> Result<SourceGlobalBaseOperand, SourceKeyDirectoryMetadataError> {
+        self.number_operand(0)
+    }
+
+    fn append_base_binary_op(
+        &mut self,
+        kind: u16,
+        left: SourceGlobalBaseOperand,
+        right: SourceGlobalBaseOperand,
+    ) -> Result<SourceGlobalBaseOperand, SourceKeyDirectoryMetadataError> {
+        let destination = self.next_temp;
+        self.next_temp = self
+            .next_temp
+            .checked_add(1)
+            .ok_or_else(|| unsupported_source_message("source global temporary overflow"))?;
+        let destination =
+            source_u32_to_u16(destination, "source global temporary offset overflow")?;
+        let left_offset = source_u32_to_u16(left.offset, "source global operand offset overflow")?;
+        let right_offset =
+            source_u32_to_u16(right.offset, "source global operand offset overflow")?;
+
+        self.builder.ops.push(0);
+        self.builder.args.extend([
+            kind,
+            destination,
+            left.buffer,
+            left_offset,
+            right.buffer,
+            right_offset,
+        ]);
+        Ok(SourceGlobalBaseOperand {
+            buffer: 0,
+            offset: u32::from(destination),
+        })
+    }
+
+    fn ensure_temp_operand(
+        &mut self,
+        operand: SourceGlobalBaseOperand,
+    ) -> Result<SourceGlobalBaseOperand, SourceKeyDirectoryMetadataError> {
+        if operand.buffer == 0 {
+            return Ok(operand);
+        }
+        let zero = self.zero_operand()?;
+        self.append_base_binary_op(1, operand, zero)
+    }
+}
+
+fn lower_global_base_residual_operand(
+    expression: &Expression,
+    context: &mut SourceGlobalBaseLoweringContext<'_, '_>,
+) -> Result<Option<SourceGlobalBaseOperand>, SourceKeyDirectoryMetadataError> {
+    if let Some(value) = evaluate_source_static_expression(
+        context.alias_scope.program,
+        expression,
+        &context.alias_scope.static_values,
+    ) {
+        return Ok(Some(
+            context.number_operand(source_public_initializer_field_value(&value)?)?,
+        ));
+    }
+    match &strip_group_expression(expression).kind {
+        ExpressionKind::Group(inner) => lower_global_base_residual_operand(inner, context),
+        ExpressionKind::Name(name) => lower_global_base_name_operand(name, None, context),
+        ExpressionKind::Index { target, index } => {
+            lower_global_base_index_operand(target, index, context)
+        }
+        ExpressionKind::Unary { op, expr } => match op {
+            UnaryOperator::Plus => lower_global_base_residual_operand(expr, context),
+            UnaryOperator::Minus => {
+                let Some(value) = lower_global_base_residual_operand(expr, context)? else {
+                    return Ok(None);
+                };
+                let zero = context.zero_operand()?;
+                context.append_base_binary_op(1, zero, value).map(Some)
+            }
+            _ => Ok(None),
+        },
+        ExpressionKind::Binary { op, left, right } => {
+            let kind = match op {
+                BinaryOperator::Add => 0,
+                BinaryOperator::Subtract => 1,
+                BinaryOperator::Multiply => 2,
+                _ => return Ok(None),
+            };
+            let Some(left) = lower_global_base_residual_operand(left, context)? else {
+                return Ok(None);
+            };
+            let Some(right) = lower_global_base_residual_operand(right, context)? else {
+                return Ok(None);
+            };
+            context.append_base_binary_op(kind, left, right).map(Some)
+        }
+        _ => Ok(None),
+    }
+}
+
+fn lower_global_base_index_operand(
+    target: &Expression,
+    index: &Expression,
+    context: &mut SourceGlobalBaseLoweringContext<'_, '_>,
+) -> Result<Option<SourceGlobalBaseOperand>, SourceKeyDirectoryMetadataError> {
+    let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
+        return Ok(None);
+    };
+    let Some(index) = static_u32_expression(index, context.alias_scope) else {
+        return Ok(None);
+    };
+    if let Some(alias) = context.alias_scope.expression_arrays.get(name) {
+        if !context.resolving_array_aliases.insert(name.clone()) {
+            return Ok(None);
+        }
+        let element = source_global_expression_array_alias_element(
+            alias,
+            usize::try_from(index)
+                .map_err(|_| unsupported_source_message("source global index overflow"))?,
+            &context.alias_scope.expression_arrays,
+            &mut context.resolving_array_aliases,
+        );
+        context.resolving_array_aliases.remove(name);
+        return match element {
+            Some(SourceGlobalExpressionArrayAliasElement::Expression(expression)) => {
+                lower_global_base_residual_operand(expression, context)
+            }
+            Some(SourceGlobalExpressionArrayAliasElement::NamedArray(name)) => {
+                lower_global_base_name_operand(name, Some(index), context)
+            }
+            None => Ok(None),
+        };
+    }
+    lower_global_base_name_operand(name, Some(index), context)
+}
+
+fn lower_global_base_name_operand(
+    name: &str,
+    index: Option<u32>,
+    context: &mut SourceGlobalBaseLoweringContext<'_, '_>,
+) -> Result<Option<SourceGlobalBaseOperand>, SourceKeyDirectoryMetadataError> {
+    if index.is_none() {
+        if let Some(alias) = context.alias_scope.expressions.get(name) {
+            if !context.resolving_aliases.insert(name.to_owned()) {
+                return Ok(None);
+            }
+            let operand = lower_global_base_residual_operand(alias, context);
+            context.resolving_aliases.remove(name);
+            return operand;
+        }
+    }
+    if let Some(slot) = context.public_value_slots.get(name).copied() {
+        if slot.stage != 1 {
+            return unsupported("top-level base residuals require base-field public values");
+        }
+        let offset = public_value_target_offset(slot, index)?;
+        return Ok(Some(SourceGlobalBaseOperand { buffer: 1, offset }));
+    }
+    if let Some(slot) = context.proof_value_slots.get(name).copied() {
+        if index.is_some() || proof_value_operand_dimension(slot.stage) != 1 {
+            return unsupported("top-level base residuals require scalar base-field proof values");
+        }
+        return Ok(Some(SourceGlobalBaseOperand {
+            buffer: 3,
+            offset: slot.offset,
+        }));
+    }
+    Ok(None)
 }
 
 fn proof_value_operand_dimension(stage: u64) -> u32 {
