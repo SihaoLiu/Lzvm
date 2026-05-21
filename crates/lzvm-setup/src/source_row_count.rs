@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use lzvm_pil::{
@@ -154,17 +154,28 @@ fn source_air_instance_parameter_values(
     constants: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> BTreeMap<String, FixedFileTemplateValue> {
     let mut values = constants.clone();
+    let mut provided = BTreeSet::new();
+    if let Some(arguments) = instance.args_expressions.as_ref() {
+        apply_source_air_instance_arguments(
+            program,
+            template,
+            arguments,
+            &mut values,
+            &mut provided,
+        );
+    }
     for parameter in &template.parameters {
-        if let Some(value) = parameter
+        if provided.contains(&parameter.name) {
+            continue;
+        }
+        let Some(value) = parameter
             .default_expression
             .as_ref()
             .and_then(|expression| evaluate_source_static_expression(program, expression, &values))
-        {
-            values.insert(parameter.name.clone(), value);
-        }
-    }
-    if let Some(arguments) = instance.args_expressions.as_ref() {
-        apply_source_air_instance_arguments(program, template, arguments, &mut values);
+        else {
+            continue;
+        };
+        values.insert(parameter.name.clone(), value);
     }
     values
 }
@@ -174,6 +185,7 @@ fn apply_source_air_instance_arguments(
     template: &AirTemplateDeclaration,
     arguments: &[CallArgument],
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    provided: &mut BTreeSet<String>,
 ) {
     let mut positional_index = 0;
     for argument in arguments {
@@ -181,14 +193,33 @@ fn apply_source_air_instance_arguments(
         else {
             continue;
         };
-        if let Some(name) = argument.name.as_ref() {
+        let name = if let Some(name) = argument.name.as_ref() {
+            name
+        } else {
+            while template
+                .parameters
+                .get(positional_index)
+                .is_some_and(|parameter| provided.contains(&parameter.name))
+            {
+                let Some(next) = positional_index.checked_add(1) else {
+                    return;
+                };
+                positional_index = next;
+            }
+            let Some(parameter) = template.parameters.get(positional_index) else {
+                continue;
+            };
+            &parameter.name
+        };
+        if provided.insert(name.clone()) {
             values.insert(name.clone(), value);
-            continue;
         }
-        if let Some(parameter) = template.parameters.get(positional_index) {
-            values.insert(parameter.name.clone(), value);
+        if argument.name.is_none() {
+            let Some(next) = positional_index.checked_add(1) else {
+                return;
+            };
+            positional_index = next;
         }
-        positional_index += 1;
     }
 }
 
