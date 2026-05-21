@@ -53,12 +53,13 @@ struct SourceUnitValueSlot {
     lengths: Vec<u32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct SourceGroupValueSlot {
     id: u32,
     stage: u32,
     source_dimension: u32,
     operand_dimension: u32,
+    lengths: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,6 +157,7 @@ impl SourceScalarSlots {
                     stage: value.stage,
                     source_dimension,
                     operand_dimension: if value.stage == 1 { 1 } else { 3 },
+                    lengths: value.lengths.clone(),
                 },
             );
             group_value_id = group_value_id.checked_add(source_dimension).ok_or(
@@ -768,6 +770,11 @@ impl SourceScalarSlots {
         }
 
         if let Some(slot) = self.unit_values.get(name) {
+            let index = linear_source_index(name, indices, &slot.lengths)?;
+            return self.operand_index_at(name, index, row_offset);
+        }
+
+        if let Some(slot) = self.group_values.get(name) {
             let index = linear_source_index(name, indices, &slot.lengths)?;
             return self.operand_index_at(name, index, row_offset);
         }
