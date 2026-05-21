@@ -503,6 +503,17 @@ impl SourceScalarSlots {
                 .collect();
         }
 
+        if let Some(slot) = self.constants.get(name) {
+            if slot.stage != 0 {
+                return Err(SourceScalarSlotError::UnsupportedValueShape {
+                    name: name.to_owned(),
+                });
+            }
+            return (0..slot.dimension)
+                .map(|index| self.operand_index_at(name, index, row_offset))
+                .collect();
+        }
+
         if let Some(slot) = self.proof_values.get(name) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
@@ -659,6 +670,31 @@ impl SourceScalarSlots {
                 None,
                 slot.operand_dimension,
             ));
+        }
+
+        if let Some(slot) = self.constants.get(name) {
+            if slot.stage != 0 {
+                return Err(SourceScalarSlotError::UnsupportedValueShape {
+                    name: name.to_owned(),
+                });
+            }
+            if index >= slot.dimension {
+                return Err(SourceScalarSlotError::IndexOutOfRange {
+                    name: name.to_owned(),
+                    index,
+                    dimension: slot.dimension,
+                });
+            }
+            let id = slot
+                .id
+                .checked_add(index)
+                .ok_or(SourceScalarSlotError::LengthOverflow(
+                    "source constant id overflow",
+                ))?;
+            if row_offset == 0 {
+                return Ok(CodeOperand::constant(id, 1));
+            }
+            return Ok(CodeOperand::constant_at(id, Some(row_offset), 1));
         }
 
         if let Some(slot) = self.proof_values.get(name) {
