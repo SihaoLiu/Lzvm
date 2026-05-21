@@ -220,6 +220,7 @@ pub fn write_source_key_directory_metadata(
         let layout = read_key_directory_layout(&request.setup_dir)?;
         let mut unit_payloads = Vec::new();
         let mut body_caches = SourceControlBodyCaches::default();
+        let active_templates = concrete_template_names(&program);
         for unit in &layout.units {
             let Some(setup_path) = unit.setup_info_binary() else {
                 continue;
@@ -227,7 +228,14 @@ pub fn write_source_key_directory_metadata(
             let row_count = source_layout_unit_row_count(unit, &row_counts)?;
             let mut setup_info = source_unit_setup_info(&program, row_count, &mut body_caches)?;
             let unit_constant_values = source_scalar_constant_values(&program, row_count);
-            let challenge_slots = source_challenge_slots(&program, &unit_constant_values)?;
+            let unit_template_values =
+                source_template_constant_value_cache(&program, &unit_constant_values);
+            let challenge_slots = source_challenge_slots(
+                &program,
+                &unit_constant_values,
+                &active_templates,
+                &unit_template_values,
+            )?;
             let expression_info = source_expression_info(
                 &program,
                 &setup_info,
@@ -371,8 +379,18 @@ fn source_global_info(
     let constant_values = source_scalar_constant_values(program, row_count);
     let template_values = source_template_constant_value_cache(program, &constant_values);
     let active_templates = concrete_template_names(program);
-    let num_challenges = source_challenge_counts(program, &constant_values)?;
-    let (num_proof_values, proof_values_map) = source_proof_values(program, &constant_values)?;
+    let num_challenges = source_challenge_counts(
+        program,
+        &constant_values,
+        &active_templates,
+        &template_values,
+    )?;
+    let (num_proof_values, proof_values_map) = source_proof_values(
+        program,
+        &constant_values,
+        &active_templates,
+        &template_values,
+    )?;
     let publics_map = source_public_values(program, &constant_values)?;
     let (_, group_aggregation_types) = source_air_group_values(
         program,
@@ -495,6 +513,8 @@ fn source_public_values(
 fn source_proof_values(
     program: &SourceProgram,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    active_templates: &BTreeSet<String>,
+    template_values: &SourceTemplateConstantValueCache,
 ) -> Result<(Vec<u64>, Vec<NamedStageValue>), SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut counts_by_stage = Vec::<u64>::new();
@@ -502,6 +522,30 @@ fn source_proof_values(
     for module in &program.modules {
         for declaration in &module.values {
             if declaration.kind != ValueDeclarationKind::ProofValue {
+                continue;
+            }
+            if declaration_in_inactive_template(
+                module,
+                declaration.start,
+                declaration.end,
+                active_templates,
+            ) {
+                continue;
+            }
+            let declaration_values = source_declaration_constant_values_from_cache(
+                module,
+                declaration.start,
+                declaration.end,
+                constant_values,
+                template_values,
+            );
+            if source_declaration_in_static_false_branch(
+                program,
+                module,
+                declaration.start,
+                declaration.end,
+                declaration_values,
+            ) {
                 continue;
             }
             let stage = usize::try_from(declaration.stage)
@@ -533,7 +577,7 @@ fn source_proof_values(
                         program,
                         item,
                         "source proof value",
-                        constant_values,
+                        declaration_values,
                     )?
                     .into_iter()
                     .map(u64::from)
@@ -548,8 +592,11 @@ fn source_proof_values(
 fn source_challenge_counts(
     program: &SourceProgram,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    active_templates: &BTreeSet<String>,
+    template_values: &SourceTemplateConstantValueCache,
 ) -> Result<Vec<u64>, SourceKeyDirectoryMetadataError> {
-    let slots = source_challenge_slots(program, constant_values)?;
+    let slots =
+        source_challenge_slots(program, constant_values, active_templates, template_values)?;
     let mut counts_by_stage = Vec::<u64>::new();
     for slot in slots {
         let stage_index = usize::try_from(slot.stage)
@@ -569,6 +616,8 @@ fn source_challenge_counts(
 fn source_challenge_slots(
     program: &SourceProgram,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    active_templates: &BTreeSet<String>,
+    template_values: &SourceTemplateConstantValueCache,
 ) -> Result<Vec<SourceChallengeSlotMetadata>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeMap::<String, SourceChallengeShape>::new();
     let mut slots = Vec::<SourceChallengeSlotMetadata>::new();
@@ -576,6 +625,30 @@ fn source_challenge_slots(
     for module in &program.modules {
         for declaration in &module.values {
             if declaration.kind != ValueDeclarationKind::Challenge {
+                continue;
+            }
+            if declaration_in_inactive_template(
+                module,
+                declaration.start,
+                declaration.end,
+                active_templates,
+            ) {
+                continue;
+            }
+            let declaration_values = source_declaration_constant_values_from_cache(
+                module,
+                declaration.start,
+                declaration.end,
+                constant_values,
+                template_values,
+            );
+            if source_declaration_in_static_false_branch(
+                program,
+                module,
+                declaration.start,
+                declaration.end,
+                declaration_values,
+            ) {
                 continue;
             }
             let stage = usize::try_from(declaration.stage)
@@ -588,7 +661,7 @@ fn source_challenge_slots(
                     return unsupported("template challenge names need instance lowering support");
                 }
                 let lengths =
-                    source_item_lengths(program, item, "source challenge", constant_values)?;
+                    source_item_lengths(program, item, "source challenge", declaration_values)?;
                 let dimension = source_column_dimension(&lengths, "source challenge")?;
                 let shape = SourceChallengeShape { stage, dimension };
                 if let Some(existing) = seen.get(&item.name) {
@@ -863,14 +936,19 @@ fn source_unit_setup_info(
         &template_values,
         body_caches,
     )?;
-    let challenge_count = source_challenge_counts(program, &constant_values)?
-        .into_iter()
-        .try_fold(0_usize, |acc, count| {
-            usize::try_from(count)
-                .ok()
-                .and_then(|count| acc.checked_add(count))
-        })
-        .ok_or_else(|| unsupported_source_message("source challenge count overflow"))?;
+    let challenge_count = source_challenge_counts(
+        program,
+        &constant_values,
+        &active_templates,
+        &template_values,
+    )?
+    .into_iter()
+    .try_fold(0_usize, |acc, count| {
+        usize::try_from(count)
+            .ok()
+            .and_then(|count| acc.checked_add(count))
+    })
+    .ok_or_else(|| unsupported_source_message("source challenge count overflow"))?;
     let public_count = source_public_values(program, &constant_values)?.len();
     let const_width = constant_columns
         .iter()
