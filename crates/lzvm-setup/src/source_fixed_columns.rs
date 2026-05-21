@@ -1334,13 +1334,11 @@ fn source_fixed_index_assignment_target(
     else {
         return Ok(None);
     };
-    let ExpressionKind::Name(column_name) = &strip_source_fixed_group_expression(target).kind
+    let Some(column_name) =
+        source_fixed_index_assignment_column_name(target, expected_columns, constant_values)
     else {
         return Ok(None);
     };
-    if !expected_columns.contains(column_name) {
-        return Ok(None);
-    }
     let Some(row_value) = evaluate_source_fixed_assignment_value_expression(index, constant_values)
     else {
         return Ok(None);
@@ -1367,7 +1365,34 @@ fn source_fixed_index_assignment_target(
             expression: row.to_string(),
         });
     }
-    Ok(Some((column_name.clone(), row)))
+    Ok(Some((column_name, row)))
+}
+
+fn source_fixed_index_assignment_column_name(
+    expression: &Expression,
+    expected_columns: &BTreeSet<String>,
+    values: &SourceFixedAssignmentValues<'_>,
+) -> Option<String> {
+    match &strip_source_fixed_group_expression(expression).kind {
+        ExpressionKind::Name(column_name) => expected_columns
+            .contains(column_name)
+            .then(|| column_name.clone()),
+        ExpressionKind::Index { target, index } => {
+            let ExpressionKind::Name(column_name) =
+                &strip_source_fixed_group_expression(target).kind
+            else {
+                return None;
+            };
+            let index = evaluate_source_fixed_assignment_value_expression(index, values)?;
+            let index = source_fixed_assignment_integer(&index)?;
+            let index = u32::try_from(index).ok()?;
+            let column_name = format!("{column_name}[{index}]");
+            expected_columns
+                .contains(&column_name)
+                .then_some(column_name)
+        }
+        _ => None,
+    }
 }
 
 fn strip_source_fixed_group_expression(expression: &Expression) -> &Expression {

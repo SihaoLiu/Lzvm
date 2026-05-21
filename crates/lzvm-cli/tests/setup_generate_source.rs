@@ -601,6 +601,81 @@ fn generate_key_writes_fixed_array_element_sequences() {
 }
 
 #[test]
+fn generate_key_writes_fixed_array_element_row_assignments() {
+    let dir = temp_dir("fixed-array-element-row-assignments");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col fixed lane[2];\n\
+             lane[0][0] = 1;\n\
+             lane[0][1] = 2;\n\
+             lane[1][0] = 3;\n\
+             lane[1][1] = 4;\n\
+             col fixed marker = [0, 1];\n\
+         }\n\
+         airgroup GroupA { UnitA(); }",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup_path = unit
+        .setup_info_binary()
+        .expect("setup metadata path should derive");
+    let setup = read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+    assert_eq!(setup.n_constants, 3);
+    assert_eq!(setup.constant_columns[0].name, "lane");
+    assert_eq!(setup.constant_columns[0].dimension, 2);
+    assert_eq!(setup.constant_columns[1].name, "marker");
+
+    let columns = parse_raw_fixed_columns(
+        &fs::read(&unit.fixed_columns).expect("raw fixed columns should read"),
+        &setup,
+        unit.group_name.as_deref().unwrap_or("raw"),
+        unit.unit_name.as_deref().unwrap_or("unit"),
+    )
+    .expect("raw fixed columns should parse");
+    assert_eq!(columns.columns[0].name, "lane[0]");
+    assert_eq!(columns.columns[0].values, [1, 2]);
+    assert_eq!(columns.columns[1].name, "lane[1]");
+    assert_eq!(columns.columns[1].values, [3, 4]);
+    assert_eq!(columns.columns[2].name, "marker");
+    assert_eq!(columns.columns[2].values, [0, 1]);
+    assert_eq!(
+        read_raw_fixed_row_file(
+            &unit.fixed_columns,
+            &setup,
+            unit.group_name.as_deref().unwrap_or("raw"),
+            unit.unit_name.as_deref().unwrap_or("unit"),
+            0,
+        )
+        .expect("raw fixed row should read"),
+        [1, 3, 0],
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_uses_template_local_constants_for_column_dimensions() {
     let dir = temp_dir("template-local-constant-dimensions");
     let _ = fs::remove_dir_all(&dir);
