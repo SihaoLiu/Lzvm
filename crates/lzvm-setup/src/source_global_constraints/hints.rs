@@ -7,7 +7,7 @@ use lzvm_artifacts::hint_program::{global_hint_program_from_expression_info, Hin
 use lzvm_pil::{
     lex_source, BinaryOperator, CallArgument, Expression, ExpressionKind, FixedFileTemplateValue,
     FunctionDeclaration, FunctionParameter, FunctionStatement, FunctionStatementDeclaration,
-    FunctionStatementKind, SourceProgram, SourceProgramModule, Token,
+    FunctionStatementKind, SourceProgram, SourceProgramModule, Token, UnaryOperator,
 };
 
 use crate::{
@@ -190,6 +190,13 @@ fn lower_source_global_hint_statement(
             Ok(())
         }
         FunctionStatementKind::Expression => {
+            if apply_source_global_hint_static_expression_statement(
+                context.program,
+                statement.value_expression.as_ref(),
+                values,
+            ) {
+                return Ok(());
+            }
             if source_global_hint_static_assertion(
                 context.program,
                 context.module,
@@ -476,6 +483,86 @@ fn source_call_expression(expression: Option<&Expression>) -> Option<(&str, &[Ca
     Some((name.as_str(), args.as_slice()))
 }
 
+fn apply_source_global_hint_static_expression_statement(
+    program: &SourceProgram,
+    expression: Option<&Expression>,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> bool {
+    let Some(expression) = expression else {
+        return false;
+    };
+    match &expression.kind {
+        ExpressionKind::Unary { op, expr } => {
+            let delta = match op {
+                UnaryOperator::Increment => 1,
+                UnaryOperator::Decrement => -1,
+                _ => return false,
+            };
+            let Some(name) = source_expression_name(expr) else {
+                return false;
+            };
+            apply_source_global_hint_static_delta(name, delta, values)
+        }
+        ExpressionKind::Binary { op, left, right } => {
+            let Some(name) = source_expression_name(left) else {
+                return false;
+            };
+            if !values.contains_key(name) {
+                return false;
+            }
+            let Some(right) = evaluate_source_static_expression(program, right, values) else {
+                return false;
+            };
+            let value = match op {
+                BinaryOperator::Assign => right,
+                BinaryOperator::PlusAssign => {
+                    let Some(current) = source_global_hint_static_integer_value(values.get(name))
+                    else {
+                        return false;
+                    };
+                    let Some(right) = source_global_hint_static_integer_value(Some(&right)) else {
+                        return false;
+                    };
+                    let Some(value) = current.checked_add(right) else {
+                        return false;
+                    };
+                    FixedFileTemplateValue::Integer(value)
+                }
+                BinaryOperator::MinusAssign => {
+                    let Some(current) = source_global_hint_static_integer_value(values.get(name))
+                    else {
+                        return false;
+                    };
+                    let Some(right) = source_global_hint_static_integer_value(Some(&right)) else {
+                        return false;
+                    };
+                    let Some(value) = current.checked_sub(right) else {
+                        return false;
+                    };
+                    FixedFileTemplateValue::Integer(value)
+                }
+                BinaryOperator::StarAssign => {
+                    let Some(current) = source_global_hint_static_integer_value(values.get(name))
+                    else {
+                        return false;
+                    };
+                    let Some(right) = source_global_hint_static_integer_value(Some(&right)) else {
+                        return false;
+                    };
+                    let Some(value) = current.checked_mul(right) else {
+                        return false;
+                    };
+                    FixedFileTemplateValue::Integer(value)
+                }
+                _ => return false,
+            };
+            values.insert(name.to_owned(), value);
+            true
+        }
+        _ => false,
+    }
+}
+
 fn source_global_hint_static_assertion(
     program: &SourceProgram,
     module: &SourceProgramModule,
@@ -595,6 +682,21 @@ fn source_global_hint_static_truthy_value(value: &FixedFileTemplateValue) -> boo
         FixedFileTemplateValue::Boolean(value) => *value,
         FixedFileTemplateValue::String(value) => !value.is_empty(),
     }
+}
+
+fn apply_source_global_hint_static_delta(
+    name: &str,
+    delta: i128,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> bool {
+    let Some(current) = source_global_hint_static_integer_value(values.get(name)) else {
+        return false;
+    };
+    let Some(value) = current.checked_add(delta) else {
+        return false;
+    };
+    values.insert(name.to_owned(), FixedFileTemplateValue::Integer(value));
+    true
 }
 
 fn source_expression_name(expression: &Expression) -> Option<&str> {
