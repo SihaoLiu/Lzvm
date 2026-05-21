@@ -20,7 +20,10 @@ use lzvm_artifacts::global_info::{
     AggregationType, CurveKind, GlobalAir, GlobalInfo, NamedStageValue, PublicValue,
 };
 use lzvm_artifacts::group_values_segment::{parse_group_values_segment, GROUP_VALUES_SEGMENT_ID};
-use lzvm_artifacts::hint_program::{Hint, HintField, HintOperand, HintProgram, HintValue};
+use lzvm_artifacts::hint_program::{
+    Hint, HintField, HintOperand, HintProgram, HintValue, SOURCE_LOOKUP_ASSUMES_HINT,
+    SOURCE_LOOKUP_PROVES_HINT,
+};
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry,
     KeyUnitKind, KeyUnitPaths,
@@ -53,7 +56,7 @@ use lzvm_artifacts::public_values::{
     encode_public_values, public_values_digest, PublicValueEntry, PublicValues,
 };
 use lzvm_artifacts::setup_info::{
-    EvaluationMapEntry, FriStep, StageValue, StarkStruct, UnitSetupInfo,
+    CommitmentColumn, EvaluationMapEntry, FriStep, StageValue, StarkStruct, UnitSetupInfo,
 };
 use lzvm_artifacts::trace_bundle::{TraceBundle, TraceBundleUnit};
 use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
@@ -780,6 +783,44 @@ fn sample_trace_bundle(unit_count: u32, seed: u64) -> TraceBundle {
             })
             .collect(),
     }
+}
+
+fn source_lookup_balance_hint(name: &str) -> Hint {
+    Hint {
+        name: name.to_owned(),
+        fields: vec![
+            HintField {
+                name: "bus_id".to_owned(),
+                values: vec![HintValue {
+                    operand: HintOperand::Number(7),
+                    positions: Vec::new(),
+                }],
+            },
+            HintField {
+                name: "values".to_owned(),
+                values: vec![HintValue {
+                    operand: HintOperand::Commitment {
+                        id: 0,
+                        row_offset_index: 0,
+                    },
+                    positions: Vec::new(),
+                }],
+            },
+        ],
+    }
+}
+
+fn declare_source_lookup_commitment_column(unit: &mut KeyUnitCatalogEntry) {
+    unit.metadata.setup.commitment_columns = vec![CommitmentColumn {
+        name: "lookup_value".to_owned(),
+        stage: 1,
+        dimension: 1,
+        pols_map_id: 0,
+        stage_id: 0,
+        stage_position: 0,
+        intermediate: false,
+        lengths: Vec::new(),
+    }];
 }
 
 fn witness_source() -> &'static str {
@@ -1806,6 +1847,89 @@ fn runs_witness_commitments_for_all_units_in_prover() {
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(outputs, expected);
+    assert_eq!(outputs[0].commitments().unit_index(), 0);
+    assert_eq!(outputs[1].commitments().unit_index(), 1);
+}
+
+#[test]
+fn runs_all_units_with_cross_unit_source_lookup_balance() {
+    let dir = temp_dir("all-units-cross-unit-source-lookup");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [11_u8]).expect("input data should be written");
+
+    let mut first_unit = sample_unit();
+    first_unit.paths.constant_tree = dir.join("unit-a.consttree");
+    declare_source_lookup_commitment_column(&mut first_unit);
+    first_unit.regular_hints = HintProgram {
+        hints: vec![source_lookup_balance_hint(SOURCE_LOOKUP_PROVES_HINT)],
+    };
+
+    let mut second_unit = sample_unit();
+    second_unit.paths.unit_id = Some(1);
+    second_unit.paths.unit_name = Some("unit-b".to_owned());
+    second_unit.paths.prefix = "unit-b".into();
+    second_unit.paths.metadata_prefix = Some("unit-b".into());
+    second_unit.paths.program_prefix = Some("unit-b".into());
+    second_unit.paths.verification_key_prefix = "unit-b".into();
+    second_unit.paths.constant_tree = dir.join("unit-b.consttree");
+    declare_source_lookup_commitment_column(&mut second_unit);
+    second_unit.regular_hints = HintProgram {
+        hints: vec![source_lookup_balance_hint(SOURCE_LOOKUP_ASSUMES_HINT)],
+    };
+
+    let first_tree_bytes = expected_constant_tree_byte_count(&first_unit.metadata.setup)
+        .expect("tree size should derive");
+    let second_tree_bytes = expected_constant_tree_byte_count(&second_unit.metadata.setup)
+        .expect("tree size should derive");
+    fs::write(
+        &first_unit.paths.constant_tree,
+        vec![0_u8; first_tree_bytes],
+    )
+    .expect("first constant tree should be written");
+    fs::write(
+        &second_unit.paths.constant_tree,
+        vec![0_u8; second_tree_bytes],
+    )
+    .expect("second constant tree should be written");
+
+    let catalog = sample_catalog_units(vec![first_unit, second_unit]);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let trace_bytes = sample_trace_bytes(17);
+    let trace_bundle = TraceBundle {
+        units: vec![
+            TraceBundleUnit {
+                unit_index: 0,
+                trace_bytes: trace_bytes.clone(),
+            },
+            TraceBundleUnit {
+                unit_index: 1,
+                trace_bytes,
+            },
+        ],
+    };
+
+    let outputs = lzvm_prover::run_prove_witness_commitments_for_all_units_with_trace_bundle(
+        &plan,
+        &ProveWitnessAuxiliaryInputs::default(),
+        &trace_bundle,
+    )
+    .expect("cross-unit source lookup balance should validate");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(outputs.len(), 2);
     assert_eq!(outputs[0].commitments().unit_index(), 0);
     assert_eq!(outputs[1].commitments().unit_index(), 1);
 }

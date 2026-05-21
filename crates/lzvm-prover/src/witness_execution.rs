@@ -193,6 +193,9 @@ pub enum ProveWitnessCommitmentError {
         unit_index: usize,
         message: String,
     },
+    SourceLookupSet {
+        message: String,
+    },
     RegularConstraintViolation {
         unit_index: usize,
         constraint_index: usize,
@@ -336,6 +339,10 @@ impl fmt::Display for ProveWitnessCommitmentError {
                 f,
                 "source lookup validation failed for prove witness commitment unit {unit_index}: {message}"
             ),
+            Self::SourceLookupSet { message } => write!(
+                f,
+                "source lookup validation failed for prove witness commitment set: {message}"
+            ),
             Self::RegularConstraintViolation {
                 unit_index,
                 constraint_index,
@@ -378,6 +385,7 @@ impl std::error::Error for ProveWitnessCommitmentError {
             | Self::MissingRegularHintInput { .. }
             | Self::UnsupportedRegularHint { .. }
             | Self::SourceLookup { .. }
+            | Self::SourceLookupSet { .. }
             | Self::RegularConstraintViolation { .. } => None,
         }
     }
@@ -452,6 +460,22 @@ pub fn run_prove_witness_commitments_with_trace_backend<B: WitnessBackend + ?Siz
     auxiliary_inputs: ProveWitnessAuxiliaryInputs,
     backend: &B,
 ) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
+    run_prove_witness_commitments_with_trace_backend_inner(
+        plan,
+        unit_index,
+        auxiliary_inputs,
+        backend,
+        None,
+    )
+}
+
+fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?Sized>(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    auxiliary_inputs: ProveWitnessAuxiliaryInputs,
+    backend: &B,
+    source_lookup_balance: Option<&mut SourceLookupBalance>,
+) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
     let unit_count = plan.run_plan.schedule.units.len();
     let unit = plan.run_plan.schedule.units.get(unit_index).ok_or(
         ProveWitnessCommitmentError::UnitIndexOutOfRange {
@@ -479,14 +503,26 @@ pub fn run_prove_witness_commitments_with_trace_backend<B: WitnessBackend + ?Siz
         &publics,
         &auxiliary_inputs,
     )?;
-    validate_witness_regular_hints(
-        execution_unit,
-        unit_index,
-        &layout,
-        &trace,
-        &publics,
-        &auxiliary_inputs,
-    )?;
+    if let Some(source_lookup_balance) = source_lookup_balance {
+        accumulate_witness_regular_hints(
+            execution_unit,
+            unit_index,
+            &layout,
+            &trace,
+            &publics,
+            &auxiliary_inputs,
+            source_lookup_balance,
+        )?;
+    } else {
+        validate_witness_regular_hints(
+            execution_unit,
+            unit_index,
+            &layout,
+            &trace,
+            &publics,
+            &auxiliary_inputs,
+        )?;
+    }
     let trace_rows = trace.row_count();
     let trace_columns = trace.column_count();
     let stage_commitments = commit_witness_trace_stages_with_workers(
@@ -517,18 +553,23 @@ pub fn run_prove_witness_commitments_for_all_units(
     backend: &(impl WitnessBackend + ?Sized),
 ) -> Result<Vec<ProveWitnessTraceCommitments>, String> {
     let mut outputs = Vec::with_capacity(plan.units.len());
+    let mut source_lookup_balance = SourceLookupBalance::default();
     for unit_index in 0..plan.units.len() {
-        let output = run_prove_witness_commitments_with_trace_backend(
+        let output = run_prove_witness_commitments_with_trace_backend_inner(
             plan,
             unit_index,
             auxiliary_inputs.clone(),
             backend,
+            Some(&mut source_lookup_balance),
         )
         .map_err(|error| {
             format!("run witness commitments failed for unit {unit_index}: {error}")
         })?;
         outputs.push(output);
     }
+    source_lookup_balance
+        .validate_all_units()
+        .map_err(|error| error.to_string())?;
     Ok(outputs)
 }
 
@@ -538,6 +579,7 @@ pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
     bundle: &TraceBundle,
 ) -> Result<Vec<ProveWitnessTraceCommitments>, String> {
     let mut outputs = Vec::with_capacity(plan.units.len());
+    let mut source_lookup_balance = SourceLookupBalance::default();
     for unit_index in 0..plan.units.len() {
         let unit_index_u32 = u32::try_from(unit_index)
             .map_err(|_| format!("trace bundle unit index is too large: {unit_index}"))?;
@@ -545,17 +587,21 @@ pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
             .trace_bytes_for_unit(unit_index_u32)
             .ok_or_else(|| format!("trace bundle is missing unit {unit_index}"))?;
         let backend = TraceBytesBackend::new(trace_bytes.to_vec());
-        let output = run_prove_witness_commitments_with_trace_backend(
+        let output = run_prove_witness_commitments_with_trace_backend_inner(
             plan,
             unit_index,
             auxiliary_inputs.clone(),
             &backend,
+            Some(&mut source_lookup_balance),
         )
         .map_err(|error| {
             format!("run witness commitments failed for unit {unit_index}: {error}")
         })?;
         outputs.push(output);
     }
+    source_lookup_balance
+        .validate_all_units()
+        .map_err(|error| error.to_string())?;
     Ok(outputs)
 }
 
@@ -715,6 +761,29 @@ fn validate_witness_regular_hints(
     publics: &[Felt],
     auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
 ) -> Result<(), ProveWitnessCommitmentError> {
+    let mut source_lookup_balance = SourceLookupBalance::default();
+    accumulate_witness_regular_hints(
+        plan_unit,
+        unit_index,
+        layout,
+        trace,
+        publics,
+        auxiliary_inputs,
+        &mut source_lookup_balance,
+    )?;
+    source_lookup_balance.validate(unit_index)?;
+    Ok(())
+}
+
+fn accumulate_witness_regular_hints(
+    plan_unit: &ProveExecutionUnitArtifacts,
+    unit_index: usize,
+    layout: &WitnessTraceLayout,
+    trace: &WitnessTraceBuffer,
+    publics: &[Felt],
+    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
+    source_lookup_balance: &mut SourceLookupBalance,
+) -> Result<(), ProveWitnessCommitmentError> {
     if plan_unit.regular_hints.hints.is_empty() {
         return Ok(());
     }
@@ -770,7 +839,6 @@ fn validate_witness_regular_hints(
                 }
             });
 
-    let mut source_lookup_balance = SourceLookupBalance::default();
     for row in 0..layout.row_count() {
         let resolved = resolve_regular_hint_program_for_row(
             &plan_unit.setup,
@@ -796,7 +864,6 @@ fn validate_witness_regular_hints(
         .map_err(|error| map_regular_hint_eval_error(unit_index, error))?;
         source_lookup_balance.absorb(unit_index, row, &resolved)?;
     }
-    source_lookup_balance.validate(unit_index)?;
     Ok(())
 }
 

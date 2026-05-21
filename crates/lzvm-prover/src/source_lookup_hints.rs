@@ -70,6 +70,22 @@ impl SourceLookupBalance {
         }
         Ok(())
     }
+
+    pub(crate) fn validate_all_units(self) -> Result<(), ProveWitnessCommitmentError> {
+        for (key, balance) in self.entries {
+            if balance != Felt::ZERO {
+                return Err(ProveWitnessCommitmentError::SourceLookupSet {
+                    message: format!(
+                        "unbalanced lookup bus {} tuple {} has net weight {}",
+                        key.bus_label(),
+                        key.value_label(),
+                        balance.to_u64()
+                    ),
+                });
+            }
+        }
+        Ok(())
+    }
 }
 
 impl SourceLookupKey {
