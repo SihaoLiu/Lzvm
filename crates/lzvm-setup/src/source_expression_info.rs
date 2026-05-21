@@ -453,6 +453,7 @@ fn lower_source_template_statement(
         statement,
         values,
         alias_scope,
+        body_cache,
         hints,
         constraints,
     )? {
@@ -480,6 +481,7 @@ fn lower_source_template_function_call(
     statement: &FunctionStatement,
     values: &BTreeMap<String, FixedFileTemplateValue>,
     alias_scope: &SourceExpressionAliasScope,
+    body_cache: &mut SourceControlBodyCache,
     hints: &mut Vec<HintInfo>,
     constraints: &mut Vec<ConstraintCode>,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
@@ -518,6 +520,7 @@ fn lower_source_template_function_call(
             body_statement,
             &mut bindings.values,
             &body_alias_scope,
+            body_cache,
             &mut function_hints,
             &mut function_constraints,
         )? {
@@ -917,12 +920,53 @@ fn lower_source_function_body_statement(
     statement: &FunctionStatement,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
     alias_scope: &SourceExpressionAliasScope,
+    body_cache: &mut SourceControlBodyCache,
     hints: &mut Vec<HintInfo>,
     constraints: &mut Vec<ConstraintCode>,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
         let applied = apply_source_static_declaration(context.program, statement, values);
         return Ok(applied || source_expr_alias_declaration(statement));
+    }
+    if statement.kind == FunctionStatementKind::If {
+        match source_static_if_body_statements_with_tokens(
+            context.program,
+            context.module,
+            context.tokens,
+            statement,
+            values,
+            body_cache,
+        ) {
+            Ok(Some(body_statements)) => {
+                let mut body_alias_scope = alias_scope.clone();
+                for body_statement in body_statements.iter() {
+                    if !lower_source_function_body_statement(
+                        context,
+                        body_statement,
+                        values,
+                        &body_alias_scope,
+                        body_cache,
+                        hints,
+                        constraints,
+                    )? {
+                        return Ok(false);
+                    }
+                    collect_source_template_expression_alias(
+                        body_statement,
+                        &mut body_alias_scope.expressions,
+                    );
+                    collect_source_template_expression_array_alias(
+                        body_statement,
+                        &mut body_alias_scope.expression_arrays,
+                    );
+                }
+                return Ok(true);
+            }
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
+                return Ok(false);
+            }
+            Err(error) => return Err(error),
+        }
     }
     if statement.kind != FunctionStatementKind::Expression {
         return Ok(false);
