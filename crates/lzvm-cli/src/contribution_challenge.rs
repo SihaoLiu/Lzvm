@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use lzvm_artifacts::challenge_values_segment::{
     encode_challenge_values_segment, parse_challenge_values_segment, ChallengeValuesSegment,
 };
-use lzvm_prover::contribution::derive_global_challenge_from_contribution_proofs;
+use lzvm_prover::contribution::{
+    derive_global_challenge_from_contribution_proofs, ContributionChallengeReport,
+};
 
 use crate::prove_plan;
 
@@ -86,6 +88,7 @@ pub(crate) fn run(
         "public_value_fields={}",
         report.public_value_field_count
     );
+    write_contribution_binding_summary(stdout, &report);
     let _ = writeln!(stdout, "proof_values={}", report.proof_value_count);
     let _ = writeln!(stdout, "contributions={}", report.contribution_count);
     let _ = writeln!(stdout, "challenge_values={}", challenge_values.len());
@@ -170,6 +173,7 @@ pub(crate) fn verify(
         "public_value_fields={}",
         report.public_value_field_count
     );
+    write_contribution_binding_summary(stdout, &report);
     let _ = writeln!(stdout, "proof_values={}", report.proof_value_count);
     let _ = writeln!(stdout, "contributions={}", report.contribution_count);
     let _ = writeln!(stdout, "challenge_values={}", challenge_values.len());
@@ -181,6 +185,39 @@ pub(crate) fn verify(
         report.challenge.c2.to_u64()
     );
     0
+}
+
+fn write_contribution_binding_summary(
+    stdout: &mut dyn Write,
+    report: &ContributionChallengeReport,
+) {
+    if report.program_image_cache_count > 0 {
+        let _ = writeln!(
+            stdout,
+            "program_image_caches={}",
+            report.program_image_cache_count
+        );
+        for hash in &report.program_image_cache_hashes {
+            let _ = writeln!(
+                stdout,
+                "program_image_cache_segment_hash={}",
+                prove_plan::format_hash(hash)
+            );
+        }
+    }
+    if report.eth_block_input_count > 0 {
+        let _ = writeln!(stdout, "eth_block_inputs={}", report.eth_block_input_count);
+        for (index, hash) in report.eth_block_input_hashes.iter().enumerate() {
+            let _ = writeln!(
+                stdout,
+                "eth_block_input_hash={}",
+                prove_plan::format_hash(hash)
+            );
+            if let Some(byte_count) = report.eth_block_input_byte_counts.get(index) {
+                let _ = writeln!(stdout, "eth_block_input_bytes={byte_count}");
+            }
+        }
+    }
 }
 
 pub(crate) fn write_usage(stderr: &mut dyn Write) -> i32 {

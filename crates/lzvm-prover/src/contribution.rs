@@ -57,6 +57,11 @@ pub struct ContributionChallengeReport {
     pub public_value_count: usize,
     pub public_values_hash: [u8; 32],
     pub public_value_field_count: usize,
+    pub program_image_cache_count: usize,
+    pub program_image_cache_hashes: Vec<[u8; 32]>,
+    pub eth_block_input_count: usize,
+    pub eth_block_input_hashes: Vec<[u8; 32]>,
+    pub eth_block_input_byte_counts: Vec<usize>,
     pub proof_value_count: usize,
     pub contribution_count: usize,
     pub challenge: Ext3,
@@ -708,6 +713,11 @@ pub fn derive_global_challenge_from_files(
         public_value_count: public_report.public_value_count,
         public_values_hash: public_report.public_values_hash,
         public_value_field_count: public_report.public_value_field_count,
+        program_image_cache_count: public_report.program_image_cache_count,
+        program_image_cache_hashes: public_report.program_image_cache_hashes,
+        eth_block_input_count: public_report.eth_block_input_count,
+        eth_block_input_hashes: public_report.eth_block_input_hashes,
+        eth_block_input_byte_counts: public_report.eth_block_input_byte_counts,
         proof_value_count: packed_proof_values.len(),
         contribution_count: entries.len(),
         challenge,
@@ -733,6 +743,11 @@ pub fn derive_global_challenge_from_contribution_proofs(
     let mut public_value_count = None;
     let mut public_values_hash = None;
     let mut proof_value_count = 0_usize;
+    let mut program_image_cache_count = None;
+    let mut program_image_cache_hashes = None::<Vec<[u8; 32]>>;
+    let mut eth_block_input_count = None;
+    let mut eth_block_input_hashes = None::<Vec<[u8; 32]>>;
+    let mut eth_block_input_byte_counts = None::<Vec<usize>>;
     let mut packed_proof_values = None::<Vec<Felt>>;
     let mut bound_segments = None::<Vec<ProofSegment>>;
     let mut entries = Vec::new();
@@ -747,6 +762,15 @@ pub fn derive_global_challenge_from_contribution_proofs(
             .ok_or(ContributionChallengeError::LengthOverflow)?;
         public_value_count = public_value_count.or(Some(public_report.public_value_count));
         public_values_hash = public_values_hash.or(Some(public_report.public_values_hash));
+        program_image_cache_count =
+            program_image_cache_count.or(Some(public_report.program_image_cache_count));
+        program_image_cache_hashes =
+            program_image_cache_hashes.or(Some(public_report.program_image_cache_hashes.clone()));
+        eth_block_input_count = eth_block_input_count.or(Some(public_report.eth_block_input_count));
+        eth_block_input_hashes =
+            eth_block_input_hashes.or(Some(public_report.eth_block_input_hashes.clone()));
+        eth_block_input_byte_counts =
+            eth_block_input_byte_counts.or(Some(public_report.eth_block_input_byte_counts.clone()));
 
         let proof_values =
             load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)?;
@@ -800,6 +824,11 @@ pub fn derive_global_challenge_from_contribution_proofs(
         public_value_count: public_value_count.unwrap_or(0),
         public_values_hash: public_values_hash.unwrap_or([0; 32]),
         public_value_field_count: public_fields.len(),
+        program_image_cache_count: program_image_cache_count.unwrap_or(0),
+        program_image_cache_hashes: program_image_cache_hashes.unwrap_or_default(),
+        eth_block_input_count: eth_block_input_count.unwrap_or(0),
+        eth_block_input_hashes: eth_block_input_hashes.unwrap_or_default(),
+        eth_block_input_byte_counts: eth_block_input_byte_counts.unwrap_or_default(),
         proof_value_count,
         contribution_count: entries.len(),
         challenge,

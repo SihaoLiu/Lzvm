@@ -18,6 +18,7 @@ use lzvm_artifacts::proof::read_proof_artifact_file;
 use lzvm_artifacts::public_values::read_public_values_file;
 use lzvm_prover::contribution::{
     derive_global_challenge_from_contribution_proofs, derive_global_challenge_from_files,
+    ContributionChallengeReport,
 };
 use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
 use lzvm_prover::setup_preflight::validate_setup_preflight_from_files;
@@ -406,6 +407,7 @@ pub(super) fn verify_contribution(
         "public_value_fields={}",
         report.public_value_field_count
     );
+    write_contribution_binding_summary(stdout, &report);
     let _ = writeln!(stdout, "proof_values={}", report.proof_value_count);
     let _ = writeln!(stdout, "contributions={}", report.contribution_count);
     let _ = writeln!(
@@ -452,6 +454,7 @@ pub(super) fn verify_contribution_set(
         "public_value_fields={}",
         report.public_value_field_count
     );
+    write_contribution_binding_summary(stdout, &report);
     let _ = writeln!(stdout, "proof_values={}", report.proof_value_count);
     let _ = writeln!(stdout, "contributions={}", report.contribution_count);
     let _ = writeln!(
@@ -1037,6 +1040,39 @@ fn write_challenge_values_summary(
     for (byte_count, value_count) in segment_byte_counts.iter().zip(value_counts) {
         let _ = writeln!(stdout, "challenge_values_segment_bytes={byte_count}");
         let _ = writeln!(stdout, "challenge_values_count={value_count}");
+    }
+}
+
+fn write_contribution_binding_summary(
+    stdout: &mut dyn Write,
+    report: &ContributionChallengeReport,
+) {
+    if report.program_image_cache_count > 0 {
+        let _ = writeln!(
+            stdout,
+            "program_image_caches={}",
+            report.program_image_cache_count
+        );
+        for hash in &report.program_image_cache_hashes {
+            let _ = writeln!(
+                stdout,
+                "program_image_cache_segment_hash={}",
+                prove_plan::format_hash(hash)
+            );
+        }
+    }
+    if report.eth_block_input_count > 0 {
+        let _ = writeln!(stdout, "eth_block_inputs={}", report.eth_block_input_count);
+        for (index, hash) in report.eth_block_input_hashes.iter().enumerate() {
+            let _ = writeln!(
+                stdout,
+                "eth_block_input_hash={}",
+                prove_plan::format_hash(hash)
+            );
+            if let Some(byte_count) = report.eth_block_input_byte_counts.get(index) {
+                let _ = writeln!(stdout, "eth_block_input_bytes={byte_count}");
+            }
+        }
     }
 }
 
