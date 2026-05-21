@@ -68,11 +68,12 @@ struct SourceConstantSlot {
     lengths: Vec<u32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct SourcePublicSlot {
     offset: u32,
     stage: u64,
     dimension: u32,
+    lengths: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -177,12 +178,14 @@ impl SourceScalarSlots {
         let mut public_offset = 0_u32;
         for value in public_values {
             let dimension = public_value_dimension(&value.lengths)?;
+            let lengths = public_value_lengths(&value.lengths)?;
             publics.insert(
                 value.name.clone(),
                 SourcePublicSlot {
                     offset: public_offset,
                     stage: value.stage,
                     dimension,
+                    lengths,
                 },
             );
             public_offset = public_offset.checked_add(dimension).ok_or(
@@ -249,12 +252,14 @@ impl SourceScalarSlots {
         let mut public_offset = 0_u32;
         for value in public_values {
             let dimension = public_value_dimension(&value.lengths)?;
+            let lengths = public_value_lengths(&value.lengths)?;
             publics.insert(
                 value.name.clone(),
                 SourcePublicSlot {
                     offset: public_offset,
                     stage: value.stage,
                     dimension,
+                    lengths,
                 },
             );
             public_offset = public_offset.checked_add(dimension).ok_or(
@@ -755,6 +760,11 @@ impl SourceScalarSlots {
             return self.operand_index_at(name, index, row_offset);
         }
 
+        if let Some(slot) = self.publics.get(name) {
+            let index = linear_source_index(name, indices, &slot.lengths)?;
+            return self.operand_index_at(name, index, row_offset);
+        }
+
         Err(SourceScalarSlotError::UnsupportedIndex {
             name: name.to_owned(),
         })
@@ -822,6 +832,17 @@ fn public_value_dimension(lengths: &[u64]) -> Result<u32, SourceScalarSlotError>
     u32::try_from(dimension).map_err(|_| {
         SourceScalarSlotError::LengthOverflow("source public value dimension overflow")
     })
+}
+
+fn public_value_lengths(lengths: &[u64]) -> Result<Vec<u32>, SourceScalarSlotError> {
+    lengths
+        .iter()
+        .map(|length| {
+            u32::try_from(*length).map_err(|_| {
+                SourceScalarSlotError::LengthOverflow("source public value dimension overflow")
+            })
+        })
+        .collect()
 }
 
 fn named_stage_value_dimension(lengths: &[u64]) -> Result<u32, SourceScalarSlotError> {
