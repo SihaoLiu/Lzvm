@@ -13,5 +13,6 @@ path = "src/lib.rs"
 default = []
 
 [dependencies]
+lzvm-field = { path = "../lzvm-field" }
 sha2 = "0.10"
 sha3 = "0.10"

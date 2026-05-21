@@ -1,6 +1,8 @@
 use std::fmt;
 use std::path::Path;
 
+use lzvm_field::{Felt, FieldError};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerificationKeyRoot {
     FieldElements(Vec<u64>),
@@ -10,6 +12,7 @@ pub enum VerificationKeyRoot {
 pub enum VerificationKeyError {
     InvalidBinaryLength { expected: usize, found: usize },
     FieldElementCountMismatch { expected: usize, found: usize },
+    NonCanonicalFieldElement { index: usize, source: FieldError },
     Io { message: String },
 }
 
@@ -24,12 +27,25 @@ impl fmt::Display for VerificationKeyError {
                 f,
                 "verification-key field element count mismatch: expected {expected}, found {found}"
             ),
+            Self::NonCanonicalFieldElement { index, source } => write!(
+                f,
+                "verification-key field element {index} is non-canonical: {source}"
+            ),
             Self::Io { message } => write!(f, "verification-key io error: {message}"),
         }
     }
 }
 
-impl std::error::Error for VerificationKeyError {}
+impl std::error::Error for VerificationKeyError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::NonCanonicalFieldElement { source, .. } => Some(source),
+            Self::InvalidBinaryLength { .. }
+            | Self::FieldElementCountMismatch { .. }
+            | Self::Io { .. } => None,
+        }
+    }
+}
 
 pub fn parse_verification_key_binary(
     bytes: &[u8],
@@ -46,9 +62,9 @@ pub fn parse_verification_key_binary(
 
     let mut values = Vec::with_capacity(ROOT_ELEMENTS);
     for chunk in bytes.chunks_exact(8) {
-        values.push(u64::from_le_bytes(
-            chunk.try_into().expect("slice length checked"),
-        ));
+        let value = u64::from_le_bytes(chunk.try_into().expect("slice length checked"));
+        validate_field_element(values.len(), value)?;
+        values.push(value);
     }
 
     Ok(VerificationKeyRoot::FieldElements(values))
@@ -78,8 +94,15 @@ pub fn encode_verification_key_binary(
     }
 
     let mut out = Vec::with_capacity(ROOT_ELEMENTS * 8);
-    for value in values {
+    for (index, value) in values.iter().copied().enumerate() {
+        validate_field_element(index, value)?;
         out.extend_from_slice(&value.to_le_bytes());
     }
     Ok(out)
+}
+
+fn validate_field_element(index: usize, value: u64) -> Result<(), VerificationKeyError> {
+    Felt::from_canonical(value)
+        .map(|_| ())
+        .map_err(|source| VerificationKeyError::NonCanonicalFieldElement { index, source })
 }

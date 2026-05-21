@@ -5,6 +5,8 @@ use lzvm_artifacts::verification_key::{
 use std::fs;
 use std::path::PathBuf;
 
+const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
+
 fn temp_file_path(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
         "lzvm-verification-key-{}-{name}",
@@ -17,13 +19,13 @@ fn encodes_field_root_binary_little_endian() {
     let encoded = encode_verification_key_binary(&VerificationKeyRoot::FieldElements(vec![
         1,
         0x1122_3344_5566_7788,
-        u64::MAX,
+        NON_CANONICAL_FIELD - 1,
         4,
     ]))
     .expect("fixture should encode");
 
     let mut expected = Vec::new();
-    for value in [1_u64, 0x1122_3344_5566_7788, u64::MAX, 4] {
+    for value in [1_u64, 0x1122_3344_5566_7788, NON_CANONICAL_FIELD - 1, 4] {
         expected.extend_from_slice(&value.to_le_bytes());
     }
     assert_eq!(encoded, expected);
@@ -48,6 +50,38 @@ fn rejects_binary_roots_with_the_wrong_size() {
         parse_verification_key_binary(&[1, 2, 3]),
         Err(VerificationKeyError::InvalidBinaryLength { .. })
     ));
+}
+
+#[test]
+fn rejects_non_canonical_binary_root_words() {
+    let mut bytes = Vec::new();
+    for value in [9_u64, NON_CANONICAL_FIELD, 11, 12] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    let error = parse_verification_key_binary(&bytes)
+        .expect_err("non-canonical binary root word should reject");
+
+    assert_eq!(
+        error.to_string(),
+        "verification-key field element 1 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_encoding_non_canonical_root_words() {
+    let error = encode_verification_key_binary(&VerificationKeyRoot::FieldElements(vec![
+        1,
+        2,
+        NON_CANONICAL_FIELD,
+        4,
+    ]))
+    .expect_err("non-canonical root word should reject");
+
+    assert_eq!(
+        error.to_string(),
+        "verification-key field element 2 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
 }
 
 #[test]
