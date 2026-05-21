@@ -440,7 +440,9 @@ fn bind_source_global_function_default(
     if !source_const_parameter(parameter) {
         return None;
     }
-    None
+    let expression = parameter.default_expression.as_ref()?;
+    let elements = source_static_array_expression(program, expression, values)?;
+    insert_source_static_array(values, &parameter.name, elements)
 }
 
 fn insert_source_expr_array_static_values(
