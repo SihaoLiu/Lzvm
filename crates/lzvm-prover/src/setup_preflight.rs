@@ -48,7 +48,7 @@ use crate::global_constraints::{
 use crate::group_values::{load_group_values_from_segments, LoadGroupValuesSegmentError};
 use crate::hint_eval::{
     resolve_global_hint_program_from_proof_segments, ResolveGlobalHintProofSegmentsError,
-    ResolveGlobalHintProofSegmentsRequest,
+    ResolveGlobalHintProofSegmentsRequest, ResolvedHint,
 };
 use crate::pcs_fri::{
     validate_optional_pcs_fri_opening_proof_segments,
@@ -71,6 +71,7 @@ use crate::proof_values::{
     flatten_pcs_proof_values, load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError,
     ProvePcsProofValuesSegmentError,
 };
+use crate::source_lookup_hints::{SourceLookupBalance, SourceLookupHintError};
 use crate::unit_values::{load_unit_values_from_segments, LoadUnitValuesSegmentError};
 use crate::witness_commitment::{
     load_witness_commitment_segments, LoadWitnessCommitmentSegmentsError,
@@ -149,6 +150,9 @@ pub enum SetupPreflightError {
     WitnessOpening(ValidateWitnessOpeningSegmentsError),
     GlobalConstraints(ValidateGlobalConstraintProofSegmentsError),
     GlobalHints(ResolveGlobalHintProofSegmentsError),
+    SourceLookup {
+        message: String,
+    },
     PcsFri(ValidateOptionalPcsFriOpeningProofSegmentsError),
     Contribution(ContributionChallengeError),
     ChallengeValues(ChallengeValuesSegmentError),
@@ -216,6 +220,7 @@ impl fmt::Display for SetupPreflightError {
             Self::WitnessOpening(error) => write!(f, "{error}"),
             Self::GlobalConstraints(error) => write!(f, "{error}"),
             Self::GlobalHints(error) => write!(f, "{error}"),
+            Self::SourceLookup { message } => write!(f, "{message}"),
             Self::PcsFri(error) => write!(f, "{error}"),
             Self::Contribution(error) => write!(f, "{error}"),
             Self::ChallengeValues(error) => write!(f, "{error}"),
@@ -310,6 +315,7 @@ impl std::error::Error for SetupPreflightError {
             Self::UnitValueQueryPlan(error) => Some(error),
             Self::CatalogHashMismatch
             | Self::ProgramImageCacheSetupHashMismatch
+            | Self::SourceLookup { .. }
             | Self::MissingContributionChallengeValues
             | Self::ContributionChallengeValuesMismatch
             | Self::DuplicateChallengeValuesSegment
@@ -654,15 +660,17 @@ pub fn validate_setup_preflight(
     }
 
     if !catalog.global_hints.hints.is_empty() {
-        resolve_global_hint_program_from_proof_segments(ResolveGlobalHintProofSegmentsRequest {
-            global_info: &catalog.layout.global_info,
-            program: &catalog.global_hints,
-            schedule: &schedule,
-            public_values: public_fields.as_deref().unwrap_or(&[]),
-            segments: &proof.segments,
-        })
-        .map(|_| ())
+        let resolved = resolve_global_hint_program_from_proof_segments(
+            ResolveGlobalHintProofSegmentsRequest {
+                global_info: &catalog.layout.global_info,
+                program: &catalog.global_hints,
+                schedule: &schedule,
+                public_values: public_fields.as_deref().unwrap_or(&[]),
+                segments: &proof.segments,
+            },
+        )
         .map_err(SetupPreflightError::GlobalHints)?;
+        validate_global_source_lookup_hints(&resolved)?;
     }
 
     let verifier_codes = catalog
@@ -682,6 +690,22 @@ pub fn validate_setup_preflight(
     .map_err(SetupPreflightError::PcsFri)?;
 
     Ok(report)
+}
+
+fn validate_global_source_lookup_hints(hints: &[ResolvedHint]) -> Result<(), SetupPreflightError> {
+    let mut balance = SourceLookupBalance::default();
+    balance
+        .absorb(0, 0, hints)
+        .map_err(source_lookup_setup_preflight_error)?;
+    balance
+        .validate_all_units()
+        .map_err(source_lookup_setup_preflight_error)
+}
+
+fn source_lookup_setup_preflight_error(error: SourceLookupHintError) -> SetupPreflightError {
+    SetupPreflightError::SourceLookup {
+        message: error.to_string(),
+    }
 }
 
 fn validate_optional_unit_value_segments(

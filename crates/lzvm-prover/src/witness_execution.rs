@@ -21,7 +21,7 @@ use crate::regular_constraints::{
     RegularConstraintInputs, RegularStageColumns,
 };
 use crate::source_assignment_hints::validate_source_assignment_hints;
-use crate::source_lookup_hints::SourceLookupBalance;
+use crate::source_lookup_hints::{SourceLookupBalance, SourceLookupHintError};
 use crate::witness_commitment::{
     commit_witness_trace_stages_with_workers, WitnessTraceCommitmentError, WitnessTraceCommitments,
 };
@@ -443,6 +443,21 @@ impl From<WitnessTraceCommitmentError> for ProveWitnessCommitmentError {
     }
 }
 
+impl From<SourceLookupHintError> for ProveWitnessCommitmentError {
+    fn from(error: SourceLookupHintError) -> Self {
+        match error {
+            SourceLookupHintError::Unit {
+                unit_index,
+                message,
+            } => Self::SourceLookup {
+                unit_index,
+                message,
+            },
+            SourceLookupHintError::Set { message } => Self::SourceLookupSet { message },
+        }
+    }
+}
+
 pub fn run_prove_witness_commitments(
     plan: &ProveExecutionPlan,
     unit_index: usize,
@@ -689,7 +704,8 @@ fn accumulate_witness_global_hints(
         },
     )
     .map_err(|source| ProveWitnessCommitmentError::GlobalHintEval { source })?;
-    source_lookup_balance.absorb(0, 0, &resolved)
+    source_lookup_balance.absorb(0, 0, &resolved)?;
+    Ok(())
 }
 
 fn validate_witness_regular_constraints(
@@ -1258,9 +1274,11 @@ mod tests {
         )
         .expect("global lookup hint should accumulate");
 
-        let error = balance
-            .validate_all_units()
-            .expect_err("unbalanced global lookup hints should reject");
+        let error = ProveWitnessCommitmentError::from(
+            balance
+                .validate_all_units()
+                .expect_err("unbalanced global lookup hints should reject"),
+        );
 
         assert!(matches!(
             error,

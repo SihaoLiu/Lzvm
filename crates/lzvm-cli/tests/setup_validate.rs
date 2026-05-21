@@ -38,7 +38,7 @@ use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_artifacts::hint_program::{
     encode_global_hint_program, encode_regular_hint_program,
     regular_hint_program_from_expression_info, Hint, HintField, HintOperand, HintProgram,
-    HintValue,
+    HintValue, SOURCE_LOOKUP_PROVES_HINT,
 };
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, key_directory_catalog_digest_hex, read_key_directory_catalog,
@@ -2057,6 +2057,57 @@ fn write_global_hint_preflight_fixture(
             .segments
             .push(sample_pcs_proof_values_segment(proof_values));
     }
+    let segment_count = proof.segments.len();
+    let proof_path = root.join("proof.bin");
+    let public_values_path = root.join("public_values.bin");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+    (proof_path, public_values_path, segment_count)
+}
+
+fn write_global_lookup_hint_preflight_fixture(root: &Path) -> (PathBuf, PathBuf, usize) {
+    write_setup_directory(root);
+    write_global_program(
+        root,
+        GlobalConstraintProgram {
+            entries: Vec::new(),
+            ops: Vec::new(),
+            args: Vec::new(),
+            numbers: Vec::new(),
+        },
+        HintProgram {
+            hints: vec![Hint {
+                name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
+                fields: vec![
+                    HintField {
+                        name: "bus_id".to_owned(),
+                        values: vec![HintValue {
+                            operand: HintOperand::Number(7),
+                            positions: Vec::new(),
+                        }],
+                    },
+                    HintField {
+                        name: "values".to_owned(),
+                        values: vec![HintValue {
+                            operand: HintOperand::Number(11),
+                            positions: Vec::new(),
+                        }],
+                    },
+                ],
+            }],
+        },
+    );
+    run_generate_key_command(root);
+    let catalog = read_key_directory_catalog(root).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let proof = sample_proof_with_material(&public_values, &catalog);
     let segment_count = proof.segments.len();
     let proof_path = root.join("proof.bin");
     let public_values_path = root.join("public_values.bin");
@@ -10588,6 +10639,37 @@ fn rejects_setup_aware_verify_preflight_with_missing_global_hint_proof_values() 
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "verify setup-preflight failed: missing PCS proof values segment\n"
+    );
+}
+
+#[test]
+fn rejects_setup_aware_verify_preflight_with_unbalanced_global_lookup_hints() {
+    let dir = temp_dir("verify-setup-preflight-unbalanced-global-lookup-hints");
+    let _ = fs::remove_dir_all(&dir);
+    let (proof_path, public_values_path, _) = write_global_lookup_hint_preflight_fixture(&dir);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: unbalanced lookup bus 7 tuple 11 has net weight 1\n"
     );
 }
 

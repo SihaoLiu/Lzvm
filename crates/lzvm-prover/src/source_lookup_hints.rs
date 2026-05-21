@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 
 use lzvm_artifacts::hint_program::{
     source_lookup_hint_name, SOURCE_LOOKUP_ASSUMES_HINT, SOURCE_LOOKUP_PROVES_HINT,
@@ -6,11 +7,16 @@ use lzvm_artifacts::hint_program::{
 use lzvm_field::Felt;
 
 use crate::hint_eval::{ResolvedHint, ResolvedHintField, ResolvedHintPayload};
-use crate::witness_execution::ProveWitnessCommitmentError;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct SourceLookupBalance {
     entries: BTreeMap<SourceLookupKey, Felt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SourceLookupHintError {
+    Unit { unit_index: usize, message: String },
+    Set { message: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -32,7 +38,7 @@ impl SourceLookupBalance {
         unit_index: usize,
         row: usize,
         hints: &[ResolvedHint],
-    ) -> Result<(), ProveWitnessCommitmentError> {
+    ) -> Result<(), SourceLookupHintError> {
         for hint in hints {
             if !source_lookup_hint_name(&hint.name) {
                 continue;
@@ -54,7 +60,7 @@ impl SourceLookupBalance {
         Ok(())
     }
 
-    pub(crate) fn validate(self, unit_index: usize) -> Result<(), ProveWitnessCommitmentError> {
+    pub(crate) fn validate(self, unit_index: usize) -> Result<(), SourceLookupHintError> {
         for (key, balance) in self.entries {
             if balance != Felt::ZERO {
                 return source_lookup_error(
@@ -71,10 +77,10 @@ impl SourceLookupBalance {
         Ok(())
     }
 
-    pub(crate) fn validate_all_units(self) -> Result<(), ProveWitnessCommitmentError> {
+    pub(crate) fn validate_all_units(self) -> Result<(), SourceLookupHintError> {
         for (key, balance) in self.entries {
             if balance != Felt::ZERO {
-                return Err(ProveWitnessCommitmentError::SourceLookupSet {
+                return Err(SourceLookupHintError::Set {
                     message: format!(
                         "unbalanced lookup bus {} tuple {} has net weight {}",
                         key.bus_label(),
@@ -87,6 +93,16 @@ impl SourceLookupBalance {
         Ok(())
     }
 }
+
+impl fmt::Display for SourceLookupHintError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unit { message, .. } | Self::Set { message } => write!(f, "{message}"),
+        }
+    }
+}
+
+impl std::error::Error for SourceLookupHintError {}
 
 impl SourceLookupKey {
     fn bus_label(&self) -> String {
@@ -120,7 +136,7 @@ fn source_lookup_key(
     unit_index: usize,
     row: usize,
     hint: &ResolvedHint,
-) -> Result<SourceLookupKey, ProveWitnessCommitmentError> {
+) -> Result<SourceLookupKey, SourceLookupHintError> {
     let mut qualifiers = Vec::new();
     qualifiers.push((
         "bus_id".to_owned(),
@@ -157,7 +173,7 @@ fn source_lookup_weight(
     unit_index: usize,
     row: usize,
     hint: &ResolvedHint,
-) -> Result<Felt, ProveWitnessCommitmentError> {
+) -> Result<Felt, SourceLookupHintError> {
     let multiplicity = source_lookup_field(hint, "multiplicity");
     let selector = source_lookup_field(hint, "selector");
     match (multiplicity, selector) {
@@ -176,7 +192,7 @@ fn source_lookup_weight_field(
     unit_index: usize,
     row: usize,
     field: &ResolvedHintField,
-) -> Result<Felt, ProveWitnessCommitmentError> {
+) -> Result<Felt, SourceLookupHintError> {
     if field.values.len() == 1 {
         return match field.values[0].payload {
             ResolvedHintPayload::Scalar(value) => Ok(value),
@@ -196,7 +212,7 @@ fn source_lookup_expression_field(
     unit_index: usize,
     row: usize,
     field: &ResolvedHintField,
-) -> Result<Felt, ProveWitnessCommitmentError> {
+) -> Result<Felt, SourceLookupHintError> {
     let mut stack = Vec::new();
     for value in &field.values {
         match &value.payload {
@@ -210,12 +226,11 @@ fn source_lookup_expression_field(
                     "mul" => left * right,
                     "pow" => left.pow(right.to_u64()),
                     "div" => {
-                        let inverse = right.inverse().ok_or_else(|| {
-                            ProveWitnessCommitmentError::SourceLookup {
+                        let inverse =
+                            right.inverse().ok_or_else(|| SourceLookupHintError::Unit {
                                 unit_index,
                                 message: format!("operator div has zero divisor at row {row}"),
-                            }
-                        })?;
+                            })?;
                         left * inverse
                     }
                     _ => {
@@ -257,13 +272,11 @@ fn source_lookup_expression_pop(
     row: usize,
     op: &str,
     stack: &mut Vec<Felt>,
-) -> Result<Felt, ProveWitnessCommitmentError> {
-    stack
-        .pop()
-        .ok_or_else(|| ProveWitnessCommitmentError::SourceLookup {
-            unit_index,
-            message: format!("operator {op} has too few operands at row {row}"),
-        })
+) -> Result<Felt, SourceLookupHintError> {
+    stack.pop().ok_or_else(|| SourceLookupHintError::Unit {
+        unit_index,
+        message: format!("operator {op} has too few operands at row {row}"),
+    })
 }
 
 fn source_lookup_single_payload(
@@ -271,7 +284,7 @@ fn source_lookup_single_payload(
     row: usize,
     hint: &ResolvedHint,
     field_name: &str,
-) -> Result<SourceLookupPayload, ProveWitnessCommitmentError> {
+) -> Result<SourceLookupPayload, SourceLookupHintError> {
     let field = source_lookup_field(hint, field_name).ok_or_else(|| {
         source_lookup_message(unit_index, format!("missing {field_name} field"), row)
     })?;
@@ -306,8 +319,8 @@ fn source_lookup_message(
     unit_index: usize,
     message: impl Into<String>,
     row: usize,
-) -> ProveWitnessCommitmentError {
-    ProveWitnessCommitmentError::SourceLookup {
+) -> SourceLookupHintError {
+    SourceLookupHintError::Unit {
         unit_index,
         message: format!("{} at row {row}", message.into()),
     }
@@ -316,8 +329,8 @@ fn source_lookup_message(
 fn source_lookup_error<T>(
     unit_index: usize,
     message: impl Into<String>,
-) -> Result<T, ProveWitnessCommitmentError> {
-    Err(ProveWitnessCommitmentError::SourceLookup {
+) -> Result<T, SourceLookupHintError> {
+    Err(SourceLookupHintError::Unit {
         unit_index,
         message: message.into(),
     })
