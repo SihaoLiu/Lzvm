@@ -1080,7 +1080,14 @@ fn apply_source_static_declaration(
     match statement.declaration.as_ref() {
         Some(FunctionStatementDeclaration::Constant(declaration)) => {
             if !declaration.array_dims.is_empty() {
-                return false;
+                let Some(expression) = declaration.initializer_expression.as_ref() else {
+                    return false;
+                };
+                let Some(elements) = source_static_array_expression(program, expression, values)
+                else {
+                    return false;
+                };
+                return insert_source_static_array(values, &declaration.name, elements).is_some();
             }
             let Some(expression) = declaration.initializer_expression.as_ref() else {
                 return false;
@@ -1093,7 +1100,14 @@ fn apply_source_static_declaration(
         }
         Some(FunctionStatementDeclaration::Variable(declaration)) => {
             if !declaration.array_dims.is_empty() {
-                return false;
+                let Some(expression) = declaration.initializer_expression.as_ref() else {
+                    return false;
+                };
+                let Some(elements) = source_static_array_expression(program, expression, values)
+                else {
+                    return false;
+                };
+                return insert_source_static_array(values, &declaration.name, elements).is_some();
             }
             let Some(expression) = declaration.initializer_expression.as_ref() else {
                 return false;
