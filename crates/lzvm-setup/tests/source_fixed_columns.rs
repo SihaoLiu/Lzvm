@@ -758,6 +758,118 @@ fn writes_fixed_column_source_artifacts_from_row_varying_bitwise_expressions() {
 }
 
 #[test]
+fn writes_fixed_column_source_artifacts_from_row_varying_comparison_expressions() {
+    let dir = temp_dir("row-varying-comparison-expressions");
+    let _ = fs::remove_dir_all(&dir);
+    let setup = fixtures::sample_two_column_setup_info(2, 3, 1, 4);
+    let setup_path = dir.join("unit.starkinfo.bin");
+    let main_path = dir.join("main.pil");
+    let output_path = dir.join("unit.fixed-source.bin");
+    write_file(
+        &setup_path,
+        encode_unit_setup_info(&setup).expect("setup should encode"),
+    );
+    write_file(
+        &main_path,
+        "col fixed main.left = [0, 1, 2, 3];\n\
+         col fixed main.right = (main.left < 2) + ((main.left >= 2) * 2) + \
+             ((main.left == 1) * 4) + (main.left != 3) + \
+             ((main.left <= 0) * 8) + ((main.left > 2) * 16) + (main.left === 3);",
+    );
+
+    write_fixed_columns_from_source_file(&SourceFixedColumnsWriteRequest {
+        working_dir: dir.clone(),
+        include_paths: Vec::new(),
+        include_path_first: false,
+        main_file: main_path,
+        setup_info_path: setup_path,
+        group_name: "group-a".to_owned(),
+        unit_name: "unit-a".to_owned(),
+        output_path: output_path.clone(),
+    })
+    .expect("fixed columns should be written");
+
+    let columns = read_fixed_columns_file(&output_path).expect("fixed columns should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        columns,
+        FixedColumns {
+            group_name: "group-a".to_owned(),
+            unit_name: "unit-a".to_owned(),
+            row_count: 4,
+            columns: vec![
+                FixedColumn {
+                    name: "main.left".to_owned(),
+                    dimensions: vec![1],
+                    values: vec![0, 1, 2, 3],
+                },
+                FixedColumn {
+                    name: "main.right".to_owned(),
+                    dimensions: vec![1],
+                    values: vec![10, 6, 3, 19],
+                },
+            ],
+        }
+    );
+}
+
+#[test]
+fn writes_fixed_column_source_artifacts_from_row_varying_logical_expressions() {
+    let dir = temp_dir("row-varying-logical-expressions");
+    let _ = fs::remove_dir_all(&dir);
+    let setup = fixtures::sample_two_column_setup_info(2, 3, 1, 4);
+    let setup_path = dir.join("unit.starkinfo.bin");
+    let main_path = dir.join("main.pil");
+    let output_path = dir.join("unit.fixed-source.bin");
+    write_file(
+        &setup_path,
+        encode_unit_setup_info(&setup).expect("setup should encode"),
+    );
+    write_file(
+        &main_path,
+        "col fixed main.left = [0, 1, 2, 0];\n\
+         col fixed main.right = (!main.left) + (main.left && 4) + (main.left || 5);",
+    );
+
+    write_fixed_columns_from_source_file(&SourceFixedColumnsWriteRequest {
+        working_dir: dir.clone(),
+        include_paths: Vec::new(),
+        include_path_first: false,
+        main_file: main_path,
+        setup_info_path: setup_path,
+        group_name: "group-a".to_owned(),
+        unit_name: "unit-a".to_owned(),
+        output_path: output_path.clone(),
+    })
+    .expect("fixed columns should be written");
+
+    let columns = read_fixed_columns_file(&output_path).expect("fixed columns should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        columns,
+        FixedColumns {
+            group_name: "group-a".to_owned(),
+            unit_name: "unit-a".to_owned(),
+            row_count: 4,
+            columns: vec![
+                FixedColumn {
+                    name: "main.left".to_owned(),
+                    dimensions: vec![1],
+                    values: vec![0, 1, 2, 0],
+                },
+                FixedColumn {
+                    name: "main.right".to_owned(),
+                    dimensions: vec![1],
+                    values: vec![6, 5, 6, 6],
+                },
+            ],
+        }
+    );
+}
+
+#[test]
 fn writes_fixed_column_source_artifacts_from_array_constant_indices() {
     let dir = temp_dir("array-constant-indices");
     let _ = fs::remove_dir_all(&dir);

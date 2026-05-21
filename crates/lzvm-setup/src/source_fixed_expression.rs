@@ -103,7 +103,8 @@ fn evaluate_source_fixed_expression_inner(
             match op {
                 UnaryOperator::Plus => Ok(Some(value)),
                 UnaryOperator::Minus => Ok(Some(field_sub(0, value))),
-                UnaryOperator::Not | UnaryOperator::Increment | UnaryOperator::Decrement => {
+                UnaryOperator::Not => Ok(Some(source_fixed_bool(!source_fixed_truthy(value)))),
+                UnaryOperator::Increment | UnaryOperator::Decrement => {
                     Err(source_fixed_expression_unsupported(context, expression))
                 }
             }
@@ -112,6 +113,18 @@ fn evaluate_source_fixed_expression_inner(
             let Some(lhs) = evaluate_source_fixed_expression_inner(context, left, row)? else {
                 return Ok(None);
             };
+            if *op == BinaryOperator::LogicalAnd {
+                if !source_fixed_truthy(lhs) {
+                    return Ok(Some(lhs));
+                }
+                return evaluate_source_fixed_expression_inner(context, right, row);
+            }
+            if *op == BinaryOperator::LogicalOr {
+                if source_fixed_truthy(lhs) {
+                    return Ok(Some(lhs));
+                }
+                return evaluate_source_fixed_expression_inner(context, right, row);
+            }
             if *op == BinaryOperator::Power {
                 let exponent = source_fixed_expression_static_integer(context, right)?;
                 let exponent = u64::try_from(exponent)
@@ -148,6 +161,14 @@ fn evaluate_source_fixed_expression_inner(
                 BinaryOperator::BitOr => {
                     integer_bitwise(context, expression, lhs, rhs, |a, b| a | b).map(Some)
                 }
+                BinaryOperator::Less => Ok(Some(integer_cmp(lhs, rhs, |a, b| a < b))),
+                BinaryOperator::LessEqual => Ok(Some(integer_cmp(lhs, rhs, |a, b| a <= b))),
+                BinaryOperator::Greater => Ok(Some(integer_cmp(lhs, rhs, |a, b| a > b))),
+                BinaryOperator::GreaterEqual => Ok(Some(integer_cmp(lhs, rhs, |a, b| a >= b))),
+                BinaryOperator::EqualEqual | BinaryOperator::TripleEqual => {
+                    Ok(Some(source_fixed_bool(lhs == rhs)))
+                }
+                BinaryOperator::NotEqual => Ok(Some(source_fixed_bool(lhs != rhs))),
                 _ => Err(source_fixed_expression_unsupported(context, expression)),
             }
         }
@@ -478,6 +499,22 @@ fn integer_bitwise(
 ) -> Result<u64, SourceFixedColumnsWriteError> {
     let value = op(i128::from(lhs), i128::from(rhs));
     canonical_source_fixed_expression_value(context, expression, value)
+}
+
+fn integer_cmp(lhs: u64, rhs: u64, op: impl FnOnce(i128, i128) -> bool) -> u64 {
+    source_fixed_bool(op(i128::from(lhs), i128::from(rhs)))
+}
+
+fn source_fixed_truthy(value: u64) -> bool {
+    value != 0
+}
+
+fn source_fixed_bool(value: bool) -> u64 {
+    if value {
+        1
+    } else {
+        0
+    }
 }
 
 fn field_pow(base: u64, exponent: u64) -> u64 {
