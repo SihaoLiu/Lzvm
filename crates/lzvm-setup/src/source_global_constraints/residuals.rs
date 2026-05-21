@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use lzvm_field::Felt;
 use lzvm_pil::{BinaryOperator, Expression, ExpressionKind, UnaryOperator};
@@ -20,9 +20,7 @@ enum SourceGlobalMixedOperand {
 pub(super) fn append_ext_residual_constraint(
     builder: &mut SourceGlobalConstraintBuilder,
     expression: &Expression,
-    proof_value_slots: &BTreeMap<String, SourceProofValueSlot>,
-    public_value_slots: &BTreeMap<String, SourcePublicValueSlot>,
-    challenge_slots: &BTreeMap<String, SourceChallengeSlot>,
+    slots: &SourceGlobalSlots<'_>,
     alias_scope: &SourceGlobalAliasScope<'_>,
     source_line: String,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
@@ -35,9 +33,7 @@ pub(super) fn append_ext_residual_constraint(
     let (destination_id, temp1_count, temp3_count) = {
         let mut context = SourceGlobalExtLoweringContext {
             builder,
-            proof_value_slots,
-            public_value_slots,
-            challenge_slots,
+            slots,
             alias_scope,
             resolving_aliases: BTreeSet::new(),
             resolving_array_aliases: BTreeSet::new(),
@@ -87,9 +83,7 @@ pub(super) fn append_ext_residual_constraint(
 
 struct SourceGlobalExtLoweringContext<'a, 'b> {
     builder: &'a mut SourceGlobalConstraintBuilder,
-    proof_value_slots: &'b BTreeMap<String, SourceProofValueSlot>,
-    public_value_slots: &'b BTreeMap<String, SourcePublicValueSlot>,
-    challenge_slots: &'b BTreeMap<String, SourceChallengeSlot>,
+    slots: &'b SourceGlobalSlots<'b>,
     alias_scope: &'b SourceGlobalAliasScope<'b>,
     resolving_aliases: BTreeSet<String>,
     resolving_array_aliases: BTreeSet<String>,
@@ -399,13 +393,25 @@ fn lower_global_mixed_name_operand(
             return operand;
         }
     }
-    if let Some(slot) = context.challenge_slots.get(name).copied() {
+    if let Some(slot) = context.slots.challenges.get(name).copied() {
         let offset = challenge_target_offset(slot, index)?;
         return Ok(Some(SourceGlobalMixedOperand::Ext(
             SourceGlobalExtOperand { buffer: 6, offset },
         )));
     }
-    if let Some(slot) = context.public_value_slots.get(name).copied() {
+    if let Some(slot) = context.slots.group_values.get(name).copied() {
+        let offset = group_value_target_offset(slot, index)?;
+        return match proof_value_operand_dimension(u64::from(slot.stage)) {
+            1 => Ok(Some(SourceGlobalMixedOperand::Base(
+                SourceGlobalBaseOperand { buffer: 5, offset },
+            ))),
+            3 => Ok(Some(SourceGlobalMixedOperand::Ext(
+                SourceGlobalExtOperand { buffer: 5, offset },
+            ))),
+            _ => unsupported("unsupported source group value dimension"),
+        };
+    }
+    if let Some(slot) = context.slots.public_values.get(name).copied() {
         if slot.stage != 1 {
             return unsupported("top-level base residuals require base-field public values");
         }
@@ -414,7 +420,7 @@ fn lower_global_mixed_name_operand(
             SourceGlobalBaseOperand { buffer: 1, offset },
         )));
     }
-    if let Some(slot) = context.proof_value_slots.get(name).copied() {
+    if let Some(slot) = context.slots.proof_values.get(name).copied() {
         if index.is_some() {
             return unsupported("top-level proof value constraints require scalar values");
         }

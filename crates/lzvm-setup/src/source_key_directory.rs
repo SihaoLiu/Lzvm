@@ -655,7 +655,7 @@ fn source_push_unit_values(
     Ok(())
 }
 
-fn source_air_group_values(
+pub(crate) fn source_air_group_values(
     program: &SourceProgram,
     unit_name: Option<(&str, &str)>,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
