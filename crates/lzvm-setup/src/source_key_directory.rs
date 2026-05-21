@@ -713,8 +713,10 @@ fn source_air_group_values(
             let aggregation_type =
                 source_group_value_aggregation_type(&declaration.aggregate_type)?;
             if let Some(default_expression) = declaration.default_expression.as_ref() {
-                let Some(FixedFileTemplateValue::Integer(default_value)) =
+                let Some(default_value) =
                     evaluate_source_static_expression(program, default_expression, constant_values)
+                        .as_ref()
+                        .and_then(static_value_integer)
                 else {
                     return unsupported(
                         "source air group value defaults need proof lowering support",

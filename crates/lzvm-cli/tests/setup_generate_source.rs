@@ -1048,6 +1048,55 @@ fn generate_key_allows_identity_source_air_group_value_defaults() {
 }
 
 #[test]
+fn generate_key_allows_boolean_identity_source_air_group_value_defaults() {
+    let dir = temp_dir("air-group-value-boolean-defaults");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "const int SELECTED = 1;\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];\n\
+         airgroupval aggregate(sum) default(SELECTED != 1) group.total;\n\
+         airgroupval aggregate(prod) default(SELECTED == 1) group.product;",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
+        .expect("source global metadata should parse");
+    assert_eq!(global.aggregation_types[0][0].aggregation_type, 0);
+    assert_eq!(global.aggregation_types[0][1].aggregation_type, 1);
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let setup_path = layout.units[0]
+        .setup_info_binary()
+        .expect("setup metadata path should derive");
+    let setup = read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+    assert_eq!(setup.group_value_map.len(), 2);
+    assert_eq!(setup.group_value_map[0].name, "group.total");
+    assert_eq!(setup.group_value_map[1].name, "group.product");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_allows_static_function_identity_air_group_value_defaults() {
     let dir = temp_dir("air-group-value-function-defaults");
     let _ = fs::remove_dir_all(&dir);
