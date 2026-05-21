@@ -239,7 +239,7 @@ fn lower_global_mixed_residual_operand(
     }
     match &strip_group_expression(expression).kind {
         ExpressionKind::Group(inner) => lower_global_mixed_residual_operand(inner, context),
-        ExpressionKind::Name(name) => lower_global_mixed_name_operand(name, None, context),
+        ExpressionKind::Name(name) => lower_global_mixed_name_operand(name, &[], context),
         ExpressionKind::Index { target, index } => {
             lower_global_mixed_index_operand(target, index, context)
         }
@@ -383,43 +383,51 @@ fn lower_global_mixed_index_operand(
     index: &Expression,
     context: &mut SourceGlobalExtLoweringContext<'_, '_>,
 ) -> Result<Option<SourceGlobalMixedOperand>, SourceKeyDirectoryMetadataError> {
-    let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
+    let Some((name, indices)) =
+        indices::source_global_index_chain(target, index, context.alias_scope)
+    else {
         return Ok(None);
     };
-    let Some(index) = static_u32_expression(index, context.alias_scope) else {
-        return Ok(None);
-    };
-    if let Some(alias) = context.alias_scope.expression_arrays.get(name) {
-        if !context.resolving_array_aliases.insert(name.clone()) {
-            return Ok(None);
+    if indices.len() == 1 {
+        let index = indices[0];
+        if let Some(alias) = context.alias_scope.expression_arrays.get(&name) {
+            if !context.resolving_array_aliases.insert(name.clone()) {
+                return Ok(None);
+            }
+            let element = source_global_expression_array_alias_element(
+                alias,
+                usize::try_from(index)
+                    .map_err(|_| unsupported_source_message("source global index overflow"))?,
+                &context.alias_scope.expression_arrays,
+                &mut context.resolving_array_aliases,
+            );
+            context.resolving_array_aliases.remove(&name);
+            return match element {
+                Some(SourceGlobalExpressionArrayAliasElement::Expression(expression)) => {
+                    lower_global_mixed_residual_operand(expression, context)
+                }
+                Some(SourceGlobalExpressionArrayAliasElement::NamedArray(name)) => {
+                    lower_global_mixed_name_operand(name, &indices, context)
+                }
+                None => Ok(None),
+            };
         }
-        let element = source_global_expression_array_alias_element(
-            alias,
-            usize::try_from(index)
-                .map_err(|_| unsupported_source_message("source global index overflow"))?,
-            &context.alias_scope.expression_arrays,
-            &mut context.resolving_array_aliases,
-        );
-        context.resolving_array_aliases.remove(name);
-        return match element {
-            Some(SourceGlobalExpressionArrayAliasElement::Expression(expression)) => {
-                lower_global_mixed_residual_operand(expression, context)
-            }
-            Some(SourceGlobalExpressionArrayAliasElement::NamedArray(name)) => {
-                lower_global_mixed_name_operand(name, Some(index), context)
-            }
-            None => Ok(None),
-        };
+    } else if let Some(name) = indices::source_global_named_array_alias_target(
+        &context.alias_scope.expression_arrays,
+        &name,
+        &mut context.resolving_array_aliases,
+    ) {
+        return lower_global_mixed_name_operand(&name, &indices, context);
     }
-    lower_global_mixed_name_operand(name, Some(index), context)
+    lower_global_mixed_name_operand(&name, &indices, context)
 }
 
 fn lower_global_mixed_name_operand(
     name: &str,
-    index: Option<u32>,
+    indices: &[u32],
     context: &mut SourceGlobalExtLoweringContext<'_, '_>,
 ) -> Result<Option<SourceGlobalMixedOperand>, SourceKeyDirectoryMetadataError> {
-    if index.is_none() {
+    if indices.is_empty() {
         if let Some(alias) = context.alias_scope.expressions.get(name) {
             if !context.resolving_aliases.insert(name.to_owned()) {
                 return Ok(None);
@@ -429,14 +437,14 @@ fn lower_global_mixed_name_operand(
             return operand;
         }
     }
-    if let Some(slot) = context.slots.challenges.get(name).copied() {
-        let offset = challenge_target_offset(slot, index)?;
+    if let Some(slot) = context.slots.challenges.get(name) {
+        let offset = challenge_target_offset(slot, indices)?;
         return Ok(Some(SourceGlobalMixedOperand::Ext(
             SourceGlobalExtOperand { buffer: 6, offset },
         )));
     }
-    if let Some(slot) = context.slots.group_values.get(name).copied() {
-        let offset = group_value_target_offset(slot, index)?;
+    if let Some(slot) = context.slots.group_values.get(name) {
+        let offset = group_value_target_offset(slot, indices)?;
         return match proof_value_operand_dimension(u64::from(slot.stage)) {
             1 => Ok(Some(SourceGlobalMixedOperand::Base(
                 SourceGlobalBaseOperand { buffer: 5, offset },
@@ -447,17 +455,17 @@ fn lower_global_mixed_name_operand(
             _ => unsupported("unsupported source group value dimension"),
         };
     }
-    if let Some(slot) = context.slots.public_values.get(name).copied() {
+    if let Some(slot) = context.slots.public_values.get(name) {
         if slot.stage != 1 {
             return unsupported("top-level base residuals require base-field public values");
         }
-        let offset = public_value_target_offset(slot, index)?;
+        let offset = public_value_target_offset(slot, indices)?;
         return Ok(Some(SourceGlobalMixedOperand::Base(
             SourceGlobalBaseOperand { buffer: 1, offset },
         )));
     }
-    if let Some(slot) = context.slots.proof_values.get(name).copied() {
-        let offset = proof_value_target_offset(slot, index)?;
+    if let Some(slot) = context.slots.proof_values.get(name) {
+        let offset = proof_value_target_offset(slot, indices)?;
         let dimension = proof_value_operand_dimension(slot.stage);
         return match dimension {
             1 => Ok(Some(SourceGlobalMixedOperand::Base(

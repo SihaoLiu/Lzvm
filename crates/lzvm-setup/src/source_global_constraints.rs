@@ -28,6 +28,7 @@ use crate::{
 };
 
 mod hints;
+mod indices;
 mod residuals;
 mod top_level_call;
 mod top_level_for;
@@ -140,7 +141,7 @@ fn lower_public_initializer_constraint(
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     let (name, dimension) = source_public_initializer_target(program, declaration, static_values)?;
-    let Some(slot) = public_value_slots.get(&name).copied() else {
+    let Some(slot) = public_value_slots.get(&name) else {
         return unsupported("source public initializer references an unknown public value");
     };
     let slot_dimension = usize::try_from(slot.dimension)
@@ -378,8 +379,8 @@ fn lower_top_level_global_constraint(
         &mut resolving_aliases,
         &mut resolving_array_aliases,
     ) {
-        if let Some(slot) = slots.proof_values.get(&target.name).copied() {
-            if target.index.is_some() {
+        if let Some(slot) = slots.proof_values.get(&target.name) {
+            if !target.indices.is_empty() {
                 return unsupported("top-level proof value constraints require scalar values");
             }
             return constraints.append_proof_value_boolean_constraint(
@@ -388,11 +389,11 @@ fn lower_top_level_global_constraint(
                 source_line.trim().to_owned(),
             );
         }
-        if let Some(slot) = slots.public_values.get(&target.name).copied() {
+        if let Some(slot) = slots.public_values.get(&target.name) {
             if slot.stage != 1 {
                 return unsupported("top-level public value constraints require scalar values");
             }
-            let offset = public_value_target_offset(slot, target.index)?;
+            let offset = public_value_target_offset(slot, &target.indices)?;
             return constraints
                 .append_public_value_boolean_constraint(offset, source_line.trim().to_owned());
         }
@@ -421,31 +422,35 @@ fn lower_top_level_global_constraint(
     ))
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct SourceProofValueSlot {
     offset: u32,
     stage: u64,
     dimension: u32,
+    lengths: Vec<u32>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct SourcePublicValueSlot {
     offset: u32,
     stage: u64,
     dimension: u32,
+    lengths: Vec<u32>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct SourceChallengeSlot {
     id: u32,
     dimension: u32,
+    lengths: Vec<u32>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct SourceGroupValueSlot {
     offset: u32,
     stage: u32,
     dimension: u32,
+    lengths: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -457,7 +462,7 @@ struct SourceGlobalBaseOperand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SourceBooleanTarget {
     name: String,
-    index: Option<u32>,
+    indices: Vec<u32>,
 }
 
 struct SourceGlobalAliasScope<'a> {
@@ -608,12 +613,14 @@ fn source_proof_value_slots(
     let mut next_offset = 0_u32;
     for entry in &global_info.proof_values_map {
         let dimension = source_global_named_stage_value_dimension(&entry.lengths)?;
+        let lengths = indices::source_global_named_stage_value_lengths(&entry.lengths)?;
         slots.insert(
             entry.name.clone(),
             SourceProofValueSlot {
                 offset: next_offset,
                 stage: entry.stage,
                 dimension,
+                lengths,
             },
         );
         let width = if entry.stage == 1 { 1 } else { 3 };
@@ -634,12 +641,14 @@ fn source_public_value_slots(
     let mut next_offset = 0_u32;
     for entry in &global_info.publics_map {
         let dimension = source_global_public_value_dimension(&entry.lengths)?;
+        let lengths = indices::source_global_public_value_lengths(&entry.lengths)?;
         slots.insert(
             entry.name.clone(),
             SourcePublicValueSlot {
                 offset: next_offset,
                 stage: entry.stage,
                 dimension,
+                lengths,
             },
         );
         next_offset = next_offset
@@ -660,6 +669,7 @@ fn source_global_challenge_slots(
                 SourceChallengeSlot {
                     id: slot.id,
                     dimension: slot.dimension,
+                    lengths: slot.lengths.clone(),
                 },
             )
         })
@@ -679,6 +689,7 @@ fn source_global_group_value_slots(
                 offset: next_offset,
                 stage: value.stage,
                 dimension,
+                lengths: value.lengths.clone(),
             },
         );
         let width = if value.stage == 1 { 1 } else { 3 };
@@ -693,42 +704,34 @@ fn source_global_group_value_slots(
 }
 
 fn public_value_target_offset(
-    slot: SourcePublicValueSlot,
-    index: Option<u32>,
+    slot: &SourcePublicValueSlot,
+    indices: &[u32],
 ) -> Result<u32, SourceKeyDirectoryMetadataError> {
-    let Some(index) = index else {
-        if slot.dimension == 1 {
-            return Ok(slot.offset);
-        }
-        return unsupported("top-level public value constraints require scalar values");
-    };
-    if index >= slot.dimension {
-        return unsupported("top-level public value index is out of range");
-    }
+    let index = indices::source_global_linear_index(
+        indices,
+        &slot.lengths,
+        slot.dimension,
+        "top-level public value constraints require scalar values",
+        "top-level public value index is out of range",
+        "source public value offset overflow",
+    )?;
     slot.offset
         .checked_add(index)
         .ok_or_else(|| unsupported_source_message("source public value offset overflow"))
 }
 
 fn challenge_target_offset(
-    slot: SourceChallengeSlot,
-    index: Option<u32>,
+    slot: &SourceChallengeSlot,
+    indices: &[u32],
 ) -> Result<u32, SourceKeyDirectoryMetadataError> {
-    let index = match index {
-        Some(index) => {
-            if index >= slot.dimension {
-                return unsupported("top-level challenge value index is out of range");
-            }
-            index
-        }
-        None => {
-            if slot.dimension == 1 {
-                0
-            } else {
-                return unsupported("top-level challenge constraints require scalar values");
-            }
-        }
-    };
+    let index = indices::source_global_linear_index(
+        indices,
+        &slot.lengths,
+        slot.dimension,
+        "top-level challenge constraints require scalar values",
+        "top-level challenge value index is out of range",
+        "source challenge offset overflow",
+    )?;
     slot.id
         .checked_add(index)
         .and_then(|id| id.checked_mul(3))
@@ -736,24 +739,17 @@ fn challenge_target_offset(
 }
 
 fn group_value_target_offset(
-    slot: SourceGroupValueSlot,
-    index: Option<u32>,
+    slot: &SourceGroupValueSlot,
+    indices: &[u32],
 ) -> Result<u32, SourceKeyDirectoryMetadataError> {
-    let index = match index {
-        Some(index) => {
-            if index >= slot.dimension {
-                return unsupported("top-level group value index is out of range");
-            }
-            index
-        }
-        None => {
-            if slot.dimension == 1 {
-                0
-            } else {
-                return unsupported("top-level group value constraints require scalar values");
-            }
-        }
-    };
+    let index = indices::source_global_linear_index(
+        indices,
+        &slot.lengths,
+        slot.dimension,
+        "top-level group value constraints require scalar values",
+        "top-level group value index is out of range",
+        "source group value offset overflow",
+    )?;
     let width = if slot.stage == 1 { 1 } else { 3 };
     slot.offset
         .checked_add(
@@ -765,24 +761,17 @@ fn group_value_target_offset(
 }
 
 fn proof_value_target_offset(
-    slot: SourceProofValueSlot,
-    index: Option<u32>,
+    slot: &SourceProofValueSlot,
+    indices: &[u32],
 ) -> Result<u32, SourceKeyDirectoryMetadataError> {
-    let index = match index {
-        Some(index) => {
-            if index >= slot.dimension {
-                return unsupported("top-level proof value index is out of range");
-            }
-            index
-        }
-        None => {
-            if slot.dimension == 1 {
-                0
-            } else {
-                return unsupported("top-level proof value constraints require scalar values");
-            }
-        }
-    };
+    let index = indices::source_global_linear_index(
+        indices,
+        &slot.lengths,
+        slot.dimension,
+        "top-level proof value constraints require scalar values",
+        "top-level proof value index is out of range",
+        "source proof value offset overflow",
+    )?;
     let width = proof_value_operand_dimension(slot.stage);
     slot.offset
         .checked_add(
@@ -884,42 +873,45 @@ fn expression_target(
             }
             Some(SourceBooleanTarget {
                 name: name.clone(),
-                index: None,
+                indices: Vec::new(),
             })
         }
         ExpressionKind::Index { target, index } => {
-            let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
-                return None;
-            };
-            let index = static_u32_expression(index, alias_scope)?;
-            if let Some(alias) = alias_scope.expression_arrays.get(name) {
-                let element = source_global_expression_array_alias_element(
-                    alias,
-                    usize::try_from(index).ok()?,
-                    &alias_scope.expression_arrays,
-                    resolving_array_aliases,
-                )?;
-                return match element {
-                    SourceGlobalExpressionArrayAliasElement::Expression(expression) => {
-                        expression_target(
-                            expression,
-                            alias_scope,
-                            resolving_aliases,
-                            resolving_array_aliases,
-                        )
-                    }
-                    SourceGlobalExpressionArrayAliasElement::NamedArray(name) => {
-                        Some(SourceBooleanTarget {
-                            name: name.to_owned(),
-                            index: Some(index),
-                        })
-                    }
-                };
+            let (name, indices) = indices::source_global_index_chain(target, index, alias_scope)?;
+            if indices.len() == 1 {
+                let index = indices[0];
+                if let Some(alias) = alias_scope.expression_arrays.get(&name) {
+                    let element = source_global_expression_array_alias_element(
+                        alias,
+                        usize::try_from(index).ok()?,
+                        &alias_scope.expression_arrays,
+                        resolving_array_aliases,
+                    )?;
+                    return match element {
+                        SourceGlobalExpressionArrayAliasElement::Expression(expression) => {
+                            expression_target(
+                                expression,
+                                alias_scope,
+                                resolving_aliases,
+                                resolving_array_aliases,
+                            )
+                        }
+                        SourceGlobalExpressionArrayAliasElement::NamedArray(name) => {
+                            Some(SourceBooleanTarget {
+                                name: name.to_owned(),
+                                indices: vec![index],
+                            })
+                        }
+                    };
+                }
+            } else if let Some(name) = indices::source_global_named_array_alias_target(
+                &alias_scope.expression_arrays,
+                &name,
+                resolving_array_aliases,
+            ) {
+                return Some(SourceBooleanTarget { name, indices });
             }
-            Some(SourceBooleanTarget {
-                name: name.clone(),
-                index: Some(index),
-            })
+            Some(SourceBooleanTarget { name, indices })
         }
         _ => None,
     }
@@ -1415,7 +1407,7 @@ fn lower_global_base_residual_operand(
     }
     match &strip_group_expression(expression).kind {
         ExpressionKind::Group(inner) => lower_global_base_residual_operand(inner, context),
-        ExpressionKind::Name(name) => lower_global_base_name_operand(name, None, context),
+        ExpressionKind::Name(name) => lower_global_base_name_operand(name, &[], context),
         ExpressionKind::Index { target, index } => {
             lower_global_base_index_operand(target, index, context)
         }
@@ -1513,43 +1505,51 @@ fn lower_global_base_index_operand(
     index: &Expression,
     context: &mut SourceGlobalBaseLoweringContext<'_, '_>,
 ) -> Result<Option<SourceGlobalBaseOperand>, SourceKeyDirectoryMetadataError> {
-    let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
+    let Some((name, indices)) =
+        indices::source_global_index_chain(target, index, context.alias_scope)
+    else {
         return Ok(None);
     };
-    let Some(index) = static_u32_expression(index, context.alias_scope) else {
-        return Ok(None);
-    };
-    if let Some(alias) = context.alias_scope.expression_arrays.get(name) {
-        if !context.resolving_array_aliases.insert(name.clone()) {
-            return Ok(None);
+    if indices.len() == 1 {
+        let index = indices[0];
+        if let Some(alias) = context.alias_scope.expression_arrays.get(&name) {
+            if !context.resolving_array_aliases.insert(name.clone()) {
+                return Ok(None);
+            }
+            let element = source_global_expression_array_alias_element(
+                alias,
+                usize::try_from(index)
+                    .map_err(|_| unsupported_source_message("source global index overflow"))?,
+                &context.alias_scope.expression_arrays,
+                &mut context.resolving_array_aliases,
+            );
+            context.resolving_array_aliases.remove(&name);
+            return match element {
+                Some(SourceGlobalExpressionArrayAliasElement::Expression(expression)) => {
+                    lower_global_base_residual_operand(expression, context)
+                }
+                Some(SourceGlobalExpressionArrayAliasElement::NamedArray(name)) => {
+                    lower_global_base_name_operand(name, &indices, context)
+                }
+                None => Ok(None),
+            };
         }
-        let element = source_global_expression_array_alias_element(
-            alias,
-            usize::try_from(index)
-                .map_err(|_| unsupported_source_message("source global index overflow"))?,
-            &context.alias_scope.expression_arrays,
-            &mut context.resolving_array_aliases,
-        );
-        context.resolving_array_aliases.remove(name);
-        return match element {
-            Some(SourceGlobalExpressionArrayAliasElement::Expression(expression)) => {
-                lower_global_base_residual_operand(expression, context)
-            }
-            Some(SourceGlobalExpressionArrayAliasElement::NamedArray(name)) => {
-                lower_global_base_name_operand(name, Some(index), context)
-            }
-            None => Ok(None),
-        };
+    } else if let Some(name) = indices::source_global_named_array_alias_target(
+        &context.alias_scope.expression_arrays,
+        &name,
+        &mut context.resolving_array_aliases,
+    ) {
+        return lower_global_base_name_operand(&name, &indices, context);
     }
-    lower_global_base_name_operand(name, Some(index), context)
+    lower_global_base_name_operand(&name, &indices, context)
 }
 
 fn lower_global_base_name_operand(
     name: &str,
-    index: Option<u32>,
+    indices: &[u32],
     context: &mut SourceGlobalBaseLoweringContext<'_, '_>,
 ) -> Result<Option<SourceGlobalBaseOperand>, SourceKeyDirectoryMetadataError> {
-    if index.is_none() {
+    if indices.is_empty() {
         if let Some(alias) = context.alias_scope.expressions.get(name) {
             if !context.resolving_aliases.insert(name.to_owned()) {
                 return Ok(None);
@@ -1559,18 +1559,18 @@ fn lower_global_base_name_operand(
             return operand;
         }
     }
-    if let Some(slot) = context.public_value_slots.get(name).copied() {
+    if let Some(slot) = context.public_value_slots.get(name) {
         if slot.stage != 1 {
             return unsupported("top-level base residuals require base-field public values");
         }
-        let offset = public_value_target_offset(slot, index)?;
+        let offset = public_value_target_offset(slot, indices)?;
         return Ok(Some(SourceGlobalBaseOperand { buffer: 1, offset }));
     }
-    if let Some(slot) = context.proof_value_slots.get(name).copied() {
+    if let Some(slot) = context.proof_value_slots.get(name) {
         if proof_value_operand_dimension(slot.stage) != 1 {
             return Ok(None);
         }
-        let offset = proof_value_target_offset(slot, index)?;
+        let offset = proof_value_target_offset(slot, indices)?;
         return Ok(Some(SourceGlobalBaseOperand { buffer: 3, offset }));
     }
     Ok(None)
