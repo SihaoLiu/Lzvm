@@ -7661,16 +7661,14 @@ fn run_prove_witness_with_aggregate_modifiers(
 }
 
 #[test]
-fn rejects_prove_witness_with_final_wrap() {
+fn runs_prove_witness_with_final_wrap() {
     let (code, stdout, stderr) =
         run_prove_witness_with_aggregate_modifier("prove-witness-final-wrap", "--final-wrap");
 
-    assert_eq!(code, 1);
-    assert!(stdout.is_empty());
-    assert_eq!(
-        stderr,
-        "prove witness failed: final wrap is unsupported by prove witness\n"
-    );
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("aggregate=true\n"));
+    assert!(stdout.contains("final_wrap=true\n"));
 }
 
 #[test]
