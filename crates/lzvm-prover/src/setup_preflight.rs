@@ -157,6 +157,7 @@ pub enum SetupPreflightError {
     GroupValues(LoadGroupValuesSegmentError),
     UnitValues(LoadUnitValuesSegmentError),
     UnitValueQueryPlan(LoadPcsQueryPlanSegmentError),
+    MissingContributionChallengeValues,
     ContributionChallengeValuesMismatch,
     UnexpectedProofSegment {
         id: u32,
@@ -209,6 +210,9 @@ impl fmt::Display for SetupPreflightError {
             Self::GroupValues(error) => write!(f, "{error}"),
             Self::UnitValues(error) => write!(f, "{error}"),
             Self::UnitValueQueryPlan(error) => write!(f, "{error}"),
+            Self::MissingContributionChallengeValues => {
+                write!(f, "missing contribution challenge values")
+            }
             Self::ContributionChallengeValuesMismatch => {
                 write!(f, "contribution challenge values mismatch")
             }
@@ -256,6 +260,7 @@ impl std::error::Error for SetupPreflightError {
             Self::UnitValueQueryPlan(error) => Some(error),
             Self::CatalogHashMismatch
             | Self::ProgramImageCacheSetupHashMismatch
+            | Self::MissingContributionChallengeValues
             | Self::ContributionChallengeValuesMismatch
             | Self::DuplicateChallengeValuesSegment
             | Self::UnexpectedProofSegment { .. } => None,
@@ -664,18 +669,21 @@ fn validate_optional_contribution_challenge_values(
     proof: &ProofArtifact,
     public_values: &PublicValues,
 ) -> Result<(), SetupPreflightError> {
+    let has_contribution = proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == CONTRIBUTION_SEGMENT_ID);
     let Some(challenge_segment) = proof
         .segments
         .iter()
         .find(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID)
     else {
+        if has_contribution {
+            return Err(SetupPreflightError::MissingContributionChallengeValues);
+        }
         return Ok(());
     };
-    if !proof
-        .segments
-        .iter()
-        .any(|segment| segment.id == CONTRIBUTION_SEGMENT_ID)
-    {
+    if !has_contribution {
         return Ok(());
     }
 

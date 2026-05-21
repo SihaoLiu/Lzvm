@@ -351,16 +351,18 @@ pub fn build_witness_proof_artifact_for_unit(
     if let Some(unit_values_segment) = unit_values_segment {
         segments.push(unit_values_segment);
     }
-    let contribution_source = WitnessContributionSource {
-        output: request.output,
-        packed_unit_values: unit_values,
-    };
-    if let Some(contribution_segment) = build_witness_contribution_segment(
-        request.catalog,
-        request.schedule,
-        std::slice::from_ref(&contribution_source),
-    )? {
-        segments.push(contribution_segment);
+    if request.challenge_values_segment.is_some() {
+        let contribution_source = WitnessContributionSource {
+            output: request.output,
+            packed_unit_values: unit_values,
+        };
+        if let Some(contribution_segment) = build_witness_contribution_segment(
+            request.catalog,
+            request.schedule,
+            std::slice::from_ref(&contribution_source),
+        )? {
+            segments.push(contribution_segment);
+        }
     }
     append_binding_segments(&mut segments, binding_segments);
     let proof = ProofArtifact {
@@ -590,28 +592,30 @@ pub fn build_witness_proof_artifact_for_all_units(
         )?
     };
     let mut proof = proof;
-    let contribution_sources = request
-        .outputs
-        .iter()
-        .map(|output| {
-            let unit_index = output.commitments().unit_index();
-            let packed_unit_values = proof_unit_values
-                .iter()
-                .find(|values| values.unit_index == unit_index)
-                .map(|values| values.packed_values.as_slice())
-                .unwrap_or_else(|| output.auxiliary_inputs().unit_values.as_slice());
-            WitnessContributionSource {
-                output,
-                packed_unit_values,
-            }
-        })
-        .collect::<Vec<_>>();
-    if let Some(contribution_segment) = build_witness_contribution_segment(
-        request.catalog,
-        request.schedule,
-        &contribution_sources,
-    )? {
-        proof.segments.push(contribution_segment);
+    if request.challenge_values_segment.is_some() {
+        let contribution_sources = request
+            .outputs
+            .iter()
+            .map(|output| {
+                let unit_index = output.commitments().unit_index();
+                let packed_unit_values = proof_unit_values
+                    .iter()
+                    .find(|values| values.unit_index == unit_index)
+                    .map(|values| values.packed_values.as_slice())
+                    .unwrap_or_else(|| output.auxiliary_inputs().unit_values.as_slice());
+                WitnessContributionSource {
+                    output,
+                    packed_unit_values,
+                }
+            })
+            .collect::<Vec<_>>();
+        if let Some(contribution_segment) = build_witness_contribution_segment(
+            request.catalog,
+            request.schedule,
+            &contribution_sources,
+        )? {
+            proof.segments.push(contribution_segment);
+        }
     }
     append_binding_segments(&mut proof.segments, binding_segments);
     if request.verify_outputs {

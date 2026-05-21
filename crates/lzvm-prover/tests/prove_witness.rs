@@ -64,10 +64,7 @@ use lzvm_artifacts::witness_segment::{
     WitnessCommitmentStageSegment, WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
 use lzvm_field::{coset_extend_evaluations, Ext3, Felt};
-use lzvm_prover::contribution::{
-    build_witness_contribution_input, derive_worker_contribution_entry,
-    load_contribution_segment_from_segments,
-};
+use lzvm_prover::contribution::build_witness_contribution_input;
 use lzvm_prover::pcs_challenge::{derive_fri_queries, verify_query_nonce};
 use lzvm_prover::pcs_fri::{verify_fri_opening_folds, PcsFriOpeningFoldRequest};
 use lzvm_prover::pcs_transcript::{
@@ -1071,29 +1068,10 @@ fn builds_witness_proof_artifact_for_unit_in_prover() {
         .segments
         .iter()
         .any(|segment| { segment.id == WITNESS_COMMITMENT_SEGMENT_BASE_ID }));
-    assert!(proof
+    assert!(!proof
         .segments
         .iter()
         .any(|segment| { segment.id == CONTRIBUTION_SEGMENT_ID }));
-    let expected_input = build_witness_contribution_input(
-        &catalog.units[0].verification_key,
-        &plan.run_plan.schedule.units[0],
-        &output,
-        &output.auxiliary_inputs().unit_values,
-    )
-    .expect("expected contribution input should build");
-    let expected_entry = derive_worker_contribution_entry(
-        &catalog.layout.global_info,
-        0,
-        plan.run_plan.schedule.units[0].group_id.unwrap_or(0) as u32,
-        &[expected_input],
-    )
-    .expect("expected contribution entry should build");
-    assert_eq!(
-        load_contribution_segment_from_segments(&proof.segments)
-            .expect("contribution segment should load"),
-        vec![expected_entry]
-    );
 }
 
 #[test]
@@ -1314,7 +1292,7 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
             .collect::<Vec<_>>(),
         vec![WITNESS_COMMITMENT_SEGMENT_BASE_ID, second_witness_id]
     );
-    assert!(proof
+    assert!(!proof
         .segments
         .iter()
         .any(|segment| { segment.id == CONTRIBUTION_SEGMENT_ID }));
@@ -1351,33 +1329,6 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
     assert_eq!(
         unit_values.units[1].values,
         vec![901, 1001, 1002, 1003, 902]
-    );
-    let expected_entries = outputs
-        .iter()
-        .map(|output| {
-            let unit_index = output.commitments().unit_index();
-            let expected_input = build_witness_contribution_input(
-                &catalog.units[unit_index].verification_key,
-                &plan.run_plan.schedule.units[unit_index],
-                output,
-                &output.auxiliary_inputs().unit_values,
-            )
-            .expect("expected contribution input should build");
-            derive_worker_contribution_entry(
-                &catalog.layout.global_info,
-                unit_index as u32,
-                plan.run_plan.schedule.units[unit_index]
-                    .group_id
-                    .unwrap_or(0) as u32,
-                &[expected_input],
-            )
-            .expect("expected contribution entry should build")
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        load_contribution_segment_from_segments(&proof.segments)
-            .expect("contribution segment should load"),
-        expected_entries
     );
 }
 

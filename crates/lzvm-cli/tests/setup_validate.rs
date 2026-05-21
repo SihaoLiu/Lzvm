@@ -363,8 +363,8 @@ fn sample_proof(public_values: &PublicValues) -> ProofArtifact {
     }
 }
 
-fn assert_has_contribution_segment(proof: &ProofArtifact) {
-    assert!(proof
+fn assert_has_no_contribution_segment(proof: &ProofArtifact) {
+    assert!(!proof
         .segments
         .iter()
         .any(|segment| segment.id == CONTRIBUTION_SEGMENT_ID));
@@ -4917,8 +4917,8 @@ fn saves_prove_witness_commitment_outputs_when_requested() {
         proof.public_values_hash,
         public_values_digest(&public_values).expect("digest should compute")
     );
-    assert_eq!(proof.segments.len(), 6);
-    assert_has_contribution_segment(&proof);
+    assert_eq!(proof.segments.len(), 5);
+    assert_has_no_contribution_segment(&proof);
     assert_eq!(proof.segments[0].id, PCS_MATERIAL_MANIFEST_SEGMENT_ID);
     let manifest = parse_pcs_material_manifest_segment(&proof.segments[0].data)
         .expect("material manifest should parse");
@@ -5099,8 +5099,8 @@ fn writes_prove_witness_proof_without_save_outputs() {
     );
     assert!(stderr.is_empty());
     assert_eq!(proof.setup_hash, setup_hash);
-    assert_eq!(proof.segments.len(), 6);
-    assert_has_contribution_segment(&proof);
+    assert_eq!(proof.segments.len(), 5);
+    assert_has_no_contribution_segment(&proof);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
@@ -7761,8 +7761,8 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     let proof_path = output_dir.join("proof.bin");
     let proof_bytes = fs::read(&proof_path).expect("proof output should read");
     let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
-    assert_eq!(proof.segments.len(), 12);
-    assert_has_contribution_segment(&proof);
+    assert_eq!(proof.segments.len(), 11);
+    assert_has_no_contribution_segment(&proof);
     assert!(proof
         .segments
         .iter()
@@ -7844,7 +7844,7 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(12, &public_values_path)
+        expected_setup_verify_stdout(11, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
 
@@ -7871,7 +7871,7 @@ fn runs_prove_witness_for_aggregate_with_transcript_fri_outputs() {
     );
     assert_eq!(
         String::from_utf8(proof_verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(12, &public_values_path)
+        expected_setup_verify_stdout(11, &public_values_path)
     );
     assert!(proof_verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -7956,8 +7956,8 @@ fn runs_prove_witness_for_aggregate_with_evaluation_values_segment() {
     let proof_path = output_dir.join("proof.bin");
     let proof_bytes = fs::read(&proof_path).expect("proof output should read");
     let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
-    assert_eq!(proof.segments.len(), 12);
-    assert_has_contribution_segment(&proof);
+    assert_eq!(proof.segments.len(), 11);
+    assert_has_no_contribution_segment(&proof);
 
     let evaluation_segment = proof
         .segments
@@ -7999,7 +7999,7 @@ fn runs_prove_witness_for_aggregate_with_evaluation_values_segment() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(12, &public_values_path)
+        expected_setup_verify_stdout(11, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -8113,8 +8113,8 @@ fn runs_prove_witness_for_aggregate_fri_with_unit_values_segment() {
     let proof_path = output_dir.join("proof.bin");
     let proof_bytes = fs::read(&proof_path).expect("proof output should read");
     let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
-    assert_eq!(proof.segments.len(), 13);
-    assert_has_contribution_segment(&proof);
+    assert_eq!(proof.segments.len(), 12);
+    assert_has_no_contribution_segment(&proof);
 
     let unit_values_segment = proof
         .segments
@@ -8157,7 +8157,7 @@ fn runs_prove_witness_for_aggregate_fri_with_unit_values_segment() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(13, &public_values_path)
+        expected_setup_verify_stdout(12, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -8217,8 +8217,8 @@ fn saves_prove_witness_transcript_fri_outputs_when_requested() {
     let proof_path = output_dir.join("proof.bin");
     let proof_bytes = fs::read(&proof_path).expect("proof output should read");
     let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
-    assert_eq!(proof.segments.len(), 9);
-    assert_has_contribution_segment(&proof);
+    assert_eq!(proof.segments.len(), 8);
+    assert_has_no_contribution_segment(&proof);
     assert!(proof
         .segments
         .iter()
@@ -8360,7 +8360,7 @@ fn saves_prove_witness_transcript_fri_outputs_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(9, &public_values_path)
+        expected_setup_verify_stdout(8, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -8574,7 +8574,7 @@ fn saves_prove_witness_proof_values_segment_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(7, &public_values_path)
+        expected_setup_verify_stdout(6, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -8687,7 +8687,7 @@ fn saves_prove_witness_group_values_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(7, &public_values_path)
+        expected_setup_verify_stdout(6, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -8856,7 +8856,7 @@ fn saves_prove_witness_unit_values_segment_when_requested() {
     );
     assert_eq!(
         String::from_utf8(verify_stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(7, &public_values_path)
+        expected_setup_verify_stdout(6, &public_values_path)
     );
     assert!(verify_stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -9758,6 +9758,87 @@ fn rejects_setup_aware_verify_preflight_with_invalid_contribution_segment() {
     );
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_setup_aware_verify_preflight_with_missing_contribution_challenge() {
+    let dir = temp_dir("verify-setup-preflight-missing-contribution-challenge");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let schedule = derive_prove_schedule(&catalog).expect("schedule should derive");
+    let material_segment =
+        build_pcs_material_manifest_segment(&schedule).expect("material segment should build");
+    let witness_segment = sample_witness_proof_segment(&schedule, 0);
+    let entries = sample_contribution_entries(
+        catalog
+            .layout
+            .global_info
+            .lattice_size
+            .expect("lattice size should exist") as usize,
+    );
+    let contribution_segment = build_contribution_segment(&entries)
+        .expect("contribution segment should build")
+        .expect("contribution segment should exist");
+    let query_segment = build_pcs_query_plan_segment(
+        &schedule,
+        public_values_digest(&public_values).expect("digest should compute"),
+        &material_segment,
+        std::slice::from_ref(&witness_segment),
+    )
+    .expect("query segment should build");
+    let constant_opening_segment =
+        build_constant_opening_segment(&catalog, &schedule, &query_segment)
+            .expect("constant opening segment should build");
+    let opening_segment = sample_witness_opening_segment(&schedule, &query_segment, 0);
+    let proof = ProofArtifact {
+        setup_hash: public_values.setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            material_segment,
+            query_segment,
+            constant_opening_segment,
+            opening_segment,
+            witness_segment,
+            contribution_segment,
+        ],
+    };
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: missing contribution challenge values\n"
+    );
 }
 
 #[test]
@@ -11787,6 +11868,14 @@ fn rounds_trip_contribution_challenge_through_witness_run() {
         &fs::read(full_output_dir.join("proof.bin")).expect("full proof should read"),
     )
     .expect("full proof should parse");
+    assert!(full_proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == CONTRIBUTION_SEGMENT_ID));
+    assert!(full_proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID));
     assert!(full_proof
         .segments
         .iter()
