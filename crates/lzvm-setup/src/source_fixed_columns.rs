@@ -32,7 +32,7 @@ use crate::{
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_static_values::{
         evaluate_source_static_expression, source_declaration_constant_values_from_cache,
-        source_template_constant_value_cache, SourceStaticValueLookup,
+        source_template_constant_value_cache, static_value_integer, SourceStaticValueLookup,
         SourceTemplateConstantValueCache,
     },
     source_template_for::source_static_for_loop_with_lookup,
@@ -1318,8 +1318,10 @@ fn source_fixed_column_dimensions(
                 });
             };
             let expression_text = source_fixed_dimension_expression_text(source, *span);
-            let Some(FixedFileTemplateValue::Integer(value)) =
+            let Some(value) =
                 evaluate_source_static_expression(program, expression, &constant_values.scalars)
+                    .as_ref()
+                    .and_then(static_value_integer)
             else {
                 return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
                     source_name: source_name.to_owned(),
@@ -1456,8 +1458,10 @@ fn source_fixed_constant_array_value(
     let Some(initializer_span) = declaration.initializer else {
         return Ok(None);
     };
-    let Some(FixedFileTemplateValue::Integer(length)) =
+    let Some(length) =
         evaluate_source_static_expression(program, dimension_expression, &values.scalars)
+            .as_ref()
+            .and_then(static_value_integer)
     else {
         return Ok(None);
     };

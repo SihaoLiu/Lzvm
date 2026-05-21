@@ -1028,6 +1028,62 @@ fn generate_key_writes_array_fixed_inputs_from_source_dimensions() {
 }
 
 #[test]
+fn generate_key_writes_array_fixed_inputs_from_boolean_source_dimensions() {
+    let dir = create_key_directory_without_fixed_inputs("generate-key-source-boolean-arrays");
+    let source_path = dir.join("main.pil");
+    write_bytes(
+        &source_path,
+        "const int SELECTED = 1;\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [0..1];\n\
+         col fixed main.right[SELECTED == 1] = [9, 8];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    for unit in &layout.units {
+        let setup_path = unit
+            .setup_info_binary()
+            .expect("setup metadata path should derive");
+        let setup =
+            read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+        let columns = parse_raw_fixed_columns(
+            &fs::read(&unit.fixed_columns).expect("raw fixed columns should read"),
+            &setup,
+            "GroupA",
+            "UnitA",
+        )
+        .expect("raw fixed columns should parse");
+        assert_eq!(columns.columns[0].dimensions, [1]);
+        assert_eq!(columns.columns[0].values, [0, 1]);
+        assert_eq!(columns.columns[1].dimensions, [1]);
+        assert_eq!(columns.columns[1].values, [9, 8]);
+    }
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("source_fixed_units="));
+    assert!(stdout.contains("setup_hash="));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_writes_array_fixed_inputs_from_source_dimension_functions() {
     let dir = create_key_directory_without_fixed_inputs("generate-key-source-array-functions");
     let source_path = dir.join("main.pil");
