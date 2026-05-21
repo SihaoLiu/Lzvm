@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+use lzvm_field::{Felt, FieldError};
+
 pub const PCS_EVALUATION_SEGMENT_ID: u32 = 10_006;
 
 const PCS_EVALUATION_MAGIC: [u8; 4] = *b"evs0";
@@ -25,12 +27,29 @@ pub struct PcsEvaluationUnitSegment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcsEvaluationSegmentError {
     InvalidMagic,
-    UnsupportedVersion { version: u32 },
-    UnexpectedEof { needed: usize, available: usize },
-    TrailingBytes { trailing: usize },
+    UnsupportedVersion {
+        version: u32,
+    },
+    UnexpectedEof {
+        needed: usize,
+        available: usize,
+    },
+    TrailingBytes {
+        trailing: usize,
+    },
     EmptyUnits,
-    EmptyValues { unit_index: u32 },
-    DuplicateUnitIndex { unit_index: u32 },
+    EmptyValues {
+        unit_index: u32,
+    },
+    DuplicateUnitIndex {
+        unit_index: u32,
+    },
+    ValueNonCanonical {
+        unit_index: u32,
+        value_index: usize,
+        word_index: usize,
+        source: FieldError,
+    },
     LengthOverflow,
 }
 
@@ -55,12 +74,35 @@ impl fmt::Display for PcsEvaluationSegmentError {
             Self::DuplicateUnitIndex { unit_index } => {
                 write!(f, "duplicate PCS evaluation unit index: {unit_index}")
             }
+            Self::ValueNonCanonical {
+                unit_index,
+                value_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "PCS evaluation unit {unit_index} value {value_index} word {word_index} is non-canonical: {source}"
+            ),
             Self::LengthOverflow => write!(f, "PCS evaluation segment length overflow"),
         }
     }
 }
 
-impl std::error::Error for PcsEvaluationSegmentError {}
+impl std::error::Error for PcsEvaluationSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ValueNonCanonical { source, .. } => Some(source),
+            Self::InvalidMagic
+            | Self::UnsupportedVersion { .. }
+            | Self::UnexpectedEof { .. }
+            | Self::TrailingBytes { .. }
+            | Self::EmptyUnits
+            | Self::EmptyValues { .. }
+            | Self::DuplicateUnitIndex { .. }
+            | Self::LengthOverflow => None,
+        }
+    }
+}
 
 pub fn encode_pcs_evaluation_segment(
     value: &PcsEvaluationSegment,
@@ -147,6 +189,18 @@ fn validate_pcs_evaluation_segment(
             return Err(PcsEvaluationSegmentError::EmptyValues {
                 unit_index: unit.unit_index,
             });
+        }
+        for (value_index, value) in unit.values.iter().enumerate() {
+            for (word_index, word) in value.iter().copied().enumerate() {
+                Felt::from_canonical(word).map_err(|source| {
+                    PcsEvaluationSegmentError::ValueNonCanonical {
+                        unit_index: unit.unit_index,
+                        value_index,
+                        word_index,
+                        source,
+                    }
+                })?;
+            }
         }
     }
     Ok(())

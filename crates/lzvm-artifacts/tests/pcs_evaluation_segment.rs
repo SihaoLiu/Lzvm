@@ -3,6 +3,9 @@ use lzvm_artifacts::pcs_evaluation_segment::{
     PcsEvaluationSegmentError, PcsEvaluationUnitSegment,
 };
 
+const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
+const FIRST_VALUE_OFFSET: usize = 12 + 4 + 4;
+
 fn sample_segment() -> PcsEvaluationSegment {
     PcsEvaluationSegment {
         units: vec![
@@ -60,6 +63,32 @@ fn rejects_empty_pcs_evaluation_segments() {
         encode_pcs_evaluation_segment(&segment),
         Err(PcsEvaluationSegmentError::EmptyUnits)
     ));
+}
+
+#[test]
+fn rejects_non_canonical_pcs_evaluation_values() {
+    let mut segment = sample_segment();
+    segment.units[1].values[0][2] = NON_CANONICAL_FIELD;
+
+    let err = encode_pcs_evaluation_segment(&segment).expect_err("value should be rejected");
+    assert_eq!(
+        err.to_string(),
+        "PCS evaluation unit 2 value 0 word 2 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_non_canonical_pcs_evaluation_values_when_parsing() {
+    let mut encoded =
+        encode_pcs_evaluation_segment(&sample_segment()).expect("evaluation segment should encode");
+    encoded[FIRST_VALUE_OFFSET + 8..FIRST_VALUE_OFFSET + 16]
+        .copy_from_slice(&NON_CANONICAL_FIELD.to_le_bytes());
+
+    let err = parse_pcs_evaluation_segment(&encoded).expect_err("value should be rejected");
+    assert_eq!(
+        err.to_string(),
+        "PCS evaluation unit 0 value 0 word 1 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
 }
 
 #[test]

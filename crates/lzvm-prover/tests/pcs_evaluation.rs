@@ -1,7 +1,7 @@
 use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_evaluation_segment::{
     encode_pcs_evaluation_segment, parse_pcs_evaluation_segment, PcsEvaluationSegment,
-    PcsEvaluationUnitSegment, PCS_EVALUATION_SEGMENT_ID,
+    PcsEvaluationSegmentError, PcsEvaluationUnitSegment, PCS_EVALUATION_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::proof::ProofSegment;
@@ -12,6 +12,8 @@ use lzvm_prover::pcs_evaluation::{
 use lzvm_prover::{
     build_pcs_evaluation_segment, ProvePcsEvaluationValues, ProveSchedule, ProveUnitSchedule,
 };
+
+const FIRST_EVALUATION_VALUE_OFFSET: usize = 12 + 4 + 4;
 
 #[test]
 fn loads_pcs_evaluation_unit_from_segments() {
@@ -74,19 +76,21 @@ fn rejects_pcs_evaluation_value_count_mismatches() {
 
 #[test]
 fn rejects_non_canonical_pcs_evaluation_values() {
-    let segment = pcs_evaluation_proof_segment(vec![evaluation_unit(0, vec![[MODULUS, 2, 3]])]);
+    let mut segment = pcs_evaluation_proof_segment(vec![evaluation_unit(0, vec![[1, 2, 3]])]);
+    segment.data[FIRST_EVALUATION_VALUE_OFFSET..FIRST_EVALUATION_VALUE_OFFSET + 8]
+        .copy_from_slice(&MODULUS.to_le_bytes());
 
     let error = load_pcs_evaluation_unit_from_segments(0, &sample_unit(1), &[segment])
         .expect_err("evaluation values should be canonical");
 
     assert_eq!(
         error,
-        LoadPcsEvaluationUnitError::ValueNonCanonical {
+        LoadPcsEvaluationUnitError::Segment(PcsEvaluationSegmentError::ValueNonCanonical {
             unit_index: 0,
             value_index: 0,
             word_index: 0,
             source: FieldError::NonCanonical { value: MODULUS }
-        }
+        })
     );
 }
 
