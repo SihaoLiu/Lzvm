@@ -10,6 +10,7 @@ use crate::{
     source_control_body_cache::SourceControlBodyCache,
     source_expression_aliases::collect_source_template_expression_alias,
     source_key_directory::SourceKeyDirectoryMetadataError,
+    source_statement_hints::source_statement_line,
     source_static_values::{
         evaluate_source_static_expression, insert_source_static_array,
         source_static_array_expression,
@@ -377,6 +378,9 @@ fn lower_function_body_statement(
     if apply_static_expression_statement(context.program, expression, values) {
         return Ok(true);
     }
+    if source_static_assertion(context.program, context.module, statement, values)? {
+        return Ok(true);
+    }
     if lower_function_call_expression(
         context,
         expression,
@@ -520,6 +524,72 @@ fn static_integer_value(value: Option<&FixedFileTemplateValue>) -> Option<i128> 
         Some(FixedFileTemplateValue::Integer(value)) => Some(*value),
         Some(FixedFileTemplateValue::Boolean(value)) => Some(if *value { 1 } else { 0 }),
         _ => None,
+    }
+}
+
+fn source_static_assertion(
+    program: &SourceProgram,
+    module: &lzvm_pil::SourceProgramModule,
+    statement: &FunctionStatement,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<bool, SourceKeyDirectoryMetadataError> {
+    let Some(expression) = statement.value_expression.as_ref() else {
+        return Ok(false);
+    };
+    let Some((name, arguments)) = source_call_expression(expression) else {
+        return Ok(false);
+    };
+    if name != "assert" || !(1..=2).contains(&arguments.len()) || arguments[0].name.is_some() {
+        return Ok(false);
+    }
+    match source_static_condition(program, &arguments[0].value, values) {
+        Some(true) => Ok(true),
+        Some(false) => Err(SourceKeyDirectoryMetadataError::StaticAssertionFailed {
+            line: source_statement_line(module, statement),
+        }),
+        None => Ok(false),
+    }
+}
+
+fn source_static_condition(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<bool> {
+    if let Some(value) = evaluate_source_static_expression(program, expression, values) {
+        return Some(source_static_truthy_value(&value));
+    }
+    let ExpressionKind::Binary { op, left, right } = &strip_group_expression(expression).kind
+    else {
+        return None;
+    };
+    let left = source_static_integer_expression(program, left, values)?;
+    let right = source_static_integer_expression(program, right, values)?;
+    match op {
+        BinaryOperator::Less => Some(left < right),
+        BinaryOperator::LessEqual => Some(left <= right),
+        BinaryOperator::Greater => Some(left > right),
+        BinaryOperator::GreaterEqual => Some(left >= right),
+        BinaryOperator::EqualEqual | BinaryOperator::TripleEqual => Some(left == right),
+        BinaryOperator::NotEqual => Some(left != right),
+        _ => None,
+    }
+}
+
+fn source_static_integer_expression(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<i128> {
+    let value = evaluate_source_static_expression(program, expression, values)?;
+    static_integer_value(Some(&value))
+}
+
+fn source_static_truthy_value(value: &FixedFileTemplateValue) -> bool {
+    match value {
+        FixedFileTemplateValue::Integer(value) => *value != 0,
+        FixedFileTemplateValue::Boolean(value) => *value,
+        FixedFileTemplateValue::String(value) => !value.is_empty(),
     }
 }
 
