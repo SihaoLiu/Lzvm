@@ -747,27 +747,35 @@ fn constant_column_specs(setup: &UnitSetupInfo) -> Vec<RawFixedColumnInfo> {
         *name_counts.entry(column.name.as_str()).or_insert(0_usize) += 1;
     }
 
-    setup
-        .constant_columns
-        .iter()
-        .map(|column| {
-            let dimensions = if column.lengths.is_empty() {
-                vec![column.dimension]
-            } else {
-                column.lengths.clone()
-            };
-            let name = if name_counts.get(column.name.as_str()).copied().unwrap_or(0) > 1 {
-                format!("{}[{}]", column.name, column.pols_map_id)
-            } else {
-                column.name.clone()
-            };
-            RawFixedColumnInfo {
+    let mut specs = Vec::new();
+    for column in &setup.constant_columns {
+        let dimensions = if column.lengths.is_empty() {
+            vec![column.dimension]
+        } else {
+            column.lengths.clone()
+        };
+        let name = if name_counts.get(column.name.as_str()).copied().unwrap_or(0) > 1 {
+            format!("{}[{}]", column.name, column.pols_map_id)
+        } else {
+            column.name.clone()
+        };
+        if column.dimension <= 1 {
+            specs.push(RawFixedColumnInfo {
                 name,
                 index: column.pols_map_id,
                 dimensions,
-            }
-        })
-        .collect()
+            });
+            continue;
+        }
+        for element in 0..column.dimension {
+            specs.push(RawFixedColumnInfo {
+                name: format!("{name}[{element}]"),
+                index: column.pols_map_id.saturating_add(element),
+                dimensions: vec![1],
+            });
+        }
+    }
+    specs
 }
 
 fn raw_row_count(setup: &UnitSetupInfo) -> Result<u64, FixedColumnError> {

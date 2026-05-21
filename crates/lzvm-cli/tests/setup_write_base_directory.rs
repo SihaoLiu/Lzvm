@@ -949,10 +949,13 @@ fn generate_key_writes_array_fixed_inputs_from_source_dimensions() {
     write_bytes(
         &source_path,
         "const int WIDTH = 2;\n\
-         airtemplate UnitA() { }\n\
-         airgroup GroupA { UnitA(); }\n\
-         col fixed main.left = [0..1];\n\
-         col fixed main.right[WIDTH] = [9, 8];",
+         airtemplate UnitA() {\n\
+             col fixed main.left = [0..1];\n\
+             col fixed main.right[WIDTH];\n\
+             main.right[0] = [9, 8];\n\
+             main.right[1] = [6, 7];\n\
+         }\n\
+         airgroup GroupA { UnitA(); }",
     );
     let layout = read_key_directory_layout(&dir).expect("layout should derive");
     for unit in &layout.units {
@@ -1002,8 +1005,12 @@ fn generate_key_writes_array_fixed_inputs_from_source_dimensions() {
         .expect("raw fixed columns should parse");
         assert_eq!(columns.columns[0].dimensions, [1]);
         assert_eq!(columns.columns[0].values, [0, 1]);
-        assert_eq!(columns.columns[1].dimensions, [2]);
+        assert_eq!(columns.columns[1].name, "main.right[0]");
+        assert_eq!(columns.columns[1].dimensions, [1]);
         assert_eq!(columns.columns[1].values, [9, 8]);
+        assert_eq!(columns.columns[2].name, "main.right[1]");
+        assert_eq!(columns.columns[2].dimensions, [1]);
+        assert_eq!(columns.columns[2].values, [6, 7]);
         assert!(unit.constant_tree.is_file());
         assert!(unit.verification_key_binary().is_file());
         assert!(unit
@@ -1094,10 +1101,13 @@ fn generate_key_writes_array_fixed_inputs_from_source_dimension_functions() {
         "function width(): int {\n\
              return 2;\n\
          }\n\
-         airtemplate UnitA() { }\n\
-         airgroup GroupA { UnitA(); }\n\
-         col fixed main.left = [0..1];\n\
-         col fixed main.right[width()] = [9, 8];",
+         airtemplate UnitA() {\n\
+             col fixed main.left = [0..1];\n\
+             col fixed main.right[width()];\n\
+             main.right[0] = [9, 8];\n\
+             main.right[1] = [6, 7];\n\
+         }\n\
+         airgroup GroupA { UnitA(); }",
     );
     let layout = read_key_directory_layout(&dir).expect("layout should derive");
     for unit in &layout.units {
@@ -1147,8 +1157,12 @@ fn generate_key_writes_array_fixed_inputs_from_source_dimension_functions() {
         .expect("raw fixed columns should parse");
         assert_eq!(columns.columns[0].dimensions, [1]);
         assert_eq!(columns.columns[0].values, [0, 1]);
-        assert_eq!(columns.columns[1].dimensions, [2]);
+        assert_eq!(columns.columns[1].name, "main.right[0]");
+        assert_eq!(columns.columns[1].dimensions, [1]);
         assert_eq!(columns.columns[1].values, [9, 8]);
+        assert_eq!(columns.columns[2].name, "main.right[1]");
+        assert_eq!(columns.columns[2].dimensions, [1]);
+        assert_eq!(columns.columns[2].values, [6, 7]);
         assert!(unit.constant_tree.is_file());
         assert!(unit.verification_key_binary().is_file());
         assert!(unit

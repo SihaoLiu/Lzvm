@@ -1030,8 +1030,13 @@ fn writes_fixed_column_source_artifacts_with_array_dimensions() {
     write_file(
         &main_path,
         "const int WIDTH = 2;\n\
-         col fixed main.left = [0..3];\n\
-         col fixed main.right[WIDTH] = [9, 8, 7, 6];",
+         airtemplate UnitA() {\n\
+             col fixed main.left = [0..3];\n\
+             col fixed main.right[WIDTH];\n\
+             main.right[0] = [9, 8, 7, 6];\n\
+             main.right[1] = [6, 7, 8, 9];\n\
+         }\n\
+         airgroup GroupA { UnitA(); }",
     );
 
     write_fixed_columns_from_source_file(&SourceFixedColumnsWriteRequest {
@@ -1062,9 +1067,14 @@ fn writes_fixed_column_source_artifacts_with_array_dimensions() {
                     values: vec![0, 1, 2, 3],
                 },
                 FixedColumn {
-                    name: "main.right".to_owned(),
-                    dimensions: vec![2],
+                    name: "main.right[0]".to_owned(),
+                    dimensions: vec![1],
                     values: vec![9, 8, 7, 6],
+                },
+                FixedColumn {
+                    name: "main.right[1]".to_owned(),
+                    dimensions: vec![1],
+                    values: vec![6, 7, 8, 9],
                 },
             ],
         }
