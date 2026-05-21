@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+use lzvm_field::{Felt, FieldError};
+
 pub const PCS_FRI_OPENING_SEGMENT_ID: u32 = 10_004;
 
 const PCS_FRI_OPENING_MAGIC: [u8; 4] = *b"fos0";
@@ -81,6 +83,42 @@ pub enum PcsFriOpeningSegmentError {
         unit_index: u32,
         layer_index: u32,
     },
+    FinalPolynomialValueNonCanonical {
+        unit_index: u32,
+        value_index: usize,
+        word_index: usize,
+        source: FieldError,
+    },
+    LayerRootNonCanonical {
+        unit_index: u32,
+        layer_index: u32,
+        word_index: usize,
+        source: FieldError,
+    },
+    LastLevelRootNonCanonical {
+        unit_index: u32,
+        layer_index: u32,
+        root_index: usize,
+        word_index: usize,
+        source: FieldError,
+    },
+    QueryValueNonCanonical {
+        unit_index: u32,
+        layer_index: u32,
+        row_index: u64,
+        value_index: usize,
+        word_index: usize,
+        source: FieldError,
+    },
+    SiblingRootNonCanonical {
+        unit_index: u32,
+        layer_index: u32,
+        row_index: u64,
+        level_index: usize,
+        root_index: usize,
+        word_index: usize,
+        source: FieldError,
+    },
     LengthOverflow,
 }
 
@@ -131,12 +169,84 @@ impl fmt::Display for PcsFriOpeningSegmentError {
                 f,
                 "duplicate PCS FRI opening layer index: unit {unit_index}, layer {layer_index}"
             ),
+            Self::FinalPolynomialValueNonCanonical {
+                unit_index,
+                value_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "PCS FRI opening unit {unit_index} final polynomial value {value_index} word {word_index} is non-canonical: {source}"
+            ),
+            Self::LayerRootNonCanonical {
+                unit_index,
+                layer_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "PCS FRI opening unit {unit_index} layer {layer_index} root word {word_index} is non-canonical: {source}"
+            ),
+            Self::LastLevelRootNonCanonical {
+                unit_index,
+                layer_index,
+                root_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "PCS FRI opening unit {unit_index} layer {layer_index} last level root {root_index} word {word_index} is non-canonical: {source}"
+            ),
+            Self::QueryValueNonCanonical {
+                unit_index,
+                layer_index,
+                row_index,
+                value_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "PCS FRI opening unit {unit_index} layer {layer_index} row {row_index} query value {value_index} word {word_index} is non-canonical: {source}"
+            ),
+            Self::SiblingRootNonCanonical {
+                unit_index,
+                layer_index,
+                row_index,
+                level_index,
+                root_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "PCS FRI opening unit {unit_index} layer {layer_index} row {row_index} sibling level {level_index} root {root_index} word {word_index} is non-canonical: {source}"
+            ),
             Self::LengthOverflow => write!(f, "PCS FRI opening segment length overflow"),
         }
     }
 }
 
-impl std::error::Error for PcsFriOpeningSegmentError {}
+impl std::error::Error for PcsFriOpeningSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::FinalPolynomialValueNonCanonical { source, .. }
+            | Self::LayerRootNonCanonical { source, .. }
+            | Self::LastLevelRootNonCanonical { source, .. }
+            | Self::QueryValueNonCanonical { source, .. }
+            | Self::SiblingRootNonCanonical { source, .. } => Some(source),
+            Self::InvalidMagic
+            | Self::UnsupportedVersion { .. }
+            | Self::UnexpectedEof { .. }
+            | Self::TrailingBytes { .. }
+            | Self::EmptyUnits
+            | Self::EmptyFinalPolynomial { .. }
+            | Self::EmptyLayerQueries { .. }
+            | Self::EmptyQueryValues { .. }
+            | Self::DuplicateUnitIndex { .. }
+            | Self::DuplicateLayerIndex { .. }
+            | Self::LengthOverflow => None,
+        }
+    }
+}
 
 pub fn encode_pcs_fri_opening_segment(
     value: &PcsFriOpeningSegment,
@@ -342,6 +452,18 @@ fn validate_pcs_fri_opening_segment(
                 unit_index: unit.unit_index,
             });
         }
+        for (value_index, value) in unit.final_polynomial.iter().enumerate() {
+            for (word_index, word) in value.iter().copied().enumerate() {
+                Felt::from_canonical(word).map_err(|source| {
+                    PcsFriOpeningSegmentError::FinalPolynomialValueNonCanonical {
+                        unit_index: unit.unit_index,
+                        value_index,
+                        word_index,
+                        source,
+                    }
+                })?;
+            }
+        }
         let mut seen_layers = BTreeSet::new();
         for layer in &unit.layers {
             if !seen_layers.insert(layer.layer_index) {
@@ -356,6 +478,29 @@ fn validate_pcs_fri_opening_segment(
                     layer_index: layer.layer_index,
                 });
             }
+            for (word_index, word) in layer.root.iter().copied().enumerate() {
+                Felt::from_canonical(word).map_err(|source| {
+                    PcsFriOpeningSegmentError::LayerRootNonCanonical {
+                        unit_index: unit.unit_index,
+                        layer_index: layer.layer_index,
+                        word_index,
+                        source,
+                    }
+                })?;
+            }
+            for (root_index, root) in layer.last_level.iter().enumerate() {
+                for (word_index, word) in root.iter().copied().enumerate() {
+                    Felt::from_canonical(word).map_err(|source| {
+                        PcsFriOpeningSegmentError::LastLevelRootNonCanonical {
+                            unit_index: unit.unit_index,
+                            layer_index: layer.layer_index,
+                            root_index,
+                            word_index,
+                            source,
+                        }
+                    })?;
+                }
+            }
             for query in &layer.queries {
                 if query.values.is_empty() {
                     return Err(PcsFriOpeningSegmentError::EmptyQueryValues {
@@ -363,6 +508,37 @@ fn validate_pcs_fri_opening_segment(
                         layer_index: layer.layer_index,
                         row_index: query.row_index,
                     });
+                }
+                for (value_index, value) in query.values.iter().enumerate() {
+                    for (word_index, word) in value.iter().copied().enumerate() {
+                        Felt::from_canonical(word).map_err(|source| {
+                            PcsFriOpeningSegmentError::QueryValueNonCanonical {
+                                unit_index: unit.unit_index,
+                                layer_index: layer.layer_index,
+                                row_index: query.row_index,
+                                value_index,
+                                word_index,
+                                source,
+                            }
+                        })?;
+                    }
+                }
+                for (level_index, level) in query.siblings.iter().enumerate() {
+                    for (root_index, root) in level.siblings.iter().enumerate() {
+                        for (word_index, word) in root.iter().copied().enumerate() {
+                            Felt::from_canonical(word).map_err(|source| {
+                                PcsFriOpeningSegmentError::SiblingRootNonCanonical {
+                                    unit_index: unit.unit_index,
+                                    layer_index: layer.layer_index,
+                                    row_index: query.row_index,
+                                    level_index,
+                                    root_index,
+                                    word_index,
+                                    source,
+                                }
+                            })?;
+                        }
+                    }
                 }
             }
         }

@@ -4,6 +4,16 @@ use lzvm_artifacts::pcs_fri_segment::{
     PcsFriOpeningSegmentError, PcsFriOpeningUnitSegment,
 };
 
+const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
+const FIRST_FINAL_POLYNOMIAL_OFFSET: usize = 12 + 12;
+const FIRST_LAYER_OFFSET: usize = FIRST_FINAL_POLYNOMIAL_OFFSET + 2 * 3 * 8;
+const FIRST_LAYER_ROOT_OFFSET: usize = FIRST_LAYER_OFFSET + 4;
+const FIRST_LAST_LEVEL_OFFSET: usize = FIRST_LAYER_OFFSET + 4 + 4 * 8 + 4 + 4;
+const FIRST_QUERY_OFFSET: usize = FIRST_LAST_LEVEL_OFFSET + 4 * 8;
+const FIRST_QUERY_VALUES_OFFSET: usize = FIRST_QUERY_OFFSET + 8 + 4 + 4;
+const FIRST_SIBLING_LEVEL_OFFSET: usize = FIRST_QUERY_VALUES_OFFSET + 2 * 3 * 8;
+const FIRST_SIBLING_OFFSET: usize = FIRST_SIBLING_LEVEL_OFFSET + 4;
+
 fn sample_segment() -> PcsFriOpeningSegment {
     PcsFriOpeningSegment {
         units: vec![PcsFriOpeningUnitSegment {
@@ -62,6 +72,146 @@ fn encodes_and_parses_pcs_fri_opening_segments() {
 
     assert_eq!(&encoded[0..4], b"fos0");
     assert_eq!(parsed, sample_segment());
+}
+
+#[test]
+fn rejects_non_canonical_pcs_fri_final_polynomial_values() {
+    let mut segment = sample_segment();
+    segment.units[0].final_polynomial[0][1] = NON_CANONICAL_FIELD;
+
+    let err = encode_pcs_fri_opening_segment(&segment).expect_err("field value should reject");
+
+    assert_eq!(
+        err.to_string(),
+        "PCS FRI opening unit 0 final polynomial value 0 word 1 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_non_canonical_pcs_fri_layer_roots() {
+    let mut segment = sample_segment();
+    segment.units[0].layers[0].root[2] = NON_CANONICAL_FIELD;
+
+    let err = encode_pcs_fri_opening_segment(&segment).expect_err("layer root should reject");
+
+    assert_eq!(
+        err.to_string(),
+        "PCS FRI opening unit 0 layer 0 root word 2 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_non_canonical_pcs_fri_last_level_roots() {
+    let mut segment = sample_segment();
+    segment.units[0].layers[0].last_level[0][3] = NON_CANONICAL_FIELD;
+
+    let err = encode_pcs_fri_opening_segment(&segment).expect_err("last level root should reject");
+
+    assert_eq!(
+        err.to_string(),
+        "PCS FRI opening unit 0 layer 0 last level root 0 word 3 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_non_canonical_pcs_fri_query_values() {
+    let mut segment = sample_segment();
+    segment.units[0].layers[0].queries[0].values[1][0] = NON_CANONICAL_FIELD;
+
+    let err = encode_pcs_fri_opening_segment(&segment).expect_err("query value should reject");
+
+    assert_eq!(
+        err.to_string(),
+        "PCS FRI opening unit 0 layer 0 row 3 query value 1 word 0 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_non_canonical_pcs_fri_sibling_roots() {
+    let mut segment = sample_segment();
+    segment.units[0].layers[0].queries[0].siblings[0].siblings[0][1] = NON_CANONICAL_FIELD;
+
+    let err = encode_pcs_fri_opening_segment(&segment).expect_err("sibling root should reject");
+
+    assert_eq!(
+        err.to_string(),
+        "PCS FRI opening unit 0 layer 0 row 3 sibling level 0 root 0 word 1 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_non_canonical_pcs_fri_values_when_parsing() {
+    let mut encoded =
+        encode_pcs_fri_opening_segment(&sample_segment()).expect("FRI segment should encode");
+    encoded[FIRST_FINAL_POLYNOMIAL_OFFSET..FIRST_FINAL_POLYNOMIAL_OFFSET + 8]
+        .copy_from_slice(&NON_CANONICAL_FIELD.to_le_bytes());
+
+    let err = parse_pcs_fri_opening_segment(&encoded).expect_err("field value should reject");
+
+    assert_eq!(
+        err.to_string(),
+        "PCS FRI opening unit 0 final polynomial value 0 word 0 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_non_canonical_pcs_fri_layer_roots_when_parsing() {
+    let mut encoded =
+        encode_pcs_fri_opening_segment(&sample_segment()).expect("FRI segment should encode");
+    encoded[FIRST_LAYER_ROOT_OFFSET + 16..FIRST_LAYER_ROOT_OFFSET + 24]
+        .copy_from_slice(&NON_CANONICAL_FIELD.to_le_bytes());
+
+    let err = parse_pcs_fri_opening_segment(&encoded).expect_err("layer root should reject");
+
+    assert_eq!(
+        err.to_string(),
+        "PCS FRI opening unit 0 layer 0 root word 2 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_non_canonical_pcs_fri_last_level_roots_when_parsing() {
+    let mut encoded =
+        encode_pcs_fri_opening_segment(&sample_segment()).expect("FRI segment should encode");
+    encoded[FIRST_LAST_LEVEL_OFFSET + 24..FIRST_LAST_LEVEL_OFFSET + 32]
+        .copy_from_slice(&NON_CANONICAL_FIELD.to_le_bytes());
+
+    let err = parse_pcs_fri_opening_segment(&encoded).expect_err("last level root should reject");
+
+    assert_eq!(
+        err.to_string(),
+        "PCS FRI opening unit 0 layer 0 last level root 0 word 3 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_non_canonical_pcs_fri_query_values_when_parsing() {
+    let mut encoded =
+        encode_pcs_fri_opening_segment(&sample_segment()).expect("FRI segment should encode");
+    encoded[FIRST_QUERY_VALUES_OFFSET + 24..FIRST_QUERY_VALUES_OFFSET + 32]
+        .copy_from_slice(&NON_CANONICAL_FIELD.to_le_bytes());
+
+    let err = parse_pcs_fri_opening_segment(&encoded).expect_err("query value should reject");
+
+    assert_eq!(
+        err.to_string(),
+        "PCS FRI opening unit 0 layer 0 row 3 query value 1 word 0 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_non_canonical_pcs_fri_sibling_roots_when_parsing() {
+    let mut encoded =
+        encode_pcs_fri_opening_segment(&sample_segment()).expect("FRI segment should encode");
+    encoded[FIRST_SIBLING_OFFSET + 8..FIRST_SIBLING_OFFSET + 16]
+        .copy_from_slice(&NON_CANONICAL_FIELD.to_le_bytes());
+
+    let err = parse_pcs_fri_opening_segment(&encoded).expect_err("sibling root should reject");
+
+    assert_eq!(
+        err.to_string(),
+        "PCS FRI opening unit 0 layer 0 row 3 sibling level 0 root 0 word 1 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
 }
 
 #[test]
