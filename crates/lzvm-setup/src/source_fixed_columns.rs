@@ -12,10 +12,11 @@ use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyDirectoryError
 use lzvm_artifacts::setup_info::{read_unit_setup_info_binary_file, SetupInfoError, UnitSetupInfo};
 use lzvm_field::Felt;
 use lzvm_pil::{
-    lex_source, BinaryOperator, ColumnInitializer, ColumnInitializerKind, ColumnItem, ColumnKind,
-    ConstantDeclaration, Expression, ExpressionKind, FixedFileTemplateValue, FunctionStatement,
-    FunctionStatementKind, LexError, ParseError, SourceLoaderConfig, SourceProgram,
-    SourceProgramError, SourceProgramLoader, SourceProgramModule, SourceSpan, Token, UnaryOperator,
+    lex_source, AirInstanceDeclaration, AirTemplateDeclaration, BinaryOperator, CallArgument,
+    ColumnInitializer, ColumnInitializerKind, ColumnItem, ColumnKind, ConstantDeclaration,
+    Expression, ExpressionKind, FixedFileTemplateValue, FunctionStatement, FunctionStatementKind,
+    LexError, ParseError, SourceLoaderConfig, SourceProgram, SourceProgramError,
+    SourceProgramLoader, SourceProgramModule, SourceSpan, Token, UnaryOperator,
 };
 
 use crate::{
@@ -506,6 +507,30 @@ enum SourceFixedColumnsOutputFormat {
     Raw,
 }
 
+fn source_fixed_unit_instance<'a>(
+    program: &'a SourceProgram,
+    group_name: &str,
+    unit_name: &str,
+) -> Option<&'a AirInstanceDeclaration> {
+    let units = program
+        .air_units()
+        .into_iter()
+        .filter(|unit| !unit.virtual_instance)
+        .collect::<Vec<_>>();
+    let instances = program
+        .modules
+        .iter()
+        .flat_map(|module| module.air_instances.iter())
+        .filter(|instance| !instance.virtual_instance)
+        .collect::<Vec<_>>();
+    units
+        .into_iter()
+        .zip(instances)
+        .find_map(|(unit, instance)| {
+            (unit.group_name == group_name && unit.unit_name == unit_name).then_some(instance)
+        })
+}
+
 fn fixed_columns_from_source_program(
     program: &SourceProgram,
     setup: &UnitSetupInfo,
@@ -531,6 +556,7 @@ fn fixed_columns_from_source_program(
     let constant_values = source_fixed_constant_values(program, setup, row_count)?;
     let template_values = source_template_constant_value_cache(program, &constant_values.scalars);
     let active_templates = concrete_template_names(program);
+    let unit_instance = source_fixed_unit_instance(program, group_name, unit_name);
     let mut logical_dimensions = BTreeMap::new();
     let mut seen_declarations = BTreeSet::new();
 
@@ -617,6 +643,7 @@ fn fixed_columns_from_source_program(
         &logical_dimensions,
         row_count_usize,
         &constant_values,
+        unit_instance,
     )?;
     let mut resolved_values = vec![None::<Vec<u64>>; declarations.len()];
     loop {
@@ -702,6 +729,7 @@ fn source_fixed_values_from_template_assignments(
     logical_dimensions: &BTreeMap<String, Vec<u32>>,
     row_count: usize,
     constant_values: &SourceFixedConstantValues,
+    unit_instance: Option<&AirInstanceDeclaration>,
 ) -> Result<BTreeMap<String, Vec<u64>>, SourceFixedColumnsWriteError> {
     let mut partial_values = BTreeMap::<String, Vec<Option<u64>>>::new();
     let active_templates = concrete_template_names(program);
@@ -718,10 +746,29 @@ fn source_fixed_values_from_template_assignments(
         })?;
         let mut body_cache = SourceControlBodyCache::default();
         for template in &module.air_templates {
+            let assignment_values = if let Some(instance) = unit_instance {
+                if template.name != instance.template {
+                    continue;
+                }
+                SourceFixedAssignmentValues::for_template(
+                    program,
+                    template,
+                    instance,
+                    constant_values,
+                )
+            } else {
+                if !active_templates.contains(&template.name) {
+                    continue;
+                }
+                SourceFixedAssignmentValues::for_template_defaults(
+                    program,
+                    template,
+                    constant_values,
+                )
+            };
             if !active_templates.contains(&template.name) {
                 continue;
             }
-            let assignment_values = SourceFixedAssignmentValues::base(constant_values);
             let context = SourceFixedTemplateAssignmentContext {
                 program,
                 module,
@@ -769,10 +816,38 @@ struct SourceFixedAssignmentValues<'a> {
 }
 
 impl<'a> SourceFixedAssignmentValues<'a> {
-    fn base(constant_values: &'a SourceFixedConstantValues) -> Self {
+    fn for_template(
+        program: &SourceProgram,
+        template: &AirTemplateDeclaration,
+        instance: &AirInstanceDeclaration,
+        constant_values: &'a SourceFixedConstantValues,
+    ) -> Self {
+        let mut scalars = constant_values.scalars.clone();
+        bind_source_fixed_instance_arguments(program, template, instance, &mut scalars);
+        Self::with_scalars(constant_values, scalars)
+    }
+
+    fn for_template_defaults(
+        program: &SourceProgram,
+        template: &AirTemplateDeclaration,
+        constant_values: &'a SourceFixedConstantValues,
+    ) -> Self {
+        let mut scalars = constant_values.scalars.clone();
+        bind_source_fixed_template_defaults(program, template, &mut scalars, &BTreeSet::new());
+        Self::with_scalars(constant_values, scalars)
+    }
+
+    fn with_scalars(
+        constant_values: &'a SourceFixedConstantValues,
+        scalars: BTreeMap<String, FixedFileTemplateValue>,
+    ) -> Self {
+        let overlays = scalars
+            .into_iter()
+            .filter(|(name, value)| constant_values.scalars.get(name) != Some(value))
+            .collect();
         Self {
             base_scalars: &constant_values.scalars,
-            overlays: Vec::new(),
+            overlays,
             arrays: &constant_values.arrays,
         }
     }
@@ -803,6 +878,84 @@ impl<'a> SourceFixedAssignmentValues<'a> {
         SourceFixedConstantValues {
             scalars,
             arrays: self.arrays.clone(),
+        }
+    }
+}
+
+fn bind_source_fixed_instance_arguments(
+    program: &SourceProgram,
+    template: &AirTemplateDeclaration,
+    instance: &AirInstanceDeclaration,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) {
+    let mut provided = BTreeSet::new();
+    if let Some(arguments) = instance.args_expressions.as_ref() {
+        apply_source_fixed_instance_arguments(program, template, arguments, values, &mut provided);
+    }
+    bind_source_fixed_template_defaults(program, template, values, &provided);
+}
+
+fn bind_source_fixed_template_defaults(
+    program: &SourceProgram,
+    template: &AirTemplateDeclaration,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    provided: &BTreeSet<String>,
+) {
+    for parameter in &template.parameters {
+        if provided.contains(&parameter.name) {
+            continue;
+        }
+        let Some(value) = parameter
+            .default_expression
+            .as_ref()
+            .and_then(|expression| evaluate_source_static_expression(program, expression, values))
+        else {
+            values.remove(&parameter.name);
+            continue;
+        };
+        values.insert(parameter.name.clone(), value);
+    }
+}
+
+fn apply_source_fixed_instance_arguments(
+    program: &SourceProgram,
+    template: &AirTemplateDeclaration,
+    arguments: &[CallArgument],
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    provided: &mut BTreeSet<String>,
+) {
+    let mut positional_index = 0;
+    for argument in arguments {
+        let Some(value) = evaluate_source_static_expression(program, &argument.value, values)
+        else {
+            continue;
+        };
+        let name = if let Some(name) = argument.name.as_ref() {
+            name
+        } else {
+            while template
+                .parameters
+                .get(positional_index)
+                .is_some_and(|parameter| provided.contains(&parameter.name))
+            {
+                let Some(next) = positional_index.checked_add(1) else {
+                    return;
+                };
+                positional_index = next;
+            }
+            let Some(parameter) = template.parameters.get(positional_index) else {
+                continue;
+            };
+            &parameter.name
+        };
+        if provided.insert(name.clone()) {
+            values.insert(name.clone(), value);
+        }
+        if argument.name.is_none() {
+            let Some(next) = positional_index.checked_add(1) else {
+                return;
+            };
+            positional_index = next;
         }
     }
 }
