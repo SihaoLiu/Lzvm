@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_pil::{
     lex_source, parse_expression_tokens, parse_function_body_statements, BinaryOperator,
-    Expression, ExpressionKind, FunctionDeclaration, FunctionStatement,
-    FunctionStatementDeclaration, FunctionStatementKind, SourceProgram, SourceProgramModule,
-    SourceSpan, Token, TokenKind, UnaryOperator,
+    CallArgument, Expression, ExpressionKind, FunctionDeclaration, FunctionParameter,
+    FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind, SourceProgram,
+    SourceProgramModule, SourceSpan, Token, TokenKind, UnaryOperator,
 };
 
 use crate::source_static_values::{
@@ -42,9 +42,9 @@ pub(crate) fn evaluate_static_i128(
         ExpressionKind::Binary { op, left, right } => {
             evaluate_static_binary(program, *op, left, right, values)
         }
-        ExpressionKind::Call { callee, args } if args.is_empty() => {
+        ExpressionKind::Call { callee, args } => {
             let name = static_expression_name(callee)?;
-            evaluate_static_zero_arg_function(program, name, values)
+            evaluate_static_function_call(program, name, args, values)
         }
         _ => None,
     }
@@ -116,22 +116,115 @@ fn static_bool(value: bool) -> i128 {
     }
 }
 
-fn evaluate_static_zero_arg_function(
+fn evaluate_static_function_call(
     program: &SourceProgram,
     name: &str,
+    arguments: &[CallArgument],
     values: &BTreeMap<String, i128>,
 ) -> Option<i128> {
     for module in &program.modules {
         let Some(function) = module
             .functions
             .iter()
-            .find(|function| function.name == name && function.parameters.is_empty())
+            .find(|function| function.name == name)
         else {
             continue;
         };
-        return evaluate_static_function(program, module, function, values);
+        let bindings = static_function_call_bindings(program, function, arguments, values)?;
+        return evaluate_static_function(program, module, function, &bindings);
     }
     None
+}
+
+fn static_function_call_bindings(
+    program: &SourceProgram,
+    function: &FunctionDeclaration,
+    arguments: &[CallArgument],
+    values: &BTreeMap<String, i128>,
+) -> Option<BTreeMap<String, i128>> {
+    let mut bindings = values.clone();
+    let mut provided = BTreeSet::new();
+    for parameter in &function.parameters {
+        bind_static_function_default(program, parameter, &mut bindings)?;
+    }
+
+    let mut positional_index = 0_usize;
+    for argument in arguments {
+        let parameter = if let Some(name) = argument.name.as_ref() {
+            function
+                .parameters
+                .iter()
+                .find(|parameter| parameter.name == *name)?
+        } else {
+            while function
+                .parameters
+                .get(positional_index)
+                .is_some_and(|parameter| provided.contains(&parameter.name))
+            {
+                positional_index = positional_index.checked_add(1)?;
+            }
+            let parameter = function.parameters.get(positional_index)?;
+            parameter
+        };
+        bind_static_function_argument(
+            program,
+            parameter,
+            &argument.value,
+            &mut bindings,
+            &mut provided,
+        )?;
+        if argument.name.is_none() {
+            positional_index = positional_index.checked_add(1)?;
+        }
+    }
+
+    if function.parameters.iter().any(|parameter| {
+        static_integer_parameter(parameter)
+            && parameter.default_expression.is_none()
+            && !provided.contains(&parameter.name)
+    }) {
+        return None;
+    }
+    Some(bindings)
+}
+
+fn bind_static_function_default(
+    program: &SourceProgram,
+    parameter: &FunctionParameter,
+    values: &mut BTreeMap<String, i128>,
+) -> Option<()> {
+    if !static_integer_parameter(parameter) {
+        return None;
+    }
+    let Some(expression) = parameter.default_expression.as_ref() else {
+        return Some(());
+    };
+    let value = evaluate_static_i128(program, expression, values)?;
+    values.insert(parameter.name.clone(), value);
+    Some(())
+}
+
+fn bind_static_function_argument(
+    program: &SourceProgram,
+    parameter: &FunctionParameter,
+    expression: &Expression,
+    values: &mut BTreeMap<String, i128>,
+    provided: &mut BTreeSet<String>,
+) -> Option<()> {
+    if !static_integer_parameter(parameter) {
+        return None;
+    }
+    if provided.contains(&parameter.name) {
+        return None;
+    }
+    let value = evaluate_static_i128(program, expression, values)?;
+    values.insert(parameter.name.clone(), value);
+    provided.insert(parameter.name.clone());
+    Some(())
+}
+
+fn static_integer_parameter(parameter: &FunctionParameter) -> bool {
+    !parameter.by_reference && parameter.type_name == "int" && parameter.array_dims.is_empty()
 }
 
 fn evaluate_static_function(

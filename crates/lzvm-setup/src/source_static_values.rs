@@ -229,7 +229,7 @@ fn evaluate_source_static_expression_with_integer_env(
 
 fn source_expression_needs_integer_env(expression: &Expression) -> bool {
     match &expression.kind {
-        ExpressionKind::Call { args, .. } => args.is_empty(),
+        ExpressionKind::Call { .. } => true,
         ExpressionKind::Group(inner) => source_expression_needs_integer_env(inner),
         ExpressionKind::Unary { expr, .. } => source_expression_needs_integer_env(expr),
         ExpressionKind::Binary { left, right, .. } => {
