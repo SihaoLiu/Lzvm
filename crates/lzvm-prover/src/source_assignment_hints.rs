@@ -60,6 +60,11 @@ fn source_assignment_expression_field(
         match &value.payload {
             ResolvedHintPayload::Scalar(value) => stack.push(*value),
             ResolvedHintPayload::Text(op) => {
+                if op == "not" {
+                    let value = source_assignment_expression_pop(unit_index, row, op, &mut stack)?;
+                    stack.push(Felt::from_u64(u64::from(value == Felt::ZERO)));
+                    continue;
+                }
                 let right = source_assignment_expression_pop(unit_index, row, op, &mut stack)?;
                 let left = source_assignment_expression_pop(unit_index, row, op, &mut stack)?;
                 let result = match op.as_str() {
@@ -119,6 +124,20 @@ fn source_assignment_expression_field(
                     "bitand" => Felt::from_u64(left.to_u64() & right.to_u64()),
                     "bitxor" => Felt::from_u64(left.to_u64() ^ right.to_u64()),
                     "bitor" => Felt::from_u64(left.to_u64() | right.to_u64()),
+                    "and" => {
+                        if left == Felt::ZERO {
+                            left
+                        } else {
+                            right
+                        }
+                    }
+                    "or" => {
+                        if left == Felt::ZERO {
+                            right
+                        } else {
+                            left
+                        }
+                    }
                     "lt" => Felt::from_u64(u64::from(left.to_u64() < right.to_u64())),
                     "le" => Felt::from_u64(u64::from(left.to_u64() <= right.to_u64())),
                     "gt" => Felt::from_u64(u64::from(left.to_u64() > right.to_u64())),

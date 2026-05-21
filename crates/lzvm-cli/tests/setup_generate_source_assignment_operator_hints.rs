@@ -77,9 +77,12 @@ fn assert_generated_assignment_ops(dir: &Path, expected_ops: &[&str]) {
         assert_eq!(hint.fields.len(), 2);
         assert_eq!(hint.fields[0].name, "target");
         assert_eq!(hint.fields[1].name, "expression");
-        assert_eq!(hint.fields[1].values.len(), 3);
         assert_eq!(
-            hint.fields[1].values[2].payload,
+            hint.fields[1]
+                .values
+                .last()
+                .expect("expression field should have an operator")
+                .payload,
             HintPayload::String {
                 value: (*op).to_owned()
             }
@@ -95,9 +98,12 @@ fn assert_generated_assignment_ops(dir: &Path, expected_ops: &[&str]) {
     for (hint, op) in regular.hints.hints.iter().zip(expected_ops) {
         assert_eq!(hint.name, SOURCE_ASSIGNMENT_CHECK_HINT);
         assert_eq!(hint.fields[1].name, "expression");
-        assert_eq!(hint.fields[1].values.len(), 3);
         assert_eq!(
-            hint.fields[1].values[2].operand,
+            hint.fields[1]
+                .values
+                .last()
+                .expect("expression field should have an operator")
+                .operand,
             HintOperand::String((*op).to_owned())
         );
     }
@@ -218,6 +224,19 @@ fn shift_source() -> &'static str {
      col fixed main.left = [5, 1];"
 }
 
+fn logical_source() -> &'static str {
+    "airtemplate UnitA() {\n\
+         col witness left;\n\
+         col witness right;\n\
+         col witness out[3];\n\
+         out[0] = !left;\n\
+         out[1] = left && right;\n\
+         out[2] = left || right;\n\
+     }\n\
+     airgroup GroupA { UnitA(); }\n\
+     col fixed main.left = [5, 1];"
+}
+
 #[test]
 fn generate_key_lowers_source_modulo_assignments_as_regular_hints() {
     let dir = temp_dir("source-modulo-assignment");
@@ -323,5 +342,32 @@ fn prove_witness_rejects_source_shift_assignment_mismatch_with_trace_bytes() {
         "source-shift-assignment-mismatch",
         shift_source(),
         &[3, 2, 12, 1, 32, 3, 256, 4],
+    );
+}
+
+#[test]
+fn generate_key_lowers_source_logical_assignments_as_regular_hints() {
+    let dir = temp_dir("source-logical-assignment");
+    let _ = fs::remove_dir_all(&dir);
+    assert_generate_key_succeeds(&dir, logical_source());
+    assert_generated_assignment_ops(&dir, &["not", "and", "or"]);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn prove_witness_accepts_source_logical_assignment_hints_with_trace_bytes() {
+    assert_witness_accepts(
+        "source-logical-assignment-witness",
+        logical_source(),
+        &[0, 9, 1, 0, 9, 4, 7, 0, 7, 4],
+    );
+}
+
+#[test]
+fn prove_witness_rejects_source_logical_assignment_mismatch_with_trace_bytes() {
+    assert_witness_rejects(
+        "source-logical-assignment-mismatch",
+        logical_source(),
+        &[0, 9, 1, 0, 8, 4, 7, 0, 7, 4],
     );
 }

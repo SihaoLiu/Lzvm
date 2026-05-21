@@ -831,6 +831,14 @@ fn source_assignment_expression_values(
                 });
                 return Some(values);
             }
+            UnaryOperator::Not => {
+                let mut values = source_assignment_expression_values(context, expr)?;
+                values.push(HintValueInfo {
+                    positions: Vec::new(),
+                    payload: HintPayload::string("not"),
+                });
+                return Some(values);
+            }
             _ => return None,
         }
     }
@@ -879,6 +887,8 @@ fn source_assignment_binary_operator(op: BinaryOperator) -> Option<&'static str>
         BinaryOperator::BitAnd => Some("bitand"),
         BinaryOperator::BitXor => Some("bitxor"),
         BinaryOperator::BitOr => Some("bitor"),
+        BinaryOperator::LogicalAnd => Some("and"),
+        BinaryOperator::LogicalOr => Some("or"),
         BinaryOperator::Less => Some("lt"),
         BinaryOperator::LessEqual => Some("le"),
         BinaryOperator::Greater => Some("gt"),
