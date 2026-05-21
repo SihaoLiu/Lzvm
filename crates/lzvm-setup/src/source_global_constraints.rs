@@ -394,6 +394,7 @@ fn lower_top_level_global_constraint(
 struct SourceProofValueSlot {
     offset: u32,
     stage: u64,
+    dimension: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -574,16 +575,21 @@ fn source_proof_value_slots(
     let mut slots = BTreeMap::new();
     let mut next_offset = 0_u32;
     for entry in &global_info.proof_values_map {
+        let dimension = source_global_named_stage_value_dimension(&entry.lengths)?;
         slots.insert(
             entry.name.clone(),
             SourceProofValueSlot {
                 offset: next_offset,
                 stage: entry.stage,
+                dimension,
             },
         );
         let width = if entry.stage == 1 { 1 } else { 3 };
+        let field_width = dimension
+            .checked_mul(width)
+            .ok_or_else(|| unsupported_source_message("source proof value offset overflow"))?;
         next_offset = next_offset
-            .checked_add(width)
+            .checked_add(field_width)
             .ok_or_else(|| unsupported_source_message("source proof value offset overflow"))?;
     }
     Ok(slots)
@@ -724,6 +730,35 @@ fn group_value_target_offset(
                 .ok_or_else(|| unsupported_source_message("source group value offset overflow"))?,
         )
         .ok_or_else(|| unsupported_source_message("source group value offset overflow"))
+}
+
+fn proof_value_target_offset(
+    slot: SourceProofValueSlot,
+    index: Option<u32>,
+) -> Result<u32, SourceKeyDirectoryMetadataError> {
+    let index = match index {
+        Some(index) => {
+            if index >= slot.dimension {
+                return unsupported("top-level proof value index is out of range");
+            }
+            index
+        }
+        None => {
+            if slot.dimension == 1 {
+                0
+            } else {
+                return unsupported("top-level proof value constraints require scalar values");
+            }
+        }
+    };
+    let width = proof_value_operand_dimension(slot.stage);
+    slot.offset
+        .checked_add(
+            index
+                .checked_mul(width)
+                .ok_or_else(|| unsupported_source_message("source proof value offset overflow"))?,
+        )
+        .ok_or_else(|| unsupported_source_message("source proof value offset overflow"))
 }
 
 fn proof_value_boolean_constraint_target(
@@ -1443,13 +1478,11 @@ fn lower_global_base_name_operand(
         return Ok(Some(SourceGlobalBaseOperand { buffer: 1, offset }));
     }
     if let Some(slot) = context.proof_value_slots.get(name).copied() {
-        if index.is_some() || proof_value_operand_dimension(slot.stage) != 1 {
-            return unsupported("top-level base residuals require scalar base-field proof values");
+        if proof_value_operand_dimension(slot.stage) != 1 {
+            return Ok(None);
         }
-        return Ok(Some(SourceGlobalBaseOperand {
-            buffer: 3,
-            offset: slot.offset,
-        }));
+        let offset = proof_value_target_offset(slot, index)?;
+        return Ok(Some(SourceGlobalBaseOperand { buffer: 3, offset }));
     }
     Ok(None)
 }
@@ -1471,6 +1504,17 @@ fn source_global_public_value_dimension(
     })?;
     u32::try_from(dimension)
         .map_err(|_| unsupported_source_message("source public value dimension overflow"))
+}
+
+fn source_global_named_stage_value_dimension(
+    lengths: &[u64],
+) -> Result<u32, SourceKeyDirectoryMetadataError> {
+    let dimension = lengths.iter().try_fold(1_u64, |acc, length| {
+        acc.checked_mul(*length)
+            .ok_or_else(|| unsupported_source_message("source proof value dimension overflow"))
+    })?;
+    u32::try_from(dimension)
+        .map_err(|_| unsupported_source_message("source proof value dimension overflow"))
 }
 
 fn source_global_stage_value_dimension(

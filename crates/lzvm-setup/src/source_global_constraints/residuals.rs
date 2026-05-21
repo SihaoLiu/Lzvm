@@ -421,22 +421,14 @@ fn lower_global_mixed_name_operand(
         )));
     }
     if let Some(slot) = context.slots.proof_values.get(name).copied() {
-        if index.is_some() {
-            return unsupported("top-level proof value constraints require scalar values");
-        }
+        let offset = proof_value_target_offset(slot, index)?;
         let dimension = proof_value_operand_dimension(slot.stage);
         return match dimension {
             1 => Ok(Some(SourceGlobalMixedOperand::Base(
-                SourceGlobalBaseOperand {
-                    buffer: 3,
-                    offset: slot.offset,
-                },
+                SourceGlobalBaseOperand { buffer: 3, offset },
             ))),
             3 => Ok(Some(SourceGlobalMixedOperand::Ext(
-                SourceGlobalExtOperand {
-                    buffer: 3,
-                    offset: slot.offset,
-                },
+                SourceGlobalExtOperand { buffer: 3, offset },
             ))),
             _ => unsupported("unsupported source proof value dimension"),
         };
