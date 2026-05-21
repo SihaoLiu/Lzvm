@@ -13,27 +13,28 @@ use crate::{
 };
 
 use super::{
-    lower_top_level_global_constraint, unsupported_source_message, SourceGlobalAliasScope,
-    SourceGlobalConstraintBuilder, SourceGlobalSlots,
+    lower_top_level_global_constraints_range, unsupported_source_message, SourceGlobalAliasScope,
+    SourceGlobalConstraintBuilder, SourceTopLevelGlobalConstraintContext,
 };
 
 const STATIC_TOP_LEVEL_FOR_LOOP_LIMIT: usize = 10_000;
 
 pub(super) fn lower_top_level_static_for_statement(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
-    tokens: &[Token],
+    context: &SourceTopLevelGlobalConstraintContext<'_, '_, '_>,
     index: usize,
-    slots: &SourceGlobalSlots<'_>,
-    alias_scope: &SourceGlobalAliasScope<'_>,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<Option<usize>, SourceKeyDirectoryMetadataError> {
-    let loop_info =
-        parse_top_level_for_loop(program, module, tokens, index, &alias_scope.static_values)?;
+    let loop_info = parse_top_level_for_loop(
+        context.program,
+        context.module,
+        context.tokens,
+        index,
+        &context.alias_scope.static_values,
+    )?;
     let Some(loop_info) = loop_info else {
         return Ok(None);
     };
-    let mut values = alias_scope.static_values.clone();
+    let mut values = context.alias_scope.static_values.clone();
     values.insert(
         loop_info.variable_name.clone(),
         FixedFileTemplateValue::Integer(loop_info.initial_value),
@@ -42,7 +43,7 @@ pub(super) fn lower_top_level_static_for_statement(
 
     for _ in 0..STATIC_TOP_LEVEL_FOR_LOOP_LIMIT {
         let Some(condition_value) =
-            evaluate_source_static_expression(program, &loop_info.condition, &values)
+            evaluate_source_static_expression(context.program, &loop_info.condition, &values)
         else {
             constraints.rollback(checkpoint);
             return Ok(None);
@@ -51,17 +52,15 @@ pub(super) fn lower_top_level_static_for_statement(
             return Ok(Some(loop_info.next_index));
         }
         let iteration_alias_scope = SourceGlobalAliasScope {
-            program: alias_scope.program,
-            expressions: alias_scope.expressions.clone(),
-            expression_arrays: alias_scope.expression_arrays.clone(),
+            program: context.alias_scope.program,
+            expressions: context.alias_scope.expressions.clone(),
+            expression_arrays: context.alias_scope.expression_arrays.clone(),
             static_values: values.clone(),
         };
         if !lower_top_level_for_body(
-            module,
-            tokens,
+            context,
             loop_info.body_start,
             loop_info.body_end,
-            slots,
             &iteration_alias_scope,
             constraints,
         )? {
@@ -69,7 +68,7 @@ pub(super) fn lower_top_level_static_for_statement(
             return Ok(None);
         }
         apply_top_level_for_update(
-            program,
+            context.program,
             &loop_info.update,
             &loop_info.variable_name,
             &mut values,
@@ -236,45 +235,24 @@ fn parse_for_update(
 }
 
 fn lower_top_level_for_body(
-    module: &SourceProgramModule,
-    tokens: &[Token],
+    context: &SourceTopLevelGlobalConstraintContext<'_, '_, '_>,
     start: usize,
     end: usize,
-    slots: &SourceGlobalSlots<'_>,
     alias_scope: &SourceGlobalAliasScope<'_>,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
-    let mut index = start;
-    while index < end {
-        let token = &tokens[index];
-        if matches!(token.kind, TokenKind::Semicolon) {
-            index += 1;
-            continue;
-        }
-        if token.kind == TokenKind::For {
-            return Ok(false);
-        }
-        let next_index = skip_statement_until(tokens, index, end)?;
-        let expression_end = next_index.checked_sub(1).ok_or_else(|| {
-            unsupported_source_message("top-level for loop body has no expression")
-        })?;
-        let expression = parse_expression_range(module, tokens, (index, expression_end))?;
-        match lower_top_level_global_constraint(
-            &expression,
-            &module.source.contents[expression.start..expression.end],
-            slots,
-            alias_scope,
-            constraints,
-        ) {
-            Ok(()) => {}
-            Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
-                return Ok(false);
-            }
-            Err(error) => return Err(error),
-        }
-        index = next_index;
+    let iteration_context = SourceTopLevelGlobalConstraintContext {
+        program: context.program,
+        module: context.module,
+        tokens: context.tokens,
+        slots: context.slots,
+        alias_scope,
+    };
+    match lower_top_level_global_constraints_range(&iteration_context, start, end, constraints) {
+        Ok(()) => Ok(true),
+        Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => Ok(false),
+        Err(error) => Err(error),
     }
-    Ok(true)
 }
 
 fn apply_top_level_for_update(
@@ -401,23 +379,6 @@ fn parse_expression_range(
         ));
     }
     Ok(expression)
-}
-
-fn skip_statement_until(
-    tokens: &[Token],
-    index: usize,
-    end: usize,
-) -> Result<usize, SourceKeyDirectoryMetadataError> {
-    let mut stack = Vec::<TokenKind>::new();
-    for (cursor, token) in tokens.iter().enumerate().take(end).skip(index) {
-        if stack.is_empty() && token.kind == TokenKind::Semicolon {
-            return Ok(cursor + 1);
-        }
-        update_delimiter_stack(token.kind, &mut stack)?;
-    }
-    Err(unsupported_source_message(
-        "top-level for loop body statement has no terminator",
-    ))
 }
 
 fn matching_delimiter(

@@ -294,12 +294,8 @@ fn lower_top_level_global_constraints_range(
             }
             TokenKind::For => {
                 if let Some(next_index) = top_level_for::lower_top_level_static_for_statement(
-                    context.program,
-                    context.module,
-                    context.tokens,
+                    context,
                     index,
-                    context.slots,
-                    context.alias_scope,
                     constraints,
                 )? {
                     index = next_index;
