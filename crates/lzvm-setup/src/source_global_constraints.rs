@@ -1382,6 +1382,9 @@ fn lower_global_base_residual_operand(
                 BinaryOperator::Divide | BinaryOperator::Backslash => {
                     return lower_global_base_static_divisor_operand(left, right, context);
                 }
+                BinaryOperator::Power => {
+                    return lower_global_base_static_exponent_operand(left, right, context);
+                }
                 _ => return Ok(None),
             };
             let Some(left) = lower_global_base_residual_operand(left, context)? else {
@@ -1417,6 +1420,36 @@ fn lower_global_base_static_divisor_operand(
     };
     let inverse = context.number_operand(inverse.to_u64())?;
     context.append_base_binary_op(2, left, inverse).map(Some)
+}
+
+fn lower_global_base_static_exponent_operand(
+    left: &Expression,
+    right: &Expression,
+    context: &mut SourceGlobalBaseLoweringContext<'_, '_>,
+) -> Result<Option<SourceGlobalBaseOperand>, SourceKeyDirectoryMetadataError> {
+    let Some(mut exponent) = static_u32_expression(right, context.alias_scope) else {
+        return Ok(None);
+    };
+    if exponent == 0 {
+        return context.number_operand(1).map(Some);
+    }
+    let Some(mut power) = lower_global_base_residual_operand(left, context)? else {
+        return Ok(None);
+    };
+    let mut result = None;
+    while exponent > 0 {
+        if exponent & 1 == 1 {
+            result = Some(match result {
+                Some(value) => context.append_base_binary_op(2, value, power)?,
+                None => power,
+            });
+        }
+        exponent >>= 1;
+        if exponent > 0 {
+            power = context.append_base_binary_op(2, power, power)?;
+        }
+    }
+    Ok(result)
 }
 
 fn lower_global_base_index_operand(

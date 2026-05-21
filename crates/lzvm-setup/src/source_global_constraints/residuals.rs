@@ -279,6 +279,9 @@ fn lower_global_mixed_binary_operand(
     if matches!(op, BinaryOperator::Divide | BinaryOperator::Backslash) {
         return lower_global_mixed_static_divisor_operand(left, right, context);
     }
+    if *op == BinaryOperator::Power {
+        return lower_global_mixed_static_exponent_operand(left, right, context);
+    }
     let kind = match op {
         BinaryOperator::Add => 0,
         BinaryOperator::Subtract => 1,
@@ -315,6 +318,39 @@ fn lower_global_mixed_static_divisor_operand(
     };
     let inverse = SourceGlobalMixedOperand::Base(context.number_operand(inverse.to_u64())?);
     lower_global_mixed_binary_operands(2, left, inverse, context).map(Some)
+}
+
+fn lower_global_mixed_static_exponent_operand(
+    left: &Expression,
+    right: &Expression,
+    context: &mut SourceGlobalExtLoweringContext<'_, '_>,
+) -> Result<Option<SourceGlobalMixedOperand>, SourceKeyDirectoryMetadataError> {
+    let Some(mut exponent) = static_u32_expression(right, context.alias_scope) else {
+        return Ok(None);
+    };
+    if exponent == 0 {
+        return context
+            .number_operand(1)
+            .map(SourceGlobalMixedOperand::Base)
+            .map(Some);
+    }
+    let Some(mut power) = lower_global_mixed_residual_operand(left, context)? else {
+        return Ok(None);
+    };
+    let mut result = None;
+    while exponent > 0 {
+        if exponent & 1 == 1 {
+            result = Some(match result {
+                Some(value) => lower_global_mixed_binary_operands(2, value, power, context)?,
+                None => power,
+            });
+        }
+        exponent >>= 1;
+        if exponent > 0 {
+            power = lower_global_mixed_binary_operands(2, power, power, context)?;
+        }
+    }
+    Ok(result)
 }
 
 fn lower_global_mixed_binary_operands(

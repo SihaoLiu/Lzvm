@@ -255,6 +255,67 @@ fn generate_key_lowers_proof_value_static_backslash_global_constraints() {
 }
 
 #[test]
+fn generate_key_lowers_proof_value_static_exponent_global_constraints() {
+    let dir = temp_dir("proof-value-static-exponent-residual");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "proofval stage(2) expected;\n\
+         expected ** 3 - 27;\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let program = read_global_program_file(dir.join("pilout.globalConstraints.bin"))
+        .expect("source global program should parse");
+    assert_eq!(program.constraints.entries.len(), 1);
+    assert_eq!(program.constraints.entries[0].destination_dimension, 3);
+
+    let satisfied = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            proof_values: &[Felt::from_u64(3), Felt::ZERO, Felt::ZERO],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("matching proof value should evaluate");
+    assert_eq!(satisfied, [Ext3::ZERO]);
+
+    let unsatisfied = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            proof_values: &[Felt::from_u64(4), Felt::ZERO, Felt::ZERO],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("mismatched proof value should evaluate");
+    assert_ne!(unsatisfied, [Ext3::ZERO]);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_lowers_public_value_boolean_global_constraints() {
     let dir = temp_dir("public-value-boolean");
     let _ = fs::remove_dir_all(&dir);
@@ -495,6 +556,67 @@ fn generate_key_lowers_public_value_static_backslash_global_constraints() {
         &program.constraints,
         GlobalConstraintInputs {
             publics: &[Felt::from_u64(8)],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("mismatched public value should evaluate");
+    assert_ne!(unsatisfied, [Ext3::ZERO]);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_lowers_public_value_static_exponent_global_constraints() {
+    let dir = temp_dir("public-value-static-exponent-residual");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "public expected;\n\
+         expected ** 3 - 27;\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let program = read_global_program_file(dir.join("pilout.globalConstraints.bin"))
+        .expect("source global program should parse");
+    assert_eq!(program.constraints.entries.len(), 1);
+    assert_eq!(program.constraints.entries[0].destination_dimension, 1);
+
+    let satisfied = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            publics: &[Felt::from_u64(3)],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("matching public value should evaluate");
+    assert_eq!(satisfied, [Ext3::ZERO]);
+
+    let unsatisfied = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            publics: &[Felt::from_u64(4)],
             ..GlobalConstraintInputs::default()
         },
     )
