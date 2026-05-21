@@ -7,7 +7,7 @@ use lzvm_artifacts::hint_program::{global_hint_program_from_expression_info, Hin
 use lzvm_pil::{
     lex_source, BinaryOperator, CallArgument, Expression, ExpressionKind, FixedFileTemplateValue,
     FunctionDeclaration, FunctionParameter, FunctionStatement, FunctionStatementDeclaration,
-    FunctionStatementKind, SourceProgram, SourceProgramModule, Token, UnaryOperator,
+    FunctionStatementKind, SourceProgram, SourceProgramModule, Token, TokenKind, UnaryOperator,
 };
 
 use crate::{
@@ -205,6 +205,18 @@ fn lower_source_global_hint_statement(
                 alias_scope,
             )? {
                 return Ok(());
+            }
+            if let Some(update) =
+                source_global_hint_static_postfix_update(context.module, statement).map_err(
+                    |source| SourceKeyDirectoryMetadataError::Lex {
+                        source_name: context.module.source_name.clone(),
+                        source,
+                    },
+                )?
+            {
+                if apply_source_global_hint_static_delta(&update.name, update.delta, values) {
+                    return Ok(());
+                }
             }
             if lower_source_global_hint_function_call(context, statement, values, alias_scope)? {
                 return Ok(());
@@ -684,6 +696,40 @@ fn source_global_hint_static_truthy_value(value: &FixedFileTemplateValue) -> boo
         FixedFileTemplateValue::Boolean(value) => *value,
         FixedFileTemplateValue::String(value) => !value.is_empty(),
     }
+}
+
+struct SourceGlobalHintStaticPostfixUpdate {
+    name: String,
+    delta: i128,
+}
+
+fn source_global_hint_static_postfix_update(
+    module: &SourceProgramModule,
+    statement: &FunctionStatement,
+) -> Result<Option<SourceGlobalHintStaticPostfixUpdate>, lzvm_pil::LexError> {
+    let text = &module.source.contents[statement.start..statement.end];
+    let tokens = lex_source(text)?;
+    let tokens = tokens
+        .iter()
+        .filter(|token| token.kind != TokenKind::EndOfInput)
+        .collect::<Vec<_>>();
+    let (name, update) = match tokens.as_slice() {
+        [name, update] => (*name, *update),
+        [name, update, semicolon] if semicolon.kind == TokenKind::Semicolon => (*name, *update),
+        _ => return Ok(None),
+    };
+    if name.kind != TokenKind::Identifier {
+        return Ok(None);
+    }
+    let delta = match update.kind {
+        TokenKind::Increment => 1,
+        TokenKind::Decrement => -1,
+        _ => return Ok(None),
+    };
+    Ok(Some(SourceGlobalHintStaticPostfixUpdate {
+        name: name.lexeme.clone(),
+        delta,
+    }))
 }
 
 fn apply_source_global_hint_static_delta(
