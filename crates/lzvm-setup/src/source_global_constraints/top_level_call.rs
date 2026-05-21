@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_pil::{
-    CallArgument, Expression, ExpressionKind, FixedFileTemplateValue, FunctionDeclaration,
-    FunctionParameter, FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind,
-    SourceProgram,
+    BinaryOperator, CallArgument, Expression, ExpressionKind, FixedFileTemplateValue,
+    FunctionDeclaration, FunctionParameter, FunctionStatement, FunctionStatementDeclaration,
+    FunctionStatementKind, SourceProgram, UnaryOperator,
 };
 
 use crate::{
@@ -374,6 +374,9 @@ fn lower_function_body_statement(
     let Some(expression) = statement.value_expression.as_ref() else {
         return Ok(false);
     };
+    if apply_static_expression_statement(context.program, expression, values) {
+        return Ok(true);
+    }
     if lower_function_call_expression(
         context,
         expression,
@@ -423,26 +426,151 @@ fn insert_source_expr_array_static_values(
     Some(())
 }
 
+fn apply_static_expression_statement(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> bool {
+    match &strip_group_expression(expression).kind {
+        ExpressionKind::Unary { op, expr } => {
+            let delta = match op {
+                UnaryOperator::Increment => 1,
+                UnaryOperator::Decrement => -1,
+                _ => return false,
+            };
+            let Some(name) = expression_name(expr) else {
+                return false;
+            };
+            apply_static_delta(name, delta, values)
+        }
+        ExpressionKind::Binary { op, left, right } => {
+            let Some(name) = expression_name(left) else {
+                return false;
+            };
+            if !values.contains_key(name) {
+                return false;
+            }
+            let Some(right) = evaluate_source_static_expression(program, right, values) else {
+                return false;
+            };
+            let value = match op {
+                BinaryOperator::Assign => right,
+                BinaryOperator::PlusAssign => {
+                    let Some(current) = static_integer_value(values.get(name)) else {
+                        return false;
+                    };
+                    let Some(right) = static_integer_value(Some(&right)) else {
+                        return false;
+                    };
+                    let Some(value) = current.checked_add(right) else {
+                        return false;
+                    };
+                    FixedFileTemplateValue::Integer(value)
+                }
+                BinaryOperator::MinusAssign => {
+                    let Some(current) = static_integer_value(values.get(name)) else {
+                        return false;
+                    };
+                    let Some(right) = static_integer_value(Some(&right)) else {
+                        return false;
+                    };
+                    let Some(value) = current.checked_sub(right) else {
+                        return false;
+                    };
+                    FixedFileTemplateValue::Integer(value)
+                }
+                BinaryOperator::StarAssign => {
+                    let Some(current) = static_integer_value(values.get(name)) else {
+                        return false;
+                    };
+                    let Some(right) = static_integer_value(Some(&right)) else {
+                        return false;
+                    };
+                    let Some(value) = current.checked_mul(right) else {
+                        return false;
+                    };
+                    FixedFileTemplateValue::Integer(value)
+                }
+                _ => return false,
+            };
+            values.insert(name.to_owned(), value);
+            true
+        }
+        _ => false,
+    }
+}
+
+fn apply_static_delta(
+    name: &str,
+    delta: i128,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> bool {
+    let Some(current) = static_integer_value(values.get(name)) else {
+        return false;
+    };
+    let Some(value) = current.checked_add(delta) else {
+        return false;
+    };
+    values.insert(name.to_owned(), FixedFileTemplateValue::Integer(value));
+    true
+}
+
+fn static_integer_value(value: Option<&FixedFileTemplateValue>) -> Option<i128> {
+    match value {
+        Some(FixedFileTemplateValue::Integer(value)) => Some(*value),
+        Some(FixedFileTemplateValue::Boolean(value)) => Some(if *value { 1 } else { 0 }),
+        _ => None,
+    }
+}
+
 fn apply_static_declaration(
     program: &SourceProgram,
     statement: &FunctionStatement,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
 ) -> bool {
-    let Some(FunctionStatementDeclaration::Constant(declaration)) = statement.declaration.as_ref()
-    else {
-        return false;
-    };
-    if declaration.type_name.as_deref() == Some("expr") || !declaration.array_dims.is_empty() {
-        return false;
+    match statement.declaration.as_ref() {
+        Some(FunctionStatementDeclaration::Constant(declaration)) => {
+            if declaration.type_name.as_deref() == Some("expr") {
+                return false;
+            }
+            let Some(expression) = declaration.initializer_expression.as_ref() else {
+                return false;
+            };
+            if !declaration.array_dims.is_empty() {
+                let Some(elements) = source_static_array_expression(program, expression, values)
+                else {
+                    return false;
+                };
+                return insert_source_static_array(values, &declaration.name, elements).is_some();
+            }
+            let Some(value) = evaluate_source_static_expression(program, expression, values) else {
+                return false;
+            };
+            values.insert(declaration.name.clone(), value);
+            true
+        }
+        Some(FunctionStatementDeclaration::Variable(declaration)) => {
+            if declaration.type_name == "expr" {
+                return false;
+            }
+            let Some(expression) = declaration.initializer_expression.as_ref() else {
+                return false;
+            };
+            if !declaration.array_dims.is_empty() {
+                let Some(elements) = source_static_array_expression(program, expression, values)
+                else {
+                    return false;
+                };
+                return insert_source_static_array(values, &declaration.name, elements).is_some();
+            }
+            let Some(value) = evaluate_source_static_expression(program, expression, values) else {
+                return false;
+            };
+            values.insert(declaration.name.clone(), value);
+            true
+        }
+        _ => false,
     }
-    let Some(expression) = declaration.initializer_expression.as_ref() else {
-        return false;
-    };
-    let Some(value) = evaluate_source_static_expression(program, expression, values) else {
-        return false;
-    };
-    values.insert(declaration.name.clone(), value);
-    true
 }
 
 fn clone_alias_scope<'a>(alias_scope: &SourceGlobalAliasScope<'a>) -> SourceGlobalAliasScope<'a> {
