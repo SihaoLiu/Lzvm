@@ -104,6 +104,7 @@ impl SourceProgram {
                     .push(pragma);
             }
         }
+        let constants = fixed_file_constant_values(self);
 
         let mut resolved = Vec::new();
         for entry in self.air_unit_entries() {
@@ -121,6 +122,7 @@ impl SourceProgram {
             let values = fixed_file_template_values(
                 templates_by_name.get(unit.template_name.as_str()).copied(),
                 entry.instance,
+                &constants,
             );
             for scoped in pragmas {
                 let Some(source) = sources_by_name.get(scoped.pragma.source_name.as_str()) else {
@@ -238,11 +240,12 @@ pub struct AirTemplateFixedFilePragma {
 fn fixed_file_template_values(
     template: Option<&AirTemplateDeclaration>,
     instance: &AirInstanceDeclaration,
+    constants: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> BTreeMap<String, FixedFileTemplateValue> {
     let Some(template) = template else {
-        return BTreeMap::new();
+        return constants.clone();
     };
-    let mut values = BTreeMap::new();
+    let mut values = constants.clone();
     let mut provided = BTreeSet::new();
     if let Some(arguments) = instance.args_expressions.as_ref() {
         apply_fixed_file_template_call_arguments(template, arguments, &mut values, &mut provided);
@@ -259,9 +262,74 @@ fn fixed_file_template_values(
             })
         {
             values.insert(parameter.name.clone(), value);
+        } else {
+            values.remove(&parameter.name);
         }
     }
     values
+}
+
+fn fixed_file_constant_values(program: &SourceProgram) -> BTreeMap<String, FixedFileTemplateValue> {
+    let declarations = program
+        .modules
+        .iter()
+        .flat_map(|module| {
+            module
+                .constants
+                .iter()
+                .filter(move |declaration| !constant_in_dynamic_scope(module, declaration))
+        })
+        .collect::<Vec<_>>();
+    let mut values = BTreeMap::new();
+    let mut resolved = vec![false; declarations.len()];
+
+    loop {
+        let mut progressed = false;
+        for (index, declaration) in declarations.iter().enumerate() {
+            if resolved[index] {
+                continue;
+            }
+            if !declaration.array_dims.is_empty() || values.contains_key(&declaration.name) {
+                resolved[index] = true;
+                continue;
+            }
+            let Some(expression) = declaration.initializer_expression.as_ref() else {
+                resolved[index] = true;
+                continue;
+            };
+            let Some(value) =
+                evaluate_fixed_file_template_value_expression_with_values(expression, &values)
+            else {
+                continue;
+            };
+            values.insert(declaration.name.clone(), value);
+            resolved[index] = true;
+            progressed = true;
+        }
+        if !progressed {
+            break;
+        }
+    }
+
+    values
+}
+
+fn constant_in_dynamic_scope(
+    module: &SourceProgramModule,
+    declaration: &ConstantDeclaration,
+) -> bool {
+    module
+        .air_templates
+        .iter()
+        .any(|template| span_contains(template.body.start, template.body.end, declaration))
+        || module
+            .functions
+            .iter()
+            .any(|function| span_contains(function.body.start, function.body.end, declaration))
+}
+
+fn span_contains(start: usize, end: usize, declaration: &ConstantDeclaration) -> bool {
+    declaration.start >= start && declaration.end <= end
 }
 
 fn apply_fixed_file_template_call_arguments(
