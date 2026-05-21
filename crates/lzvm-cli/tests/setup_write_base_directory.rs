@@ -943,6 +943,74 @@ fn generate_key_writes_missing_fixed_inputs_from_source_literals() {
 }
 
 #[test]
+fn generate_key_writes_template_named_fixed_inputs_from_source() {
+    let dir = create_key_directory_without_fixed_inputs("generate-key-source-template-fixed-name");
+    let source_path = dir.join("main.pil");
+    write_bytes(
+        &source_path,
+        "airtemplate UnitA(const int ID = 7) {\n\
+             col fixed `main.left_${ID}` = [5, 1];\n\
+         }\n\
+         airgroup GroupA { UnitA(ID: 3); }\n\
+         col fixed main.left = [5, 1];\n\
+         col fixed main.right = [0x9, 9];",
+    );
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    for unit in &layout.units {
+        let mut setup = fixtures::sample_setup_info();
+        if unit.group_name.as_deref() == Some("GroupA")
+            && unit.unit_name.as_deref() == Some("UnitA")
+        {
+            setup.constant_columns[0].name = "main.left_3".to_owned();
+        }
+        write_unit_setup_metadata(
+            &unit
+                .setup_info_binary()
+                .expect("setup metadata path should derive"),
+            &setup,
+        );
+        assert!(!unit.fixed_columns.is_file());
+    }
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    for unit in &layout.units {
+        let setup_path = unit
+            .setup_info_binary()
+            .expect("setup metadata path should derive");
+        let setup =
+            read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+        let left = read_raw_fixed_column_file(&unit.fixed_columns, &setup, "GroupA", "UnitA", 0)
+            .expect("left fixed column should read");
+        let right = read_raw_fixed_column_file(&unit.fixed_columns, &setup, "GroupA", "UnitA", 1)
+            .expect("right fixed column should read");
+        assert_eq!(left, [5, 1]);
+        assert_eq!(right, [9, 9]);
+    }
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("source_fixed_units="));
+    assert!(stdout.contains("setup_hash="));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_writes_array_fixed_inputs_from_source_dimensions() {
     let dir = create_key_directory_without_fixed_inputs("generate-key-source-arrays");
     let source_path = dir.join("main.pil");

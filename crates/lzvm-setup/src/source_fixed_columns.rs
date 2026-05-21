@@ -30,7 +30,10 @@ use crate::{
     source_fixed_sequence::{
         canonical_fixed_value, parse_literal_sequence, parse_literal_sequence_values,
     },
-    source_key_directory::SourceKeyDirectoryMetadataError,
+    source_key_directory::{source_item_name, SourceKeyDirectoryMetadataError},
+    source_metadata_template::{
+        source_metadata_declaration_template, source_metadata_template_values,
+    },
     source_scope::{
         concrete_template_names, declaration_in_function_body, declaration_in_inactive_template,
     },
@@ -582,6 +585,40 @@ fn fixed_columns_from_source_program(
                 &constant_values,
                 &template_values,
             );
+            let declaration_values = if let Some(template) =
+                source_metadata_declaration_template(module, declaration.start, declaration.end)
+            {
+                if let Some(instance) = unit_instance {
+                    if template.name != instance.template {
+                        continue;
+                    }
+                    SourceFixedConstantValues {
+                        scalars: source_metadata_template_values(
+                            program,
+                            module,
+                            template,
+                            Some(instance),
+                            &constant_values.scalars,
+                            &template_values,
+                        ),
+                        arrays: declaration_values.arrays,
+                    }
+                } else {
+                    SourceFixedConstantValues {
+                        scalars: source_metadata_template_values(
+                            program,
+                            module,
+                            template,
+                            None,
+                            &constant_values.scalars,
+                            &template_values,
+                        ),
+                        arrays: declaration_values.arrays,
+                    }
+                }
+            } else {
+                declaration_values
+            };
             if source_declaration_in_static_false_branch(
                 program,
                 module,
@@ -592,14 +629,14 @@ fn fixed_columns_from_source_program(
                 continue;
             }
             for item in &declaration.items {
-                if !source_fixed_expected_column_matches(&item.name, &expected_columns) {
+                let item_name = source_fixed_item_name(
+                    program,
+                    &declaration.source_name,
+                    item,
+                    &declaration_values,
+                )?;
+                if !source_fixed_expected_column_matches(&item_name, &expected_columns) {
                     continue;
-                }
-                if item.template {
-                    return Err(SourceFixedColumnsWriteError::UnsupportedColumnShape {
-                        source_name: declaration.source_name.clone(),
-                        column: item.name.clone(),
-                    });
                 }
                 let dimensions = source_fixed_column_dimensions(
                     program,
@@ -609,17 +646,17 @@ fn fixed_columns_from_source_program(
                     &declaration_values,
                 )?;
                 logical_dimensions
-                    .entry(item.name.clone())
+                    .entry(item_name.clone())
                     .or_insert_with(|| dimensions.clone());
                 let physical_columns =
-                    source_fixed_physical_columns(&item.name, &dimensions, &expected_columns);
+                    source_fixed_physical_columns(&item_name, &dimensions, &expected_columns);
                 for (column_name, column_dimensions) in physical_columns {
                     if !seen_declarations.insert(column_name.clone()) {
                         continue;
                     }
                     let mut column_item = item.clone();
                     column_item.name = column_name;
-                    let initializer = if column_item.name == item.name {
+                    let initializer = if column_item.name == item_name {
                         declaration.initializer.clone()
                     } else {
                         None
@@ -721,6 +758,24 @@ fn source_fixed_declaration_constant_values(
         .clone(),
         arrays: base_values.arrays.clone(),
     }
+}
+
+fn source_fixed_item_name(
+    program: &SourceProgram,
+    source_name: &str,
+    item: &ColumnItem,
+    constant_values: &SourceFixedConstantValues,
+) -> Result<String, SourceFixedColumnsWriteError> {
+    source_item_name(
+        program,
+        item,
+        "source fixed-column",
+        &constant_values.scalars,
+    )
+    .map_err(|_| SourceFixedColumnsWriteError::UnsupportedColumnShape {
+        source_name: source_name.to_owned(),
+        column: item.name.clone(),
+    })
 }
 
 fn source_fixed_values_from_template_assignments(
