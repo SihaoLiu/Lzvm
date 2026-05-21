@@ -30,7 +30,12 @@ pub(crate) fn source_scalar_constant_values(
     let declarations = program
         .modules
         .iter()
-        .flat_map(|module| module.constants.iter())
+        .flat_map(|module| {
+            module.constants.iter().filter(move |declaration| {
+                !declaration_in_function_body(module, declaration.start, declaration.end)
+                    && !declaration_in_template(module, declaration.start, declaration.end)
+            })
+        })
         .collect::<Vec<_>>();
     let mut resolved = vec![false; declarations.len()];
 
@@ -1298,6 +1303,13 @@ fn source_declaration_visible_from_statement(
         return true;
     }
     !module
+        .air_templates
+        .iter()
+        .any(|template| template.body.start <= start && end <= template.body.end)
+}
+
+fn declaration_in_template(module: &SourceProgramModule, start: usize, end: usize) -> bool {
+    module
         .air_templates
         .iter()
         .any(|template| template.body.start <= start && end <= template.body.end)

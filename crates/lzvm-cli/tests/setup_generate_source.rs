@@ -2352,6 +2352,48 @@ fn generate_key_lowers_source_template_witness_boolean_constraints() {
 }
 
 #[test]
+fn generate_key_rejects_dimensions_from_inactive_template_constants() {
+    let dir = temp_dir("inactive-template-constant-dimension");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate Unused() {\n\
+             const int inactive_width = 3;\n\
+         }\n\
+         airtemplate UnitA() {\n\
+             col witness trace[inactive_width];\n\
+         }\n\
+         airgroup GroupA {\n\
+             virtual Unused();\n\
+             UnitA();\n\
+         }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    let stderr = String::from_utf8(stderr).expect("stderr should be utf-8");
+    assert!(stderr.contains("unsupported source setup metadata"));
+    assert!(!dir.join("pilout.globalInfo.bin").exists());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn generate_key_uses_source_template_row_count_for_fill_sequences() {
     let dir = temp_dir("template-row-count-fill");
     let _ = fs::remove_dir_all(&dir);
