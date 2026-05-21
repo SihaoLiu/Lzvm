@@ -220,7 +220,9 @@ fn source_lookup_value_expressions(
             return false;
         };
         for value_range in ranges {
-            if let Some(expression) = source_lookup_spread_expression(module, tokens, value_range) {
+            if let Some(expression) =
+                source_lookup_spread_expression(module, line, tokens, value_range)
+            {
                 expressions.push(expression);
                 continue;
             }
@@ -243,12 +245,13 @@ fn source_lookup_value_expressions(
 
 fn source_lookup_spread_expression(
     module: &SourceProgramModule,
+    line: &str,
     tokens: &[Token],
     range: (usize, usize),
 ) -> Option<Expression> {
-    let name = source_lookup_spread_name(tokens, range)?;
+    let name = source_lookup_spread_name(module, line, tokens, range)?;
     Some(Expression {
-        kind: ExpressionKind::Name(name.to_owned()),
+        kind: ExpressionKind::Name(name),
         source_name: module.source_name.clone(),
         start: tokens[range.0].start,
         end: tokens[range.1 - 1].end,
@@ -712,8 +715,10 @@ fn source_lookup_values(
         let ranges = top_level_argument_ranges(context.tokens, range.0, range.1 - 1)?;
         let mut values = SourceLookupValues::default();
         for value_range in ranges {
-            if let Some(name) = source_lookup_spread_name(context.tokens, value_range) {
-                values.extend(source_lookup_spread_values(context, name)?);
+            if let Some(name) =
+                source_lookup_spread_name(context.module, context.line, context.tokens, value_range)
+            {
+                values.extend(source_lookup_spread_values(context, &name)?);
             } else {
                 values
                     .push_component(source_lookup_value_expression_values(context, value_range)?)?;
@@ -738,14 +743,20 @@ fn source_lookup_bare_name(tokens: &[Token], range: (usize, usize)) -> Option<&s
     None
 }
 
-fn source_lookup_spread_name(tokens: &[Token], range: (usize, usize)) -> Option<&str> {
-    if range.0 + 2 == range.1
-        && tokens[range.0].kind == TokenKind::Ellipsis
-        && tokens[range.0 + 1].kind == TokenKind::Identifier
-    {
-        return Some(tokens[range.0 + 1].lexeme.as_str());
+fn source_lookup_spread_name(
+    module: &SourceProgramModule,
+    line: &str,
+    tokens: &[Token],
+    range: (usize, usize),
+) -> Option<String> {
+    if range.0 + 1 >= range.1 || tokens[range.0].kind != TokenKind::Ellipsis {
+        return None;
     }
-    None
+    let expression = parse_source_lookup_expression(module, line, tokens, (range.0 + 1, range.1))?;
+    match &strip_group_expression(&expression).kind {
+        ExpressionKind::Name(name) => Some(name.clone()),
+        _ => None,
+    }
 }
 
 fn source_lookup_spread_values(

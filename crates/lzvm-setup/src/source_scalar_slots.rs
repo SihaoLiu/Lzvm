@@ -481,6 +481,28 @@ impl SourceScalarSlots {
                 .collect();
         }
 
+        if let Some(slot) = self.unit_values.get(name) {
+            if row_offset != 0 {
+                return Err(SourceScalarSlotError::UnsupportedRowOffset {
+                    name: name.to_owned(),
+                });
+            }
+            return (0..slot.source_dimension)
+                .map(|index| self.operand_index_at(name, index, row_offset))
+                .collect();
+        }
+
+        if let Some(slot) = self.group_values.get(name) {
+            if row_offset != 0 {
+                return Err(SourceScalarSlotError::UnsupportedRowOffset {
+                    name: name.to_owned(),
+                });
+            }
+            return (0..slot.source_dimension)
+                .map(|index| self.operand_index_at(name, index, row_offset))
+                .collect();
+        }
+
         if let Some(slot) = self.proof_values.get(name) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
