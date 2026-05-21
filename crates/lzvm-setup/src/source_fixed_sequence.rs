@@ -394,7 +394,24 @@ fn append_sequence_segment(
         return Ok(());
     }
 
-    values.extend(parse_sequence_values(context, start, end, row_count)?);
+    let segment_row_count = if is_literal_sequence_segment(context, start, end) {
+        row_count.saturating_sub(values.len())
+    } else {
+        row_count
+    };
+    let segment_values = parse_sequence_values(context, start, end, segment_row_count)?;
+    if values
+        .len()
+        .checked_add(segment_values.len())
+        .is_none_or(|len| len > row_count)
+    {
+        return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
+            source_name: context.source_name.to_owned(),
+            source_span: context.source_span,
+            expression: segment_text(context, start, end),
+        });
+    }
+    values.extend(segment_values);
     Ok(())
 }
 
@@ -1323,16 +1340,7 @@ fn parse_sequence_values(
     end: usize,
     row_count: usize,
 ) -> Result<Vec<i128>, SourceFixedColumnsWriteError> {
-    if start < end
-        && context
-            .tokens
-            .get(start)
-            .is_some_and(|token| token.kind == TokenKind::LBracket)
-        && context
-            .tokens
-            .get(end - 1)
-            .is_some_and(|token| token.kind == TokenKind::RBracket)
-    {
+    if is_literal_sequence_segment(context, start, end) {
         let source = segment_text(context, start, end);
         return parse_literal_sequence_values(
             context.program,
@@ -1345,6 +1353,22 @@ fn parse_sequence_values(
     }
 
     Ok(vec![parse_sequence_expression(context, start, end)?])
+}
+
+fn is_literal_sequence_segment(
+    context: &SequenceParseContext<'_>,
+    start: usize,
+    end: usize,
+) -> bool {
+    start < end
+        && context
+            .tokens
+            .get(start)
+            .is_some_and(|token| token.kind == TokenKind::LBracket)
+        && context
+            .tokens
+            .get(end - 1)
+            .is_some_and(|token| token.kind == TokenKind::RBracket)
 }
 
 fn top_level_range_index(
