@@ -553,6 +553,7 @@ fn source_function_call_bindings(
 ) -> Option<SourceFunctionCallBindings> {
     let mut function_values = values.clone();
     let mut function_alias_scope = alias_scope.clone();
+    let mut provided = BTreeSet::new();
     for parameter in &function.parameters {
         if source_expr_parameter(parameter) {
             if let Some(expression) = parameter.default_expression.as_ref() {
@@ -598,22 +599,24 @@ fn source_function_call_bindings(
 
     let mut positional_index = 0;
     for argument in arguments {
-        if let Some(name) = argument.name.as_ref() {
-            let parameter = function
+        let parameter = if let Some(name) = argument.name.as_ref() {
+            function
                 .parameters
                 .iter()
-                .find(|parameter| parameter.name == *name)?;
-            source_bind_function_argument(
-                program,
-                parameter,
-                &argument.value,
-                &mut function_values,
-                &mut function_alias_scope.expressions,
-                &mut function_alias_scope.expression_arrays,
-            )?;
-            continue;
+                .find(|parameter| parameter.name == *name)?
+        } else {
+            while function
+                .parameters
+                .get(positional_index)
+                .is_some_and(|parameter| provided.contains(&parameter.name))
+            {
+                positional_index = positional_index.checked_add(1)?;
+            }
+            function.parameters.get(positional_index)?
+        };
+        if !provided.insert(parameter.name.clone()) {
+            return None;
         }
-        let parameter = function.parameters.get(positional_index)?;
         source_bind_function_argument(
             program,
             parameter,
@@ -622,13 +625,25 @@ fn source_function_call_bindings(
             &mut function_alias_scope.expressions,
             &mut function_alias_scope.expression_arrays,
         )?;
-        positional_index += 1;
+        if argument.name.is_none() {
+            positional_index = positional_index.checked_add(1)?;
+        }
+    }
+
+    if function.parameters.iter().any(|parameter| {
+        !provided.contains(&parameter.name) && !source_parameter_has_default(parameter)
+    }) {
+        return None;
     }
 
     Some(SourceFunctionCallBindings {
         values: function_values,
         alias_scope: function_alias_scope,
     })
+}
+
+fn source_parameter_has_default(parameter: &lzvm_pil::FunctionParameter) -> bool {
+    parameter.default_expression.is_some() || parameter.default_value.is_some()
 }
 
 fn source_bind_function_argument(
