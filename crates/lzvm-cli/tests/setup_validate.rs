@@ -7537,26 +7537,67 @@ fn run_prove_witness_with_aggregate_modifiers(
     ]);
     let code = run_cli(&args, &mut stdout, &mut stderr);
     if code == 0 {
-        let proof_bytes = fs::read(output_dir.join("proof.bin")).expect("proof output should read");
+        let proof_path = output_dir.join("proof.bin");
+        let proof_bytes = fs::read(&proof_path).expect("proof output should read");
         let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
-        let witness_ids = proof
-            .segments
-            .iter()
-            .filter(|segment| {
-                segment.id >= WITNESS_COMMITMENT_SEGMENT_BASE_ID
-                    && segment.id < WITNESS_COMMITMENT_SEGMENT_BASE_ID + 2
-            })
-            .map(|segment| segment.id)
-            .collect::<Vec<_>>();
-        assert_eq!(
-            witness_ids,
-            vec![
-                WITNESS_COMMITMENT_SEGMENT_BASE_ID,
-                WITNESS_COMMITMENT_SEGMENT_BASE_ID + 1
-            ]
-        );
-        validate_setup_preflight(&catalog, &proof, &public_values)
-            .expect("setup preflight should validate");
+        if modifiers.contains(&"--remote-aggregation") {
+            let segment_ids = proof
+                .segments
+                .iter()
+                .map(|segment| segment.id)
+                .collect::<Vec<_>>();
+            assert!(segment_ids.contains(&CONTRIBUTION_SEGMENT_ID));
+            assert!(!segment_ids.contains(&PCS_MATERIAL_MANIFEST_SEGMENT_ID));
+            assert!(!segment_ids.contains(&PCS_QUERY_PLAN_SEGMENT_ID));
+            assert!(!segment_ids.contains(&CONSTANT_OPENING_SEGMENT_ID));
+            assert!(!segment_ids.contains(&WITNESS_OPENING_SEGMENT_ID));
+            assert!(!segment_ids.iter().any(|segment_id| {
+                *segment_id >= WITNESS_COMMITMENT_SEGMENT_BASE_ID
+                    && *segment_id < WITNESS_COMMITMENT_SEGMENT_BASE_ID + 16
+            }));
+
+            let mut verify_stdout = Vec::new();
+            let mut verify_stderr = Vec::new();
+            let verify_code = run_cli(
+                &[
+                    "verify",
+                    "contribution",
+                    dir.to_str().expect("setup path should be utf-8"),
+                    proof_path.to_str().expect("proof path should be utf-8"),
+                    public_values_path
+                        .to_str()
+                        .expect("public values path should be utf-8"),
+                ],
+                &mut verify_stdout,
+                &mut verify_stderr,
+            );
+            assert_eq!(
+                verify_code,
+                0,
+                "{}",
+                String::from_utf8_lossy(&verify_stderr)
+            );
+            assert!(verify_stderr.is_empty());
+        } else {
+            let witness_ids = proof
+                .segments
+                .iter()
+                .filter(|segment| {
+                    segment.id >= WITNESS_COMMITMENT_SEGMENT_BASE_ID
+                        && segment.id < WITNESS_COMMITMENT_SEGMENT_BASE_ID + 2
+                })
+                .map(|segment| segment.id)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                witness_ids,
+                vec![
+                    WITNESS_COMMITMENT_SEGMENT_BASE_ID,
+                    WITNESS_COMMITMENT_SEGMENT_BASE_ID + 1
+                ]
+            );
+            validate_setup_preflight(&catalog, &proof, &public_values)
+                .expect("setup preflight should validate");
+        }
         assert!(output_dir.join("unit-0.witness-segment").exists());
         assert!(output_dir.join("unit-1.witness-segment").exists());
     }
@@ -7582,18 +7623,16 @@ fn rejects_prove_witness_with_final_wrap() {
 }
 
 #[test]
-fn rejects_prove_witness_with_remote_aggregation() {
+fn runs_prove_witness_with_remote_aggregation() {
     let (code, stdout, stderr) = run_prove_witness_with_aggregate_modifier(
         "prove-witness-remote-aggregation",
         "--remote-aggregation",
     );
 
-    assert_eq!(code, 1);
-    assert!(stdout.is_empty());
-    assert_eq!(
-        stderr,
-        "prove witness failed: remote aggregation is unsupported by prove witness\n"
-    );
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("aggregate=true\n"));
+    assert!(stdout.contains("remote_aggregation=true\n"));
 }
 
 #[test]

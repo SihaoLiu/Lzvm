@@ -62,13 +62,6 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
 
-    if parsed.run_args.request.options.remote_aggregation {
-        let _ = writeln!(
-            stderr,
-            "prove witness failed: remote aggregation is unsupported by prove witness"
-        );
-        return 1;
-    }
     if parsed.run_args.request.options.final_wrap {
         let _ = writeln!(
             stderr,
@@ -125,7 +118,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
-    let contribution_only = plan.run_plan.pass.kind() == ProvePassKind::Contributions;
+    let contribution_only = contribution_artifact_requested(&plan);
     if parsed.evaluation_values_segment.is_some()
         && !(parsed.all_units || plan.run_plan.options.aggregate)
     {
@@ -411,6 +404,11 @@ struct PublicInputSummary {
     digest: [u8; 32],
     value_count: usize,
     field_count: usize,
+}
+
+fn contribution_artifact_requested(plan: &ProveExecutionPlan) -> bool {
+    plan.run_plan.pass.kind() == ProvePassKind::Contributions
+        || plan.run_plan.options.remote_aggregation
 }
 
 fn summarize_public_inputs(path: Option<&Path>) -> Result<Option<PublicInputSummary>, String> {
@@ -922,7 +920,7 @@ fn finish_all_units_witness_run(
         eth_block_input: eth_block_input.summary.map(|summary| &summary.input),
         challenge_values_segment,
     };
-    let proof = if plan.run_plan.pass.kind() == ProvePassKind::Contributions {
+    let proof = if contribution_artifact_requested(plan) {
         lzvm_prover::build_witness_contribution_proof_artifact_for_all_units(&proof_request)?
     } else {
         lzvm_prover::build_witness_proof_artifact_for_all_units(&proof_request)?
@@ -959,7 +957,7 @@ fn finish_all_units_witness_run(
                 eth_block_input: eth_block_input.summary.map(|summary| &summary.input),
                 challenge_values_segment,
                 output,
-                contribution_only: plan.run_plan.pass.kind() == ProvePassKind::Contributions,
+                contribution_only: contribution_artifact_requested(plan),
             };
             save_witness_outputs(&request, &segment)?;
         }
