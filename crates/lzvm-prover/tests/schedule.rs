@@ -7,7 +7,9 @@ use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::ExpressionProgram;
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
 use lzvm_artifacts::guest_image::{read_guest_image_file, GuestImageError};
-use lzvm_artifacts::hint_program::HintProgram;
+use lzvm_artifacts::hint_program::{
+    Hint, HintField, HintOperand, HintProgram, HintValue, SOURCE_LOOKUP_PROVES_HINT,
+};
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry,
     KeyUnitKind, KeyUnitPaths,
@@ -455,6 +457,35 @@ fn rejects_empty_prove_schedule_catalogs() {
         derive_prove_schedule(&catalog),
         Err(ProveScheduleError::EmptyCatalog)
     ));
+}
+
+#[test]
+fn rejects_schedules_with_unimplemented_regular_hints() {
+    let mut unit = sample_unit(KeyUnitKind::Basic, 0, 128);
+    unit.regular_hints = HintProgram {
+        hints: vec![Hint {
+            name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
+            fields: vec![HintField {
+                name: "line".to_owned(),
+                values: vec![HintValue {
+                    operand: HintOperand::String("lookup_proves(7, [value])".to_owned()),
+                    positions: Vec::new(),
+                }],
+            }],
+        }],
+    };
+    let catalog = sample_catalog(vec![unit]);
+
+    let error = derive_prove_schedule(&catalog)
+        .expect_err("unimplemented regular hints should block prove scheduling");
+
+    assert_eq!(
+        error,
+        ProveScheduleError::UnsupportedRegularHint {
+            unit_index: 0,
+            name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
+        }
+    );
 }
 
 #[test]

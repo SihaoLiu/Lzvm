@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 use lzvm_artifacts::constraint_program::ConstraintProgram;
 use lzvm_artifacts::expression_program::ExpressionProgram;
 use lzvm_artifacts::guest_image::{read_guest_image_file, GuestImageError, GuestImageInfo};
-use lzvm_artifacts::hint_program::HintProgram;
+use lzvm_artifacts::hint_program::{
+    source_unimplemented_hint_name, HintProgram, SOURCE_UNSUPPORTED_ASSIGNMENT_HINT,
+};
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, read_key_directory_catalog, KeyDirectoryCatalog,
     KeyDirectoryError, KeyUnitKind,
@@ -177,6 +179,7 @@ pub enum ProveScheduleError {
     LengthOverflow,
     KeyDirectory(KeyDirectoryError),
     SetupDirectoryManifest(SetupDirectoryManifestError),
+    UnsupportedRegularHint { unit_index: usize, name: String },
 }
 
 impl fmt::Display for ProveScheduleError {
@@ -186,6 +189,12 @@ impl fmt::Display for ProveScheduleError {
             Self::LengthOverflow => write!(f, "prove schedule length overflow"),
             Self::KeyDirectory(error) => write!(f, "prove schedule catalog error: {error}"),
             Self::SetupDirectoryManifest(error) => write!(f, "{error}"),
+            Self::UnsupportedRegularHint { unit_index, name } => {
+                write!(
+                    f,
+                    "prove schedule unsupported regular hint {name} for unit {unit_index}"
+                )
+            }
         }
     }
 }
@@ -646,7 +655,8 @@ pub fn derive_prove_schedule(
     let mut total_query_count = 0_u64;
     let mut max_extended_domain_bits = 0_u32;
     let mut units = Vec::with_capacity(catalog.units.len());
-    for unit in &catalog.units {
+    for (unit_index, unit) in catalog.units.iter().enumerate() {
+        validate_schedulable_regular_hints(&unit.regular_hints, unit_index)?;
         total_fixed_bytes = total_fixed_bytes
             .checked_add(unit.actual_fixed_bytes)
             .ok_or(ProveScheduleError::LengthOverflow)?;
@@ -721,6 +731,22 @@ pub fn derive_prove_schedule(
         max_extended_domain_bits,
         units,
     })
+}
+
+fn validate_schedulable_regular_hints(
+    program: &HintProgram,
+    unit_index: usize,
+) -> Result<(), ProveScheduleError> {
+    if let Some(hint) = program.hints.iter().find(|hint| {
+        source_unimplemented_hint_name(&hint.name)
+            && hint.name != SOURCE_UNSUPPORTED_ASSIGNMENT_HINT
+    }) {
+        return Err(ProveScheduleError::UnsupportedRegularHint {
+            unit_index,
+            name: hint.name.clone(),
+        });
+    }
+    Ok(())
 }
 
 pub fn derive_prove_schedule_from_directory(
