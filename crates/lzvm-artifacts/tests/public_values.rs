@@ -7,6 +7,9 @@ use lzvm_artifacts::public_values::{
     PublicValuesError,
 };
 use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedSection};
+use lzvm_field::FieldError;
+
+const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
 
 fn sample_hash(byte: u8) -> [u8; 32] {
     [byte; 32]
@@ -160,6 +163,43 @@ fn rejects_public_values_with_duplicate_names() {
     assert!(matches!(
         encode_public_values(&value),
         Err(PublicValuesError::DuplicateName { .. })
+    ));
+}
+
+#[test]
+fn rejects_non_canonical_public_values() {
+    let mut value = sample_public_values();
+    value.values[1].elements[2] = NON_CANONICAL_FIELD;
+
+    assert!(matches!(
+        encode_public_values(&value),
+        Err(PublicValuesError::ElementNonCanonical {
+            name,
+            element_index: 2,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        }) if name == "state_root_words"
+    ));
+}
+
+#[test]
+fn rejects_non_canonical_public_values_when_parsing() {
+    let mut section = section_header(1);
+    push_string(&mut section, "bad_value");
+    push_u32(&mut section, 1);
+    push_u64(&mut section, NON_CANONICAL_FIELD);
+    let bytes = public_values_file(section);
+
+    assert!(matches!(
+        parse_public_values(&bytes),
+        Err(PublicValuesError::ElementNonCanonical {
+            name,
+            element_index: 0,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        }) if name == "bad_value"
     ));
 }
 

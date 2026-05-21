@@ -3395,15 +3395,21 @@ fn prove_inputs_rejects_noncanonical_public_value_fields() {
         setup_hash,
         values: vec![PublicValueEntry {
             name: "bad_value".to_owned(),
-            elements: vec![MODULUS],
+            elements: vec![7],
         }],
     };
+    let mut public_values_file =
+        encode_public_values(&public_values).expect("public values should encode");
+    let mut sectioned = parse_sectioned_file(&public_values_file, *b"pval", 1)
+        .expect("public values should parse as sectioned file");
+    let element_offset = 4 + 32 + 4 + 4 + "bad_value".len() + 4;
+    sectioned.sections[0].data[element_offset..element_offset + 8]
+        .copy_from_slice(&MODULUS.to_le_bytes());
+    public_values_file =
+        encode_sectioned_file(&sectioned).expect("mutated public values should encode");
     write_bytes(&witness_library, sample_witness_library());
     write_bytes(&guest_image, sample_guest_image());
-    write_bytes(
-        &public_inputs,
-        encode_public_values(&public_values).expect("public values should encode"),
-    );
+    write_bytes(&public_inputs, public_values_file);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -3431,7 +3437,7 @@ fn prove_inputs_rejects_noncanonical_public_value_fields() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         format!(
-            "prove inputs failed: prove execution plan public inputs field conversion failed: {}: invalid PCS transcript public value: non-canonical field element: {MODULUS}\n",
+            "prove inputs failed: prove execution plan public inputs are invalid: {}: public-values entry bad_value element 0 is non-canonical: non-canonical field element: {MODULUS}\n",
             public_inputs.display()
         )
     );

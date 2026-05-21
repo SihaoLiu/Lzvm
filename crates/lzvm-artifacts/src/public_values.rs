@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::path::Path;
 
+use lzvm_field::{Felt, FieldError};
 use sha2::{Digest, Sha256};
 
 use crate::sectioned::{
@@ -64,6 +65,11 @@ pub enum PublicValuesError {
     EmptyValue {
         name: String,
     },
+    ElementNonCanonical {
+        name: String,
+        element_index: usize,
+        source: FieldError,
+    },
     Io {
         message: String,
     },
@@ -108,12 +114,39 @@ impl fmt::Display for PublicValuesError {
                 write!(f, "duplicate public-values name: {name}")
             }
             Self::EmptyValue { name } => write!(f, "empty public-values entry: {name}"),
+            Self::ElementNonCanonical {
+                name,
+                element_index,
+                source,
+            } => write!(
+                f,
+                "public-values entry {name} element {element_index} is non-canonical: {source}"
+            ),
             Self::Io { message } => write!(f, "public-values io error: {message}"),
         }
     }
 }
 
-impl std::error::Error for PublicValuesError {}
+impl std::error::Error for PublicValuesError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ElementNonCanonical { source, .. } => Some(source),
+            Self::InvalidMagic
+            | Self::UnsupportedVersion { .. }
+            | Self::UnsupportedSchemaVersion { .. }
+            | Self::InvalidSectionCount { .. }
+            | Self::InvalidSectionId { .. }
+            | Self::UnexpectedTrailingBytes { .. }
+            | Self::UnexpectedEof { .. }
+            | Self::LengthOverflow
+            | Self::InvalidUtf8
+            | Self::EmptyName { .. }
+            | Self::DuplicateName { .. }
+            | Self::EmptyValue { .. }
+            | Self::Io { .. } => None,
+        }
+    }
+}
 
 impl From<SectionedError> for PublicValuesError {
     fn from(value: SectionedError) -> Self {
@@ -303,6 +336,15 @@ fn validate_public_values(value: &PublicValues) -> Result<(), PublicValuesError>
             return Err(PublicValuesError::EmptyValue {
                 name: entry.name.clone(),
             });
+        }
+        for (element_index, element) in entry.elements.iter().copied().enumerate() {
+            Felt::from_canonical(element).map_err(|source| {
+                PublicValuesError::ElementNonCanonical {
+                    name: entry.name.clone(),
+                    element_index,
+                    source,
+                }
+            })?;
         }
     }
     Ok(())

@@ -21,6 +21,7 @@ use lzvm_artifacts::public_values::{
     encode_public_values, public_values_digest, PublicValueEntry, PublicValues,
 };
 use lzvm_artifacts::rlp::parse_rlp;
+use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
 use lzvm_cli::run_cli;
 use lzvm_field::MODULUS;
 use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
@@ -699,13 +700,26 @@ fn rejects_preflight_with_mismatched_public_values_hashes() {
 
 #[test]
 fn rejects_preflight_with_noncanonical_public_values() {
-    let mut values = sample_public_values();
-    values.values.push(PublicValueEntry {
-        name: "bad_value".to_owned(),
-        elements: vec![MODULUS],
-    });
+    let values = PublicValues {
+        schema_version: 1,
+        setup_hash: sample_hash(0x44),
+        values: vec![PublicValueEntry {
+            name: "bad_value".to_owned(),
+            elements: vec![7],
+        }],
+    };
     let proof = sample_proof(&values);
     let (dir, proof_path, public_path) = write_fixture_pair("bad-public-field", &proof, &values);
+    let public_values_bytes = fs::read(&public_path).expect("public values should be readable");
+    let mut sectioned = parse_sectioned_file(&public_values_bytes, *b"pval", 1)
+        .expect("public values should parse as sectioned file");
+    let element_offset = 4 + 32 + 4 + 4 + "bad_value".len() + 4;
+    sectioned.sections[0].data[element_offset..element_offset + 8]
+        .copy_from_slice(&MODULUS.to_le_bytes());
+    write_bytes(
+        &public_path,
+        encode_sectioned_file(&sectioned).expect("mutated public values should encode"),
+    );
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -726,7 +740,7 @@ fn rejects_preflight_with_noncanonical_public_values() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         format!(
-            "verify preflight failed: invalid PCS transcript public value: non-canonical field element: {MODULUS}\n"
+            "verify preflight failed: public-values entry bad_value element 0 is non-canonical: non-canonical field element: {MODULUS}\n"
         )
     );
 }
