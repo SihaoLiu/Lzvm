@@ -202,16 +202,20 @@ impl SourceScalarSlots {
                 SourceScalarSlotError::LengthOverflow("source proof value stage overflow")
             })?;
             let operand_dimension = if value.stage == 1 { 1 } else { 3 };
+            let source_dimension = named_stage_value_dimension(&value.lengths)?;
+            let field_width = source_dimension.checked_mul(operand_dimension).ok_or(
+                SourceScalarSlotError::LengthOverflow("source proof value offset overflow"),
+            )?;
             proof_value_slots.insert(
                 value.name.clone(),
                 SourceProofValueSlot {
                     offset: proof_value_offset,
                     stage,
-                    source_dimension: named_stage_value_dimension(&value.lengths)?,
+                    source_dimension,
                     operand_dimension,
                 },
             );
-            proof_value_offset = proof_value_offset.checked_add(operand_dimension).ok_or(
+            proof_value_offset = proof_value_offset.checked_add(field_width).ok_or(
                 SourceScalarSlotError::LengthOverflow("source proof value offset overflow"),
             )?;
         }
