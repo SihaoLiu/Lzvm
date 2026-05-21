@@ -554,48 +554,6 @@ fn source_function_call_bindings(
     let mut function_values = values.clone();
     let mut function_alias_scope = alias_scope.clone();
     let mut provided = BTreeSet::new();
-    for parameter in &function.parameters {
-        if source_expr_parameter(parameter) {
-            if let Some(expression) = parameter.default_expression.as_ref() {
-                function_alias_scope
-                    .expressions
-                    .insert(parameter.name.clone(), expression.clone());
-            }
-            continue;
-        }
-        if source_expr_array_parameter(parameter) {
-            if let Some(expression) = parameter.default_expression.as_ref() {
-                insert_source_expr_array_static_values(
-                    program,
-                    expression,
-                    &mut function_values,
-                    &parameter.name,
-                )?;
-                let alias = source_expression_array_alias(expression)?;
-                function_alias_scope
-                    .expression_arrays
-                    .insert(parameter.name.clone(), alias);
-            }
-            continue;
-        }
-        if source_const_parameter(parameter) && parameter.array_dims.is_empty() {
-            let Some(expression) = parameter.default_expression.as_ref() else {
-                continue;
-            };
-            let value = evaluate_source_static_expression(program, expression, &function_values)?;
-            function_values.insert(parameter.name.clone(), value);
-            continue;
-        }
-        if source_const_parameter(parameter) {
-            if let Some(span) = parameter.default_value {
-                let elements =
-                    source_static_array_literal(program, module, span, &function_values)?;
-                insert_source_static_array(&mut function_values, &parameter.name, elements)?;
-            }
-            continue;
-        }
-        return None;
-    }
 
     let mut positional_index = 0;
     for argument in arguments {
@@ -630,20 +588,24 @@ fn source_function_call_bindings(
         }
     }
 
-    if function.parameters.iter().any(|parameter| {
-        !provided.contains(&parameter.name) && !source_parameter_has_default(parameter)
-    }) {
-        return None;
+    for parameter in &function.parameters {
+        if provided.contains(&parameter.name) {
+            continue;
+        }
+        source_bind_function_default(
+            program,
+            module,
+            parameter,
+            &mut function_values,
+            &mut function_alias_scope.expressions,
+            &mut function_alias_scope.expression_arrays,
+        )?;
     }
 
     Some(SourceFunctionCallBindings {
         values: function_values,
         alias_scope: function_alias_scope,
     })
-}
-
-fn source_parameter_has_default(parameter: &lzvm_pil::FunctionParameter) -> bool {
-    parameter.default_expression.is_some() || parameter.default_value.is_some()
 }
 
 fn source_bind_function_argument(
@@ -655,12 +617,18 @@ fn source_bind_function_argument(
     expression_array_aliases: &mut SourceExpressionArrayAliases,
 ) -> Option<()> {
     if source_expr_parameter(parameter) {
+        if source_expression_name(expression) == Some(parameter.name.as_str()) {
+            return Some(());
+        }
         expression_aliases.insert(parameter.name.clone(), expression.clone());
         return Some(());
     }
     if source_expr_array_parameter(parameter) {
         insert_source_expr_array_static_values(program, expression, values, &parameter.name)?;
         let alias = source_expression_array_alias(expression)?;
+        if matches!(&alias, SourceExpressionArrayAlias::Name(name) if name == &parameter.name) {
+            return Some(());
+        }
         expression_array_aliases.insert(parameter.name.clone(), alias);
         return Some(());
     }
@@ -677,6 +645,39 @@ fn source_bind_function_argument(
     }
     let name = source_expression_name(expression)?;
     let elements = source_static_array_values(values, name)?;
+    insert_source_static_array(values, &parameter.name, elements)
+}
+
+fn source_bind_function_default(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    parameter: &lzvm_pil::FunctionParameter,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: &mut SourceExpressionAliases,
+    expression_array_aliases: &mut SourceExpressionArrayAliases,
+) -> Option<()> {
+    if source_expr_parameter(parameter) {
+        let expression = parameter.default_expression.as_ref()?;
+        expression_aliases.insert(parameter.name.clone(), expression.clone());
+        return Some(());
+    }
+    if source_expr_array_parameter(parameter) {
+        let expression = parameter.default_expression.as_ref()?;
+        insert_source_expr_array_static_values(program, expression, values, &parameter.name)?;
+        let alias = source_expression_array_alias(expression)?;
+        expression_array_aliases.insert(parameter.name.clone(), alias);
+        return Some(());
+    }
+    if source_const_parameter(parameter) && parameter.array_dims.is_empty() {
+        let expression = parameter.default_expression.as_ref()?;
+        let value = evaluate_source_static_expression(program, expression, values)?;
+        values.insert(parameter.name.clone(), value);
+        return Some(());
+    }
+    if !source_const_parameter(parameter) {
+        return None;
+    }
+    let elements = source_static_array_literal(program, module, parameter.default_value?, values)?;
     insert_source_static_array(values, &parameter.name, elements)
 }
 
