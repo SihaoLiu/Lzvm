@@ -55,6 +55,7 @@ mod prove_fri_polynomial;
 mod prove_witness;
 pub mod regular_constraints;
 pub mod setup_preflight;
+mod source_assignment_hints;
 mod source_lookup_hints;
 pub mod unit_values;
 pub mod verifier_eval;

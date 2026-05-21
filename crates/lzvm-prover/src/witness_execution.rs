@@ -18,6 +18,7 @@ use crate::regular_constraints::{
     evaluate_regular_constraints, RegularColumnMatrix, RegularConstraintEvalError,
     RegularConstraintInputs, RegularStageColumns,
 };
+use crate::source_assignment_hints::validate_source_assignment_hints;
 use crate::source_lookup_hints::SourceLookupBalance;
 use crate::witness_commitment::{
     commit_witness_trace_stages_with_workers, WitnessTraceCommitmentError, WitnessTraceCommitments,
@@ -193,6 +194,10 @@ pub enum ProveWitnessCommitmentError {
         unit_index: usize,
         message: String,
     },
+    SourceAssignment {
+        unit_index: usize,
+        message: String,
+    },
     SourceLookupSet {
         message: String,
     },
@@ -339,6 +344,13 @@ impl fmt::Display for ProveWitnessCommitmentError {
                 f,
                 "source lookup validation failed for prove witness commitment unit {unit_index}: {message}"
             ),
+            Self::SourceAssignment {
+                unit_index,
+                message,
+            } => write!(
+                f,
+                "source assignment validation failed for prove witness commitment unit {unit_index}: {message}"
+            ),
             Self::SourceLookupSet { message } => write!(
                 f,
                 "source lookup validation failed for prove witness commitment set: {message}"
@@ -385,6 +397,7 @@ impl std::error::Error for ProveWitnessCommitmentError {
             | Self::MissingRegularHintInput { .. }
             | Self::UnsupportedRegularHint { .. }
             | Self::SourceLookup { .. }
+            | Self::SourceAssignment { .. }
             | Self::SourceLookupSet { .. }
             | Self::RegularConstraintViolation { .. } => None,
         }
@@ -862,6 +875,7 @@ fn accumulate_witness_regular_hints(
             },
         )
         .map_err(|error| map_regular_hint_eval_error(unit_index, error))?;
+        validate_source_assignment_hints(unit_index, row, &resolved)?;
         source_lookup_balance.absorb(unit_index, row, &resolved)?;
     }
     Ok(())
@@ -980,8 +994,8 @@ mod tests {
     use crate::witness_layout::derive_witness_trace_layout;
     use crate::witness_trace::parse_witness_trace;
     use lzvm_artifacts::hint_program::{
-        Hint, HintField, HintOperand, HintValue, SOURCE_LOOKUP_ASSUMES_HINT,
-        SOURCE_LOOKUP_PROVES_HINT, SOURCE_UNSUPPORTED_ASSIGNMENT_HINT,
+        Hint, HintField, HintOperand, HintValue, SOURCE_ASSIGNMENT_CHECK_HINT,
+        SOURCE_LOOKUP_ASSUMES_HINT, SOURCE_LOOKUP_PROVES_HINT, SOURCE_UNSUPPORTED_ASSIGNMENT_HINT,
         SOURCE_UNSUPPORTED_CALL_HINT, SOURCE_UNSUPPORTED_CONSTRAINT_HINT,
         SOURCE_UNSUPPORTED_STATEMENT_HINT,
     };
@@ -1043,6 +1057,38 @@ mod tests {
             &ProveWitnessAuxiliaryInputs::default(),
         )
         .expect("balanced lookup hints should validate");
+    }
+
+    #[test]
+    fn rejects_mismatched_source_assignment_regular_hints() {
+        let program = HintProgram {
+            hints: vec![source_assignment_hint(
+                HintOperand::Commitment {
+                    id: 0,
+                    row_offset_index: 0,
+                },
+                HintOperand::Commitment {
+                    id: 1,
+                    row_offset_index: 0,
+                },
+            )],
+        };
+        let plan_unit = source_lookup_plan_unit(program);
+        let schedule = source_lookup_schedule();
+        let layout = derive_witness_trace_layout(&schedule).expect("layout should derive");
+        let trace = source_lookup_trace(&[7, 1, 8, 2]);
+
+        let error = validate_witness_regular_hints(
+            &plan_unit,
+            0,
+            &layout,
+            &trace,
+            &[],
+            &ProveWitnessAuxiliaryInputs::default(),
+        )
+        .expect_err("mismatched assignment hint should reject");
+
+        assert!(error.to_string().contains("source assignment"));
     }
 
     #[test]
@@ -1218,6 +1264,28 @@ mod tests {
                     name: weight_field.to_owned(),
                     values: vec![HintValue {
                         operand: weight_operand,
+                        positions: Vec::new(),
+                    }],
+                },
+            ],
+        }
+    }
+
+    fn source_assignment_hint(target: HintOperand, value: HintOperand) -> Hint {
+        Hint {
+            name: SOURCE_ASSIGNMENT_CHECK_HINT.to_owned(),
+            fields: vec![
+                HintField {
+                    name: "target".to_owned(),
+                    values: vec![HintValue {
+                        operand: target,
+                        positions: Vec::new(),
+                    }],
+                },
+                HintField {
+                    name: "value".to_owned(),
+                    values: vec![HintValue {
+                        operand: value,
                         positions: Vec::new(),
                     }],
                 },

@@ -5,14 +5,15 @@ use lzvm_artifacts::expression_info::{
     CodeOperand, HintFieldInfo, HintInfo, HintPayload, HintValueInfo,
 };
 use lzvm_artifacts::hint_program::{
-    SOURCE_LOOKUP_ASSUMES_HINT, SOURCE_LOOKUP_PROVES_HINT, SOURCE_UNSUPPORTED_ASSIGNMENT_HINT,
-    SOURCE_UNSUPPORTED_CALL_HINT, SOURCE_UNSUPPORTED_CONSTRAINT_HINT,
-    SOURCE_UNSUPPORTED_STATEMENT_HINT,
+    SOURCE_ASSIGNMENT_CHECK_HINT, SOURCE_LOOKUP_ASSUMES_HINT, SOURCE_LOOKUP_PROVES_HINT,
+    SOURCE_UNSUPPORTED_ASSIGNMENT_HINT, SOURCE_UNSUPPORTED_CALL_HINT,
+    SOURCE_UNSUPPORTED_CONSTRAINT_HINT, SOURCE_UNSUPPORTED_STATEMENT_HINT,
 };
 use lzvm_field::MODULUS;
 use lzvm_pil::{
-    lex_source, parse_expression_tokens, Expression, ExpressionKind, FixedFileTemplateValue,
-    FunctionStatement, LexError, SourceFile, SourceProgram, SourceProgramModule, Token, TokenKind,
+    lex_source, parse_expression_tokens, BinaryOperator, Expression, ExpressionKind,
+    FixedFileTemplateValue, FunctionStatement, LexError, SourceFile, SourceProgram,
+    SourceProgramModule, Token, TokenKind,
 };
 
 use crate::{
@@ -73,6 +74,61 @@ pub(crate) fn lower_source_lookup_statement(
         return Ok(Some(hint));
     }
     Ok(Some(source_lookup_line_hint(name, line)))
+}
+
+pub(crate) fn lower_source_assignment_statement(
+    inputs: &SourceLookupInputs<'_>,
+    statement: &FunctionStatement,
+) -> Result<Option<HintInfo>, LexError> {
+    let Some(expression) = statement.value_expression.as_ref() else {
+        return Ok(None);
+    };
+    let ExpressionKind::Binary { op, left, right } = &strip_group_expression(expression).kind
+    else {
+        return Ok(None);
+    };
+    if *op != BinaryOperator::Assign {
+        return Ok(None);
+    }
+
+    let line = source_statement_line(inputs.module, statement);
+    let context = SourceLookupLowering {
+        program: inputs.program,
+        module: inputs.module,
+        line: &line,
+        tokens: &[],
+        values: inputs.values,
+        expression_aliases: inputs.expression_aliases,
+        expression_array_aliases: inputs.expression_array_aliases,
+        scalar_slots: inputs.scalar_slots,
+        opening_points: inputs.opening_points,
+    };
+    let target = source_lookup_scalar_operand(&context, left, 0)
+        .and_then(|operand| source_assignment_target_payload(operand, inputs.opening_points));
+    let value = source_lookup_value_payload_from_expression(&context, right);
+    let (Some(target), Some(value)) = (target, value) else {
+        return Ok(None);
+    };
+
+    Ok(Some(HintInfo {
+        name: SOURCE_ASSIGNMENT_CHECK_HINT.to_owned(),
+        fields: vec![
+            HintFieldInfo {
+                name: "target".to_owned(),
+                values: vec![HintValueInfo {
+                    positions: Vec::new(),
+                    payload: target,
+                }],
+            },
+            HintFieldInfo {
+                name: "value".to_owned(),
+                values: vec![HintValueInfo {
+                    positions: Vec::new(),
+                    payload: value,
+                }],
+            },
+        ],
+    }))
 }
 
 pub(crate) fn source_lookup_statement_expressions(
@@ -1089,6 +1145,18 @@ fn hint_payload_from_code_operand(
             stage,
             dimension,
         } => Some(HintPayload::proof_value(id, stage, Some(dimension))),
+        _ => None,
+    }
+}
+
+fn source_assignment_target_payload(
+    operand: CodeOperand,
+    opening_points: &[i64],
+) -> Option<HintPayload> {
+    match operand {
+        CodeOperand::Commitment { .. } | CodeOperand::CommitmentElement { .. } => {
+            hint_payload_from_code_operand(operand, opening_points)
+        }
         _ => None,
     }
 }

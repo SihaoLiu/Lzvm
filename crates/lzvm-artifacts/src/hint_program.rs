@@ -19,6 +19,7 @@ const POSITION_BYTES: usize = 4;
 pub const SOURCE_LOOKUP_HINT_PREFIX: &str = "source.lookup.";
 pub const SOURCE_LOOKUP_PROVES_HINT: &str = "source.lookup.proves";
 pub const SOURCE_LOOKUP_ASSUMES_HINT: &str = "source.lookup.assumes";
+pub const SOURCE_ASSIGNMENT_CHECK_HINT: &str = "source.assignment.check";
 pub const SOURCE_UNSUPPORTED_CALL_HINT: &str = "source.call.unsupported";
 pub const SOURCE_UNSUPPORTED_ASSIGNMENT_HINT: &str = "source.assignment.unsupported";
 pub const SOURCE_UNSUPPORTED_STATEMENT_HINT: &str = "source.statement.unsupported";

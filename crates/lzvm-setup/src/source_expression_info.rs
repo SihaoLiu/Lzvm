@@ -27,11 +27,12 @@ use crate::{
         concrete_template_names, declaration_in_function_body, declaration_in_inactive_template,
     },
     source_statement_hints::{
-        lower_source_lookup_statement, lower_unsupported_source_assignment_statement,
-        lower_unsupported_source_call_statement, lower_unsupported_source_constraint_statement,
-        lower_unsupported_source_template_statement, source_statement_contains_assignment_operator,
-        source_statement_first_token_kind, source_statement_line, SourceExpressionArrayAlias,
-        SourceExpressionArrayAliases, SourceLookupInputs,
+        lower_source_assignment_statement, lower_source_lookup_statement,
+        lower_unsupported_source_assignment_statement, lower_unsupported_source_call_statement,
+        lower_unsupported_source_constraint_statement, lower_unsupported_source_template_statement,
+        source_statement_contains_assignment_operator, source_statement_first_token_kind,
+        source_statement_line, SourceExpressionArrayAlias, SourceExpressionArrayAliases,
+        SourceLookupInputs,
     },
     source_static_values::{
         evaluate_source_static_expression, insert_source_static_array, source_active_static_name,
@@ -544,6 +545,20 @@ fn lower_source_template_statement(
         }
         return Ok(());
     }
+    let is_assignment = source_expression_is_assignment(statement.value_expression.as_ref());
+    if is_assignment {
+        if let Some(hint) =
+            lower_source_assignment_statement(&lookup_inputs, statement).map_err(|source| {
+                SourceKeyDirectoryMetadataError::Lex {
+                    source_name: context.module.source_name.clone(),
+                    source,
+                }
+            })?
+        {
+            hints.push(hint);
+            return Ok(());
+        }
+    }
     let contains_assignment_operator =
         source_statement_contains_assignment_operator(context.module, statement).map_err(
             |source| SourceKeyDirectoryMetadataError::Lex {
@@ -551,9 +566,7 @@ fn lower_source_template_statement(
                 source,
             },
         )?;
-    if source_expression_is_assignment(statement.value_expression.as_ref())
-        || contains_assignment_operator
-    {
+    if is_assignment || contains_assignment_operator {
         hints.push(lower_unsupported_source_assignment_statement(
             context.module,
             statement,
