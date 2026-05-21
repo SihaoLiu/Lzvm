@@ -20,6 +20,8 @@ use lzvm_prover::proof_preflight::{
     ProofPreflightReport, PublicValueFieldError,
 };
 
+const FIRST_CHALLENGE_VALUE_OFFSET: usize = 12;
+
 fn sample_hash(byte: u8) -> [u8; 32] {
     [byte; 32]
 }
@@ -363,12 +365,15 @@ fn rejects_invalid_challenge_values_segments() {
 fn rejects_non_canonical_challenge_values_segments() {
     let public_values = sample_public_values();
     let mut proof = sample_proof(&public_values);
+    let mut data = encode_challenge_values_segment(&ChallengeValuesSegment {
+        values: vec![[1, 2, 3]],
+    })
+    .expect("challenge values segment should encode");
+    data[FIRST_CHALLENGE_VALUE_OFFSET + 2 * 8..FIRST_CHALLENGE_VALUE_OFFSET + 3 * 8]
+        .copy_from_slice(&MODULUS.to_le_bytes());
     proof.segments.push(ProofSegment {
         id: CHALLENGE_VALUES_SEGMENT_ID,
-        data: encode_challenge_values_segment(&ChallengeValuesSegment {
-            values: vec![[1, 2, MODULUS]],
-        })
-        .expect("challenge values segment should encode"),
+        data,
     });
 
     let error = validate_proof_public_values(&proof, &public_values)
@@ -376,11 +381,11 @@ fn rejects_non_canonical_challenge_values_segments() {
 
     assert_eq!(
         error,
-        ProofPreflightError::ChallengeValueNonCanonical {
+        ProofPreflightError::ChallengeValues(ChallengeValuesSegmentError::ValueNonCanonical {
             value_index: 0,
             word_index: 2,
             source: FieldError::NonCanonical { value: MODULUS },
-        }
+        })
     );
 }
 

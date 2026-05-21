@@ -769,6 +769,8 @@ mod tests {
         SetupPreflightError,
     };
 
+    const FIRST_CHALLENGE_VALUE_OFFSET: usize = 12;
+
     #[test]
     fn setup_proof_segment_id_check_accepts_challenge_values_segment() {
         let segments = vec![
@@ -828,15 +830,18 @@ mod tests {
 
     #[test]
     fn challenge_values_preflight_rejects_non_canonical_values() {
+        let mut data = encode_challenge_values_segment(&ChallengeValuesSegment {
+            values: vec![[1, 2, 3]],
+        })
+        .expect("challenge values segment should encode");
+        data[FIRST_CHALLENGE_VALUE_OFFSET + 8..FIRST_CHALLENGE_VALUE_OFFSET + 16]
+            .copy_from_slice(&MODULUS.to_le_bytes());
         let proof = ProofArtifact {
             setup_hash: [0; 32],
             public_values_hash: [0; 32],
             segments: vec![ProofSegment {
                 id: CHALLENGE_VALUES_SEGMENT_ID,
-                data: encode_challenge_values_segment(&ChallengeValuesSegment {
-                    values: vec![[1, MODULUS, 3]],
-                })
-                .expect("challenge values segment should encode"),
+                data,
             }],
         };
 
@@ -845,11 +850,11 @@ mod tests {
 
         assert_eq!(
             error,
-            SetupPreflightError::ChallengeValueNonCanonical {
+            SetupPreflightError::ChallengeValues(ChallengeValuesSegmentError::ValueNonCanonical {
                 value_index: 0,
                 word_index: 1,
                 source: FieldError::NonCanonical { value: MODULUS },
-            }
+            })
         );
     }
 
