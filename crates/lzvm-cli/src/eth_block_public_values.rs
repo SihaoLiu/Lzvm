@@ -8,8 +8,10 @@ use lzvm_artifacts::eth_block_input::{
     parse_eth_block_input,
 };
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
-use lzvm_artifacts::key_directory::key_directory_catalog_digest;
+use lzvm_artifacts::global_info::GlobalInfo;
+use lzvm_artifacts::key_directory::{key_directory_catalog_digest, KeyDirectoryCatalog};
 use lzvm_artifacts::public_values::{encode_public_values, public_values_digest, PublicValues};
+use lzvm_prover::setup_preflight::validate_public_values_metadata;
 
 use crate::prove_plan::read_checked_setup_catalog;
 
@@ -23,17 +25,34 @@ pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write)
                     return 1;
                 }
             };
-            write_block_public_values(setup_hash, input_path, output_path, stdout, stderr)
+            write_block_public_values(setup_hash, None, input_path, output_path, stdout, stderr)
         }
         ["--setup-dir", setup_dir, input_path, output_path] => {
-            let setup_hash = match setup_hash_from_directory(setup_dir) {
-                Ok(hash) => hash,
+            let catalog = match setup_catalog_from_directory(setup_dir) {
+                Ok(catalog) => catalog,
                 Err(message) => {
                     let _ = writeln!(stderr, "eth block public values failed: {message}");
                     return 1;
                 }
             };
-            write_block_public_values(setup_hash, input_path, output_path, stdout, stderr)
+            let setup_hash = match key_directory_catalog_digest(&catalog) {
+                Ok(hash) => hash,
+                Err(error) => {
+                    let _ = writeln!(
+                        stderr,
+                        "eth block public values failed: derive setup hash failed: {setup_dir}: {error}"
+                    );
+                    return 1;
+                }
+            };
+            write_block_public_values(
+                setup_hash,
+                Some(&catalog.layout.global_info),
+                input_path,
+                output_path,
+                stdout,
+                stderr,
+            )
         }
         _ => write_usage(stderr),
     }
@@ -41,6 +60,7 @@ pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write)
 
 fn write_block_public_values(
     setup_hash: [u8; 32],
+    setup_public_metadata: Option<&GlobalInfo>,
     input_path: &str,
     output_path: &str,
     stdout: &mut dyn Write,
@@ -86,6 +106,12 @@ fn write_block_public_values(
         }
     };
     let public_values = public_values_from_eth_block_input(setup_hash, &input);
+    if let Some(global_info) = setup_public_metadata {
+        if let Err(error) = validate_public_values_metadata(global_info, &public_values) {
+            let _ = writeln!(stderr, "eth block public values failed: {error}");
+            return 1;
+        }
+    }
     let public_values_hash = match public_values_digest(&public_values) {
         Ok(hash) => hash,
         Err(error) => {
@@ -233,11 +259,9 @@ fn public_values_field_count(public_values: &PublicValues) -> usize {
         .sum()
 }
 
-fn setup_hash_from_directory(setup_dir: &str) -> Result<[u8; 32], String> {
-    let catalog = read_checked_setup_catalog(Path::new(setup_dir))
-        .map_err(|message| format!("read setup directory failed: {setup_dir}: {message}"))?;
-    key_directory_catalog_digest(&catalog)
-        .map_err(|error| format!("derive setup hash failed: {setup_dir}: {error}"))
+fn setup_catalog_from_directory(setup_dir: &str) -> Result<KeyDirectoryCatalog, String> {
+    read_checked_setup_catalog(Path::new(setup_dir))
+        .map_err(|message| format!("read setup directory failed: {setup_dir}: {message}"))
 }
 
 fn parse_hash_hex(value: &str) -> Result<[u8; 32], HashHexError> {

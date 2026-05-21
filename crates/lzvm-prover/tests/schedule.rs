@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use lzvm_artifacts::constraint_program::{ConstraintProgram, GlobalConstraintProgram};
 use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::ExpressionProgram;
-use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
+use lzvm_artifacts::global_info::{CurveKind, GlobalInfo, PublicValue};
 use lzvm_artifacts::guest_image::{read_guest_image_file, GuestImageError};
 use lzvm_artifacts::hint_program::{
     Hint, HintField, HintOperand, HintProgram, HintValue, SOURCE_LOOKUP_PROVES_HINT,
@@ -334,6 +334,15 @@ fn sample_public_values(setup_hash: [u8; 32]) -> PublicValues {
     }
 }
 
+fn declare_sample_public_value_metadata(catalog: &mut KeyDirectoryCatalog) {
+    catalog.layout.global_info.n_publics = 1;
+    catalog.layout.global_info.publics_map = vec![PublicValue {
+        name: "sample_value".to_owned(),
+        stage: 1,
+        lengths: Vec::new(),
+    }];
+}
+
 fn write_public_inputs(path: &Path, catalog: &KeyDirectoryCatalog) {
     let setup_hash = key_directory_catalog_digest(catalog).expect("catalog digest should compute");
     fs::write(
@@ -342,6 +351,11 @@ fn write_public_inputs(path: &Path, catalog: &KeyDirectoryCatalog) {
             .expect("public inputs should encode"),
     )
     .expect("public inputs should be written");
+}
+
+fn write_public_inputs_with_metadata(catalog: &mut KeyDirectoryCatalog, path: &Path) {
+    declare_sample_public_value_metadata(catalog);
+    write_public_inputs(path, catalog);
 }
 
 fn sample_pcs_material(seed: u8) -> PcsSetupMaterial {
@@ -792,8 +806,8 @@ fn derives_prove_execution_plan_with_input_artifacts() {
     unit.expression_program.numbers = vec![17, 19, 23];
     unit.metadata.verifier.quotient.expression_id = Some(42);
     let expected_expression_program = unit.expression_program.clone();
-    let catalog = sample_catalog(vec![unit]);
-    write_public_inputs(&public_inputs, &catalog);
+    let mut catalog = sample_catalog(vec![unit]);
+    write_public_inputs_with_metadata(&mut catalog, &public_inputs);
     let request = ProveRunRequest {
         pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
         options: ProveRunOptions::default_for_output(dir.join("out")),
@@ -827,6 +841,49 @@ fn derives_prove_execution_plan_with_input_artifacts() {
         expected_expression_program
     );
     assert_eq!(plan.units[0].fri_expression_id, Some(42));
+}
+
+#[test]
+fn rejects_prove_execution_plan_public_inputs_that_mismatch_setup_metadata() {
+    let dir = temp_dir("execution-plan-public-metadata-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let public_inputs = dir.join("public-inputs.bin");
+    fs::write(&witness_library, sample_witness_library())
+        .expect("witness library should be written");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+
+    let catalog = sample_catalog(vec![sample_unit_with_pcs_material(
+        KeyUnitKind::Basic,
+        0,
+        64,
+    )]);
+    write_public_inputs(&public_inputs, &catalog);
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
+        options: ProveRunOptions::default_for_output(dir.join("out")),
+        gpu: GpuRunOptions::default(),
+    };
+    let inputs = ProveExecutionInputArtifacts {
+        witness_library: Some(witness_library),
+        guest_image,
+        public_inputs: Some(public_inputs.clone()),
+    };
+
+    let result = derive_prove_execution_plan(&catalog, request, inputs);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        result,
+        Err(error)
+            if error.to_string()
+                == format!(
+                    "prove execution plan public inputs metadata mismatch: {}: public-values entry count mismatch: expected 0, found 1",
+                    public_inputs.display()
+                )
+    ));
 }
 
 #[test]
@@ -877,11 +934,12 @@ fn derives_prove_execution_plan_with_program_image_cache() {
         .expect("guest image should parse")
         .digest;
 
-    let catalog = sample_catalog(vec![sample_unit_with_pcs_material(
+    let mut catalog = sample_catalog(vec![sample_unit_with_pcs_material(
         KeyUnitKind::Basic,
         0,
         64,
     )]);
+    declare_sample_public_value_metadata(&mut catalog);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
     write_program_image_cache(&cache_path, guest_digest, setup_hash);
     write_public_inputs(&public_inputs, &catalog);
@@ -935,11 +993,12 @@ fn rejects_prove_execution_plan_with_program_image_cache_guest_digest_mismatch()
         .digest;
     guest_digest[0] ^= 0xff;
 
-    let catalog = sample_catalog(vec![sample_unit_with_pcs_material(
+    let mut catalog = sample_catalog(vec![sample_unit_with_pcs_material(
         KeyUnitKind::Basic,
         0,
         64,
     )]);
+    declare_sample_public_value_metadata(&mut catalog);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
     write_program_image_cache(&cache_path, guest_digest, setup_hash);
     write_public_inputs(&public_inputs, &catalog);
@@ -986,12 +1045,12 @@ fn rejects_prove_execution_plan_with_program_image_cache_setup_hash_mismatch() {
         .digest;
     write_program_image_cache(&cache_path, guest_digest, [0x22; 32]);
 
-    let catalog = sample_catalog(vec![sample_unit_with_pcs_material(
+    let mut catalog = sample_catalog(vec![sample_unit_with_pcs_material(
         KeyUnitKind::Basic,
         0,
         64,
     )]);
-    write_public_inputs(&public_inputs, &catalog);
+    write_public_inputs_with_metadata(&mut catalog, &public_inputs);
     let request = ProveRunRequest {
         pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
         options: ProveRunOptions::default_for_output(dir.join("out")),
@@ -1038,11 +1097,12 @@ fn rejects_prove_execution_plan_with_non_canonical_program_image_cache_root() {
         .expect("guest image should parse")
         .digest;
 
-    let catalog = sample_catalog(vec![sample_unit_with_pcs_material(
+    let mut catalog = sample_catalog(vec![sample_unit_with_pcs_material(
         KeyUnitKind::Basic,
         0,
         64,
     )]);
+    declare_sample_public_value_metadata(&mut catalog);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
     write_program_image_cache(&cache_path, guest_digest, setup_hash);
     overwrite_program_image_cache_root_word(&cache_path, 0, MODULUS);

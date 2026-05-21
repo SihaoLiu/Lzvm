@@ -28,6 +28,7 @@ use lzvm_artifacts::witness_library::{
 use lzvm_field::{Felt, FieldError};
 
 use crate::proof_preflight::{public_values_as_fields, PublicValueFieldError};
+use crate::setup_preflight::{validate_public_values_metadata, SetupPreflightError};
 
 pub mod constant_opening;
 pub mod constant_tree_opening;
@@ -564,6 +565,10 @@ pub enum ProveExecutionPlanError {
         path: PathBuf,
         source: PublicValueFieldError,
     },
+    PublicInputsMetadata {
+        path: PathBuf,
+        source: SetupPreflightError,
+    },
     PublicInputsSetupHashMismatch {
         path: PathBuf,
     },
@@ -669,6 +674,11 @@ impl fmt::Display for ProveExecutionPlanError {
                 "prove execution plan public inputs field conversion failed: {}: {source}",
                 path.display()
             ),
+            Self::PublicInputsMetadata { path, source } => write!(
+                f,
+                "prove execution plan public inputs metadata mismatch: {}: {source}",
+                path.display()
+            ),
             Self::PublicInputsSetupHashMismatch { path } => write!(
                 f,
                 "prove execution plan public inputs setup hash mismatch: {}",
@@ -701,6 +711,7 @@ impl std::error::Error for ProveExecutionPlanError {
             Self::ProgramImageCacheTreeRootNonCanonical { source, .. } => Some(source),
             Self::InvalidPublicInputs { source, .. } => Some(source),
             Self::PublicInputsFieldConversion { source, .. } => Some(source),
+            Self::PublicInputsMetadata { source, .. } => Some(source),
             Self::RunPlan(error) => Some(error),
             Self::MissingPcsMaterial { .. }
             | Self::MissingProgramImageCache { .. }
@@ -982,6 +993,12 @@ pub fn derive_prove_execution_plan_with_program_image_cache(
                 source,
             }
         })?;
+        validate_public_values_metadata(&catalog.layout.global_info, &public_values).map_err(
+            |source| ProveExecutionPlanError::PublicInputsMetadata {
+                path: public_inputs.clone(),
+                source,
+            },
+        )?;
     }
     let program_image_cache = match program_image_cache {
         Some(path) => Some(load_program_image_cache(

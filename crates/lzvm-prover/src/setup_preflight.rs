@@ -430,7 +430,7 @@ pub fn validate_setup_preflight_hashes(
         eth_block_input_withdrawal_preimage_counts,
     } = validate_proof_public_values(proof, public_values).map_err(SetupPreflightError::Proof)?;
 
-    validate_public_values_metadata(
+    validate_public_values_metadata_with_field_count(
         &catalog.layout.global_info,
         public_values,
         public_value_field_count,
@@ -508,7 +508,27 @@ pub fn validate_setup_preflight_hashes(
     })
 }
 
-fn validate_public_values_metadata(
+pub fn validate_public_values_metadata(
+    global_info: &GlobalInfo,
+    public_values: &PublicValues,
+) -> Result<(), SetupPreflightError> {
+    let public_value_field_count =
+        public_values
+            .values
+            .iter()
+            .try_fold(0_usize, |count, entry| {
+                count
+                    .checked_add(entry.elements.len())
+                    .ok_or(SetupPreflightError::PublicValueCountOverflow)
+            })?;
+    validate_public_values_metadata_with_field_count(
+        global_info,
+        public_values,
+        public_value_field_count,
+    )
+}
+
+fn validate_public_values_metadata_with_field_count(
     global_info: &GlobalInfo,
     public_values: &PublicValues,
     public_value_field_count: usize,

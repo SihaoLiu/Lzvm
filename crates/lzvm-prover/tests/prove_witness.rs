@@ -14,7 +14,7 @@ use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::{ExpressionEntry, ExpressionProgram};
 use lzvm_artifacts::fixed::{write_raw_fixed_columns_file, FixedColumn, FixedColumns};
 use lzvm_artifacts::global_info::{
-    AggregationType, CurveKind, GlobalAir, GlobalInfo, NamedStageValue,
+    AggregationType, CurveKind, GlobalAir, GlobalInfo, NamedStageValue, PublicValue,
 };
 use lzvm_artifacts::group_values_segment::{parse_group_values_segment, GROUP_VALUES_SEGMENT_ID};
 use lzvm_artifacts::hint_program::{Hint, HintField, HintOperand, HintProgram, HintValue};
@@ -529,6 +529,15 @@ fn write_public_values(path: &Path, setup_hash: [u8; 32], elements: Vec<u64>) {
         encode_public_values(&values).expect("public values should encode"),
     )
     .expect("public values should be written");
+}
+
+fn declare_sample_public_value_metadata(catalog: &mut KeyDirectoryCatalog) {
+    catalog.layout.global_info.n_publics = 1;
+    catalog.layout.global_info.publics_map = vec![PublicValue {
+        name: "sample_public".to_owned(),
+        stage: 1,
+        lengths: Vec::new(),
+    }];
 }
 
 fn write_sample_fixed_columns(path: &Path, setup: &UnitSetupInfo, unit_name: &str) {
@@ -1205,6 +1214,7 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
         id: None,
         lengths: Vec::new(),
     }];
+    declare_sample_public_value_metadata(&mut catalog);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values_path = dir.join("public.bin");
     let public_values = PublicValues {
@@ -1376,6 +1386,7 @@ fn builds_all_units_contribution_proof_artifact_from_output_proof_values() {
         id: None,
         lengths: Vec::new(),
     }];
+    declare_sample_public_value_metadata(&mut catalog);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values_path = dir.join("public.bin");
     let public_values = PublicValues {
@@ -1510,7 +1521,8 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
     )
     .expect("second constant tree should be written");
 
-    let catalog = sample_catalog_units(vec![first_unit, second_unit]);
+    let mut catalog = sample_catalog_units(vec![first_unit, second_unit]);
+    declare_sample_public_value_metadata(&mut catalog);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let public_values_path = dir.join("public.bin");
     let public_values = PublicValues {
@@ -1733,7 +1745,8 @@ fn preserves_trace_inputs_and_commitments_for_pcs_openings() {
     fs::write(&unit.paths.fixed_columns, vec![0_u8; 16 * 2 * 8])
         .expect("fixed columns should be written");
     unit.regular_constraints = public_row_zero_stage_constraint();
-    let catalog = sample_catalog(unit);
+    let mut catalog = sample_catalog(unit);
+    declare_sample_public_value_metadata(&mut catalog);
     write_public_values(
         &public_inputs,
         key_directory_catalog_digest(&catalog).expect("catalog digest should compute"),
@@ -1906,7 +1919,8 @@ fn uses_public_inputs_when_checking_regular_constraints() {
     fs::write(&unit.paths.fixed_columns, vec![0_u8; 16 * 2 * 8])
         .expect("fixed columns should be written");
     unit.regular_constraints = public_row_zero_stage_constraint();
-    let catalog = sample_catalog(unit);
+    let mut catalog = sample_catalog(unit);
+    declare_sample_public_value_metadata(&mut catalog);
     write_public_values(
         &public_inputs,
         key_directory_catalog_digest(&catalog).expect("catalog digest should compute"),

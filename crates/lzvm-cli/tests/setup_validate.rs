@@ -6912,6 +6912,47 @@ fn writes_eth_block_public_values_from_setup_directory() {
 }
 
 #[test]
+fn rejects_eth_block_public_values_from_mismatched_setup_metadata() {
+    let dir = temp_dir("eth-block-public-values-metadata-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let block_input_path = dir.join("block.input");
+    let public_values_path = dir.join("eth-public-values.bin");
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_bytes(
+        &block_input_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-block-public-values",
+            "--setup-dir",
+            dir.to_str().expect("setup path should be utf-8"),
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "eth block public values failed: public-values entry count mismatch: expected 1, found 21\n"
+    );
+}
+
+#[test]
 fn builds_witness_proof_core_for_multiple_units() {
     let dir = temp_dir("prove-witness-core-multi");
     let _ = fs::remove_dir_all(&dir);
