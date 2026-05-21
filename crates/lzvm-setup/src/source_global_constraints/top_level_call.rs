@@ -7,9 +7,11 @@ use lzvm_pil::{
 };
 
 use crate::{
+    source_control_body_cache::SourceControlBodyCache,
     source_expression_aliases::collect_source_template_expression_alias,
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_static_values::evaluate_source_static_expression,
+    source_template_if::source_static_if_body_statements_with_tokens,
 };
 
 use super::{
@@ -48,6 +50,7 @@ pub(super) fn lower_top_level_function_call(
 
     let checkpoint = constraints.checkpoint();
     let mut body_alias_scope = bindings.alias_scope;
+    let mut body_cache = SourceControlBodyCache::default();
     for statement in &function.statements {
         body_alias_scope.static_values = bindings.values.clone();
         if !lower_function_body_statement(
@@ -55,6 +58,7 @@ pub(super) fn lower_top_level_function_call(
             statement,
             &mut bindings.values,
             &body_alias_scope,
+            &mut body_cache,
             constraints,
         )? {
             constraints.rollback(checkpoint);
@@ -184,11 +188,49 @@ fn lower_function_body_statement(
     statement: &FunctionStatement,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
     alias_scope: &SourceGlobalAliasScope<'_>,
+    body_cache: &mut SourceControlBodyCache,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
         return Ok(apply_static_declaration(context.program, statement, values)
             || source_expr_alias_declaration(statement));
+    }
+    if statement.kind == FunctionStatementKind::If {
+        return match source_static_if_body_statements_with_tokens(
+            context.program,
+            context.module,
+            context.tokens,
+            statement,
+            values,
+            body_cache,
+        ) {
+            Ok(Some(body_statements)) => {
+                let mut body_alias_scope = clone_alias_scope(alias_scope);
+                for body_statement in body_statements.iter() {
+                    body_alias_scope.static_values = values.clone();
+                    if !lower_function_body_statement(
+                        context,
+                        body_statement,
+                        values,
+                        &body_alias_scope,
+                        body_cache,
+                        constraints,
+                    )? {
+                        return Ok(false);
+                    }
+                    body_alias_scope.static_values = values.clone();
+                    collect_source_template_expression_alias(
+                        body_statement,
+                        &mut body_alias_scope.expressions,
+                    );
+                }
+                Ok(true)
+            }
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        };
     }
     if statement.kind != FunctionStatementKind::Expression {
         return Ok(false);
@@ -230,6 +272,15 @@ fn apply_static_declaration(
     };
     values.insert(declaration.name.clone(), value);
     true
+}
+
+fn clone_alias_scope<'a>(alias_scope: &SourceGlobalAliasScope<'a>) -> SourceGlobalAliasScope<'a> {
+    SourceGlobalAliasScope {
+        program: alias_scope.program,
+        expressions: alias_scope.expressions.clone(),
+        expression_arrays: alias_scope.expression_arrays.clone(),
+        static_values: alias_scope.static_values.clone(),
+    }
 }
 
 fn source_expr_alias_declaration(statement: &FunctionStatement) -> bool {
