@@ -12,6 +12,7 @@ pub(crate) struct SourceChallengeSlotMetadata {
     pub(crate) stage: u32,
     pub(crate) stage_id: u32,
     pub(crate) dimension: u32,
+    pub(crate) lengths: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,12 +79,13 @@ struct SourcePublicSlot {
     lengths: Vec<u32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct SourceChallengeSlot {
     id: u32,
     stage: u32,
     stage_id: u32,
     dimension: u32,
+    lengths: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -208,6 +210,7 @@ impl SourceScalarSlots {
                         stage: value.stage,
                         stage_id: value.stage_id,
                         dimension: value.dimension,
+                        lengths: value.lengths.clone(),
                     },
                 )
             })
@@ -785,6 +788,11 @@ impl SourceScalarSlots {
         }
 
         if let Some(slot) = self.proof_values.get(name) {
+            let index = linear_source_index(name, indices, &slot.lengths)?;
+            return self.operand_index_at(name, index, row_offset);
+        }
+
+        if let Some(slot) = self.challenges.get(name) {
             let index = linear_source_index(name, indices, &slot.lengths)?;
             return self.operand_index_at(name, index, row_offset);
         }

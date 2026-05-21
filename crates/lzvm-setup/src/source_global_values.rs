@@ -28,10 +28,11 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct SourceChallengeShape {
     stage: usize,
     dimension: u32,
+    lengths: Vec<u32>,
 }
 
 pub(crate) fn source_public_values(
@@ -629,7 +630,11 @@ fn source_push_challenge_slots(
         let name = source_item_name(program, item, "source challenge", declaration_values)?;
         let lengths = source_item_lengths(program, item, "source challenge", declaration_values)?;
         let dimension = source_column_dimension(&lengths, "source challenge")?;
-        let shape = SourceChallengeShape { stage, dimension };
+        let shape = SourceChallengeShape {
+            stage,
+            dimension,
+            lengths: lengths.clone(),
+        };
         if let Some(existing) = seen.get(&name) {
             if *existing != shape {
                 return unsupported("duplicate source challenge name");
@@ -651,6 +656,7 @@ fn source_push_challenge_slots(
                 .map_err(|_| unsupported_source_message("source challenge stage overflow"))?,
             stage_id,
             dimension,
+            lengths,
         });
     }
     Ok(())
