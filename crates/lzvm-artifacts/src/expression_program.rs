@@ -1,6 +1,8 @@
 use std::fmt;
 use std::path::Path;
 
+use lzvm_field::{Felt, FieldError};
+
 use crate::sectioned::{
     encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
@@ -59,6 +61,10 @@ pub enum ExpressionProgramError {
     Io {
         message: String,
     },
+    NumberNonCanonical {
+        index: usize,
+        source: FieldError,
+    },
     OperationSpanOutOfBounds {
         expression_id: u32,
     },
@@ -92,6 +98,10 @@ impl fmt::Display for ExpressionProgramError {
             }
             Self::LengthOverflow => write!(f, "expression program length overflow"),
             Self::Io { message } => write!(f, "expression program io error: {message}"),
+            Self::NumberNonCanonical { index, source } => write!(
+                f,
+                "expression program number {index} is non-canonical: {source}"
+            ),
             Self::OperationSpanOutOfBounds { expression_id } => {
                 write!(f, "operation span is out of bounds for expression {expression_id}")
             }
@@ -102,7 +112,24 @@ impl fmt::Display for ExpressionProgramError {
     }
 }
 
-impl std::error::Error for ExpressionProgramError {}
+impl std::error::Error for ExpressionProgramError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Sectioned(error) => Some(error),
+            Self::NumberNonCanonical { source, .. } => Some(source),
+            Self::MissingExpressionSection
+            | Self::UnexpectedTrailingBytes { .. }
+            | Self::UnexpectedEof { .. }
+            | Self::MissingStringTerminator { .. }
+            | Self::InvalidUtf8
+            | Self::StringContainsNul { .. }
+            | Self::LengthOverflow
+            | Self::Io { .. }
+            | Self::OperationSpanOutOfBounds { .. }
+            | Self::ArgumentSpanOutOfBounds { .. } => None,
+        }
+    }
+}
 
 pub fn read_expression_program_file(
     path: impl AsRef<Path>,
@@ -201,8 +228,10 @@ fn parse_expression_section(bytes: &[u8]) -> Result<ExpressionProgram, Expressio
         return Err(ExpressionProgramError::LengthOverflow);
     }
     let mut numbers = Vec::with_capacity(numbers_count);
-    for _ in 0..numbers_count {
-        numbers.push(reader.read_u64()?);
+    for index in 0..numbers_count {
+        let value = reader.read_u64()?;
+        validate_number(index, value)?;
+        numbers.push(value);
     }
 
     if reader.position() != bytes.len() {
@@ -268,8 +297,9 @@ fn encode_expression_section(
     for value in &program.args {
         write_u16(&mut out, *value);
     }
-    for value in &program.numbers {
-        write_u64(&mut out, *value);
+    for (index, value) in program.numbers.iter().copied().enumerate() {
+        validate_number(index, value)?;
+        write_u64(&mut out, value);
     }
 
     Ok(out)
@@ -304,6 +334,12 @@ fn validate_spans(program: &ExpressionProgram) -> Result<(), ExpressionProgramEr
         }
     }
     Ok(())
+}
+
+fn validate_number(index: usize, value: u64) -> Result<(), ExpressionProgramError> {
+    Felt::from_canonical(value)
+        .map(|_| ())
+        .map_err(|source| ExpressionProgramError::NumberNonCanonical { index, source })
 }
 
 fn write_u16(out: &mut Vec<u8>, value: u16) {

@@ -5,8 +5,11 @@ use lzvm_artifacts::expression_program::{
 use lzvm_artifacts::sectioned::{
     encode_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
+use lzvm_field::FieldError;
 use std::fs;
 use std::path::PathBuf;
+
+const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
 
 fn sample_program() -> ExpressionProgram {
     ExpressionProgram {
@@ -56,6 +59,10 @@ fn temp_file_path(name: &str) -> PathBuf {
 }
 
 fn push_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_u64(out: &mut Vec<u8>, value: u64) {
     out.extend_from_slice(&value.to_le_bytes());
 }
 
@@ -210,6 +217,39 @@ fn rejects_numbers_count_that_exceeds_remaining_numbers() {
     assert!(matches!(
         parse_expression_program(&bytes),
         Err(ExpressionProgramError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_non_canonical_expression_numbers() {
+    let mut program = sample_program();
+    program.numbers[1] = NON_CANONICAL_FIELD;
+
+    assert!(matches!(
+        encode_expression_program(&program),
+        Err(ExpressionProgramError::NumberNonCanonical {
+            index: 1,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        })
+    ));
+}
+
+#[test]
+fn rejects_non_canonical_expression_numbers_when_parsing() {
+    let mut section = counted_section(0, 0, 1, 0);
+    push_u64(&mut section, NON_CANONICAL_FIELD);
+    let bytes = wrap_expression_section(section);
+
+    assert!(matches!(
+        parse_expression_program(&bytes),
+        Err(ExpressionProgramError::NumberNonCanonical {
+            index: 0,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        })
     ));
 }
 
