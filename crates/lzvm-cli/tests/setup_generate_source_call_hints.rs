@@ -177,6 +177,44 @@ fn generate_key_skips_satisfied_source_static_assert_calls_with_messages() {
 }
 
 #[test]
+fn generate_key_rejects_failed_source_static_assert_calls() {
+    let dir = temp_dir("failed-source-static-assert");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "constant N = 2;\n\
+         airtemplate UnitA() {\n\
+             assert(N == 3, `N is ${N}`);\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "setup key generation failed: source static assertion failed: assert(N == 3, `N is ${N}`)\n"
+    );
+}
+
+#[test]
 fn generate_key_skips_source_static_array_length_assert_calls() {
     let dir = temp_dir("source-static-array-length-assert");
     let _ = fs::remove_dir_all(&dir);

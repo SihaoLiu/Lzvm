@@ -77,6 +77,9 @@ pub enum SourceKeyDirectoryMetadataError {
     UnsupportedSourceProgram {
         message: String,
     },
+    StaticAssertionFailed {
+        line: String,
+    },
 }
 
 struct SourceUnitMetadataPayload {
@@ -117,6 +120,9 @@ impl fmt::Display for SourceKeyDirectoryMetadataError {
             Self::UnsupportedSourceProgram { message } => {
                 write!(f, "unsupported source setup metadata: {message}")
             }
+            Self::StaticAssertionFailed { line } => {
+                write!(f, "source static assertion failed: {line}")
+            }
         }
     }
 }
@@ -134,7 +140,7 @@ impl std::error::Error for SourceKeyDirectoryMetadataError {
             Self::Setup(error) => Some(error),
             Self::Parse(error) => Some(error),
             Self::Lex { source, .. } => Some(source),
-            Self::UnsupportedSourceProgram { .. } => None,
+            Self::UnsupportedSourceProgram { .. } | Self::StaticAssertionFailed { .. } => None,
         }
     }
 }

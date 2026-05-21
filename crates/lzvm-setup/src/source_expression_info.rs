@@ -318,7 +318,7 @@ fn lower_source_template_statement(
     ) {
         return Ok(());
     }
-    if source_static_assertion(context.program, statement.value_expression.as_ref(), values) {
+    if source_static_assertion(context.program, context.module, statement, values)? {
         return Ok(());
     }
     if let Some(update) =
@@ -827,16 +827,24 @@ fn source_call_expression(expression: Option<&Expression>) -> Option<(&str, &[Ca
 
 fn source_static_assertion(
     program: &SourceProgram,
-    expression: Option<&Expression>,
+    module: &SourceProgramModule,
+    statement: &FunctionStatement,
     values: &BTreeMap<String, FixedFileTemplateValue>,
-) -> bool {
-    let Some((name, arguments)) = source_call_expression(expression) else {
-        return false;
+) -> Result<bool, SourceKeyDirectoryMetadataError> {
+    let Some((name, arguments)) = source_call_expression(statement.value_expression.as_ref())
+    else {
+        return Ok(false);
     };
     if name != "assert" || !(1..=2).contains(&arguments.len()) || arguments[0].name.is_some() {
-        return false;
+        return Ok(false);
     }
-    source_static_condition(program, &arguments[0].value, values).unwrap_or(false)
+    match source_static_condition(program, &arguments[0].value, values) {
+        Some(true) => Ok(true),
+        Some(false) => Err(SourceKeyDirectoryMetadataError::StaticAssertionFailed {
+            line: source_statement_line(module, statement),
+        }),
+        None => Ok(false),
+    }
 }
 
 fn source_static_condition(
@@ -923,8 +931,10 @@ fn lower_source_function_body_statement(
         context.program,
         statement.value_expression.as_ref(),
         values,
-    ) || source_static_assertion(context.program, statement.value_expression.as_ref(), values)
-    {
+    ) {
+        return Ok(true);
+    }
+    if source_static_assertion(context.program, context.module, statement, values)? {
         return Ok(true);
     }
     let lookup_inputs = SourceLookupInputs {
