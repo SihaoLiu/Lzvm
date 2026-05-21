@@ -10,14 +10,19 @@ use crate::{
     source_control_body_cache::SourceControlBodyCache,
     source_expression_aliases::collect_source_template_expression_alias,
     source_key_directory::SourceKeyDirectoryMetadataError,
-    source_static_values::evaluate_source_static_expression,
+    source_static_values::{
+        evaluate_source_static_expression, insert_source_static_array,
+        source_static_array_expression,
+    },
     source_template_for::source_static_for_loop_with_tokens,
     source_template_if::source_static_if_body_statements_with_tokens,
 };
 
 use super::{
-    lower_top_level_global_constraint, SourceGlobalAliasScope, SourceGlobalConstraintBuilder,
-    SourceGlobalExpressionAliases, SourceTopLevelGlobalConstraintContext,
+    lower_top_level_global_constraint, source_global_expression_array_alias,
+    SourceGlobalAliasScope, SourceGlobalConstraintBuilder, SourceGlobalExpressionAliases,
+    SourceGlobalExpressionArrayAlias, SourceGlobalExpressionArrayAliases,
+    SourceTopLevelGlobalConstraintContext,
 };
 
 pub(super) fn lower_top_level_function_call(
@@ -67,6 +72,10 @@ pub(super) fn lower_top_level_function_call(
         }
         body_alias_scope.static_values = bindings.values.clone();
         collect_source_template_expression_alias(statement, &mut body_alias_scope.expressions);
+        collect_source_global_expression_array_alias(
+            statement,
+            &mut body_alias_scope.expression_arrays,
+        );
     }
     Ok(true)
 }
@@ -118,6 +127,7 @@ fn source_function_call_bindings<'a>(
             &argument.value,
             &mut function_values,
             &mut function_alias_scope.expressions,
+            &mut function_alias_scope.expression_arrays,
         )?;
         if argument.name.is_none() {
             positional_index = positional_index.checked_add(1)?;
@@ -133,6 +143,7 @@ fn source_function_call_bindings<'a>(
             parameter,
             &mut function_values,
             &mut function_alias_scope.expressions,
+            &mut function_alias_scope.expression_arrays,
         )?;
     }
 
@@ -149,6 +160,7 @@ fn bind_source_function_argument(
     expression: &Expression,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: &mut SourceGlobalExpressionAliases,
+    expression_array_aliases: &mut SourceGlobalExpressionArrayAliases,
 ) -> Option<()> {
     if source_expr_parameter(parameter) {
         if expression_name(expression) == Some(parameter.name.as_str()) {
@@ -157,12 +169,26 @@ fn bind_source_function_argument(
         expression_aliases.insert(parameter.name.clone(), expression.clone());
         return Some(());
     }
-    if !source_const_scalar_parameter(parameter) {
+    if source_expr_array_parameter(parameter) {
+        insert_source_expr_array_static_values(program, expression, values, &parameter.name)?;
+        let alias = source_global_expression_array_alias(expression)?;
+        if matches!(&alias, SourceGlobalExpressionArrayAlias::Name(name) if name == &parameter.name)
+        {
+            return Some(());
+        }
+        expression_array_aliases.insert(parameter.name.clone(), alias);
+        return Some(());
+    }
+    if source_const_parameter(parameter) && parameter.array_dims.is_empty() {
+        let value = evaluate_source_static_expression(program, expression, values)?;
+        values.insert(parameter.name.clone(), value);
+        return Some(());
+    }
+    if !source_const_parameter(parameter) {
         return None;
     }
-    let value = evaluate_source_static_expression(program, expression, values)?;
-    values.insert(parameter.name.clone(), value);
-    Some(())
+    let elements = source_static_array_expression(program, expression, values)?;
+    insert_source_static_array(values, &parameter.name, elements)
 }
 
 fn bind_source_function_default(
@@ -170,18 +196,29 @@ fn bind_source_function_default(
     parameter: &FunctionParameter,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
     expression_aliases: &mut SourceGlobalExpressionAliases,
+    expression_array_aliases: &mut SourceGlobalExpressionArrayAliases,
 ) -> Option<()> {
     let expression = parameter.default_expression.as_ref()?;
     if source_expr_parameter(parameter) {
         expression_aliases.insert(parameter.name.clone(), expression.clone());
         return Some(());
     }
-    if !source_const_scalar_parameter(parameter) {
+    if source_expr_array_parameter(parameter) {
+        insert_source_expr_array_static_values(program, expression, values, &parameter.name)?;
+        let alias = source_global_expression_array_alias(expression)?;
+        expression_array_aliases.insert(parameter.name.clone(), alias);
+        return Some(());
+    }
+    if source_const_parameter(parameter) && parameter.array_dims.is_empty() {
+        let value = evaluate_source_static_expression(program, expression, values)?;
+        values.insert(parameter.name.clone(), value);
+        return Some(());
+    }
+    if !source_const_parameter(parameter) {
         return None;
     }
-    let value = evaluate_source_static_expression(program, expression, values)?;
-    values.insert(parameter.name.clone(), value);
-    Some(())
+    let elements = source_static_array_expression(program, expression, values)?;
+    insert_source_static_array(values, &parameter.name, elements)
 }
 
 fn lower_function_body_statement(
@@ -194,7 +231,8 @@ fn lower_function_body_statement(
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
         return Ok(apply_static_declaration(context.program, statement, values)
-            || source_expr_alias_declaration(statement));
+            || source_expr_alias_declaration(statement)
+            || source_expr_array_alias_declaration(statement));
     }
     if statement.kind == FunctionStatementKind::If {
         return match source_static_if_body_statements_with_tokens(
@@ -223,6 +261,10 @@ fn lower_function_body_statement(
                     collect_source_template_expression_alias(
                         body_statement,
                         &mut body_alias_scope.expressions,
+                    );
+                    collect_source_global_expression_array_alias(
+                        body_statement,
+                        &mut body_alias_scope.expression_arrays,
                     );
                 }
                 Ok(true)
@@ -265,6 +307,10 @@ fn lower_function_body_statement(
                         collect_source_template_expression_alias(
                             body_statement,
                             &mut loop_alias_scope.expressions,
+                        );
+                        collect_source_global_expression_array_alias(
+                            body_statement,
+                            &mut loop_alias_scope.expression_arrays,
                         );
                     }
                 }
@@ -309,6 +355,18 @@ fn restore_static_value(
     }
 }
 
+fn insert_source_expr_array_static_values(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    target_name: &str,
+) -> Option<()> {
+    if let Some(elements) = source_static_array_expression(program, expression, values) {
+        return insert_source_static_array(values, target_name, elements);
+    }
+    Some(())
+}
+
 fn apply_static_declaration(
     program: &SourceProgram,
     statement: &FunctionStatement,
@@ -350,12 +408,45 @@ fn source_expr_alias_declaration(statement: &FunctionStatement) -> bool {
         && declaration.initializer_expression.is_some()
 }
 
+fn source_expr_array_alias_declaration(statement: &FunctionStatement) -> bool {
+    let Some(FunctionStatementDeclaration::Constant(declaration)) = statement.declaration.as_ref()
+    else {
+        return false;
+    };
+    declaration.type_name.as_deref() == Some("expr")
+        && !declaration.array_dims.is_empty()
+        && declaration.initializer_expression.is_some()
+}
+
+fn collect_source_global_expression_array_alias(
+    statement: &FunctionStatement,
+    expression_array_aliases: &mut SourceGlobalExpressionArrayAliases,
+) {
+    let Some(FunctionStatementDeclaration::Constant(declaration)) = statement.declaration.as_ref()
+    else {
+        return;
+    };
+    if declaration.type_name.as_deref() != Some("expr") || declaration.array_dims.is_empty() {
+        return;
+    }
+    let Some(expression) = declaration.initializer_expression.as_ref() else {
+        return;
+    };
+    if let Some(alias) = source_global_expression_array_alias(expression) {
+        expression_array_aliases.insert(declaration.name.clone(), alias);
+    }
+}
+
 fn source_expr_parameter(parameter: &FunctionParameter) -> bool {
     !parameter.by_reference && parameter.array_dims.is_empty() && parameter.type_name == "expr"
 }
 
-fn source_const_scalar_parameter(parameter: &FunctionParameter) -> bool {
-    parameter.is_const && !parameter.by_reference && parameter.array_dims.is_empty()
+fn source_expr_array_parameter(parameter: &FunctionParameter) -> bool {
+    !parameter.by_reference && !parameter.array_dims.is_empty() && parameter.type_name == "expr"
+}
+
+fn source_const_parameter(parameter: &FunctionParameter) -> bool {
+    parameter.is_const && !parameter.by_reference
 }
 
 fn source_call_expression(expression: &Expression) -> Option<(&str, &[CallArgument])> {
