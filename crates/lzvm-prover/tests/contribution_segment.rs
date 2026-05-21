@@ -1,5 +1,6 @@
 use lzvm_artifacts::contribution_segment::{
-    encode_contribution_segment, ContributionEntry, ContributionSegment, CONTRIBUTION_SEGMENT_ID,
+    encode_contribution_segment, ContributionEntry, ContributionSegment, ContributionSegmentError,
+    CONTRIBUTION_SEGMENT_ID,
 };
 use lzvm_artifacts::global_info::{CurveKind, GlobalAir, GlobalInfo, NamedStageValue};
 use lzvm_artifacts::proof::{encode_proof_artifact, parse_proof_artifact, ProofArtifact};
@@ -13,6 +14,8 @@ use lzvm_prover::contribution::{
     ContributionChallengeError, InternalContributionInput, LoadContributionSegmentError,
     ProveContributionEntry,
 };
+
+const FIRST_CONTRIBUTION_VALUE_OFFSET: usize = 12 + 4 + 4 + 4 + 4;
 
 fn sample_entries() -> Vec<ProveContributionEntry> {
     vec![
@@ -159,15 +162,17 @@ fn rejects_duplicate_contribution_segments() {
 
 #[test]
 fn rejects_non_canonical_contribution_values() {
-    let bytes = encode_contribution_segment(&ContributionSegment {
+    let mut bytes = encode_contribution_segment(&ContributionSegment {
         entries: vec![ContributionEntry {
             worker_index: 0,
             group_id: 0,
             aggregated: false,
-            values: vec![u64::MAX],
+            values: vec![7],
         }],
     })
     .expect("segment should encode");
+    bytes[FIRST_CONTRIBUTION_VALUE_OFFSET..FIRST_CONTRIBUTION_VALUE_OFFSET + 8]
+        .copy_from_slice(&u64::MAX.to_le_bytes());
     let segment = lzvm_artifacts::proof::ProofSegment {
         id: CONTRIBUTION_SEGMENT_ID,
         data: bytes,
@@ -175,11 +180,14 @@ fn rejects_non_canonical_contribution_values() {
 
     assert!(matches!(
         load_contribution_segment_from_segments(&[segment]),
-        Err(LoadContributionSegmentError::NonCanonicalValue {
-            entry_index: 0,
-            index: 0,
-            source: FieldError::NonCanonical { value: u64::MAX },
-        })
+        Err(LoadContributionSegmentError::Segment(
+            ContributionSegmentError::ValueNonCanonical {
+                worker_index: 0,
+                group_id: 0,
+                value_index: 0,
+                source: FieldError::NonCanonical { value: u64::MAX },
+            }
+        ))
     ));
 }
 

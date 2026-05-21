@@ -3,6 +3,9 @@ use lzvm_artifacts::contribution_segment::{
     ContributionSegment, ContributionSegmentError,
 };
 
+const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
+const FIRST_VALUE_OFFSET: usize = 12 + 4 + 4 + 4 + 4;
+
 fn sample_segment() -> ContributionSegment {
     ContributionSegment {
         entries: vec![
@@ -65,6 +68,32 @@ fn rejects_empty_contribution_segments() {
         encode_contribution_segment(&segment),
         Err(ContributionSegmentError::EmptyEntries)
     ));
+}
+
+#[test]
+fn rejects_non_canonical_contribution_values() {
+    let mut segment = sample_segment();
+    segment.entries[1].values[1] = NON_CANONICAL_FIELD;
+
+    let err = encode_contribution_segment(&segment).expect_err("value should be rejected");
+    assert_eq!(
+        err.to_string(),
+        "contribution entry worker 2 group 1 value 1 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_non_canonical_contribution_values_when_parsing() {
+    let mut encoded =
+        encode_contribution_segment(&sample_segment()).expect("segment should encode");
+    encoded[FIRST_VALUE_OFFSET + 8..FIRST_VALUE_OFFSET + 16]
+        .copy_from_slice(&NON_CANONICAL_FIELD.to_le_bytes());
+
+    let err = parse_contribution_segment(&encoded).expect_err("value should be rejected");
+    assert_eq!(
+        err.to_string(),
+        "contribution entry worker 0 group 0 value 1 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
 }
 
 #[test]

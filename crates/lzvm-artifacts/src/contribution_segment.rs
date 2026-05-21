@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+use lzvm_field::{Felt, FieldError};
+
 pub const CONTRIBUTION_SEGMENT_ID: u32 = 10_011;
 
 const CONTRIBUTION_MAGIC: [u8; 4] = *b"ctr0";
@@ -25,13 +27,34 @@ pub struct ContributionEntry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContributionSegmentError {
     InvalidMagic,
-    UnsupportedVersion { version: u32 },
-    UnexpectedEof { needed: usize, available: usize },
-    TrailingBytes { trailing: usize },
+    UnsupportedVersion {
+        version: u32,
+    },
+    UnexpectedEof {
+        needed: usize,
+        available: usize,
+    },
+    TrailingBytes {
+        trailing: usize,
+    },
     EmptyEntries,
-    EmptyValues { worker_index: u32, group_id: u32 },
-    DuplicateEntry { worker_index: u32, group_id: u32 },
-    InvalidAggregatedFlag { value: u32 },
+    EmptyValues {
+        worker_index: u32,
+        group_id: u32,
+    },
+    DuplicateEntry {
+        worker_index: u32,
+        group_id: u32,
+    },
+    InvalidAggregatedFlag {
+        value: u32,
+    },
+    ValueNonCanonical {
+        worker_index: u32,
+        group_id: u32,
+        value_index: usize,
+        source: FieldError,
+    },
     LengthOverflow,
 }
 
@@ -69,12 +92,36 @@ impl fmt::Display for ContributionSegmentError {
             Self::InvalidAggregatedFlag { value } => {
                 write!(f, "invalid contribution aggregated flag: {value}")
             }
+            Self::ValueNonCanonical {
+                worker_index,
+                group_id,
+                value_index,
+                source,
+            } => write!(
+                f,
+                "contribution entry worker {worker_index} group {group_id} value {value_index} is non-canonical: {source}"
+            ),
             Self::LengthOverflow => write!(f, "contribution segment length overflow"),
         }
     }
 }
 
-impl std::error::Error for ContributionSegmentError {}
+impl std::error::Error for ContributionSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ValueNonCanonical { source, .. } => Some(source),
+            Self::InvalidMagic
+            | Self::UnsupportedVersion { .. }
+            | Self::UnexpectedEof { .. }
+            | Self::TrailingBytes { .. }
+            | Self::EmptyEntries
+            | Self::EmptyValues { .. }
+            | Self::DuplicateEntry { .. }
+            | Self::InvalidAggregatedFlag { .. }
+            | Self::LengthOverflow => None,
+        }
+    }
+}
 
 pub fn encode_contribution_segment(
     value: &ContributionSegment,
@@ -176,6 +223,16 @@ fn validate_contribution_segment(
                 worker_index: entry.worker_index,
                 group_id: entry.group_id,
             });
+        }
+        for (value_index, value) in entry.values.iter().copied().enumerate() {
+            Felt::from_canonical(value).map_err(|source| {
+                ContributionSegmentError::ValueNonCanonical {
+                    worker_index: entry.worker_index,
+                    group_id: entry.group_id,
+                    value_index,
+                    source,
+                }
+            })?;
         }
     }
     Ok(())
