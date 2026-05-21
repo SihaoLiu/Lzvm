@@ -509,13 +509,17 @@ fn sequence_progression_count(
     let previous = previous_value.ok_or_else(|| {
         unsupported_source_message("source fixed-column progression needs explicit metadata")
     })?;
-    let current = parse_i128_static_integer(context, item[..progression_index].trim())?;
+    let (current, repeat) =
+        parse_progression_endpoint_count(context, item[..progression_index].trim())?;
     let last_start = progression_index + kind.marker_len();
     let last = item.get(last_start..).unwrap_or_default().trim();
     if last.is_empty() {
         return unsupported("source fixed-column progression needs explicit metadata");
     }
-    let last = parse_i128_static_integer(context, last)?;
+    let (last, last_repeat) = parse_progression_endpoint_count(context, last)?;
+    if repeat != last_repeat {
+        return unsupported("source fixed-column progression repeat counts must match");
+    }
     let len = match kind {
         SequenceProgressionKind::Add => {
             let step = current
@@ -527,6 +531,9 @@ fn sequence_progression_count(
             sequence_mul_or_div_progression_len(previous, current, last)?
         }
     };
+    let len = len
+        .checked_mul(repeat)
+        .ok_or_else(|| unsupported_source_message("source progression length overflow"))?;
     Ok(SequenceItemCount {
         len,
         last_value: Some(last),
@@ -680,6 +687,17 @@ fn parse_range_endpoint_count(
     };
     let value = parse_i128_static_integer(context, value.trim())?;
     let repeat = parse_u64_static_integer(context, repeat.trim())?;
+    Ok((value, repeat))
+}
+
+fn parse_progression_endpoint_count(
+    context: &SequenceCountContext<'_>,
+    value: &str,
+) -> Result<(i128, u64), SourceKeyDirectoryMetadataError> {
+    let (value, repeat) = parse_range_endpoint_count(context, value)?;
+    if repeat == 0 {
+        return unsupported("source fixed-column progression repeat count must be positive");
+    }
     Ok((value, repeat))
 }
 

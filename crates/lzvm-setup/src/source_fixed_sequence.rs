@@ -826,7 +826,7 @@ fn append_sequence_add_progression(
                 source_span: context.source_span,
                 token: context.tokens[progression_index].lexeme.clone(),
             })?;
-    let current = parse_sequence_expression(context, start, progression_index)?;
+    let (current, repeat) = parse_progression_endpoint(context, start, progression_index)?;
     let step = current.checked_sub(previous).ok_or_else(|| {
         SourceFixedColumnsWriteError::IntegerOutOfRange {
             source_name: context.source_name.to_owned(),
@@ -841,10 +841,11 @@ fn append_sequence_add_progression(
         row_count,
     };
     if progression_index + 1 == end {
-        return append_add_progression_fill(values, &segment, current, step);
+        return append_add_progression_fill(values, &segment, current, step, repeat);
     }
-    let last = parse_sequence_expression(context, progression_index + 1, end)?;
-    append_add_progression_values(values, &segment, current, last, step)
+    let (last, last_repeat) = parse_progression_endpoint(context, progression_index + 1, end)?;
+    validate_progression_endpoint_repeats(&segment, repeat, last_repeat)?;
+    append_add_progression_values(values, &segment, current, last, step, repeat)
 }
 
 fn append_add_progression_fill(
@@ -852,10 +853,11 @@ fn append_add_progression_fill(
     segment: &ProgressionSegment<'_, '_>,
     current: i128,
     step: i128,
+    repeat: usize,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     let mut value = current;
     while values.len() < segment.row_count {
-        push_progression_value(values, segment, value)?;
+        push_repeated_progression_value_truncated(values, segment, value, repeat);
         if values.len() < segment.row_count {
             value = value.checked_add(step).ok_or_else(|| {
                 SourceFixedColumnsWriteError::IntegerOutOfRange {
@@ -875,6 +877,7 @@ fn append_add_progression_values(
     current: i128,
     last: i128,
     step: i128,
+    repeat: usize,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     if (step > 0 && current > last)
         || (step < 0 && current < last)
@@ -885,7 +888,7 @@ fn append_add_progression_values(
 
     let mut value = current;
     loop {
-        push_progression_value(values, segment, value)?;
+        push_repeated_progression_value(values, segment, value, repeat)?;
         if value == last {
             break;
         }
@@ -919,7 +922,7 @@ fn append_sequence_mul_progression(
                 source_span: context.source_span,
                 token: context.tokens[progression_index].lexeme.clone(),
             })?;
-    let current = parse_sequence_expression(context, start, progression_index)?;
+    let (current, repeat) = parse_progression_endpoint(context, start, progression_index)?;
 
     let segment = ProgressionSegment {
         context,
@@ -930,10 +933,13 @@ fn append_sequence_mul_progression(
     if progression_uses_omega(&segment) {
         let factor = field_progression_factor(previous, current, &segment)?;
         if progression_index + 1 == end {
-            return append_mul_progression_fill_field(values, &segment, current, factor);
+            return append_mul_progression_fill_field(values, &segment, current, factor, repeat);
         }
-        let last = parse_sequence_expression(context, progression_index + 1, end)?;
-        return append_mul_progression_values_field(values, &segment, current, last, factor);
+        let (last, last_repeat) = parse_progression_endpoint(context, progression_index + 1, end)?;
+        validate_progression_endpoint_repeats(&segment, repeat, last_repeat)?;
+        return append_mul_progression_values_field(
+            values, &segment, current, last, factor, repeat,
+        );
     }
 
     if previous > 0 && current >= previous && current % previous == 0 {
@@ -945,10 +951,11 @@ fn append_sequence_mul_progression(
             }
         })?;
         if progression_index + 1 == end {
-            return append_mul_progression_fill(values, &segment, current, factor);
+            return append_mul_progression_fill(values, &segment, current, factor, repeat);
         }
-        let last = parse_sequence_expression(context, progression_index + 1, end)?;
-        return append_mul_progression_values(values, &segment, current, last, factor);
+        let (last, last_repeat) = parse_progression_endpoint(context, progression_index + 1, end)?;
+        validate_progression_endpoint_repeats(&segment, repeat, last_repeat)?;
+        return append_mul_progression_values(values, &segment, current, last, factor, repeat);
     }
     if current > 0 && previous > current && previous % current == 0 {
         let divisor = u128::try_from(previous / current).map_err(|_| {
@@ -959,10 +966,11 @@ fn append_sequence_mul_progression(
             }
         })?;
         if progression_index + 1 == end {
-            return append_div_progression_fill(values, &segment, current, divisor);
+            return append_div_progression_fill(values, &segment, current, divisor, repeat);
         }
-        let last = parse_sequence_expression(context, progression_index + 1, end)?;
-        return append_div_progression_values(values, &segment, current, last, divisor);
+        let (last, last_repeat) = parse_progression_endpoint(context, progression_index + 1, end)?;
+        validate_progression_endpoint_repeats(&segment, repeat, last_repeat)?;
+        return append_div_progression_values(values, &segment, current, last, divisor, repeat);
     }
     Err(SourceFixedColumnsWriteError::UnsupportedExpression {
         source_name: context.source_name.to_owned(),
@@ -976,10 +984,11 @@ fn append_mul_progression_fill(
     segment: &ProgressionSegment<'_, '_>,
     current: i128,
     factor: u128,
+    repeat: usize,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     let mut value = current;
     while values.len() < segment.row_count {
-        push_progression_value(values, segment, value)?;
+        push_repeated_progression_value_truncated(values, segment, value, repeat);
         if values.len() < segment.row_count {
             let factor = i128::try_from(factor).map_err(|_| {
                 SourceFixedColumnsWriteError::IntegerOutOfRange {
@@ -1005,10 +1014,16 @@ fn append_mul_progression_fill_field(
     segment: &ProgressionSegment<'_, '_>,
     current: i128,
     factor: Felt,
+    repeat: usize,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     let mut value = field_progression_value(current, segment)?;
     while values.len() < segment.row_count {
-        push_progression_value(values, segment, i128::from(value.to_u64()))?;
+        push_repeated_progression_value_truncated(
+            values,
+            segment,
+            i128::from(value.to_u64()),
+            repeat,
+        );
         if values.len() < segment.row_count {
             value = value * factor;
         }
@@ -1022,6 +1037,7 @@ fn append_mul_progression_values(
     current: i128,
     last: i128,
     factor: u128,
+    repeat: usize,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     if factor <= 1 && current != last {
         return Err(progression_unsupported(segment));
@@ -1034,7 +1050,7 @@ fn append_mul_progression_values(
             expression: progression_expression(segment),
         })?;
     loop {
-        push_progression_value(values, segment, value)?;
+        push_repeated_progression_value(values, segment, value, repeat)?;
         if value == last {
             break;
         }
@@ -1058,11 +1074,12 @@ fn append_mul_progression_values_field(
     current: i128,
     last: i128,
     factor: Felt,
+    repeat: usize,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     let mut value = field_progression_value(current, segment)?;
     let last = field_progression_value(last, segment)?;
     loop {
-        push_progression_value(values, segment, i128::from(value.to_u64()))?;
+        push_repeated_progression_value(values, segment, i128::from(value.to_u64()), repeat)?;
         if value == last {
             break;
         }
@@ -1076,6 +1093,7 @@ fn append_div_progression_fill(
     segment: &ProgressionSegment<'_, '_>,
     current: i128,
     divisor: u128,
+    repeat: usize,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     let mut value = current;
     let divisor =
@@ -1085,7 +1103,7 @@ fn append_div_progression_fill(
             expression: progression_expression(segment),
         })?;
     while values.len() < segment.row_count {
-        push_progression_value(values, segment, value)?;
+        push_repeated_progression_value_truncated(values, segment, value, repeat);
         if values.len() < segment.row_count {
             if value % divisor != 0 {
                 return Err(progression_unsupported(segment));
@@ -1102,6 +1120,7 @@ fn append_div_progression_values(
     current: i128,
     last: i128,
     divisor: u128,
+    repeat: usize,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     if divisor <= 1 && current != last {
         return Err(progression_unsupported(segment));
@@ -1114,7 +1133,7 @@ fn append_div_progression_values(
             expression: progression_expression(segment),
         })?;
     loop {
-        push_progression_value(values, segment, value)?;
+        push_repeated_progression_value(values, segment, value, repeat)?;
         if value == last {
             break;
         }
@@ -1127,6 +1146,60 @@ fn append_div_progression_values(
         }
     }
     Ok(())
+}
+
+fn parse_progression_endpoint(
+    context: &SequenceParseContext<'_>,
+    start: usize,
+    end: usize,
+) -> Result<(i128, usize), SourceFixedColumnsWriteError> {
+    let (value, repeat) = parse_range_endpoint(context, start, end)?;
+    if repeat == 0 {
+        return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
+            source_name: context.source_name.to_owned(),
+            source_span: context.source_span,
+            expression: segment_text(context, start, end),
+        });
+    }
+    Ok((value, repeat))
+}
+
+fn validate_progression_endpoint_repeats(
+    segment: &ProgressionSegment<'_, '_>,
+    repeat: usize,
+    last_repeat: usize,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    if repeat == last_repeat {
+        Ok(())
+    } else {
+        Err(progression_unsupported(segment))
+    }
+}
+
+fn push_repeated_progression_value(
+    values: &mut Vec<i128>,
+    segment: &ProgressionSegment<'_, '_>,
+    value: i128,
+    repeat: usize,
+) -> Result<(), SourceFixedColumnsWriteError> {
+    for _ in 0..repeat {
+        push_progression_value(values, segment, value)?;
+    }
+    Ok(())
+}
+
+fn push_repeated_progression_value_truncated(
+    values: &mut Vec<i128>,
+    segment: &ProgressionSegment<'_, '_>,
+    value: i128,
+    repeat: usize,
+) {
+    for _ in 0..repeat {
+        if values.len() >= segment.row_count {
+            break;
+        }
+        values.push(value);
+    }
 }
 
 fn push_progression_value(
