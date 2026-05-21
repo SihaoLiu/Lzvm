@@ -29,8 +29,7 @@ pub fn source_lookup_hint_name(name: &str) -> bool {
 }
 
 pub fn source_unimplemented_hint_name(name: &str) -> bool {
-    source_lookup_hint_name(name)
-        || name == SOURCE_UNSUPPORTED_CALL_HINT
+    name == SOURCE_UNSUPPORTED_CALL_HINT
         || name == SOURCE_UNSUPPORTED_ASSIGNMENT_HINT
         || name == SOURCE_UNSUPPORTED_STATEMENT_HINT
         || name == SOURCE_UNSUPPORTED_CONSTRAINT_HINT

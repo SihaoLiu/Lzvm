@@ -7,7 +7,8 @@ use lzvm_artifacts::constraint_program::ConstraintProgram;
 use lzvm_artifacts::expression_program::ExpressionProgram;
 use lzvm_artifacts::guest_image::{read_guest_image_file, GuestImageError, GuestImageInfo};
 use lzvm_artifacts::hint_program::{
-    source_unimplemented_hint_name, HintProgram, SOURCE_UNSUPPORTED_ASSIGNMENT_HINT,
+    source_lookup_hint_name, source_unimplemented_hint_name, HintProgram,
+    SOURCE_UNSUPPORTED_ASSIGNMENT_HINT,
 };
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, read_key_directory_catalog, KeyDirectoryCatalog,
@@ -54,6 +55,7 @@ mod prove_fri_polynomial;
 mod prove_witness;
 pub mod regular_constraints;
 pub mod setup_preflight;
+mod source_lookup_hints;
 pub mod unit_values;
 pub mod verifier_eval;
 pub mod verifier_query;
@@ -870,11 +872,9 @@ fn validate_pcs_material_constant_tree_root(
 }
 
 fn validate_schedulable_global_hints(program: &HintProgram) -> Result<(), ProveScheduleError> {
-    if let Some(hint) = program
-        .hints
-        .iter()
-        .find(|hint| source_unimplemented_hint_name(&hint.name))
-    {
+    if let Some(hint) = program.hints.iter().find(|hint| {
+        source_lookup_hint_name(&hint.name) || source_unimplemented_hint_name(&hint.name)
+    }) {
         return Err(ProveScheduleError::UnsupportedGlobalHint {
             name: hint.name.clone(),
         });

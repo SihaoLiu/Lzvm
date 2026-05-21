@@ -20,6 +20,7 @@ use crate::regular_constraints::{
     evaluate_regular_constraints, RegularColumnMatrix, RegularConstraintEvalError,
     RegularConstraintInputs, RegularStageColumns,
 };
+use crate::source_lookup_hints::SourceLookupBalance;
 use crate::witness_commitment::{
     commit_witness_trace_stages_with_workers, WitnessTraceCommitmentError, WitnessTraceCommitments,
 };
@@ -190,6 +191,10 @@ pub enum ProveWitnessCommitmentError {
         unit_index: usize,
         name: String,
     },
+    SourceLookup {
+        unit_index: usize,
+        message: String,
+    },
     RegularConstraintViolation {
         unit_index: usize,
         constraint_index: usize,
@@ -326,6 +331,13 @@ impl fmt::Display for ProveWitnessCommitmentError {
                 f,
                 "unsupported regular hint {name} for prove witness commitment unit {unit_index}"
             ),
+            Self::SourceLookup {
+                unit_index,
+                message,
+            } => write!(
+                f,
+                "source lookup validation failed for prove witness commitment unit {unit_index}: {message}"
+            ),
             Self::RegularConstraintViolation {
                 unit_index,
                 constraint_index,
@@ -367,6 +379,7 @@ impl std::error::Error for ProveWitnessCommitmentError {
             | Self::MissingRegularConstraintInput { .. }
             | Self::MissingRegularHintInput { .. }
             | Self::UnsupportedRegularHint { .. }
+            | Self::SourceLookup { .. }
             | Self::RegularConstraintViolation { .. } => None,
         }
     }
@@ -759,8 +772,9 @@ fn validate_witness_regular_hints(
                 }
             });
 
+    let mut source_lookup_balance = SourceLookupBalance::default();
     for row in 0..layout.row_count() {
-        resolve_regular_hint_program_for_row(
+        let resolved = resolve_regular_hint_program_for_row(
             &plan_unit.setup,
             &plan_unit.regular_hints,
             row,
@@ -782,7 +796,9 @@ fn validate_witness_regular_hints(
             },
         )
         .map_err(|error| map_regular_hint_eval_error(unit_index, error))?;
+        source_lookup_balance.absorb(unit_index, row, &resolved)?;
     }
+    source_lookup_balance.validate(unit_index)?;
     Ok(())
 }
 
@@ -895,14 +911,19 @@ fn witness_input_path(pass: &ProvePassRequest) -> Option<&Path> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::witness_layout::derive_witness_trace_layout;
+    use crate::witness_trace::parse_witness_trace;
     use lzvm_artifacts::hint_program::{
-        Hint, HintField, HintOperand, HintValue, SOURCE_LOOKUP_PROVES_HINT,
-        SOURCE_UNSUPPORTED_ASSIGNMENT_HINT, SOURCE_UNSUPPORTED_CALL_HINT,
-        SOURCE_UNSUPPORTED_CONSTRAINT_HINT, SOURCE_UNSUPPORTED_STATEMENT_HINT,
+        Hint, HintField, HintOperand, HintValue, SOURCE_LOOKUP_ASSUMES_HINT,
+        SOURCE_LOOKUP_PROVES_HINT, SOURCE_UNSUPPORTED_ASSIGNMENT_HINT,
+        SOURCE_UNSUPPORTED_CALL_HINT, SOURCE_UNSUPPORTED_CONSTRAINT_HINT,
+        SOURCE_UNSUPPORTED_STATEMENT_HINT,
     };
+    use lzvm_artifacts::key_directory::KeyUnitKind;
+    use lzvm_artifacts::setup_info::{CommitmentColumn, FriStep, StarkStruct, UnitSetupInfo};
 
     #[test]
-    fn rejects_source_lookup_regular_hints() {
+    fn accepts_source_lookup_regular_hints_at_unsupported_gate() {
         let program = HintProgram {
             hints: vec![Hint {
                 name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
@@ -916,16 +937,86 @@ mod tests {
             }],
         };
 
-        let error = reject_unsupported_regular_hints(&program, 3)
-            .expect_err("source lookup hints should be rejected before evaluation");
+        reject_unsupported_regular_hints(&program, 3)
+            .expect("source lookup hints should reach semantic validation");
+    }
 
-        assert_eq!(
+    #[test]
+    fn accepts_balanced_source_lookup_regular_hints() {
+        let program = HintProgram {
+            hints: vec![
+                source_lookup_hint(
+                    SOURCE_LOOKUP_PROVES_HINT,
+                    "multiplicity",
+                    HintOperand::Commitment {
+                        id: 1,
+                        row_offset_index: 0,
+                    },
+                ),
+                source_lookup_hint(
+                    SOURCE_LOOKUP_ASSUMES_HINT,
+                    "selector",
+                    HintOperand::Commitment {
+                        id: 1,
+                        row_offset_index: 0,
+                    },
+                ),
+            ],
+        };
+        let plan_unit = source_lookup_plan_unit(program);
+        let schedule = source_lookup_schedule();
+        let layout = derive_witness_trace_layout(&schedule).expect("layout should derive");
+        let trace = source_lookup_trace(&[7, 1, 8, 2]);
+
+        validate_witness_regular_hints(
+            &plan_unit,
+            0,
+            &layout,
+            &trace,
+            &[],
+            &ProveWitnessAuxiliaryInputs::default(),
+        )
+        .expect("balanced lookup hints should validate");
+    }
+
+    #[test]
+    fn rejects_unbalanced_source_lookup_regular_hints() {
+        let program = HintProgram {
+            hints: vec![
+                source_lookup_hint(
+                    SOURCE_LOOKUP_PROVES_HINT,
+                    "multiplicity",
+                    HintOperand::Commitment {
+                        id: 1,
+                        row_offset_index: 0,
+                    },
+                ),
+                source_lookup_hint(
+                    SOURCE_LOOKUP_ASSUMES_HINT,
+                    "selector",
+                    HintOperand::Number(1),
+                ),
+            ],
+        };
+        let plan_unit = source_lookup_plan_unit(program);
+        let schedule = source_lookup_schedule();
+        let layout = derive_witness_trace_layout(&schedule).expect("layout should derive");
+        let trace = source_lookup_trace(&[7, 1, 8, 2]);
+
+        let error = validate_witness_regular_hints(
+            &plan_unit,
+            0,
+            &layout,
+            &trace,
+            &[],
+            &ProveWitnessAuxiliaryInputs::default(),
+        )
+        .expect_err("unbalanced lookup hints should reject");
+
+        assert!(matches!(
             error,
-            ProveWitnessCommitmentError::UnsupportedRegularHint {
-                unit_index: 3,
-                name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
-            }
-        );
+            ProveWitnessCommitmentError::SourceLookup { unit_index: 0, .. }
+        ));
     }
 
     #[test]
@@ -1026,5 +1117,174 @@ mod tests {
                 name: SOURCE_UNSUPPORTED_CONSTRAINT_HINT.to_owned(),
             }
         );
+    }
+
+    fn source_lookup_hint(name: &str, weight_field: &str, weight_operand: HintOperand) -> Hint {
+        Hint {
+            name: name.to_owned(),
+            fields: vec![
+                HintField {
+                    name: "bus_id".to_owned(),
+                    values: vec![HintValue {
+                        operand: HintOperand::Number(7),
+                        positions: Vec::new(),
+                    }],
+                },
+                HintField {
+                    name: "values".to_owned(),
+                    values: vec![HintValue {
+                        operand: HintOperand::Commitment {
+                            id: 0,
+                            row_offset_index: 0,
+                        },
+                        positions: Vec::new(),
+                    }],
+                },
+                HintField {
+                    name: weight_field.to_owned(),
+                    values: vec![HintValue {
+                        operand: weight_operand,
+                        positions: Vec::new(),
+                    }],
+                },
+            ],
+        }
+    }
+
+    fn source_lookup_plan_unit(program: HintProgram) -> ProveExecutionUnitArtifacts {
+        ProveExecutionUnitArtifacts {
+            fixed_columns: PathBuf::from("fixed.bin"),
+            expression_program: lzvm_artifacts::expression_program::ExpressionProgram {
+                max_tmp1: 0,
+                max_tmp3: 0,
+                max_args: 0,
+                max_ops: 0,
+                entries: Vec::new(),
+                ops: Vec::new(),
+                args: Vec::new(),
+                numbers: Vec::new(),
+            },
+            fri_expression_id: None,
+            regular_constraints: lzvm_artifacts::constraint_program::ConstraintProgram {
+                entries: Vec::new(),
+                ops: Vec::new(),
+                args: Vec::new(),
+                numbers: Vec::new(),
+            },
+            regular_hints: program,
+            setup: source_lookup_setup(),
+            fixed_column_count: 0,
+            stage_count: 1,
+            opening_point_offsets: vec![0],
+            group_name: "group".to_owned(),
+            unit_name: "unit".to_owned(),
+        }
+    }
+
+    fn source_lookup_setup() -> UnitSetupInfo {
+        UnitSetupInfo {
+            n_stages: 1,
+            n_constants: 0,
+            constant_columns: Vec::new(),
+            n_publics: Some(0),
+            n_constraints: Some(0),
+            q_degree: 3,
+            opening_points: vec![0],
+            section_widths: std::collections::BTreeMap::new(),
+            challenge_count: 0,
+            eval_count: 0,
+            evaluation_map: Vec::new(),
+            boundaries: Vec::new(),
+            commitment_columns: vec![
+                CommitmentColumn {
+                    name: "value".to_owned(),
+                    stage: 1,
+                    dimension: 1,
+                    pols_map_id: 0,
+                    stage_id: 0,
+                    stage_position: 0,
+                    intermediate: false,
+                    lengths: Vec::new(),
+                },
+                CommitmentColumn {
+                    name: "weight".to_owned(),
+                    stage: 1,
+                    dimension: 1,
+                    pols_map_id: 1,
+                    stage_id: 1,
+                    stage_position: 1,
+                    intermediate: false,
+                    lengths: Vec::new(),
+                },
+            ],
+            unit_value_map: Vec::new(),
+            group_value_map: Vec::new(),
+            stark: StarkStruct {
+                n_bits: 1,
+                n_bits_ext: 2,
+                n_queries: 1,
+                steps: vec![FriStep { n_bits: 2 }],
+                hash_commits: true,
+                last_level_verification: 1,
+                pow_bits: 0,
+                merkle_tree_arity: 4,
+                verification_hash_type: Some("GL".to_owned()),
+                transcript_arity: Some(4),
+                merkle_tree_custom: Some(true),
+            },
+        }
+    }
+
+    fn source_lookup_schedule() -> crate::ProveUnitSchedule {
+        crate::ProveUnitSchedule {
+            kind: KeyUnitKind::Basic,
+            group_id: Some(0),
+            unit_id: Some(0),
+            group_name: Some("group".to_owned()),
+            unit_name: Some("unit".to_owned()),
+            base_domain_bits: 1,
+            extended_domain_bits: 2,
+            base_domain_size: 2,
+            extended_domain_size: 4,
+            blowup_factor: 2,
+            query_count: 1,
+            proof_of_work_bits: 0,
+            merkle_tree_arity: 4,
+            last_level_verification: 1,
+            transcript_arity: Some(4),
+            hash_commits: true,
+            transcript_root_challenge_draws: vec![2],
+            challenge_count: 0,
+            evaluation_value_count: 0,
+            evaluation_map: Vec::new(),
+            transcript_evaluation_challenge_draws: 0,
+            constant_width: 0,
+            stage_commit_widths: vec![2],
+            commitment_columns: source_lookup_setup().commitment_columns,
+            unit_value_map: Vec::new(),
+            group_value_map: Vec::new(),
+            opening_points: vec![0],
+            fri_layers: Vec::new(),
+            final_layer_bits: 0,
+            fixed_bytes: 0,
+            constant_tree_root: None,
+            pcs_material_bytes: None,
+            pcs_material_plan_digest: None,
+            pcs_material_fixed_column_digest: None,
+            pcs_material_constant_tree_digest: None,
+            pcs_material_constant_tree_root: None,
+            pcs_material_fixed_byte_count: None,
+            pcs_material_constant_tree_byte_count: None,
+            pcs_material_leaf_byte_count: None,
+            pcs_material_node_byte_count: None,
+        }
+    }
+
+    fn source_lookup_trace(values: &[u64]) -> WitnessTraceBuffer {
+        let bytes = values
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect::<Vec<_>>();
+        parse_witness_trace(&bytes, 2, 2).expect("trace should parse")
     }
 }

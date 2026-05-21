@@ -9,6 +9,7 @@ use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
 use lzvm_artifacts::guest_image::{read_guest_image_file, GuestImageError};
 use lzvm_artifacts::hint_program::{
     Hint, HintField, HintOperand, HintProgram, HintValue, SOURCE_LOOKUP_PROVES_HINT,
+    SOURCE_UNSUPPORTED_CALL_HINT,
 };
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, KeyDirectoryCatalog, KeyDirectoryLayout, KeyUnitCatalogEntry,
@@ -535,11 +536,11 @@ fn rejects_schedules_with_unimplemented_regular_hints() {
     let mut unit = sample_unit(KeyUnitKind::Basic, 0, 128);
     unit.regular_hints = HintProgram {
         hints: vec![Hint {
-            name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
+            name: SOURCE_UNSUPPORTED_CALL_HINT.to_owned(),
             fields: vec![HintField {
                 name: "line".to_owned(),
                 values: vec![HintValue {
-                    operand: HintOperand::String("lookup_proves(7, [value])".to_owned()),
+                    operand: HintOperand::String("source_protocol_call()".to_owned()),
                     positions: Vec::new(),
                 }],
             }],
@@ -554,6 +555,61 @@ fn rejects_schedules_with_unimplemented_regular_hints() {
         error,
         ProveScheduleError::UnsupportedRegularHint {
             unit_index: 0,
+            name: SOURCE_UNSUPPORTED_CALL_HINT.to_owned(),
+        }
+    );
+}
+
+#[test]
+fn schedules_allow_structured_source_lookup_regular_hints() {
+    let mut unit = sample_unit(KeyUnitKind::Basic, 0, 128);
+    unit.regular_hints = HintProgram {
+        hints: vec![Hint {
+            name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
+            fields: vec![
+                HintField {
+                    name: "bus_id".to_owned(),
+                    values: vec![HintValue {
+                        operand: HintOperand::Number(7),
+                        positions: Vec::new(),
+                    }],
+                },
+                HintField {
+                    name: "values".to_owned(),
+                    values: vec![HintValue {
+                        operand: HintOperand::Number(11),
+                        positions: Vec::new(),
+                    }],
+                },
+            ],
+        }],
+    };
+    let catalog = sample_catalog(vec![unit]);
+
+    derive_prove_schedule(&catalog).expect("structured lookup hints should be schedulable");
+}
+
+#[test]
+fn rejects_schedules_with_global_source_lookup_hints() {
+    let mut catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 128)]);
+    catalog.global_hints = HintProgram {
+        hints: vec![Hint {
+            name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
+            fields: vec![HintField {
+                name: "values".to_owned(),
+                values: vec![HintValue {
+                    operand: HintOperand::Number(11),
+                    positions: Vec::new(),
+                }],
+            }],
+        }],
+    };
+    let error = derive_prove_schedule(&catalog)
+        .expect_err("source lookup hints should stay local to regular hint validation");
+
+    assert_eq!(
+        error,
+        ProveScheduleError::UnsupportedGlobalHint {
             name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
         }
     );
@@ -564,24 +620,23 @@ fn rejects_schedules_with_unimplemented_global_hints() {
     let mut catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 128)]);
     catalog.global_hints = HintProgram {
         hints: vec![Hint {
-            name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
+            name: SOURCE_UNSUPPORTED_CALL_HINT.to_owned(),
             fields: vec![HintField {
                 name: "line".to_owned(),
                 values: vec![HintValue {
-                    operand: HintOperand::String("lookup_proves(7, [value])".to_owned()),
+                    operand: HintOperand::String("source_protocol_call()".to_owned()),
                     positions: Vec::new(),
                 }],
             }],
         }],
     };
-
     let error = derive_prove_schedule(&catalog)
         .expect_err("unimplemented global hints should block prove scheduling");
 
     assert_eq!(
         error,
         ProveScheduleError::UnsupportedGlobalHint {
-            name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
+            name: SOURCE_UNSUPPORTED_CALL_HINT.to_owned(),
         }
     );
 }
