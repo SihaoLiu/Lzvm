@@ -5,10 +5,9 @@ use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::constraint_program::ConstraintProgram;
 use lzvm_artifacts::expression_program::ExpressionProgram;
+use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::guest_image::{read_guest_image_file, GuestImageError, GuestImageInfo};
-use lzvm_artifacts::hint_program::{
-    source_lookup_hint_name, source_unimplemented_hint_name, HintProgram,
-};
+use lzvm_artifacts::hint_program::{source_unimplemented_hint_name, HintProgram};
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, read_key_directory_catalog, KeyDirectoryCatalog,
     KeyDirectoryError, KeyUnitKind,
@@ -473,6 +472,8 @@ pub struct ProveProgramImageCache {
 pub struct ProveExecutionPlan {
     pub run_plan: ProveRunPlan,
     pub inputs: ProveExecutionInputArtifacts,
+    pub global_info: GlobalInfo,
+    pub global_hints: HintProgram,
     pub witness_library_info: Option<WitnessLibraryInfo>,
     pub guest_image_info: GuestImageInfo,
     pub program_image_cache: Option<ProveProgramImageCache>,
@@ -883,9 +884,11 @@ fn validate_pcs_material_constant_tree_root(
 }
 
 fn validate_schedulable_global_hints(program: &HintProgram) -> Result<(), ProveScheduleError> {
-    if let Some(hint) = program.hints.iter().find(|hint| {
-        source_lookup_hint_name(&hint.name) || source_unimplemented_hint_name(&hint.name)
-    }) {
+    if let Some(hint) = program
+        .hints
+        .iter()
+        .find(|hint| source_unimplemented_hint_name(&hint.name))
+    {
         return Err(ProveScheduleError::UnsupportedGlobalHint {
             name: hint.name.clone(),
         });
@@ -1015,6 +1018,8 @@ pub fn derive_prove_execution_plan_with_program_image_cache(
     Ok(ProveExecutionPlan {
         run_plan,
         inputs,
+        global_info: catalog.layout.global_info.clone(),
+        global_hints: catalog.global_hints.clone(),
         witness_library_info,
         guest_image_info,
         program_image_cache,

@@ -1,31 +1,38 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_artifacts::constraint_program::{GlobalConstraintEntry, GlobalConstraintProgram};
+use lzvm_artifacts::expression_info::{ExpressionInfo, HintInfo};
 use lzvm_artifacts::global_info::GlobalInfo;
-use lzvm_artifacts::global_program::GlobalProgram;
-use lzvm_artifacts::hint_program::HintProgram;
+use lzvm_artifacts::global_program::{GlobalProgram, GlobalProgramError};
+use lzvm_artifacts::hint_program::{global_hint_program_from_expression_info, HintProgram};
 use lzvm_artifacts::setup_info::StageValue;
 use lzvm_field::{Felt, MODULUS};
 use lzvm_pil::{
     lex_source, parse_expression, BinaryOperator, ConstantDeclaration, Expression, ExpressionKind,
-    FixedFileTemplateValue, PublicDeclaration, SourceProgram, SourceProgramModule, Token,
-    TokenKind, UnaryOperator,
+    FixedFileTemplateValue, FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind,
+    PublicDeclaration, SourceProgram, SourceProgramModule, Token, TokenKind, UnaryOperator,
 };
 
 use crate::{
-    source_control_body_cache::SourceControlBodyCaches,
+    source_constraint_lowering::SourceExpressionAliases,
+    source_control_body_cache::{SourceControlBodyCache, SourceControlBodyCaches},
     source_global_values::source_challenge_slots,
     source_key_directory::{
         source_air_group_values, source_item_lengths, source_item_name,
         SourceKeyDirectoryMetadataError,
     },
-    source_scalar_slots::SourceChallengeSlotMetadata,
+    source_scalar_slots::{SourceChallengeSlotMetadata, SourceScalarSlots},
     source_scope::{concrete_template_names, global_constraint_source_names},
-    source_static_values::{
-        evaluate_source_static_expression, source_declaration_in_static_false_branch,
-        source_scalar_constant_values, source_static_array_expression,
-        source_template_constant_value_cache, static_value_integer,
+    source_statement_hints::{
+        lower_source_lookup_statement, SourceExpressionArrayAliases, SourceLookupInputs,
     },
+    source_static_values::{
+        evaluate_source_static_expression, insert_source_static_array,
+        source_declaration_in_static_false_branch, source_scalar_constant_values,
+        source_static_array_expression, source_template_constant_value_cache, static_value_integer,
+    },
+    source_template_for::source_static_for_loop_with_tokens,
+    source_template_if::source_static_if_body_statements_with_tokens,
 };
 
 mod residuals;
@@ -67,6 +74,7 @@ pub(crate) fn source_global_program(
         challenges: &challenge_slots,
         group_values: &group_value_slots,
     };
+    let hints = source_global_hints(program, global_info, &static_values, &mut body_caches)?;
     let mut constraints = SourceGlobalConstraintBuilder::default();
     for module in &program.modules {
         if !global_source_names.contains(&module.source_name) {
@@ -89,8 +97,198 @@ pub(crate) fn source_global_program(
     }
     Ok(GlobalProgram {
         constraints: constraints.finish(),
-        hints: HintProgram { hints: Vec::new() },
+        hints,
     })
+}
+
+fn source_global_hints(
+    program: &SourceProgram,
+    global_info: &GlobalInfo,
+    static_values: &BTreeMap<String, FixedFileTemplateValue>,
+    body_caches: &mut SourceControlBodyCaches,
+) -> Result<HintProgram, SourceKeyDirectoryMetadataError> {
+    let scalar_slots =
+        SourceScalarSlots::from_global(&global_info.publics_map, &global_info.proof_values_map)
+            .map_err(|error| unsupported_source_message(error.to_string()))?;
+    let mut hints = Vec::<HintInfo>::new();
+
+    for module in &program.modules {
+        let tokens = lex_source(&module.source.contents).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: module.source_name.clone(),
+                source,
+            }
+        })?;
+        let body_cache = body_caches.module_cache(&module.source_name);
+        for group in &module.air_groups {
+            let mut values = static_values.clone();
+            let mut context = SourceGlobalHintLoweringContext {
+                program,
+                module,
+                tokens: &tokens,
+                scalar_slots: &scalar_slots,
+                body_cache,
+                hints: &mut hints,
+            };
+            for statement in &group.statements {
+                lower_source_global_hint_statement(&mut context, statement, &mut values)?;
+            }
+        }
+    }
+
+    let expression_info = ExpressionInfo {
+        hints,
+        expressions: Vec::new(),
+        constraints: Vec::new(),
+    };
+    global_hint_program_from_expression_info(&expression_info).map_err(|error| {
+        SourceKeyDirectoryMetadataError::GlobalProgram(GlobalProgramError::Hints(error))
+    })
+}
+
+struct SourceGlobalHintLoweringContext<'a, 'b> {
+    program: &'a SourceProgram,
+    module: &'a SourceProgramModule,
+    tokens: &'a [Token],
+    scalar_slots: &'a SourceScalarSlots,
+    body_cache: &'b mut SourceControlBodyCache,
+    hints: &'b mut Vec<HintInfo>,
+}
+
+fn lower_source_global_hint_statement(
+    context: &mut SourceGlobalHintLoweringContext<'_, '_>,
+    statement: &FunctionStatement,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    match statement.kind {
+        FunctionStatementKind::Declaration => {
+            apply_source_global_hint_static_declaration(context.program, statement, values);
+            Ok(())
+        }
+        FunctionStatementKind::If => {
+            match source_static_if_body_statements_with_tokens(
+                context.program,
+                context.module,
+                context.tokens,
+                statement,
+                values,
+                context.body_cache,
+            ) {
+                Ok(Some(body_statements)) => {
+                    for body_statement in body_statements.iter() {
+                        lower_source_global_hint_statement(context, body_statement, values)?;
+                    }
+                }
+                Ok(None)
+                | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
+                Err(error) => return Err(error),
+            }
+            Ok(())
+        }
+        FunctionStatementKind::For => {
+            match source_static_for_loop_with_tokens(
+                context.program,
+                context.module,
+                context.tokens,
+                statement,
+                values,
+                context.body_cache,
+            ) {
+                Ok(Some(loop_info)) => {
+                    let previous = values.get(&loop_info.variable_name).cloned();
+                    for iteration_value in &loop_info.iteration_values {
+                        values.insert(loop_info.variable_name.clone(), iteration_value.clone());
+                        for body_statement in loop_info.body_statements.iter() {
+                            lower_source_global_hint_statement(context, body_statement, values)?;
+                        }
+                    }
+                    if let Some(previous) = previous {
+                        values.insert(loop_info.variable_name, previous);
+                    } else {
+                        values.remove(&loop_info.variable_name);
+                    }
+                }
+                Ok(None)
+                | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
+                Err(error) => return Err(error),
+            }
+            Ok(())
+        }
+        FunctionStatementKind::Expression => {
+            let expression_aliases = SourceExpressionAliases::new();
+            let expression_array_aliases = SourceExpressionArrayAliases::new();
+            let lookup_inputs = SourceLookupInputs {
+                program: context.program,
+                module: context.module,
+                values,
+                expression_aliases: &expression_aliases,
+                expression_array_aliases: &expression_array_aliases,
+                scalar_slots: context.scalar_slots,
+                opening_points: &[],
+            };
+            if let Some(hint) =
+                lower_source_lookup_statement(&lookup_inputs, statement).map_err(|source| {
+                    SourceKeyDirectoryMetadataError::Lex {
+                        source_name: context.module.source_name.clone(),
+                        source,
+                    }
+                })?
+            {
+                if source_global_hint_is_structured(&hint) {
+                    context.hints.push(hint);
+                }
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn source_global_hint_is_structured(hint: &HintInfo) -> bool {
+    hint.fields.iter().all(|field| field.name != "line")
+}
+
+fn apply_source_global_hint_static_declaration(
+    program: &SourceProgram,
+    statement: &FunctionStatement,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) {
+    let Some(declaration) = statement.declaration.as_ref() else {
+        return;
+    };
+    match declaration {
+        FunctionStatementDeclaration::Constant(declaration) => {
+            let Some(expression) = declaration.initializer_expression.as_ref() else {
+                return;
+            };
+            if !declaration.array_dims.is_empty() {
+                if let Some(elements) = source_static_array_expression(program, expression, values)
+                {
+                    let _ = insert_source_static_array(values, &declaration.name, elements);
+                }
+                return;
+            }
+            if let Some(value) = evaluate_source_static_expression(program, expression, values) {
+                values.insert(declaration.name.clone(), value);
+            }
+        }
+        FunctionStatementDeclaration::Variable(declaration) => {
+            let Some(expression) = declaration.initializer_expression.as_ref() else {
+                return;
+            };
+            if !declaration.array_dims.is_empty() {
+                if let Some(elements) = source_static_array_expression(program, expression, values)
+                {
+                    let _ = insert_source_static_array(values, &declaration.name, elements);
+                }
+                return;
+            }
+            if let Some(value) = evaluate_source_static_expression(program, expression, values) {
+                values.insert(declaration.name.clone(), value);
+            }
+        }
+        FunctionStatementDeclaration::Column(_) => {}
+    }
 }
 
 fn lower_module_public_initializer_constraints(

@@ -11,8 +11,10 @@ use crate::fixed_material::FixedColumnsMaterialError;
 use crate::fri_polynomial::{
     build_fri_domain_points, FriPolynomialError, FriPolynomialZerofierTable,
 };
+use crate::global_constraints::GlobalConstraintInputs;
 use crate::hint_eval::{
-    regular_hint_input_requirements, resolve_regular_hint_program_for_row, HintEvalError,
+    regular_hint_input_requirements, resolve_global_hint_program,
+    resolve_regular_hint_program_for_row, HintEvalError,
 };
 use crate::regular_constraints::{
     evaluate_regular_constraints, RegularColumnMatrix, RegularConstraintEvalError,
@@ -186,6 +188,9 @@ pub enum ProveWitnessCommitmentError {
         unit_index: usize,
         source: HintEvalError,
     },
+    GlobalHintEval {
+        source: HintEvalError,
+    },
     UnsupportedRegularHint {
         unit_index: usize,
         name: String,
@@ -333,6 +338,9 @@ impl fmt::Display for ProveWitnessCommitmentError {
                 f,
                 "prove witness commitment regular hint evaluation failed for unit {unit_index}: {source}"
             ),
+            Self::GlobalHintEval { source } => {
+                write!(f, "prove witness commitment global hint evaluation failed: {source}")
+            }
             Self::UnsupportedRegularHint { unit_index, name } => write!(
                 f,
                 "unsupported regular hint {name} for prove witness commitment unit {unit_index}"
@@ -380,6 +388,7 @@ impl std::error::Error for ProveWitnessCommitmentError {
             Self::RegularConstraintDomainHelper { source, .. } => Some(source),
             Self::RegularConstraintEval(error) => Some(error),
             Self::RegularHintEval { source, .. } => Some(source),
+            Self::GlobalHintEval { source } => Some(source),
             Self::Commit(error) => Some(error),
             Self::UnitIndexOutOfRange { .. }
             | Self::InputData { .. }
@@ -473,13 +482,17 @@ pub fn run_prove_witness_commitments_with_trace_backend<B: WitnessBackend + ?Siz
     auxiliary_inputs: ProveWitnessAuxiliaryInputs,
     backend: &B,
 ) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
-    run_prove_witness_commitments_with_trace_backend_inner(
+    let mut source_lookup_balance = SourceLookupBalance::default();
+    let output = run_prove_witness_commitments_with_trace_backend_inner(
         plan,
         unit_index,
-        auxiliary_inputs,
+        auxiliary_inputs.clone(),
         backend,
-        None,
-    )
+        Some(&mut source_lookup_balance),
+    )?;
+    accumulate_witness_global_hints(plan, &auxiliary_inputs, &mut source_lookup_balance)?;
+    source_lookup_balance.validate_all_units()?;
+    Ok(output)
 }
 
 fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?Sized>(
@@ -580,6 +593,8 @@ pub fn run_prove_witness_commitments_for_all_units(
         })?;
         outputs.push(output);
     }
+    accumulate_witness_global_hints(plan, auxiliary_inputs, &mut source_lookup_balance)
+        .map_err(|error| error.to_string())?;
     source_lookup_balance
         .validate_all_units()
         .map_err(|error| error.to_string())?;
@@ -612,6 +627,8 @@ pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
         })?;
         outputs.push(output);
     }
+    accumulate_witness_global_hints(plan, auxiliary_inputs, &mut source_lookup_balance)
+        .map_err(|error| error.to_string())?;
     source_lookup_balance
         .validate_all_units()
         .map_err(|error| error.to_string())?;
@@ -650,6 +667,29 @@ fn public_values_to_fields(
             })
         })
         .collect()
+}
+
+fn accumulate_witness_global_hints(
+    plan: &ProveExecutionPlan,
+    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
+    source_lookup_balance: &mut SourceLookupBalance,
+) -> Result<(), ProveWitnessCommitmentError> {
+    if plan.global_hints.hints.is_empty() {
+        return Ok(());
+    }
+    let publics = load_public_inputs(plan)?;
+    let resolved = resolve_global_hint_program(
+        &plan.global_info,
+        &plan.global_hints,
+        GlobalConstraintInputs {
+            publics: &publics,
+            proof_values: &auxiliary_inputs.proof_values,
+            challenges: &auxiliary_inputs.challenges,
+            group_values: &auxiliary_inputs.group_values,
+        },
+    )
+    .map_err(|source| ProveWitnessCommitmentError::GlobalHintEval { source })?;
+    source_lookup_balance.absorb(0, 0, &resolved)
 }
 
 fn validate_witness_regular_constraints(
@@ -993,6 +1033,8 @@ mod tests {
     use super::*;
     use crate::witness_layout::derive_witness_trace_layout;
     use crate::witness_trace::parse_witness_trace;
+    use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
+    use lzvm_artifacts::guest_image::{ElfClass, ElfEndian, GuestImageInfo};
     use lzvm_artifacts::hint_program::{
         Hint, HintField, HintOperand, HintValue, SOURCE_ASSIGNMENT_CHECK_HINT,
         SOURCE_LOOKUP_ASSUMES_HINT, SOURCE_LOOKUP_PROVES_HINT, SOURCE_UNSUPPORTED_ASSIGNMENT_HINT,
@@ -1181,6 +1223,52 @@ mod tests {
     }
 
     #[test]
+    fn accepts_balanced_source_lookup_global_hints() {
+        let plan = source_lookup_global_plan(HintProgram {
+            hints: vec![
+                source_lookup_global_hint(SOURCE_LOOKUP_PROVES_HINT),
+                source_lookup_global_hint(SOURCE_LOOKUP_ASSUMES_HINT),
+            ],
+        });
+        let mut balance = SourceLookupBalance::default();
+
+        accumulate_witness_global_hints(
+            &plan,
+            &ProveWitnessAuxiliaryInputs::default(),
+            &mut balance,
+        )
+        .expect("balanced global lookup hints should accumulate");
+
+        balance
+            .validate_all_units()
+            .expect("balanced global lookup hints should validate");
+    }
+
+    #[test]
+    fn rejects_unbalanced_source_lookup_global_hints() {
+        let plan = source_lookup_global_plan(HintProgram {
+            hints: vec![source_lookup_global_hint(SOURCE_LOOKUP_PROVES_HINT)],
+        });
+        let mut balance = SourceLookupBalance::default();
+
+        accumulate_witness_global_hints(
+            &plan,
+            &ProveWitnessAuxiliaryInputs::default(),
+            &mut balance,
+        )
+        .expect("global lookup hint should accumulate");
+
+        let error = balance
+            .validate_all_units()
+            .expect_err("unbalanced global lookup hints should reject");
+
+        assert!(matches!(
+            error,
+            ProveWitnessCommitmentError::SourceLookupSet { .. }
+        ));
+    }
+
+    #[test]
     fn rejects_unsupported_source_call_regular_hints() {
         let program = HintProgram {
             hints: vec![Hint {
@@ -1350,6 +1438,79 @@ mod tests {
                     }],
                 },
             ],
+        }
+    }
+
+    fn source_lookup_global_hint(name: &str) -> Hint {
+        Hint {
+            name: name.to_owned(),
+            fields: vec![
+                HintField {
+                    name: "bus_id".to_owned(),
+                    values: vec![HintValue {
+                        operand: HintOperand::Number(7),
+                        positions: Vec::new(),
+                    }],
+                },
+                HintField {
+                    name: "values".to_owned(),
+                    values: vec![HintValue {
+                        operand: HintOperand::Number(11),
+                        positions: Vec::new(),
+                    }],
+                },
+            ],
+        }
+    }
+
+    fn source_lookup_global_plan(global_hints: HintProgram) -> ProveExecutionPlan {
+        ProveExecutionPlan {
+            run_plan: crate::ProveRunPlan {
+                schedule: crate::ProveSchedule {
+                    setup_hash: [0; 32],
+                    unit_count: 1,
+                    total_fixed_bytes: 0,
+                    total_pcs_material_bytes: 0,
+                    pcs_material_unit_count: 0,
+                    total_query_count: 0,
+                    max_extended_domain_bits: 0,
+                    units: vec![source_lookup_schedule()],
+                },
+                pass: ProvePassRequest::Full(crate::ProvePartitionPlan::single()),
+                options: crate::ProveRunOptions::default_for_output(PathBuf::from("out")),
+                gpu: crate::GpuRunOptions::default(),
+            },
+            inputs: crate::ProveExecutionInputArtifacts {
+                witness_library: None,
+                guest_image: PathBuf::from("guest.elf"),
+                public_inputs: None,
+            },
+            global_info: GlobalInfo {
+                name: "program".to_owned(),
+                air_groups: Vec::new(),
+                airs: Vec::new(),
+                curve: CurveKind::None,
+                lattice_size: None,
+                aggregation_types: Vec::new(),
+                n_publics: 0,
+                num_challenges: Vec::new(),
+                num_proof_values: Vec::new(),
+                proof_values_map: Vec::new(),
+                publics_map: Vec::new(),
+                transcript_arity: 4,
+            },
+            global_hints,
+            witness_library_info: None,
+            guest_image_info: GuestImageInfo {
+                byte_len: 0,
+                digest: [0; 32],
+                elf_class: ElfClass::Elf64,
+                endian: ElfEndian::Little,
+                machine: 0,
+                entry: 0,
+            },
+            program_image_cache: None,
+            units: vec![source_lookup_plan_unit(HintProgram { hints: Vec::new() })],
         }
     }
 

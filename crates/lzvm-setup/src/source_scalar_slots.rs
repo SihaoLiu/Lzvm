@@ -237,6 +237,63 @@ impl SourceScalarSlots {
         })
     }
 
+    pub(crate) fn from_global(
+        public_values: &[PublicValue],
+        proof_values: &[NamedStageValue],
+    ) -> Result<Self, SourceScalarSlotError> {
+        let mut publics = BTreeMap::new();
+        let mut public_offset = 0_u32;
+        for value in public_values {
+            let dimension = public_value_dimension(&value.lengths)?;
+            publics.insert(
+                value.name.clone(),
+                SourcePublicSlot {
+                    offset: public_offset,
+                    stage: value.stage,
+                    dimension,
+                },
+            );
+            public_offset = public_offset.checked_add(dimension).ok_or(
+                SourceScalarSlotError::LengthOverflow("source public value offset overflow"),
+            )?;
+        }
+
+        let mut proof_value_slots = BTreeMap::new();
+        let mut proof_value_offset = 0_u32;
+        for value in proof_values {
+            let stage = u32::try_from(value.stage).map_err(|_| {
+                SourceScalarSlotError::LengthOverflow("source proof value stage overflow")
+            })?;
+            let operand_dimension = if value.stage == 1 { 1 } else { 3 };
+            let source_dimension = named_stage_value_dimension(&value.lengths)?;
+            let field_width = source_dimension.checked_mul(operand_dimension).ok_or(
+                SourceScalarSlotError::LengthOverflow("source proof value offset overflow"),
+            )?;
+            proof_value_slots.insert(
+                value.name.clone(),
+                SourceProofValueSlot {
+                    offset: proof_value_offset,
+                    stage,
+                    source_dimension,
+                    operand_dimension,
+                },
+            );
+            proof_value_offset = proof_value_offset.checked_add(field_width).ok_or(
+                SourceScalarSlotError::LengthOverflow("source proof value offset overflow"),
+            )?;
+        }
+
+        Ok(Self {
+            commitments: BTreeMap::new(),
+            unit_values: BTreeMap::new(),
+            group_values: BTreeMap::new(),
+            constants: BTreeMap::new(),
+            publics,
+            challenges: BTreeMap::new(),
+            proof_values: proof_value_slots,
+        })
+    }
+
     pub(crate) fn operand(&self, name: &str) -> Result<CodeOperand, SourceScalarSlotError> {
         if let Some(slot) = self.commitments.get(name) {
             if slot.stage != 1 || slot.dimension != 1 {
