@@ -82,6 +82,10 @@ pub enum ProofPreflightError {
     PublicValuesHashMismatch,
     PublicValuesField(PublicValueFieldError),
     ProgramImageCache(ProgramImageCacheSegmentError),
+    ProgramImageCacheTreeRootNonCanonical {
+        word_index: usize,
+        source: FieldError,
+    },
     ChallengeValues(ChallengeValuesSegmentError),
     ChallengeValueNonCanonical {
         value_index: usize,
@@ -114,6 +118,10 @@ impl fmt::Display for ProofPreflightError {
             Self::PublicValuesHashMismatch => write!(f, "public-values hash mismatch"),
             Self::PublicValuesField(error) => write!(f, "{error}"),
             Self::ProgramImageCache(error) => write!(f, "{error}"),
+            Self::ProgramImageCacheTreeRootNonCanonical { word_index, source } => write!(
+                f,
+                "program image cache tree root word {word_index} is non-canonical: {source}"
+            ),
             Self::ChallengeValues(error) => write!(f, "{error}"),
             Self::ChallengeValueNonCanonical {
                 value_index,
@@ -155,6 +163,7 @@ impl std::error::Error for ProofPreflightError {
             Self::PublicValuesDigest(error) => Some(error),
             Self::PublicValuesField(error) => Some(error),
             Self::ProgramImageCache(error) => Some(error),
+            Self::ProgramImageCacheTreeRootNonCanonical { source, .. } => Some(source),
             Self::ChallengeValues(error) => Some(error),
             Self::ChallengeValueNonCanonical { source, .. } => Some(source),
             Self::EthBlockInput(error) => Some(error),
@@ -229,6 +238,7 @@ pub fn validate_proof_public_values(
     {
         let cache = parse_program_image_cache_segment(&segment.data)
             .map_err(ProofPreflightError::ProgramImageCache)?;
+        validate_program_image_cache_tree_root_canonical(&cache)?;
         program_image_cache_hashes.push(program_image_cache_segment_digest(&segment.data));
         program_image_caches.push(cache);
     }
@@ -422,6 +432,17 @@ fn validate_challenge_values_canonical(values: &[[u64; 3]]) -> Result<(), ProofP
                 }
             })?;
         }
+    }
+    Ok(())
+}
+
+fn validate_program_image_cache_tree_root_canonical(
+    cache: &ProgramImageCommitmentCache,
+) -> Result<(), ProofPreflightError> {
+    for (word_index, word) in cache.tree_root.iter().copied().enumerate() {
+        Felt::from_canonical(word).map_err(|source| {
+            ProofPreflightError::ProgramImageCacheTreeRootNonCanonical { word_index, source }
+        })?;
     }
     Ok(())
 }

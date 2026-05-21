@@ -25,6 +25,7 @@ use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::witness_library::{
     read_witness_library_file, WitnessLibraryError, WitnessLibraryInfo,
 };
+use lzvm_field::{Felt, FieldError};
 
 use crate::proof_preflight::{public_values_as_fields, PublicValueFieldError};
 
@@ -479,6 +480,11 @@ pub enum ProveExecutionPlanError {
         path: PathBuf,
         source: ProgramImageCommitmentCacheError,
     },
+    ProgramImageCacheTreeRootNonCanonical {
+        path: PathBuf,
+        word_index: usize,
+        source: FieldError,
+    },
     ProgramImageCacheGuestImageDigestMismatch {
         path: PathBuf,
     },
@@ -563,6 +569,15 @@ impl fmt::Display for ProveExecutionPlanError {
             Self::InvalidProgramImageCache { path, source } => {
                 write!(f, "program image cache failed at {}: {source}", path.display())
             }
+            Self::ProgramImageCacheTreeRootNonCanonical {
+                path,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "program image cache tree root word {word_index} is non-canonical at {}: {source}",
+                path.display()
+            ),
             Self::ProgramImageCacheGuestImageDigestMismatch { path } => write!(
                 f,
                 "program image cache guest image digest mismatch at {}",
@@ -624,6 +639,7 @@ impl std::error::Error for ProveExecutionPlanError {
             Self::InvalidWitnessLibrary { source, .. } => Some(source),
             Self::InvalidGuestImage { source, .. } => Some(source),
             Self::InvalidProgramImageCache { source, .. } => Some(source),
+            Self::ProgramImageCacheTreeRootNonCanonical { source, .. } => Some(source),
             Self::InvalidPublicInputs { source, .. } => Some(source),
             Self::PublicInputsFieldConversion { source, .. } => Some(source),
             Self::RunPlan(error) => Some(error),
@@ -889,6 +905,7 @@ fn load_program_image_cache(
             source,
         }
     })?;
+    validate_program_image_cache_tree_root(path, &cache)?;
     if cache.source_image_digest != guest_image_info.digest {
         return Err(
             ProveExecutionPlanError::ProgramImageCacheGuestImageDigestMismatch {
@@ -907,6 +924,22 @@ fn load_program_image_cache(
         path: path.to_path_buf(),
         cache,
     })
+}
+
+fn validate_program_image_cache_tree_root(
+    path: &Path,
+    cache: &ProgramImageCommitmentCache,
+) -> Result<(), ProveExecutionPlanError> {
+    for (word_index, word) in cache.tree_root.iter().copied().enumerate() {
+        Felt::from_canonical(word).map_err(|source| {
+            ProveExecutionPlanError::ProgramImageCacheTreeRootNonCanonical {
+                path: path.to_path_buf(),
+                word_index,
+                source,
+            }
+        })?;
+    }
+    Ok(())
 }
 
 fn derive_prove_execution_units(

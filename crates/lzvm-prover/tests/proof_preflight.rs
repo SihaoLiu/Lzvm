@@ -273,6 +273,28 @@ fn rejects_invalid_program_image_cache_segments() {
 }
 
 #[test]
+fn rejects_non_canonical_program_image_cache_tree_roots() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    let mut segment_data =
+        encode_program_image_cache_segment(&sample_program_image_cache()).expect("cache encodes");
+    let root_word_offset = 8 + 32 * 3;
+    segment_data[root_word_offset..root_word_offset + 8].copy_from_slice(&MODULUS.to_le_bytes());
+    proof.segments.push(ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: segment_data,
+    });
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("cache tree root should use canonical field elements");
+
+    assert_eq!(
+        error.to_string(),
+        "program image cache tree root word 0 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
 fn reports_program_image_cache_segment_hashes() {
     let public_values = sample_public_values();
     let mut proof = sample_proof(&public_values);

@@ -27,6 +27,7 @@ use lzvm_artifacts::setup_info::{
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_artifacts::verifier_info::{VerifierCode, VerifierInfo};
 use lzvm_artifacts::witness_library::WitnessLibraryError;
+use lzvm_field::MODULUS;
 use lzvm_prover::{
     derive_prove_execution_plan, derive_prove_execution_plan_with_program_image_cache,
     derive_prove_run_plan, derive_prove_schedule, GpuRunOptions, ProveExecutionInputArtifacts,
@@ -280,11 +281,25 @@ fn write_program_image_cache(
     source_image_digest: [u8; 32],
     constraint_system_digest: [u8; 32],
 ) {
+    write_program_image_cache_with_root(
+        path,
+        source_image_digest,
+        constraint_system_digest,
+        [3, 4, 5, 6],
+    );
+}
+
+fn write_program_image_cache_with_root(
+    path: &Path,
+    source_image_digest: [u8; 32],
+    constraint_system_digest: [u8; 32],
+    tree_root: [u64; 4],
+) {
     let cache = ProgramImageCommitmentCache {
         program_digest: [0x11; 32],
         source_image_digest,
         constraint_system_digest,
-        tree_root: [3, 4, 5, 6],
+        tree_root,
         trace_row_count: 1024,
         trace_column_count: 17,
         blowup_factor: 8,
@@ -862,6 +877,60 @@ fn rejects_prove_execution_plan_with_program_image_cache_setup_hash_mismatch() {
             .to_string(),
         format!(
             "program image cache setup hash mismatch at {}",
+            cache_path.display()
+        )
+    );
+}
+
+#[test]
+fn rejects_prove_execution_plan_with_non_canonical_program_image_cache_root() {
+    let dir = temp_dir("execution-plan-program-image-cache-noncanonical-root");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let public_inputs = dir.join("public.bin");
+    let cache_path = dir.join("program-image-cache.bin");
+    fs::write(&witness_library, sample_witness_library())
+        .expect("witness library should be written");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    let guest_digest = read_guest_image_file(&guest_image)
+        .expect("guest image should parse")
+        .digest;
+
+    let catalog = sample_catalog(vec![sample_unit_with_pcs_material(
+        KeyUnitKind::Basic,
+        0,
+        64,
+    )]);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    write_program_image_cache_with_root(&cache_path, guest_digest, setup_hash, [MODULUS, 4, 5, 6]);
+    write_public_inputs(&public_inputs, &catalog);
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
+        options: ProveRunOptions::default_for_output(dir.join("out")),
+        gpu: GpuRunOptions::default(),
+    };
+    let inputs = ProveExecutionInputArtifacts {
+        witness_library: Some(witness_library),
+        guest_image,
+        public_inputs: Some(public_inputs),
+    };
+
+    let result = derive_prove_execution_plan_with_program_image_cache(
+        &catalog,
+        request,
+        inputs,
+        Some(cache_path.clone()),
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        result
+            .expect_err("program image cache root should be canonical")
+            .to_string(),
+        format!(
+            "program image cache tree root word 0 is non-canonical at {}: non-canonical field element: 18446744069414584321",
             cache_path.display()
         )
     );
