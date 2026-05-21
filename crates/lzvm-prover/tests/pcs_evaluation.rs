@@ -5,7 +5,7 @@ use lzvm_artifacts::pcs_evaluation_segment::{
 };
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::proof::ProofSegment;
-use lzvm_field::Ext3;
+use lzvm_field::{Ext3, FieldError, MODULUS};
 use lzvm_prover::pcs_evaluation::{
     load_pcs_evaluation_unit_from_segments, LoadPcsEvaluationUnitError,
 };
@@ -68,6 +68,24 @@ fn rejects_pcs_evaluation_value_count_mismatches() {
             unit_index: 0,
             expected: 2,
             found: 1
+        }
+    );
+}
+
+#[test]
+fn rejects_non_canonical_pcs_evaluation_values() {
+    let segment = pcs_evaluation_proof_segment(vec![evaluation_unit(0, vec![[MODULUS, 2, 3]])]);
+
+    let error = load_pcs_evaluation_unit_from_segments(0, &sample_unit(1), &[segment])
+        .expect_err("evaluation values should be canonical");
+
+    assert_eq!(
+        error,
+        LoadPcsEvaluationUnitError::ValueNonCanonical {
+            unit_index: 0,
+            value_index: 0,
+            word_index: 0,
+            source: FieldError::NonCanonical { value: MODULUS }
         }
     );
 }

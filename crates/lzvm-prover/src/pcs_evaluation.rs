@@ -6,7 +6,7 @@ use lzvm_artifacts::pcs_evaluation_segment::{
 };
 use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
 use lzvm_artifacts::proof::ProofSegment;
-use lzvm_field::Ext3;
+use lzvm_field::{Ext3, Felt, FieldError};
 
 use crate::ProveSchedule;
 use crate::ProveUnitSchedule;
@@ -96,6 +96,12 @@ pub enum LoadPcsEvaluationUnitError {
         expected: usize,
         found: usize,
     },
+    ValueNonCanonical {
+        unit_index: usize,
+        value_index: usize,
+        word_index: usize,
+        source: FieldError,
+    },
     Segment(PcsEvaluationSegmentError),
 }
 
@@ -115,6 +121,15 @@ impl fmt::Display for LoadPcsEvaluationUnitError {
                 f,
                 "PCS evaluation segment value count mismatch for unit {unit_index}"
             ),
+            Self::ValueNonCanonical {
+                unit_index,
+                value_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "PCS evaluation segment unit {unit_index} value {value_index} word {word_index} is non-canonical: {source}"
+            ),
             Self::Segment(error) => write!(f, "invalid PCS evaluation segment: {error}"),
         }
     }
@@ -124,6 +139,7 @@ impl std::error::Error for LoadPcsEvaluationUnitError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Segment(error) => Some(error),
+            Self::ValueNonCanonical { source, .. } => Some(source),
             Self::MissingSegment
             | Self::DuplicateSegment
             | Self::MissingUnit { .. }
@@ -166,7 +182,27 @@ pub fn load_pcs_evaluation_unit_from_segments(
             found: evaluation_unit.values.len(),
         });
     }
+    validate_pcs_evaluation_values(unit_index, &evaluation_unit.values)?;
     Ok(evaluation_unit)
+}
+
+fn validate_pcs_evaluation_values(
+    unit_index: usize,
+    values: &[[u64; 3]],
+) -> Result<(), LoadPcsEvaluationUnitError> {
+    for (value_index, words) in values.iter().enumerate() {
+        for (word_index, word) in words.iter().copied().enumerate() {
+            Felt::from_canonical(word).map_err(|source| {
+                LoadPcsEvaluationUnitError::ValueNonCanonical {
+                    unit_index,
+                    value_index,
+                    word_index,
+                    source,
+                }
+            })?;
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_pcs_evaluation_units_match_query_units(
