@@ -200,6 +200,7 @@ fn lower_source_global_hint_statement(
             if source_global_hint_static_assertion(
                 context.program,
                 context.module,
+                context.scalar_slots,
                 statement,
                 values,
                 alias_scope,
@@ -580,6 +581,7 @@ fn apply_source_global_hint_static_expression_statement(
 fn source_global_hint_static_assertion(
     program: &SourceProgram,
     module: &SourceProgramModule,
+    scalar_slots: &SourceScalarSlots,
     statement: &FunctionStatement,
     values: &BTreeMap<String, FixedFileTemplateValue>,
     alias_scope: &SourceGlobalHintAliasScope,
@@ -591,7 +593,13 @@ fn source_global_hint_static_assertion(
     if name != "assert" || !(1..=2).contains(&arguments.len()) || arguments[0].name.is_some() {
         return Ok(false);
     }
-    match source_global_hint_static_condition(program, &arguments[0].value, values, alias_scope) {
+    match source_global_hint_static_condition(
+        program,
+        scalar_slots,
+        &arguments[0].value,
+        values,
+        alias_scope,
+    ) {
         Some(true) => Ok(true),
         Some(false) => Err(SourceKeyDirectoryMetadataError::StaticAssertionFailed {
             line: source_statement_line(module, statement),
@@ -602,6 +610,7 @@ fn source_global_hint_static_assertion(
 
 fn source_global_hint_static_condition(
     program: &SourceProgram,
+    scalar_slots: &SourceScalarSlots,
     expression: &Expression,
     values: &BTreeMap<String, FixedFileTemplateValue>,
     alias_scope: &SourceGlobalHintAliasScope,
@@ -613,8 +622,20 @@ fn source_global_hint_static_condition(
     else {
         return None;
     };
-    let left = source_global_hint_static_integer_expression(program, left, values, alias_scope)?;
-    let right = source_global_hint_static_integer_expression(program, right, values, alias_scope)?;
+    let left = source_global_hint_static_integer_expression(
+        program,
+        scalar_slots,
+        left,
+        values,
+        alias_scope,
+    )?;
+    let right = source_global_hint_static_integer_expression(
+        program,
+        scalar_slots,
+        right,
+        values,
+        alias_scope,
+    )?;
     match op {
         BinaryOperator::Less => Some(left < right),
         BinaryOperator::LessEqual => Some(left <= right),
@@ -628,6 +649,7 @@ fn source_global_hint_static_condition(
 
 fn source_global_hint_static_integer_expression(
     program: &SourceProgram,
+    scalar_slots: &SourceScalarSlots,
     expression: &Expression,
     values: &BTreeMap<String, FixedFileTemplateValue>,
     alias_scope: &SourceGlobalHintAliasScope,
@@ -642,6 +664,7 @@ fn source_global_hint_static_integer_expression(
                         return None;
                     };
                     return source_global_hint_array_length(
+                        scalar_slots,
                         values,
                         &alias_scope.expression_arrays,
                         name,
@@ -656,6 +679,7 @@ fn source_global_hint_static_integer_expression(
 }
 
 fn source_global_hint_array_length(
+    scalar_slots: &SourceScalarSlots,
     values: &BTreeMap<String, FixedFileTemplateValue>,
     expression_array_aliases: &SourceExpressionArrayAliases,
     name: &str,
@@ -664,11 +688,15 @@ fn source_global_hint_array_length(
     if let Some(length) = source_static_array_length(values, name) {
         return Some(length);
     }
+    if let Some(dimension) = scalar_slots.source_dimension(name) {
+        return Some(i128::from(dimension));
+    }
     if !resolving_aliases.insert(name.to_owned()) {
         return None;
     }
     let length = match expression_array_aliases.get(name)? {
         SourceExpressionArrayAlias::Name(alias) => source_global_hint_array_length(
+            scalar_slots,
             values,
             expression_array_aliases,
             alias,

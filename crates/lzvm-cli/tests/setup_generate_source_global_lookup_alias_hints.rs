@@ -213,6 +213,52 @@ fn generate_key_rejects_airgroup_lookup_helper_static_assertion_mismatch() {
 }
 
 #[test]
+fn generate_key_rejects_airgroup_lookup_helper_public_array_length_assertion_mismatch() {
+    let dir = temp_dir("helper-public-array-length-assertion");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "public inputs[2];\n\
+         const int BUS_ID = 9;\n\
+         const int LABEL = 17;\n\
+         function emit_update(expr tuple[], const int count) {\n\
+             assert(length(tuple) == count);\n\
+             direct_global_update_proves(BUS_ID, [...tuple], surname: LABEL);\n\
+         }\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA {\n\
+             UnitA();\n\
+             emit_update(inputs, 3);\n\
+         }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "setup key generation failed: source static assertion failed: assert(length(tuple) == count)\n"
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn generate_key_applies_airgroup_lookup_helper_static_assignments() {
     let dir = temp_dir("helper-static-assignments");
     let _ = fs::remove_dir_all(&dir);

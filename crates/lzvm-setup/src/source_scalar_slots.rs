@@ -294,6 +294,30 @@ impl SourceScalarSlots {
         })
     }
 
+    pub(crate) fn source_dimension(&self, name: &str) -> Option<u32> {
+        if let Some(slot) = self.commitments.get(name) {
+            return Some(slot.dimension);
+        }
+        if let Some(slot) = self.unit_values.get(name) {
+            return Some(slot.source_dimension);
+        }
+        if let Some(slot) = self.group_values.get(name) {
+            return Some(slot.source_dimension);
+        }
+        if let Some(slot) = self.constants.get(name) {
+            return Some(slot.dimension);
+        }
+        if let Some(slot) = self.publics.get(name) {
+            return Some(slot.dimension);
+        }
+        if let Some(slot) = self.challenges.get(name) {
+            return Some(slot.dimension);
+        }
+        self.proof_values
+            .get(name)
+            .map(|slot| slot.source_dimension)
+    }
+
     pub(crate) fn operand(&self, name: &str) -> Result<CodeOperand, SourceScalarSlotError> {
         if let Some(slot) = self.commitments.get(name) {
             if slot.stage != 1 || slot.dimension != 1 {
