@@ -4834,6 +4834,141 @@ fn runs_prove_witness_commitments_from_trace_bytes() {
 }
 
 #[test]
+fn runs_prove_witness_with_source_generated_key_directory() {
+    let dir = temp_dir("prove-witness-source-generated");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_bytes(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col witness values[2];\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut generate_stdout = Vec::new();
+    let mut generate_stderr = Vec::new();
+    let generate_code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut generate_stdout,
+        &mut generate_stderr,
+    );
+    assert_eq!(
+        generate_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&generate_stderr)
+    );
+    assert!(generate_stderr.is_empty());
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let trace_path = dir.join("trace.bin");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+    write_bytes(&trace_path, sample_trace_bytes(17));
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&PublicValues {
+            schema_version: 1,
+            setup_hash,
+            values: Vec::new(),
+        })
+        .expect("public values should encode"),
+    );
+
+    let mut plan_stdout = Vec::new();
+    let mut plan_stderr = Vec::new();
+    let plan_code = run_cli(
+        &[
+            "prove",
+            "plan",
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+        ],
+        &mut plan_stdout,
+        &mut plan_stderr,
+    );
+    assert_eq!(plan_code, 0, "{}", String::from_utf8_lossy(&plan_stderr));
+    assert!(plan_stderr.is_empty());
+    let plan_stdout_text = String::from_utf8(plan_stdout).expect("stdout should be utf-8");
+    assert!(plan_stdout_text.contains("source_fixed_file_manifest=present\n"));
+    assert!(plan_stdout_text.contains("source_program_archive=present\n"));
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--trace-bytes",
+            trace_path.to_str().expect("trace path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("source_fixed_file_manifest=present\n"));
+    assert!(stdout_text.contains("source_fixed_file_manifest_entries=0\n"));
+    assert!(stdout_text.contains("source_program_archive=present\n"));
+    assert!(stdout_text.contains("source_program_archive_sources=1\n"));
+    assert!(stdout_text.contains("source_program_archive_edges=0\n"));
+
+    let proof_path = output_dir.join("proof.bin");
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "proof",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
+
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert!(verify_stderr.is_empty());
+    let verify_stdout_text =
+        String::from_utf8(verify_stdout).expect("verify stdout should be utf-8");
+    assert!(verify_stdout_text.contains("source_fixed_file_manifest=present\n"));
+    assert!(verify_stdout_text.contains("source_program_archive=present\n"));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn runs_prove_witness_commitments_from_trace_bundle() {
     let dir = temp_dir("prove-witness-trace-bundle");
     let _ = fs::remove_dir_all(&dir);

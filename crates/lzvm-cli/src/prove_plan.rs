@@ -35,6 +35,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     };
 
     write_run_plan_summary(stdout, &plan);
+    write_source_companion_summary(stdout, &catalog);
     0
 }
 
@@ -391,6 +392,60 @@ pub(crate) fn write_run_plan_summary(stdout: &mut dyn Write, plan: &ProveRunPlan
         stdout,
         "setup_hash={}",
         format_hash(&plan.schedule.setup_hash)
+    );
+}
+
+pub(crate) fn write_source_companion_summary(
+    stdout: &mut dyn Write,
+    catalog: &KeyDirectoryCatalog,
+) {
+    if catalog.source_fixed_file_manifest.is_none() && catalog.source_program_archive.is_none() {
+        return;
+    }
+    let _ = writeln!(
+        stdout,
+        "source_fixed_file_manifest={}",
+        if catalog.source_fixed_file_manifest.is_some() {
+            "present"
+        } else {
+            "absent"
+        }
+    );
+    let _ = writeln!(
+        stdout,
+        "source_fixed_file_manifest_entries={}",
+        catalog
+            .source_fixed_file_manifest
+            .as_ref()
+            .map(|manifest| manifest.entries.len())
+            .unwrap_or(0)
+    );
+    let _ = writeln!(
+        stdout,
+        "source_program_archive={}",
+        if catalog.source_program_archive.is_some() {
+            "present"
+        } else {
+            "absent"
+        }
+    );
+    let _ = writeln!(
+        stdout,
+        "source_program_archive_sources={}",
+        catalog
+            .source_program_archive
+            .as_ref()
+            .map(|archive| archive.sources.len())
+            .unwrap_or(0)
+    );
+    let _ = writeln!(
+        stdout,
+        "source_program_archive_edges={}",
+        catalog
+            .source_program_archive
+            .as_ref()
+            .map(|archive| archive.edges.len())
+            .unwrap_or(0)
     );
 }
 

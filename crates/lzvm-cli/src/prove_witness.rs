@@ -32,7 +32,8 @@ use crate::eth_block_prove_input::{
 use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{
     parse_run_args, prepare_requested_gpu_setup, read_checked_setup_catalog, required_option_value,
-    validate_all_unit_stored_witness_limit, write_run_plan_summary, ParseError, ParsedRunArgs,
+    validate_all_unit_stored_witness_limit, write_run_plan_summary, write_source_companion_summary,
+    ParseError, ParsedRunArgs,
 };
 
 mod value_inputs;
@@ -345,6 +346,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     }
 
     write_run_plan_summary(stdout, &plan.run_plan);
+    write_source_companion_summary(stdout, &catalog);
     if let Some(path) = &plan.inputs.public_inputs {
         let _ = writeln!(stdout, "public_inputs={}", path.display());
     }
