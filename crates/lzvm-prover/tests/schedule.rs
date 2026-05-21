@@ -482,6 +482,36 @@ fn rejects_prove_schedule_with_non_canonical_pcs_material_root() {
 }
 
 #[test]
+fn rejects_prove_schedule_with_non_canonical_verification_key_root() {
+    let mut unit = sample_unit(KeyUnitKind::Basic, 0, 64);
+    unit.verification_key = VerificationKeyRoot::FieldElements(vec![MODULUS, 2, 3, 4]);
+    let catalog = sample_catalog(vec![unit]);
+
+    let error =
+        derive_prove_schedule(&catalog).expect_err("verification key root should be canonical");
+
+    assert_eq!(
+        error.to_string(),
+        "prove schedule verification key root word 0 is non-canonical for unit 0: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_prove_schedule_with_non_canonical_constant_tree_root() {
+    let mut unit = sample_unit(KeyUnitKind::Basic, 0, 64);
+    unit.constant_tree_root = Some(VerificationKeyRoot::FieldElements(vec![1, MODULUS, 3, 4]));
+    let catalog = sample_catalog(vec![unit]);
+
+    let error =
+        derive_prove_schedule(&catalog).expect_err("constant tree root should be canonical");
+
+    assert_eq!(
+        error.to_string(),
+        "prove schedule constant tree root word 1 is non-canonical for unit 0: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
 fn rejects_empty_prove_schedule_catalogs() {
     let catalog = sample_catalog(Vec::new());
 

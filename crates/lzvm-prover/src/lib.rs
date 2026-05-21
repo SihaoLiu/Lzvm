@@ -180,6 +180,16 @@ pub enum ProveScheduleError {
     LengthOverflow,
     KeyDirectory(KeyDirectoryError),
     SetupDirectoryManifest(SetupDirectoryManifestError),
+    VerificationKeyRootNonCanonical {
+        unit_index: usize,
+        word_index: usize,
+        source: FieldError,
+    },
+    ConstantTreeRootNonCanonical {
+        unit_index: usize,
+        word_index: usize,
+        source: FieldError,
+    },
     PcsMaterialConstantTreeRootNonCanonical {
         unit_index: usize,
         word_index: usize,
@@ -201,6 +211,22 @@ impl fmt::Display for ProveScheduleError {
             Self::LengthOverflow => write!(f, "prove schedule length overflow"),
             Self::KeyDirectory(error) => write!(f, "prove schedule catalog error: {error}"),
             Self::SetupDirectoryManifest(error) => write!(f, "{error}"),
+            Self::VerificationKeyRootNonCanonical {
+                unit_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "prove schedule verification key root word {word_index} is non-canonical for unit {unit_index}: {source}"
+            ),
+            Self::ConstantTreeRootNonCanonical {
+                unit_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "prove schedule constant tree root word {word_index} is non-canonical for unit {unit_index}: {source}"
+            ),
             Self::PcsMaterialConstantTreeRootNonCanonical {
                 unit_index,
                 word_index,
@@ -227,6 +253,8 @@ impl std::error::Error for ProveScheduleError {
         match self {
             Self::KeyDirectory(error) => Some(error),
             Self::SetupDirectoryManifest(error) => Some(error),
+            Self::VerificationKeyRootNonCanonical { source, .. } => Some(source),
+            Self::ConstantTreeRootNonCanonical { source, .. } => Some(source),
             Self::PcsMaterialConstantTreeRootNonCanonical { source, .. } => Some(source),
             Self::EmptyCatalog
             | Self::LengthOverflow
@@ -708,6 +736,10 @@ pub fn derive_prove_schedule(
     let mut units = Vec::with_capacity(catalog.units.len());
     for (unit_index, unit) in catalog.units.iter().enumerate() {
         validate_schedulable_regular_hints(&unit.regular_hints, unit_index)?;
+        validate_verification_key_root(unit_index, &unit.verification_key)?;
+        if let Some(root) = &unit.constant_tree_root {
+            validate_constant_tree_root(unit_index, root)?;
+        }
         total_fixed_bytes = total_fixed_bytes
             .checked_add(unit.actual_fixed_bytes)
             .ok_or(ProveScheduleError::LengthOverflow)?;
@@ -785,6 +817,40 @@ pub fn derive_prove_schedule(
         max_extended_domain_bits,
         units,
     })
+}
+
+fn validate_verification_key_root(
+    unit_index: usize,
+    root: &VerificationKeyRoot,
+) -> Result<(), ProveScheduleError> {
+    let VerificationKeyRoot::FieldElements(words) = root;
+    for (word_index, word) in words.iter().copied().enumerate() {
+        Felt::from_canonical(word).map_err(|source| {
+            ProveScheduleError::VerificationKeyRootNonCanonical {
+                unit_index,
+                word_index,
+                source,
+            }
+        })?;
+    }
+    Ok(())
+}
+
+fn validate_constant_tree_root(
+    unit_index: usize,
+    root: &VerificationKeyRoot,
+) -> Result<(), ProveScheduleError> {
+    let VerificationKeyRoot::FieldElements(words) = root;
+    for (word_index, word) in words.iter().copied().enumerate() {
+        Felt::from_canonical(word).map_err(|source| {
+            ProveScheduleError::ConstantTreeRootNonCanonical {
+                unit_index,
+                word_index,
+                source,
+            }
+        })?;
+    }
+    Ok(())
 }
 
 fn validate_pcs_material_constant_tree_root(
