@@ -1,4 +1,6 @@
-use lzvm_artifacts::challenge_values_segment::CHALLENGE_VALUES_SEGMENT_ID;
+use lzvm_artifacts::challenge_values_segment::{
+    parse_challenge_values_segment, CHALLENGE_VALUES_SEGMENT_ID,
+};
 use lzvm_artifacts::eth_block_input::EthBlockInput;
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
@@ -17,12 +19,16 @@ use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 use lzvm_field::{Ext3, Felt};
 
 use crate::contribution::{
-    build_contribution_segment, build_witness_contribution_input, derive_worker_contribution_entry,
+    build_contribution_segment, build_witness_contribution_input,
+    derive_global_challenge_from_proof_segments, derive_worker_contribution_entry,
 };
 use crate::group_values::build_group_values_segment;
 use crate::pcs_transcript::aggregate_pcs_final_query_challenges;
-use crate::proof_preflight::contains_eth_block_public_values;
-use crate::proof_values::build_pcs_proof_values_segment_from_packed_values;
+use crate::proof_preflight::{contains_eth_block_public_values, public_values_as_fields};
+use crate::proof_values::{
+    build_pcs_proof_values_segment_from_packed_values, flatten_pcs_proof_values,
+    load_pcs_proof_values_from_segments,
+};
 use crate::setup_preflight::{validate_setup_preflight, validate_setup_preflight_hashes};
 use crate::unit_values::{
     build_unit_values_segment_from_packed_values,
@@ -429,8 +435,7 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
         segments,
     };
     if request.verify_outputs {
-        validate_setup_preflight_hashes(request.catalog, &proof, public_values)
-            .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
+        validate_contribution_proof_output(request.catalog, &proof, public_values)?;
     }
     Ok(Some(proof))
 }
@@ -512,8 +517,7 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
         segments,
     };
     if request.verify_outputs {
-        validate_setup_preflight_hashes(request.catalog, &proof, public_values)
-            .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
+        validate_contribution_proof_output(request.catalog, &proof, public_values)?;
     }
     Ok(Some(proof))
 }
@@ -674,6 +678,60 @@ fn validate_eth_block_binding(
             .map_err(|error| error.to_string())?;
     } else if contains_eth_block_public_values(public_values) {
         return Err("missing ETH block input proof segment".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_contribution_proof_output(
+    catalog: &KeyDirectoryCatalog,
+    proof: &ProofArtifact,
+    public_values: &PublicValues,
+) -> Result<(), String> {
+    validate_setup_preflight_hashes(catalog, proof, public_values)
+        .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
+    if proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID)
+    {
+        validate_contribution_proof_challenge_values(catalog, proof, public_values)?;
+    }
+    Ok(())
+}
+
+fn validate_contribution_proof_challenge_values(
+    catalog: &KeyDirectoryCatalog,
+    proof: &ProofArtifact,
+    public_values: &PublicValues,
+) -> Result<(), String> {
+    let segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID)
+        .ok_or_else(|| {
+            "verify contribution proof output failed: missing challenge values segment".to_owned()
+        })?;
+    let challenge_values = parse_challenge_values_segment(&segment.data)
+        .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
+    let public_fields = public_values_as_fields(public_values)
+        .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
+    let proof_values =
+        load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
+            .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
+    let packed_proof_values = flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)
+        .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
+    let expected = derive_global_challenge_from_proof_segments(
+        &catalog.layout.global_info,
+        &public_fields,
+        &packed_proof_values,
+        &proof.segments,
+    )
+    .map_err(|error| format!("verify contribution proof output failed: {error}"))?;
+    if challenge_values.values.as_slice() != [expected.to_u64s()] {
+        return Err(
+            "verify contribution proof output failed: contribution challenge values mismatch"
+                .to_owned(),
+        );
     }
     Ok(())
 }

@@ -3,6 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use lzvm_artifacts::challenge_values_segment::{
+    encode_challenge_values_segment, ChallengeValuesSegment, CHALLENGE_VALUES_SEGMENT_ID,
+};
 use lzvm_artifacts::constant_tree::expected_constant_tree_byte_count;
 use lzvm_artifacts::constraint_program::{
     ConstraintEntry, ConstraintProgram, GlobalConstraintProgram,
@@ -1459,6 +1462,85 @@ fn builds_all_units_contribution_proof_artifact_from_output_proof_values() {
         .segments
         .iter()
         .any(|segment| segment.id == CONTRIBUTION_SEGMENT_ID));
+}
+
+#[test]
+fn rejects_all_units_contribution_proof_artifact_with_mismatched_challenge_segment() {
+    let dir = temp_dir("contribution-proof-bad-challenge");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [19_u8]).expect("input data should be written");
+
+    let mut catalog = sample_catalog(sample_unit());
+    catalog.layout.global_info.lattice_size = Some(32);
+    declare_sample_public_value_metadata(&mut catalog);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values_path = dir.join("public.bin");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: vec![PublicValueEntry {
+            name: "sample_public".to_owned(),
+            elements: vec![19],
+        }],
+    };
+    fs::write(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    )
+    .expect("public values should be written");
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: Some(public_values_path),
+        },
+    )
+    .expect("execution plan should derive");
+    let outputs = vec![run_prove_witness_commitments_with_trace(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+    )
+    .expect("unit should run")];
+    let challenge_segment = ProofSegment {
+        id: CHALLENGE_VALUES_SEGMENT_ID,
+        data: encode_challenge_values_segment(&ChallengeValuesSegment {
+            values: vec![[1, 2, 3]],
+        })
+        .expect("challenge values segment should encode"),
+    };
+
+    let error = lzvm_prover::build_witness_contribution_proof_artifact_for_all_units(
+        &lzvm_prover::WitnessAllUnitsProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            execution_units: &plan.units,
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            outputs: &outputs,
+            auxiliary_inputs: &ProveWitnessAuxiliaryInputs::default(),
+            unit_values: &[],
+            evaluation_values_segment: None,
+            verify_outputs: true,
+            program_image_cache: None,
+            eth_block_input: None,
+            challenge_values_segment: Some(&challenge_segment),
+        },
+    )
+    .expect_err("mismatched challenge segment should reject");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        error,
+        "verify contribution proof output failed: contribution challenge values mismatch"
+    );
 }
 
 #[test]
