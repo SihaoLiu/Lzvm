@@ -211,48 +211,29 @@ fn lower_source_scalar_expression_at(
                 .map(|index| source_scalar_index_value(index, state))
                 .collect::<Result<Vec<_>, _>>()?;
             if let Some(alias) = state.expression_array_aliases.get(name) {
-                if let [index] = indices.as_slice() {
-                    let element = source_constraint_array_alias_element(
-                        alias,
-                        usize::try_from(*index).map_err(|_| {
-                            unsupported_source_message("source scalar constraint index overflow")
-                        })?,
-                        state.expression_array_aliases,
-                        &mut state.resolving_array_aliases,
-                    )
-                    .ok_or_else(|| {
-                        unsupported_source_message("unsupported source indexed constraint target")
-                    })?;
-                    return match element {
-                        SourceConstraintArrayAliasElement::Expression(expression) => {
-                            lower_source_scalar_expression_at(expression, state, row_offset)
-                        }
-                        SourceConstraintArrayAliasElement::NamedArray(name) => {
-                            if row_offset != 0 {
-                                state.frame_offsets.include(row_offset);
-                            }
-                            state
-                                .scalar_slots
-                                .operand_index_at(name, *index, row_offset)
-                                .map_err(|error| unsupported_source_message(error.to_string()))
-                        }
-                    };
-                }
-                let name = source_constraint_named_array_alias_target(
+                let element = source_constraint_array_alias_path_element(
+                    alias,
+                    &indices,
                     state.expression_array_aliases,
-                    name,
                     &mut state.resolving_array_aliases,
                 )
                 .ok_or_else(|| {
                     unsupported_source_message("unsupported source indexed constraint target")
                 })?;
-                if row_offset != 0 {
-                    state.frame_offsets.include(row_offset);
-                }
-                return state
-                    .scalar_slots
-                    .operand_indices_at(&name, &indices, row_offset)
-                    .map_err(|error| unsupported_source_message(error.to_string()));
+                return match element {
+                    SourceConstraintArrayAliasElement::Expression(expression) => {
+                        lower_source_scalar_expression_at(expression, state, row_offset)
+                    }
+                    SourceConstraintArrayAliasElement::NamedArray(name) => {
+                        if row_offset != 0 {
+                            state.frame_offsets.include(row_offset);
+                        }
+                        state
+                            .scalar_slots
+                            .operand_indices_at(name, &indices, row_offset)
+                            .map_err(|error| unsupported_source_message(error.to_string()))
+                    }
+                };
             }
             if row_offset != 0 {
                 state.frame_offsets.include(row_offset);
@@ -298,9 +279,9 @@ enum SourceConstraintArrayAliasElement<'a> {
     NamedArray(&'a str),
 }
 
-fn source_constraint_array_alias_element<'a>(
+fn source_constraint_array_alias_path_element<'a>(
     alias: &'a SourceExpressionArrayAlias,
-    index: usize,
+    indices: &[u32],
     expression_array_aliases: &'a SourceExpressionArrayAliases,
     resolving_array_aliases: &mut BTreeSet<String>,
 ) -> Option<SourceConstraintArrayAliasElement<'a>> {
@@ -310,9 +291,9 @@ fn source_constraint_array_alias_element<'a>(
                 if !resolving_array_aliases.insert(name.clone()) {
                     return None;
                 }
-                let element = source_constraint_array_alias_element(
+                let element = source_constraint_array_alias_path_element(
                     next_alias,
-                    index,
+                    indices,
                     expression_array_aliases,
                     resolving_array_aliases,
                 );
@@ -321,35 +302,45 @@ fn source_constraint_array_alias_element<'a>(
             }
             Some(SourceConstraintArrayAliasElement::NamedArray(name))
         }
-        SourceExpressionArrayAlias::Values(expressions) => expressions
-            .get(index)
-            .map(SourceConstraintArrayAliasElement::Expression),
+        SourceExpressionArrayAlias::Values(expressions) => {
+            source_constraint_expression_array_element(
+                expressions,
+                indices,
+                expression_array_aliases,
+                resolving_array_aliases,
+            )
+        }
     }
 }
 
-fn source_constraint_named_array_alias_target(
-    expression_array_aliases: &SourceExpressionArrayAliases,
-    name: &str,
+fn source_constraint_expression_array_element<'a>(
+    expressions: &'a [Expression],
+    indices: &[u32],
+    expression_array_aliases: &'a SourceExpressionArrayAliases,
     resolving_array_aliases: &mut BTreeSet<String>,
-) -> Option<String> {
-    let alias = expression_array_aliases.get(name)?;
-    match alias {
-        SourceExpressionArrayAlias::Name(alias_name) => {
-            if !expression_array_aliases.contains_key(alias_name) {
-                return Some(alias_name.clone());
-            }
-            if !resolving_array_aliases.insert(name.to_owned()) {
-                return None;
-            }
-            let target = source_constraint_named_array_alias_target(
+) -> Option<SourceConstraintArrayAliasElement<'a>> {
+    let (index, rest) = indices.split_first()?;
+    let expression = expressions.get(usize::try_from(*index).ok()?)?;
+    if rest.is_empty() {
+        return Some(SourceConstraintArrayAliasElement::Expression(expression));
+    }
+    match &strip_group_expression(expression).kind {
+        ExpressionKind::Array(expressions) => source_constraint_expression_array_element(
+            expressions,
+            rest,
+            expression_array_aliases,
+            resolving_array_aliases,
+        ),
+        ExpressionKind::Name(name) => {
+            let alias = expression_array_aliases.get(name)?;
+            source_constraint_array_alias_path_element(
+                alias,
+                rest,
                 expression_array_aliases,
-                alias_name,
                 resolving_array_aliases,
-            );
-            resolving_array_aliases.remove(name);
-            target
+            )
         }
-        SourceExpressionArrayAlias::Values(_) => None,
+        _ => None,
     }
 }
 

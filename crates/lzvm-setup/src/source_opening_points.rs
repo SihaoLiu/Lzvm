@@ -678,8 +678,7 @@ fn collect_source_opening_points(
         ExpressionKind::Index { target, index } => {
             if let Some(element) = source_opening_indexed_array_alias_element(
                 program,
-                target,
-                index,
+                expression,
                 constant_values,
                 alias_scope,
                 resolving_array_aliases,
@@ -797,27 +796,24 @@ enum SourceOpeningArrayAliasElement<'a> {
 
 fn source_opening_indexed_array_alias_element<'a>(
     program: &SourceProgram,
-    target: &Expression,
-    index: &Expression,
+    expression: &Expression,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
     alias_scope: &'a SourceOpeningAliasScope,
     resolving_array_aliases: &mut BTreeSet<String>,
 ) -> Option<SourceOpeningArrayAliasElement<'a>> {
-    let ExpressionKind::Name(name) = &strip_source_group_expression(target).kind else {
-        return None;
-    };
+    let (name, index_expressions) =
+        source_opening_index_chain(strip_source_group_expression(expression))?;
+    let indices = index_expressions
+        .iter()
+        .map(|index| source_opening_index_value(program, index, constant_values))
+        .collect::<Option<Vec<_>>>()?;
     let alias = alias_scope.expression_arrays.get(name)?;
-    source_opening_array_alias_element(
-        alias,
-        source_opening_index_value(program, index, constant_values)?,
-        alias_scope,
-        resolving_array_aliases,
-    )
+    source_opening_array_alias_path_element(alias, &indices, alias_scope, resolving_array_aliases)
 }
 
-fn source_opening_array_alias_element<'a>(
+fn source_opening_array_alias_path_element<'a>(
     alias: &'a SourceExpressionArrayAlias,
-    index: usize,
+    indices: &[usize],
     alias_scope: &'a SourceOpeningAliasScope,
     resolving_array_aliases: &mut BTreeSet<String>,
 ) -> Option<SourceOpeningArrayAliasElement<'a>> {
@@ -827,9 +823,9 @@ fn source_opening_array_alias_element<'a>(
                 if !resolving_array_aliases.insert(name.clone()) {
                     return None;
                 }
-                let element = source_opening_array_alias_element(
+                let element = source_opening_array_alias_path_element(
                     next_alias,
-                    index,
+                    indices,
                     alias_scope,
                     resolving_array_aliases,
                 );
@@ -838,9 +834,55 @@ fn source_opening_array_alias_element<'a>(
             }
             Some(SourceOpeningArrayAliasElement::NamedArray)
         }
-        SourceExpressionArrayAlias::Values(expressions) => expressions
-            .get(index)
-            .map(SourceOpeningArrayAliasElement::Expression),
+        SourceExpressionArrayAlias::Values(expressions) => source_opening_expression_array_element(
+            expressions,
+            indices,
+            alias_scope,
+            resolving_array_aliases,
+        ),
+    }
+}
+
+fn source_opening_expression_array_element<'a>(
+    expressions: &'a [Expression],
+    indices: &[usize],
+    alias_scope: &'a SourceOpeningAliasScope,
+    resolving_array_aliases: &mut BTreeSet<String>,
+) -> Option<SourceOpeningArrayAliasElement<'a>> {
+    let (index, rest) = indices.split_first()?;
+    let expression = expressions.get(*index)?;
+    if rest.is_empty() {
+        return Some(SourceOpeningArrayAliasElement::Expression(expression));
+    }
+    match &strip_source_group_expression(expression).kind {
+        ExpressionKind::Array(expressions) => source_opening_expression_array_element(
+            expressions,
+            rest,
+            alias_scope,
+            resolving_array_aliases,
+        ),
+        ExpressionKind::Name(name) => {
+            let alias = alias_scope.expression_arrays.get(name)?;
+            source_opening_array_alias_path_element(
+                alias,
+                rest,
+                alias_scope,
+                resolving_array_aliases,
+            )
+        }
+        _ => None,
+    }
+}
+
+fn source_opening_index_chain(expression: &Expression) -> Option<(&str, Vec<&Expression>)> {
+    match &strip_source_group_expression(expression).kind {
+        ExpressionKind::Name(name) => Some((name, Vec::new())),
+        ExpressionKind::Index { target, index } => {
+            let (name, mut indices) = source_opening_index_chain(target)?;
+            indices.push(index);
+            Some((name, indices))
+        }
+        _ => None,
     }
 }
 
