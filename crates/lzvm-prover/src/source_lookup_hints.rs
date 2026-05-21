@@ -249,6 +249,9 @@ fn source_lookup_expression_field(
                     "ge" => Felt::from_u64(u64::from(left.to_u64() >= right.to_u64())),
                     "eq" => Felt::from_u64(u64::from(left == right)),
                     "ne" => Felt::from_u64(u64::from(left != right)),
+                    "bitand" => Felt::from_u64(left.to_u64() & right.to_u64()),
+                    "bitxor" => Felt::from_u64(left.to_u64() ^ right.to_u64()),
+                    "bitor" => Felt::from_u64(left.to_u64() | right.to_u64()),
                     _ => {
                         return source_lookup_error(
                             unit_index,

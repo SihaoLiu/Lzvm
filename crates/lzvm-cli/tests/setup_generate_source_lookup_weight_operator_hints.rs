@@ -80,6 +80,23 @@ fn comparison_weight_source() -> &'static str {
      col fixed main.left = [5, 1];"
 }
 
+fn bitwise_weight_source() -> &'static str {
+    "airtemplate UnitA() {\n\
+         col witness value;\n\
+         col witness left;\n\
+         col witness right;\n\
+         col witness selector[3];\n\
+         lookup_proves(7, [value], mul: left & right);\n\
+         lookup_assumes(7, [value], sel: selector[0]);\n\
+         lookup_proves(7, [value], mul: left ^ right);\n\
+         lookup_assumes(7, [value], sel: selector[1]);\n\
+         lookup_proves(7, [value], mul: left | right);\n\
+         lookup_assumes(7, [value], sel: selector[2]);\n\
+     }\n\
+     airgroup GroupA { UnitA(); }\n\
+     col fixed main.left = [5, 1];"
+}
+
 fn generate_key(source: &str, dir: &Path) -> (i32, Vec<u8>, Vec<u8>) {
     let source_path = dir.join("source").join("main.pil");
     write_file(&source_path, source);
@@ -261,6 +278,49 @@ fn prove_witness_rejects_source_lookup_comparison_weight_mismatch() {
     assert_generate_key_succeeds(&dir, comparison_weight_source());
 
     let trace_values = &[11, 3, 5, 1, 1, 0, 0, 0, 0, 12, 4, 4, 0, 1, 0, 1, 1, 0];
+    let (code, stdout, stderr) = run_witness(&dir, trace_values);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert!(String::from_utf8(stderr)
+        .expect("stderr should be utf-8")
+        .contains("unbalanced lookup bus 7 tuple 11 has net weight 1"));
+}
+
+#[test]
+fn generate_key_lowers_source_lookup_bitwise_weight_expressions() {
+    let dir = temp_dir("source-lookup-bitwise-weight");
+    let _ = fs::remove_dir_all(&dir);
+    assert_generate_key_succeeds(&dir, bitwise_weight_source());
+    assert_lookup_proves_weight_ops(&dir, &["bitand", "bitxor", "bitor"]);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn prove_witness_accepts_source_lookup_bitwise_weight_expressions() {
+    let dir = temp_dir("source-lookup-bitwise-weight-witness");
+    let _ = fs::remove_dir_all(&dir);
+    assert_generate_key_succeeds(&dir, bitwise_weight_source());
+
+    let trace_values = &[11, 6, 3, 2, 5, 7, 12, 10, 12, 8, 6, 14];
+    let (code, stdout, stderr) = run_witness(&dir, trace_values);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .starts_with("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn prove_witness_rejects_source_lookup_bitwise_weight_mismatch() {
+    let dir = temp_dir("source-lookup-bitwise-weight-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    assert_generate_key_succeeds(&dir, bitwise_weight_source());
+
+    let trace_values = &[11, 6, 3, 2, 5, 6, 12, 10, 12, 8, 6, 14];
     let (code, stdout, stderr) = run_witness(&dir, trace_values);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
