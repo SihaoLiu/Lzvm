@@ -11164,6 +11164,15 @@ fn verifies_contribution_challenge_from_proof_artifact() {
             .lattice_size
             .expect("lattice size should exist") as usize,
     );
+    let public_fields =
+        public_values_as_fields(&public_values).expect("public values should flatten");
+    let expected_challenge = derive_global_challenge_from_contributions(
+        &catalog.layout.global_info,
+        &public_fields,
+        &[],
+        &entries,
+    )
+    .expect("challenge should derive");
     let contribution_segment = build_contribution_segment(&entries)
         .expect("contribution segment should build")
         .expect("contribution segment should exist");
@@ -11175,7 +11184,7 @@ fn verifies_contribution_challenge_from_proof_artifact() {
             ProofSegment {
                 id: CHALLENGE_VALUES_SEGMENT_ID,
                 data: encode_challenge_values_segment(&ChallengeValuesSegment {
-                    values: vec![[1, 2, 3]],
+                    values: vec![expected_challenge.to_u64s()],
                 })
                 .expect("challenge values segment should encode"),
             },
@@ -11192,16 +11201,7 @@ fn verifies_contribution_challenge_from_proof_artifact() {
         encode_public_values(&public_values).expect("public values should encode"),
     );
 
-    let public_fields =
-        public_values_as_fields(&public_values).expect("public values should flatten");
     let public_values_hash = public_values_digest(&public_values).expect("digest should compute");
-    let expected_challenge = derive_global_challenge_from_proof_segments(
-        &catalog.layout.global_info,
-        &public_fields,
-        &[],
-        &[proof.segments[0].clone()],
-    )
-    .expect("challenge should derive");
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -11232,6 +11232,75 @@ fn verifies_contribution_challenge_from_proof_artifact() {
         )
     );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_verify_contribution_with_mismatched_embedded_challenge() {
+    let dir = temp_dir("verify-contribution-mismatched-challenge");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should parse");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = sample_public_values(setup_hash);
+
+    let entries = sample_contribution_entries(
+        catalog
+            .layout
+            .global_info
+            .lattice_size
+            .expect("lattice size should exist") as usize,
+    );
+    let contribution_segment = build_contribution_segment(&entries)
+        .expect("contribution segment should build")
+        .expect("contribution segment should exist");
+    let proof = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            contribution_segment,
+            ProofSegment {
+                id: CHALLENGE_VALUES_SEGMENT_ID,
+                data: encode_challenge_values_segment(&ChallengeValuesSegment {
+                    values: vec![[1, 2, 3]],
+                })
+                .expect("challenge values segment should encode"),
+            },
+        ],
+    };
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "contribution",
+            dir.to_str().expect("setup path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify contribution failed: contribution challenge values mismatch\n"
+    );
 }
 
 #[test]
@@ -11712,6 +11781,98 @@ fn verifies_contribution_challenge_segment_from_multiple_proof_artifacts() {
         "verify contribution-challenge failed: contribution challenge values mismatch\n"
     );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_contribution_challenge_verification_with_mismatched_embedded_challenge() {
+    let dir = temp_dir("verify-contribution-challenge-embedded-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should parse");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let entries = sample_contribution_entries(
+        catalog
+            .layout
+            .global_info
+            .lattice_size
+            .expect("lattice size should exist") as usize,
+    );
+    let public_fields =
+        public_values_as_fields(&public_values).expect("public values should flatten");
+    let expected_challenge = derive_global_challenge_from_contributions(
+        &catalog.layout.global_info,
+        &public_fields,
+        &[],
+        &entries,
+    )
+    .expect("challenge should derive");
+
+    let proof = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            build_contribution_segment(&entries)
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            ProofSegment {
+                id: CHALLENGE_VALUES_SEGMENT_ID,
+                data: encode_challenge_values_segment(&ChallengeValuesSegment {
+                    values: vec![[1, 2, 3]],
+                })
+                .expect("challenge values segment should encode"),
+            },
+        ],
+    };
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.bin");
+    let challenge_segment_path = dir.join("challenge_values_segment.bin");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+    write_bytes(
+        &challenge_segment_path,
+        encode_challenge_values_segment(&ChallengeValuesSegment {
+            values: vec![[
+                expected_challenge.c0.to_u64(),
+                expected_challenge.c1.to_u64(),
+                expected_challenge.c2.to_u64(),
+            ]],
+        })
+        .expect("challenge values segment should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "contribution-challenge",
+            dir.to_str().expect("setup path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+            challenge_segment_path
+                .to_str()
+                .expect("challenge path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify contribution-challenge failed: contribution challenge values mismatch\n"
+    );
 }
 
 #[test]

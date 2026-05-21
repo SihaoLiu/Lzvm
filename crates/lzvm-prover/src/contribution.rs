@@ -2,6 +2,9 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use lzvm_artifacts::challenge_values_segment::{
+    parse_challenge_values_segment, ChallengeValuesSegmentError, CHALLENGE_VALUES_SEGMENT_ID,
+};
 use lzvm_artifacts::contribution_segment::{
     encode_contribution_segment, parse_contribution_segment, ContributionEntry,
     ContributionSegment, ContributionSegmentError, CONTRIBUTION_SEGMENT_ID,
@@ -139,6 +142,9 @@ pub enum ContributionChallengeFileError {
     ProofValues(LoadPcsProofValuesSegmentError),
     ProofValuePacking(ProvePcsProofValuesSegmentError),
     ProofValueMismatch { proof_index: usize },
+    ChallengeValues(ChallengeValuesSegmentError),
+    DuplicateChallengeValuesSegment,
+    ContributionChallengeValuesMismatch,
     Contribution(ContributionChallengeError),
 }
 
@@ -310,6 +316,15 @@ impl fmt::Display for ContributionChallengeFileError {
             Self::ProofValueMismatch { proof_index } => {
                 write!(f, "contribution proof {proof_index} proof values mismatch")
             }
+            Self::ChallengeValues(error) => {
+                write!(f, "invalid contribution challenge values: {error}")
+            }
+            Self::DuplicateChallengeValuesSegment => {
+                write!(f, "duplicate challenge values segment")
+            }
+            Self::ContributionChallengeValuesMismatch => {
+                write!(f, "contribution challenge values mismatch")
+            }
             Self::Contribution(error) => write!(f, "{error}"),
         }
     }
@@ -326,10 +341,13 @@ impl std::error::Error for ContributionChallengeFileError {
             Self::PublicValueField(error) => Some(error),
             Self::ProofValues(error) => Some(error),
             Self::ProofValuePacking(error) => Some(error),
+            Self::ChallengeValues(error) => Some(error),
             Self::Contribution(error) => Some(error),
             Self::MissingProofs
             | Self::UnexpectedProofSegment { .. }
-            | Self::ProofValueMismatch { .. } => None,
+            | Self::ProofValueMismatch { .. }
+            | Self::DuplicateChallengeValuesSegment
+            | Self::ContributionChallengeValuesMismatch => None,
         }
     }
 }
@@ -379,6 +397,12 @@ impl From<LoadPcsProofValuesSegmentError> for ContributionChallengeFileError {
 impl From<ProvePcsProofValuesSegmentError> for ContributionChallengeFileError {
     fn from(error: ProvePcsProofValuesSegmentError) -> Self {
         Self::ProofValuePacking(error)
+    }
+}
+
+impl From<ChallengeValuesSegmentError> for ContributionChallengeFileError {
+    fn from(error: ChallengeValuesSegmentError) -> Self {
+        Self::ChallengeValues(error)
     }
 }
 
@@ -579,6 +603,7 @@ pub fn derive_global_challenge_from_files(
         &packed_proof_values,
         &entries,
     )?;
+    validate_optional_contribution_challenge_values(&proof.segments, challenge)?;
 
     Ok(ContributionChallengeReport {
         proof_count: 1,
@@ -613,6 +638,7 @@ pub fn derive_global_challenge_from_contribution_proofs(
     let mut proof_value_count = 0_usize;
     let mut packed_proof_values = None::<Vec<Felt>>;
     let mut entries = Vec::new();
+    let mut embedded_challenges = Vec::new();
 
     for (proof_index, proof_path) in proof_paths.iter().enumerate() {
         let proof = read_proof_artifact_file(proof_path)?;
@@ -639,6 +665,9 @@ pub fn derive_global_challenge_from_contribution_proofs(
         let mut proof_entries = load_contribution_segment_from_segments(&proof.segments)
             .map_err(ContributionChallengeError::from)?;
         entries.append(&mut proof_entries);
+        if let Some(challenge) = load_optional_contribution_challenge_values(&proof.segments)? {
+            embedded_challenges.push(challenge);
+        }
     }
 
     let packed_proof_values = packed_proof_values.unwrap_or_default();
@@ -648,6 +677,11 @@ pub fn derive_global_challenge_from_contribution_proofs(
         &packed_proof_values,
         &entries,
     )?;
+    for embedded in embedded_challenges {
+        if embedded != challenge.to_u64s() {
+            return Err(ContributionChallengeFileError::ContributionChallengeValuesMismatch);
+        }
+    }
 
     Ok(ContributionChallengeReport {
         proof_count: proof_paths.len(),
@@ -669,6 +703,39 @@ fn validate_contribution_proof_segment_ids(
             continue;
         }
         return Err(ContributionChallengeFileError::UnexpectedProofSegment { id: segment.id });
+    }
+    Ok(())
+}
+
+fn load_optional_contribution_challenge_values(
+    segments: &[ProofSegment],
+) -> Result<Option<[u64; 3]>, ContributionChallengeFileError> {
+    let mut matching_segments = segments
+        .iter()
+        .filter(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID);
+    let Some(segment) = matching_segments.next() else {
+        return Ok(None);
+    };
+    if matching_segments.next().is_some() {
+        return Err(ContributionChallengeFileError::DuplicateChallengeValuesSegment);
+    }
+
+    let values = parse_challenge_values_segment(&segment.data)?.values;
+    let [value] = values.as_slice() else {
+        return Err(ContributionChallengeFileError::ContributionChallengeValuesMismatch);
+    };
+    Ok(Some(*value))
+}
+
+fn validate_optional_contribution_challenge_values(
+    segments: &[ProofSegment],
+    expected: Ext3,
+) -> Result<(), ContributionChallengeFileError> {
+    let Some(values) = load_optional_contribution_challenge_values(segments)? else {
+        return Ok(());
+    };
+    if values != expected.to_u64s() {
+        return Err(ContributionChallengeFileError::ContributionChallengeValuesMismatch);
     }
     Ok(())
 }
