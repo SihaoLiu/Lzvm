@@ -59,11 +59,12 @@ struct SourceGroupValueSlot {
     operand_dimension: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct SourceConstantSlot {
     id: u32,
     stage: u32,
     dimension: u32,
+    lengths: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,6 +166,7 @@ impl SourceScalarSlots {
                     id: column.pols_map_id,
                     stage: column.stage,
                     dimension: column.dimension,
+                    lengths: column.lengths.clone(),
                 },
             );
         }
@@ -730,6 +732,26 @@ impl SourceScalarSlots {
             name: name.to_owned(),
         })
     }
+
+    pub(crate) fn operand_indices_at(
+        &self,
+        name: &str,
+        indices: &[u32],
+        row_offset: i64,
+    ) -> Result<CodeOperand, SourceScalarSlotError> {
+        if indices.len() == 1 {
+            return self.operand_index_at(name, indices[0], row_offset);
+        }
+
+        if let Some(slot) = self.constants.get(name) {
+            let index = linear_source_index(name, indices, &slot.lengths)?;
+            return self.operand_index_at(name, index, row_offset);
+        }
+
+        Err(SourceScalarSlotError::UnsupportedIndex {
+            name: name.to_owned(),
+        })
+    }
 }
 
 impl fmt::Display for SourceScalarSlotError {
@@ -804,4 +826,34 @@ fn named_stage_value_dimension(lengths: &[u64]) -> Result<u32, SourceScalarSlotE
     })?;
     u32::try_from(dimension)
         .map_err(|_| SourceScalarSlotError::LengthOverflow("source stage value dimension overflow"))
+}
+
+fn linear_source_index(
+    name: &str,
+    indices: &[u32],
+    lengths: &[u32],
+) -> Result<u32, SourceScalarSlotError> {
+    if indices.is_empty() || indices.len() != lengths.len() {
+        return Err(SourceScalarSlotError::UnsupportedIndex {
+            name: name.to_owned(),
+        });
+    }
+
+    indices
+        .iter()
+        .zip(lengths)
+        .try_fold(0_u32, |acc, (index, length)| {
+            if index >= length {
+                return Err(SourceScalarSlotError::IndexOutOfRange {
+                    name: name.to_owned(),
+                    index: *index,
+                    dimension: *length,
+                });
+            }
+            acc.checked_mul(*length)
+                .and_then(|base| base.checked_add(*index))
+                .ok_or(SourceScalarSlotError::LengthOverflow(
+                    "source indexed value offset overflow",
+                ))
+        })
 }

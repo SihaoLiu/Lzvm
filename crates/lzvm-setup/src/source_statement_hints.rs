@@ -1082,15 +1082,20 @@ fn source_lookup_scalar_operand_inner(
                 context.scalar_slots.operand_at(name, row_offset).ok()
             }
         }
-        ExpressionKind::Index { target, index } => {
-            let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
-                return None;
-            };
-            let index = source_lookup_index(context.program, index, context.values)?;
+        ExpressionKind::Index { .. } => {
+            let (name, index_expressions) =
+                source_lookup_index_chain(strip_group_expression(expression))?;
+            let indices = index_expressions
+                .iter()
+                .map(|index| source_lookup_index(context.program, index, context.values))
+                .collect::<Option<Vec<_>>>()?;
             if let Some(alias) = context.expression_array_aliases.get(name) {
+                let [index] = indices.as_slice() else {
+                    return None;
+                };
                 let element = source_lookup_array_alias_element(
                     alias,
-                    usize::try_from(index).ok()?,
+                    usize::try_from(*index).ok()?,
                     context.expression_array_aliases,
                     resolving_array_aliases,
                 )?;
@@ -1106,13 +1111,13 @@ fn source_lookup_scalar_operand_inner(
                     }
                     SourceLookupArrayAliasElement::NamedArray(name) => context
                         .scalar_slots
-                        .operand_index_at(name, index, row_offset)
+                        .operand_index_at(name, *index, row_offset)
                         .ok(),
                 };
             }
             context
                 .scalar_slots
-                .operand_index_at(name, index, row_offset)
+                .operand_indices_at(name, &indices, row_offset)
                 .ok()
         }
         ExpressionKind::RowOffset {
@@ -1173,6 +1178,18 @@ fn strip_group_expression(expression: &Expression) -> &Expression {
     match &expression.kind {
         ExpressionKind::Group(inner) => strip_group_expression(inner),
         _ => expression,
+    }
+}
+
+fn source_lookup_index_chain(expression: &Expression) -> Option<(&str, Vec<&Expression>)> {
+    match &strip_group_expression(expression).kind {
+        ExpressionKind::Name(name) => Some((name, Vec::new())),
+        ExpressionKind::Index { target, index } => {
+            let (name, mut indices) = source_lookup_index_chain(target)?;
+            indices.push(index);
+            Some((name, indices))
+        }
+        _ => None,
     }
 }
 
