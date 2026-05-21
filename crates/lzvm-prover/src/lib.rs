@@ -404,6 +404,7 @@ pub enum ProveRunPlanError {
         option: &'static str,
     },
     FinalWrapRequiresFullPass,
+    FinalWrapRemoteAggregation,
     FinalWrapRequiresFinalAggregation,
     InvalidGpuStreams,
     InvalidWitnessThreadPools,
@@ -440,6 +441,9 @@ impl fmt::Display for ProveRunPlanError {
             }
             Self::FinalWrapRequiresFullPass => {
                 write!(f, "prove run plan final wrap requires full pass")
+            }
+            Self::FinalWrapRemoteAggregation => {
+                write!(f, "prove run plan final wrap cannot use remote aggregation")
             }
             Self::FinalWrapRequiresFinalAggregation => {
                 write!(
@@ -1265,6 +1269,9 @@ fn validate_final_wrap_options(
     }
     if !matches!(pass, ProvePassRequest::Full(_)) {
         return Err(ProveRunPlanError::FinalWrapRequiresFullPass);
+    }
+    if options.remote_aggregation {
+        return Err(ProveRunPlanError::FinalWrapRemoteAggregation);
     }
     if !schedule
         .units

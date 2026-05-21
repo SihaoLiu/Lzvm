@@ -759,6 +759,31 @@ fn rejects_final_wrap_for_contribution_passes() {
 }
 
 #[test]
+fn rejects_final_wrap_with_remote_aggregation() {
+    let catalog = sample_catalog(vec![
+        sample_unit(KeyUnitKind::Basic, 0, 64),
+        sample_unit(KeyUnitKind::FinalAggregation, 1, 96),
+    ]);
+    let mut options = ProveRunOptions::default_for_output(PathBuf::from("out"));
+    options.aggregate = true;
+    options.remote_aggregation = true;
+    options.final_wrap = true;
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
+        options,
+        gpu: GpuRunOptions::default(),
+    };
+
+    let error = derive_prove_run_plan(&catalog, request)
+        .expect_err("final wrap should reject remote aggregation");
+
+    assert_eq!(
+        error.to_string(),
+        "prove run plan final wrap cannot use remote aggregation"
+    );
+}
+
+#[test]
 fn rejects_final_wrap_without_final_aggregation_unit() {
     let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
     let mut options = ProveRunOptions::default_for_output(PathBuf::from("out"));
