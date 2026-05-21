@@ -145,6 +145,7 @@ pub enum SetupPreflightError {
     PcsFri(ValidateOptionalPcsFriOpeningProofSegmentsError),
     Contribution(ContributionChallengeError),
     ChallengeValues(ChallengeValuesSegmentError),
+    DuplicateChallengeValuesSegment,
     ProofValues(LoadPcsProofValuesSegmentError),
     ProofValuePacking(ProvePcsProofValuesSegmentError),
     GroupValues(LoadGroupValuesSegmentError),
@@ -184,6 +185,9 @@ impl fmt::Display for SetupPreflightError {
             Self::PcsFri(error) => write!(f, "{error}"),
             Self::Contribution(error) => write!(f, "{error}"),
             Self::ChallengeValues(error) => write!(f, "{error}"),
+            Self::DuplicateChallengeValuesSegment => {
+                write!(f, "duplicate challenge values segment")
+            }
             Self::ProofValues(error) => write!(f, "{error}"),
             Self::ProofValuePacking(error) => write!(f, "{error}"),
             Self::GroupValues(error) => write!(f, "{error}"),
@@ -236,6 +240,7 @@ impl std::error::Error for SetupPreflightError {
             Self::CatalogHashMismatch
             | Self::ProgramImageCacheSetupHashMismatch
             | Self::ContributionChallengeValuesMismatch
+            | Self::DuplicateChallengeValuesSegment
             | Self::UnexpectedProofSegment { .. } => None,
         }
     }
@@ -606,15 +611,19 @@ fn validate_optional_contribution_segment(
 fn validate_optional_challenge_values_segment(
     proof: &ProofArtifact,
 ) -> Result<(), SetupPreflightError> {
-    if let Some(segment) = proof
+    let mut segments = proof
         .segments
         .iter()
-        .find(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID)
-    {
-        parse_challenge_values_segment(&segment.data)
-            .map(|_| ())
-            .map_err(SetupPreflightError::ChallengeValues)?;
+        .filter(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID);
+    let Some(segment) = segments.next() else {
+        return Ok(());
+    };
+    if segments.next().is_some() {
+        return Err(SetupPreflightError::DuplicateChallengeValuesSegment);
     }
+    parse_challenge_values_segment(&segment.data)
+        .map(|_| ())
+        .map_err(SetupPreflightError::ChallengeValues)?;
     Ok(())
 }
 
@@ -782,6 +791,33 @@ mod tests {
 
         validate_optional_challenge_values_segment(&proof)
             .expect("challenge values segment should validate");
+    }
+
+    #[test]
+    fn challenge_values_preflight_rejects_duplicate_segments() {
+        let data = encode_challenge_values_segment(&ChallengeValuesSegment {
+            values: vec![[1, 2, 3]],
+        })
+        .expect("challenge values segment should encode");
+        let proof = ProofArtifact {
+            setup_hash: [0; 32],
+            public_values_hash: [0; 32],
+            segments: vec![
+                ProofSegment {
+                    id: CHALLENGE_VALUES_SEGMENT_ID,
+                    data: data.clone(),
+                },
+                ProofSegment {
+                    id: CHALLENGE_VALUES_SEGMENT_ID,
+                    data,
+                },
+            ],
+        };
+
+        let error = validate_optional_challenge_values_segment(&proof)
+            .expect_err("duplicate challenge values segments should reject");
+
+        assert_eq!(error, SetupPreflightError::DuplicateChallengeValuesSegment);
     }
 
     #[test]
