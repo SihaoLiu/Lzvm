@@ -36,11 +36,12 @@ pub(crate) enum SourceScalarSlotError {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct SourceCommitmentSlot {
     id: u32,
     stage: u32,
     dimension: u32,
+    lengths: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,6 +117,7 @@ impl SourceScalarSlots {
                     id: usize_to_u32(index, "source commitment id overflow")?,
                     stage: column.stage,
                     dimension: column.dimension,
+                    lengths: column.lengths.clone(),
                 },
             );
         }
@@ -741,6 +743,11 @@ impl SourceScalarSlots {
     ) -> Result<CodeOperand, SourceScalarSlotError> {
         if indices.len() == 1 {
             return self.operand_index_at(name, indices[0], row_offset);
+        }
+
+        if let Some(slot) = self.commitments.get(name) {
+            let index = linear_source_index(name, indices, &slot.lengths)?;
+            return self.operand_index_at(name, index, row_offset);
         }
 
         if let Some(slot) = self.constants.get(name) {
