@@ -983,6 +983,62 @@ fn writes_fixed_column_source_artifacts_from_array_constant_index_expressions() 
 }
 
 #[test]
+fn writes_fixed_column_source_artifacts_from_array_derived_static_operators() {
+    let dir = temp_dir("array-derived-static-operators");
+    let _ = fs::remove_dir_all(&dir);
+    let setup = fixtures::sample_two_column_setup_info(2, 3, 1, 4);
+    let setup_path = dir.join("unit.starkinfo.bin");
+    let main_path = dir.join("main.pil");
+    let output_path = dir.join("unit.fixed-source.bin");
+    write_file(
+        &setup_path,
+        encode_unit_setup_info(&setup).expect("setup should encode"),
+    );
+    write_file(
+        &main_path,
+        "const int GEN[2] = [2, 3];\n\
+         col fixed main.left = [GEN[0] << GEN[1], GEN[1] & 1, GEN[0] < GEN[1], !(GEN[1] - 3)];\n\
+         col fixed main.right = [GEN[1] >= GEN[0], GEN[0] != GEN[1], GEN[0] || 5, 0 && GEN[1]];",
+    );
+
+    write_fixed_columns_from_source_file(&SourceFixedColumnsWriteRequest {
+        working_dir: dir.clone(),
+        include_paths: Vec::new(),
+        include_path_first: false,
+        main_file: main_path,
+        setup_info_path: setup_path,
+        group_name: "group-a".to_owned(),
+        unit_name: "unit-a".to_owned(),
+        output_path: output_path.clone(),
+    })
+    .expect("fixed columns should be written");
+
+    let columns = read_fixed_columns_file(&output_path).expect("fixed columns should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        columns,
+        FixedColumns {
+            group_name: "group-a".to_owned(),
+            unit_name: "unit-a".to_owned(),
+            row_count: 4,
+            columns: vec![
+                FixedColumn {
+                    name: "main.left".to_owned(),
+                    dimensions: vec![1],
+                    values: vec![16, 1, 1, 1],
+                },
+                FixedColumn {
+                    name: "main.right".to_owned(),
+                    dimensions: vec![1],
+                    values: vec![1, 1, 2, 0],
+                },
+            ],
+        }
+    );
+}
+
+#[test]
 fn writes_fixed_column_source_artifacts_from_row_varying_array_indices() {
     let dir = temp_dir("row-varying-array-indices");
     let _ = fs::remove_dir_all(&dir);

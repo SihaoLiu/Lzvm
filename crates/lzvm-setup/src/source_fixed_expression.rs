@@ -238,30 +238,115 @@ pub(crate) fn evaluate_source_fixed_template_value_expression_with_parts(
         return Some(value);
     }
 
+    if let ExpressionKind::Group(inner) = &expression.kind {
+        return evaluate_source_fixed_template_value_expression_with_parts(inner, scalars, arrays);
+    }
+
+    if let ExpressionKind::Unary { op, expr } = &expression.kind {
+        let value =
+            evaluate_source_fixed_template_value_expression_with_parts(expr, scalars, arrays)?;
+        return match op {
+            UnaryOperator::Plus => {
+                source_fixed_template_integer(&value).map(FixedFileTemplateValue::Integer)
+            }
+            UnaryOperator::Minus => source_fixed_template_integer(&value)
+                .and_then(i128::checked_neg)
+                .map(FixedFileTemplateValue::Integer),
+            UnaryOperator::Not => Some(FixedFileTemplateValue::Boolean(
+                !source_fixed_template_truthy(&value),
+            )),
+            UnaryOperator::Increment | UnaryOperator::Decrement => None,
+        };
+    }
+
     if let ExpressionKind::Binary { op, left, right } = &expression.kind {
         let left =
             evaluate_source_fixed_template_value_expression_with_parts(left, scalars, arrays)?;
+        if *op == BinaryOperator::LogicalAnd {
+            if source_fixed_template_truthy(&left) {
+                return evaluate_source_fixed_template_value_expression_with_parts(
+                    right, scalars, arrays,
+                );
+            }
+            return Some(left);
+        }
+        if *op == BinaryOperator::LogicalOr {
+            if source_fixed_template_truthy(&left) {
+                return Some(left);
+            }
+            return evaluate_source_fixed_template_value_expression_with_parts(
+                right, scalars, arrays,
+            );
+        }
+
         let right =
             evaluate_source_fixed_template_value_expression_with_parts(right, scalars, arrays)?;
-        let (FixedFileTemplateValue::Integer(left), FixedFileTemplateValue::Integer(right)) =
-            (left, right)
-        else {
-            return None;
-        };
+        let left_integer = source_fixed_template_integer(&left);
+        let right_integer = source_fixed_template_integer(&right);
         let value = match op {
-            BinaryOperator::Add => left.checked_add(right)?,
-            BinaryOperator::Subtract => left.checked_sub(right)?,
-            BinaryOperator::Multiply => left.checked_mul(right)?,
-            BinaryOperator::Divide if right != 0 => left.checked_div(right)?,
-            BinaryOperator::Modulo if right != 0 => left.checked_rem(right)?,
-            BinaryOperator::Power => {
-                let base = u64::try_from(left).ok()?;
-                let exponent = u64::try_from(right).ok()?;
-                i128::from(Felt::from_u64(base).pow(exponent).to_u64())
+            BinaryOperator::Add => match (left_integer, right_integer) {
+                (Some(left), Some(right)) => {
+                    FixedFileTemplateValue::Integer(left.checked_add(right)?)
+                }
+                _ => FixedFileTemplateValue::String(format!(
+                    "{}{}",
+                    source_fixed_template_string(left),
+                    source_fixed_template_string(right)
+                )),
+            },
+            BinaryOperator::Subtract => {
+                FixedFileTemplateValue::Integer(left_integer?.checked_sub(right_integer?)?)
             }
+            BinaryOperator::Multiply => {
+                FixedFileTemplateValue::Integer(left_integer?.checked_mul(right_integer?)?)
+            }
+            BinaryOperator::Divide | BinaryOperator::Backslash if right_integer? != 0 => {
+                FixedFileTemplateValue::Integer(left_integer?.checked_div(right_integer?)?)
+            }
+            BinaryOperator::Modulo if right_integer? != 0 => {
+                FixedFileTemplateValue::Integer(left_integer?.checked_rem(right_integer?)?)
+            }
+            BinaryOperator::Power => {
+                let base = u64::try_from(left_integer?).ok()?;
+                let exponent = u64::try_from(right_integer?).ok()?;
+                FixedFileTemplateValue::Integer(i128::from(
+                    Felt::from_u64(base).pow(exponent).to_u64(),
+                ))
+            }
+            BinaryOperator::ShiftLeft => {
+                let right = u32::try_from(right_integer?).ok()?;
+                FixedFileTemplateValue::Integer(left_integer?.checked_shl(right)?)
+            }
+            BinaryOperator::ShiftRight => {
+                let right = u32::try_from(right_integer?).ok()?;
+                FixedFileTemplateValue::Integer(left_integer?.checked_shr(right)?)
+            }
+            BinaryOperator::BitAnd => {
+                FixedFileTemplateValue::Integer(left_integer? & right_integer?)
+            }
+            BinaryOperator::BitXor => {
+                FixedFileTemplateValue::Integer(left_integer? ^ right_integer?)
+            }
+            BinaryOperator::BitOr => {
+                FixedFileTemplateValue::Integer(left_integer? | right_integer?)
+            }
+            BinaryOperator::Less => FixedFileTemplateValue::Boolean(left_integer? < right_integer?),
+            BinaryOperator::LessEqual => {
+                FixedFileTemplateValue::Boolean(left_integer? <= right_integer?)
+            }
+            BinaryOperator::Greater => {
+                FixedFileTemplateValue::Boolean(left_integer? > right_integer?)
+            }
+            BinaryOperator::GreaterEqual => {
+                FixedFileTemplateValue::Boolean(left_integer? >= right_integer?)
+            }
+            BinaryOperator::EqualEqual | BinaryOperator::TripleEqual => {
+                FixedFileTemplateValue::Boolean(left == right)
+            }
+            BinaryOperator::NotEqual => FixedFileTemplateValue::Boolean(left != right),
             _ => return None,
         };
-        return Some(FixedFileTemplateValue::Integer(value));
+        return Some(value);
     }
 
     let ExpressionKind::Index { target, index } = &expression.kind else {
@@ -278,6 +363,30 @@ pub(crate) fn evaluate_source_fixed_template_value_expression_with_parts(
         .get(index)
         .copied()
         .map(|value| FixedFileTemplateValue::Integer(i128::from(value)))
+}
+
+fn source_fixed_template_integer(value: &FixedFileTemplateValue) -> Option<i128> {
+    match value {
+        FixedFileTemplateValue::Integer(value) => Some(*value),
+        FixedFileTemplateValue::Boolean(value) => Some(if *value { 1 } else { 0 }),
+        FixedFileTemplateValue::String(_) => None,
+    }
+}
+
+fn source_fixed_template_truthy(value: &FixedFileTemplateValue) -> bool {
+    match value {
+        FixedFileTemplateValue::Integer(value) => *value != 0,
+        FixedFileTemplateValue::Boolean(value) => *value,
+        FixedFileTemplateValue::String(value) => !value.is_empty(),
+    }
+}
+
+fn source_fixed_template_string(value: FixedFileTemplateValue) -> String {
+    match value {
+        FixedFileTemplateValue::Integer(value) => value.to_string(),
+        FixedFileTemplateValue::Boolean(value) => value.to_string(),
+        FixedFileTemplateValue::String(value) => value,
+    }
 }
 
 fn evaluate_source_fixed_template_value_expression_with_static_index(
