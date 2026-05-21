@@ -221,7 +221,7 @@ fn lower_source_scalar_expression_at(
                 .map_err(|error| unsupported_source_message(error.to_string()))
         }
         ExpressionKind::Binary { op, left, right } => {
-            if *op == BinaryOperator::Divide {
+            if matches!(op, BinaryOperator::Divide | BinaryOperator::Backslash) {
                 return lower_source_static_divisor_expression(left, right, state, row_offset);
             }
             if *op == BinaryOperator::Power {
