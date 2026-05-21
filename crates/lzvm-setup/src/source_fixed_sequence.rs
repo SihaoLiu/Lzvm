@@ -189,15 +189,115 @@ pub(crate) fn parse_literal_sequence_values(
             token: "<end>".to_owned(),
         });
     }
-    if tokens
-        .get(cursor)
-        .is_some_and(|token| token.kind == TokenKind::Ellipsis)
-    {
-        cursor += 1;
-        fill_sequence_pattern(&mut values, row_count, source_name, source_span)?;
+    if tokens.get(cursor).is_some() {
+        cursor = apply_sequence_suffix(&mut values, &context, cursor, row_count)?;
     }
     expect_end(&tokens, cursor, source_name, source_span)?;
     Ok(values)
+}
+
+fn apply_sequence_suffix(
+    values: &mut Vec<i128>,
+    context: &SequenceParseContext<'_>,
+    cursor: usize,
+    row_count: usize,
+) -> Result<usize, SourceFixedColumnsWriteError> {
+    let Some(token) = context.tokens.get(cursor) else {
+        return Ok(cursor);
+    };
+    match token.kind {
+        TokenKind::Ellipsis => {
+            fill_sequence_pattern(values, row_count, context.source_name, context.source_span)?;
+            Ok(cursor + 1)
+        }
+        TokenKind::Colon => {
+            let cursor = apply_sequence_repeat_suffix(values, context, cursor, row_count)?;
+            if context
+                .tokens
+                .get(cursor)
+                .is_some_and(|token| token.kind == TokenKind::Ellipsis)
+            {
+                fill_sequence_pattern(values, row_count, context.source_name, context.source_span)?;
+                return Ok(cursor + 1);
+            }
+            Ok(cursor)
+        }
+        _ => Ok(cursor),
+    }
+}
+
+fn apply_sequence_repeat_suffix(
+    values: &mut Vec<i128>,
+    context: &SequenceParseContext<'_>,
+    colon_index: usize,
+    row_count: usize,
+) -> Result<usize, SourceFixedColumnsWriteError> {
+    let start = colon_index + 1;
+    let end = sequence_suffix_expression_end(context, start)?;
+    if start == end {
+        return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
+            source_name: context.source_name.to_owned(),
+            source_span: context.source_span,
+            token: context
+                .tokens
+                .get(end)
+                .map(|token| token.lexeme.clone())
+                .unwrap_or_else(|| "<end>".to_owned()),
+        });
+    }
+    let count = parse_sequence_count(context, start, end)?;
+    let pattern = values.clone();
+    values.clear();
+    for _ in 0..count {
+        for value in &pattern {
+            if values.len() >= row_count {
+                return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
+                    source_name: context.source_name.to_owned(),
+                    source_span: context.source_span,
+                    expression: segment_text(context, 0, end),
+                });
+            }
+            values.push(*value);
+        }
+    }
+    Ok(end)
+}
+
+fn sequence_suffix_expression_end(
+    context: &SequenceParseContext<'_>,
+    start: usize,
+) -> Result<usize, SourceFixedColumnsWriteError> {
+    let mut stack = Vec::new();
+    let mut cursor = start;
+    while let Some(token) = context.tokens.get(cursor) {
+        if stack.is_empty() && token.kind == TokenKind::Ellipsis {
+            break;
+        }
+        match token.kind {
+            TokenKind::LParen => stack.push(TokenKind::RParen),
+            TokenKind::LBracket => stack.push(TokenKind::RBracket),
+            TokenKind::LBrace => stack.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                let Some(expected) = stack.pop() else {
+                    return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
+                        source_name: context.source_name.to_owned(),
+                        source_span: context.source_span,
+                        token: token.lexeme.clone(),
+                    });
+                };
+                if expected != token.kind {
+                    return Err(SourceFixedColumnsWriteError::UnexpectedSequenceToken {
+                        source_name: context.source_name.to_owned(),
+                        source_span: context.source_span,
+                        token: token.lexeme.clone(),
+                    });
+                }
+            }
+            _ => {}
+        }
+        cursor += 1;
+    }
+    Ok(cursor)
 }
 
 fn fill_sequence_pattern(

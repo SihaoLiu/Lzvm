@@ -260,12 +260,7 @@ fn parse_column_initializer(
     };
     if token.kind == TokenKind::LBracket {
         let (mut span, mut next_index) = parse_delimited_span(tokens, index, source)?;
-        if let Some(token) = tokens.get(next_index) {
-            if token.kind == TokenKind::Ellipsis {
-                span.end = token.end;
-                next_index += 1;
-            }
-        }
+        next_index = parse_sequence_initializer_suffix(tokens, next_index, &mut span, source)?;
         let terminator = tokens
             .get(next_index)
             .ok_or_else(|| ParseError::ExpectedTerminator {
@@ -313,6 +308,62 @@ fn parse_column_initializer(
         next_index + 1,
         terminator.end,
     ))
+}
+
+fn parse_sequence_initializer_suffix(
+    tokens: &[Token],
+    index: usize,
+    span: &mut SourceSpan,
+    source: &SourceFile,
+) -> Result<usize, ParseError> {
+    let Some(token) = tokens.get(index) else {
+        return Ok(index);
+    };
+    if token.kind == TokenKind::Ellipsis {
+        span.end = token.end;
+        return Ok(index + 1);
+    }
+    if token.kind != TokenKind::Colon {
+        return Ok(index);
+    }
+
+    let mut cursor = index + 1;
+    let mut stack = Vec::new();
+    while let Some(token) = tokens.get(cursor) {
+        if stack.is_empty() && matches!(token.kind, TokenKind::Ellipsis | TokenKind::Semicolon) {
+            break;
+        }
+        match token.kind {
+            TokenKind::LParen => stack.push(TokenKind::RParen),
+            TokenKind::LBracket => stack.push(TokenKind::RBracket),
+            TokenKind::LBrace => stack.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                let Some(expected) = stack.pop() else {
+                    return Err(expected_close_error(token.kind, source, token.start));
+                };
+                if token.kind != expected {
+                    return Err(expected_close_error(expected, source, token.start));
+                }
+            }
+            _ => {}
+        }
+        cursor += 1;
+    }
+
+    if cursor == index + 1 {
+        return Err(ParseError::ExpectedTerminator {
+            source_name: source.source_name.clone(),
+            start: missing_start(tokens, cursor),
+        });
+    }
+    span.end = tokens[cursor - 1].end;
+    if let Some(token) = tokens.get(cursor) {
+        if token.kind == TokenKind::Ellipsis {
+            span.end = token.end;
+            cursor += 1;
+        }
+    }
+    Ok(cursor)
 }
 
 fn parse_column_name_reference(

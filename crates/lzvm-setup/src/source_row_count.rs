@@ -253,12 +253,7 @@ fn count_source_sequence_items_with_last(
     if text.ends_with("...") {
         return unsupported("source fixed-column fill sequences need explicit metadata");
     }
-    let inner = text
-        .strip_prefix('[')
-        .and_then(|value| value.strip_suffix(']'))
-        .ok_or_else(|| {
-            unsupported_source_message("source fixed-column sequence must use brackets")
-        })?;
+    let (inner, repeat) = source_sequence_inner_and_repeat(text)?;
     let mut count = 0_u64;
     let mut previous_value = None;
     let mut value_before_previous = None;
@@ -302,10 +297,88 @@ fn count_source_sequence_items_with_last(
     if pending_comma_progression.is_some() {
         return unsupported("source fixed-column progression needs explicit metadata");
     }
-    Ok(SequenceItemCount {
+    let count = SequenceItemCount {
         len: count,
         last_value: previous_value,
-    })
+    };
+    if let Some(repeat) = repeat {
+        let repeat = parse_u64_static_integer(context, repeat)?;
+        let len = count
+            .len
+            .checked_mul(repeat)
+            .ok_or_else(|| unsupported_source_message("source sequence length overflow"))?;
+        return Ok(SequenceItemCount {
+            len,
+            last_value: if repeat == 0 { None } else { count.last_value },
+        });
+    }
+    Ok(count)
+}
+
+fn source_sequence_inner_and_repeat(
+    text: &str,
+) -> Result<(&str, Option<&str>), SourceKeyDirectoryMetadataError> {
+    let text = text.trim();
+    if !text.starts_with('[') {
+        return Err(unsupported_source_message(
+            "source fixed-column sequence must use brackets",
+        ));
+    }
+    let close = source_sequence_close_index(text)?;
+    let inner = &text[1..close];
+    let suffix = text[close + 1..].trim();
+    if suffix.is_empty() {
+        return Ok((inner, None));
+    }
+    let Some(repeat) = suffix.strip_prefix(':') else {
+        return Err(unsupported_source_message(
+            "source fixed-column sequence must use brackets",
+        ));
+    };
+    let repeat = repeat.trim();
+    if repeat.is_empty() {
+        return unsupported("source fixed-column repeat count must be explicit");
+    }
+    Ok((inner, Some(repeat)))
+}
+
+fn source_sequence_close_index(text: &str) -> Result<usize, SourceKeyDirectoryMetadataError> {
+    let mut depth = 0_i32;
+    let mut quote = None::<char>;
+    let mut escaped = false;
+    for (index, character) in text.char_indices() {
+        if let Some(active_quote) = quote {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if character == '\\' {
+                escaped = true;
+                continue;
+            }
+            if character == active_quote {
+                quote = None;
+            }
+            continue;
+        }
+        match character {
+            '"' | '\'' | '`' => quote = Some(character),
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Ok(index);
+                }
+                if depth < 0 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    Err(unsupported_source_message(
+        "source fixed-column sequence must use brackets",
+    ))
 }
 
 struct SequenceCountContext<'a> {
@@ -416,7 +489,7 @@ fn sequence_repeat_value_count(
     context: &SequenceCountContext<'_>,
     value: &str,
 ) -> Result<SequenceItemCount, SourceKeyDirectoryMetadataError> {
-    if value.starts_with('[') && value.ends_with(']') {
+    if value.starts_with('[') {
         count_source_sequence_items_with_last(context, value)
     } else {
         Ok(SequenceItemCount {

@@ -1621,6 +1621,24 @@ fn parses_sequence_initializer_spans_with_trailing_ellipsis() {
 }
 
 #[test]
+fn parses_sequence_initializer_spans_with_repeat_suffix() {
+    let source = source("col fixed x = [foo(bar), baz[1]]:3...;");
+
+    let declarations = parse_column_declarations(&source).expect("columns should parse");
+
+    let initializer = declarations[0]
+        .initializer
+        .as_ref()
+        .expect("initializer should be recorded");
+    assert_eq!(initializer.kind, ColumnInitializerKind::Sequence);
+    assert_eq!(
+        &source.contents[initializer.span.start..initializer.span.end],
+        "[foo(bar), baz[1]]:3..."
+    );
+    assert!(initializer.expression.is_none());
+}
+
+#[test]
 fn skips_col_cast_expressions() {
     let source = source("value = col(x);");
 
