@@ -201,15 +201,22 @@ fn lower_source_scalar_expression_at(
                 .ok_or_else(|| unsupported_source_message("source row offset overflow"))?;
             lower_source_scalar_expression_at(target, state, combined_offset)
         }
-        ExpressionKind::Index { target, index } => {
-            let ExpressionKind::Name(name) = &strip_group_expression(target).kind else {
-                return unsupported("unsupported source indexed constraint target");
-            };
-            let index = source_scalar_index_value(index, state)?;
+        ExpressionKind::Index { .. } => {
+            let (name, index_expressions) =
+                source_constraint_index_chain(strip_group_expression(expression)).ok_or_else(
+                    || unsupported_source_message("unsupported source indexed constraint target"),
+                )?;
+            let indices = index_expressions
+                .iter()
+                .map(|index| source_scalar_index_value(index, state))
+                .collect::<Result<Vec<_>, _>>()?;
             if let Some(alias) = state.expression_array_aliases.get(name) {
+                let [index] = indices.as_slice() else {
+                    return unsupported("unsupported source indexed constraint target");
+                };
                 let element = source_constraint_array_alias_element(
                     alias,
-                    usize::try_from(index).map_err(|_| {
+                    usize::try_from(*index).map_err(|_| {
                         unsupported_source_message("source scalar constraint index overflow")
                     })?,
                     state.expression_array_aliases,
@@ -228,7 +235,7 @@ fn lower_source_scalar_expression_at(
                         }
                         state
                             .scalar_slots
-                            .operand_index_at(name, index, row_offset)
+                            .operand_index_at(name, *index, row_offset)
                             .map_err(|error| unsupported_source_message(error.to_string()))
                     }
                 };
@@ -238,7 +245,7 @@ fn lower_source_scalar_expression_at(
             }
             state
                 .scalar_slots
-                .operand_index_at(name, index, row_offset)
+                .operand_indices_at(name, &indices, row_offset)
                 .map_err(|error| unsupported_source_message(error.to_string()))
         }
         ExpressionKind::Binary { op, left, right } => {
@@ -478,6 +485,18 @@ fn strip_group_expression(expression: &Expression) -> &Expression {
     match &expression.kind {
         ExpressionKind::Group(inner) => strip_group_expression(inner),
         _ => expression,
+    }
+}
+
+fn source_constraint_index_chain(expression: &Expression) -> Option<(&str, Vec<&Expression>)> {
+    match &strip_group_expression(expression).kind {
+        ExpressionKind::Name(name) => Some((name, Vec::new())),
+        ExpressionKind::Index { target, index } => {
+            let (name, mut indices) = source_constraint_index_chain(target)?;
+            indices.push(index);
+            Some((name, indices))
+        }
+        _ => None,
     }
 }
 
