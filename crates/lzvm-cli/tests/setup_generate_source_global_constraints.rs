@@ -295,6 +295,77 @@ fn generate_key_lowers_public_value_static_divisor_global_constraints() {
 }
 
 #[test]
+fn generate_key_lowers_challenge_residual_global_constraints() {
+    let dir = temp_dir("challenge-residual");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "challenge stage(1) alpha;\n\
+         alpha - 3;\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let program = read_global_program_file(dir.join("pilout.globalConstraints.bin"))
+        .expect("source global program should parse");
+    assert_eq!(program.constraints.entries.len(), 1);
+    assert_eq!(program.constraints.entries[0].destination_dimension, 3);
+
+    let satisfied = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            challenges: &[Ext3::new(Felt::from_u64(3), Felt::ZERO, Felt::ZERO)],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("matching challenge value should evaluate");
+    assert_eq!(satisfied, [Ext3::ZERO]);
+
+    let unsatisfied_base = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            challenges: &[Ext3::new(Felt::from_u64(4), Felt::ZERO, Felt::ZERO)],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("mismatched challenge base component should evaluate");
+    assert_ne!(unsatisfied_base, [Ext3::ZERO]);
+
+    let unsatisfied_extension = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            challenges: &[Ext3::new(Felt::from_u64(3), Felt::ONE, Felt::ZERO)],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("nonzero challenge extension component should evaluate");
+    assert_ne!(unsatisfied_extension, [Ext3::ZERO]);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_lowers_static_public_initializers_as_global_constraints() {
     let dir = temp_dir("static-public-initializer");
     let _ = fs::remove_dir_all(&dir);

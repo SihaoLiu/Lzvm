@@ -12,15 +12,21 @@ use lzvm_pil::{
 };
 
 use crate::{
+    source_control_body_cache::SourceControlBodyCaches,
+    source_global_values::source_challenge_slots,
     source_key_directory::{
         source_item_lengths, source_item_name, SourceKeyDirectoryMetadataError,
     },
-    source_scope::global_constraint_source_names,
+    source_scalar_slots::SourceChallengeSlotMetadata,
+    source_scope::{concrete_template_names, global_constraint_source_names},
     source_static_values::{
         evaluate_source_static_expression, source_declaration_in_static_false_branch,
-        source_scalar_constant_values, source_static_array_expression, static_value_integer,
+        source_scalar_constant_values, source_static_array_expression,
+        source_template_constant_value_cache, static_value_integer,
     },
 };
+
+mod residuals;
 
 pub(crate) fn source_global_program(
     program: &SourceProgram,
@@ -33,6 +39,17 @@ pub(crate) fn source_global_program(
         .lattice_size
         .map(|row_count| source_scalar_constant_values(program, row_count))
         .unwrap_or_default();
+    let template_values = source_template_constant_value_cache(program, &static_values);
+    let active_templates = concrete_template_names(program);
+    let mut body_caches = SourceControlBodyCaches::default();
+    let challenge_metadata = source_challenge_slots(
+        program,
+        &static_values,
+        &active_templates,
+        &template_values,
+        &mut body_caches,
+    )?;
+    let challenge_slots = source_global_challenge_slots(&challenge_metadata);
     let mut constraints = SourceGlobalConstraintBuilder::default();
     for module in &program.modules {
         if !global_source_names.contains(&module.source_name) {
@@ -50,6 +67,7 @@ pub(crate) fn source_global_program(
             module,
             &proof_value_slots,
             &public_value_slots,
+            &challenge_slots,
             &static_values,
             &mut constraints,
         )?;
@@ -210,6 +228,7 @@ fn lower_module_top_level_global_constraints(
     module: &SourceProgramModule,
     proof_value_slots: &BTreeMap<String, SourceProofValueSlot>,
     public_value_slots: &BTreeMap<String, SourcePublicValueSlot>,
+    challenge_slots: &BTreeMap<String, SourceChallengeSlot>,
     static_values: &BTreeMap<String, FixedFileTemplateValue>,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
@@ -218,6 +237,12 @@ fn lower_module_top_level_global_constraints(
         expressions: top_level_global_expression_aliases(module),
         expression_arrays: top_level_global_expression_array_aliases(module),
         static_values: static_values.clone(),
+    };
+    let lowering_context = SourceTopLevelGlobalConstraintContext {
+        proof_value_slots,
+        public_value_slots,
+        challenge_slots,
+        alias_scope: &alias_scope,
     };
     let tokens = lex_source(&module.source.contents).map_err(|source| {
         SourceKeyDirectoryMetadataError::Lex {
@@ -243,9 +268,7 @@ fn lower_module_top_level_global_constraints(
                         module,
                         &tokens,
                         index,
-                        proof_value_slots,
-                        public_value_slots,
-                        &alias_scope,
+                        &lowering_context,
                         constraints,
                     )?;
                 }
@@ -265,9 +288,7 @@ fn lower_module_top_level_global_constraints(
                     module,
                     &tokens,
                     index,
-                    proof_value_slots,
-                    public_value_slots,
-                    &alias_scope,
+                    &lowering_context,
                     constraints,
                 )?;
             }
@@ -280,9 +301,7 @@ fn lower_top_level_expression_statement(
     module: &SourceProgramModule,
     tokens: &[Token],
     index: usize,
-    proof_value_slots: &BTreeMap<String, SourceProofValueSlot>,
-    public_value_slots: &BTreeMap<String, SourcePublicValueSlot>,
-    alias_scope: &SourceGlobalAliasScope<'_>,
+    context: &SourceTopLevelGlobalConstraintContext<'_, '_>,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<usize, SourceKeyDirectoryMetadataError> {
     let next_index = skip_top_level_statement(tokens, index)?;
@@ -296,9 +315,7 @@ fn lower_top_level_expression_statement(
     lower_top_level_global_constraint(
         &expression,
         &module.source.contents[expression.start..expression.end],
-        proof_value_slots,
-        public_value_slots,
-        alias_scope,
+        context,
         constraints,
     )?;
     Ok(next_index)
@@ -307,20 +324,18 @@ fn lower_top_level_expression_statement(
 fn lower_top_level_global_constraint(
     expression: &Expression,
     source_line: &str,
-    proof_value_slots: &BTreeMap<String, SourceProofValueSlot>,
-    public_value_slots: &BTreeMap<String, SourcePublicValueSlot>,
-    alias_scope: &SourceGlobalAliasScope<'_>,
+    context: &SourceTopLevelGlobalConstraintContext<'_, '_>,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     let mut resolving_aliases = BTreeSet::new();
     let mut resolving_array_aliases = BTreeSet::new();
     if let Some(target) = proof_value_boolean_constraint_target(
         expression,
-        alias_scope,
+        context.alias_scope,
         &mut resolving_aliases,
         &mut resolving_array_aliases,
     ) {
-        if let Some(slot) = proof_value_slots.get(&target.name).copied() {
+        if let Some(slot) = context.proof_value_slots.get(&target.name).copied() {
             if target.index.is_some() {
                 return unsupported("top-level proof value constraints require scalar values");
             }
@@ -330,7 +345,7 @@ fn lower_top_level_global_constraint(
                 source_line.trim().to_owned(),
             );
         }
-        if let Some(slot) = public_value_slots.get(&target.name).copied() {
+        if let Some(slot) = context.public_value_slots.get(&target.name).copied() {
             if slot.stage != 1 {
                 return unsupported("top-level public value constraints require scalar values");
             }
@@ -339,12 +354,23 @@ fn lower_top_level_global_constraint(
                 .append_public_value_boolean_constraint(offset, source_line.trim().to_owned());
         }
     }
+    let source_line = source_line.trim().to_owned();
     if constraints.append_base_residual_constraint(
         expression,
-        proof_value_slots,
-        public_value_slots,
-        alias_scope,
-        source_line.trim().to_owned(),
+        context.proof_value_slots,
+        context.public_value_slots,
+        context.alias_scope,
+        source_line.clone(),
+    )? {
+        return Ok(());
+    }
+    if constraints.append_ext_residual_constraint(
+        expression,
+        context.proof_value_slots,
+        context.public_value_slots,
+        context.challenge_slots,
+        context.alias_scope,
+        source_line.clone(),
     )? {
         return Ok(());
     }
@@ -368,6 +394,12 @@ struct SourcePublicValueSlot {
 }
 
 #[derive(Debug, Clone, Copy)]
+struct SourceChallengeSlot {
+    id: u32,
+    dimension: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
 struct SourceGlobalBaseOperand {
     buffer: u16,
     offset: u32,
@@ -384,6 +416,13 @@ struct SourceGlobalAliasScope<'a> {
     expressions: SourceGlobalExpressionAliases,
     expression_arrays: SourceGlobalExpressionArrayAliases,
     static_values: BTreeMap<String, FixedFileTemplateValue>,
+}
+
+struct SourceTopLevelGlobalConstraintContext<'a, 'b> {
+    proof_value_slots: &'a BTreeMap<String, SourceProofValueSlot>,
+    public_value_slots: &'a BTreeMap<String, SourcePublicValueSlot>,
+    challenge_slots: &'a BTreeMap<String, SourceChallengeSlot>,
+    alias_scope: &'a SourceGlobalAliasScope<'b>,
 }
 
 type SourceGlobalExpressionAliases = BTreeMap<String, Expression>;
@@ -555,6 +594,23 @@ fn source_public_value_slots(
     Ok(slots)
 }
 
+fn source_global_challenge_slots(
+    slots: &[SourceChallengeSlotMetadata],
+) -> BTreeMap<String, SourceChallengeSlot> {
+    slots
+        .iter()
+        .map(|slot| {
+            (
+                slot.name.clone(),
+                SourceChallengeSlot {
+                    id: slot.id,
+                    dimension: slot.dimension,
+                },
+            )
+        })
+        .collect()
+}
+
 fn public_value_target_offset(
     slot: SourcePublicValueSlot,
     index: Option<u32>,
@@ -571,6 +627,31 @@ fn public_value_target_offset(
     slot.offset
         .checked_add(index)
         .ok_or_else(|| unsupported_source_message("source public value offset overflow"))
+}
+
+fn challenge_target_offset(
+    slot: SourceChallengeSlot,
+    index: Option<u32>,
+) -> Result<u32, SourceKeyDirectoryMetadataError> {
+    let index = match index {
+        Some(index) => {
+            if index >= slot.dimension {
+                return unsupported("top-level challenge value index is out of range");
+            }
+            index
+        }
+        None => {
+            if slot.dimension == 1 {
+                0
+            } else {
+                return unsupported("top-level challenge constraints require scalar values");
+            }
+        }
+    };
+    slot.id
+        .checked_add(index)
+        .and_then(|id| id.checked_mul(3))
+        .ok_or_else(|| unsupported_source_message("source challenge offset overflow"))
 }
 
 fn proof_value_boolean_constraint_target(
@@ -860,6 +941,7 @@ impl SourceGlobalConstraintBuilder {
             source_usize_to_u32(self.args.len(), "source global argument offset overflow")?;
         let ops_start = self.ops.len();
         let args_start = self.args.len();
+        let numbers_start = self.numbers.len();
         let (destination_id, temp1_count) = {
             let mut context = SourceGlobalBaseLoweringContext {
                 builder: self,
@@ -872,6 +954,9 @@ impl SourceGlobalConstraintBuilder {
             };
             let Some(operand) = lower_global_base_residual_operand(expression, &mut context)?
             else {
+                self.ops.truncate(ops_start);
+                self.args.truncate(args_start);
+                self.numbers.truncate(numbers_start);
                 return Ok(false);
             };
             let destination = context.ensure_temp_operand(operand)?;
@@ -897,6 +982,26 @@ impl SourceGlobalConstraintBuilder {
             source_line,
         });
         Ok(true)
+    }
+
+    fn append_ext_residual_constraint(
+        &mut self,
+        expression: &Expression,
+        proof_value_slots: &BTreeMap<String, SourceProofValueSlot>,
+        public_value_slots: &BTreeMap<String, SourcePublicValueSlot>,
+        challenge_slots: &BTreeMap<String, SourceChallengeSlot>,
+        alias_scope: &SourceGlobalAliasScope<'_>,
+        source_line: String,
+    ) -> Result<bool, SourceKeyDirectoryMetadataError> {
+        residuals::append_ext_residual_constraint(
+            self,
+            expression,
+            proof_value_slots,
+            public_value_slots,
+            challenge_slots,
+            alias_scope,
+            source_line,
+        )
     }
 
     fn append_public_value_constant_constraint(
