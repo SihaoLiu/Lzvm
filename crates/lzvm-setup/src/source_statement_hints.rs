@@ -874,6 +874,8 @@ fn source_assignment_binary_operator(op: BinaryOperator) -> Option<&'static str>
         BinaryOperator::Multiply => Some("mul"),
         BinaryOperator::Divide | BinaryOperator::Backslash => Some("div"),
         BinaryOperator::Modulo => Some("mod"),
+        BinaryOperator::ShiftLeft => Some("shl"),
+        BinaryOperator::ShiftRight => Some("shr"),
         BinaryOperator::BitAnd => Some("bitand"),
         BinaryOperator::BitXor => Some("bitxor"),
         BinaryOperator::BitOr => Some("bitor"),

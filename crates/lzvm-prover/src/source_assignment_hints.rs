@@ -86,6 +86,36 @@ fn source_assignment_expression_field(
                         }
                         Felt::from_u64(left.to_u64() % divisor)
                     }
+                    "shl" => {
+                        let shift = u32::try_from(right.to_u64()).map_err(|_| {
+                            ProveWitnessCommitmentError::SourceAssignment {
+                                unit_index,
+                                message: format!("operator shl has invalid shift at row {row}"),
+                            }
+                        })?;
+                        let shifted = left.to_u64().checked_shl(shift).ok_or_else(|| {
+                            ProveWitnessCommitmentError::SourceAssignment {
+                                unit_index,
+                                message: format!("operator shl has invalid shift at row {row}"),
+                            }
+                        })?;
+                        Felt::from_u64(shifted)
+                    }
+                    "shr" => {
+                        let shift = u32::try_from(right.to_u64()).map_err(|_| {
+                            ProveWitnessCommitmentError::SourceAssignment {
+                                unit_index,
+                                message: format!("operator shr has invalid shift at row {row}"),
+                            }
+                        })?;
+                        let shifted = left.to_u64().checked_shr(shift).ok_or_else(|| {
+                            ProveWitnessCommitmentError::SourceAssignment {
+                                unit_index,
+                                message: format!("operator shr has invalid shift at row {row}"),
+                            }
+                        })?;
+                        Felt::from_u64(shifted)
+                    }
                     "bitand" => Felt::from_u64(left.to_u64() & right.to_u64()),
                     "bitxor" => Felt::from_u64(left.to_u64() ^ right.to_u64()),
                     "bitor" => Felt::from_u64(left.to_u64() | right.to_u64()),

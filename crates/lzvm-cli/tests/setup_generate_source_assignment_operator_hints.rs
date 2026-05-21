@@ -206,6 +206,18 @@ fn bitwise_source() -> &'static str {
      col fixed main.left = [5, 1];"
 }
 
+fn shift_source() -> &'static str {
+    "airtemplate UnitA() {\n\
+         col witness value;\n\
+         col witness amount;\n\
+         col witness out[2];\n\
+         out[0] = value << amount;\n\
+         out[1] = value >> amount;\n\
+     }\n\
+     airgroup GroupA { UnitA(); }\n\
+     col fixed main.left = [5, 1];"
+}
+
 #[test]
 fn generate_key_lowers_source_modulo_assignments_as_regular_hints() {
     let dir = temp_dir("source-modulo-assignment");
@@ -284,5 +296,32 @@ fn prove_witness_rejects_source_bitwise_assignment_mismatch_with_trace_bytes() {
         "source-bitwise-assignment-mismatch",
         bitwise_source(),
         &[6, 3, 2, 5, 0, 10, 12, 8, 6, 14],
+    );
+}
+
+#[test]
+fn generate_key_lowers_source_shift_assignments_as_regular_hints() {
+    let dir = temp_dir("source-shift-assignment");
+    let _ = fs::remove_dir_all(&dir);
+    assert_generate_key_succeeds(&dir, shift_source());
+    assert_generated_assignment_ops(&dir, &["shl", "shr"]);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn prove_witness_accepts_source_shift_assignment_hints_with_trace_bytes() {
+    assert_witness_accepts(
+        "source-shift-assignment-witness",
+        shift_source(),
+        &[3, 2, 12, 0, 32, 3, 256, 4],
+    );
+}
+
+#[test]
+fn prove_witness_rejects_source_shift_assignment_mismatch_with_trace_bytes() {
+    assert_witness_rejects(
+        "source-shift-assignment-mismatch",
+        shift_source(),
+        &[3, 2, 12, 1, 32, 3, 256, 4],
     );
 }
