@@ -356,7 +356,7 @@ fn generate_key_records_unsupported_source_compound_assignments_as_regular_hints
 }
 
 #[test]
-fn prove_witness_accepts_source_assignment_hints_with_trace_bytes() {
+fn prove_witness_rejects_source_assignment_hints_with_trace_bytes() {
     let dir = temp_dir("source-assignment-witness");
     let _ = fs::remove_dir_all(&dir);
     let source_path = dir.join("source").join("main.pil");
@@ -414,11 +414,12 @@ fn prove_witness_accepts_source_assignment_hints_with_trace_bytes() {
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
-    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
-    assert!(stderr.is_empty());
-    assert!(String::from_utf8(stdout)
-        .expect("stdout should be utf-8")
-        .starts_with("status=ok\n"));
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove witness failed: prove execution plan run-plan error: prove run plan schedule error: prove schedule unsupported regular hint source.assignment.unsupported for unit 0\n"
+    );
 }
 
 #[test]

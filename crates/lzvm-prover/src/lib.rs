@@ -8,7 +8,6 @@ use lzvm_artifacts::expression_program::ExpressionProgram;
 use lzvm_artifacts::guest_image::{read_guest_image_file, GuestImageError, GuestImageInfo};
 use lzvm_artifacts::hint_program::{
     source_lookup_hint_name, source_unimplemented_hint_name, HintProgram,
-    SOURCE_UNSUPPORTED_ASSIGNMENT_HINT,
 };
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, read_key_directory_catalog, KeyDirectoryCatalog,
@@ -886,10 +885,11 @@ fn validate_schedulable_regular_hints(
     program: &HintProgram,
     unit_index: usize,
 ) -> Result<(), ProveScheduleError> {
-    if let Some(hint) = program.hints.iter().find(|hint| {
-        source_unimplemented_hint_name(&hint.name)
-            && hint.name != SOURCE_UNSUPPORTED_ASSIGNMENT_HINT
-    }) {
+    if let Some(hint) = program
+        .hints
+        .iter()
+        .find(|hint| source_unimplemented_hint_name(&hint.name))
+    {
         return Err(ProveScheduleError::UnsupportedRegularHint {
             unit_index,
             name: hint.name.clone(),
