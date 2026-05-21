@@ -1379,7 +1379,7 @@ fn lower_global_base_residual_operand(
                 BinaryOperator::Add => 0,
                 BinaryOperator::Subtract => 1,
                 BinaryOperator::Multiply => 2,
-                BinaryOperator::Divide => {
+                BinaryOperator::Divide | BinaryOperator::Backslash => {
                     return lower_global_base_static_divisor_operand(left, right, context);
                 }
                 _ => return Ok(None),

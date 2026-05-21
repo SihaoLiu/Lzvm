@@ -276,7 +276,7 @@ fn lower_global_mixed_binary_operand(
     right: &Expression,
     context: &mut SourceGlobalExtLoweringContext<'_, '_>,
 ) -> Result<Option<SourceGlobalMixedOperand>, SourceKeyDirectoryMetadataError> {
-    if *op == BinaryOperator::Divide {
+    if matches!(op, BinaryOperator::Divide | BinaryOperator::Backslash) {
         return lower_global_mixed_static_divisor_operand(left, right, context);
     }
     let kind = match op {
