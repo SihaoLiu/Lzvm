@@ -1,5 +1,7 @@
 use std::fmt;
 
+use lzvm_field::{Felt, FieldError};
+
 pub const GROUP_VALUES_SEGMENT_ID: u32 = 10_008;
 
 const GROUP_VALUES_MAGIC: [u8; 4] = *b"gvs0";
@@ -17,10 +19,22 @@ pub struct GroupValuesSegment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GroupValuesSegmentError {
     InvalidMagic,
-    UnsupportedVersion { version: u32 },
-    UnexpectedEof { needed: usize, available: usize },
-    TrailingBytes { trailing: usize },
+    UnsupportedVersion {
+        version: u32,
+    },
+    UnexpectedEof {
+        needed: usize,
+        available: usize,
+    },
+    TrailingBytes {
+        trailing: usize,
+    },
     EmptyValues,
+    ValueNonCanonical {
+        value_index: usize,
+        word_index: usize,
+        source: FieldError,
+    },
     LengthOverflow,
 }
 
@@ -39,12 +53,32 @@ impl fmt::Display for GroupValuesSegmentError {
                 write!(f, "trailing group values segment bytes: {trailing}")
             }
             Self::EmptyValues => write!(f, "group values segment has no values"),
+            Self::ValueNonCanonical {
+                value_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "group values value {value_index} word {word_index} is non-canonical: {source}"
+            ),
             Self::LengthOverflow => write!(f, "group values segment length overflow"),
         }
     }
 }
 
-impl std::error::Error for GroupValuesSegmentError {}
+impl std::error::Error for GroupValuesSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ValueNonCanonical { source, .. } => Some(source),
+            Self::InvalidMagic
+            | Self::UnsupportedVersion { .. }
+            | Self::UnexpectedEof { .. }
+            | Self::TrailingBytes { .. }
+            | Self::EmptyValues
+            | Self::LengthOverflow => None,
+        }
+    }
+}
 
 pub fn encode_group_values_segment(
     value: &GroupValuesSegment,
@@ -97,6 +131,17 @@ fn validate_group_values_segment(
 ) -> Result<(), GroupValuesSegmentError> {
     if value.values.is_empty() {
         return Err(GroupValuesSegmentError::EmptyValues);
+    }
+    for (value_index, value) in value.values.iter().enumerate() {
+        for (word_index, word) in value.iter().copied().enumerate() {
+            Felt::from_canonical(word).map_err(|source| {
+                GroupValuesSegmentError::ValueNonCanonical {
+                    value_index,
+                    word_index,
+                    source,
+                }
+            })?;
+        }
     }
     Ok(())
 }

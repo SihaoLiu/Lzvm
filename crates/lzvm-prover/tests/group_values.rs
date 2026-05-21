@@ -1,7 +1,7 @@
 use lzvm_artifacts::global_info::{AggregationType, CurveKind, GlobalAir, GlobalInfo};
 use lzvm_artifacts::group_values_segment::{
     encode_group_values_segment, parse_group_values_segment, GroupValuesSegment,
-    GROUP_VALUES_SEGMENT_ID,
+    GroupValuesSegmentError, GROUP_VALUES_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_field::{Ext3, FieldError, MODULUS};
@@ -9,6 +9,8 @@ use lzvm_prover::group_values::{
     build_group_values_segment, load_group_values_from_segments, LoadGroupValuesSegmentError,
     ProveGroupValuesSegmentError,
 };
+
+const FIRST_GROUP_VALUE_OFFSET: usize = 12;
 
 #[test]
 fn builds_group_values_segment() {
@@ -86,17 +88,20 @@ fn rejects_loaded_group_values_count_mismatch() {
 
 #[test]
 fn rejects_loaded_noncanonical_group_values() {
-    let segment = group_values_segment([[MODULUS, 8, 9]]);
+    let mut segment = group_values_segment([[7, 8, 9]]);
+    segment.data[FIRST_GROUP_VALUE_OFFSET..FIRST_GROUP_VALUE_OFFSET + 8]
+        .copy_from_slice(&MODULUS.to_le_bytes());
 
     let error = load_group_values_from_segments(&sample_global_info(1), &[segment])
         .expect_err("segment values should be canonical field elements");
 
     assert_eq!(
         error,
-        LoadGroupValuesSegmentError::NonCanonicalValue {
-            index: 0,
+        LoadGroupValuesSegmentError::Segment(GroupValuesSegmentError::ValueNonCanonical {
+            value_index: 0,
+            word_index: 0,
             source: FieldError::NonCanonical { value: MODULUS }
-        }
+        })
     );
 }
 
