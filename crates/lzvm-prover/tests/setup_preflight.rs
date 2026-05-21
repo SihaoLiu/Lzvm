@@ -99,6 +99,11 @@ fn validates_setup_preflight_hashes() {
             public_values_hash: public_values_digest(&public_values)
                 .expect("digest should compute"),
             public_value_field_count: 5,
+            source_fixed_file_manifest_present: false,
+            source_fixed_file_manifest_entry_count: 0,
+            source_program_archive_present: false,
+            source_program_archive_source_count: 0,
+            source_program_archive_edge_count: 0,
             program_image_cache_count: 0,
             program_image_caches: Vec::new(),
             program_image_cache_hashes: Vec::new(),

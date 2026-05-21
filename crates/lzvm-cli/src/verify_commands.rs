@@ -564,6 +564,43 @@ fn verify_setup_validation(
         "public_value_fields={}",
         public_report.public_value_field_count
     );
+    if public_report.source_fixed_file_manifest_present
+        || public_report.source_program_archive_present
+    {
+        let _ = writeln!(
+            stdout,
+            "source_fixed_file_manifest={}",
+            if public_report.source_fixed_file_manifest_present {
+                "present"
+            } else {
+                "absent"
+            }
+        );
+        let _ = writeln!(
+            stdout,
+            "source_fixed_file_manifest_entries={}",
+            public_report.source_fixed_file_manifest_entry_count
+        );
+        let _ = writeln!(
+            stdout,
+            "source_program_archive={}",
+            if public_report.source_program_archive_present {
+                "present"
+            } else {
+                "absent"
+            }
+        );
+        let _ = writeln!(
+            stdout,
+            "source_program_archive_sources={}",
+            public_report.source_program_archive_source_count
+        );
+        let _ = writeln!(
+            stdout,
+            "source_program_archive_edges={}",
+            public_report.source_program_archive_edge_count
+        );
+    }
     if public_report.program_image_cache_count > 0 {
         let _ = writeln!(
             stdout,

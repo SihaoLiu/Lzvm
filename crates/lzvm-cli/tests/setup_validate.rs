@@ -1453,6 +1453,40 @@ fn write_setup_directory(root: &Path) {
     }
 }
 
+fn sample_source_global_info() -> GlobalInfo {
+    let mut info = fixtures::sample_global_info();
+    info.air_groups = vec!["GroupA".to_owned()];
+    info.airs[0][0].name = "UnitA".to_owned();
+    info
+}
+
+fn write_source_key_inputs(root: &Path) {
+    write_global_files_with_info(root, &sample_source_global_info());
+    let layout = read_key_directory_layout(root).expect("layout should parse");
+    for unit in &layout.units {
+        if let Some(path) = unit.setup_info_binary() {
+            write_unit_setup_metadata(&path, &fixtures::sample_setup_info());
+        }
+        if let Some(path) = unit.expression_info_binary() {
+            write_expression_metadata(&path, &fixtures::sample_expression_info());
+        }
+        if let Some(path) = unit.verifier_info_binary() {
+            write_verifier_metadata(&path, &fixtures::sample_verifier_info());
+        }
+        if let Some(path) = unit.expression_program() {
+            write_bytes(
+                &path,
+                sample_program_file_with_regular_constraints(sample_regular_constraint_program()),
+            );
+        }
+        let verifier_program = encode_expression_program(&sample_expression_program())
+            .expect("verifier program should encode");
+        if let Some(path) = unit.verifier_program() {
+            write_bytes(&path, &verifier_program);
+        }
+    }
+}
+
 fn write_source_fixed_file_manifest(root: &Path) {
     write_source_fixed_file_manifest_with_span(root, 10, 40);
 }
@@ -9513,6 +9547,75 @@ fn runs_setup_aware_verify_preflight() {
         )
     );
     assert!(stderr.is_empty());
+}
+
+#[test]
+fn runs_setup_aware_verify_preflight_with_source_generated_key_directory() {
+    let dir = temp_dir("verify-setup-preflight-source-generated");
+    let _ = fs::remove_dir_all(&dir);
+    write_source_key_inputs(&dir);
+    let source_path = dir.join("main.pil");
+    write_bytes(
+        &source_path,
+        "airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];\n\
+         col fixed main.right = [9, 9];",
+    );
+
+    let mut generate_stdout = Vec::new();
+    let mut generate_stderr = Vec::new();
+    let generate_code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut generate_stdout,
+        &mut generate_stderr,
+    );
+    assert_eq!(
+        generate_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&generate_stderr)
+    );
+    assert!(generate_stderr.is_empty());
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values_hash =
+        public_values_digest(&sample_public_values(setup_hash)).expect("digest should compute");
+    let (proof_path, public_values_path) =
+        write_proof_pair_with_material(&dir, setup_hash, &catalog);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\nunits=4\nsegments=5\npublic_values=1\npublic_values_hash={}\npublic_value_fields=1\nsource_fixed_file_manifest=present\nsource_fixed_file_manifest_entries=0\nsource_program_archive=present\nsource_program_archive_sources=1\nsource_program_archive_edges=0\n",
+            format_hash(&public_values_hash)
+        )
+    );
 }
 
 #[test]

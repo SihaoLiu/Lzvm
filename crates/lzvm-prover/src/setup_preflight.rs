@@ -86,6 +86,11 @@ pub struct SetupPreflightReport {
     pub public_value_count: usize,
     pub public_values_hash: [u8; 32],
     pub public_value_field_count: usize,
+    pub source_fixed_file_manifest_present: bool,
+    pub source_fixed_file_manifest_entry_count: usize,
+    pub source_program_archive_present: bool,
+    pub source_program_archive_source_count: usize,
+    pub source_program_archive_edge_count: usize,
     pub program_image_cache_count: usize,
     pub program_image_caches: Vec<ProgramImageCommitmentCache>,
     pub program_image_cache_hashes: Vec<[u8; 32]>,
@@ -388,6 +393,23 @@ pub fn validate_setup_preflight_hashes(
         public_value_count,
         public_values_hash,
         public_value_field_count,
+        source_fixed_file_manifest_present: catalog.source_fixed_file_manifest.is_some(),
+        source_fixed_file_manifest_entry_count: catalog
+            .source_fixed_file_manifest
+            .as_ref()
+            .map(|manifest| manifest.entries.len())
+            .unwrap_or(0),
+        source_program_archive_present: catalog.source_program_archive.is_some(),
+        source_program_archive_source_count: catalog
+            .source_program_archive
+            .as_ref()
+            .map(|archive| archive.sources.len())
+            .unwrap_or(0),
+        source_program_archive_edge_count: catalog
+            .source_program_archive
+            .as_ref()
+            .map(|archive| archive.edges.len())
+            .unwrap_or(0),
         program_image_cache_count,
         program_image_caches,
         program_image_cache_hashes,
