@@ -1,12 +1,13 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_artifacts::expression_info::{ExpressionInfo, HintInfo};
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::global_program::GlobalProgramError;
 use lzvm_artifacts::hint_program::{global_hint_program_from_expression_info, HintProgram};
 use lzvm_pil::{
-    lex_source, Expression, ExpressionKind, FixedFileTemplateValue, FunctionStatement,
-    FunctionStatementDeclaration, FunctionStatementKind, SourceProgram, SourceProgramModule, Token,
+    lex_source, CallArgument, Expression, ExpressionKind, FixedFileTemplateValue,
+    FunctionDeclaration, FunctionParameter, FunctionStatement, FunctionStatementDeclaration,
+    FunctionStatementKind, SourceProgram, SourceProgramModule, Token,
 };
 
 use crate::{
@@ -21,7 +22,7 @@ use crate::{
     },
     source_static_values::{
         evaluate_source_static_expression, insert_source_static_array,
-        source_static_array_expression,
+        source_static_array_expression, source_static_array_values,
     },
     source_template_for::source_static_for_loop_with_tokens,
     source_template_if::source_static_if_body_statements_with_tokens,
@@ -189,6 +190,9 @@ fn lower_source_global_hint_statement(
             Ok(())
         }
         FunctionStatementKind::Expression => {
+            if lower_source_global_hint_function_call(context, statement, values, alias_scope)? {
+                return Ok(());
+            }
             let lookup_inputs = SourceLookupInputs {
                 program: context.program,
                 module: context.module,
@@ -213,6 +217,261 @@ fn lower_source_global_hint_statement(
             Ok(())
         }
         _ => Ok(()),
+    }
+}
+
+fn lower_source_global_hint_function_call(
+    context: &mut SourceGlobalHintLoweringContext<'_, '_>,
+    statement: &FunctionStatement,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceGlobalHintAliasScope,
+) -> Result<bool, SourceKeyDirectoryMetadataError> {
+    let Some((name, arguments)) = source_call_expression(statement.value_expression.as_ref())
+    else {
+        return Ok(false);
+    };
+    let Some(function) = context
+        .module
+        .functions
+        .iter()
+        .find(|function| function.name == name)
+    else {
+        return Ok(false);
+    };
+    if function.return_type.is_some() {
+        return Ok(false);
+    }
+    let Some(mut bindings) = source_global_function_call_bindings(
+        context.program,
+        context.module,
+        function,
+        arguments,
+        values,
+        alias_scope,
+    ) else {
+        return Ok(false);
+    };
+
+    let mut function_hints = Vec::new();
+    {
+        let mut function_context = SourceGlobalHintLoweringContext {
+            program: context.program,
+            module: context.module,
+            tokens: context.tokens,
+            scalar_slots: context.scalar_slots,
+            body_cache: context.body_cache,
+            hints: &mut function_hints,
+        };
+        let mut body_alias_scope = bindings.alias_scope;
+        for body_statement in &function.statements {
+            lower_source_global_hint_statement(
+                &mut function_context,
+                body_statement,
+                &mut bindings.values,
+                &body_alias_scope,
+            )?;
+            collect_source_template_expression_alias(
+                body_statement,
+                &mut body_alias_scope.expressions,
+            );
+            collect_source_global_hint_expression_array_alias(
+                body_statement,
+                &mut body_alias_scope.expression_arrays,
+            );
+        }
+    }
+
+    context.hints.extend(function_hints);
+    Ok(true)
+}
+
+struct SourceGlobalFunctionCallBindings {
+    values: BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: SourceGlobalHintAliasScope,
+}
+
+fn source_global_function_call_bindings(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    function: &FunctionDeclaration,
+    arguments: &[CallArgument],
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceGlobalHintAliasScope,
+) -> Option<SourceGlobalFunctionCallBindings> {
+    let mut function_values = values.clone();
+    let mut function_alias_scope = alias_scope.clone();
+    let mut provided = BTreeSet::new();
+    let mut positional_index = 0;
+
+    for argument in arguments {
+        let parameter = if let Some(name) = argument.name.as_ref() {
+            function
+                .parameters
+                .iter()
+                .find(|parameter| parameter.name == *name)?
+        } else {
+            while function
+                .parameters
+                .get(positional_index)
+                .is_some_and(|parameter| provided.contains(&parameter.name))
+            {
+                positional_index = positional_index.checked_add(1)?;
+            }
+            function.parameters.get(positional_index)?
+        };
+        if !provided.insert(parameter.name.clone()) {
+            return None;
+        }
+        bind_source_global_function_argument(
+            program,
+            parameter,
+            &argument.value,
+            &mut function_values,
+            &mut function_alias_scope.expressions,
+            &mut function_alias_scope.expression_arrays,
+        )?;
+        if argument.name.is_none() {
+            positional_index = positional_index.checked_add(1)?;
+        }
+    }
+
+    for parameter in &function.parameters {
+        if provided.contains(&parameter.name) {
+            continue;
+        }
+        bind_source_global_function_default(
+            program,
+            module,
+            parameter,
+            &mut function_values,
+            &mut function_alias_scope.expressions,
+            &mut function_alias_scope.expression_arrays,
+        )?;
+    }
+
+    Some(SourceGlobalFunctionCallBindings {
+        values: function_values,
+        alias_scope: function_alias_scope,
+    })
+}
+
+fn bind_source_global_function_argument(
+    program: &SourceProgram,
+    parameter: &FunctionParameter,
+    expression: &Expression,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: &mut SourceExpressionAliases,
+    expression_array_aliases: &mut SourceExpressionArrayAliases,
+) -> Option<()> {
+    if source_expr_parameter(parameter) {
+        if source_expression_name(expression) == Some(parameter.name.as_str()) {
+            return Some(());
+        }
+        expression_aliases.insert(parameter.name.clone(), expression.clone());
+        return Some(());
+    }
+    if source_expr_array_parameter(parameter) {
+        insert_source_expr_array_static_values(program, expression, values, &parameter.name)?;
+        let alias = source_global_hint_expression_array_alias(expression)?;
+        if matches!(&alias, SourceExpressionArrayAlias::Name(name) if name == &parameter.name) {
+            return Some(());
+        }
+        expression_array_aliases.insert(parameter.name.clone(), alias);
+        return Some(());
+    }
+    if source_const_parameter(parameter) && parameter.array_dims.is_empty() {
+        let value = evaluate_source_static_expression(program, expression, values)?;
+        values.insert(parameter.name.clone(), value);
+        return Some(());
+    }
+    if !source_const_parameter(parameter) {
+        return None;
+    }
+    if let Some(elements) = source_static_array_expression(program, expression, values) {
+        return insert_source_static_array(values, &parameter.name, elements);
+    }
+    let name = source_expression_name(expression)?;
+    let elements = source_static_array_values(values, name)?;
+    insert_source_static_array(values, &parameter.name, elements)
+}
+
+fn bind_source_global_function_default(
+    program: &SourceProgram,
+    _module: &SourceProgramModule,
+    parameter: &FunctionParameter,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    expression_aliases: &mut SourceExpressionAliases,
+    expression_array_aliases: &mut SourceExpressionArrayAliases,
+) -> Option<()> {
+    if source_expr_parameter(parameter) {
+        let expression = parameter.default_expression.as_ref()?;
+        expression_aliases.insert(parameter.name.clone(), expression.clone());
+        return Some(());
+    }
+    if source_expr_array_parameter(parameter) {
+        let expression = parameter.default_expression.as_ref()?;
+        insert_source_expr_array_static_values(program, expression, values, &parameter.name)?;
+        let alias = source_global_hint_expression_array_alias(expression)?;
+        expression_array_aliases.insert(parameter.name.clone(), alias);
+        return Some(());
+    }
+    if source_const_parameter(parameter) && parameter.array_dims.is_empty() {
+        let expression = parameter.default_expression.as_ref()?;
+        let value = evaluate_source_static_expression(program, expression, values)?;
+        values.insert(parameter.name.clone(), value);
+        return Some(());
+    }
+    if !source_const_parameter(parameter) {
+        return None;
+    }
+    None
+}
+
+fn insert_source_expr_array_static_values(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    target_name: &str,
+) -> Option<()> {
+    if let Some(elements) = source_static_array_expression(program, expression, values) {
+        return insert_source_static_array(values, target_name, elements);
+    }
+    let Some(name) = source_expression_name(expression) else {
+        return Some(());
+    };
+    let Some(elements) = source_static_array_values(values, name) else {
+        return Some(());
+    };
+    insert_source_static_array(values, target_name, elements)
+}
+
+fn source_const_parameter(parameter: &FunctionParameter) -> bool {
+    parameter.is_const && !parameter.by_reference
+}
+
+fn source_expr_parameter(parameter: &FunctionParameter) -> bool {
+    !parameter.by_reference && parameter.array_dims.is_empty() && parameter.type_name == "expr"
+}
+
+fn source_expr_array_parameter(parameter: &FunctionParameter) -> bool {
+    !parameter.by_reference && !parameter.array_dims.is_empty() && parameter.type_name == "expr"
+}
+
+fn source_call_expression(expression: Option<&Expression>) -> Option<(&str, &[CallArgument])> {
+    let ExpressionKind::Call { callee, args } = &expression?.kind else {
+        return None;
+    };
+    let ExpressionKind::Name(name) = &callee.kind else {
+        return None;
+    };
+    Some((name.as_str(), args.as_slice()))
+}
+
+fn source_expression_name(expression: &Expression) -> Option<&str> {
+    match &expression.kind {
+        ExpressionKind::Name(name) => Some(name),
+        ExpressionKind::Group(inner) => source_expression_name(inner),
+        _ => None,
     }
 }
 
