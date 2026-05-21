@@ -13,7 +13,7 @@ use crate::{
     source_statement_hints::source_statement_line,
     source_static_values::{
         evaluate_source_static_expression, insert_source_static_array,
-        source_static_array_expression,
+        source_static_array_expression, source_static_array_length,
     },
     source_template_for::source_static_for_loop_with_tokens,
     source_template_if::source_static_if_body_statements_with_tokens,
@@ -378,7 +378,7 @@ fn lower_function_body_statement(
     if apply_static_expression_statement(context.program, expression, values) {
         return Ok(true);
     }
-    if source_static_assertion(context.program, context.module, statement, values)? {
+    if source_static_assertion(context, statement, values, alias_scope)? {
         return Ok(true);
     }
     if lower_function_call_expression(
@@ -528,10 +528,10 @@ fn static_integer_value(value: Option<&FixedFileTemplateValue>) -> Option<i128> 
 }
 
 fn source_static_assertion(
-    program: &SourceProgram,
-    module: &lzvm_pil::SourceProgramModule,
+    context: &SourceTopLevelGlobalConstraintContext<'_, '_, '_>,
     statement: &FunctionStatement,
     values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceGlobalAliasScope<'_>,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
     let Some(expression) = statement.value_expression.as_ref() else {
         return Ok(false);
@@ -542,29 +542,30 @@ fn source_static_assertion(
     if name != "assert" || !(1..=2).contains(&arguments.len()) || arguments[0].name.is_some() {
         return Ok(false);
     }
-    match source_static_condition(program, &arguments[0].value, values) {
+    match source_static_condition(context, &arguments[0].value, values, alias_scope) {
         Some(true) => Ok(true),
         Some(false) => Err(SourceKeyDirectoryMetadataError::StaticAssertionFailed {
-            line: source_statement_line(module, statement),
+            line: source_statement_line(context.module, statement),
         }),
         None => Ok(false),
     }
 }
 
 fn source_static_condition(
-    program: &SourceProgram,
+    context: &SourceTopLevelGlobalConstraintContext<'_, '_, '_>,
     expression: &Expression,
     values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceGlobalAliasScope<'_>,
 ) -> Option<bool> {
-    if let Some(value) = evaluate_source_static_expression(program, expression, values) {
+    if let Some(value) = evaluate_source_static_expression(context.program, expression, values) {
         return Some(source_static_truthy_value(&value));
     }
     let ExpressionKind::Binary { op, left, right } = &strip_group_expression(expression).kind
     else {
         return None;
     };
-    let left = source_static_integer_expression(program, left, values)?;
-    let right = source_static_integer_expression(program, right, values)?;
+    let left = source_static_integer_expression(context, left, values, alias_scope)?;
+    let right = source_static_integer_expression(context, right, values, alias_scope)?;
     match op {
         BinaryOperator::Less => Some(left < right),
         BinaryOperator::LessEqual => Some(left <= right),
@@ -577,12 +578,68 @@ fn source_static_condition(
 }
 
 fn source_static_integer_expression(
-    program: &SourceProgram,
+    context: &SourceTopLevelGlobalConstraintContext<'_, '_, '_>,
     expression: &Expression,
     values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceGlobalAliasScope<'_>,
 ) -> Option<i128> {
-    let value = evaluate_source_static_expression(program, expression, values)?;
+    let expression = strip_group_expression(expression);
+    if let ExpressionKind::Call { callee, args } = &expression.kind {
+        if args.len() == 1 && args[0].name.is_none() {
+            if let ExpressionKind::Name(callee) = &strip_group_expression(callee).kind {
+                if callee == "length" {
+                    let ExpressionKind::Name(name) = &strip_group_expression(&args[0].value).kind
+                    else {
+                        return None;
+                    };
+                    return source_global_array_length(
+                        context,
+                        values,
+                        &alias_scope.expression_arrays,
+                        name,
+                        &mut BTreeSet::new(),
+                    );
+                }
+            }
+        }
+    }
+    let value = evaluate_source_static_expression(context.program, expression, values)?;
     static_integer_value(Some(&value))
+}
+
+fn source_global_array_length(
+    context: &SourceTopLevelGlobalConstraintContext<'_, '_, '_>,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    expression_array_aliases: &SourceGlobalExpressionArrayAliases,
+    name: &str,
+    resolving_aliases: &mut BTreeSet<String>,
+) -> Option<i128> {
+    if let Some(length) = source_static_array_length(values, name) {
+        return Some(length);
+    }
+    if let Some(slot) = context.slots.public_values.get(name) {
+        return Some(i128::from(slot.dimension));
+    }
+    if let Some(slot) = context.slots.proof_values.get(name) {
+        return Some(i128::from(slot.dimension));
+    }
+    if !resolving_aliases.insert(name.to_owned()) {
+        return None;
+    }
+    let length = match expression_array_aliases.get(name)? {
+        SourceGlobalExpressionArrayAlias::Name(alias) => source_global_array_length(
+            context,
+            values,
+            expression_array_aliases,
+            alias,
+            resolving_aliases,
+        )?,
+        SourceGlobalExpressionArrayAlias::Values(expressions) => {
+            i128::try_from(expressions.len()).ok()?
+        }
+    };
+    resolving_aliases.remove(name);
+    Some(length)
 }
 
 fn source_static_truthy_value(value: &FixedFileTemplateValue) -> bool {
