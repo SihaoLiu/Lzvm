@@ -202,10 +202,9 @@ pub(crate) fn evaluate_source_static_expression_with_lookup(
     expression: &Expression,
     values: &(impl SourceStaticValueLookup + ?Sized),
 ) -> Option<FixedFileTemplateValue> {
-    if let Some(value) = evaluate_source_static_index_expression(program, expression, values) {
-        return Some(value);
-    }
-    if let Some(value) = evaluate_source_template_value_expression_with_lookup(expression, values) {
+    if let Some(value) =
+        evaluate_source_template_value_expression_with_lookup(program, expression, values)
+    {
         return Some(value);
     }
     if !source_expression_needs_integer_env(expression) {
@@ -221,31 +220,12 @@ fn evaluate_source_static_expression_with_integer_env(
     values: &BTreeMap<String, FixedFileTemplateValue>,
     integer_env: &BTreeMap<String, i128>,
 ) -> Option<FixedFileTemplateValue> {
-    evaluate_source_template_value_expression(expression, values).or_else(|| {
+    evaluate_source_template_value_expression(program, expression, values).or_else(|| {
         if !source_expression_needs_integer_env(expression) {
             return None;
         }
         evaluate_static_i128(program, expression, integer_env).map(FixedFileTemplateValue::Integer)
     })
-}
-
-fn evaluate_source_static_index_expression(
-    program: &SourceProgram,
-    expression: &Expression,
-    values: &(impl SourceStaticValueLookup + ?Sized),
-) -> Option<FixedFileTemplateValue> {
-    match &expression.kind {
-        ExpressionKind::Group(inner) => {
-            evaluate_source_static_index_expression(program, inner, values)
-        }
-        ExpressionKind::Index { target, index } => {
-            let name = expression_name(target)?;
-            let index = evaluate_source_static_expression_with_lookup(program, index, values)?;
-            let index = usize::try_from(static_value_integer(&index)?).ok()?;
-            values.source_static_array_element(name, index)
-        }
-        _ => None,
-    }
 }
 
 fn source_expression_needs_integer_env(expression: &Expression) -> bool {
@@ -262,13 +242,15 @@ fn source_expression_needs_integer_env(expression: &Expression) -> bool {
 }
 
 fn evaluate_source_template_value_expression(
+    program: &SourceProgram,
     expression: &Expression,
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Option<FixedFileTemplateValue> {
-    evaluate_source_template_value_expression_with_lookup(expression, values)
+    evaluate_source_template_value_expression_with_lookup(program, expression, values)
 }
 
 fn evaluate_source_template_value_expression_with_lookup(
+    program: &SourceProgram,
     expression: &Expression,
     values: &(impl SourceStaticValueLookup + ?Sized),
 ) -> Option<FixedFileTemplateValue> {
@@ -281,10 +263,17 @@ fn evaluate_source_template_value_expression_with_lookup(
         }
         ExpressionKind::Name(name) => values.source_static_value(name).cloned(),
         ExpressionKind::Group(inner) => {
-            evaluate_source_template_value_expression_with_lookup(inner, values)
+            evaluate_source_template_value_expression_with_lookup(program, inner, values)
+        }
+        ExpressionKind::Index { target, index } => {
+            let name = expression_name(target)?;
+            let index = evaluate_source_static_expression_with_lookup(program, index, values)?;
+            let index = usize::try_from(static_value_integer(&index)?).ok()?;
+            values.source_static_array_element(name, index)
         }
         ExpressionKind::Unary { op, expr } => {
-            let value = evaluate_source_template_value_expression_with_lookup(expr, values)?;
+            let value =
+                evaluate_source_template_value_expression_with_lookup(program, expr, values)?;
             match op {
                 UnaryOperator::Plus => {
                     static_value_integer(&value).map(FixedFileTemplateValue::Integer)
@@ -299,11 +288,14 @@ fn evaluate_source_template_value_expression_with_lookup(
             }
         }
         ExpressionKind::Binary { op, left, right } => {
-            let left = evaluate_source_template_value_expression_with_lookup(left, values)?;
+            let left =
+                evaluate_source_template_value_expression_with_lookup(program, left, values)?;
             match op {
                 BinaryOperator::LogicalAnd => {
                     if static_value_truthy(&left) {
-                        evaluate_source_template_value_expression_with_lookup(right, values)
+                        evaluate_source_template_value_expression_with_lookup(
+                            program, right, values,
+                        )
                     } else {
                         Some(left)
                     }
@@ -312,12 +304,15 @@ fn evaluate_source_template_value_expression_with_lookup(
                     if static_value_truthy(&left) {
                         Some(left)
                     } else {
-                        evaluate_source_template_value_expression_with_lookup(right, values)
+                        evaluate_source_template_value_expression_with_lookup(
+                            program, right, values,
+                        )
                     }
                 }
                 _ => {
-                    let right =
-                        evaluate_source_template_value_expression_with_lookup(right, values)?;
+                    let right = evaluate_source_template_value_expression_with_lookup(
+                        program, right, values,
+                    )?;
                     evaluate_source_template_binary(*op, left, right)
                 }
             }
