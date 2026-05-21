@@ -30,10 +30,13 @@ use crate::{
         canonical_fixed_value, parse_literal_sequence, parse_literal_sequence_values,
     },
     source_key_directory::SourceKeyDirectoryMetadataError,
+    source_scope::{
+        concrete_template_names, declaration_in_function_body, declaration_in_inactive_template,
+    },
     source_static_values::{
         evaluate_source_static_expression, source_declaration_constant_values_from_cache,
-        source_template_constant_value_cache, static_value_integer, SourceStaticValueLookup,
-        SourceTemplateConstantValueCache,
+        source_declaration_in_static_false_branch, source_template_constant_value_cache,
+        static_value_integer, SourceStaticValueLookup, SourceTemplateConstantValueCache,
     },
     source_template_for::source_static_for_loop_with_lookup,
     source_template_if::source_static_if_body_statements_with_lookup,
@@ -527,12 +530,23 @@ fn fixed_columns_from_source_program(
     let mut declarations = Vec::<SourceFixedColumnDeclaration>::new();
     let constant_values = source_fixed_constant_values(program, setup, row_count)?;
     let template_values = source_template_constant_value_cache(program, &constant_values.scalars);
+    let active_templates = concrete_template_names(program);
     let mut logical_dimensions = BTreeMap::new();
     let mut seen_declarations = BTreeSet::new();
 
     for module in &program.modules {
         for declaration in &module.columns {
             if declaration.kind != ColumnKind::Fixed {
+                continue;
+            }
+            if declaration_in_function_body(module, declaration.start, declaration.end)
+                || declaration_in_inactive_template(
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    &active_templates,
+                )
+            {
                 continue;
             }
             let declaration_values = source_fixed_declaration_constant_values(
@@ -542,6 +556,15 @@ fn fixed_columns_from_source_program(
                 &constant_values,
                 &template_values,
             );
+            if source_declaration_in_static_false_branch(
+                program,
+                module,
+                declaration.start,
+                declaration.end,
+                &declaration_values.scalars,
+            ) {
+                continue;
+            }
             for item in &declaration.items {
                 if !source_fixed_expected_column_matches(&item.name, &expected_columns) {
                     continue;

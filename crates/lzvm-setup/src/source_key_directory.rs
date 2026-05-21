@@ -1092,6 +1092,15 @@ fn source_constant_columns(
                 constant_values,
                 template_values,
             );
+            if source_declaration_in_static_false_branch(
+                program,
+                module,
+                declaration.start,
+                declaration.end,
+                declaration_values,
+            ) {
+                continue;
+            }
             for item in &declaration.items {
                 if item.template {
                     return unsupported(format!(
@@ -1155,6 +1164,15 @@ fn source_commitment_columns(
                 constant_values,
                 template_values,
             );
+            if source_declaration_in_static_false_branch(
+                program,
+                module,
+                declaration.start,
+                declaration.end,
+                declaration_values,
+            ) {
+                continue;
+            }
             let stage = source_column_stage(program, declaration, declaration_values)?;
             for item in &declaration.items {
                 if item.template {

@@ -379,6 +379,60 @@ fn generate_key_skips_virtual_only_template_columns() {
 }
 
 #[test]
+fn generate_key_skips_statically_inactive_source_columns() {
+    let dir = temp_dir("inactive-template-columns");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             int count = 0;\n\
+             if (count > 0) {\n\
+                 col fixed skipped_fixed[UNKNOWN_WIDTH] = [1];\n\
+                 col witness skipped_trace[UNKNOWN_WIDTH];\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let setup_path = layout.units[0]
+        .setup_info_binary()
+        .expect("setup metadata path should derive");
+    let setup = read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+    assert_eq!(
+        setup
+            .constant_columns
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect::<Vec<_>>(),
+        ["main.left"]
+    );
+    assert!(setup.commitment_columns.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_skips_virtual_only_template_air_values() {
     let dir = temp_dir("virtual-template-air-values");
     let _ = fs::remove_dir_all(&dir);

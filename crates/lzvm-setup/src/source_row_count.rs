@@ -8,7 +8,14 @@ use lzvm_pil::{
 };
 
 use crate::source_key_directory::SourceKeyDirectoryMetadataError;
-use crate::source_static_values::{evaluate_source_static_expression, static_value_integer};
+use crate::source_scope::{
+    concrete_template_names, declaration_in_function_body, declaration_in_inactive_template,
+};
+use crate::source_static_values::{
+    evaluate_source_static_expression, source_declaration_constant_values_from_cache,
+    source_declaration_in_static_false_branch, source_template_constant_value_cache,
+    static_value_integer,
+};
 
 pub(crate) type SourceUnitRowCounts = BTreeMap<(usize, usize), u64>;
 
@@ -18,10 +25,38 @@ pub(crate) fn infer_source_row_counts(
     let mut row_counts = infer_source_row_counts_from_air_units(program)?;
     if row_counts.is_empty() {
         let constants = source_static_constant_values(program);
+        let template_values = source_template_constant_value_cache(program, &constants);
+        let active_templates = concrete_template_names(program);
         let mut first_sequence_error = None;
         for module in &program.modules {
             for declaration in &module.columns {
                 if declaration.kind != ColumnKind::Fixed {
+                    continue;
+                }
+                if declaration_in_function_body(module, declaration.start, declaration.end)
+                    || declaration_in_inactive_template(
+                        module,
+                        declaration.start,
+                        declaration.end,
+                        &active_templates,
+                    )
+                {
+                    continue;
+                }
+                let declaration_values = source_declaration_constant_values_from_cache(
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    &constants,
+                    &template_values,
+                );
+                if source_declaration_in_static_false_branch(
+                    program,
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    declaration_values,
+                ) {
                     continue;
                 }
                 let Some(initializer) = declaration.initializer.as_ref() else {
