@@ -333,13 +333,28 @@ fn lower_structured_source_lookup_hint(
         return Ok(None);
     };
 
-    let mut fields = vec![
-        hint_number_field("bus_id", bus_id),
-        HintFieldInfo {
+    let mut fields = vec![hint_number_field("bus_id", bus_id)];
+    let needs_value_lengths = lookup_values.needs_lengths();
+    if needs_value_lengths {
+        let Some(length_values) =
+            source_lookup_value_length_values(&lookup_values.component_lengths)
+        else {
+            return Ok(None);
+        };
+        fields.push(HintFieldInfo {
             name: "values".to_owned(),
-            values: lookup_values,
-        },
-    ];
+            values: lookup_values.values,
+        });
+        fields.push(HintFieldInfo {
+            name: "value_lengths".to_owned(),
+            values: length_values,
+        });
+    } else {
+        fields.push(HintFieldInfo {
+            name: "values".to_owned(),
+            values: lookup_values.values,
+        });
+    }
     for (positional_index, range) in arguments.into_iter().skip(2).enumerate() {
         let argument = split_named_argument(&tokens, range);
         let Some(field) = source_lookup_extra_field(name, call_name, &argument, positional_index)
@@ -475,6 +490,32 @@ struct SourceLookupLowering<'a> {
     expression_array_aliases: &'a SourceExpressionArrayAliases,
     scalar_slots: &'a SourceScalarSlots,
     opening_points: &'a [i64],
+}
+
+#[derive(Default)]
+struct SourceLookupValues {
+    values: Vec<HintValueInfo>,
+    component_lengths: Vec<usize>,
+}
+
+impl SourceLookupValues {
+    fn push_component(&mut self, values: Vec<HintValueInfo>) -> Option<()> {
+        if values.is_empty() {
+            return None;
+        }
+        self.component_lengths.push(values.len());
+        self.values.extend(values);
+        Some(())
+    }
+
+    fn extend(&mut self, values: SourceLookupValues) {
+        self.component_lengths.extend(values.component_lengths);
+        self.values.extend(values.values);
+    }
+
+    fn needs_lengths(&self) -> bool {
+        self.component_lengths.iter().any(|length| *length != 1)
+    }
 }
 
 fn split_named_argument(tokens: &[Token], range: (usize, usize)) -> SourceLookupArgument {
@@ -660,7 +701,7 @@ fn evaluate_unsigned_argument(
 fn source_lookup_values(
     context: &SourceLookupLowering<'_>,
     range: (usize, usize),
-) -> Option<Vec<HintValueInfo>> {
+) -> Option<SourceLookupValues> {
     if range.0 >= range.1 {
         return None;
     }
@@ -669,12 +710,13 @@ fn source_lookup_values(
         && context.tokens[range.1 - 1].kind == TokenKind::RBracket
     {
         let ranges = top_level_argument_ranges(context.tokens, range.0, range.1 - 1)?;
-        let mut values = Vec::new();
+        let mut values = SourceLookupValues::default();
         for value_range in ranges {
             if let Some(name) = source_lookup_spread_name(context.tokens, value_range) {
                 values.extend(source_lookup_spread_values(context, name)?);
             } else {
-                values.push(source_lookup_value(context, value_range)?);
+                values
+                    .push_component(source_lookup_value_expression_values(context, value_range)?)?;
             }
         }
         return Some(values);
@@ -684,7 +726,9 @@ fn source_lookup_values(
             return Some(values);
         }
     }
-    Some(vec![source_lookup_value(context, range)?])
+    let mut values = SourceLookupValues::default();
+    values.push_component(source_lookup_value_expression_values(context, range)?)?;
+    Some(values)
 }
 
 fn source_lookup_bare_name(tokens: &[Token], range: (usize, usize)) -> Option<&str> {
@@ -707,7 +751,7 @@ fn source_lookup_spread_name(tokens: &[Token], range: (usize, usize)) -> Option<
 fn source_lookup_spread_values(
     context: &SourceLookupLowering<'_>,
     name: &str,
-) -> Option<Vec<HintValueInfo>> {
+) -> Option<SourceLookupValues> {
     if let Some(alias) = context.expression_array_aliases.get(name) {
         let mut resolving_aliases = BTreeSet::new();
         return source_lookup_spread_alias_values(context, alias, &mut resolving_aliases);
@@ -719,7 +763,7 @@ fn source_lookup_spread_alias_values(
     context: &SourceLookupLowering<'_>,
     alias: &SourceExpressionArrayAlias,
     resolving_aliases: &mut BTreeSet<String>,
-) -> Option<Vec<HintValueInfo>> {
+) -> Option<SourceLookupValues> {
     match alias {
         SourceExpressionArrayAlias::Name(name) => {
             if let Some(next_alias) = context.expression_array_aliases.get(name) {
@@ -733,50 +777,59 @@ fn source_lookup_spread_alias_values(
             }
             source_lookup_named_spread_values(context, name)
         }
-        SourceExpressionArrayAlias::Values(expressions) => expressions
-            .iter()
-            .map(|expression| source_lookup_value_from_expression(context, expression))
-            .collect(),
+        SourceExpressionArrayAlias::Values(expressions) => {
+            let mut values = SourceLookupValues::default();
+            for expression in expressions {
+                values.push_component(source_assignment_expression_values(context, expression)?)?;
+            }
+            Some(values)
+        }
     }
 }
 
 fn source_lookup_named_spread_values(
     context: &SourceLookupLowering<'_>,
     name: &str,
-) -> Option<Vec<HintValueInfo>> {
+) -> Option<SourceLookupValues> {
     if let Some(values) = source_static_array_values(context.values, name) {
-        return values
-            .into_iter()
-            .map(|value| {
-                Some(HintValueInfo {
-                    positions: Vec::new(),
-                    payload: hint_payload_from_static_value(value)?,
-                })
-            })
-            .collect();
+        let mut out = SourceLookupValues::default();
+        for value in values {
+            out.push_component(vec![HintValueInfo {
+                positions: Vec::new(),
+                payload: hint_payload_from_static_value(value)?,
+            }])?;
+        }
+        return Some(out);
     }
-    context
-        .scalar_slots
-        .operand_elements_at(name, 0)
-        .ok()?
-        .into_iter()
-        .map(|operand| {
+    let mut out = SourceLookupValues::default();
+    for operand in context.scalar_slots.operand_elements_at(name, 0).ok()? {
+        out.push_component(vec![HintValueInfo {
+            positions: Vec::new(),
+            payload: hint_payload_from_code_operand(operand, context.opening_points)?,
+        }])?;
+    }
+    Some(out)
+}
+
+fn source_lookup_value_length_values(lengths: &[usize]) -> Option<Vec<HintValueInfo>> {
+    lengths
+        .iter()
+        .map(|length| {
             Some(HintValueInfo {
                 positions: Vec::new(),
-                payload: hint_payload_from_code_operand(operand, context.opening_points)?,
+                payload: HintPayload::number(u64::try_from(*length).ok()?),
             })
         })
         .collect()
 }
 
-fn source_lookup_value(
+fn source_lookup_value_expression_values(
     context: &SourceLookupLowering<'_>,
     range: (usize, usize),
-) -> Option<HintValueInfo> {
-    Some(HintValueInfo {
-        positions: Vec::new(),
-        payload: source_lookup_value_payload(context, range)?,
-    })
+) -> Option<Vec<HintValueInfo>> {
+    let expression =
+        parse_source_lookup_expression(context.module, context.line, context.tokens, range)?;
+    source_assignment_expression_values(context, &expression)
 }
 
 fn source_lookup_value_from_expression(
@@ -891,15 +944,6 @@ fn source_lookup_static_value_payload(
         &expression,
         context.values,
     )?)
-}
-
-fn source_lookup_value_payload(
-    context: &SourceLookupLowering<'_>,
-    range: (usize, usize),
-) -> Option<HintPayload> {
-    let expression =
-        parse_source_lookup_expression(context.module, context.line, context.tokens, range)?;
-    source_lookup_value_payload_from_expression(context, &expression)
 }
 
 fn source_lookup_value_payload_from_expression(

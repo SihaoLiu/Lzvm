@@ -145,7 +145,7 @@ fn source_lookup_key(
     for field in &hint.fields {
         if matches!(
             field.name.as_str(),
-            "bus_id" | "values" | "multiplicity" | "selector" | "line"
+            "bus_id" | "values" | "value_lengths" | "multiplicity" | "selector" | "line"
         ) {
             continue;
         }
@@ -156,12 +156,7 @@ fn source_lookup_key(
     }
     qualifiers.sort_by(|left, right| left.0.cmp(&right.0));
 
-    let values = source_lookup_field(hint, "values")
-        .ok_or_else(|| source_lookup_message(unit_index, "missing values field", row))?
-        .values
-        .iter()
-        .map(|value| source_lookup_payload(&value.payload))
-        .collect::<Vec<_>>();
+    let values = source_lookup_key_values(unit_index, row, hint)?;
     if values.is_empty() {
         return source_lookup_error(unit_index, format!("empty values field at row {row}"));
     }
@@ -345,6 +340,91 @@ fn source_lookup_expression_pop(
         unit_index,
         message: format!("operator {op} has too few operands at row {row}"),
     })
+}
+
+fn source_lookup_key_values(
+    unit_index: usize,
+    row: usize,
+    hint: &ResolvedHint,
+) -> Result<Vec<SourceLookupPayload>, SourceLookupHintError> {
+    let field = source_lookup_field(hint, "values")
+        .ok_or_else(|| source_lookup_message(unit_index, "missing values field", row))?;
+    let Some(lengths) = source_lookup_value_lengths(unit_index, row, hint)? else {
+        return Ok(field
+            .values
+            .iter()
+            .map(|value| source_lookup_payload(&value.payload))
+            .collect());
+    };
+
+    let mut values = Vec::with_capacity(lengths.len());
+    let mut offset = 0_usize;
+    for length in lengths {
+        if length == 0 {
+            return source_lookup_error(
+                unit_index,
+                format!("lookup value expression has zero length at row {row}"),
+            );
+        }
+        let end = offset
+            .checked_add(length)
+            .ok_or_else(|| SourceLookupHintError::Unit {
+                unit_index,
+                message: format!("lookup value expression length overflow at row {row}"),
+            })?;
+        if end > field.values.len() {
+            return source_lookup_error(
+                unit_index,
+                format!("lookup value expression length exceeds values at row {row}"),
+            );
+        }
+        if length == 1 {
+            values.push(source_lookup_payload(&field.values[offset].payload));
+        } else {
+            let expression = ResolvedHintField {
+                name: "values".to_owned(),
+                values: field.values[offset..end].to_vec(),
+            };
+            values.push(SourceLookupPayload::Scalar(
+                source_lookup_expression_field(unit_index, row, &expression)?.to_u64(),
+            ));
+        }
+        offset = end;
+    }
+    if offset != field.values.len() {
+        return source_lookup_error(
+            unit_index,
+            format!("lookup value expression lengths leave unused values at row {row}"),
+        );
+    }
+    Ok(values)
+}
+
+fn source_lookup_value_lengths(
+    unit_index: usize,
+    row: usize,
+    hint: &ResolvedHint,
+) -> Result<Option<Vec<usize>>, SourceLookupHintError> {
+    let Some(field) = source_lookup_field(hint, "value_lengths") else {
+        return Ok(None);
+    };
+    field
+        .values
+        .iter()
+        .map(|value| match value.payload {
+            ResolvedHintPayload::Scalar(value) => {
+                usize::try_from(value.to_u64()).map_err(|_| SourceLookupHintError::Unit {
+                    unit_index,
+                    message: format!("lookup value expression length overflow at row {row}"),
+                })
+            }
+            _ => Err(SourceLookupHintError::Unit {
+                unit_index,
+                message: format!("lookup value expression length is not scalar at row {row}"),
+            }),
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
 }
 
 fn source_lookup_single_payload(
