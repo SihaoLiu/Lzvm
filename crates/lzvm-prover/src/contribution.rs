@@ -924,10 +924,15 @@ fn build_internal_contribution_values(
         });
     }
 
-    let stage_one_count = unit_value_map
-        .iter()
-        .filter(|entry| entry.stage == 1)
-        .count();
+    let stage_one_count = unit_value_map.iter().try_fold(0_usize, |count, entry| {
+        if entry.stage == 1 {
+            count
+                .checked_add(stage_value_dimension(entry)?)
+                .ok_or(ContributionChallengeError::LengthOverflow)
+        } else {
+            Ok(count)
+        }
+    })?;
     let capacity = CONTRIBUTION_ROOT_SLOT_END
         .checked_add(stage_one_count)
         .ok_or(ContributionChallengeError::LengthOverflow)?;
@@ -941,14 +946,19 @@ fn build_internal_contribution_values(
 
     let mut offset = 0_usize;
     for entry in unit_value_map {
+        let dimension = stage_value_dimension(entry)?;
         if entry.stage == 1 {
-            values.push(packed_unit_values[offset]);
-            offset = offset
-                .checked_add(1)
+            let end = offset
+                .checked_add(dimension)
                 .ok_or(ContributionChallengeError::LengthOverflow)?;
+            values.extend_from_slice(&packed_unit_values[offset..end]);
+            offset = end;
         } else {
+            let width = dimension
+                .checked_mul(3)
+                .ok_or(ContributionChallengeError::LengthOverflow)?;
             offset = offset
-                .checked_add(3)
+                .checked_add(width)
                 .ok_or(ContributionChallengeError::LengthOverflow)?;
         }
     }
@@ -994,8 +1004,23 @@ fn expected_packed_stage_value_count(
     unit_value_map: &[StageValue],
 ) -> Result<usize, ContributionChallengeError> {
     unit_value_map.iter().try_fold(0_usize, |count, value| {
+        let dimension = stage_value_dimension(value)?;
+        let width = if value.stage == 1 { 1 } else { 3 };
+        let value_count = dimension
+            .checked_mul(width)
+            .ok_or(ContributionChallengeError::LengthOverflow)?;
         count
-            .checked_add(if value.stage == 1 { 1 } else { 3 })
+            .checked_add(value_count)
+            .ok_or(ContributionChallengeError::LengthOverflow)
+    })
+}
+
+fn stage_value_dimension(entry: &StageValue) -> Result<usize, ContributionChallengeError> {
+    entry.lengths.iter().try_fold(1_usize, |dimension, length| {
+        let length =
+            usize::try_from(*length).map_err(|_| ContributionChallengeError::LengthOverflow)?;
+        dimension
+            .checked_mul(length)
             .ok_or(ContributionChallengeError::LengthOverflow)
     })
 }

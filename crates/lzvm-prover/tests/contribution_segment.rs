@@ -72,10 +72,14 @@ fn array_proof_value(name: &str, stage: u64, lengths: &[u64]) -> NamedStageValue
 }
 
 fn stage_value(name: &str, stage: u32) -> StageValue {
+    array_stage_value(name, stage, &[1])
+}
+
+fn array_stage_value(name: &str, stage: u32, lengths: &[u32]) -> StageValue {
     StageValue {
         name: name.to_owned(),
         stage,
-        lengths: vec![1],
+        lengths: lengths.to_vec(),
     }
 }
 
@@ -117,11 +121,16 @@ fn expected_internal_values(
     ];
     let mut offset = 0_usize;
     for entry in unit_value_map {
+        let dimension = entry
+            .lengths
+            .iter()
+            .fold(1_usize, |acc, length| acc * (*length as usize));
         if entry.stage == 1 {
-            values.push(packed_unit_values[offset]);
-            offset += 1;
+            let end = offset + dimension;
+            values.extend_from_slice(&packed_unit_values[offset..end]);
+            offset = end;
         } else {
-            offset += 3;
+            offset += dimension * 3;
         }
     }
     values
@@ -262,6 +271,61 @@ fn builds_internal_contribution_input_from_unit_metadata_values() {
                 &unit_value_map,
                 &packed_unit_values
             ),
+        }
+    );
+}
+
+#[test]
+fn builds_internal_contribution_input_from_array_unit_values() {
+    let root = [
+        Felt::from_u64(501),
+        Felt::from_u64(502),
+        Felt::from_u64(503),
+        Felt::from_u64(504),
+    ];
+    let verification_key = VerificationKeyRoot::FieldElements(vec![11, 22, 33, 44]);
+    let unit_value_map = vec![
+        array_stage_value("local_a", 1, &[2]),
+        array_stage_value("local_b", 2, &[2]),
+        stage_value("local_c", 1),
+    ];
+    let packed_unit_values = vec![
+        Felt::from_u64(101),
+        Felt::from_u64(102),
+        Felt::from_u64(201),
+        Felt::from_u64(202),
+        Felt::from_u64(203),
+        Felt::from_u64(204),
+        Felt::from_u64(205),
+        Felt::from_u64(206),
+        Felt::from_u64(103),
+    ];
+
+    let input = build_internal_contribution_input(
+        root,
+        &verification_key,
+        &unit_value_map,
+        &packed_unit_values,
+    )
+    .expect("internal contribution input should build");
+
+    assert_eq!(
+        input,
+        InternalContributionInput {
+            root,
+            values: vec![
+                Felt::from_u64(11),
+                Felt::from_u64(22),
+                Felt::from_u64(33),
+                Felt::from_u64(44),
+                Felt::ZERO,
+                Felt::ZERO,
+                Felt::ZERO,
+                Felt::ZERO,
+                Felt::from_u64(101),
+                Felt::from_u64(102),
+                Felt::from_u64(103),
+            ],
         }
     );
 }
