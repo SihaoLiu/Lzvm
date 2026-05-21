@@ -12,11 +12,13 @@ use lzvm_pil::{
 };
 
 use crate::{
-    source_key_directory::{source_item_name, SourceKeyDirectoryMetadataError},
+    source_key_directory::{
+        source_item_lengths, source_item_name, SourceKeyDirectoryMetadataError,
+    },
     source_scope::global_constraint_source_names,
     source_static_values::{
         evaluate_source_static_expression, source_declaration_in_static_false_branch,
-        source_scalar_constant_values, static_value_integer,
+        source_scalar_constant_values, source_static_array_expression, static_value_integer,
     },
 };
 
@@ -100,47 +102,101 @@ fn lower_public_initializer_constraint(
     static_values: &BTreeMap<String, FixedFileTemplateValue>,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
-    if declaration.items.len() != 1
-        || declaration
-            .items
-            .first()
-            .is_some_and(|item| !item.array_dim_expressions.is_empty())
-    {
-        return unsupported("source public initializers require scalar public values");
+    let (name, dimension) = source_public_initializer_target(program, declaration, static_values)?;
+    let Some(slot) = public_value_slots.get(&name).copied() else {
+        return unsupported("source public initializer references an unknown public value");
+    };
+    let slot_dimension = usize::try_from(slot.dimension)
+        .map_err(|_| unsupported_source_message("source public initializer dimension overflow"))?;
+    if slot.stage != 1 || slot_dimension != dimension {
+        return unsupported("source public initializer dimension does not match metadata");
+    }
+    let Some(expression) = declaration.initializer_expression.as_ref() else {
+        return unsupported("source public initializers must be static field values");
+    };
+    let values =
+        source_public_initializer_field_values(program, expression, static_values, dimension)?;
+    let source_line = module.source.contents[declaration.start..declaration.end]
+        .trim()
+        .to_owned();
+    for (index, value) in values.into_iter().enumerate() {
+        let offset = source_usize_to_u32(index, "source public initializer offset overflow")
+            .and_then(|index| {
+                slot.offset.checked_add(index).ok_or_else(|| {
+                    unsupported_source_message("source public initializer offset overflow")
+                })
+            })?;
+        constraints.append_public_value_constant_constraint(offset, value, source_line.clone())?;
+    }
+    Ok(())
+}
+
+fn source_public_initializer_target(
+    program: &SourceProgram,
+    declaration: &PublicDeclaration,
+    static_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<(String, usize), SourceKeyDirectoryMetadataError> {
+    if declaration.items.len() != 1 {
+        return unsupported("source public initializers require one public value");
     }
     let item = declaration
         .items
         .first()
         .ok_or_else(|| unsupported_source_message("source public initializer has no value"))?;
     let name = source_item_name(program, item, "source public value", static_values)?;
-    let Some(slot) = public_value_slots.get(&name).copied() else {
-        return unsupported("source public initializer references an unknown public value");
+    let lengths = source_item_lengths(program, item, "source public value", static_values)?;
+    let dimension = if lengths.is_empty() {
+        1
+    } else {
+        lengths.iter().try_fold(1_usize, |dimension, length| {
+            dimension
+                .checked_mul(usize::try_from(*length).map_err(|_| {
+                    unsupported_source_message("source public initializer dimension overflow")
+                })?)
+                .ok_or_else(|| {
+                    unsupported_source_message("source public initializer dimension overflow")
+                })
+        })?
     };
-    if slot.stage != 1 || slot.dimension != 1 {
-        return unsupported("source public initializers require scalar public values");
-    }
-    let Some(expression) = declaration.initializer_expression.as_ref() else {
-        return unsupported("source public initializers must be static field values");
-    };
-    let value = source_public_initializer_field_value(program, expression, static_values)?;
-    constraints.append_public_value_constant_constraint(
-        slot.offset,
-        value,
-        module.source.contents[declaration.start..declaration.end]
-            .trim()
-            .to_owned(),
-    )
+    Ok((name, dimension))
 }
 
-fn source_public_initializer_field_value(
+fn source_public_initializer_field_values(
     program: &SourceProgram,
     expression: &Expression,
     static_values: &BTreeMap<String, FixedFileTemplateValue>,
-) -> Result<u64, SourceKeyDirectoryMetadataError> {
-    let Some(value) = evaluate_source_static_expression(program, expression, static_values) else {
-        return unsupported("source public initializers must be static field values");
+    dimension: usize,
+) -> Result<Vec<u64>, SourceKeyDirectoryMetadataError> {
+    let values = if dimension == 1 {
+        vec![
+            evaluate_source_static_expression(program, expression, static_values).ok_or_else(
+                || {
+                    unsupported_source_message(
+                        "source public initializers must be static field values",
+                    )
+                },
+            )?,
+        ]
+    } else {
+        source_static_array_expression(program, expression, static_values).ok_or_else(|| {
+            unsupported_source_message("source public initializers must be static field values")
+        })?
     };
-    let Some(value) = static_value_integer(&value) else {
+    if values.len() != dimension {
+        return unsupported(
+            "source public initializer length does not match public value dimension",
+        );
+    }
+    values
+        .iter()
+        .map(source_public_initializer_field_value)
+        .collect()
+}
+
+fn source_public_initializer_field_value(
+    value: &FixedFileTemplateValue,
+) -> Result<u64, SourceKeyDirectoryMetadataError> {
+    let Some(value) = static_value_integer(value) else {
         return unsupported("source public initializers must be static field values");
     };
     let modulus = i128::from(MODULUS);

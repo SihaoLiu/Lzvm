@@ -1326,7 +1326,7 @@ fn source_token_index_after_end(tokens: &[Token], end: usize) -> Option<usize> {
         .and_then(|index| index.checked_add(1))
 }
 
-fn source_static_array_expression(
+pub(crate) fn source_static_array_expression(
     program: &SourceProgram,
     expression: &Expression,
     values: &BTreeMap<String, FixedFileTemplateValue>,

@@ -241,6 +241,77 @@ fn generate_key_lowers_static_public_initializers_as_global_constraints() {
 }
 
 #[test]
+fn generate_key_lowers_static_public_array_initializers_as_global_constraints() {
+    let dir = temp_dir("static-public-array-initializer");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "public expected[2] = [6 + 1, 9];\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
+        .expect("source global metadata should parse");
+    assert_eq!(global.n_publics, 1);
+    assert_eq!(global.publics_map.len(), 1);
+    assert_eq!(global.publics_map[0].name, "expected");
+    assert_eq!(global.publics_map[0].lengths, [2]);
+
+    let program = read_global_program_file(dir.join("pilout.globalConstraints.bin"))
+        .expect("source global program should parse");
+    assert_eq!(program.constraints.entries.len(), 2);
+    assert!(program
+        .constraints
+        .entries
+        .iter()
+        .all(|entry| entry.destination_dimension == 1));
+
+    let satisfied = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            publics: &[Felt::from_u64(7), Felt::from_u64(9)],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("matching public values should evaluate");
+    assert_eq!(satisfied, [Ext3::ZERO, Ext3::ZERO]);
+
+    let unsatisfied = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            publics: &[Felt::from_u64(7), Felt::from_u64(10)],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("mismatched public value should evaluate");
+    assert_ne!(unsatisfied, [Ext3::ZERO, Ext3::ZERO]);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_rejects_non_static_public_initializers() {
     let dir = temp_dir("non-static-public-initializer");
     let _ = fs::remove_dir_all(&dir);

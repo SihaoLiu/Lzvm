@@ -23,8 +23,8 @@ use crate::{
     },
     source_static_values::{
         evaluate_source_static_expression, source_declaration_constant_values_from_cache,
-        source_declaration_in_static_false_branch, static_value_integer,
-        SourceTemplateConstantValueCache,
+        source_declaration_in_static_false_branch, source_static_array_expression,
+        static_value_integer, SourceTemplateConstantValueCache,
     },
 };
 
@@ -231,25 +231,79 @@ fn source_public_initializer_static_value(
     if !initializer_constraint_available {
         return unsupported("source public initializers need global constraint lowering support");
     }
-    if declaration.items.len() != 1
-        || declaration
-            .items
-            .first()
-            .is_some_and(|item| !item.array_dim_expressions.is_empty())
-    {
-        return unsupported("source public initializers require scalar public values");
-    }
+    let dimension = source_public_initializer_dimension(program, declaration, declaration_values)?;
     let Some(expression) = declaration.initializer_expression.as_ref() else {
         return unsupported("source public initializers must be static field values");
     };
-    let Some(value) = evaluate_source_static_expression(program, expression, declaration_values)
-    else {
-        return unsupported("source public initializers must be static field values");
-    };
-    if static_value_integer(&value).is_none() {
+    let values = source_public_initializer_static_values(
+        program,
+        expression,
+        declaration_values,
+        dimension,
+    )?;
+    if values
+        .iter()
+        .any(|value| static_value_integer(value).is_none())
+    {
         return unsupported("source public initializers must be static field values");
     }
     Ok(())
+}
+
+fn source_public_initializer_dimension(
+    program: &SourceProgram,
+    declaration: &PublicDeclaration,
+    declaration_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<usize, SourceKeyDirectoryMetadataError> {
+    if declaration.items.len() != 1 {
+        return unsupported("source public initializers require one public value");
+    }
+    let item = declaration
+        .items
+        .first()
+        .ok_or_else(|| unsupported_source_message("source public initializer has no value"))?;
+    let lengths = source_item_lengths(program, item, "source public value", declaration_values)?;
+    if lengths.is_empty() {
+        return Ok(1);
+    }
+    lengths.iter().try_fold(1_usize, |dimension, length| {
+        dimension
+            .checked_mul(usize::try_from(*length).map_err(|_| {
+                unsupported_source_message("source public initializer dimension overflow")
+            })?)
+            .ok_or_else(|| {
+                unsupported_source_message("source public initializer dimension overflow")
+            })
+    })
+}
+
+fn source_public_initializer_static_values(
+    program: &SourceProgram,
+    expression: &lzvm_pil::Expression,
+    declaration_values: &BTreeMap<String, FixedFileTemplateValue>,
+    dimension: usize,
+) -> Result<Vec<FixedFileTemplateValue>, SourceKeyDirectoryMetadataError> {
+    let values = if dimension == 1 {
+        vec![
+            evaluate_source_static_expression(program, expression, declaration_values).ok_or_else(
+                || {
+                    unsupported_source_message(
+                        "source public initializers must be static field values",
+                    )
+                },
+            )?,
+        ]
+    } else {
+        source_static_array_expression(program, expression, declaration_values).ok_or_else(
+            || unsupported_source_message("source public initializers must be static field values"),
+        )?
+    };
+    if values.len() != dimension {
+        return unsupported(
+            "source public initializer length does not match public value dimension",
+        );
+    }
+    Ok(values)
 }
 
 pub(crate) fn source_proof_values(
