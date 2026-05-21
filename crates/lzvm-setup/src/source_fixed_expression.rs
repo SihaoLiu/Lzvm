@@ -128,6 +128,10 @@ fn evaluate_source_fixed_expression_inner(
                 let divisor = source_fixed_expression_static_integer(context, right)?;
                 return field_mod_by_static(context, expression, lhs, divisor).map(Some);
             }
+            if matches!(op, BinaryOperator::ShiftLeft | BinaryOperator::ShiftRight) {
+                let shift = source_fixed_expression_static_integer(context, right)?;
+                return integer_shift_by_static(context, expression, lhs, shift, *op).map(Some);
+            }
             let Some(rhs) = evaluate_source_fixed_expression_inner(context, right, row)? else {
                 return Ok(None);
             };
@@ -135,6 +139,15 @@ fn evaluate_source_fixed_expression_inner(
                 BinaryOperator::Add => Ok(Some(field_add(lhs, rhs))),
                 BinaryOperator::Subtract => Ok(Some(field_sub(lhs, rhs))),
                 BinaryOperator::Multiply => Ok(Some(field_mul(lhs, rhs))),
+                BinaryOperator::BitAnd => {
+                    integer_bitwise(context, expression, lhs, rhs, |a, b| a & b).map(Some)
+                }
+                BinaryOperator::BitXor => {
+                    integer_bitwise(context, expression, lhs, rhs, |a, b| a ^ b).map(Some)
+                }
+                BinaryOperator::BitOr => {
+                    integer_bitwise(context, expression, lhs, rhs, |a, b| a | b).map(Some)
+                }
                 _ => Err(source_fixed_expression_unsupported(context, expression)),
             }
         }
@@ -434,6 +447,36 @@ fn field_mod_by_static(
     let value = lhs
         .checked_rem(divisor)
         .ok_or_else(|| source_fixed_expression_integer_out_of_range(context, expression))?;
+    canonical_source_fixed_expression_value(context, expression, value)
+}
+
+fn integer_shift_by_static(
+    context: &SourceFixedExpressionContext<'_>,
+    expression: &Expression,
+    lhs: u64,
+    shift: i128,
+    op: BinaryOperator,
+) -> Result<u64, SourceFixedColumnsWriteError> {
+    let lhs = i128::from(lhs);
+    let shift = u32::try_from(shift)
+        .map_err(|_| source_fixed_expression_integer_out_of_range(context, expression))?;
+    let value = match op {
+        BinaryOperator::ShiftLeft => lhs.checked_shl(shift),
+        BinaryOperator::ShiftRight => lhs.checked_shr(shift),
+        _ => None,
+    }
+    .ok_or_else(|| source_fixed_expression_integer_out_of_range(context, expression))?;
+    canonical_source_fixed_expression_value(context, expression, value)
+}
+
+fn integer_bitwise(
+    context: &SourceFixedExpressionContext<'_>,
+    expression: &Expression,
+    lhs: u64,
+    rhs: u64,
+    op: impl FnOnce(i128, i128) -> i128,
+) -> Result<u64, SourceFixedColumnsWriteError> {
+    let value = op(i128::from(lhs), i128::from(rhs));
     canonical_source_fixed_expression_value(context, expression, value)
 }
 
