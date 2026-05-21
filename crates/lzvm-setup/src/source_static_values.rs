@@ -1,11 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
 
 use lzvm_pil::{
-    lex_source, parse_expression_tokens, BinaryOperator, Expression, ExpressionKind,
-    FixedFileTemplateValue, FunctionDeclaration, FunctionStatement, FunctionStatementDeclaration,
-    FunctionStatementKind, SourceFile, SourceProgram, SourceProgramModule, SourceSpan, Token,
-    TokenKind, UnaryOperator,
+    lex_source, parse_expression_tokens, parse_function_body_statements, BinaryOperator,
+    Expression, ExpressionKind, FixedFileTemplateValue, FunctionDeclaration, FunctionStatement,
+    FunctionStatementDeclaration, FunctionStatementKind, SourceFile, SourceProgram,
+    SourceProgramModule, SourceSpan, Token, TokenKind, UnaryOperator,
 };
 
 use crate::source_scope::{declaration_in_function_body, declaration_in_inactive_template};
@@ -563,19 +562,31 @@ fn evaluate_static_function(
     values: &BTreeMap<String, i128>,
 ) -> Option<i128> {
     let mut values = values.clone();
-    for statement in &function.statements {
-        if let StaticFlow::Return(value) =
-            execute_static_statement(program, module, statement, &mut values)?
-        {
-            return Some(value);
-        }
+    match execute_static_statements(program, module, &function.statements, &mut values)? {
+        StaticFlow::Continue => None,
+        StaticFlow::Return(value) => Some(value),
     }
-    None
 }
 
 enum StaticFlow {
     Continue,
     Return(i128),
+}
+
+fn execute_static_statements(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    statements: &[FunctionStatement],
+    values: &mut BTreeMap<String, i128>,
+) -> Option<StaticFlow> {
+    for statement in statements {
+        if let StaticFlow::Return(value) =
+            execute_static_statement(program, module, statement, values)?
+        {
+            return Some(StaticFlow::Return(value));
+        }
+    }
+    Some(StaticFlow::Continue)
 }
 
 fn execute_static_statement(
@@ -616,6 +627,9 @@ fn execute_static_statement(
                 }
             }
             None
+        }
+        FunctionStatementKind::If => {
+            execute_static_if_statement(program, module, statement, values)
         }
         _ => None,
     }
@@ -700,66 +714,116 @@ fn execute_static_body(
     end: usize,
     values: &mut BTreeMap<String, i128>,
 ) -> Option<StaticFlow> {
-    let body = module.source.contents.get(start..end)?;
-    let body = body
-        .trim()
-        .strip_prefix('{')
-        .and_then(|body| body.strip_suffix('}'))
-        .unwrap_or(body);
-    let source = SourceFile {
-        contents: body.to_owned(),
-        file_dir: PathBuf::new(),
-        full_path: PathBuf::new(),
-        source_name: module.source_name.clone(),
-    };
-    execute_static_expression_statements(program, &source, values)?;
-    Some(StaticFlow::Continue)
+    let tokens = lex_source(&module.source.contents).ok()?;
+    let statements =
+        parse_function_body_statements(&tokens, SourceSpan { start, end }, &module.source).ok()?;
+    execute_static_statements(program, module, &statements, values)
 }
 
-fn execute_static_expression_statements(
+fn execute_static_if_statement(
     program: &SourceProgram,
-    source: &SourceFile,
+    module: &SourceProgramModule,
+    statement: &FunctionStatement,
     values: &mut BTreeMap<String, i128>,
-) -> Option<()> {
-    let tokens = lex_source(&source.contents).ok()?;
-    let mut index = 0;
-    while index < tokens.len() {
-        match tokens[index].kind {
-            TokenKind::LBrace | TokenKind::RBrace | TokenKind::Semicolon => {
-                index += 1;
-            }
-            TokenKind::EndOfInput => break,
-            _ => {
-                let end = next_static_semicolon(&tokens, index)?;
-                let (expression, consumed) =
-                    parse_expression_tokens(&tokens, index, end, source).ok()?;
-                if consumed != end {
-                    return None;
-                }
-                execute_static_expression_statement(program, &expression, values)?;
-                index = end + 1;
-            }
-        }
+) -> Option<StaticFlow> {
+    let tokens = lex_source(&module.source.contents).ok()?;
+    let start = tokens
+        .iter()
+        .position(|token| token.start == statement.start)?;
+    let end = tokens
+        .iter()
+        .position(|token| token.end == statement.end)?
+        .checked_add(1)?;
+    match static_if_body_span(program, module, &tokens, start, end, values)? {
+        Some(span) => execute_static_body(program, module, span.start, span.end, values),
+        None => Some(StaticFlow::Continue),
     }
-    Some(())
 }
 
-fn next_static_semicolon(tokens: &[lzvm_pil::Token], index: usize) -> Option<usize> {
-    let mut depth = 0_usize;
-    for (cursor, token) in tokens.iter().enumerate().skip(index) {
-        match token.kind {
-            TokenKind::LParen | TokenKind::LBracket | TokenKind::LBrace => {
-                depth = depth.checked_add(1)?;
-            }
-            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
-                depth = depth.checked_sub(1)?;
-            }
-            TokenKind::Semicolon if depth == 0 => return Some(cursor),
-            TokenKind::EndOfInput => return None,
-            _ => {}
+fn static_if_body_span(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    index: usize,
+    end: usize,
+    values: &BTreeMap<String, i128>,
+) -> Option<Option<SourceSpan>> {
+    if !matches!(
+        tokens.get(index).map(|token| token.kind),
+        Some(TokenKind::If | TokenKind::ElseIf)
+    ) {
+        return None;
+    }
+    let open = next_token_kind(tokens, index + 1, end, TokenKind::LParen)?;
+    let close = matching_closing_token(tokens, open, end)?;
+    let (condition, consumed) =
+        parse_expression_tokens(tokens, open + 1, close, &module.source).ok()?;
+    if consumed != close {
+        return None;
+    }
+    let body = static_control_body_span(tokens, close + 1, end)?;
+    if evaluate_static_i128(program, &condition, values)? != 0 {
+        return body.braced.then_some(Some(body.span));
+    }
+    static_else_body_span(program, module, tokens, body.after, end, values)
+}
+
+fn static_else_body_span(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    index: usize,
+    end: usize,
+    values: &BTreeMap<String, i128>,
+) -> Option<Option<SourceSpan>> {
+    match tokens.get(index).map(|token| token.kind) {
+        Some(TokenKind::ElseIf) => static_if_body_span(program, module, tokens, index, end, values),
+        Some(TokenKind::Else)
+            if tokens
+                .get(index + 1)
+                .is_some_and(|token| token.kind == TokenKind::If) =>
+        {
+            static_if_body_span(program, module, tokens, index + 1, end, values)
+        }
+        Some(TokenKind::Else) => {
+            let body = static_control_body_span(tokens, index + 1, end)?;
+            body.braced.then_some(Some(body.span))
+        }
+        _ => Some(None),
+    }
+}
+
+struct StaticBodySpan {
+    span: SourceSpan,
+    braced: bool,
+    after: usize,
+}
+
+fn static_control_body_span(tokens: &[Token], index: usize, end: usize) -> Option<StaticBodySpan> {
+    match tokens.get(index)?.kind {
+        TokenKind::LBrace => {
+            let close = matching_closing_token(tokens, index, end)?;
+            Some(StaticBodySpan {
+                span: SourceSpan {
+                    start: tokens[index].start,
+                    end: tokens[close].end,
+                },
+                braced: true,
+                after: close + 1,
+            })
+        }
+        _ => {
+            let semicolon = next_static_semicolon_limited(tokens, index, end)?;
+            Some(StaticBodySpan {
+                span: SourceSpan {
+                    start: tokens[index].start,
+                    end: tokens[semicolon].end,
+                },
+                braced: false,
+                after: semicolon + 1,
+            })
         }
     }
-    None
 }
 
 fn execute_static_expression_statement(
