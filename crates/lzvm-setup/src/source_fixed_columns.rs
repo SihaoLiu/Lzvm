@@ -704,6 +704,7 @@ fn source_fixed_values_from_template_assignments(
     constant_values: &SourceFixedConstantValues,
 ) -> Result<BTreeMap<String, Vec<u64>>, SourceFixedColumnsWriteError> {
     let mut partial_values = BTreeMap::<String, Vec<Option<u64>>>::new();
+    let active_templates = concrete_template_names(program);
     for module in &program.modules {
         let tokens = lex_source(&module.source.contents).map_err(|source| {
             SourceFixedColumnsWriteError::Lex {
@@ -717,6 +718,9 @@ fn source_fixed_values_from_template_assignments(
         })?;
         let mut body_cache = SourceControlBodyCache::default();
         for template in &module.air_templates {
+            if !active_templates.contains(&template.name) {
+                continue;
+            }
             let assignment_values = SourceFixedAssignmentValues::base(constant_values);
             let context = SourceFixedTemplateAssignmentContext {
                 program,

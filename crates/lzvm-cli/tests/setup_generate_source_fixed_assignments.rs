@@ -172,6 +172,47 @@ fn generate_key_lowers_source_template_fixed_index_assignments() {
 }
 
 #[test]
+fn generate_key_ignores_inactive_template_fixed_index_assignments() {
+    let dir = temp_dir("inactive-template-fixed-assignments");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate Unused() {\n\
+             table.value[0] = 7;\n\
+             table.value[1] = 9;\n\
+         }\n\
+         airtemplate UnitA() {\n\
+             col fixed table.value;\n\
+         }\n\
+         airgroup GroupA {\n\
+             virtual Unused();\n\
+             UnitA();\n\
+         }",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    let stderr = String::from_utf8(stderr).expect("stderr should be utf-8");
+    assert!(stderr.contains("unsupported fixed-column initializer for table.value"));
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn generate_key_lowers_static_source_for_loop_fixed_index_assignments() {
     let dir = temp_dir("template-static-for-fixed-assignments");
     let _ = fs::remove_dir_all(&dir);
