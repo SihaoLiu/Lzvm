@@ -1,12 +1,10 @@
-use std::collections::BTreeSet;
-
 use lzvm_pil::{Expression, ExpressionKind};
 
 use crate::source_key_directory::SourceKeyDirectoryMetadataError;
 
 use super::{
     static_u32_expression, strip_group_expression, unsupported, unsupported_source_message,
-    SourceGlobalAliasScope, SourceGlobalExpressionArrayAlias, SourceGlobalExpressionArrayAliases,
+    SourceGlobalAliasScope,
 };
 
 pub(super) fn source_global_index_chain(
@@ -28,32 +26,6 @@ pub(super) fn source_global_index_chain(
             }
             _ => return None,
         }
-    }
-}
-
-pub(super) fn source_global_named_array_alias_target(
-    expression_array_aliases: &SourceGlobalExpressionArrayAliases,
-    name: &str,
-    resolving_aliases: &mut BTreeSet<String>,
-) -> Option<String> {
-    let alias = expression_array_aliases.get(name)?;
-    match alias {
-        SourceGlobalExpressionArrayAlias::Name(alias_name) => {
-            if !expression_array_aliases.contains_key(alias_name) {
-                return Some(alias_name.clone());
-            }
-            if !resolving_aliases.insert(name.to_owned()) {
-                return None;
-            }
-            let target = source_global_named_array_alias_target(
-                expression_array_aliases,
-                alias_name,
-                resolving_aliases,
-            );
-            resolving_aliases.remove(name);
-            target
-        }
-        SourceGlobalExpressionArrayAlias::Values(_) => None,
     }
 }
 

@@ -878,38 +878,29 @@ fn expression_target(
         }
         ExpressionKind::Index { target, index } => {
             let (name, indices) = indices::source_global_index_chain(target, index, alias_scope)?;
-            if indices.len() == 1 {
-                let index = indices[0];
-                if let Some(alias) = alias_scope.expression_arrays.get(&name) {
-                    let element = source_global_expression_array_alias_element(
-                        alias,
-                        usize::try_from(index).ok()?,
-                        &alias_scope.expression_arrays,
-                        resolving_array_aliases,
-                    )?;
-                    return match element {
-                        SourceGlobalExpressionArrayAliasElement::Expression(expression) => {
-                            expression_target(
-                                expression,
-                                alias_scope,
-                                resolving_aliases,
-                                resolving_array_aliases,
-                            )
-                        }
-                        SourceGlobalExpressionArrayAliasElement::NamedArray(name) => {
-                            Some(SourceBooleanTarget {
-                                name: name.to_owned(),
-                                indices: vec![index],
-                            })
-                        }
-                    };
-                }
-            } else if let Some(name) = indices::source_global_named_array_alias_target(
-                &alias_scope.expression_arrays,
-                &name,
-                resolving_array_aliases,
-            ) {
-                return Some(SourceBooleanTarget { name, indices });
+            if let Some(alias) = alias_scope.expression_arrays.get(&name) {
+                let element = source_global_expression_array_alias_path_element(
+                    alias,
+                    &indices,
+                    &alias_scope.expression_arrays,
+                    resolving_array_aliases,
+                )?;
+                return match element {
+                    SourceGlobalExpressionArrayAliasElement::Expression(expression) => {
+                        expression_target(
+                            expression,
+                            alias_scope,
+                            resolving_aliases,
+                            resolving_array_aliases,
+                        )
+                    }
+                    SourceGlobalExpressionArrayAliasElement::NamedArray(name) => {
+                        Some(SourceBooleanTarget {
+                            name: name.to_owned(),
+                            indices,
+                        })
+                    }
+                };
             }
             Some(SourceBooleanTarget { name, indices })
         }
@@ -922,9 +913,9 @@ enum SourceGlobalExpressionArrayAliasElement<'a> {
     NamedArray(&'a str),
 }
 
-fn source_global_expression_array_alias_element<'a>(
+fn source_global_expression_array_alias_path_element<'a>(
     alias: &'a SourceGlobalExpressionArrayAlias,
-    index: usize,
+    indices: &[u32],
     expression_array_aliases: &'a SourceGlobalExpressionArrayAliases,
     resolving_array_aliases: &mut BTreeSet<String>,
 ) -> Option<SourceGlobalExpressionArrayAliasElement<'a>> {
@@ -934,9 +925,9 @@ fn source_global_expression_array_alias_element<'a>(
                 if !resolving_array_aliases.insert(name.clone()) {
                     return None;
                 }
-                let element = source_global_expression_array_alias_element(
+                let element = source_global_expression_array_alias_path_element(
                     next_alias,
-                    index,
+                    indices,
                     expression_array_aliases,
                     resolving_array_aliases,
                 );
@@ -945,9 +936,47 @@ fn source_global_expression_array_alias_element<'a>(
             }
             Some(SourceGlobalExpressionArrayAliasElement::NamedArray(name))
         }
-        SourceGlobalExpressionArrayAlias::Values(expressions) => expressions
-            .get(index)
-            .map(SourceGlobalExpressionArrayAliasElement::Expression),
+        SourceGlobalExpressionArrayAlias::Values(expressions) => {
+            source_global_expression_array_element(
+                expressions,
+                indices,
+                expression_array_aliases,
+                resolving_array_aliases,
+            )
+        }
+    }
+}
+
+fn source_global_expression_array_element<'a>(
+    expressions: &'a [Expression],
+    indices: &[u32],
+    expression_array_aliases: &'a SourceGlobalExpressionArrayAliases,
+    resolving_array_aliases: &mut BTreeSet<String>,
+) -> Option<SourceGlobalExpressionArrayAliasElement<'a>> {
+    let (index, rest) = indices.split_first()?;
+    let expression = expressions.get(usize::try_from(*index).ok()?)?;
+    if rest.is_empty() {
+        return Some(SourceGlobalExpressionArrayAliasElement::Expression(
+            expression,
+        ));
+    }
+    match &strip_group_expression(expression).kind {
+        ExpressionKind::Array(expressions) => source_global_expression_array_element(
+            expressions,
+            rest,
+            expression_array_aliases,
+            resolving_array_aliases,
+        ),
+        ExpressionKind::Name(name) => {
+            let alias = expression_array_aliases.get(name)?;
+            source_global_expression_array_alias_path_element(
+                alias,
+                rest,
+                expression_array_aliases,
+                resolving_array_aliases,
+            )
+        }
+        _ => None,
     }
 }
 
@@ -1510,36 +1539,22 @@ fn lower_global_base_index_operand(
     else {
         return Ok(None);
     };
-    if indices.len() == 1 {
-        let index = indices[0];
-        if let Some(alias) = context.alias_scope.expression_arrays.get(&name) {
-            if !context.resolving_array_aliases.insert(name.clone()) {
-                return Ok(None);
+    if let Some(alias) = context.alias_scope.expression_arrays.get(&name) {
+        let element = source_global_expression_array_alias_path_element(
+            alias,
+            &indices,
+            &context.alias_scope.expression_arrays,
+            &mut context.resolving_array_aliases,
+        );
+        return match element {
+            Some(SourceGlobalExpressionArrayAliasElement::Expression(expression)) => {
+                lower_global_base_residual_operand(expression, context)
             }
-            let element = source_global_expression_array_alias_element(
-                alias,
-                usize::try_from(index)
-                    .map_err(|_| unsupported_source_message("source global index overflow"))?,
-                &context.alias_scope.expression_arrays,
-                &mut context.resolving_array_aliases,
-            );
-            context.resolving_array_aliases.remove(&name);
-            return match element {
-                Some(SourceGlobalExpressionArrayAliasElement::Expression(expression)) => {
-                    lower_global_base_residual_operand(expression, context)
-                }
-                Some(SourceGlobalExpressionArrayAliasElement::NamedArray(name)) => {
-                    lower_global_base_name_operand(name, &indices, context)
-                }
-                None => Ok(None),
-            };
-        }
-    } else if let Some(name) = indices::source_global_named_array_alias_target(
-        &context.alias_scope.expression_arrays,
-        &name,
-        &mut context.resolving_array_aliases,
-    ) {
-        return lower_global_base_name_operand(&name, &indices, context);
+            Some(SourceGlobalExpressionArrayAliasElement::NamedArray(name)) => {
+                lower_global_base_name_operand(name, &indices, context)
+            }
+            None => Ok(None),
+        };
     }
     lower_global_base_name_operand(&name, &indices, context)
 }

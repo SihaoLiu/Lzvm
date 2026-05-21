@@ -388,36 +388,22 @@ fn lower_global_mixed_index_operand(
     else {
         return Ok(None);
     };
-    if indices.len() == 1 {
-        let index = indices[0];
-        if let Some(alias) = context.alias_scope.expression_arrays.get(&name) {
-            if !context.resolving_array_aliases.insert(name.clone()) {
-                return Ok(None);
+    if let Some(alias) = context.alias_scope.expression_arrays.get(&name) {
+        let element = source_global_expression_array_alias_path_element(
+            alias,
+            &indices,
+            &context.alias_scope.expression_arrays,
+            &mut context.resolving_array_aliases,
+        );
+        return match element {
+            Some(SourceGlobalExpressionArrayAliasElement::Expression(expression)) => {
+                lower_global_mixed_residual_operand(expression, context)
             }
-            let element = source_global_expression_array_alias_element(
-                alias,
-                usize::try_from(index)
-                    .map_err(|_| unsupported_source_message("source global index overflow"))?,
-                &context.alias_scope.expression_arrays,
-                &mut context.resolving_array_aliases,
-            );
-            context.resolving_array_aliases.remove(&name);
-            return match element {
-                Some(SourceGlobalExpressionArrayAliasElement::Expression(expression)) => {
-                    lower_global_mixed_residual_operand(expression, context)
-                }
-                Some(SourceGlobalExpressionArrayAliasElement::NamedArray(name)) => {
-                    lower_global_mixed_name_operand(name, &indices, context)
-                }
-                None => Ok(None),
-            };
-        }
-    } else if let Some(name) = indices::source_global_named_array_alias_target(
-        &context.alias_scope.expression_arrays,
-        &name,
-        &mut context.resolving_array_aliases,
-    ) {
-        return lower_global_mixed_name_operand(&name, &indices, context);
+            Some(SourceGlobalExpressionArrayAliasElement::NamedArray(name)) => {
+                lower_global_mixed_name_operand(name, &indices, context)
+            }
+            None => Ok(None),
+        };
     }
     lower_global_mixed_name_operand(&name, &indices, context)
 }
