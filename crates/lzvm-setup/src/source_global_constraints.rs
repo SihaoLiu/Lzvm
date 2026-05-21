@@ -4,7 +4,7 @@ use lzvm_artifacts::constraint_program::{GlobalConstraintEntry, GlobalConstraint
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::global_program::GlobalProgram;
 use lzvm_artifacts::hint_program::HintProgram;
-use lzvm_field::MODULUS;
+use lzvm_field::{Felt, MODULUS};
 use lzvm_pil::{
     lex_source, parse_expression, BinaryOperator, ConstantDeclaration, Expression, ExpressionKind,
     FixedFileTemplateValue, PublicDeclaration, SourceProgram, SourceProgramModule, Token,
@@ -1177,6 +1177,9 @@ fn lower_global_base_residual_operand(
                 BinaryOperator::Add => 0,
                 BinaryOperator::Subtract => 1,
                 BinaryOperator::Multiply => 2,
+                BinaryOperator::Divide => {
+                    return lower_global_base_static_divisor_operand(left, right, context);
+                }
                 _ => return Ok(None),
             };
             let Some(left) = lower_global_base_residual_operand(left, context)? else {
@@ -1189,6 +1192,29 @@ fn lower_global_base_residual_operand(
         }
         _ => Ok(None),
     }
+}
+
+fn lower_global_base_static_divisor_operand(
+    left: &Expression,
+    right: &Expression,
+    context: &mut SourceGlobalBaseLoweringContext<'_, '_>,
+) -> Result<Option<SourceGlobalBaseOperand>, SourceKeyDirectoryMetadataError> {
+    let Some(value) = evaluate_source_static_expression(
+        context.alias_scope.program,
+        right,
+        &context.alias_scope.static_values,
+    ) else {
+        return Ok(None);
+    };
+    let divisor = Felt::from_u64(source_public_initializer_field_value(&value)?);
+    let inverse = divisor
+        .inverse()
+        .ok_or_else(|| unsupported_source_message("source global constraint division by zero"))?;
+    let Some(left) = lower_global_base_residual_operand(left, context)? else {
+        return Ok(None);
+    };
+    let inverse = context.number_operand(inverse.to_u64())?;
+    context.append_base_binary_op(2, left, inverse).map(Some)
 }
 
 fn lower_global_base_index_operand(
