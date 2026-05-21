@@ -17,7 +17,7 @@ use lzvm_artifacts::verifier_info::{encode_verifier_info, VerifierInfoError};
 use lzvm_pil::{
     lex_source, AirGroupValueDeclaration, AirTemplateDeclaration, BinaryOperator,
     ColumnDeclaration, ColumnItem, ColumnKind, Expression, ExpressionKind, FixedFileTemplateValue,
-    LexError, ParseError, SourceLoaderConfig, SourceProgram, SourceProgramError,
+    LexError, ParseError, PublicDeclaration, SourceLoaderConfig, SourceProgram, SourceProgramError,
     SourceProgramLoader, SourceProgramModule, Token, UnaryOperator, ValueDeclarationKind,
 };
 
@@ -426,6 +426,7 @@ fn source_global_info(
     let constant_values = source_scalar_constant_values(program, row_count);
     let template_values = source_template_constant_value_cache(program, &constant_values);
     let active_templates = concrete_template_names(program);
+    let mut body_caches = SourceControlBodyCaches::default();
     let num_challenges = source_challenge_counts(
         program,
         &constant_values,
@@ -443,8 +444,8 @@ fn source_global_info(
         &constant_values,
         &active_templates,
         &template_values,
+        &mut body_caches,
     )?;
-    let mut body_caches = SourceControlBodyCaches::default();
     let (_, group_aggregation_types) = source_air_group_values(
         program,
         None,
@@ -531,10 +532,26 @@ fn source_public_values(
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
     active_templates: &BTreeSet<String>,
     template_values: &SourceTemplateConstantValueCache,
+    body_caches: &mut SourceControlBodyCaches,
 ) -> Result<Vec<PublicValue>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut values = Vec::new();
     for module in &program.modules {
+        let tokens = lex_source(&module.source.contents).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: module.source_name.clone(),
+                source,
+            }
+        })?;
+        let body_cache = body_caches.module_cache(&module.source_name);
+        let mut template_context = SourcePublicTemplateContext {
+            program,
+            module,
+            tokens: &tokens,
+            body_cache,
+            constant_values,
+            template_values,
+        };
         for declaration in &module.publics {
             if declaration_in_function_body(module, declaration.start, declaration.end)
                 || declaration_in_inactive_template(
@@ -546,51 +563,121 @@ fn source_public_values(
             {
                 continue;
             }
-            let declaration_values = source_declaration_constant_values_from_cache(
-                module,
-                declaration.start,
-                declaration.end,
-                constant_values,
-                template_values,
-            );
-            if source_declaration_in_static_false_branch(
-                program,
-                module,
-                declaration.start,
-                declaration.end,
-                declaration_values,
-            ) {
+            let Some(declaration_template) =
+                source_metadata_declaration_template(module, declaration.start, declaration.end)
+            else {
+                let declaration_values = source_declaration_constant_values_from_cache(
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    constant_values,
+                    template_values,
+                );
+                if source_declaration_in_static_false_branch(
+                    program,
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    declaration_values,
+                ) {
+                    continue;
+                }
+                source_push_public_values(
+                    program,
+                    declaration,
+                    declaration_values,
+                    &mut seen,
+                    &mut values,
+                )?;
                 continue;
-            }
-            if declaration.initializer.is_some() {
-                return unsupported("source public initializers need metadata lowering support");
-            }
-            for item in &declaration.items {
-                if item.template {
-                    return unsupported(
-                        "template public-value names need instance lowering support",
-                    );
-                }
-                if !seen.insert(item.name.clone()) {
-                    return unsupported("duplicate source public value name");
-                }
-                values.push(PublicValue {
-                    name: item.name.clone(),
-                    stage: 1,
-                    lengths: source_item_lengths(
-                        program,
-                        item,
-                        "source public value",
-                        declaration_values,
-                    )?
-                    .into_iter()
-                    .map(u64::from)
-                    .collect(),
-                });
-            }
+            };
+            let Some(declaration_values) = source_public_values_for_any_instance(
+                &mut template_context,
+                declaration,
+                declaration_template,
+            )?
+            else {
+                continue;
+            };
+            source_push_public_values(
+                program,
+                declaration,
+                &declaration_values,
+                &mut seen,
+                &mut values,
+            )?;
         }
     }
     Ok(values)
+}
+
+struct SourcePublicTemplateContext<'a, 'b> {
+    program: &'a SourceProgram,
+    module: &'a SourceProgramModule,
+    tokens: &'a [Token],
+    body_cache: &'b mut SourceControlBodyCache,
+    constant_values: &'a BTreeMap<String, FixedFileTemplateValue>,
+    template_values: &'a SourceTemplateConstantValueCache,
+}
+
+fn source_public_values_for_any_instance(
+    context: &mut SourcePublicTemplateContext<'_, '_>,
+    declaration: &PublicDeclaration,
+    declaration_template: &AirTemplateDeclaration,
+) -> Result<Option<BTreeMap<String, FixedFileTemplateValue>>, SourceKeyDirectoryMetadataError> {
+    for instance in source_metadata_template_instances(context.program, &declaration_template.name)
+    {
+        let values = source_metadata_template_values(
+            context.program,
+            context.module,
+            declaration_template,
+            Some(instance),
+            context.constant_values,
+            context.template_values,
+        );
+        if source_declaration_in_unselected_static_branch(
+            context.program,
+            context.module,
+            context.tokens,
+            context.body_cache,
+            declaration.start,
+            declaration.end,
+            &values,
+        )? {
+            continue;
+        }
+        return Ok(Some(values));
+    }
+    Ok(None)
+}
+
+fn source_push_public_values(
+    program: &SourceProgram,
+    declaration: &PublicDeclaration,
+    declaration_values: &BTreeMap<String, FixedFileTemplateValue>,
+    seen: &mut BTreeSet<String>,
+    values: &mut Vec<PublicValue>,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    if declaration.initializer.is_some() {
+        return unsupported("source public initializers need metadata lowering support");
+    }
+    for item in &declaration.items {
+        if item.template {
+            return unsupported("template public-value names need instance lowering support");
+        }
+        if !seen.insert(item.name.clone()) {
+            return unsupported("duplicate source public value name");
+        }
+        values.push(PublicValue {
+            name: item.name.clone(),
+            stage: 1,
+            lengths: source_item_lengths(program, item, "source public value", declaration_values)?
+                .into_iter()
+                .map(u64::from)
+                .collect(),
+        });
+    }
+    Ok(())
 }
 
 fn source_proof_values(
@@ -1223,6 +1310,7 @@ fn source_unit_setup_info(
         &constant_values,
         &active_templates,
         &template_values,
+        body_caches,
     )?
     .len();
     let const_width = constant_columns
