@@ -14,7 +14,7 @@ pub(crate) fn validate_source_assignment_hints(
             continue;
         }
         let target = source_assignment_scalar_field(unit_index, row, hint, "target")?;
-        let value = source_assignment_scalar_field(unit_index, row, hint, "value")?;
+        let value = source_assignment_value(unit_index, row, hint)?;
         if target != value {
             return source_assignment_error(
                 unit_index,
@@ -27,6 +27,87 @@ pub(crate) fn validate_source_assignment_hints(
         }
     }
     Ok(())
+}
+
+fn source_assignment_value(
+    unit_index: usize,
+    row: usize,
+    hint: &ResolvedHint,
+) -> Result<Felt, ProveWitnessCommitmentError> {
+    let scalar_value = source_assignment_field(hint, "value");
+    let expression = source_assignment_field(hint, "expression");
+    match (scalar_value, expression) {
+        (Some(_), Some(_)) => source_assignment_error(
+            unit_index,
+            format!("assignment hint has both value and expression fields at row {row}"),
+        ),
+        (Some(_), None) => source_assignment_scalar_field(unit_index, row, hint, "value"),
+        (None, Some(field)) => source_assignment_expression_field(unit_index, row, field),
+        (None, None) => source_assignment_error(
+            unit_index,
+            format!("assignment hint is missing value field at row {row}"),
+        ),
+    }
+}
+
+fn source_assignment_expression_field(
+    unit_index: usize,
+    row: usize,
+    field: &ResolvedHintField,
+) -> Result<Felt, ProveWitnessCommitmentError> {
+    let mut stack = Vec::new();
+    for value in &field.values {
+        match &value.payload {
+            ResolvedHintPayload::Scalar(value) => stack.push(*value),
+            ResolvedHintPayload::Text(op) => {
+                let right = source_assignment_expression_pop(unit_index, row, op, &mut stack)?;
+                let left = source_assignment_expression_pop(unit_index, row, op, &mut stack)?;
+                let result = match op.as_str() {
+                    "add" => left + right,
+                    "sub" => left - right,
+                    "mul" => left * right,
+                    _ => {
+                        return source_assignment_error(
+                            unit_index,
+                            format!("unsupported expression operator {op} at row {row}"),
+                        )
+                    }
+                };
+                stack.push(result);
+            }
+            ResolvedHintPayload::Extension(_) => {
+                return source_assignment_error(
+                    unit_index,
+                    format!("expression field contains an extension value at row {row}"),
+                )
+            }
+        }
+    }
+
+    if stack.len() != 1 {
+        return source_assignment_error(
+            unit_index,
+            format!(
+                "expression field leaves {} values on the stack at row {row}",
+                stack.len()
+            ),
+        );
+    }
+    Ok(stack[0])
+}
+
+fn source_assignment_expression_pop(
+    unit_index: usize,
+    row: usize,
+    op: &str,
+    stack: &mut Vec<Felt>,
+) -> Result<Felt, ProveWitnessCommitmentError> {
+    stack
+        .pop()
+        .ok_or_else(|| ProveWitnessCommitmentError::SourceAssignment {
+            unit_index,
+            message: format!("operator {op} has too few operands at row {row}"),
+        })
 }
 
 fn source_assignment_scalar_field(

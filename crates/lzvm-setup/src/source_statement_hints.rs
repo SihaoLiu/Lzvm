@@ -105,9 +105,14 @@ pub(crate) fn lower_source_assignment_statement(
     };
     let target = source_lookup_scalar_operand(&context, left, 0)
         .and_then(|operand| source_assignment_target_payload(operand, inputs.opening_points));
-    let value = source_lookup_value_payload_from_expression(&context, right);
+    let value = source_assignment_expression_values(&context, right);
     let (Some(target), Some(value)) = (target, value) else {
         return Ok(None);
+    };
+    let value_field_name = if value.len() == 1 {
+        "value"
+    } else {
+        "expression"
     };
 
     Ok(Some(HintInfo {
@@ -121,11 +126,8 @@ pub(crate) fn lower_source_assignment_statement(
                 }],
             },
             HintFieldInfo {
-                name: "value".to_owned(),
-                values: vec![HintValueInfo {
-                    positions: Vec::new(),
-                    payload: value,
-                }],
+                name: value_field_name.to_owned(),
+                values: value,
             },
         ],
     }))
@@ -781,6 +783,36 @@ fn source_lookup_value_from_expression(
         positions: Vec::new(),
         payload: source_lookup_value_payload_from_expression(context, expression)?,
     })
+}
+
+fn source_assignment_expression_values(
+    context: &SourceLookupLowering<'_>,
+    expression: &Expression,
+) -> Option<Vec<HintValueInfo>> {
+    let expression = strip_group_expression(expression);
+    if let ExpressionKind::Binary { op, left, right } = &expression.kind {
+        let op = source_assignment_binary_operator(*op)?;
+        let mut values = source_assignment_expression_values(context, left)?;
+        values.extend(source_assignment_expression_values(context, right)?);
+        values.push(HintValueInfo {
+            positions: Vec::new(),
+            payload: HintPayload::string(op),
+        });
+        return Some(values);
+    }
+
+    Some(vec![source_lookup_value_from_expression(
+        context, expression,
+    )?])
+}
+
+fn source_assignment_binary_operator(op: BinaryOperator) -> Option<&'static str> {
+    match op {
+        BinaryOperator::Add => Some("add"),
+        BinaryOperator::Subtract => Some("sub"),
+        BinaryOperator::Multiply => Some("mul"),
+        _ => None,
+    }
 }
 
 fn source_lookup_static_value(
