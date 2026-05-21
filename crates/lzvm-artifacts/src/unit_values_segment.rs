@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+use lzvm_field::{Felt, FieldError};
+
 pub const UNIT_VALUES_SEGMENT_ID: u32 = 10_009;
 
 const UNIT_VALUES_MAGIC: [u8; 4] = *b"uvs0";
@@ -23,12 +25,28 @@ pub struct UnitValuesUnitSegment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnitValuesSegmentError {
     InvalidMagic,
-    UnsupportedVersion { version: u32 },
-    UnexpectedEof { needed: usize, available: usize },
-    TrailingBytes { trailing: usize },
+    UnsupportedVersion {
+        version: u32,
+    },
+    UnexpectedEof {
+        needed: usize,
+        available: usize,
+    },
+    TrailingBytes {
+        trailing: usize,
+    },
     EmptyUnits,
-    EmptyValues { unit_index: u32 },
-    DuplicateUnitIndex { unit_index: u32 },
+    EmptyValues {
+        unit_index: u32,
+    },
+    DuplicateUnitIndex {
+        unit_index: u32,
+    },
+    ValueNonCanonical {
+        unit_index: u32,
+        value_index: usize,
+        source: FieldError,
+    },
     LengthOverflow,
 }
 
@@ -53,12 +71,34 @@ impl fmt::Display for UnitValuesSegmentError {
             Self::DuplicateUnitIndex { unit_index } => {
                 write!(f, "duplicate unit values unit index: {unit_index}")
             }
+            Self::ValueNonCanonical {
+                unit_index,
+                value_index,
+                source,
+            } => write!(
+                f,
+                "unit values unit {unit_index} value {value_index} is non-canonical: {source}"
+            ),
             Self::LengthOverflow => write!(f, "unit values segment length overflow"),
         }
     }
 }
 
-impl std::error::Error for UnitValuesSegmentError {}
+impl std::error::Error for UnitValuesSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ValueNonCanonical { source, .. } => Some(source),
+            Self::InvalidMagic
+            | Self::UnsupportedVersion { .. }
+            | Self::UnexpectedEof { .. }
+            | Self::TrailingBytes { .. }
+            | Self::EmptyUnits
+            | Self::EmptyValues { .. }
+            | Self::DuplicateUnitIndex { .. }
+            | Self::LengthOverflow => None,
+        }
+    }
+}
 
 pub fn encode_unit_values_segment(
     value: &UnitValuesSegment,
@@ -142,6 +182,15 @@ fn validate_unit_values_segment(value: &UnitValuesSegment) -> Result<(), UnitVal
             return Err(UnitValuesSegmentError::EmptyValues {
                 unit_index: unit.unit_index,
             });
+        }
+        for (value_index, value) in unit.values.iter().copied().enumerate() {
+            Felt::from_canonical(value).map_err(|source| {
+                UnitValuesSegmentError::ValueNonCanonical {
+                    unit_index: unit.unit_index,
+                    value_index,
+                    source,
+                }
+            })?;
         }
     }
     Ok(())

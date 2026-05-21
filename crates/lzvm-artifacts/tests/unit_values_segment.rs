@@ -3,6 +3,9 @@ use lzvm_artifacts::unit_values_segment::{
     UnitValuesSegmentError, UnitValuesUnitSegment,
 };
 
+const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
+const FIRST_VALUE_OFFSET: usize = 12 + 4 + 4;
+
 fn sample_segment() -> UnitValuesSegment {
     UnitValuesSegment {
         units: vec![
@@ -58,6 +61,31 @@ fn rejects_empty_unit_values_segments() {
         encode_unit_values_segment(&segment),
         Err(UnitValuesSegmentError::EmptyUnits)
     ));
+}
+
+#[test]
+fn rejects_non_canonical_unit_values() {
+    let mut segment = sample_segment();
+    segment.units[1].values[0] = NON_CANONICAL_FIELD;
+
+    let err = encode_unit_values_segment(&segment).expect_err("value should be rejected");
+    assert_eq!(
+        err.to_string(),
+        "unit values unit 2 value 0 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_non_canonical_unit_values_when_parsing() {
+    let mut encoded = encode_unit_values_segment(&sample_segment()).expect("segment should encode");
+    encoded[FIRST_VALUE_OFFSET + 8..FIRST_VALUE_OFFSET + 16]
+        .copy_from_slice(&NON_CANONICAL_FIELD.to_le_bytes());
+
+    let err = parse_unit_values_segment(&encoded).expect_err("value should be rejected");
+    assert_eq!(
+        err.to_string(),
+        "unit values unit 0 value 1 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
 }
 
 #[test]

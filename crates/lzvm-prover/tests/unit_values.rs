@@ -2,7 +2,7 @@ use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::setup_info::StageValue;
 use lzvm_artifacts::unit_values_segment::{
     encode_unit_values_segment, parse_unit_values_segment, UnitValuesSegment,
-    UnitValuesUnitSegment, UNIT_VALUES_SEGMENT_ID,
+    UnitValuesSegmentError, UnitValuesUnitSegment, UNIT_VALUES_SEGMENT_ID,
 };
 use lzvm_field::{Felt, FieldError, MODULUS};
 use lzvm_prover::unit_values::{
@@ -10,6 +10,8 @@ use lzvm_prover::unit_values::{
     build_unit_values_segment_from_packed_values_batch, load_unit_values_from_segments,
     LoadUnitValuesSegmentError, ProveUnitValues, ProveUnitValuesSegmentError,
 };
+
+const FIRST_UNIT_VALUE_OFFSET: usize = 12 + 4 + 4;
 
 fn stage_value(name: &str, stage: u32) -> StageValue {
     StageValue {
@@ -149,18 +151,20 @@ fn rejects_loaded_unit_value_count_mismatch() {
 #[test]
 fn rejects_loaded_noncanonical_unit_values() {
     let map = vec![stage_value("unit.alpha", 1)];
-    let segment = unit_values_segment(0, &[MODULUS]);
+    let mut segment = unit_values_segment(0, &[11]);
+    segment.data[FIRST_UNIT_VALUE_OFFSET..FIRST_UNIT_VALUE_OFFSET + 8]
+        .copy_from_slice(&MODULUS.to_le_bytes());
 
     let error = load_unit_values_from_segments(0, &map, &[segment])
         .expect_err("unit values should be canonical field elements");
 
     assert_eq!(
         error,
-        LoadUnitValuesSegmentError::NonCanonicalValue {
+        LoadUnitValuesSegmentError::Segment(UnitValuesSegmentError::ValueNonCanonical {
             unit_index: 0,
-            index: 0,
+            value_index: 0,
             source: FieldError::NonCanonical { value: MODULUS }
-        }
+        })
     );
 }
 
