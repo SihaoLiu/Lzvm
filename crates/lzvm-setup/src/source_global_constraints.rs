@@ -29,6 +29,7 @@ use crate::{
 
 mod hints;
 mod residuals;
+mod top_level_for;
 
 pub(crate) fn source_global_program(
     program: &SourceProgram,
@@ -265,6 +266,21 @@ fn lower_module_top_level_global_constraints(
             TokenKind::Pragma => {
                 index += 1;
             }
+            TokenKind::For => {
+                if let Some(next_index) = top_level_for::lower_top_level_static_for_statement(
+                    program,
+                    module,
+                    &tokens,
+                    index,
+                    slots,
+                    &alias_scope,
+                    constraints,
+                )? {
+                    index = next_index;
+                } else {
+                    index = skip_top_level_item(&tokens, index)?;
+                }
+            }
             kind if top_level_declaration_start(kind) => {
                 index = skip_top_level_item(&tokens, index)?;
             }
@@ -447,6 +463,7 @@ struct SourceGlobalSlots<'a> {
 type SourceGlobalExpressionAliases = BTreeMap<String, Expression>;
 type SourceGlobalExpressionArrayAliases = BTreeMap<String, SourceGlobalExpressionArrayAlias>;
 
+#[derive(Clone)]
 enum SourceGlobalExpressionArrayAlias {
     Name(String),
     Values(Vec<Expression>),
@@ -1035,7 +1052,31 @@ struct SourceGlobalConstraintBuilder {
     numbers: Vec<u64>,
 }
 
+#[derive(Clone, Copy)]
+struct SourceGlobalConstraintBuilderCheckpoint {
+    entries: usize,
+    ops: usize,
+    args: usize,
+    numbers: usize,
+}
+
 impl SourceGlobalConstraintBuilder {
+    fn checkpoint(&self) -> SourceGlobalConstraintBuilderCheckpoint {
+        SourceGlobalConstraintBuilderCheckpoint {
+            entries: self.entries.len(),
+            ops: self.ops.len(),
+            args: self.args.len(),
+            numbers: self.numbers.len(),
+        }
+    }
+
+    fn rollback(&mut self, checkpoint: SourceGlobalConstraintBuilderCheckpoint) {
+        self.entries.truncate(checkpoint.entries);
+        self.ops.truncate(checkpoint.ops);
+        self.args.truncate(checkpoint.args);
+        self.numbers.truncate(checkpoint.numbers);
+    }
+
     fn append_base_residual_constraint(
         &mut self,
         expression: &Expression,
