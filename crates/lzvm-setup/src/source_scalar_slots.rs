@@ -44,12 +44,13 @@ struct SourceCommitmentSlot {
     lengths: Vec<u32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct SourceUnitValueSlot {
     id: u32,
     stage: u32,
     source_dimension: u32,
     operand_dimension: u32,
+    lengths: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,6 +136,7 @@ impl SourceScalarSlots {
                     stage: value.stage,
                     source_dimension,
                     operand_dimension: if value.stage == 1 { 1 } else { 3 },
+                    lengths: value.lengths.clone(),
                 },
             );
             unit_value_id = unit_value_id.checked_add(source_dimension).ok_or(
@@ -761,6 +763,11 @@ impl SourceScalarSlots {
         }
 
         if let Some(slot) = self.publics.get(name) {
+            let index = linear_source_index(name, indices, &slot.lengths)?;
+            return self.operand_index_at(name, index, row_offset);
+        }
+
+        if let Some(slot) = self.unit_values.get(name) {
             let index = linear_source_index(name, indices, &slot.lengths)?;
             return self.operand_index_at(name, index, row_offset);
         }
