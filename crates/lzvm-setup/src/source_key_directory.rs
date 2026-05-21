@@ -640,6 +640,7 @@ fn source_challenge_slots(
 fn source_unit_values(
     program: &SourceProgram,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    active_templates: &BTreeSet<String>,
     template_values: &SourceTemplateConstantValueCache,
 ) -> Result<Vec<StageValue>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeMap::<String, (u32, Vec<u32>)>::new();
@@ -648,6 +649,12 @@ fn source_unit_values(
         for declaration in &module.values {
             if declaration.kind != ValueDeclarationKind::AirValue
                 || declaration_in_function_body(module, declaration.start, declaration.end)
+                || declaration_in_inactive_template(
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    active_templates,
+                )
             {
                 continue;
             }
@@ -803,7 +810,12 @@ fn source_unit_setup_info(
         &template_values,
     )?;
     let (n_stages, commitment_widths) = source_commitment_section_widths(&commitment_columns)?;
-    let unit_value_map = source_unit_values(program, &constant_values, &template_values)?;
+    let unit_value_map = source_unit_values(
+        program,
+        &constant_values,
+        &active_templates,
+        &template_values,
+    )?;
     let (group_value_map, _) = source_air_group_values(program, &constant_values)?;
     let opening_points = source_opening_points(
         program,
