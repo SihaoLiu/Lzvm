@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+use lzvm_field::{Felt, FieldError};
+
 pub const PCS_MATERIAL_MANIFEST_SEGMENT_ID: u32 = 10_000;
 
 const PCS_MATERIAL_MANIFEST_MAGIC: [u8; 4] = *b"pms0";
@@ -31,11 +33,25 @@ pub struct PcsMaterialManifestUnit {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcsMaterialManifestSegmentError {
     InvalidMagic,
-    UnsupportedVersion { version: u32 },
-    UnexpectedEof { needed: usize, available: usize },
-    TrailingBytes { trailing: usize },
+    UnsupportedVersion {
+        version: u32,
+    },
+    UnexpectedEof {
+        needed: usize,
+        available: usize,
+    },
+    TrailingBytes {
+        trailing: usize,
+    },
     EmptyUnits,
-    DuplicateUnitIndex { unit_index: u32 },
+    DuplicateUnitIndex {
+        unit_index: u32,
+    },
+    ConstantTreeRootNonCanonical {
+        unit_index: u32,
+        word_index: usize,
+        source: FieldError,
+    },
     LengthOverflow,
 }
 
@@ -64,12 +80,33 @@ impl fmt::Display for PcsMaterialManifestSegmentError {
                 f,
                 "duplicate PCS material manifest unit index: {unit_index}"
             ),
+            Self::ConstantTreeRootNonCanonical {
+                unit_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "PCS material manifest unit {unit_index} constant tree root word {word_index} is non-canonical: {source}"
+            ),
             Self::LengthOverflow => write!(f, "PCS material manifest segment length overflow"),
         }
     }
 }
 
-impl std::error::Error for PcsMaterialManifestSegmentError {}
+impl std::error::Error for PcsMaterialManifestSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ConstantTreeRootNonCanonical { source, .. } => Some(source),
+            Self::InvalidMagic
+            | Self::UnsupportedVersion { .. }
+            | Self::UnexpectedEof { .. }
+            | Self::TrailingBytes { .. }
+            | Self::EmptyUnits
+            | Self::DuplicateUnitIndex { .. }
+            | Self::LengthOverflow => None,
+        }
+    }
+}
 
 pub fn encode_pcs_material_manifest_segment(
     value: &PcsMaterialManifestSegment,
@@ -166,6 +203,15 @@ fn validate_pcs_material_manifest_segment(
             return Err(PcsMaterialManifestSegmentError::DuplicateUnitIndex {
                 unit_index: unit.unit_index,
             });
+        }
+        for (word_index, word) in unit.constant_tree_root.iter().copied().enumerate() {
+            Felt::from_canonical(word).map_err(|source| {
+                PcsMaterialManifestSegmentError::ConstantTreeRootNonCanonical {
+                    unit_index: unit.unit_index,
+                    word_index,
+                    source,
+                }
+            })?;
         }
     }
     Ok(())

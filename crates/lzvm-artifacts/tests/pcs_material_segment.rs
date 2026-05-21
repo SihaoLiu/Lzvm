@@ -3,6 +3,9 @@ use lzvm_artifacts::pcs_material_segment::{
     PcsMaterialManifestSegment, PcsMaterialManifestSegmentError, PcsMaterialManifestUnit,
 };
 
+const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
+const FIRST_UNIT_ROOT_OFFSET: usize = 12 + 4 + 32 * 3;
+
 fn sample_segment() -> PcsMaterialManifestSegment {
     PcsMaterialManifestSegment {
         units: vec![
@@ -53,6 +56,36 @@ fn encodes_and_parses_pcs_material_manifest_segments() {
 
     assert_eq!(&encoded[0..4], b"pms0");
     assert_eq!(parsed, sample_segment());
+}
+
+#[test]
+fn rejects_non_canonical_pcs_material_manifest_roots() {
+    let mut segment = sample_segment();
+    segment.units[0].constant_tree_root[2] = NON_CANONICAL_FIELD;
+
+    let err =
+        encode_pcs_material_manifest_segment(&segment).expect_err("manifest root should reject");
+
+    assert_eq!(
+        err.to_string(),
+        "PCS material manifest unit 0 constant tree root word 2 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_non_canonical_pcs_material_manifest_roots_when_parsing() {
+    let mut encoded = encode_pcs_material_manifest_segment(&sample_segment())
+        .expect("manifest segment should encode");
+    encoded[FIRST_UNIT_ROOT_OFFSET + 8..FIRST_UNIT_ROOT_OFFSET + 16]
+        .copy_from_slice(&NON_CANONICAL_FIELD.to_le_bytes());
+
+    let err =
+        parse_pcs_material_manifest_segment(&encoded).expect_err("manifest root should reject");
+
+    assert_eq!(
+        err.to_string(),
+        "PCS material manifest unit 0 constant tree root word 1 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
 }
 
 #[test]

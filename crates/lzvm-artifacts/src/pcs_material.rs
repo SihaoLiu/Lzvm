@@ -1,6 +1,7 @@
 use std::fmt;
 use std::path::Path;
 
+use lzvm_field::{Felt, FieldError};
 use sha2::{Digest, Sha256};
 
 use crate::constant_tree::{ConstantTree, ConstantTreeError};
@@ -34,13 +35,31 @@ pub enum PcsSetupMaterialError {
     Sectioned(SectionedError),
     PcsPlan(PcsPlanError),
     ConstantTree(ConstantTreeError),
-    UnsupportedVersion { found: u32, expected: u32 },
-    InvalidSectionCount { found: u32 },
-    InvalidSectionId { found: u32 },
-    InvalidPayloadLength { expected: usize, found: usize },
-    InvalidRootWordCount { found: usize },
+    ConstantTreeRootNonCanonical {
+        word_index: usize,
+        source: FieldError,
+    },
+    UnsupportedVersion {
+        found: u32,
+        expected: u32,
+    },
+    InvalidSectionCount {
+        found: u32,
+    },
+    InvalidSectionId {
+        found: u32,
+    },
+    InvalidPayloadLength {
+        expected: usize,
+        found: usize,
+    },
+    InvalidRootWordCount {
+        found: usize,
+    },
     LengthOverflow,
-    Io { message: String },
+    Io {
+        message: String,
+    },
 }
 
 impl fmt::Display for PcsSetupMaterialError {
@@ -51,6 +70,10 @@ impl fmt::Display for PcsSetupMaterialError {
             Self::ConstantTree(error) => {
                 write!(f, "PCS setup material constant-tree error: {error}")
             }
+            Self::ConstantTreeRootNonCanonical { word_index, source } => write!(
+                f,
+                "PCS setup material constant tree root word {word_index} is non-canonical: {source}"
+            ),
             Self::UnsupportedVersion { found, expected } => write!(
                 f,
                 "unsupported PCS setup material version {found}, expected {expected}"
@@ -74,7 +97,23 @@ impl fmt::Display for PcsSetupMaterialError {
     }
 }
 
-impl std::error::Error for PcsSetupMaterialError {}
+impl std::error::Error for PcsSetupMaterialError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Sectioned(error) => Some(error),
+            Self::PcsPlan(error) => Some(error),
+            Self::ConstantTree(error) => Some(error),
+            Self::ConstantTreeRootNonCanonical { source, .. } => Some(source),
+            Self::UnsupportedVersion { .. }
+            | Self::InvalidSectionCount { .. }
+            | Self::InvalidSectionId { .. }
+            | Self::InvalidPayloadLength { .. }
+            | Self::InvalidRootWordCount { .. }
+            | Self::LengthOverflow
+            | Self::Io { .. } => None,
+        }
+    }
+}
 
 impl From<SectionedError> for PcsSetupMaterialError {
     fn from(error: SectionedError) -> Self {
@@ -154,6 +193,7 @@ pub fn parse_pcs_setup_material(bytes: &[u8]) -> Result<PcsSetupMaterial, PcsSet
 pub fn encode_pcs_setup_material(
     value: &PcsSetupMaterial,
 ) -> Result<Vec<u8>, PcsSetupMaterialError> {
+    validate_pcs_setup_material(value)?;
     let file = SectionedFile {
         kind: PCS_MATERIAL_KIND,
         version: PCS_MATERIAL_VERSION,
@@ -182,7 +222,7 @@ fn parse_pcs_setup_material_payload(
     for value in &mut constant_tree_root {
         *value = read_u64(bytes, &mut offset);
     }
-    Ok(PcsSetupMaterial {
+    let out = PcsSetupMaterial {
         plan_digest,
         fixed_column_digest,
         constant_tree_digest,
@@ -191,7 +231,18 @@ fn parse_pcs_setup_material_payload(
         constant_tree_byte_count: read_u64(bytes, &mut offset),
         leaf_byte_count: read_u64(bytes, &mut offset),
         node_byte_count: read_u64(bytes, &mut offset),
-    })
+    };
+    validate_pcs_setup_material(&out)?;
+    Ok(out)
+}
+
+fn validate_pcs_setup_material(value: &PcsSetupMaterial) -> Result<(), PcsSetupMaterialError> {
+    for (word_index, word) in value.constant_tree_root.iter().copied().enumerate() {
+        Felt::from_canonical(word).map_err(|source| {
+            PcsSetupMaterialError::ConstantTreeRootNonCanonical { word_index, source }
+        })?;
+    }
+    Ok(())
 }
 
 fn encode_pcs_setup_material_payload(value: &PcsSetupMaterial) -> Vec<u8> {
