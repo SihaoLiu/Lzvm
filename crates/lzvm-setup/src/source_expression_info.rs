@@ -35,9 +35,10 @@ use crate::{
     },
     source_static_values::{
         evaluate_source_static_expression, insert_source_static_array,
-        source_declaration_constant_values_from_cache, source_scalar_constant_values,
-        source_static_array_length, source_static_array_values,
+        source_declaration_constant_values_from_cache, source_declaration_in_static_false_branch,
+        source_scalar_constant_values, source_static_array_length, source_static_array_values,
         source_static_assignment_expression, source_template_constant_value_cache,
+        SourceTemplateConstantValueCache,
     },
     source_template_context::SourceTemplateLoweringContext,
     source_template_for::source_static_for_loop_with_tokens,
@@ -60,10 +61,15 @@ pub(crate) fn source_expression_info(
 ) -> Result<ExpressionInfo, SourceKeyDirectoryMetadataError> {
     let scalar_slots = SourceScalarSlots::from_setup(setup, publics, challenges, proof_values)
         .map_err(|error| unsupported_source_message(error.to_string()))?;
-    let fixed_assignment_columns = source_fixed_assignment_column_names(program);
     let active_templates = concrete_template_names(program);
     let constant_values = source_scalar_constant_values(program, 1_u64 << setup.stark.n_bits);
     let template_values = source_template_constant_value_cache(program, &constant_values);
+    let fixed_assignment_columns = source_fixed_assignment_column_names(
+        program,
+        &active_templates,
+        &constant_values,
+        &template_values,
+    );
     let mut hints = Vec::new();
     let mut constraints = Vec::new();
     for module in &program.modules {
@@ -122,22 +128,43 @@ pub(crate) fn source_expression_info(
     })
 }
 
-fn source_fixed_assignment_column_names(program: &SourceProgram) -> BTreeSet<String> {
-    let active_templates = concrete_template_names(program);
+fn source_fixed_assignment_column_names(
+    program: &SourceProgram,
+    active_templates: &BTreeSet<String>,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    template_values: &SourceTemplateConstantValueCache,
+) -> BTreeSet<String> {
     program
         .modules
         .iter()
         .flat_map(|module| {
             module.columns.iter().filter(|declaration| {
-                declaration.kind == ColumnKind::Fixed
-                    && declaration.initializer.is_none()
-                    && !declaration_in_function_body(module, declaration.start, declaration.end)
-                    && !declaration_in_inactive_template(
+                if declaration.kind != ColumnKind::Fixed
+                    || declaration.initializer.is_some()
+                    || declaration_in_function_body(module, declaration.start, declaration.end)
+                    || declaration_in_inactive_template(
                         module,
                         declaration.start,
                         declaration.end,
-                        &active_templates,
+                        active_templates,
                     )
+                {
+                    return false;
+                }
+                let declaration_values = source_declaration_constant_values_from_cache(
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    constant_values,
+                    template_values,
+                );
+                !source_declaration_in_static_false_branch(
+                    program,
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    declaration_values,
+                )
             })
         })
         .flat_map(|declaration| declaration.items.iter().map(|item| item.name.clone()))
