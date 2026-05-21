@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use lzvm_artifacts::challenge_values_segment::CHALLENGE_VALUES_SEGMENT_ID;
 use lzvm_artifacts::constant_opening_segment::CONSTANT_OPENING_SEGMENT_ID;
 use lzvm_artifacts::contribution_segment::CONTRIBUTION_SEGMENT_ID;
+use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
 use lzvm_artifacts::group_values_segment::GROUP_VALUES_SEGMENT_ID;
 use lzvm_artifacts::pcs_evaluation_segment::PCS_EVALUATION_SEGMENT_ID;
 use lzvm_artifacts::pcs_fri_segment::PCS_FRI_OPENING_SEGMENT_ID;
@@ -30,9 +31,11 @@ fn segment_ids_are_unique() {
         CONSTANT_OPENING_SEGMENT_ID,
         WITNESS_OPENING_SEGMENT_ID,
         CONTRIBUTION_SEGMENT_ID,
+        ETH_BLOCK_INPUT_SEGMENT_ID,
     ];
 
     let unique = ids.into_iter().collect::<BTreeSet<_>>();
 
     assert_eq!(unique.len(), ids.len());
+    assert!(ids.contains(&ETH_BLOCK_INPUT_SEGMENT_ID));
 }
