@@ -1,12 +1,15 @@
 use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedSection};
 use lzvm_artifacts::verifier_info::{
     encode_verifier_info, parse_verifier_info, read_verifier_info_binary_file,
-    read_verifier_info_file, VerifierInfoError,
+    read_verifier_info_file, VerifierInfoError, VerifierOperand,
 };
+use lzvm_field::FieldError;
 use std::fs;
 use std::path::PathBuf;
 
 mod fixtures;
+
+const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
 
 fn temp_file_path(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("lzvm-verifier-info-{}-{name}", std::process::id()))
@@ -25,6 +28,10 @@ fn verifier_info_file(section: Vec<u8>) -> Vec<u8> {
 }
 
 fn push_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_u64(out: &mut Vec<u8>, value: u64) {
     out.extend_from_slice(&value.to_le_bytes());
 }
 
@@ -53,6 +60,24 @@ fn verifier_operation_with_source_count(source_count: u32) -> Vec<u8> {
     push_u32(&mut section, 1);
     push_u32(&mut section, source_count);
     section
+}
+
+fn verifier_code_with_number(value: u64) -> Vec<u8> {
+    let mut section = verifier_code_prefix(1);
+    section.push(4);
+    push_u32(&mut section, 0);
+    push_u32(&mut section, 1);
+    push_u32(&mut section, 1);
+    section.push(2);
+    push_u64(&mut section, value);
+    push_u32(&mut section, 1);
+    section
+}
+
+fn verifier_info_with_number(value: u64) -> Vec<u8> {
+    let mut section = verifier_code_with_number(value);
+    section.extend_from_slice(&verifier_code_with_number(1));
+    verifier_info_file(section)
 }
 
 #[test]
@@ -87,6 +112,37 @@ fn encodes_and_parses_verifier_info_binary() {
     let parsed = parse_verifier_info(&bytes).expect("binary fixture should parse");
 
     assert_eq!(parsed, info);
+}
+
+#[test]
+fn rejects_non_canonical_verifier_numbers() {
+    let mut info = fixtures::sample_verifier_info_fixture();
+    info.quotient.operations[0].sources[0] = VerifierOperand::number(NON_CANONICAL_FIELD, 1);
+
+    assert!(matches!(
+        encode_verifier_info(&info),
+        Err(VerifierInfoError::NumberNonCanonical {
+            source_index: 0,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        })
+    ));
+}
+
+#[test]
+fn rejects_non_canonical_verifier_numbers_when_parsing() {
+    let bytes = verifier_info_with_number(NON_CANONICAL_FIELD);
+
+    assert!(matches!(
+        parse_verifier_info(&bytes),
+        Err(VerifierInfoError::NumberNonCanonical {
+            source_index: 0,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        })
+    ));
 }
 
 #[test]

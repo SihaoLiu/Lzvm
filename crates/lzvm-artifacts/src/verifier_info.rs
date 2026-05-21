@@ -1,6 +1,8 @@
 use std::fmt;
 use std::path::Path;
 
+use lzvm_field::{Felt, FieldError};
+
 use crate::sectioned::{
     encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
@@ -152,6 +154,10 @@ pub enum VerifierInfoError {
     Io {
         message: String,
     },
+    NumberNonCanonical {
+        source_index: usize,
+        source: FieldError,
+    },
 }
 
 impl fmt::Display for VerifierInfoError {
@@ -198,11 +204,38 @@ impl fmt::Display for VerifierInfoError {
                 write!(f, "invalid verifier-info operand tag: {value}")
             }
             Self::Io { message } => write!(f, "verifier-info io error: {message}"),
+            Self::NumberNonCanonical {
+                source_index,
+                source,
+            } => write!(
+                f,
+                "verifier-info number source {source_index} is non-canonical: {source}"
+            ),
         }
     }
 }
 
-impl std::error::Error for VerifierInfoError {}
+impl std::error::Error for VerifierInfoError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::NumberNonCanonical { source, .. } => Some(source),
+            Self::TemporaryReferenceOutOfBounds { .. }
+            | Self::EmptyCodeBlock { .. }
+            | Self::InvalidMagic
+            | Self::UnsupportedVersion { .. }
+            | Self::InvalidSectionCount { .. }
+            | Self::InvalidSectionId { .. }
+            | Self::UnexpectedTrailingBytes { .. }
+            | Self::UnexpectedEof { .. }
+            | Self::LengthOverflow
+            | Self::InvalidUtf8
+            | Self::InvalidFlag { .. }
+            | Self::InvalidOperationTag { .. }
+            | Self::InvalidOperandTag { .. }
+            | Self::Io { .. } => None,
+        }
+    }
+}
 
 impl From<SectionedError> for VerifierInfoError {
     fn from(value: SectionedError) -> Self {
@@ -374,8 +407,8 @@ fn validate_verifier_code(
     }
     for operation in &value.operations {
         validate_destination(&operation.destination, value.temporary_count)?;
-        for source in &operation.sources {
-            validate_operand(source, value.temporary_count)?;
+        for (source_index, source) in operation.sources.iter().enumerate() {
+            validate_operand(source, value.temporary_count, source_index)?;
         }
     }
     Ok(())
@@ -477,16 +510,30 @@ fn validate_destination(
 fn validate_operand(
     value: &VerifierOperand,
     temporary_count: u32,
+    source_index: usize,
 ) -> Result<(), VerifierInfoError> {
-    if let VerifierOperand::Temporary { id, .. } = value {
-        if *id >= temporary_count {
-            return Err(VerifierInfoError::TemporaryReferenceOutOfBounds {
-                temporary_id: *id,
-                temporary_count,
-            });
+    match value {
+        VerifierOperand::Temporary { id, .. } => {
+            if *id >= temporary_count {
+                return Err(VerifierInfoError::TemporaryReferenceOutOfBounds {
+                    temporary_id: *id,
+                    temporary_count,
+                });
+            }
         }
+        VerifierOperand::Number { value, .. } => validate_number(source_index, *value)?,
+        _ => {}
     }
     Ok(())
+}
+
+fn validate_number(source_index: usize, value: u64) -> Result<(), VerifierInfoError> {
+    Felt::from_canonical(value).map(|_| ()).map_err(|source| {
+        VerifierInfoError::NumberNonCanonical {
+            source_index,
+            source,
+        }
+    })
 }
 
 fn write_destination(out: &mut Vec<u8>, value: &VerifierDestination) {
