@@ -14,10 +14,11 @@ use lzvm_artifacts::setup_info::{
 };
 use lzvm_artifacts::verifier_info::{encode_verifier_info, VerifierInfoError};
 use lzvm_pil::{
-    lex_source, AirGroupValueDeclaration, AirTemplateDeclaration, BinaryOperator,
-    ColumnDeclaration, ColumnItem, ColumnKind, Expression, ExpressionKind, FixedFileTemplateValue,
-    LexError, ParseError, SourceLoaderConfig, SourceProgram, SourceProgramError,
-    SourceProgramLoader, SourceProgramModule, Token, UnaryOperator, ValueDeclarationKind,
+    lex_source, parse_expression_tokens, AirGroupValueDeclaration, AirTemplateDeclaration,
+    BinaryOperator, ColumnDeclaration, ColumnItem, ColumnKind, Expression, ExpressionKind,
+    FixedFileTemplateValue, LexError, ParseError, SourceFile, SourceLoaderConfig, SourceProgram,
+    SourceProgramError, SourceProgramLoader, SourceProgramModule, Token, UnaryOperator,
+    ValueDeclarationKind,
 };
 
 use crate::{
@@ -635,20 +636,18 @@ fn source_push_unit_values(
         return unsupported("source air value stage must be positive");
     }
     for item in items {
-        if item.template {
-            return unsupported("template air-value names need instance lowering support");
-        }
+        let name = source_item_name(program, item, "source air value", declaration_values)?;
         let lengths = source_item_lengths(program, item, "source air value", declaration_values)?;
         let shape = (stage, lengths.clone());
-        if let Some(existing) = seen.get(&item.name) {
+        if let Some(existing) = seen.get(&name) {
             if *existing != shape {
                 return unsupported("duplicate source air value name");
             }
             continue;
         }
-        seen.insert(item.name.clone(), shape);
+        seen.insert(name.clone(), shape);
         values.push(StageValue {
-            name: item.name.clone(),
+            name,
             stage,
             lengths,
         });
@@ -844,14 +843,12 @@ fn source_push_air_group_values(
         return unsupported("source air group value defaults need proof lowering support");
     }
     for item in &declaration.items {
-        if item.template {
-            return unsupported("template air-group-value names need instance lowering support");
-        }
-        if !seen.insert(item.name.clone()) {
+        let name = source_item_name(program, item, "source air group value", declaration_values)?;
+        if !seen.insert(name.clone()) {
             return unsupported("duplicate source air group value name");
         }
         values.push(StageValue {
-            name: item.name.clone(),
+            name,
             stage: declaration.stage,
             lengths: source_item_lengths(
                 program,
@@ -1114,13 +1111,8 @@ fn source_push_constant_columns(
     next_position: &mut u32,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     for item in &declaration.items {
-        if item.template {
-            return unsupported(format!(
-                "template fixed-column names need instance lowering support in {} at {}",
-                declaration.source_name, declaration.start
-            ));
-        }
-        if !seen.insert(item.name.clone()) {
+        let name = source_item_name(program, item, "source fixed-column", declaration_values)?;
+        if !seen.insert(name.clone()) {
             continue;
         }
         let lengths =
@@ -1131,7 +1123,7 @@ fn source_push_constant_columns(
             .checked_add(dimension)
             .ok_or_else(|| unsupported_source_message("source constant width overflow"))?;
         columns.push(ConstantColumn {
-            name: item.name.clone(),
+            name,
             stage: 0,
             dimension,
             pols_map_id: id,
@@ -1268,13 +1260,13 @@ fn source_push_commitment_columns(
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     let stage = source_column_stage(program, declaration, declaration_values)?;
     for item in &declaration.items {
-        if item.template {
-            return unsupported(format!(
-                "template commitment-column names need instance lowering support in {} at {}",
-                declaration.source_name, declaration.start
-            ));
-        }
-        if !seen.insert(item.name.clone()) {
+        let name = source_item_name(
+            program,
+            item,
+            "source commitment-column",
+            declaration_values,
+        )?;
+        if !seen.insert(name.clone()) {
             continue;
         }
         let lengths = source_item_lengths(
@@ -1298,7 +1290,7 @@ fn source_push_commitment_columns(
         let pols_map_id = u32::try_from(columns.len())
             .map_err(|_| unsupported_source_message("too many source commitment columns"))?;
         columns.push(CommitmentColumn {
-            name: item.name.clone(),
+            name,
             stage,
             dimension,
             pols_map_id,
@@ -1412,6 +1404,126 @@ pub(crate) fn source_item_lengths(
         lengths.push(value);
     }
     Ok(lengths)
+}
+
+pub(crate) fn source_item_name(
+    program: &SourceProgram,
+    item: &ColumnItem,
+    item_role: &str,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<String, SourceKeyDirectoryMetadataError> {
+    if !item.template {
+        return Ok(item.name.clone());
+    }
+    source_template_text(program, &item.name, item_role, constant_values)
+}
+
+fn source_template_text(
+    program: &SourceProgram,
+    template: &str,
+    item_role: &str,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<String, SourceKeyDirectoryMetadataError> {
+    let mut resolved = String::new();
+    let mut cursor = 0;
+
+    while let Some(relative_start) = template[cursor..].find("${") {
+        let segment_start = cursor + relative_start;
+        resolved.push_str(&template[cursor..segment_start]);
+        let expression_start = segment_start + 2;
+        let expression_end = source_template_expression_end(template, expression_start)
+            .ok_or_else(|| {
+                unsupported_source_message(format!("{item_role} template name is not closed"))
+            })?;
+        let expression = &template[expression_start..expression_end];
+        let value =
+            source_template_expression_value(program, expression, item_role, constant_values)?;
+        resolved.push_str(&source_template_value_string(&value));
+        cursor = expression_end + 1;
+    }
+
+    resolved.push_str(&template[cursor..]);
+    Ok(resolved)
+}
+
+fn source_template_expression_value(
+    program: &SourceProgram,
+    expression: &str,
+    item_role: &str,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<FixedFileTemplateValue, SourceKeyDirectoryMetadataError> {
+    let expression_source = SourceFile {
+        contents: expression.to_owned(),
+        file_dir: PathBuf::new(),
+        full_path: PathBuf::new(),
+        source_name: format!("{item_role} template name"),
+    };
+    let tokens = lex_source(&expression_source.contents).map_err(|source| {
+        SourceKeyDirectoryMetadataError::Lex {
+            source_name: expression_source.source_name.clone(),
+            source,
+        }
+    })?;
+    let (parsed, next_index) =
+        parse_expression_tokens(&tokens, 0, tokens.len(), &expression_source)?;
+    if next_index != tokens.len() {
+        return unsupported(format!("{item_role} template name has trailing tokens"));
+    }
+    evaluate_source_static_expression(program, &parsed, constant_values).ok_or_else(|| {
+        unsupported_source_message(format!("{item_role} template name must be static"))
+    })
+}
+
+fn source_template_expression_end(template: &str, start: usize) -> Option<usize> {
+    let bytes = template.as_bytes();
+    let mut index = start;
+    let mut quote = None;
+    let mut escaped = false;
+    let mut brace_depth = 0_usize;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if let Some(delimiter) = quote {
+            if escaped {
+                escaped = false;
+                index += 1;
+                continue;
+            }
+            if byte == b'\\' {
+                escaped = true;
+                index += 1;
+                continue;
+            }
+            if byte == delimiter {
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+
+        match byte {
+            b'"' | b'\'' | b'`' => quote = Some(byte),
+            b'{' => brace_depth += 1,
+            b'}' => {
+                if brace_depth == 0 {
+                    return Some(index);
+                }
+                brace_depth -= 1;
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+
+    None
+}
+
+fn source_template_value_string(value: &FixedFileTemplateValue) -> String {
+    match value {
+        FixedFileTemplateValue::Integer(value) => value.to_string(),
+        FixedFileTemplateValue::Boolean(value) => value.to_string(),
+        FixedFileTemplateValue::String(value) => value.clone(),
+    }
 }
 
 fn eval_u32_expression(expression: &Expression) -> Result<u32, SourceKeyDirectoryMetadataError> {

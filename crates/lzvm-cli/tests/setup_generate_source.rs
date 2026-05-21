@@ -692,6 +692,63 @@ fn generate_key_skips_template_parameter_inactive_fixed_columns() {
 }
 
 #[test]
+fn generate_key_lowers_template_literal_names_for_source_metadata() {
+    let dir = temp_dir("template-literal-metadata-names");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(const int ID = 7, const int WIDTH = 2) {\n\
+             public `input_${ID}`[WIDTH];\n\
+             proofval `proof_${ID}`;\n\
+             challenge stage(1) `alpha_${ID}`[2];\n\
+             airgroupval stage(1) aggregate(sum) `total_${ID}`;\n\
+             airval stage(1) `air_${ID}`;\n\
+             col witness `trace_${ID}`[WIDTH];\n\
+         }\n\
+         airgroup GroupA { UnitA(ID: 3, WIDTH: 4); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
+        .expect("source global metadata should parse");
+    assert_eq!(global.publics_map[0].name, "input_3");
+    assert_eq!(global.publics_map[0].lengths, [4]);
+    assert_eq!(global.proof_values_map[0].name, "proof_3");
+    assert_eq!(global.num_challenges, [2]);
+    assert_eq!(global.aggregation_types[0][0].aggregation_type, 0);
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let setup_path = layout.units[0]
+        .setup_info_binary()
+        .expect("setup metadata path should derive");
+    let setup = read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+    assert_eq!(setup.commitment_columns[0].name, "trace_3");
+    assert_eq!(setup.commitment_columns[0].lengths, [4]);
+    assert_eq!(setup.unit_value_map[0].name, "air_3");
+    assert_eq!(setup.group_value_map[0].name, "total_3");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_uses_fixed_dimension_width_for_constant_layout() {
     let dir = temp_dir("fixed-dimension-constant-layout");
     let _ = fs::remove_dir_all(&dir);

@@ -9,8 +9,8 @@ use lzvm_pil::{
 use crate::{
     source_control_body_cache::{SourceControlBodyCache, SourceControlBodyCaches},
     source_key_directory::{
-        source_column_dimension, source_item_lengths, unsupported, unsupported_source_message,
-        SourceKeyDirectoryMetadataError,
+        source_column_dimension, source_item_lengths, source_item_name, unsupported,
+        unsupported_source_message, SourceKeyDirectoryMetadataError,
     },
     source_metadata_template::{
         source_declaration_in_unselected_static_branch, source_metadata_declaration_template,
@@ -165,14 +165,12 @@ fn source_push_public_values(
         return unsupported("source public initializers need metadata lowering support");
     }
     for item in &declaration.items {
-        if item.template {
-            return unsupported("template public-value names need instance lowering support");
-        }
-        if !seen.insert(item.name.clone()) {
+        let name = source_item_name(program, item, "source public value", declaration_values)?;
+        if !seen.insert(name.clone()) {
             return unsupported("duplicate source public value name");
         }
         values.push(PublicValue {
-            name: item.name.clone(),
+            name,
             stage: 1,
             lengths: source_item_lengths(program, item, "source public value", declaration_values)?
                 .into_iter()
@@ -328,17 +326,15 @@ fn source_push_proof_values(
         counts_by_stage.resize(stage, 0);
     }
     for item in &declaration.items {
-        if item.template {
-            return unsupported("template proof-value names need instance lowering support");
-        }
-        if !seen.insert(item.name.clone()) {
+        let name = source_item_name(program, item, "source proof value", declaration_values)?;
+        if !seen.insert(name.clone()) {
             return unsupported("duplicate source proof value name");
         }
         counts_by_stage[stage - 1] = counts_by_stage[stage - 1]
             .checked_add(1)
             .ok_or_else(|| unsupported_source_message("source proof value count overflow"))?;
         values.push(NamedStageValue {
-            name: item.name.clone(),
+            name,
             stage: u64::from(declaration.stage),
             id: None,
             lengths: source_item_lengths(program, item, "source proof value", declaration_values)?
@@ -506,19 +502,17 @@ fn source_push_challenge_slots(
         return unsupported("source challenge stage must be positive");
     }
     for item in &declaration.items {
-        if item.template {
-            return unsupported("template challenge names need instance lowering support");
-        }
+        let name = source_item_name(program, item, "source challenge", declaration_values)?;
         let lengths = source_item_lengths(program, item, "source challenge", declaration_values)?;
         let dimension = source_column_dimension(&lengths, "source challenge")?;
         let shape = SourceChallengeShape { stage, dimension };
-        if let Some(existing) = seen.get(&item.name) {
+        if let Some(existing) = seen.get(&name) {
             if *existing != shape {
                 return unsupported("duplicate source challenge name");
             }
             continue;
         }
-        seen.insert(item.name.clone(), shape);
+        seen.insert(name.clone(), shape);
         let stage_id = *next_stage_ids.get(&stage).unwrap_or(&0);
         next_stage_ids.insert(
             stage,
@@ -527,7 +521,7 @@ fn source_push_challenge_slots(
                 .ok_or_else(|| unsupported_source_message("source challenge id overflow"))?,
         );
         slots.push(SourceChallengeSlotMetadata {
-            name: item.name.clone(),
+            name,
             id: 0,
             stage: u32::try_from(stage)
                 .map_err(|_| unsupported_source_message("source challenge stage overflow"))?,
