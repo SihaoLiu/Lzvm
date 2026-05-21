@@ -816,6 +816,17 @@ impl SourceStaticValueLookup for SourceFixedAssignmentValues<'_> {
             .or_else(|| self.base_scalars.get(name))
     }
 
+    fn source_static_array_element(
+        &self,
+        name: &str,
+        index: usize,
+    ) -> Option<FixedFileTemplateValue> {
+        self.arrays
+            .get(name)
+            .and_then(|values| values.get(index))
+            .map(|value| FixedFileTemplateValue::Integer(i128::from(*value)))
+    }
+
     fn source_static_integer_values(&self) -> BTreeMap<String, i128> {
         let mut values = self
             .base_scalars

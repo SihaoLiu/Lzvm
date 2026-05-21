@@ -46,7 +46,10 @@ pub(crate) fn source_scalar_constant_values(
             if resolved[index] {
                 continue;
             }
-            if !declaration.array_dims.is_empty() || values.contains_key(&declaration.name) {
+            if !declaration.array_dims.is_empty() {
+                continue;
+            }
+            if values.contains_key(&declaration.name) {
                 resolved[index] = true;
                 progressed = true;
                 continue;
@@ -71,6 +74,31 @@ pub(crate) fn source_scalar_constant_values(
         }
     }
 
+    let mut resolved_arrays = vec![false; declarations.len()];
+    loop {
+        let mut progressed = false;
+        for (index, declaration) in declarations.iter().enumerate() {
+            if resolved_arrays[index] || declaration.array_dims.is_empty() {
+                continue;
+            }
+            let Some(expression) = declaration.initializer_expression.as_ref() else {
+                continue;
+            };
+            let Some(elements) = source_static_array_expression(program, expression, &values)
+            else {
+                continue;
+            };
+            if insert_source_static_array(&mut values, &declaration.name, elements).is_none() {
+                continue;
+            }
+            resolved_arrays[index] = true;
+            progressed = true;
+        }
+        if !progressed {
+            break;
+        }
+    }
+
     values
 }
 
@@ -78,12 +106,26 @@ const STATIC_LOOP_LIMIT: usize = 10_000;
 
 pub(crate) trait SourceStaticValueLookup {
     fn source_static_value(&self, name: &str) -> Option<&FixedFileTemplateValue>;
+    fn source_static_array_element(
+        &self,
+        name: &str,
+        index: usize,
+    ) -> Option<FixedFileTemplateValue>;
     fn source_static_integer_values(&self) -> BTreeMap<String, i128>;
 }
 
 impl SourceStaticValueLookup for BTreeMap<String, FixedFileTemplateValue> {
     fn source_static_value(&self, name: &str) -> Option<&FixedFileTemplateValue> {
         self.get(name)
+    }
+
+    fn source_static_array_element(
+        &self,
+        name: &str,
+        index: usize,
+    ) -> Option<FixedFileTemplateValue> {
+        self.get(&source_static_array_element_key(name, index))
+            .cloned()
     }
 
     fn source_static_integer_values(&self) -> BTreeMap<String, i128> {
@@ -160,6 +202,9 @@ pub(crate) fn evaluate_source_static_expression_with_lookup(
     expression: &Expression,
     values: &(impl SourceStaticValueLookup + ?Sized),
 ) -> Option<FixedFileTemplateValue> {
+    if let Some(value) = evaluate_source_static_index_expression(program, expression, values) {
+        return Some(value);
+    }
     if let Some(value) = evaluate_source_template_value_expression_with_lookup(expression, values) {
         return Some(value);
     }
@@ -182,6 +227,25 @@ fn evaluate_source_static_expression_with_integer_env(
         }
         evaluate_static_i128(program, expression, integer_env).map(FixedFileTemplateValue::Integer)
     })
+}
+
+fn evaluate_source_static_index_expression(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &(impl SourceStaticValueLookup + ?Sized),
+) -> Option<FixedFileTemplateValue> {
+    match &expression.kind {
+        ExpressionKind::Group(inner) => {
+            evaluate_source_static_index_expression(program, inner, values)
+        }
+        ExpressionKind::Index { target, index } => {
+            let name = expression_name(target)?;
+            let index = evaluate_source_static_expression_with_lookup(program, index, values)?;
+            let index = usize::try_from(static_value_integer(&index)?).ok()?;
+            values.source_static_array_element(name, index)
+        }
+        _ => None,
+    }
 }
 
 fn source_expression_needs_integer_env(expression: &Expression) -> bool {

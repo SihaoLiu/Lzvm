@@ -131,6 +131,14 @@ impl<V: SourceStaticValueLookup + ?Sized> SourceStaticValueLookup for SourceForL
         self.base_values.source_static_value(name)
     }
 
+    fn source_static_array_element(
+        &self,
+        name: &str,
+        index: usize,
+    ) -> Option<FixedFileTemplateValue> {
+        self.base_values.source_static_array_element(name, index)
+    }
+
     fn source_static_integer_values(&self) -> BTreeMap<String, i128> {
         let mut values = self.base_values.source_static_integer_values();
         if let Some(value) = static_value_integer(&self.variable_value) {
