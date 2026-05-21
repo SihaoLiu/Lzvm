@@ -180,8 +180,18 @@ pub enum ProveScheduleError {
     LengthOverflow,
     KeyDirectory(KeyDirectoryError),
     SetupDirectoryManifest(SetupDirectoryManifestError),
-    UnsupportedGlobalHint { name: String },
-    UnsupportedRegularHint { unit_index: usize, name: String },
+    PcsMaterialConstantTreeRootNonCanonical {
+        unit_index: usize,
+        word_index: usize,
+        source: FieldError,
+    },
+    UnsupportedGlobalHint {
+        name: String,
+    },
+    UnsupportedRegularHint {
+        unit_index: usize,
+        name: String,
+    },
 }
 
 impl fmt::Display for ProveScheduleError {
@@ -191,6 +201,14 @@ impl fmt::Display for ProveScheduleError {
             Self::LengthOverflow => write!(f, "prove schedule length overflow"),
             Self::KeyDirectory(error) => write!(f, "prove schedule catalog error: {error}"),
             Self::SetupDirectoryManifest(error) => write!(f, "{error}"),
+            Self::PcsMaterialConstantTreeRootNonCanonical {
+                unit_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "prove schedule PCS material constant tree root word {word_index} is non-canonical for unit {unit_index}: {source}"
+            ),
             Self::UnsupportedGlobalHint { name } => {
                 write!(f, "prove schedule unsupported global hint {name}")
             }
@@ -204,7 +222,19 @@ impl fmt::Display for ProveScheduleError {
     }
 }
 
-impl std::error::Error for ProveScheduleError {}
+impl std::error::Error for ProveScheduleError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::KeyDirectory(error) => Some(error),
+            Self::SetupDirectoryManifest(error) => Some(error),
+            Self::PcsMaterialConstantTreeRootNonCanonical { source, .. } => Some(source),
+            Self::EmptyCatalog
+            | Self::LengthOverflow
+            | Self::UnsupportedGlobalHint { .. }
+            | Self::UnsupportedRegularHint { .. } => None,
+        }
+    }
+}
 
 impl From<KeyDirectoryError> for ProveScheduleError {
     fn from(error: KeyDirectoryError) -> Self {
@@ -694,6 +724,9 @@ pub fn derive_prove_schedule(
         }
         max_extended_domain_bits = max_extended_domain_bits.max(unit.pcs_plan.extended_domain_bits);
         let material = unit.pcs_material.as_ref();
+        if let Some(material) = material {
+            validate_pcs_material_constant_tree_root(unit_index, material.constant_tree_root)?;
+        }
 
         units.push(ProveUnitSchedule {
             kind: unit.paths.kind,
@@ -752,6 +785,22 @@ pub fn derive_prove_schedule(
         max_extended_domain_bits,
         units,
     })
+}
+
+fn validate_pcs_material_constant_tree_root(
+    unit_index: usize,
+    root: [u64; 4],
+) -> Result<(), ProveScheduleError> {
+    for (word_index, word) in root.into_iter().enumerate() {
+        Felt::from_canonical(word).map_err(|source| {
+            ProveScheduleError::PcsMaterialConstantTreeRootNonCanonical {
+                unit_index,
+                word_index,
+                source,
+            }
+        })?;
+    }
+    Ok(())
 }
 
 fn validate_schedulable_global_hints(program: &HintProgram) -> Result<(), ProveScheduleError> {

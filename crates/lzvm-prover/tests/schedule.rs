@@ -465,6 +465,23 @@ fn derives_prove_schedule_with_pcs_material_inputs() {
 }
 
 #[test]
+fn rejects_prove_schedule_with_non_canonical_pcs_material_root() {
+    let mut unit = sample_unit_with_pcs_material(KeyUnitKind::Basic, 0, 64);
+    unit.pcs_material
+        .as_mut()
+        .expect("PCS material should be present")
+        .constant_tree_root[0] = MODULUS;
+    let catalog = sample_catalog(vec![unit]);
+
+    let error = derive_prove_schedule(&catalog).expect_err("PCS material root should be canonical");
+
+    assert_eq!(
+        error.to_string(),
+        "prove schedule PCS material constant tree root word 0 is non-canonical for unit 0: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
 fn rejects_empty_prove_schedule_catalogs() {
     let catalog = sample_catalog(Vec::new());
 
