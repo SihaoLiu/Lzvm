@@ -899,15 +899,19 @@ fn source_unit_setup_info(
     let active_templates = concrete_template_names(program);
     let constant_columns = source_constant_columns(
         program,
+        unit_name,
         &constant_values,
         &active_templates,
         &template_values,
+        body_caches,
     )?;
     let commitment_columns = source_commitment_columns(
         program,
+        unit_name,
         &constant_values,
         &active_templates,
         &template_values,
+        body_caches,
     )?;
     let (n_stages, commitment_widths) = source_commitment_section_widths(&commitment_columns)?;
     let unit_value_map = source_unit_values(
@@ -1000,14 +1004,24 @@ fn source_unit_setup_info(
 
 fn source_constant_columns(
     program: &SourceProgram,
+    unit_name: Option<(&str, &str)>,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
     active_templates: &BTreeSet<String>,
     template_values: &SourceTemplateConstantValueCache,
+    body_caches: &mut SourceControlBodyCaches,
 ) -> Result<Vec<ConstantColumn>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut columns = Vec::new();
     let mut next_position = 0_u32;
+    let unit_instance = source_metadata_unit_instance(program, unit_name);
     for module in &program.modules {
+        let tokens = lex_source(&module.source.contents).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: module.source_name.clone(),
+                source,
+            }
+        })?;
+        let body_cache = body_caches.module_cache(&module.source_name);
         for declaration in &module.columns {
             if declaration.kind != ColumnKind::Fixed {
                 continue;
@@ -1023,63 +1037,131 @@ fn source_constant_columns(
             ) {
                 continue;
             }
-            let declaration_values = source_declaration_constant_values_from_cache(
-                module,
-                declaration.start,
-                declaration.end,
-                constant_values,
-                template_values,
-            );
-            if source_declaration_in_static_false_branch(
-                program,
-                module,
-                declaration.start,
-                declaration.end,
-                declaration_values,
-            ) {
-                continue;
-            }
-            for item in &declaration.items {
-                if item.template {
-                    return unsupported(format!(
-                        "template fixed-column names need instance lowering support in {} at {}",
-                        declaration.source_name, declaration.start
-                    ));
-                }
-                if !seen.insert(item.name.clone()) {
+            let Some(declaration_template) =
+                source_metadata_declaration_template(module, declaration.start, declaration.end)
+            else {
+                let declaration_values = source_declaration_constant_values_from_cache(
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    constant_values,
+                    template_values,
+                );
+                if source_declaration_in_static_false_branch(
+                    program,
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    declaration_values,
+                ) {
                     continue;
                 }
-                let lengths =
-                    source_item_lengths(program, item, "source fixed-column", declaration_values)?;
-                let dimension = source_column_dimension(&lengths, "source fixed-column")?;
-                let id = next_position;
-                next_position = next_position
-                    .checked_add(dimension)
-                    .ok_or_else(|| unsupported_source_message("source constant width overflow"))?;
-                columns.push(ConstantColumn {
-                    name: item.name.clone(),
-                    stage: 0,
-                    dimension,
-                    pols_map_id: id,
-                    stage_id: id,
-                    lengths,
-                });
+                source_push_constant_columns(
+                    program,
+                    declaration,
+                    declaration_values,
+                    &mut seen,
+                    &mut columns,
+                    &mut next_position,
+                )?;
+                continue;
+            };
+            let declaration_values = if let Some(instance) = unit_instance {
+                if declaration_template.name != instance.template {
+                    continue;
+                }
+                source_metadata_template_values(
+                    program,
+                    module,
+                    declaration_template,
+                    Some(instance),
+                    constant_values,
+                    template_values,
+                )
+            } else {
+                continue;
+            };
+            if source_declaration_in_unselected_static_branch(
+                program,
+                module,
+                &tokens,
+                body_cache,
+                declaration.start,
+                declaration.end,
+                &declaration_values,
+            )? {
+                continue;
             }
+            source_push_constant_columns(
+                program,
+                declaration,
+                &declaration_values,
+                &mut seen,
+                &mut columns,
+                &mut next_position,
+            )?;
         }
     }
     Ok(columns)
 }
 
+fn source_push_constant_columns(
+    program: &SourceProgram,
+    declaration: &ColumnDeclaration,
+    declaration_values: &BTreeMap<String, FixedFileTemplateValue>,
+    seen: &mut BTreeSet<String>,
+    columns: &mut Vec<ConstantColumn>,
+    next_position: &mut u32,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    for item in &declaration.items {
+        if item.template {
+            return unsupported(format!(
+                "template fixed-column names need instance lowering support in {} at {}",
+                declaration.source_name, declaration.start
+            ));
+        }
+        if !seen.insert(item.name.clone()) {
+            continue;
+        }
+        let lengths =
+            source_item_lengths(program, item, "source fixed-column", declaration_values)?;
+        let dimension = source_column_dimension(&lengths, "source fixed-column")?;
+        let id = *next_position;
+        *next_position = next_position
+            .checked_add(dimension)
+            .ok_or_else(|| unsupported_source_message("source constant width overflow"))?;
+        columns.push(ConstantColumn {
+            name: item.name.clone(),
+            stage: 0,
+            dimension,
+            pols_map_id: id,
+            stage_id: id,
+            lengths,
+        });
+    }
+    Ok(())
+}
+
 fn source_commitment_columns(
     program: &SourceProgram,
+    unit_name: Option<(&str, &str)>,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
     active_templates: &BTreeSet<String>,
     template_values: &SourceTemplateConstantValueCache,
+    body_caches: &mut SourceControlBodyCaches,
 ) -> Result<Vec<CommitmentColumn>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut columns = Vec::new();
     let mut stages = BTreeMap::<u32, SourceCommitmentStageCursor>::new();
+    let unit_instance = source_metadata_unit_instance(program, unit_name);
     for module in &program.modules {
+        let tokens = lex_source(&module.source.contents).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: module.source_name.clone(),
+                source,
+            }
+        })?;
+        let body_cache = body_caches.module_cache(&module.source_name);
         for declaration in &module.columns {
             if matches!(declaration.kind, ColumnKind::Fixed) {
                 continue;
@@ -1095,64 +1177,76 @@ fn source_commitment_columns(
             ) {
                 continue;
             }
-            let declaration_values = source_declaration_constant_values_from_cache(
-                module,
-                declaration.start,
-                declaration.end,
-                constant_values,
-                template_values,
-            );
-            if source_declaration_in_static_false_branch(
-                program,
-                module,
-                declaration.start,
-                declaration.end,
-                declaration_values,
-            ) {
-                continue;
-            }
-            let stage = source_column_stage(program, declaration, declaration_values)?;
-            for item in &declaration.items {
-                if item.template {
-                    return unsupported(format!(
-                        "template commitment-column names need instance lowering support in {} at {}",
-                        declaration.source_name, declaration.start
-                    ));
-                }
-                if !seen.insert(item.name.clone()) {
+            let Some(declaration_template) =
+                source_metadata_declaration_template(module, declaration.start, declaration.end)
+            else {
+                let declaration_values = source_declaration_constant_values_from_cache(
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    constant_values,
+                    template_values,
+                );
+                if source_declaration_in_static_false_branch(
+                    program,
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    declaration_values,
+                ) {
                     continue;
                 }
-                let lengths = source_item_lengths(
+                source_push_commitment_columns(
                     program,
-                    item,
-                    "source commitment-column",
+                    declaration,
                     declaration_values,
+                    &mut seen,
+                    &mut stages,
+                    &mut columns,
                 )?;
-                let dimension = source_column_dimension(&lengths, "source commitment-column")?;
-                let cursor = stages.entry(stage).or_default();
-                let stage_id = cursor.next_id;
-                let stage_position = cursor.next_position;
-                cursor.next_id = cursor.next_id.checked_add(1).ok_or_else(|| {
-                    unsupported_source_message("source commitment stage id overflow")
-                })?;
-                cursor.next_position =
-                    cursor.next_position.checked_add(dimension).ok_or_else(|| {
-                        unsupported_source_message("source commitment stage width overflow")
-                    })?;
-                let pols_map_id = u32::try_from(columns.len()).map_err(|_| {
-                    unsupported_source_message("too many source commitment columns")
-                })?;
-                columns.push(CommitmentColumn {
-                    name: item.name.clone(),
-                    stage,
-                    dimension,
-                    pols_map_id,
-                    stage_id,
-                    stage_position,
-                    intermediate: declaration.kind == ColumnKind::Custom,
-                    lengths,
-                });
+                continue;
+            };
+            let declaration_values = if let Some(instance) = unit_instance {
+                if declaration_template.name != instance.template {
+                    continue;
+                }
+                source_metadata_template_values(
+                    program,
+                    module,
+                    declaration_template,
+                    Some(instance),
+                    constant_values,
+                    template_values,
+                )
+            } else {
+                source_metadata_template_values(
+                    program,
+                    module,
+                    declaration_template,
+                    None,
+                    constant_values,
+                    template_values,
+                )
+            };
+            if source_declaration_in_unselected_static_branch(
+                program,
+                module,
+                &tokens,
+                body_cache,
+                declaration.start,
+                declaration.end,
+                &declaration_values,
+            )? {
+                continue;
             }
+            source_push_commitment_columns(
+                program,
+                declaration,
+                &declaration_values,
+                &mut seen,
+                &mut stages,
+                &mut columns,
+            )?;
         }
     }
     Ok(columns)
@@ -1162,6 +1256,59 @@ fn source_commitment_columns(
 struct SourceCommitmentStageCursor {
     next_id: u32,
     next_position: u32,
+}
+
+fn source_push_commitment_columns(
+    program: &SourceProgram,
+    declaration: &ColumnDeclaration,
+    declaration_values: &BTreeMap<String, FixedFileTemplateValue>,
+    seen: &mut BTreeSet<String>,
+    stages: &mut BTreeMap<u32, SourceCommitmentStageCursor>,
+    columns: &mut Vec<CommitmentColumn>,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    let stage = source_column_stage(program, declaration, declaration_values)?;
+    for item in &declaration.items {
+        if item.template {
+            return unsupported(format!(
+                "template commitment-column names need instance lowering support in {} at {}",
+                declaration.source_name, declaration.start
+            ));
+        }
+        if !seen.insert(item.name.clone()) {
+            continue;
+        }
+        let lengths = source_item_lengths(
+            program,
+            item,
+            "source commitment-column",
+            declaration_values,
+        )?;
+        let dimension = source_column_dimension(&lengths, "source commitment-column")?;
+        let cursor = stages.entry(stage).or_default();
+        let stage_id = cursor.next_id;
+        let stage_position = cursor.next_position;
+        cursor.next_id = cursor
+            .next_id
+            .checked_add(1)
+            .ok_or_else(|| unsupported_source_message("source commitment stage id overflow"))?;
+        cursor.next_position = cursor
+            .next_position
+            .checked_add(dimension)
+            .ok_or_else(|| unsupported_source_message("source commitment stage width overflow"))?;
+        let pols_map_id = u32::try_from(columns.len())
+            .map_err(|_| unsupported_source_message("too many source commitment columns"))?;
+        columns.push(CommitmentColumn {
+            name: item.name.clone(),
+            stage,
+            dimension,
+            pols_map_id,
+            stage_id,
+            stage_position,
+            intermediate: declaration.kind == ColumnKind::Custom,
+            lengths,
+        });
+    }
+    Ok(())
 }
 
 fn source_commitment_section_widths(

@@ -580,6 +580,118 @@ fn generate_key_uses_template_defaults_for_column_dimensions() {
 }
 
 #[test]
+fn generate_key_skips_template_parameter_inactive_commitment_columns() {
+    let dir = temp_dir("template-param-inactive-commitment-columns");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(const int ENABLED = 1) {\n\
+             if (ENABLED) {\n\
+                 col witness unused[2];\n\
+             } else {\n\
+                 col witness expected[3];\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(ENABLED: 0); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let setup_path = layout.units[0]
+        .setup_info_binary()
+        .expect("setup metadata path should derive");
+    let setup = read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+    assert_eq!(setup.commitment_columns.len(), 1);
+    assert_eq!(setup.commitment_columns[0].name, "expected");
+    assert_eq!(setup.commitment_columns[0].lengths, [3]);
+    assert_eq!(setup.commitment_columns[0].dimension, 3);
+    assert_eq!(setup.section_widths.get("cm1"), Some(&3));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_skips_template_parameter_inactive_fixed_columns() {
+    let dir = temp_dir("template-param-inactive-fixed-columns");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(const int ENABLED = 1) {\n\
+             if (ENABLED) {\n\
+                 col fixed unused[2];\n\
+                 unused[0] = [1, 1];\n\
+                 unused[1] = [2, 2];\n\
+             } else {\n\
+                 col fixed expected[3];\n\
+                 expected[0] = [3, 3];\n\
+                 expected[1] = [4, 4];\n\
+                 expected[2] = [5, 5];\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(ENABLED: 0); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let setup_path = layout.units[0]
+        .setup_info_binary()
+        .expect("setup metadata path should derive");
+    let setup = read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+    assert_eq!(
+        setup
+            .constant_columns
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect::<Vec<_>>(),
+        ["expected", "main.left"]
+    );
+    assert_eq!(setup.constant_columns[0].lengths, [3]);
+    assert_eq!(setup.constant_columns[0].dimension, 3);
+    assert_eq!(setup.n_constants, 4);
+    assert_eq!(setup.section_widths.get("const"), Some(&4));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_uses_fixed_dimension_width_for_constant_layout() {
     let dir = temp_dir("fixed-dimension-constant-layout");
     let _ = fs::remove_dir_all(&dir);
