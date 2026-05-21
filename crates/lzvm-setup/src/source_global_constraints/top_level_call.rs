@@ -30,6 +30,28 @@ pub(super) fn lower_top_level_function_call(
     expression: &Expression,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
+    let mut body_cache = SourceControlBodyCache::default();
+    let mut call_stack = BTreeSet::new();
+    lower_function_call_expression(
+        context,
+        expression,
+        &context.alias_scope.static_values,
+        context.alias_scope,
+        &mut body_cache,
+        &mut call_stack,
+        constraints,
+    )
+}
+
+fn lower_function_call_expression(
+    context: &SourceTopLevelGlobalConstraintContext<'_, '_, '_>,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceGlobalAliasScope<'_>,
+    body_cache: &mut SourceControlBodyCache,
+    call_stack: &mut BTreeSet<String>,
+    constraints: &mut SourceGlobalConstraintBuilder,
+) -> Result<bool, SourceKeyDirectoryMetadataError> {
     let Some((name, arguments)) = source_call_expression(expression) else {
         return Ok(false);
     };
@@ -44,19 +66,38 @@ pub(super) fn lower_top_level_function_call(
     if function.return_type.is_some() {
         return Ok(false);
     }
-    let Some(mut bindings) = source_function_call_bindings(
-        context.program,
-        function,
-        arguments,
-        &context.alias_scope.static_values,
-        context.alias_scope,
-    ) else {
+    let Some(mut bindings) =
+        source_function_call_bindings(context.program, function, arguments, values, alias_scope)
+    else {
         return Ok(false);
     };
 
+    let function_name = function.name.clone();
+    if !call_stack.insert(function_name.clone()) {
+        return Ok(false);
+    }
+    let result = lower_bound_function_call(
+        context,
+        function,
+        &mut bindings,
+        body_cache,
+        call_stack,
+        constraints,
+    );
+    call_stack.remove(&function_name);
+    result
+}
+
+fn lower_bound_function_call(
+    context: &SourceTopLevelGlobalConstraintContext<'_, '_, '_>,
+    function: &FunctionDeclaration,
+    bindings: &mut SourceFunctionCallBindings<'_>,
+    body_cache: &mut SourceControlBodyCache,
+    call_stack: &mut BTreeSet<String>,
+    constraints: &mut SourceGlobalConstraintBuilder,
+) -> Result<bool, SourceKeyDirectoryMetadataError> {
     let checkpoint = constraints.checkpoint();
-    let mut body_alias_scope = bindings.alias_scope;
-    let mut body_cache = SourceControlBodyCache::default();
+    let mut body_alias_scope = clone_alias_scope(&bindings.alias_scope);
     for statement in &function.statements {
         body_alias_scope.static_values = bindings.values.clone();
         if !lower_function_body_statement(
@@ -64,7 +105,8 @@ pub(super) fn lower_top_level_function_call(
             statement,
             &mut bindings.values,
             &body_alias_scope,
-            &mut body_cache,
+            body_cache,
+            call_stack,
             constraints,
         )? {
             constraints.rollback(checkpoint);
@@ -227,6 +269,7 @@ fn lower_function_body_statement(
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
     alias_scope: &SourceGlobalAliasScope<'_>,
     body_cache: &mut SourceControlBodyCache,
+    call_stack: &mut BTreeSet<String>,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
@@ -253,6 +296,7 @@ fn lower_function_body_statement(
                         values,
                         &body_alias_scope,
                         body_cache,
+                        call_stack,
                         constraints,
                     )? {
                         return Ok(false);
@@ -298,6 +342,7 @@ fn lower_function_body_statement(
                             values,
                             &loop_alias_scope,
                             body_cache,
+                            call_stack,
                             constraints,
                         )? {
                             restore_static_value(values, &variable_name, previous.as_ref());
@@ -329,6 +374,17 @@ fn lower_function_body_statement(
     let Some(expression) = statement.value_expression.as_ref() else {
         return Ok(false);
     };
+    if lower_function_call_expression(
+        context,
+        expression,
+        values,
+        alias_scope,
+        body_cache,
+        call_stack,
+        constraints,
+    )? {
+        return Ok(true);
+    }
     let source_line = &context.module.source.contents[expression.start..expression.end];
     match lower_top_level_global_constraint(
         expression,
