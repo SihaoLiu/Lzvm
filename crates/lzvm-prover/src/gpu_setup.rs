@@ -30,6 +30,10 @@ impl std::error::Error for GpuSetupError {
     }
 }
 
+pub fn gpu_setup_available() -> bool {
+    cfg!(feature = "cuda")
+}
+
 #[cfg(feature = "cuda")]
 pub fn prepare_gpu_setup(max_extended_domain_bits: usize) -> Result<(), GpuSetupError> {
     lzvm_accel::cuda_setup_init(max_extended_domain_bits).map_err(GpuSetupError::Accel)

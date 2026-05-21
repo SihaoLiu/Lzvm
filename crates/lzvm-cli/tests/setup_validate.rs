@@ -3917,6 +3917,10 @@ fn prints_prove_inputs_from_trace_bytes() {
 #[cfg(not(feature = "cuda"))]
 #[test]
 fn prove_inputs_rejects_gpu_preallocate_without_cuda() {
+    if lzvm_prover::gpu_setup_available() {
+        return;
+    }
+
     let dir = temp_dir("prove-inputs-gpu-preallocate-unavailable");
     let _ = fs::remove_dir_all(&dir);
     write_execution_ready_setup_directory(&dir);
@@ -5155,6 +5159,10 @@ fn runs_direct_prove_for_setup_directory() {
 #[cfg(not(feature = "cuda"))]
 #[test]
 fn prove_witness_rejects_gpu_preallocate_without_cuda() {
+    if lzvm_prover::gpu_setup_available() {
+        return;
+    }
+
     let dir = temp_dir("prove-witness-gpu-preallocate-unavailable");
     let _ = fs::remove_dir_all(&dir);
     write_execution_ready_setup_directory(&dir);
