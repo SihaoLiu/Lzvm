@@ -167,28 +167,103 @@ fn source_lookup_weight(
             format!("lookup hint has both multiplicity and selector at row {row}"),
         ),
         (Some(field), None) | (None, Some(field)) => {
-            if field.values.len() != 1 {
+            source_lookup_weight_field(unit_index, row, field)
+        }
+    }
+}
+
+fn source_lookup_weight_field(
+    unit_index: usize,
+    row: usize,
+    field: &ResolvedHintField,
+) -> Result<Felt, ProveWitnessCommitmentError> {
+    if field.values.len() == 1 {
+        return match field.values[0].payload {
+            ResolvedHintPayload::Scalar(value) => Ok(value),
+            _ => source_lookup_error(
+                unit_index,
+                format!(
+                    "lookup weight field {} is not scalar at row {row}",
+                    field.name
+                ),
+            ),
+        };
+    }
+    source_lookup_expression_field(unit_index, row, field)
+}
+
+fn source_lookup_expression_field(
+    unit_index: usize,
+    row: usize,
+    field: &ResolvedHintField,
+) -> Result<Felt, ProveWitnessCommitmentError> {
+    let mut stack = Vec::new();
+    for value in &field.values {
+        match &value.payload {
+            ResolvedHintPayload::Scalar(value) => stack.push(*value),
+            ResolvedHintPayload::Text(op) => {
+                let right = source_lookup_expression_pop(unit_index, row, op, &mut stack)?;
+                let left = source_lookup_expression_pop(unit_index, row, op, &mut stack)?;
+                let result = match op.as_str() {
+                    "add" => left + right,
+                    "sub" => left - right,
+                    "mul" => left * right,
+                    "pow" => left.pow(right.to_u64()),
+                    "div" => {
+                        let inverse = right.inverse().ok_or_else(|| {
+                            ProveWitnessCommitmentError::SourceLookup {
+                                unit_index,
+                                message: format!("operator div has zero divisor at row {row}"),
+                            }
+                        })?;
+                        left * inverse
+                    }
+                    _ => {
+                        return source_lookup_error(
+                            unit_index,
+                            format!("unsupported expression operator {op} at row {row}"),
+                        )
+                    }
+                };
+                stack.push(result);
+            }
+            ResolvedHintPayload::Extension(_) => {
                 return source_lookup_error(
                     unit_index,
                     format!(
-                        "lookup weight field {} has {} values at row {row}",
-                        field.name,
-                        field.values.len()
-                    ),
-                );
-            }
-            match field.values[0].payload {
-                ResolvedHintPayload::Scalar(value) => Ok(value),
-                _ => source_lookup_error(
-                    unit_index,
-                    format!(
-                        "lookup weight field {} is not scalar at row {row}",
+                        "lookup weight field {} contains an extension value at row {row}",
                         field.name
                     ),
-                ),
+                )
             }
         }
     }
+
+    if stack.len() != 1 {
+        return source_lookup_error(
+            unit_index,
+            format!(
+                "lookup weight field {} leaves {} values on the stack at row {row}",
+                field.name,
+                stack.len()
+            ),
+        );
+    }
+    Ok(stack[0])
+}
+
+fn source_lookup_expression_pop(
+    unit_index: usize,
+    row: usize,
+    op: &str,
+    stack: &mut Vec<Felt>,
+) -> Result<Felt, ProveWitnessCommitmentError> {
+    stack
+        .pop()
+        .ok_or_else(|| ProveWitnessCommitmentError::SourceLookup {
+            unit_index,
+            message: format!("operator {op} has too few operands at row {row}"),
+        })
 }
 
 fn source_lookup_single_payload(

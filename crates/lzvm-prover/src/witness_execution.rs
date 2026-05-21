@@ -1060,6 +1060,55 @@ mod tests {
     }
 
     #[test]
+    fn accepts_balanced_source_lookup_weight_expressions() {
+        let program = HintProgram {
+            hints: vec![
+                source_lookup_hint_with_weight_values(
+                    SOURCE_LOOKUP_PROVES_HINT,
+                    "multiplicity",
+                    vec![
+                        HintOperand::Commitment {
+                            id: 1,
+                            row_offset_index: 0,
+                        },
+                        HintOperand::Commitment {
+                            id: 1,
+                            row_offset_index: 0,
+                        },
+                        HintOperand::String("add".to_owned()),
+                    ],
+                ),
+                source_lookup_hint_with_weight_values(
+                    SOURCE_LOOKUP_ASSUMES_HINT,
+                    "selector",
+                    vec![
+                        HintOperand::Number(2),
+                        HintOperand::Commitment {
+                            id: 1,
+                            row_offset_index: 0,
+                        },
+                        HintOperand::String("mul".to_owned()),
+                    ],
+                ),
+            ],
+        };
+        let plan_unit = source_lookup_plan_unit(program);
+        let schedule = source_lookup_schedule();
+        let layout = derive_witness_trace_layout(&schedule).expect("layout should derive");
+        let trace = source_lookup_trace(&[7, 1, 8, 2]);
+
+        validate_witness_regular_hints(
+            &plan_unit,
+            0,
+            &layout,
+            &trace,
+            &[],
+            &ProveWitnessAuxiliaryInputs::default(),
+        )
+        .expect("balanced lookup weight expressions should validate");
+    }
+
+    #[test]
     fn rejects_mismatched_source_assignment_regular_hints() {
         let program = HintProgram {
             hints: vec![source_assignment_hint(
@@ -1240,6 +1289,14 @@ mod tests {
     }
 
     fn source_lookup_hint(name: &str, weight_field: &str, weight_operand: HintOperand) -> Hint {
+        source_lookup_hint_with_weight_values(name, weight_field, vec![weight_operand])
+    }
+
+    fn source_lookup_hint_with_weight_values(
+        name: &str,
+        weight_field: &str,
+        weight_operands: Vec<HintOperand>,
+    ) -> Hint {
         Hint {
             name: name.to_owned(),
             fields: vec![
@@ -1262,10 +1319,13 @@ mod tests {
                 },
                 HintField {
                     name: weight_field.to_owned(),
-                    values: vec![HintValue {
-                        operand: weight_operand,
-                        positions: Vec::new(),
-                    }],
+                    values: weight_operands
+                        .into_iter()
+                        .map(|operand| HintValue {
+                            operand,
+                            positions: Vec::new(),
+                        })
+                        .collect(),
                 },
             ],
         }

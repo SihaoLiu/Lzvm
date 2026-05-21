@@ -349,16 +349,20 @@ fn lower_structured_source_lookup_hint(
         let Some(value_range) = source_lookup_argument_value_range(&argument) else {
             return Ok(None);
         };
-        let value = match field.value_kind {
-            SourceLookupFieldValueKind::Dynamic => source_lookup_value(&context, value_range),
-            SourceLookupFieldValueKind::Static => source_lookup_static_value(&context, value_range),
+        let values = match field.value_kind {
+            SourceLookupFieldValueKind::Dynamic => {
+                source_lookup_dynamic_field_values(&context, value_range)
+            }
+            SourceLookupFieldValueKind::Static => {
+                source_lookup_static_value(&context, value_range).map(|value| vec![value])
+            }
         };
-        let Some(value) = value else {
+        let Some(values) = values else {
             return Ok(None);
         };
         fields.push(HintFieldInfo {
             name: field.name.to_owned(),
-            values: vec![value],
+            values,
         });
     }
 
@@ -783,6 +787,15 @@ fn source_lookup_value_from_expression(
         positions: Vec::new(),
         payload: source_lookup_value_payload_from_expression(context, expression)?,
     })
+}
+
+fn source_lookup_dynamic_field_values(
+    context: &SourceLookupLowering<'_>,
+    range: (usize, usize),
+) -> Option<Vec<HintValueInfo>> {
+    let expression =
+        parse_source_lookup_expression(context.module, context.line, context.tokens, range)?;
+    source_assignment_expression_values(context, &expression)
 }
 
 fn source_assignment_expression_values(
