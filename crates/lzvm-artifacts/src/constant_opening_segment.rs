@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+use lzvm_field::{Felt, FieldError};
+
 pub const CONSTANT_OPENING_SEGMENT_ID: u32 = 10_003;
 
 const CONSTANT_OPENING_MAGIC: [u8; 4] = *b"cos0";
@@ -39,13 +41,41 @@ pub struct ConstantOpeningLevelSegment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConstantOpeningSegmentError {
     InvalidMagic,
-    UnsupportedVersion { version: u32 },
-    UnexpectedEof { needed: usize, available: usize },
-    TrailingBytes { trailing: usize },
+    UnsupportedVersion {
+        version: u32,
+    },
+    UnexpectedEof {
+        needed: usize,
+        available: usize,
+    },
+    TrailingBytes {
+        trailing: usize,
+    },
     EmptyUnits,
-    EmptyQueries { unit_index: u32 },
-    EmptyValues { unit_index: u32, row_index: u64 },
-    DuplicateUnitIndex { unit_index: u32 },
+    EmptyQueries {
+        unit_index: u32,
+    },
+    EmptyValues {
+        unit_index: u32,
+        row_index: u64,
+    },
+    DuplicateUnitIndex {
+        unit_index: u32,
+    },
+    ValueNonCanonical {
+        unit_index: u32,
+        row_index: u64,
+        value_index: usize,
+        source: FieldError,
+    },
+    SiblingRootNonCanonical {
+        unit_index: u32,
+        row_index: u64,
+        level_index: usize,
+        root_index: usize,
+        word_index: usize,
+        source: FieldError,
+    },
     LengthOverflow,
 }
 
@@ -77,12 +107,48 @@ impl fmt::Display for ConstantOpeningSegmentError {
             Self::DuplicateUnitIndex { unit_index } => {
                 write!(f, "duplicate constant opening unit index: {unit_index}")
             }
+            Self::ValueNonCanonical {
+                unit_index,
+                row_index,
+                value_index,
+                source,
+            } => write!(
+                f,
+                "constant opening unit {unit_index} row {row_index} value {value_index} is non-canonical: {source}"
+            ),
+            Self::SiblingRootNonCanonical {
+                unit_index,
+                row_index,
+                level_index,
+                root_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "constant opening unit {unit_index} row {row_index} sibling level {level_index} root {root_index} word {word_index} is non-canonical: {source}"
+            ),
             Self::LengthOverflow => write!(f, "constant opening segment length overflow"),
         }
     }
 }
 
-impl std::error::Error for ConstantOpeningSegmentError {}
+impl std::error::Error for ConstantOpeningSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ValueNonCanonical { source, .. }
+            | Self::SiblingRootNonCanonical { source, .. } => Some(source),
+            Self::InvalidMagic
+            | Self::UnsupportedVersion { .. }
+            | Self::UnexpectedEof { .. }
+            | Self::TrailingBytes { .. }
+            | Self::EmptyUnits
+            | Self::EmptyQueries { .. }
+            | Self::EmptyValues { .. }
+            | Self::DuplicateUnitIndex { .. }
+            | Self::LengthOverflow => None,
+        }
+    }
+}
 
 pub fn encode_constant_opening_segment(
     value: &ConstantOpeningSegment,
@@ -240,6 +306,32 @@ fn validate_constant_opening_segment(
                     unit_index: unit.unit_index,
                     row_index: query.row_index,
                 });
+            }
+            for (value_index, value) in query.values.iter().copied().enumerate() {
+                Felt::from_canonical(value).map_err(|source| {
+                    ConstantOpeningSegmentError::ValueNonCanonical {
+                        unit_index: unit.unit_index,
+                        row_index: query.row_index,
+                        value_index,
+                        source,
+                    }
+                })?;
+            }
+            for (level_index, level) in query.siblings.iter().enumerate() {
+                for (root_index, root) in level.siblings.iter().enumerate() {
+                    for (word_index, word) in root.iter().copied().enumerate() {
+                        Felt::from_canonical(word).map_err(|source| {
+                            ConstantOpeningSegmentError::SiblingRootNonCanonical {
+                                unit_index: unit.unit_index,
+                                row_index: query.row_index,
+                                level_index,
+                                root_index,
+                                word_index,
+                                source,
+                            }
+                        })?;
+                    }
+                }
             }
         }
     }

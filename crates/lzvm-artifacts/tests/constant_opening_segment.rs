@@ -4,6 +4,11 @@ use lzvm_artifacts::constant_opening_segment::{
     ConstantOpeningUnitSegment,
 };
 
+const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
+const FIRST_VALUE_OFFSET: usize = 12 + 4 + 4 + 8 + 4 + 4;
+const FIRST_SIBLING_OFFSET: usize = FIRST_VALUE_OFFSET + 2 * 8 + 4;
+const SECOND_SIBLING_OFFSET: usize = FIRST_SIBLING_OFFSET + 4 * 8 + 4;
+
 fn sample_segment() -> ConstantOpeningSegment {
     ConstantOpeningSegment {
         units: vec![ConstantOpeningUnitSegment {
@@ -48,6 +53,62 @@ fn encodes_and_parses_constant_opening_segments() {
 
     assert_eq!(&encoded[0..4], b"cos0");
     assert_eq!(parsed, sample_segment());
+}
+
+#[test]
+fn rejects_non_canonical_constant_opening_values() {
+    let mut segment = sample_segment();
+    segment.units[0].queries[0].values[1] = NON_CANONICAL_FIELD;
+
+    let err = encode_constant_opening_segment(&segment).expect_err("value should reject");
+
+    assert_eq!(
+        err.to_string(),
+        "constant opening unit 0 row 3 value 1 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_non_canonical_constant_opening_values_when_parsing() {
+    let mut encoded =
+        encode_constant_opening_segment(&sample_segment()).expect("opening segment should encode");
+    encoded[FIRST_VALUE_OFFSET..FIRST_VALUE_OFFSET + 8]
+        .copy_from_slice(&NON_CANONICAL_FIELD.to_le_bytes());
+
+    let err = parse_constant_opening_segment(&encoded).expect_err("value should reject");
+
+    assert_eq!(
+        err.to_string(),
+        "constant opening unit 0 row 3 value 0 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_non_canonical_constant_opening_sibling_roots() {
+    let mut segment = sample_segment();
+    segment.units[0].queries[0].siblings[1].siblings[0][2] = NON_CANONICAL_FIELD;
+
+    let err = encode_constant_opening_segment(&segment).expect_err("sibling root should reject");
+
+    assert_eq!(
+        err.to_string(),
+        "constant opening unit 0 row 3 sibling level 1 root 0 word 2 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_non_canonical_constant_opening_sibling_roots_when_parsing() {
+    let mut encoded =
+        encode_constant_opening_segment(&sample_segment()).expect("opening segment should encode");
+    encoded[SECOND_SIBLING_OFFSET + 16..SECOND_SIBLING_OFFSET + 24]
+        .copy_from_slice(&NON_CANONICAL_FIELD.to_le_bytes());
+
+    let err = parse_constant_opening_segment(&encoded).expect_err("sibling root should reject");
+
+    assert_eq!(
+        err.to_string(),
+        "constant opening unit 0 row 3 sibling level 1 root 0 word 2 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
 }
 
 #[test]
