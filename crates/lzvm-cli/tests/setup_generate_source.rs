@@ -1772,9 +1772,10 @@ fn generate_key_writes_source_air_group_values_to_metadata() {
     let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
         .expect("source global metadata should parse");
     assert_eq!(global.aggregation_types.len(), 1);
-    assert_eq!(global.aggregation_types[0].len(), 2);
+    assert_eq!(global.aggregation_types[0].len(), 3);
     assert_eq!(global.aggregation_types[0][0].aggregation_type, 0);
     assert_eq!(global.aggregation_types[0][1].aggregation_type, 1);
+    assert_eq!(global.aggregation_types[0][2].aggregation_type, 1);
 
     let layout = read_key_directory_layout(&dir).expect("layout should derive");
     let setup_path = layout.units[0]

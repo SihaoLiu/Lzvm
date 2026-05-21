@@ -847,17 +847,15 @@ fn source_push_air_group_values(
         if !seen.insert(name.clone()) {
             return unsupported("duplicate source air group value name");
         }
+        let lengths =
+            source_item_lengths(program, item, "source air group value", declaration_values)?;
+        let dimension = source_column_dimension(&lengths, "source air group value")?;
         values.push(StageValue {
             name,
             stage: declaration.stage,
-            lengths: source_item_lengths(
-                program,
-                item,
-                "source air group value",
-                declaration_values,
-            )?,
+            lengths,
         });
-        aggregation_types.push(AggregationType { aggregation_type });
+        aggregation_types.extend((0..dimension).map(|_| AggregationType { aggregation_type }));
     }
     Ok(())
 }
