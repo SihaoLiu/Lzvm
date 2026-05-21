@@ -1,5 +1,6 @@
 use crate::setup_info::UnitSetupInfo;
 use crate::verification_key::VerificationKeyRoot;
+use lzvm_field::{Felt, FieldError};
 use sha2::{Digest, Sha256};
 use std::fmt;
 use std::fs::File;
@@ -36,11 +37,24 @@ pub struct ConstantTreeFileSummary {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConstantTreeError {
-    InvalidArity { arity: u32 },
-    DomainTooLarge { n_bits_ext: u32 },
+    InvalidArity {
+        arity: u32,
+    },
+    DomainTooLarge {
+        n_bits_ext: u32,
+    },
     LengthOverflow,
-    InvalidByteLength { expected: usize, found: usize },
-    Io { message: String },
+    InvalidByteLength {
+        expected: usize,
+        found: usize,
+    },
+    RootNonCanonical {
+        word_index: usize,
+        source: FieldError,
+    },
+    Io {
+        message: String,
+    },
 }
 
 impl fmt::Display for ConstantTreeError {
@@ -58,12 +72,27 @@ impl fmt::Display for ConstantTreeError {
                 f,
                 "invalid constant-tree byte length: expected {expected}, found {found}"
             ),
+            Self::RootNonCanonical { word_index, source } => write!(
+                f,
+                "constant-tree root word {word_index} is non-canonical: {source}"
+            ),
             Self::Io { message } => write!(f, "constant-tree io error: {message}"),
         }
     }
 }
 
-impl std::error::Error for ConstantTreeError {}
+impl std::error::Error for ConstantTreeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::RootNonCanonical { source, .. } => Some(source),
+            Self::InvalidArity { .. }
+            | Self::DomainTooLarge { .. }
+            | Self::LengthOverflow
+            | Self::InvalidByteLength { .. }
+            | Self::Io { .. } => None,
+        }
+    }
+}
 
 impl ConstantTree {
     pub fn root(&self) -> Result<VerificationKeyRoot, ConstantTreeError> {
@@ -73,13 +102,7 @@ impl ConstantTree {
         }
 
         let root_start = self.bytes.len() - root_bytes;
-        let mut values = Vec::with_capacity(HASH_WORDS as usize);
-        for chunk in self.bytes[root_start..].chunks_exact(WORD_BYTES as usize) {
-            values.push(u64::from_le_bytes(
-                chunk.try_into().expect("slice length checked"),
-            ));
-        }
-        Ok(VerificationKeyRoot::FieldElements(values))
+        parse_root_bytes(&self.bytes[root_start..])
     }
 }
 
@@ -208,10 +231,17 @@ fn read_constant_tree_root_from_file(
         .map_err(|error| ConstantTreeError::Io {
             message: error.to_string(),
         })?;
-    let values = bytes
-        .chunks_exact(WORD_BYTES as usize)
-        .map(|chunk| u64::from_le_bytes(chunk.try_into().expect("slice length checked")))
-        .collect::<Vec<_>>();
+    parse_root_bytes(&bytes)
+}
+
+fn parse_root_bytes(bytes: &[u8]) -> Result<VerificationKeyRoot, ConstantTreeError> {
+    let mut values = Vec::with_capacity(HASH_WORDS as usize);
+    for (word_index, chunk) in bytes.chunks_exact(WORD_BYTES as usize).enumerate() {
+        let value = u64::from_le_bytes(chunk.try_into().expect("slice length checked"));
+        Felt::from_canonical(value)
+            .map_err(|source| ConstantTreeError::RootNonCanonical { word_index, source })?;
+        values.push(value);
+    }
     Ok(VerificationKeyRoot::FieldElements(values))
 }
 
