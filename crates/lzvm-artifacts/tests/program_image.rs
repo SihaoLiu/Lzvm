@@ -9,6 +9,10 @@ use lzvm_artifacts::program_image::{
 };
 use sha2::{Digest, Sha256};
 
+const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
+const FILE_PAYLOAD_OFFSET: usize = 24;
+const TREE_ROOT_OFFSET: usize = FILE_PAYLOAD_OFFSET + 32 * 3;
+
 fn hash(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
 }
@@ -57,6 +61,53 @@ fn encodes_and_parses_program_image_commitment_cache() {
 
     assert_eq!(&encoded[0..4], b"pimg");
     assert_eq!(parsed, sample_cache());
+}
+
+#[test]
+fn rejects_non_canonical_program_image_commitment_cache_tree_roots() {
+    let mut cache = sample_cache();
+    cache.tree_root[1] = NON_CANONICAL_FIELD;
+    let error =
+        encode_program_image_commitment_cache(&cache).expect_err("cache root should be canonical");
+
+    assert_eq!(
+        error.to_string(),
+        "program-image commitment cache tree root word 1 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+
+    let error = build_program_image_commitment_cache(ProgramImageCommitmentInputs {
+        program_bytes: b"packed-program",
+        source_image_bytes: b"source-image",
+        constraint_system_digest: [0x44; 32],
+        tree_root: [11, NON_CANONICAL_FIELD, 13, 14],
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cuda,
+    })
+    .expect_err("cache root should be canonical");
+
+    assert_eq!(
+        error.to_string(),
+        "program-image commitment cache tree root word 1 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_non_canonical_program_image_commitment_cache_tree_roots_when_parsing() {
+    let mut encoded =
+        encode_program_image_commitment_cache(&sample_cache()).expect("cache should encode");
+    encoded[TREE_ROOT_OFFSET + 16..TREE_ROOT_OFFSET + 24]
+        .copy_from_slice(&NON_CANONICAL_FIELD.to_le_bytes());
+
+    let error =
+        parse_program_image_commitment_cache(&encoded).expect_err("cache root should be canonical");
+
+    assert_eq!(
+        error.to_string(),
+        "program-image commitment cache tree root word 2 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
 }
 
 #[test]

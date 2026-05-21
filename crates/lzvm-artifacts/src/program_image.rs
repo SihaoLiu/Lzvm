@@ -1,6 +1,7 @@
 use std::fmt;
 use std::path::Path;
 
+use lzvm_field::{Felt, FieldError};
 use sha2::{Digest, Sha256};
 
 use crate::sectioned::{
@@ -67,18 +68,40 @@ pub struct ProgramImageCommitmentInputs<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProgramImageCommitmentCacheError {
     Sectioned(SectionedError),
-    UnsupportedVersion { found: u32, expected: u32 },
-    InvalidSectionCount { found: u32 },
-    InvalidSectionId { found: u32 },
-    InvalidPayloadLength { expected: usize, found: usize },
+    UnsupportedVersion {
+        found: u32,
+        expected: u32,
+    },
+    InvalidSectionCount {
+        found: u32,
+    },
+    InvalidSectionId {
+        found: u32,
+    },
+    InvalidPayloadLength {
+        expected: usize,
+        found: usize,
+    },
     EmptyProgram,
     EmptySourceImage,
     EmptyTraceRows,
     EmptyTraceColumns,
-    InvalidBlowupFactor { value: u32 },
-    InvalidMerkleTreeArity { value: u32 },
-    UnsupportedGpuMode { value: u32 },
-    Io { message: String },
+    InvalidBlowupFactor {
+        value: u32,
+    },
+    InvalidMerkleTreeArity {
+        value: u32,
+    },
+    TreeRootNonCanonical {
+        word_index: usize,
+        source: FieldError,
+    },
+    UnsupportedGpuMode {
+        value: u32,
+    },
+    Io {
+        message: String,
+    },
 }
 
 impl fmt::Display for ProgramImageCommitmentCacheError {
@@ -128,6 +151,10 @@ impl fmt::Display for ProgramImageCommitmentCacheError {
                 f,
                 "invalid program-image commitment cache Merkle tree arity {value}"
             ),
+            Self::TreeRootNonCanonical { word_index, source } => write!(
+                f,
+                "program-image commitment cache tree root word {word_index} is non-canonical: {source}"
+            ),
             Self::UnsupportedGpuMode { value } => write!(
                 f,
                 "unsupported program-image commitment cache GPU mode {value}"
@@ -139,7 +166,26 @@ impl fmt::Display for ProgramImageCommitmentCacheError {
     }
 }
 
-impl std::error::Error for ProgramImageCommitmentCacheError {}
+impl std::error::Error for ProgramImageCommitmentCacheError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Sectioned(error) => Some(error),
+            Self::TreeRootNonCanonical { source, .. } => Some(source),
+            Self::UnsupportedVersion { .. }
+            | Self::InvalidSectionCount { .. }
+            | Self::InvalidSectionId { .. }
+            | Self::InvalidPayloadLength { .. }
+            | Self::EmptyProgram
+            | Self::EmptySourceImage
+            | Self::EmptyTraceRows
+            | Self::EmptyTraceColumns
+            | Self::InvalidBlowupFactor { .. }
+            | Self::InvalidMerkleTreeArity { .. }
+            | Self::UnsupportedGpuMode { .. }
+            | Self::Io { .. } => None,
+        }
+    }
+}
 
 impl From<SectionedError> for ProgramImageCommitmentCacheError {
     fn from(error: SectionedError) -> Self {
@@ -240,6 +286,11 @@ pub(crate) fn validate_program_image_commitment_cache(
             value: value.merkle_tree_arity,
         });
     }
+    for (word_index, word) in value.tree_root.iter().copied().enumerate() {
+        Felt::from_canonical(word).map_err(|source| {
+            ProgramImageCommitmentCacheError::TreeRootNonCanonical { word_index, source }
+        })?;
+    }
     Ok(())
 }
 
@@ -261,7 +312,7 @@ pub(crate) fn parse_program_image_commitment_cache_payload(
     for value in &mut tree_root {
         *value = read_u64(bytes, &mut offset);
     }
-    Ok(ProgramImageCommitmentCache {
+    let out = ProgramImageCommitmentCache {
         program_digest,
         source_image_digest,
         constraint_system_digest,
@@ -271,7 +322,9 @@ pub(crate) fn parse_program_image_commitment_cache_payload(
         blowup_factor: read_u32(bytes, &mut offset),
         merkle_tree_arity: read_u32(bytes, &mut offset),
         gpu_mode: ProgramImageGpuMode::from_u32(read_u32(bytes, &mut offset))?,
-    })
+    };
+    validate_program_image_commitment_cache(&out)?;
+    Ok(out)
 }
 
 pub(crate) fn encode_program_image_commitment_cache_payload(

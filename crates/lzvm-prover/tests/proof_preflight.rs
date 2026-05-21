@@ -290,7 +290,7 @@ fn rejects_non_canonical_program_image_cache_tree_roots() {
 
     assert_eq!(
         error.to_string(),
-        "program image cache tree root word 0 is non-canonical: non-canonical field element: 18446744069414584321"
+        "invalid program image cache segment payload: program-image commitment cache tree root word 0 is non-canonical: non-canonical field element: 18446744069414584321"
     );
 }
 

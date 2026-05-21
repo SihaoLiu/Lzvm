@@ -35,6 +35,8 @@ use lzvm_prover::{
     ProveRunPlanError, ProveRunRequest, ProveScheduleError,
 };
 
+const PROGRAM_IMAGE_FILE_TREE_ROOT_OFFSET: usize = 24 + 32 * 3;
+
 fn sample_setup(n_bits: u32, n_bits_ext: u32, query_count: u32) -> UnitSetupInfo {
     let mut section_widths = BTreeMap::new();
     section_widths.insert("cm1".to_owned(), 2);
@@ -311,6 +313,13 @@ fn write_program_image_cache_with_root(
         encode_program_image_commitment_cache(&cache).expect("cache should encode"),
     )
     .expect("cache should be written");
+}
+
+fn overwrite_program_image_cache_root_word(path: &Path, word_index: usize, value: u64) {
+    let mut bytes = fs::read(path).expect("cache should be readable");
+    let offset = PROGRAM_IMAGE_FILE_TREE_ROOT_OFFSET + word_index * 8;
+    bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    fs::write(path, bytes).expect("cache should be overwritten");
 }
 
 fn sample_public_values(setup_hash: [u8; 32]) -> PublicValues {
@@ -951,7 +960,8 @@ fn rejects_prove_execution_plan_with_non_canonical_program_image_cache_root() {
         64,
     )]);
     let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
-    write_program_image_cache_with_root(&cache_path, guest_digest, setup_hash, [MODULUS, 4, 5, 6]);
+    write_program_image_cache(&cache_path, guest_digest, setup_hash);
+    overwrite_program_image_cache_root_word(&cache_path, 0, MODULUS);
     write_public_inputs(&public_inputs, &catalog);
     let request = ProveRunRequest {
         pass: ProvePassRequest::Full(ProvePartitionPlan::single()),

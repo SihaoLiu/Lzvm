@@ -5,6 +5,10 @@ use lzvm_artifacts::program_image_segment::{
     PROGRAM_IMAGE_CACHE_SEGMENT_ID,
 };
 
+const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
+const SEGMENT_PAYLOAD_OFFSET: usize = 8;
+const TREE_ROOT_OFFSET: usize = SEGMENT_PAYLOAD_OFFSET + 32 * 3;
+
 fn sample_cache() -> ProgramImageCommitmentCache {
     ProgramImageCommitmentCache {
         program_digest: [0x11; 32],
@@ -28,6 +32,22 @@ fn encodes_and_parses_program_image_cache_segments() {
     assert_eq!(PROGRAM_IMAGE_CACHE_SEGMENT_ID, 10_010);
     assert_eq!(&encoded[..4], b"pic0");
     assert_eq!(parsed, sample_cache());
+}
+
+#[test]
+fn rejects_non_canonical_program_image_cache_segment_tree_roots() {
+    let mut encoded =
+        encode_program_image_cache_segment(&sample_cache()).expect("segment should encode");
+    encoded[TREE_ROOT_OFFSET..TREE_ROOT_OFFSET + 8]
+        .copy_from_slice(&NON_CANONICAL_FIELD.to_le_bytes());
+
+    let error =
+        parse_program_image_cache_segment(&encoded).expect_err("segment root should be canonical");
+
+    assert_eq!(
+        error.to_string(),
+        "invalid program image cache segment payload: program-image commitment cache tree root word 0 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
 }
 
 #[test]

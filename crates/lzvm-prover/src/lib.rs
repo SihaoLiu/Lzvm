@@ -1014,11 +1014,18 @@ fn load_program_image_cache(
         |path| ProveExecutionPlanError::MissingProgramImageCache { path },
         |path| ProveExecutionPlanError::ProgramImageCacheIsNotFile { path },
     )?;
-    let cache = read_program_image_commitment_cache_file(path).map_err(|source| {
-        ProveExecutionPlanError::InvalidProgramImageCache {
+    let cache = read_program_image_commitment_cache_file(path).map_err(|source| match source {
+        ProgramImageCommitmentCacheError::TreeRootNonCanonical { word_index, source } => {
+            ProveExecutionPlanError::ProgramImageCacheTreeRootNonCanonical {
+                path: path.to_path_buf(),
+                word_index,
+                source,
+            }
+        }
+        source => ProveExecutionPlanError::InvalidProgramImageCache {
             path: path.to_path_buf(),
             source,
-        }
+        },
     })?;
     validate_program_image_cache_tree_root(path, &cache)?;
     if cache.source_image_digest != guest_image_info.digest {
