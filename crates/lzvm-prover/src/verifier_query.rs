@@ -1,12 +1,12 @@
 use std::fmt;
 
 use lzvm_artifacts::constant_opening_segment::ConstantOpeningUnitSegment;
-use lzvm_artifacts::global_info::GlobalInfo;
+use lzvm_artifacts::global_info::{GlobalInfo, NamedStageValue};
 use lzvm_artifacts::pcs_evaluation_segment::PcsEvaluationUnitSegment;
 use lzvm_artifacts::pcs_fri_segment::PcsFriOpeningUnitSegment;
 use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
 use lzvm_artifacts::proof::ProofSegment;
-use lzvm_artifacts::verifier_info::VerifierCode;
+use lzvm_artifacts::verifier_info::{VerifierCode, VerifierOperand};
 use lzvm_artifacts::witness_opening_segment::WitnessOpeningUnitSegment;
 use lzvm_field::{Ext3, Felt, FieldError, SHIFT};
 
@@ -141,6 +141,10 @@ pub enum VerifierQueryEvalError {
         opening_index: usize,
     },
     ZeroBoundaryDenominator,
+    ProofValueIndexOutOfRange {
+        index: usize,
+        len: usize,
+    },
     LengthOverflow,
     Eval(VerifierEvalError),
 }
@@ -262,6 +266,10 @@ impl fmt::Display for VerifierQueryEvalError {
             Self::ZeroBoundaryDenominator => {
                 write!(f, "verifier query boundary denominator is zero")
             }
+            Self::ProofValueIndexOutOfRange { index, len } => write!(
+                f,
+                "verifier query proof value index {index} is outside proof value count {len}"
+            ),
             Self::LengthOverflow => write!(f, "verifier query input length overflow"),
             Self::Eval(error) => write!(f, "verifier query evaluation failed: {error}"),
         }
@@ -669,6 +677,12 @@ pub fn validate_verifier_query_outputs_from_segments(
             .iter()
             .find(|unit| unit.unit_index == query_unit.unit_index)
             .ok_or(VerifierFriQueryOutputSegmentsError::UnitMismatch { unit_index })?;
+        let code = verifier_code_with_proof_value_offsets(code, request.global_info).map_err(
+            |source| VerifierFriQueryOutputSegmentsError::Validation {
+                unit_index,
+                source: VerifierFriQueryOutputValidationError::Query(source),
+            },
+        )?;
         let valid = validate_verifier_query_outputs_against_fri_opening(
             unit,
             VerifierFriQueryOutputValidationRequest {
@@ -679,7 +693,7 @@ pub fn validate_verifier_query_outputs_from_segments(
                 constant_unit,
                 witness_unit,
                 evaluations: &evaluation_unit,
-                code,
+                code: &code,
                 publics: request.public_values,
                 fri: opening_unit,
             },
@@ -691,6 +705,53 @@ pub fn validate_verifier_query_outputs_from_segments(
     }
 
     Ok(())
+}
+
+fn verifier_code_with_proof_value_offsets(
+    code: &VerifierCode,
+    global_info: &GlobalInfo,
+) -> Result<VerifierCode, VerifierQueryEvalError> {
+    let offsets = proof_value_logical_offsets(global_info)?;
+    let mut lowered = code.clone();
+    for operation in &mut lowered.operations {
+        for source in &mut operation.sources {
+            let VerifierOperand::ProofValue { id, .. } = source else {
+                continue;
+            };
+            let index = usize::try_from(*id).map_err(|_| VerifierQueryEvalError::LengthOverflow)?;
+            let offset = offsets.get(index).copied().ok_or(
+                VerifierQueryEvalError::ProofValueIndexOutOfRange {
+                    index,
+                    len: offsets.len(),
+                },
+            )?;
+            *id = offset;
+        }
+    }
+    Ok(lowered)
+}
+
+fn proof_value_logical_offsets(
+    global_info: &GlobalInfo,
+) -> Result<Vec<u32>, VerifierQueryEvalError> {
+    let mut offsets = Vec::with_capacity(global_info.proof_values_map.len());
+    let mut offset = 0_u32;
+    for entry in &global_info.proof_values_map {
+        offsets.push(offset);
+        offset = offset
+            .checked_add(proof_value_dimension(entry)?)
+            .ok_or(VerifierQueryEvalError::LengthOverflow)?;
+    }
+    Ok(offsets)
+}
+
+fn proof_value_dimension(entry: &NamedStageValue) -> Result<u32, VerifierQueryEvalError> {
+    entry.lengths.iter().try_fold(1_u32, |dimension, length| {
+        let length = u32::try_from(*length).map_err(|_| VerifierQueryEvalError::LengthOverflow)?;
+        dimension
+            .checked_mul(length)
+            .ok_or(VerifierQueryEvalError::LengthOverflow)
+    })
 }
 
 impl VerifierQueryEvalInput {

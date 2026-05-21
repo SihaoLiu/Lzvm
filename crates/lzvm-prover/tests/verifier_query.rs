@@ -2,7 +2,7 @@ use lzvm_artifacts::constant_opening_segment::{
     encode_constant_opening_segment, parse_constant_opening_segment, ConstantOpeningQuerySegment,
     ConstantOpeningSegment, ConstantOpeningUnitSegment, CONSTANT_OPENING_SEGMENT_ID,
 };
-use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
+use lzvm_artifacts::global_info::{CurveKind, GlobalInfo, NamedStageValue};
 use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_evaluation_segment::{
     encode_pcs_evaluation_segment, PcsEvaluationSegment, PcsEvaluationUnitSegment,
@@ -12,6 +12,9 @@ use lzvm_artifacts::pcs_fri_segment::{
     PcsFriOpeningLayerSegment, PcsFriOpeningQuerySegment, PcsFriOpeningUnitSegment,
 };
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
+use lzvm_artifacts::pcs_proof_values_segment::{
+    encode_pcs_proof_values_segment, PcsProofValuesSegment, PCS_PROOF_VALUES_SEGMENT_ID,
+};
 use lzvm_artifacts::pcs_query_segment::PcsQueryPlanUnit;
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_artifacts::setup_info::CommitmentColumn;
@@ -595,6 +598,41 @@ fn validates_verifier_query_outputs_from_proof_segments() {
 }
 
 #[test]
+fn validates_verifier_query_outputs_with_array_proof_value_offsets() {
+    let (unit, mut code, query_unit, mut fri, challenges, mut segments) =
+        verifier_query_output_segments_fixture(false);
+    code.temporary_count = 1;
+    code.operations = vec![operation(
+        VerifierOperationKind::Copy,
+        destination(0),
+        vec![VerifierOperand::proof_value(1, 3)],
+    )];
+    let expected = e([70, 71, 72]);
+    fri.layers[0].queries[0].values[0] = expected.to_u64s();
+    fri.layers[0].queries[1].values[1] = expected.to_u64s();
+    segments.push(ProofSegment {
+        id: PCS_PROOF_VALUES_SEGMENT_ID,
+        data: encode_pcs_proof_values_segment(&PcsProofValuesSegment {
+            values: vec![[10, 11, 12], [20, 21, 22], expected.to_u64s()],
+        })
+        .expect("proof values segment should encode"),
+    });
+    let code_refs = [&code];
+
+    validate_verifier_query_outputs_from_segments(VerifierFriQueryOutputSegmentsRequest {
+        units: &[unit],
+        verifier_codes: &code_refs,
+        global_info: &global_info_with_array_proof_values(),
+        public_values: &[],
+        query_units: std::slice::from_ref(&query_unit),
+        opening_units: std::slice::from_ref(&fri),
+        transcript_challenges: std::slice::from_ref(&challenges),
+        segments: &segments,
+    })
+    .expect("query outputs should validate");
+}
+
+#[test]
 fn rejects_verifier_query_output_mismatches_from_proof_segments() {
     let (unit, code, query_unit, fri, challenges, segments) =
         verifier_query_output_segments_fixture(true);
@@ -871,4 +909,24 @@ fn global_info_without_proof_values() -> GlobalInfo {
         publics_map: Vec::new(),
         transcript_arity: 4,
     }
+}
+
+fn global_info_with_array_proof_values() -> GlobalInfo {
+    let mut global = global_info_without_proof_values();
+    global.num_proof_values = vec![0, 2];
+    global.proof_values_map = vec![
+        NamedStageValue {
+            name: "expected".to_owned(),
+            stage: 2,
+            id: None,
+            lengths: vec![2],
+        },
+        NamedStageValue {
+            name: "actual".to_owned(),
+            stage: 2,
+            id: None,
+            lengths: Vec::new(),
+        },
+    ];
+    global
 }
