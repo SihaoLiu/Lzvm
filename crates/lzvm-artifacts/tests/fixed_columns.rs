@@ -8,7 +8,12 @@ use lzvm_artifacts::fixed::{
     read_raw_fixed_column_layout_file, read_raw_fixed_row_file, write_raw_fixed_columns_file,
     FixedColumn, FixedColumnError, FixedColumns,
 };
+use lzvm_field::FieldError;
 mod fixtures;
+
+const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
+const SAMPLE_FILE_MAIN_VALUE_ROW_1_OFFSET: usize = 24 + 88 + 8;
+const SAMPLE_RAW_MAIN_RIGHT_ROW_2_OFFSET: usize = (2 * 2 + 1) * 8;
 
 fn push_u32(out: &mut Vec<u8>, value: u32) {
     out.extend_from_slice(&value.to_le_bytes());
@@ -189,6 +194,41 @@ fn encodes_fixed_columns_to_the_canonical_binary_form() {
 }
 
 #[test]
+fn rejects_non_canonical_fixed_column_values() {
+    let mut parsed = parse_fixed_columns(&sample_file()).expect("fixture should parse");
+    parsed.columns[1].values[1] = NON_CANONICAL_FIELD;
+
+    assert!(matches!(
+        encode_fixed_columns(&parsed),
+        Err(FixedColumnError::ValueNonCanonical {
+            column,
+            row: 1,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        }) if column == "main.value"
+    ));
+}
+
+#[test]
+fn rejects_non_canonical_fixed_column_values_when_parsing() {
+    let mut bytes = sample_file();
+    bytes[SAMPLE_FILE_MAIN_VALUE_ROW_1_OFFSET..SAMPLE_FILE_MAIN_VALUE_ROW_1_OFFSET + 8]
+        .copy_from_slice(&NON_CANONICAL_FIELD.to_le_bytes());
+
+    assert!(matches!(
+        parse_fixed_columns(&bytes),
+        Err(FixedColumnError::ValueNonCanonical {
+            column,
+            row: 1,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        }) if column == "main.value"
+    ));
+}
+
+#[test]
 fn parses_raw_fixed_columns_using_setup_column_map() {
     let setup = fixtures::sample_fixed_columns_setup_info();
     let parsed = parse_raw_fixed_columns(&sample_raw_file(), &setup, "group-a", "unit-a")
@@ -217,6 +257,43 @@ fn encodes_raw_fixed_columns_using_setup_column_map() {
         .expect("encoded fixture should parse");
     assert_eq!(parsed.columns[0].values, [1, 2, 3, 4]);
     assert_eq!(parsed.columns[1].values, [10, 20, 30, 40]);
+}
+
+#[test]
+fn rejects_non_canonical_raw_fixed_column_values() {
+    let setup = fixtures::sample_fixed_columns_setup_info();
+    let mut columns = sample_raw_columns();
+    columns.columns[0].values[2] = NON_CANONICAL_FIELD;
+
+    assert!(matches!(
+        encode_raw_fixed_columns(&columns, &setup),
+        Err(FixedColumnError::ValueNonCanonical {
+            column,
+            row: 2,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        }) if column == "main.right"
+    ));
+}
+
+#[test]
+fn rejects_non_canonical_raw_fixed_column_values_when_parsing() {
+    let setup = fixtures::sample_fixed_columns_setup_info();
+    let mut bytes = sample_raw_file();
+    bytes[SAMPLE_RAW_MAIN_RIGHT_ROW_2_OFFSET..SAMPLE_RAW_MAIN_RIGHT_ROW_2_OFFSET + 8]
+        .copy_from_slice(&NON_CANONICAL_FIELD.to_le_bytes());
+
+    assert!(matches!(
+        parse_raw_fixed_columns(&bytes, &setup, "group-a", "unit-a"),
+        Err(FixedColumnError::ValueNonCanonical {
+            column,
+            row: 2,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        }) if column == "main.right"
+    ));
 }
 
 #[test]

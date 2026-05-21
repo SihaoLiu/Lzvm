@@ -1,5 +1,5 @@
-use lzvm_artifacts::fixed::{FixedColumn, FixedColumns};
-use lzvm_field::{Felt, FieldError, MODULUS, SHIFT};
+use lzvm_artifacts::fixed::{FixedColumn, FixedColumnError, FixedColumns};
+use lzvm_field::{Felt, MODULUS, SHIFT};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -111,7 +111,11 @@ fn rejects_non_canonical_fixed_values_before_extension() {
 
     assert!(matches!(
         extend_fixed_columns_for_constant_tree(&columns, &setup),
-        Err(SetupError::Field(FieldError::NonCanonical { value })) if value == MODULUS
+        Err(SetupError::FixedColumns(FixedColumnError::ValueNonCanonical {
+            column,
+            row: 0,
+            source: lzvm_field::FieldError::NonCanonical { value: MODULUS },
+        })) if column == "main.left"
     ));
 }
 
@@ -156,6 +160,11 @@ fn preserves_existing_extended_leaves_when_generation_fails() {
     let stable = fs::read(&path).expect("stable output should still exist");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
-    assert!(matches!(result, Err(SetupError::Field(_))));
+    assert!(matches!(
+        result,
+        Err(SetupError::FixedColumns(
+            FixedColumnError::ValueNonCanonical { .. }
+        ))
+    ));
     assert_eq!(stable, b"stable-output");
 }

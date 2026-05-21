@@ -4,6 +4,8 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
+use lzvm_field::{Felt, FieldError};
+
 use crate::sectioned::{
     encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
@@ -83,6 +85,11 @@ pub enum FixedColumnError {
         column: String,
         expected: u64,
         found: usize,
+    },
+    ValueNonCanonical {
+        column: String,
+        row: u64,
+        source: FieldError,
     },
     RawDomainTooLarge {
         n_bits: u32,
@@ -166,6 +173,14 @@ impl fmt::Display for FixedColumnError {
                 f,
                 "fixed-column value count mismatch for {column}: expected {expected}, found {found}"
             ),
+            Self::ValueNonCanonical {
+                column,
+                row,
+                source,
+            } => write!(
+                f,
+                "fixed-column value {column} row {row} is non-canonical: {source}"
+            ),
             Self::RawDomainTooLarge { n_bits } => {
                 write!(f, "raw fixed-column domain is too large: {n_bits}")
             }
@@ -207,7 +222,34 @@ impl fmt::Display for FixedColumnError {
     }
 }
 
-impl std::error::Error for FixedColumnError {}
+impl std::error::Error for FixedColumnError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ValueNonCanonical { source, .. } => Some(source),
+            Self::InvalidMagic
+            | Self::UnsupportedVersion { .. }
+            | Self::InvalidSectionCount { .. }
+            | Self::InvalidSectionId { .. }
+            | Self::InvalidSectionSize { .. }
+            | Self::UnexpectedTrailingBytes { .. }
+            | Self::UnexpectedEof { .. }
+            | Self::InvalidUtf8
+            | Self::MissingStringTerminator { .. }
+            | Self::LengthOverflow
+            | Self::StringContainsNul { .. }
+            | Self::ColumnValueCountMismatch { .. }
+            | Self::RawDomainTooLarge { .. }
+            | Self::InvalidRawByteLength { .. }
+            | Self::RawColumnIndexOutOfBounds { .. }
+            | Self::MissingRawColumn { .. }
+            | Self::UnexpectedRawColumn { .. }
+            | Self::DuplicateRawColumn { .. }
+            | Self::RawColumnDimensionMismatch { .. }
+            | Self::RawRowIndexOutOfBounds { .. }
+            | Self::Io { .. } => None,
+        }
+    }
+}
 
 impl From<SectionedError> for FixedColumnError {
     fn from(value: SectionedError) -> Self {
@@ -387,6 +429,7 @@ pub fn encode_raw_fixed_columns(
         }
 
         for (row, value) in column.values.iter().enumerate() {
+            validate_fixed_column_value(&spec.name, row as u64, *value)?;
             let offset = row_byte_offset(row as u64, layout.column_count, spec.index)?;
             let offset = usize::try_from(offset).map_err(|_| FixedColumnError::LengthOverflow)?;
             let end = offset
@@ -426,8 +469,9 @@ fn encode_fixed_columns_section(value: &FixedColumns) -> Result<Vec<u8>, FixedCo
         for dimension in &column.dimensions {
             write_u32(&mut section, *dimension);
         }
-        for entry in &column.values {
-            write_u64(&mut section, *entry);
+        for (row, entry) in column.values.iter().copied().enumerate() {
+            validate_fixed_column_value(&column.name, row as u64, entry)?;
+            write_u64(&mut section, entry);
         }
     }
 
@@ -489,9 +533,9 @@ pub fn parse_raw_fixed_columns(
                 .checked_mul(FIELD_WORD_BYTES_USIZE)
                 .ok_or(FixedColumnError::LengthOverflow)?;
             let word = &bytes[byte_index..byte_index + FIELD_WORD_BYTES_USIZE];
-            values.push(u64::from_le_bytes(
-                word.try_into().expect("slice length checked"),
-            ));
+            let value = u64::from_le_bytes(word.try_into().expect("slice length checked"));
+            validate_fixed_column_value(&spec.name, row as u64, value)?;
+            values.push(value);
         }
         columns.push(FixedColumn {
             name: spec.name,
@@ -648,8 +692,10 @@ fn parse_fixed_columns_section(bytes: &[u8]) -> Result<FixedColumns, FixedColumn
         }
 
         let mut values = Vec::with_capacity(rows);
-        for _ in 0..rows {
-            values.push(reader.read_u64()?);
+        for row in 0..rows {
+            let value = reader.read_u64()?;
+            validate_fixed_column_value(&name, row as u64, value)?;
+            values.push(value);
         }
 
         columns.push(FixedColumn {
@@ -748,6 +794,16 @@ fn validate_raw_fixed_file_size(
         });
     }
     Ok(())
+}
+
+fn validate_fixed_column_value(column: &str, row: u64, value: u64) -> Result<(), FixedColumnError> {
+    Felt::from_canonical(value)
+        .map(|_| ())
+        .map_err(|source| FixedColumnError::ValueNonCanonical {
+            column: column.to_owned(),
+            row,
+            source,
+        })
 }
 
 fn row_byte_offset(row: u64, width: u32, column: u32) -> Result<u64, FixedColumnError> {
