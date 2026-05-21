@@ -627,12 +627,24 @@ fn build_program_image_cache_proof_segment(
     let Some(cache) = cache else {
         return Ok(None);
     };
+    validate_program_image_cache_tree_root(cache)?;
     let data = encode_program_image_cache_segment(cache)
         .map_err(|error| format!("build program image cache segment failed: {error}"))?;
     Ok(Some(ProofSegment {
         id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
         data,
     }))
+}
+
+fn validate_program_image_cache_tree_root(
+    cache: &ProgramImageCommitmentCache,
+) -> Result<(), String> {
+    for (word_index, word) in cache.tree_root.iter().copied().enumerate() {
+        Felt::from_canonical(word).map_err(|source| {
+            format!("program image cache tree root word {word_index} is non-canonical: {source}")
+        })?;
+    }
+    Ok(())
 }
 
 fn build_eth_block_input_proof_segment(
@@ -1141,6 +1153,8 @@ mod tests {
     use super::*;
     use lzvm_artifacts::eth_block_input::build_eth_block_input;
     use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
+    use lzvm_artifacts::program_image::ProgramImageGpuMode;
+    use lzvm_field::MODULUS;
 
     #[test]
     fn rejects_eth_block_public_values_without_bound_input() {
@@ -1152,6 +1166,29 @@ mod tests {
             .expect_err("ETH block public values should require a bound input");
 
         assert_eq!(error, "missing ETH block input proof segment");
+    }
+
+    #[test]
+    fn rejects_non_canonical_program_image_cache_tree_root_for_binding_segment() {
+        let cache = ProgramImageCommitmentCache {
+            program_digest: [0x11; 32],
+            source_image_digest: [0x22; 32],
+            constraint_system_digest: [0x33; 32],
+            tree_root: [MODULUS, 11, 12, 13],
+            trace_row_count: 1024,
+            trace_column_count: 17,
+            blowup_factor: 8,
+            merkle_tree_arity: 4,
+            gpu_mode: ProgramImageGpuMode::Cuda,
+        };
+
+        let error = build_program_image_cache_proof_segment(Some(&cache))
+            .expect_err("program image cache root should be canonical");
+
+        assert_eq!(
+            error,
+            "program image cache tree root word 0 is non-canonical: non-canonical field element: 18446744069414584321"
+        );
     }
 
     fn sample_block_rlp() -> Vec<u8> {
