@@ -513,6 +513,101 @@ fn identifies_regular_hint_runtime_inputs() {
 }
 
 #[test]
+fn resolves_regular_hint_unit_value_offsets_with_array_lengths() {
+    let program = HintProgram {
+        hints: vec![Hint {
+            name: "hint-a".to_owned(),
+            fields: vec![HintField {
+                name: "values".to_owned(),
+                values: vec![HintValue {
+                    operand: HintOperand::AirValue { id: 1 },
+                    positions: vec![0],
+                }],
+            }],
+        }],
+    };
+    let mut setup = sample_unit_setup_info();
+    setup.unit_value_map = vec![StageValue {
+        name: "unit-array".to_owned(),
+        stage: 2,
+        lengths: vec![2],
+    }];
+
+    let resolved = resolve_regular_hint_field(
+        &setup,
+        &program,
+        0,
+        "values",
+        0,
+        RegularConstraintInputs {
+            domain_size: 1,
+            unit_values: &[
+                felt(101),
+                felt(102),
+                felt(103),
+                felt(201),
+                felt(202),
+                felt(203),
+            ],
+            ..RegularConstraintInputs::default()
+        },
+    )
+    .expect("regular hint field should resolve");
+
+    assert_eq!(
+        resolved,
+        vec![ResolvedHintValue {
+            payload: ResolvedHintPayload::Extension(ext([201, 202, 203])),
+            positions: vec![0],
+        }]
+    );
+}
+
+#[test]
+fn resolves_regular_hint_group_value_offsets_with_array_lengths() {
+    let program = HintProgram {
+        hints: vec![Hint {
+            name: "hint-a".to_owned(),
+            fields: vec![HintField {
+                name: "values".to_owned(),
+                values: vec![HintValue {
+                    operand: HintOperand::AirGroupValue { id: 1 },
+                    positions: vec![0],
+                }],
+            }],
+        }],
+    };
+    let mut setup = sample_unit_setup_info();
+    setup.group_value_map = vec![StageValue {
+        name: "group-array".to_owned(),
+        stage: 2,
+        lengths: vec![2],
+    }];
+
+    let resolved = resolve_regular_hint_field(
+        &setup,
+        &program,
+        0,
+        "values",
+        0,
+        RegularConstraintInputs {
+            domain_size: 1,
+            group_values: &[ext([101, 102, 103]), ext([201, 202, 203])],
+            ..RegularConstraintInputs::default()
+        },
+    )
+    .expect("regular hint field should resolve");
+
+    assert_eq!(
+        resolved,
+        vec![ResolvedHintValue {
+            payload: ResolvedHintPayload::Extension(ext([201, 202, 203])),
+            positions: vec![0],
+        }]
+    );
+}
+
+#[test]
 fn rejects_regular_hint_temporaries_without_expression_inputs() {
     let program = HintProgram {
         hints: vec![Hint {

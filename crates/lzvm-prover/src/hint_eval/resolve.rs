@@ -370,7 +370,8 @@ fn resolve_regular_operand(
             )?))
         }
         HintOperand::AirValue { id } => {
-            let (offset, width) = stage_value_offset(&setup.unit_value_map, *id as usize)?;
+            let (offset, width) =
+                stage_value_offset("unit value", &setup.unit_value_map, *id as usize, true)?;
             if width == 1 {
                 Ok(ResolvedHintPayload::Scalar(read_scalar(
                     "unit value",
@@ -386,16 +387,14 @@ fn resolve_regular_operand(
             }
         }
         HintOperand::AirGroupValue { id } => {
-            let entry = setup.group_value_map.get(*id as usize).ok_or(
-                HintEvalError::SourceIndexOutOfRange {
-                    source: "unit group value",
-                    index: *id as usize,
-                    width: 1,
-                    len: setup.group_value_map.len(),
-                },
+            let (offset, width) = stage_value_offset(
+                "unit group value",
+                &setup.group_value_map,
+                *id as usize,
+                false,
             )?;
-            let value = read_extension("unit group value", inputs.group_values, *id as usize)?;
-            if entry.stage == 1 {
+            let value = read_extension("unit group value", inputs.group_values, offset)?;
+            if width == 1 {
                 Ok(ResolvedHintPayload::Scalar(value.c0))
             } else {
                 Ok(ResolvedHintPayload::Extension(value))
@@ -514,32 +513,66 @@ fn find_commitment_column(
         })
 }
 
-fn stage_value_offset(map: &[StageValue], id: usize) -> Result<(usize, usize), HintEvalError> {
-    if id >= map.len() {
-        return Err(HintEvalError::SourceIndexOutOfRange {
-            source: "unit value",
-            index: id,
-            width: 1,
-            len: map.len(),
-        });
-    }
-
+fn stage_value_offset(
+    source: &'static str,
+    map: &[StageValue],
+    id: usize,
+    packed_fields: bool,
+) -> Result<(usize, usize), HintEvalError> {
+    let mut logical_id = 0_usize;
     let mut offset = 0usize;
-    for (index, entry) in map.iter().enumerate() {
+    for entry in map {
         let width = if entry.stage == 1 { 1 } else { 3 };
-        if index == id {
-            return Ok((offset, width));
+        let dimension = stage_value_dimension(entry)?;
+        if id >= logical_id {
+            let element = id
+                .checked_sub(logical_id)
+                .ok_or(HintEvalError::LengthOverflow)?;
+            if element < dimension {
+                let element_offset = if packed_fields {
+                    element
+                        .checked_mul(width)
+                        .ok_or(HintEvalError::LengthOverflow)?
+                } else {
+                    element
+                };
+                return Ok((
+                    offset
+                        .checked_add(element_offset)
+                        .ok_or(HintEvalError::LengthOverflow)?,
+                    width,
+                ));
+            }
         }
+        logical_id = logical_id
+            .checked_add(dimension)
+            .ok_or(HintEvalError::LengthOverflow)?;
+        let field_width = if packed_fields {
+            dimension
+                .checked_mul(width)
+                .ok_or(HintEvalError::LengthOverflow)?
+        } else {
+            dimension
+        };
         offset = offset
-            .checked_add(width)
+            .checked_add(field_width)
             .ok_or(HintEvalError::LengthOverflow)?;
     }
 
     Err(HintEvalError::SourceIndexOutOfRange {
-        source: "unit value",
+        source,
         index: id,
         width: 1,
-        len: map.len(),
+        len: logical_id,
+    })
+}
+
+fn stage_value_dimension(entry: &StageValue) -> Result<usize, HintEvalError> {
+    entry.lengths.iter().try_fold(1_usize, |dimension, length| {
+        let length = usize::try_from(*length).map_err(|_| HintEvalError::LengthOverflow)?;
+        dimension
+            .checked_mul(length)
+            .ok_or(HintEvalError::LengthOverflow)
     })
 }
 
