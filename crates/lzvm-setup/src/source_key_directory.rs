@@ -245,6 +245,7 @@ pub fn write_source_key_directory_metadata(
             let expression_info = source_expression_info(
                 &program,
                 &setup_info,
+                unit.group_name.as_deref().zip(unit.unit_name.as_deref()),
                 &global_info.publics_map,
                 &challenge_slots,
                 &global_info.proof_values_map,

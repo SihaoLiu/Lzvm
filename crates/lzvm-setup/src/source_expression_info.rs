@@ -5,10 +5,10 @@ use lzvm_artifacts::expression_info::{ConstraintCode, ExpressionInfo, HintInfo};
 use lzvm_artifacts::global_info::{NamedStageValue, PublicValue};
 use lzvm_artifacts::setup_info::UnitSetupInfo;
 use lzvm_pil::{
-    lex_source, parse_expression_tokens, BinaryOperator, CallArgument, ColumnKind, Expression,
-    ExpressionKind, FixedFileTemplateValue, FunctionDeclaration, FunctionStatement,
-    FunctionStatementDeclaration, FunctionStatementKind, SourceFile, SourceProgram,
-    SourceProgramModule, SourceSpan, Token, TokenKind, UnaryOperator,
+    lex_source, parse_expression_tokens, AirInstanceDeclaration, AirTemplateDeclaration,
+    BinaryOperator, CallArgument, ColumnKind, Expression, ExpressionKind, FixedFileTemplateValue,
+    FunctionDeclaration, FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind,
+    SourceFile, SourceProgram, SourceProgramModule, SourceSpan, Token, TokenKind, UnaryOperator,
 };
 
 use crate::{
@@ -54,6 +54,7 @@ struct SourceExpressionAliasScope {
 pub(crate) fn source_expression_info(
     program: &SourceProgram,
     setup: &UnitSetupInfo,
+    unit_name: Option<(&str, &str)>,
     publics: &[PublicValue],
     challenges: &[SourceChallengeSlotMetadata],
     proof_values: &[NamedStageValue],
@@ -64,6 +65,7 @@ pub(crate) fn source_expression_info(
     let active_templates = concrete_template_names(program);
     let constant_values = source_scalar_constant_values(program, 1_u64 << setup.stark.n_bits);
     let template_values = source_template_constant_value_cache(program, &constant_values);
+    let unit_instance = source_expression_unit_instance(program, unit_name);
     let fixed_assignment_columns = source_fixed_assignment_column_names(
         program,
         &active_templates,
@@ -84,6 +86,9 @@ pub(crate) fn source_expression_info(
             if !active_templates.contains(&template.name) {
                 continue;
             }
+            if unit_instance.is_some_and(|instance| template.name != instance.template) {
+                continue;
+            }
             let context = SourceTemplateLoweringContext {
                 program,
                 module,
@@ -96,14 +101,14 @@ pub(crate) fn source_expression_info(
                 template_values: &template_values,
             };
             let mut alias_scope = SourceExpressionAliasScope::default();
-            let mut statement_values = source_declaration_constant_values_from_cache(
+            let mut statement_values = source_expression_template_values(
+                context.program,
                 context.module,
-                template.body.start,
-                template.body.end,
+                template,
+                unit_instance,
                 context.constant_values,
                 context.template_values,
-            )
-            .clone();
+            );
             for statement in &template.statements {
                 lower_source_template_statement(
                     &context,
@@ -170,6 +175,140 @@ fn source_fixed_assignment_column_names(
         })
         .flat_map(|declaration| declaration.items.iter().map(|item| item.name.clone()))
         .collect()
+}
+
+fn source_expression_unit_instance<'a>(
+    program: &'a SourceProgram,
+    unit_name: Option<(&str, &str)>,
+) -> Option<&'a AirInstanceDeclaration> {
+    let (group_name, unit_name) = unit_name?;
+    let units = program
+        .air_units()
+        .into_iter()
+        .filter(|unit| !unit.virtual_instance)
+        .collect::<Vec<_>>();
+    let instances = program
+        .modules
+        .iter()
+        .flat_map(|module| module.air_instances.iter())
+        .filter(|instance| !instance.virtual_instance)
+        .collect::<Vec<_>>();
+    units
+        .into_iter()
+        .zip(instances)
+        .find_map(|(unit, instance)| {
+            (unit.group_name == group_name && unit.unit_name == unit_name).then_some(instance)
+        })
+}
+
+fn source_expression_template_values(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    template: &AirTemplateDeclaration,
+    instance: Option<&AirInstanceDeclaration>,
+    base_values: &BTreeMap<String, FixedFileTemplateValue>,
+    template_values: &SourceTemplateConstantValueCache,
+) -> BTreeMap<String, FixedFileTemplateValue> {
+    let cached = source_declaration_constant_values_from_cache(
+        module,
+        template.body.start,
+        template.body.end,
+        base_values,
+        template_values,
+    );
+    let Some(instance) = instance else {
+        return cached.clone();
+    };
+    let mut values = base_values.clone();
+    let mut provided = BTreeSet::new();
+    if let Some(arguments) = instance.args_expressions.as_ref() {
+        apply_source_expression_instance_arguments(
+            program,
+            template,
+            arguments,
+            &mut values,
+            &mut provided,
+        );
+    }
+    bind_source_expression_template_defaults(program, template, &mut values, &provided);
+
+    let parameter_names = template
+        .parameters
+        .iter()
+        .map(|parameter| parameter.name.as_str())
+        .collect::<BTreeSet<_>>();
+    for (name, value) in cached {
+        if !parameter_names.contains(name.as_str()) {
+            values.insert(name.clone(), value.clone());
+        }
+    }
+
+    values
+}
+
+fn bind_source_expression_template_defaults(
+    program: &SourceProgram,
+    template: &AirTemplateDeclaration,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    provided: &BTreeSet<String>,
+) {
+    for parameter in &template.parameters {
+        if provided.contains(&parameter.name) {
+            continue;
+        }
+        let Some(value) = parameter
+            .default_expression
+            .as_ref()
+            .and_then(|expression| evaluate_source_static_expression(program, expression, values))
+        else {
+            values.remove(&parameter.name);
+            continue;
+        };
+        values.insert(parameter.name.clone(), value);
+    }
+}
+
+fn apply_source_expression_instance_arguments(
+    program: &SourceProgram,
+    template: &AirTemplateDeclaration,
+    arguments: &[CallArgument],
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    provided: &mut BTreeSet<String>,
+) {
+    let mut positional_index = 0;
+    for argument in arguments {
+        let Some(value) = evaluate_source_static_expression(program, &argument.value, values)
+        else {
+            continue;
+        };
+        let name = if let Some(name) = argument.name.as_ref() {
+            name
+        } else {
+            while template
+                .parameters
+                .get(positional_index)
+                .is_some_and(|parameter| provided.contains(&parameter.name))
+            {
+                let Some(next) = positional_index.checked_add(1) else {
+                    return;
+                };
+                positional_index = next;
+            }
+            let Some(parameter) = template.parameters.get(positional_index) else {
+                continue;
+            };
+            &parameter.name
+        };
+        if provided.insert(name.clone()) {
+            values.insert(name.clone(), value);
+        }
+        if argument.name.is_none() {
+            let Some(next) = positional_index.checked_add(1) else {
+                return;
+            };
+            positional_index = next;
+        }
+    }
 }
 
 fn lower_source_template_statement(
