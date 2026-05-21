@@ -233,6 +233,16 @@ fn source_lookup_expression_field(
                             })?;
                         left * inverse
                     }
+                    "mod" => {
+                        let divisor = right.to_u64();
+                        if divisor == 0 {
+                            return Err(SourceLookupHintError::Unit {
+                                unit_index,
+                                message: format!("operator mod has zero divisor at row {row}"),
+                            });
+                        }
+                        Felt::from_u64(left.to_u64() % divisor)
+                    }
                     _ => {
                         return source_lookup_error(
                             unit_index,
