@@ -86,6 +86,9 @@ fn source_assignment_expression_field(
                         }
                         Felt::from_u64(left.to_u64() % divisor)
                     }
+                    "bitand" => Felt::from_u64(left.to_u64() & right.to_u64()),
+                    "bitxor" => Felt::from_u64(left.to_u64() ^ right.to_u64()),
+                    "bitor" => Felt::from_u64(left.to_u64() | right.to_u64()),
                     "lt" => Felt::from_u64(u64::from(left.to_u64() < right.to_u64())),
                     "le" => Felt::from_u64(u64::from(left.to_u64() <= right.to_u64())),
                     "gt" => Felt::from_u64(u64::from(left.to_u64() > right.to_u64())),
