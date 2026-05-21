@@ -13,7 +13,7 @@ use lzvm_field::MODULUS;
 use lzvm_pil::{
     lex_source, parse_expression_tokens, BinaryOperator, Expression, ExpressionKind,
     FixedFileTemplateValue, FunctionStatement, LexError, SourceFile, SourceProgram,
-    SourceProgramModule, Token, TokenKind,
+    SourceProgramModule, Token, TokenKind, UnaryOperator,
 };
 
 use crate::{
@@ -799,6 +799,24 @@ fn source_assignment_expression_values(
             payload: HintPayload::string(op),
         });
         return Some(values);
+    }
+    if let ExpressionKind::Unary { op, expr } = &expression.kind {
+        match op {
+            UnaryOperator::Plus => return source_assignment_expression_values(context, expr),
+            UnaryOperator::Minus => {
+                let mut values = vec![HintValueInfo {
+                    positions: Vec::new(),
+                    payload: HintPayload::number(0),
+                }];
+                values.extend(source_assignment_expression_values(context, expr)?);
+                values.push(HintValueInfo {
+                    positions: Vec::new(),
+                    payload: HintPayload::string("sub"),
+                });
+                return Some(values);
+            }
+            _ => return None,
+        }
     }
 
     Some(vec![source_lookup_value_from_expression(
