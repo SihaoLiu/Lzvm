@@ -30,6 +30,7 @@ use crate::{
 mod hints;
 mod residuals;
 mod top_level_for;
+mod top_level_if;
 
 pub(crate) fn source_global_program(
     program: &SourceProgram,
@@ -259,62 +260,92 @@ fn lower_module_top_level_global_constraints(
             source,
         }
     })?;
-    let mut index = 0;
-    while index < tokens.len() {
-        let token = &tokens[index];
+    let context = SourceTopLevelGlobalConstraintContext {
+        program,
+        module,
+        tokens: &tokens,
+        slots,
+        alias_scope: &alias_scope,
+    };
+    lower_top_level_global_constraints_range(&context, 0, tokens.len(), constraints)
+}
+
+pub(super) struct SourceTopLevelGlobalConstraintContext<'a, 'b, 'c> {
+    program: &'a SourceProgram,
+    module: &'a SourceProgramModule,
+    tokens: &'a [Token],
+    slots: &'a SourceGlobalSlots<'b>,
+    alias_scope: &'a SourceGlobalAliasScope<'c>,
+}
+
+fn lower_top_level_global_constraints_range(
+    context: &SourceTopLevelGlobalConstraintContext<'_, '_, '_>,
+    start: usize,
+    end: usize,
+    constraints: &mut SourceGlobalConstraintBuilder,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    let mut index = start;
+    while index < end {
+        let token = &context.tokens[index];
         match token.kind {
             TokenKind::Pragma => {
                 index += 1;
             }
             TokenKind::For => {
                 if let Some(next_index) = top_level_for::lower_top_level_static_for_statement(
-                    program,
-                    module,
-                    &tokens,
+                    context.program,
+                    context.module,
+                    context.tokens,
                     index,
-                    slots,
-                    &alias_scope,
+                    context.slots,
+                    context.alias_scope,
                     constraints,
                 )? {
                     index = next_index;
                 } else {
-                    index = skip_top_level_item(&tokens, index)?;
+                    index = skip_top_level_item(context.tokens, index)?;
                 }
             }
+            TokenKind::If => {
+                index =
+                    top_level_if::lower_top_level_static_if_statement(context, index, constraints)?;
+            }
             kind if top_level_declaration_start(kind) => {
-                index = skip_top_level_item(&tokens, index)?;
+                index = skip_top_level_item(context.tokens, index)?;
             }
             TokenKind::Identifier => {
-                if let Some(next_index) = skip_known_top_level_metadata_directive(&tokens, index) {
+                if let Some(next_index) =
+                    skip_known_top_level_metadata_directive(context.tokens, index)
+                {
                     index = next_index;
                 } else {
                     index = lower_top_level_expression_statement(
-                        module,
-                        &tokens,
+                        context.module,
+                        context.tokens,
                         index,
-                        slots,
-                        &alias_scope,
+                        context.slots,
+                        context.alias_scope,
                         constraints,
                     )?;
                 }
             }
             TokenKind::Public | TokenKind::Private
-                if tokens.get(index + 1).is_some_and(|next| {
+                if context.tokens.get(index + 1).is_some_and(|next| {
                     matches!(
                         next.kind,
                         TokenKind::Include | TokenKind::Require | TokenKind::Function
                     )
                 }) =>
             {
-                index = skip_top_level_item(&tokens, index)?;
+                index = skip_top_level_item(context.tokens, index)?;
             }
             _ => {
                 index = lower_top_level_expression_statement(
-                    module,
-                    &tokens,
+                    context.module,
+                    context.tokens,
                     index,
-                    slots,
-                    &alias_scope,
+                    context.slots,
+                    context.alias_scope,
                     constraints,
                 )?;
             }
