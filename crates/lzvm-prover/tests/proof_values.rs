@@ -87,6 +87,37 @@ fn loads_pcs_proof_values_from_segments() {
 }
 
 #[test]
+fn packs_array_proof_values_as_flattened_segment_values() {
+    let global = sample_global_info(vec![sample_array_proof_value("expected", 2, &[2])]);
+    let packed_values = [
+        Felt::from_u64(11),
+        Felt::from_u64(12),
+        Felt::from_u64(13),
+        Felt::from_u64(21),
+        Felt::from_u64(22),
+        Felt::from_u64(23),
+    ];
+
+    let segment = build_pcs_proof_values_segment_from_packed_values(&global, &packed_values)
+        .expect("segment should build")
+        .expect("metadata declares proof values");
+    let parsed =
+        parse_pcs_proof_values_segment(&segment.data).expect("segment should parse after build");
+
+    assert_eq!(parsed.values, vec![[11, 12, 13], [21, 22, 23]]);
+
+    let values = [Ext3::from_u64s([11, 12, 13]), Ext3::from_u64s([21, 22, 23])];
+    let flattened = flatten_pcs_proof_values(&global, &values).expect("values should flatten");
+
+    assert_eq!(flattened, packed_values);
+
+    let loaded =
+        load_pcs_proof_values_from_segments(&global, &[segment]).expect("segment should load");
+
+    assert_eq!(loaded, values);
+}
+
+#[test]
 fn rejects_missing_pcs_proof_values_segment() {
     let global = sample_global_info(vec![sample_proof_value("scalar-value", 1)]);
 
@@ -265,11 +296,15 @@ fn sample_global_info(proof_values_map: Vec<NamedStageValue>) -> GlobalInfo {
 }
 
 fn sample_proof_value(name: &str, stage: u64) -> NamedStageValue {
+    sample_array_proof_value(name, stage, &[])
+}
+
+fn sample_array_proof_value(name: &str, stage: u64, lengths: &[u64]) -> NamedStageValue {
     NamedStageValue {
         name: name.to_owned(),
         stage,
         id: None,
-        lengths: Vec::new(),
+        lengths: lengths.to_vec(),
     }
 }
 

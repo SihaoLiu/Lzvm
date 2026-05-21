@@ -10,7 +10,7 @@ use lzvm_artifacts::contribution_segment::{
     ContributionSegment, ContributionSegmentError, CONTRIBUTION_SEGMENT_ID,
 };
 use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
-use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
+use lzvm_artifacts::global_info::{CurveKind, GlobalInfo, NamedStageValue};
 use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryError};
 use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
 use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifactError, ProofSegment};
@@ -1040,14 +1040,19 @@ fn stage_one_proof_values(
     let mut out = Vec::with_capacity(global_info.stage_one_proof_value_count());
     let mut offset = 0_usize;
     for entry in &global_info.proof_values_map {
+        let dimension = proof_value_dimension(entry)?;
         if entry.stage == 1 {
-            out.push(packed_proof_values[offset]);
-            offset = offset
-                .checked_add(1)
+            let end = offset
+                .checked_add(dimension)
                 .ok_or(ContributionChallengeError::LengthOverflow)?;
+            out.extend_from_slice(&packed_proof_values[offset..end]);
+            offset = end;
         } else {
+            let width = dimension
+                .checked_mul(3)
+                .ok_or(ContributionChallengeError::LengthOverflow)?;
             offset = offset
-                .checked_add(3)
+                .checked_add(width)
                 .ok_or(ContributionChallengeError::LengthOverflow)?;
         }
     }
@@ -1061,10 +1066,25 @@ fn expected_packed_proof_value_count(
         .proof_values_map
         .iter()
         .try_fold(0_usize, |count, entry| {
+            let dimension = proof_value_dimension(entry)?;
+            let width = if entry.stage == 1 { 1 } else { 3 };
+            let entry_count = dimension
+                .checked_mul(width)
+                .ok_or(ContributionChallengeError::LengthOverflow)?;
             count
-                .checked_add(if entry.stage == 1 { 1 } else { 3 })
+                .checked_add(entry_count)
                 .ok_or(ContributionChallengeError::LengthOverflow)
         })
+}
+
+fn proof_value_dimension(entry: &NamedStageValue) -> Result<usize, ContributionChallengeError> {
+    entry.lengths.iter().try_fold(1_usize, |dimension, length| {
+        let length =
+            usize::try_from(*length).map_err(|_| ContributionChallengeError::LengthOverflow)?;
+        dimension
+            .checked_mul(length)
+            .ok_or(ContributionChallengeError::LengthOverflow)
+    })
 }
 
 fn validate_contribution_entries(

@@ -59,11 +59,15 @@ fn sample_global_info(lattice_size: u64, proof_values_map: Vec<NamedStageValue>)
 }
 
 fn proof_value(name: &str, stage: u64) -> NamedStageValue {
+    array_proof_value(name, stage, &[1])
+}
+
+fn array_proof_value(name: &str, stage: u64, lengths: &[u64]) -> NamedStageValue {
     NamedStageValue {
         name: name.to_owned(),
         stage,
         id: None,
-        lengths: vec![1],
+        lengths: lengths.to_vec(),
     }
 }
 
@@ -413,6 +417,56 @@ fn derives_global_challenge_from_contributions() {
     let mut transcript = PoseidonTranscript::new(4).expect("transcript should build");
     transcript.put(&public_values);
     transcript.put(&[Felt::from_u64(10), Felt::from_u64(30)]);
+    transcript.put(&[Felt::from_u64(5), Felt::from_u64(7), Felt::from_u64(9)]);
+    let expected = transcript.get_field();
+
+    assert_eq!(
+        derive_global_challenge_from_contributions(
+            &global_info,
+            &public_values,
+            &packed_proof_values,
+            &entries,
+        )
+        .expect("global challenge should derive"),
+        expected
+    );
+}
+
+#[test]
+fn derives_global_challenge_from_array_stage_one_proof_values() {
+    let global_info = sample_global_info(
+        3,
+        vec![
+            array_proof_value("stage_one_values", 1, &[2]),
+            proof_value("stage_two", 2),
+        ],
+    );
+    let public_values = vec![Felt::from_u64(3), Felt::from_u64(4)];
+    let packed_proof_values = vec![
+        Felt::from_u64(10),
+        Felt::from_u64(11),
+        Felt::from_u64(20),
+        Felt::from_u64(21),
+        Felt::from_u64(22),
+    ];
+    let entries = vec![
+        ProveContributionEntry {
+            worker_index: 0,
+            group_id: 0,
+            aggregated: false,
+            values: vec![Felt::from_u64(1), Felt::from_u64(2), Felt::from_u64(3)],
+        },
+        ProveContributionEntry {
+            worker_index: 1,
+            group_id: 0,
+            aggregated: false,
+            values: vec![Felt::from_u64(4), Felt::from_u64(5), Felt::from_u64(6)],
+        },
+    ];
+
+    let mut transcript = PoseidonTranscript::new(4).expect("transcript should build");
+    transcript.put(&public_values);
+    transcript.put(&[Felt::from_u64(10), Felt::from_u64(11)]);
     transcript.put(&[Felt::from_u64(5), Felt::from_u64(7), Felt::from_u64(9)]);
     let expected = transcript.get_field();
 

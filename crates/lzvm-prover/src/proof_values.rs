@@ -1,6 +1,6 @@
 use std::fmt;
 
-use lzvm_artifacts::global_info::GlobalInfo;
+use lzvm_artifacts::global_info::{GlobalInfo, NamedStageValue};
 use lzvm_artifacts::pcs_proof_values_segment::{
     encode_pcs_proof_values_segment, parse_pcs_proof_values_segment, PcsProofValuesSegment,
     PcsProofValuesSegmentError, PCS_PROOF_VALUES_SEGMENT_ID,
@@ -129,24 +129,27 @@ pub fn build_pcs_proof_values_segment_from_packed_values(
         });
     }
 
+    let logical_value_count = expected_logical_proof_value_count_for_prove(global_info)?;
     let mut offset = 0_usize;
-    let mut values = Vec::with_capacity(global_info.proof_values_map.len());
+    let mut values = Vec::with_capacity(logical_value_count);
     for entry in &global_info.proof_values_map {
-        if entry.stage == 1 {
-            values.push([packed_values[offset].to_u64(), 0, 0]);
-            offset = offset
-                .checked_add(1)
-                .ok_or(ProvePcsProofValuesSegmentError::LengthOverflow)?;
-        } else {
-            let end = offset
-                .checked_add(EXTENSION_WORDS)
-                .ok_or(ProvePcsProofValuesSegmentError::LengthOverflow)?;
-            values.push([
-                packed_values[offset].to_u64(),
-                packed_values[offset + 1].to_u64(),
-                packed_values[offset + 2].to_u64(),
-            ]);
-            offset = end;
+        for _ in 0..proof_value_dimension_for_prove(entry)? {
+            if entry.stage == 1 {
+                values.push([packed_values[offset].to_u64(), 0, 0]);
+                offset = offset
+                    .checked_add(1)
+                    .ok_or(ProvePcsProofValuesSegmentError::LengthOverflow)?;
+            } else {
+                let end = offset
+                    .checked_add(EXTENSION_WORDS)
+                    .ok_or(ProvePcsProofValuesSegmentError::LengthOverflow)?;
+                values.push([
+                    packed_values[offset].to_u64(),
+                    packed_values[offset + 1].to_u64(),
+                    packed_values[offset + 2].to_u64(),
+                ]);
+                offset = end;
+            }
         }
     }
 
@@ -170,28 +173,33 @@ pub fn flatten_pcs_proof_values(
         });
     }
 
-    if values.len() != global_info.proof_values_map.len() {
+    let expected_value_count = expected_logical_proof_value_count_for_prove(global_info)?;
+    if values.len() != expected_value_count {
         return Err(ProvePcsProofValuesSegmentError::ValueCountMismatch {
-            expected: global_info.proof_values_map.len(),
+            expected: expected_value_count,
             found: values.len(),
         });
     }
 
     let expected_count = expected_packed_proof_value_count(global_info)?;
     let mut packed = Vec::with_capacity(expected_count);
-    for (index, (entry, value)) in global_info
-        .proof_values_map
-        .iter()
-        .zip(values.iter().copied())
-        .enumerate()
-    {
-        if entry.stage == 1 {
-            if value.c1 != Felt::ZERO || value.c2 != Felt::ZERO {
-                return Err(ProvePcsProofValuesSegmentError::StageOneExtensionComponents { index });
+    let mut value_index = 0_usize;
+    for entry in &global_info.proof_values_map {
+        for _ in 0..proof_value_dimension_for_prove(entry)? {
+            let value = values[value_index];
+            if entry.stage == 1 {
+                if value.c1 != Felt::ZERO || value.c2 != Felt::ZERO {
+                    return Err(
+                        ProvePcsProofValuesSegmentError::StageOneExtensionComponents {
+                            index: value_index,
+                        },
+                    );
+                }
+                packed.push(value.c0);
+            } else {
+                packed.extend_from_slice(&[value.c0, value.c1, value.c2]);
             }
-            packed.push(value.c0);
-        } else {
-            packed.extend_from_slice(&[value.c0, value.c1, value.c2]);
+            value_index += 1;
         }
     }
     Ok(packed)
@@ -201,7 +209,7 @@ pub fn load_pcs_proof_values_from_segments(
     global_info: &GlobalInfo,
     segments: &[ProofSegment],
 ) -> Result<Vec<Ext3>, LoadPcsProofValuesSegmentError> {
-    let expected_count = global_info.proof_values_map.len();
+    let expected_count = expected_logical_proof_value_count_for_load(global_info)?;
     let mut matching_segments = segments
         .iter()
         .filter(|segment| segment.id == PCS_PROOF_VALUES_SEGMENT_ID);
@@ -227,11 +235,20 @@ pub fn load_pcs_proof_values_from_segments(
     }
 
     let mut values = Vec::with_capacity(parsed.values.len());
-    for (index, words) in parsed.values.iter().copied().enumerate() {
-        if global_info.proof_values_map[index].stage == 1 && (words[1] != 0 || words[2] != 0) {
-            return Err(LoadPcsProofValuesSegmentError::StageOneExtensionComponents { index });
+    let mut value_index = 0_usize;
+    for entry in &global_info.proof_values_map {
+        for _ in 0..proof_value_dimension_for_load(entry)? {
+            let words = parsed.values[value_index];
+            if entry.stage == 1 && (words[1] != 0 || words[2] != 0) {
+                return Err(
+                    LoadPcsProofValuesSegmentError::StageOneExtensionComponents {
+                        index: value_index,
+                    },
+                );
+            }
+            values.push(proof_value_extension_from_words(value_index, words)?);
+            value_index += 1;
         }
-        values.push(proof_value_extension_from_words(index, words)?);
     }
     Ok(values)
 }
@@ -260,8 +277,58 @@ fn expected_packed_proof_value_count(
         .proof_values_map
         .iter()
         .try_fold(0_usize, |count, entry| {
+            let dimension = proof_value_dimension_for_prove(entry)?;
+            let width = if entry.stage == 1 { 1 } else { EXTENSION_WORDS };
+            let entry_count = dimension
+                .checked_mul(width)
+                .ok_or(ProvePcsProofValuesSegmentError::LengthOverflow)?;
             count
-                .checked_add(if entry.stage == 1 { 1 } else { EXTENSION_WORDS })
+                .checked_add(entry_count)
                 .ok_or(ProvePcsProofValuesSegmentError::LengthOverflow)
         })
+}
+
+fn expected_logical_proof_value_count_for_prove(
+    global_info: &GlobalInfo,
+) -> Result<usize, ProvePcsProofValuesSegmentError> {
+    global_info
+        .proof_values_map
+        .iter()
+        .try_fold(0_usize, |count, entry| {
+            count
+                .checked_add(proof_value_dimension_for_prove(entry)?)
+                .ok_or(ProvePcsProofValuesSegmentError::LengthOverflow)
+        })
+}
+
+fn expected_logical_proof_value_count_for_load(
+    global_info: &GlobalInfo,
+) -> Result<usize, LoadPcsProofValuesSegmentError> {
+    global_info
+        .proof_values_map
+        .iter()
+        .try_fold(0_usize, |count, entry| {
+            count
+                .checked_add(proof_value_dimension_for_load(entry)?)
+                .ok_or(LoadPcsProofValuesSegmentError::LengthOverflow)
+        })
+}
+
+fn proof_value_dimension_for_prove(
+    entry: &NamedStageValue,
+) -> Result<usize, ProvePcsProofValuesSegmentError> {
+    proof_value_dimension(entry).ok_or(ProvePcsProofValuesSegmentError::LengthOverflow)
+}
+
+fn proof_value_dimension_for_load(
+    entry: &NamedStageValue,
+) -> Result<usize, LoadPcsProofValuesSegmentError> {
+    proof_value_dimension(entry).ok_or(LoadPcsProofValuesSegmentError::LengthOverflow)
+}
+
+fn proof_value_dimension(entry: &NamedStageValue) -> Option<usize> {
+    entry.lengths.iter().try_fold(1_usize, |dimension, length| {
+        let length = usize::try_from(*length).ok()?;
+        dimension.checked_mul(length)
+    })
 }
