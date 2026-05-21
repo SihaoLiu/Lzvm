@@ -144,9 +144,6 @@ fn static_function_call_bindings(
 ) -> Option<BTreeMap<String, i128>> {
     let mut bindings = values.clone();
     let mut provided = BTreeSet::new();
-    for parameter in &function.parameters {
-        bind_static_function_default(program, parameter, &mut bindings)?;
-    }
 
     let mut positional_index = 0_usize;
     for argument in arguments {
@@ -178,12 +175,11 @@ fn static_function_call_bindings(
         }
     }
 
-    if function.parameters.iter().any(|parameter| {
-        static_integer_parameter(parameter)
-            && parameter.default_expression.is_none()
-            && !provided.contains(&parameter.name)
-    }) {
-        return None;
+    for parameter in &function.parameters {
+        if provided.contains(&parameter.name) {
+            continue;
+        }
+        bind_static_function_default(program, parameter, &mut bindings)?;
     }
     Some(bindings)
 }
@@ -196,9 +192,7 @@ fn bind_static_function_default(
     if !static_integer_parameter(parameter) {
         return None;
     }
-    let Some(expression) = parameter.default_expression.as_ref() else {
-        return Some(());
-    };
+    let expression = parameter.default_expression.as_ref()?;
     let value = evaluate_static_i128(program, expression, values)?;
     values.insert(parameter.name.clone(), value);
     Some(())
