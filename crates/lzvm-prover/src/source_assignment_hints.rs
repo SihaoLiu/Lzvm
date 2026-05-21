@@ -66,6 +66,15 @@ fn source_assignment_expression_field(
                     "add" => left + right,
                     "sub" => left - right,
                     "mul" => left * right,
+                    "div" => {
+                        let inverse = right.inverse().ok_or_else(|| {
+                            ProveWitnessCommitmentError::SourceAssignment {
+                                unit_index,
+                                message: format!("operator div has zero divisor at row {row}"),
+                            }
+                        })?;
+                        left * inverse
+                    }
                     _ => {
                         return source_assignment_error(
                             unit_index,
