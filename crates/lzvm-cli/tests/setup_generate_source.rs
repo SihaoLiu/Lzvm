@@ -1701,6 +1701,42 @@ fn generate_key_uses_source_template_row_count_for_fill_sequences() {
 }
 
 #[test]
+fn generate_key_rejects_boolean_template_row_count_below_supported_domain() {
+    let dir = temp_dir("boolean-template-row-count-domain");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "const int SELECTED = 1;\n\
+         airtemplate UnitA(const int N = SELECTED == 1) { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "setup key generation failed: unsupported source setup metadata: source row count must be at least two\n"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn generate_key_uses_source_template_row_count_for_repeated_sequences() {
     let dir = temp_dir("template-row-count-repeat");
     let _ = fs::remove_dir_all(&dir);

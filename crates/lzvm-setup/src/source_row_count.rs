@@ -101,10 +101,10 @@ fn infer_source_row_counts_from_air_units(
             continue;
         };
         let values = source_air_instance_parameter_values(program, template, instance, &constants);
-        let Some(FixedFileTemplateValue::Integer(value)) = values.get("N") else {
+        let Some(value) = values.get("N").and_then(static_value_integer) else {
             continue;
         };
-        let value = u64::try_from(*value)
+        let value = u64::try_from(value)
             .map_err(|_| unsupported_source_message("source row count is out of range"))?;
         validate_source_row_count(value)?;
         row_counts.insert((group_id, unit_id), value);
@@ -227,7 +227,10 @@ fn merge_source_sequence_count(
 }
 
 fn validate_source_row_count(value: u64) -> Result<(), SourceKeyDirectoryMetadataError> {
-    if value == 0 || !value.is_power_of_two() {
+    if value < 2 {
+        return unsupported("source row count must be at least two");
+    }
+    if !value.is_power_of_two() {
         return unsupported("source row count must be a power of two");
     }
     Ok(())
