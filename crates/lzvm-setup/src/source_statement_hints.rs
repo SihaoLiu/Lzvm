@@ -791,6 +791,9 @@ fn source_assignment_expression_values(
 ) -> Option<Vec<HintValueInfo>> {
     let expression = strip_group_expression(expression);
     if let ExpressionKind::Binary { op, left, right } = &expression.kind {
+        if *op == BinaryOperator::Power {
+            return source_assignment_power_expression_values(context, left, right);
+        }
         let op = source_assignment_binary_operator(*op)?;
         let mut values = source_assignment_expression_values(context, left)?;
         values.extend(source_assignment_expression_values(context, right)?);
@@ -822,6 +825,33 @@ fn source_assignment_expression_values(
     Some(vec![source_lookup_value_from_expression(
         context, expression,
     )?])
+}
+
+fn source_assignment_power_expression_values(
+    context: &SourceLookupLowering<'_>,
+    base: &Expression,
+    exponent: &Expression,
+) -> Option<Vec<HintValueInfo>> {
+    let exponent = source_assignment_power_exponent(context, exponent)?;
+    let mut values = source_assignment_expression_values(context, base)?;
+    values.push(HintValueInfo {
+        positions: Vec::new(),
+        payload: HintPayload::number(exponent),
+    });
+    values.push(HintValueInfo {
+        positions: Vec::new(),
+        payload: HintPayload::string("pow"),
+    });
+    Some(values)
+}
+
+fn source_assignment_power_exponent(
+    context: &SourceLookupLowering<'_>,
+    expression: &Expression,
+) -> Option<u64> {
+    let value = evaluate_source_static_expression(context.program, expression, context.values)?;
+    let exponent = u64::try_from(static_value_integer(&value)?).ok()?;
+    (exponent < MODULUS).then_some(exponent)
 }
 
 fn source_assignment_binary_operator(op: BinaryOperator) -> Option<&'static str> {

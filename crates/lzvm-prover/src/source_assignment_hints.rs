@@ -66,6 +66,7 @@ fn source_assignment_expression_field(
                     "add" => left + right,
                     "sub" => left - right,
                     "mul" => left * right,
+                    "pow" => left.pow(right.to_u64()),
                     "div" => {
                         let inverse = right.inverse().ok_or_else(|| {
                             ProveWitnessCommitmentError::SourceAssignment {
