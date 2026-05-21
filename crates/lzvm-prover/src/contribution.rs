@@ -812,7 +812,7 @@ fn validate_lattice_hash_width(
     let value = global_info
         .lattice_size
         .ok_or(ContributionChallengeError::MissingLatticeSize)?;
-    if !lattice_size.is_multiple_of(CONTRIBUTION_HASH_STATE_WIDTH) {
+    if lattice_size == 0 || !lattice_size.is_multiple_of(CONTRIBUTION_HASH_STATE_WIDTH) {
         return Err(ContributionChallengeError::LatticeSizeNotMultipleOfHashState { value });
     }
     Ok(())

@@ -336,6 +336,20 @@ fn rejects_internal_contribution_lattice_size_not_aligned_to_hash_width() {
 }
 
 #[test]
+fn rejects_zero_internal_contribution_lattice_size() {
+    let global_info = sample_global_info(0, Vec::new());
+    let inputs = vec![InternalContributionInput {
+        root: [Felt::ZERO; 4],
+        values: (1_u64..=8).map(Felt::from_u64).collect(),
+    }];
+
+    assert!(matches!(
+        derive_worker_contribution_entry(&global_info, 0, 0, &inputs),
+        Err(ContributionChallengeError::LatticeSizeNotMultipleOfHashState { value: 0 })
+    ));
+}
+
+#[test]
 fn rejects_internal_contribution_inputs_without_root_slots() {
     let global_info = sample_global_info(16, Vec::new());
     let inputs = vec![InternalContributionInput {
