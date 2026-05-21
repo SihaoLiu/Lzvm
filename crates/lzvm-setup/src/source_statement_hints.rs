@@ -1090,30 +1090,38 @@ fn source_lookup_scalar_operand_inner(
                 .map(|index| source_lookup_index(context.program, index, context.values))
                 .collect::<Option<Vec<_>>>()?;
             if let Some(alias) = context.expression_array_aliases.get(name) {
-                let [index] = indices.as_slice() else {
-                    return None;
-                };
-                let element = source_lookup_array_alias_element(
-                    alias,
-                    usize::try_from(*index).ok()?,
+                if let [index] = indices.as_slice() {
+                    let element = source_lookup_array_alias_element(
+                        alias,
+                        usize::try_from(*index).ok()?,
+                        context.expression_array_aliases,
+                        resolving_array_aliases,
+                    )?;
+                    return match element {
+                        SourceLookupArrayAliasElement::Expression(expression) => {
+                            source_lookup_scalar_operand_inner(
+                                context,
+                                expression,
+                                row_offset,
+                                resolving_aliases,
+                                resolving_array_aliases,
+                            )
+                        }
+                        SourceLookupArrayAliasElement::NamedArray(name) => context
+                            .scalar_slots
+                            .operand_index_at(name, *index, row_offset)
+                            .ok(),
+                    };
+                }
+                let name = source_lookup_named_array_alias_target(
                     context.expression_array_aliases,
+                    name,
                     resolving_array_aliases,
                 )?;
-                return match element {
-                    SourceLookupArrayAliasElement::Expression(expression) => {
-                        source_lookup_scalar_operand_inner(
-                            context,
-                            expression,
-                            row_offset,
-                            resolving_aliases,
-                            resolving_array_aliases,
-                        )
-                    }
-                    SourceLookupArrayAliasElement::NamedArray(name) => context
-                        .scalar_slots
-                        .operand_index_at(name, *index, row_offset)
-                        .ok(),
-                };
+                return context
+                    .scalar_slots
+                    .operand_indices_at(&name, &indices, row_offset)
+                    .ok();
             }
             context
                 .scalar_slots
@@ -1171,6 +1179,32 @@ fn source_lookup_array_alias_element<'a>(
         SourceExpressionArrayAlias::Values(expressions) => expressions
             .get(index)
             .map(SourceLookupArrayAliasElement::Expression),
+    }
+}
+
+fn source_lookup_named_array_alias_target(
+    expression_array_aliases: &SourceExpressionArrayAliases,
+    name: &str,
+    resolving_array_aliases: &mut BTreeSet<String>,
+) -> Option<String> {
+    let alias = expression_array_aliases.get(name)?;
+    match alias {
+        SourceExpressionArrayAlias::Name(alias_name) => {
+            if !expression_array_aliases.contains_key(alias_name) {
+                return Some(alias_name.clone());
+            }
+            if !resolving_array_aliases.insert(name.to_owned()) {
+                return None;
+            }
+            let target = source_lookup_named_array_alias_target(
+                expression_array_aliases,
+                alias_name,
+                resolving_array_aliases,
+            );
+            resolving_array_aliases.remove(name);
+            target
+        }
+        SourceExpressionArrayAlias::Values(_) => None,
     }
 }
 
