@@ -3,7 +3,10 @@ use lzvm_artifacts::contribution_segment::{
     CONTRIBUTION_SEGMENT_ID,
 };
 use lzvm_artifacts::global_info::{CurveKind, GlobalAir, GlobalInfo, NamedStageValue};
-use lzvm_artifacts::proof::{encode_proof_artifact, parse_proof_artifact, ProofArtifact};
+use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
+use lzvm_artifacts::proof::{
+    encode_proof_artifact, parse_proof_artifact, ProofArtifact, ProofSegment,
+};
 use lzvm_artifacts::setup_info::StageValue;
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_field::{poseidon2_hash_16, Felt, FieldError, PoseidonTranscript};
@@ -483,6 +486,75 @@ fn derives_global_challenge_from_proof_segments() {
         )
         .expect("global challenge should derive"),
         expected
+    );
+}
+
+#[test]
+fn proof_segment_challenges_bind_program_image_segments() {
+    let global_info = sample_global_info(3, Vec::new());
+    let public_values = vec![Felt::from_u64(3), Felt::from_u64(4)];
+    let entries = vec![ProveContributionEntry {
+        worker_index: 0,
+        group_id: 0,
+        aggregated: false,
+        values: vec![Felt::from_u64(1), Felt::from_u64(2), Felt::from_u64(3)],
+    }];
+    let contribution_segment = build_contribution_segment(&entries)
+        .expect("segment should build")
+        .expect("segment should exist");
+    let mut first_segments = vec![
+        contribution_segment.clone(),
+        ProofSegment {
+            id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+            data: vec![11, 12, 13],
+        },
+    ];
+    let mut second_segments = vec![
+        contribution_segment,
+        ProofSegment {
+            id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+            data: vec![21, 22, 23],
+        },
+    ];
+
+    let first = derive_global_challenge_from_proof_segments(
+        &global_info,
+        &public_values,
+        &[],
+        &first_segments,
+    )
+    .expect("first challenge should derive");
+    let second = derive_global_challenge_from_proof_segments(
+        &global_info,
+        &public_values,
+        &[],
+        &second_segments,
+    )
+    .expect("second challenge should derive");
+
+    assert_ne!(first, second);
+
+    first_segments.reverse();
+    second_segments.reverse();
+    assert_eq!(
+        derive_global_challenge_from_proof_segments(
+            &global_info,
+            &public_values,
+            &[],
+            &first_segments
+        )
+        .expect("reordered first challenge should derive"),
+        first
+    );
+    assert_eq!(
+        derive_global_challenge_from_proof_segments(
+            &global_info,
+            &public_values,
+            &[],
+            &second_segments,
+        )
+        .expect("reordered second challenge should derive"),
+        second
     );
 }
 

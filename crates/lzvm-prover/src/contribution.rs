@@ -9,8 +9,10 @@ use lzvm_artifacts::contribution_segment::{
     encode_contribution_segment, parse_contribution_segment, ContributionEntry,
     ContributionSegment, ContributionSegmentError, CONTRIBUTION_SEGMENT_ID,
 };
+use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
 use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryError};
+use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
 use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifactError, ProofSegment};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValuesError};
 use lzvm_artifacts::setup_info::StageValue;
@@ -28,6 +30,7 @@ use crate::setup_preflight::{
     validate_setup_preflight_hashes, SetupPreflightError,
 };
 use crate::{ProveUnitSchedule, ProveWitnessTraceCommitments};
+use sha2::{Digest, Sha256};
 
 const CONTRIBUTION_ROOT_SLOT_START: usize = 4;
 const CONTRIBUTION_ROOT_SLOT_END: usize = 8;
@@ -142,6 +145,7 @@ pub enum ContributionChallengeFileError {
     ProofValues(LoadPcsProofValuesSegmentError),
     ProofValuePacking(ProvePcsProofValuesSegmentError),
     ProofValueMismatch { proof_index: usize },
+    BindingSegmentMismatch { proof_index: usize, id: u32 },
     ChallengeValues(ChallengeValuesSegmentError),
     DuplicateChallengeValuesSegment,
     ContributionChallengeValuesMismatch,
@@ -316,6 +320,12 @@ impl fmt::Display for ContributionChallengeFileError {
             Self::ProofValueMismatch { proof_index } => {
                 write!(f, "contribution proof {proof_index} proof values mismatch")
             }
+            Self::BindingSegmentMismatch { proof_index, id } => {
+                write!(
+                    f,
+                    "contribution proof {proof_index} binding segment {id} mismatch"
+                )
+            }
             Self::ChallengeValues(error) => {
                 write!(f, "invalid contribution challenge values: {error}")
             }
@@ -346,6 +356,7 @@ impl std::error::Error for ContributionChallengeFileError {
             Self::MissingProofs
             | Self::UnexpectedProofSegment { .. }
             | Self::ProofValueMismatch { .. }
+            | Self::BindingSegmentMismatch { .. }
             | Self::DuplicateChallengeValuesSegment
             | Self::ContributionChallengeValuesMismatch => None,
         }
@@ -551,12 +562,29 @@ pub fn derive_global_challenge_from_contributions(
     packed_proof_values: &[Felt],
     entries: &[ProveContributionEntry],
 ) -> Result<Ext3, ContributionChallengeError> {
+    derive_global_challenge_with_bound_segments(
+        global_info,
+        public_values,
+        packed_proof_values,
+        &[],
+        entries,
+    )
+}
+
+fn derive_global_challenge_with_bound_segments(
+    global_info: &GlobalInfo,
+    public_values: &[Felt],
+    packed_proof_values: &[Felt],
+    bound_segments: &[ProofSegment],
+    entries: &[ProveContributionEntry],
+) -> Result<Ext3, ContributionChallengeError> {
     let aggregated = aggregate_contribution_values(global_info, entries)?;
     let proof_values = stage_one_proof_values(global_info, packed_proof_values)?;
     let transcript_arity = usize::try_from(global_info.transcript_arity)
         .map_err(|_| ContributionChallengeError::LengthOverflow)?;
     let mut transcript = PoseidonTranscript::new(transcript_arity)?;
     transcript.put(public_values);
+    absorb_bound_segments(&mut transcript, bound_segments)?;
     if !proof_values.is_empty() {
         transcript.put(&proof_values);
     }
@@ -571,12 +599,79 @@ pub fn derive_global_challenge_from_proof_segments(
     segments: &[ProofSegment],
 ) -> Result<Ext3, ContributionChallengeError> {
     let entries = load_contribution_segment_from_segments(segments)?;
-    derive_global_challenge_from_contributions(
+    let bound_segments = contribution_bound_segments(segments);
+    derive_global_challenge_with_bound_segments(
         global_info,
         public_values,
         packed_proof_values,
+        &bound_segments,
         &entries,
     )
+}
+
+fn absorb_bound_segments(
+    transcript: &mut PoseidonTranscript,
+    segments: &[ProofSegment],
+) -> Result<(), ContributionChallengeError> {
+    if segments.is_empty() {
+        return Ok(());
+    }
+    let segment_count =
+        u64::try_from(segments.len()).map_err(|_| ContributionChallengeError::LengthOverflow)?;
+    transcript.put(&[Felt::from_u64(segment_count)]);
+    for segment in segments {
+        transcript.put(&digest_words(&hash_bound_segment(segment)?));
+    }
+    Ok(())
+}
+
+fn contribution_bound_segments(segments: &[ProofSegment]) -> Vec<ProofSegment> {
+    let mut segments = segments
+        .iter()
+        .filter(|segment| {
+            matches!(
+                segment.id,
+                PROGRAM_IMAGE_CACHE_SEGMENT_ID | ETH_BLOCK_INPUT_SEGMENT_ID
+            )
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    segments.sort_by_key(|segment| segment.id);
+    segments
+}
+
+fn hash_bound_segment(segment: &ProofSegment) -> Result<[u8; 32], ContributionChallengeError> {
+    let mut hasher = Sha256::new();
+    hasher.update(segment.id.to_le_bytes());
+    let byte_count = u64::try_from(segment.data.len())
+        .map_err(|_| ContributionChallengeError::LengthOverflow)?;
+    hasher.update(byte_count.to_le_bytes());
+    hasher.update(Sha256::digest(&segment.data));
+    Ok(hasher.finalize().into())
+}
+
+fn digest_words(digest: &[u8; 32]) -> [Felt; 4] {
+    let mut words = [Felt::ZERO; 4];
+    for (index, word) in words.iter_mut().enumerate() {
+        let start = index * 8;
+        let mut bytes = [0_u8; 8];
+        bytes.copy_from_slice(&digest[start..start + 8]);
+        *word = Felt::from_le_bytes(bytes);
+    }
+    words
+}
+
+fn first_binding_mismatch_id(expected: &[ProofSegment], found: &[ProofSegment]) -> u32 {
+    for (left, right) in expected.iter().zip(found) {
+        if left != right {
+            return left.id.min(right.id);
+        }
+    }
+    expected
+        .get(found.len())
+        .or_else(|| found.get(expected.len()))
+        .map(|segment| segment.id)
+        .unwrap_or(0)
 }
 
 pub fn derive_global_challenge_from_files(
@@ -597,10 +692,12 @@ pub fn derive_global_challenge_from_files(
     let packed_proof_values = flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)?;
     let entries = load_contribution_segment_from_segments(&proof.segments)
         .map_err(ContributionChallengeError::from)?;
-    let challenge = derive_global_challenge_from_contributions(
+    let bound_segments = contribution_bound_segments(&proof.segments);
+    let challenge = derive_global_challenge_with_bound_segments(
         &catalog.layout.global_info,
         &public_fields,
         &packed_proof_values,
+        &bound_segments,
         &entries,
     )?;
     validate_optional_contribution_challenge_values(&proof.segments, challenge)?;
@@ -637,6 +734,7 @@ pub fn derive_global_challenge_from_contribution_proofs(
     let mut public_values_hash = None;
     let mut proof_value_count = 0_usize;
     let mut packed_proof_values = None::<Vec<Felt>>;
+    let mut bound_segments = None::<Vec<ProofSegment>>;
     let mut entries = Vec::new();
     let mut embedded_challenges = Vec::new();
 
@@ -661,6 +759,17 @@ pub fn derive_global_challenge_from_contribution_proofs(
             proof_value_count = packed.len();
             packed_proof_values = Some(packed);
         }
+        let proof_bound_segments = contribution_bound_segments(&proof.segments);
+        if let Some(expected) = &bound_segments {
+            if expected != &proof_bound_segments {
+                return Err(ContributionChallengeFileError::BindingSegmentMismatch {
+                    proof_index,
+                    id: first_binding_mismatch_id(expected, &proof_bound_segments),
+                });
+            }
+        } else {
+            bound_segments = Some(proof_bound_segments);
+        }
 
         let mut proof_entries = load_contribution_segment_from_segments(&proof.segments)
             .map_err(ContributionChallengeError::from)?;
@@ -671,10 +780,12 @@ pub fn derive_global_challenge_from_contribution_proofs(
     }
 
     let packed_proof_values = packed_proof_values.unwrap_or_default();
-    let challenge = derive_global_challenge_from_contributions(
+    let bound_segments = bound_segments.unwrap_or_default();
+    let challenge = derive_global_challenge_with_bound_segments(
         &catalog.layout.global_info,
         &public_fields,
         &packed_proof_values,
+        &bound_segments,
         &entries,
     )?;
     for embedded in embedded_challenges {

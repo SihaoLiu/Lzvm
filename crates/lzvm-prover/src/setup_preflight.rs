@@ -37,7 +37,7 @@ use crate::constant_opening::{
     validate_constant_opening_segments, ValidateConstantOpeningSegmentsError,
 };
 use crate::contribution::{
-    aggregate_contribution_values, derive_global_challenge_from_contributions,
+    aggregate_contribution_values, derive_global_challenge_from_proof_segments,
     load_contribution_segment_from_segments, ContributionChallengeError,
 };
 use crate::global_constraints::{
@@ -697,14 +697,11 @@ fn validate_optional_contribution_challenge_values(
             .map_err(SetupPreflightError::ProofValues)?;
     let packed_proof_values = flatten_pcs_proof_values(&catalog.layout.global_info, &proof_values)
         .map_err(SetupPreflightError::ProofValuePacking)?;
-    let entries = load_contribution_segment_from_segments(&proof.segments)
-        .map_err(ContributionChallengeError::from)
-        .map_err(SetupPreflightError::Contribution)?;
-    let expected = derive_global_challenge_from_contributions(
+    let expected = derive_global_challenge_from_proof_segments(
         &catalog.layout.global_info,
         &public_fields,
         &packed_proof_values,
-        &entries,
+        &proof.segments,
     )
     .map_err(SetupPreflightError::Contribution)?;
     if challenge_values.as_slice() != [expected.to_u64s()] {
