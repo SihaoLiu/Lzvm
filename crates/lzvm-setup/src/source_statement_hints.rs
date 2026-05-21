@@ -726,8 +726,9 @@ fn source_lookup_values(
         }
         return Some(values);
     }
-    if let Some(name) = source_lookup_bare_name(context.tokens, range) {
-        if let Some(values) = source_lookup_spread_values(context, name) {
+    if let Some(name) = source_lookup_bare_name(context.module, context.line, context.tokens, range)
+    {
+        if let Some(values) = source_lookup_spread_values(context, &name) {
             return Some(values);
         }
     }
@@ -736,11 +737,17 @@ fn source_lookup_values(
     Some(values)
 }
 
-fn source_lookup_bare_name(tokens: &[Token], range: (usize, usize)) -> Option<&str> {
-    if range.0 + 1 == range.1 && tokens[range.0].kind == TokenKind::Identifier {
-        return Some(tokens[range.0].lexeme.as_str());
+fn source_lookup_bare_name(
+    module: &SourceProgramModule,
+    line: &str,
+    tokens: &[Token],
+    range: (usize, usize),
+) -> Option<String> {
+    let expression = parse_source_lookup_expression(module, line, tokens, range)?;
+    match &strip_group_expression(&expression).kind {
+        ExpressionKind::Name(name) => Some(name.clone()),
+        _ => None,
     }
-    None
 }
 
 fn source_lookup_spread_name(
