@@ -1,6 +1,8 @@
 use std::fmt;
 use std::path::Path;
 
+use lzvm_field::{Felt, FieldError};
+
 use crate::sectioned::{
     encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
@@ -83,6 +85,10 @@ pub enum ConstraintProgramError {
     Io {
         message: String,
     },
+    NumberNonCanonical {
+        index: usize,
+        source: FieldError,
+    },
     OperationSpanOutOfBounds {
         constraint_index: usize,
     },
@@ -118,6 +124,10 @@ impl fmt::Display for ConstraintProgramError {
             }
             Self::LengthOverflow => write!(f, "constraint program length overflow"),
             Self::Io { message } => write!(f, "constraint program io error: {message}"),
+            Self::NumberNonCanonical { index, source } => write!(
+                f,
+                "constraint program number {index} is non-canonical: {source}"
+            ),
             Self::OperationSpanOutOfBounds { constraint_index } => write!(
                 f,
                 "operation span is out of bounds for constraint {constraint_index}"
@@ -130,7 +140,24 @@ impl fmt::Display for ConstraintProgramError {
     }
 }
 
-impl std::error::Error for ConstraintProgramError {}
+impl std::error::Error for ConstraintProgramError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Sectioned(error) => Some(error),
+            Self::NumberNonCanonical { source, .. } => Some(source),
+            Self::MissingConstraintSection { .. }
+            | Self::UnexpectedTrailingBytes { .. }
+            | Self::UnexpectedEof { .. }
+            | Self::MissingStringTerminator { .. }
+            | Self::InvalidUtf8
+            | Self::StringContainsNul { .. }
+            | Self::LengthOverflow
+            | Self::Io { .. }
+            | Self::OperationSpanOutOfBounds { .. }
+            | Self::ArgumentSpanOutOfBounds { .. } => None,
+        }
+    }
+}
 
 pub fn read_regular_constraint_program_file(
     path: impl AsRef<Path>,
@@ -322,7 +349,7 @@ fn encode_regular_section(program: &ConstraintProgram) -> Result<Vec<u8>, Constr
         write_string(&mut out, &entry.source_line)?;
     }
 
-    write_buffers(&mut out, &program.ops, &program.args, &program.numbers);
+    write_buffers(&mut out, &program.ops, &program.args, &program.numbers)?;
     Ok(out)
 }
 
@@ -353,7 +380,7 @@ fn encode_global_section(
         write_string(&mut out, &entry.source_line)?;
     }
 
-    write_buffers(&mut out, &program.ops, &program.args, &program.numbers);
+    write_buffers(&mut out, &program.ops, &program.args, &program.numbers)?;
     Ok(out)
 }
 
@@ -381,8 +408,10 @@ fn read_buffers(
         return Err(ConstraintProgramError::LengthOverflow);
     }
     let mut numbers = Vec::with_capacity(numbers_count);
-    for _ in 0..numbers_count {
-        numbers.push(reader.read_u64()?);
+    for index in 0..numbers_count {
+        let value = reader.read_u64()?;
+        validate_number(index, value)?;
+        numbers.push(value);
     }
     Ok((ops, args, numbers))
 }
@@ -408,14 +437,27 @@ fn write_buffer_header(
     Ok(())
 }
 
-fn write_buffers(out: &mut Vec<u8>, ops: &[u8], args: &[u16], numbers: &[u64]) {
+fn write_buffers(
+    out: &mut Vec<u8>,
+    ops: &[u8],
+    args: &[u16],
+    numbers: &[u64],
+) -> Result<(), ConstraintProgramError> {
     out.extend_from_slice(ops);
     for value in args {
         write_u16(out, *value);
     }
-    for value in numbers {
-        write_u64(out, *value);
+    for (index, value) in numbers.iter().copied().enumerate() {
+        validate_number(index, value)?;
+        write_u64(out, value);
     }
+    Ok(())
+}
+
+fn validate_number(index: usize, value: u64) -> Result<(), ConstraintProgramError> {
+    Felt::from_canonical(value)
+        .map(|_| ())
+        .map_err(|source| ConstraintProgramError::NumberNonCanonical { index, source })
 }
 
 fn validate_regular_spans(program: &ConstraintProgram) -> Result<(), ConstraintProgramError> {

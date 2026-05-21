@@ -7,8 +7,11 @@ use lzvm_artifacts::constraint_program::{
 use lzvm_artifacts::sectioned::{
     encode_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
+use lzvm_field::FieldError;
 use std::fs;
 use std::path::PathBuf;
+
+const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
 
 fn sample_regular_program() -> ConstraintProgram {
     ConstraintProgram {
@@ -77,6 +80,10 @@ fn sample_global_program() -> GlobalConstraintProgram {
 }
 
 fn push_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_u64(out: &mut Vec<u8>, value: u64) {
     out.extend_from_slice(&value.to_le_bytes());
 }
 
@@ -251,6 +258,72 @@ fn rejects_numbers_count_that_exceeds_remaining_numbers() {
     assert!(matches!(
         parse_regular_constraint_program(&bytes),
         Err(ConstraintProgramError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_non_canonical_regular_constraint_numbers() {
+    let mut program = sample_regular_program();
+    program.numbers[1] = NON_CANONICAL_FIELD;
+
+    assert!(matches!(
+        encode_regular_constraint_program(&program),
+        Err(ConstraintProgramError::NumberNonCanonical {
+            index: 1,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        })
+    ));
+}
+
+#[test]
+fn rejects_non_canonical_regular_constraint_numbers_when_parsing() {
+    let mut section = counted_section(0, 0, 1, 0);
+    push_u64(&mut section, NON_CANONICAL_FIELD);
+    let bytes = wrap_regular_section(section);
+
+    assert!(matches!(
+        parse_regular_constraint_program(&bytes),
+        Err(ConstraintProgramError::NumberNonCanonical {
+            index: 0,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        })
+    ));
+}
+
+#[test]
+fn rejects_non_canonical_global_constraint_numbers() {
+    let mut program = sample_global_program();
+    program.numbers[0] = NON_CANONICAL_FIELD;
+
+    assert!(matches!(
+        encode_global_constraint_program(&program),
+        Err(ConstraintProgramError::NumberNonCanonical {
+            index: 0,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        })
+    ));
+}
+
+#[test]
+fn rejects_non_canonical_global_constraint_numbers_when_parsing() {
+    let mut section = counted_section(0, 0, 1, 0);
+    push_u64(&mut section, NON_CANONICAL_FIELD);
+    let bytes = wrap_global_section(section);
+
+    assert!(matches!(
+        parse_global_constraint_program(&bytes),
+        Err(ConstraintProgramError::NumberNonCanonical {
+            index: 0,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        })
     ));
 }
 
