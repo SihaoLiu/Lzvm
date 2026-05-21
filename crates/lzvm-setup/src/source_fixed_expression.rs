@@ -124,6 +124,10 @@ fn evaluate_source_fixed_expression_inner(
                     context, expression, lhs, divisor,
                 )?));
             }
+            if *op == BinaryOperator::Modulo {
+                let divisor = source_fixed_expression_static_integer(context, right)?;
+                return field_mod_by_static(context, expression, lhs, divisor).map(Some);
+            }
             let Some(rhs) = evaluate_source_fixed_expression_inner(context, right, row)? else {
                 return Ok(None);
             };
@@ -415,6 +419,22 @@ fn field_div_by_static(
         .inverse()
         .ok_or_else(|| source_fixed_expression_unsupported(context, expression))?;
     Ok(field_mul(lhs, inverse.to_u64()))
+}
+
+fn field_mod_by_static(
+    context: &SourceFixedExpressionContext<'_>,
+    expression: &Expression,
+    lhs: u64,
+    divisor: i128,
+) -> Result<u64, SourceFixedColumnsWriteError> {
+    if divisor == 0 {
+        return Err(source_fixed_expression_unsupported(context, expression));
+    }
+    let lhs = i128::from(lhs);
+    let value = lhs
+        .checked_rem(divisor)
+        .ok_or_else(|| source_fixed_expression_integer_out_of_range(context, expression))?;
+    canonical_source_fixed_expression_value(context, expression, value)
 }
 
 fn field_pow(base: u64, exponent: u64) -> u64 {
