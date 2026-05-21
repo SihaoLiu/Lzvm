@@ -702,7 +702,7 @@ fn derives_full_prove_run_plan_from_catalog_and_request() {
         options: ProveRunOptions {
             aggregate: true,
             remote_aggregation: false,
-            final_wrap: true,
+            final_wrap: false,
             verify_outputs: true,
             save_outputs: true,
             minimal_memory: false,
@@ -780,6 +780,35 @@ fn rejects_final_wrap_with_remote_aggregation() {
     assert_eq!(
         error.to_string(),
         "prove run plan final wrap cannot use remote aggregation"
+    );
+}
+
+#[test]
+fn rejects_final_wrap_with_partitioned_full_pass() {
+    let catalog = sample_catalog(vec![
+        sample_unit(KeyUnitKind::Basic, 0, 64),
+        sample_unit(KeyUnitKind::FinalAggregation, 1, 96),
+    ]);
+    let mut options = ProveRunOptions::default_for_output(PathBuf::from("out"));
+    options.aggregate = true;
+    options.final_wrap = true;
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan {
+            input_data: Some(PathBuf::from("input.bin")),
+            partition_count: 4,
+            partition_ids: vec![1, 3],
+            worker_index: 2,
+        }),
+        options,
+        gpu: GpuRunOptions::default(),
+    };
+
+    let error =
+        derive_prove_run_plan(&catalog, request).expect_err("final wrap should reject partitions");
+
+    assert_eq!(
+        error.to_string(),
+        "prove run plan final wrap requires a single complete partition"
     );
 }
 

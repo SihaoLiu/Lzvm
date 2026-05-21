@@ -405,6 +405,7 @@ pub enum ProveRunPlanError {
     },
     FinalWrapRequiresFullPass,
     FinalWrapRemoteAggregation,
+    FinalWrapRequiresSingleCompletePartition,
     FinalWrapRequiresFinalAggregation,
     InvalidGpuStreams,
     InvalidWitnessThreadPools,
@@ -445,6 +446,10 @@ impl fmt::Display for ProveRunPlanError {
             Self::FinalWrapRemoteAggregation => {
                 write!(f, "prove run plan final wrap cannot use remote aggregation")
             }
+            Self::FinalWrapRequiresSingleCompletePartition => write!(
+                f,
+                "prove run plan final wrap requires a single complete partition"
+            ),
             Self::FinalWrapRequiresFinalAggregation => {
                 write!(
                     f,
@@ -1267,11 +1272,17 @@ fn validate_final_wrap_options(
     if !options.final_wrap {
         return Ok(());
     }
-    if !matches!(pass, ProvePassRequest::Full(_)) {
+    let ProvePassRequest::Full(partitions) = pass else {
         return Err(ProveRunPlanError::FinalWrapRequiresFullPass);
-    }
+    };
     if options.remote_aggregation {
         return Err(ProveRunPlanError::FinalWrapRemoteAggregation);
+    }
+    if partitions.partition_count != 1
+        || partitions.partition_ids.as_slice() != [0]
+        || partitions.worker_index != 0
+    {
+        return Err(ProveRunPlanError::FinalWrapRequiresSingleCompletePartition);
     }
     if !schedule
         .units
