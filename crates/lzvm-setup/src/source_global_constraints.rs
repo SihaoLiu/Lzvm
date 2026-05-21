@@ -4,16 +4,19 @@ use lzvm_artifacts::constraint_program::{GlobalConstraintEntry, GlobalConstraint
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::global_program::GlobalProgram;
 use lzvm_artifacts::hint_program::HintProgram;
+use lzvm_field::MODULUS;
 use lzvm_pil::{
     lex_source, parse_expression, BinaryOperator, ConstantDeclaration, Expression, ExpressionKind,
-    FixedFileTemplateValue, SourceProgram, SourceProgramModule, Token, TokenKind,
+    FixedFileTemplateValue, PublicDeclaration, SourceProgram, SourceProgramModule, Token,
+    TokenKind,
 };
 
 use crate::{
-    source_key_directory::SourceKeyDirectoryMetadataError,
+    source_key_directory::{source_item_name, SourceKeyDirectoryMetadataError},
     source_scope::global_constraint_source_names,
     source_static_values::{
-        evaluate_source_static_expression, source_scalar_constant_values, static_value_integer,
+        evaluate_source_static_expression, source_declaration_in_static_false_branch,
+        source_scalar_constant_values, static_value_integer,
     },
 };
 
@@ -33,6 +36,13 @@ pub(crate) fn source_global_program(
         if !global_source_names.contains(&module.source_name) {
             continue;
         }
+        lower_module_public_initializer_constraints(
+            program,
+            module,
+            &public_value_slots,
+            &static_values,
+            &mut constraints,
+        )?;
         lower_module_top_level_global_constraints(
             program,
             module,
@@ -46,6 +56,97 @@ pub(crate) fn source_global_program(
         constraints: constraints.finish(),
         hints: HintProgram { hints: Vec::new() },
     })
+}
+
+fn lower_module_public_initializer_constraints(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    public_value_slots: &BTreeMap<String, SourcePublicValueSlot>,
+    static_values: &BTreeMap<String, FixedFileTemplateValue>,
+    constraints: &mut SourceGlobalConstraintBuilder,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    for declaration in &module.publics {
+        if declaration.initializer.is_none() {
+            continue;
+        }
+        if source_global_declaration_in_nested_body(module, declaration.start, declaration.end)
+            || source_declaration_in_static_false_branch(
+                program,
+                module,
+                declaration.start,
+                declaration.end,
+                static_values,
+            )
+        {
+            continue;
+        }
+        lower_public_initializer_constraint(
+            program,
+            module,
+            declaration,
+            public_value_slots,
+            static_values,
+            constraints,
+        )?;
+    }
+    Ok(())
+}
+
+fn lower_public_initializer_constraint(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    declaration: &PublicDeclaration,
+    public_value_slots: &BTreeMap<String, SourcePublicValueSlot>,
+    static_values: &BTreeMap<String, FixedFileTemplateValue>,
+    constraints: &mut SourceGlobalConstraintBuilder,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    if declaration.items.len() != 1
+        || declaration
+            .items
+            .first()
+            .is_some_and(|item| !item.array_dim_expressions.is_empty())
+    {
+        return unsupported("source public initializers require scalar public values");
+    }
+    let item = declaration
+        .items
+        .first()
+        .ok_or_else(|| unsupported_source_message("source public initializer has no value"))?;
+    let name = source_item_name(program, item, "source public value", static_values)?;
+    let Some(slot) = public_value_slots.get(&name).copied() else {
+        return unsupported("source public initializer references an unknown public value");
+    };
+    if slot.stage != 1 || slot.dimension != 1 {
+        return unsupported("source public initializers require scalar public values");
+    }
+    let Some(expression) = declaration.initializer_expression.as_ref() else {
+        return unsupported("source public initializers must be static field values");
+    };
+    let value = source_public_initializer_field_value(program, expression, static_values)?;
+    constraints.append_public_value_constant_constraint(
+        slot.offset,
+        value,
+        module.source.contents[declaration.start..declaration.end]
+            .trim()
+            .to_owned(),
+    )
+}
+
+fn source_public_initializer_field_value(
+    program: &SourceProgram,
+    expression: &Expression,
+    static_values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<u64, SourceKeyDirectoryMetadataError> {
+    let Some(value) = evaluate_source_static_expression(program, expression, static_values) else {
+        return unsupported("source public initializers must be static field values");
+    };
+    let Some(value) = static_value_integer(&value) else {
+        return unsupported("source public initializers must be static field values");
+    };
+    let modulus = i128::from(MODULUS);
+    let canonical = value.rem_euclid(modulus);
+    u64::try_from(canonical)
+        .map_err(|_| unsupported_source_message("source public initializer value overflow"))
 }
 
 fn lower_module_top_level_global_constraints(
@@ -676,6 +777,37 @@ struct SourceGlobalConstraintBuilder {
 }
 
 impl SourceGlobalConstraintBuilder {
+    fn append_public_value_constant_constraint(
+        &mut self,
+        public_value_offset: u32,
+        value: u64,
+        source_line: String,
+    ) -> Result<(), SourceKeyDirectoryMetadataError> {
+        let ops_offset = source_usize_to_u32(self.ops.len(), "source global op offset overflow")?;
+        let args_offset =
+            source_usize_to_u32(self.args.len(), "source global argument offset overflow")?;
+        let public_value_offset =
+            source_u32_to_u16(public_value_offset, "source public value offset overflow")?;
+        let value_offset =
+            source_u32_to_u16(self.intern_number(value)?, "source number offset overflow")?;
+
+        self.ops.push(0);
+        self.args
+            .extend([1, 0, 1, public_value_offset, 2, value_offset]);
+        self.entries.push(GlobalConstraintEntry {
+            destination_dimension: 1,
+            destination_id: 0,
+            temp1_count: 1,
+            temp3_count: 0,
+            ops_count: 1,
+            ops_offset,
+            args_count: 6,
+            args_offset,
+            source_line,
+        });
+        Ok(())
+    }
+
     fn append_public_value_boolean_constraint(
         &mut self,
         public_value_offset: u32,

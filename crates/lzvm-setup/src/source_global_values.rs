@@ -17,9 +17,13 @@ use crate::{
         source_metadata_template_instances, source_metadata_template_values,
     },
     source_scalar_slots::SourceChallengeSlotMetadata,
-    source_scope::{declaration_in_function_body, declaration_in_inactive_template},
+    source_scope::{
+        declaration_in_function_body, declaration_in_inactive_template,
+        global_constraint_source_names,
+    },
     source_static_values::{
-        source_declaration_constant_values_from_cache, source_declaration_in_static_false_branch,
+        evaluate_source_static_expression, source_declaration_constant_values_from_cache,
+        source_declaration_in_static_false_branch, static_value_integer,
         SourceTemplateConstantValueCache,
     },
 };
@@ -39,7 +43,9 @@ pub(crate) fn source_public_values(
 ) -> Result<Vec<PublicValue>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut values = Vec::new();
+    let global_source_names = global_constraint_source_names(program);
     for module in &program.modules {
+        let module_has_global_constraints = global_source_names.contains(&module.source_name);
         let tokens = lex_source(&module.source.contents).map_err(|source| {
             SourceKeyDirectoryMetadataError::Lex {
                 source_name: module.source_name.clone(),
@@ -69,6 +75,12 @@ pub(crate) fn source_public_values(
             let Some(declaration_template) =
                 source_metadata_declaration_template(module, declaration.start, declaration.end)
             else {
+                let initializer_constraint_available = module_has_global_constraints
+                    && !source_public_declaration_in_nested_body(
+                        module,
+                        declaration.start,
+                        declaration.end,
+                    );
                 let declaration_values = source_declaration_constant_values_from_cache(
                     module,
                     declaration.start,
@@ -89,6 +101,7 @@ pub(crate) fn source_public_values(
                     program,
                     declaration,
                     declaration_values,
+                    initializer_constraint_available,
                     &mut seen,
                     &mut values,
                 )?;
@@ -106,6 +119,7 @@ pub(crate) fn source_public_values(
                 program,
                 declaration,
                 &declaration_values,
+                false,
                 &mut seen,
                 &mut values,
             )?;
@@ -154,15 +168,42 @@ fn source_public_values_for_any_instance(
     Ok(None)
 }
 
+fn source_public_declaration_in_nested_body(
+    module: &SourceProgramModule,
+    start: usize,
+    end: usize,
+) -> bool {
+    module
+        .air_templates
+        .iter()
+        .any(|template| template.body.start <= start && end <= template.body.end)
+        || module
+            .air_groups
+            .iter()
+            .any(|group| group.body.start <= start && end <= group.body.end)
+        || module.containers.iter().any(|container| {
+            container
+                .body
+                .is_some_and(|body| body.start <= start && end <= body.end)
+        })
+        || declaration_in_function_body(module, start, end)
+}
+
 fn source_push_public_values(
     program: &SourceProgram,
     declaration: &PublicDeclaration,
     declaration_values: &BTreeMap<String, FixedFileTemplateValue>,
+    initializer_constraint_available: bool,
     seen: &mut BTreeSet<String>,
     values: &mut Vec<PublicValue>,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     if declaration.initializer.is_some() {
-        return unsupported("source public initializers need metadata lowering support");
+        source_public_initializer_static_value(
+            program,
+            declaration,
+            declaration_values,
+            initializer_constraint_available,
+        )?;
     }
     for item in &declaration.items {
         let name = source_item_name(program, item, "source public value", declaration_values)?;
@@ -177,6 +218,36 @@ fn source_push_public_values(
                 .map(u64::from)
                 .collect(),
         });
+    }
+    Ok(())
+}
+
+fn source_public_initializer_static_value(
+    program: &SourceProgram,
+    declaration: &PublicDeclaration,
+    declaration_values: &BTreeMap<String, FixedFileTemplateValue>,
+    initializer_constraint_available: bool,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    if !initializer_constraint_available {
+        return unsupported("source public initializers need global constraint lowering support");
+    }
+    if declaration.items.len() != 1
+        || declaration
+            .items
+            .first()
+            .is_some_and(|item| !item.array_dim_expressions.is_empty())
+    {
+        return unsupported("source public initializers require scalar public values");
+    }
+    let Some(expression) = declaration.initializer_expression.as_ref() else {
+        return unsupported("source public initializers must be static field values");
+    };
+    let Some(value) = evaluate_source_static_expression(program, expression, declaration_values)
+    else {
+        return unsupported("source public initializers must be static field values");
+    };
+    if static_value_integer(&value).is_none() {
+        return unsupported("source public initializers must be static field values");
     }
     Ok(())
 }
