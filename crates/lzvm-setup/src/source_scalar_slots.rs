@@ -86,12 +86,13 @@ struct SourceChallengeSlot {
     dimension: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct SourceProofValueSlot {
     offset: u32,
     stage: u32,
     source_dimension: u32,
     operand_dimension: u32,
+    lengths: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -220,6 +221,7 @@ impl SourceScalarSlots {
             })?;
             let operand_dimension = if value.stage == 1 { 1 } else { 3 };
             let source_dimension = named_stage_value_dimension(&value.lengths)?;
+            let lengths = named_stage_value_lengths(&value.lengths)?;
             let field_width = source_dimension.checked_mul(operand_dimension).ok_or(
                 SourceScalarSlotError::LengthOverflow("source proof value offset overflow"),
             )?;
@@ -230,6 +232,7 @@ impl SourceScalarSlots {
                     stage,
                     source_dimension,
                     operand_dimension,
+                    lengths,
                 },
             );
             proof_value_offset = proof_value_offset.checked_add(field_width).ok_or(
@@ -279,6 +282,7 @@ impl SourceScalarSlots {
             })?;
             let operand_dimension = if value.stage == 1 { 1 } else { 3 };
             let source_dimension = named_stage_value_dimension(&value.lengths)?;
+            let lengths = named_stage_value_lengths(&value.lengths)?;
             let field_width = source_dimension.checked_mul(operand_dimension).ok_or(
                 SourceScalarSlotError::LengthOverflow("source proof value offset overflow"),
             )?;
@@ -289,6 +293,7 @@ impl SourceScalarSlots {
                     stage,
                     source_dimension,
                     operand_dimension,
+                    lengths,
                 },
             );
             proof_value_offset = proof_value_offset.checked_add(field_width).ok_or(
@@ -779,6 +784,11 @@ impl SourceScalarSlots {
             return self.operand_index_at(name, index, row_offset);
         }
 
+        if let Some(slot) = self.proof_values.get(name) {
+            let index = linear_source_index(name, indices, &slot.lengths)?;
+            return self.operand_index_at(name, index, row_offset);
+        }
+
         Err(SourceScalarSlotError::UnsupportedIndex {
             name: name.to_owned(),
         })
@@ -868,6 +878,17 @@ fn named_stage_value_dimension(lengths: &[u64]) -> Result<u32, SourceScalarSlotE
     })?;
     u32::try_from(dimension)
         .map_err(|_| SourceScalarSlotError::LengthOverflow("source stage value dimension overflow"))
+}
+
+fn named_stage_value_lengths(lengths: &[u64]) -> Result<Vec<u32>, SourceScalarSlotError> {
+    lengths
+        .iter()
+        .map(|length| {
+            u32::try_from(*length).map_err(|_| {
+                SourceScalarSlotError::LengthOverflow("source stage value dimension overflow")
+            })
+        })
+        .collect()
 }
 
 fn linear_source_index(
