@@ -237,6 +237,17 @@ fn logical_source() -> &'static str {
      col fixed main.left = [5, 1];"
 }
 
+fn dynamic_power_source() -> &'static str {
+    "airtemplate UnitA() {\n\
+         col witness base;\n\
+         col witness exponent;\n\
+         col witness out[1];\n\
+         out[0] = base ** exponent;\n\
+     }\n\
+     airgroup GroupA { UnitA(); }\n\
+     col fixed main.left = [5, 1];"
+}
+
 #[test]
 fn generate_key_lowers_source_modulo_assignments_as_regular_hints() {
     let dir = temp_dir("source-modulo-assignment");
@@ -369,5 +380,32 @@ fn prove_witness_rejects_source_logical_assignment_mismatch_with_trace_bytes() {
         "source-logical-assignment-mismatch",
         logical_source(),
         &[0, 9, 1, 0, 8, 4, 7, 0, 7, 4],
+    );
+}
+
+#[test]
+fn generate_key_lowers_source_dynamic_power_assignments_as_regular_hints() {
+    let dir = temp_dir("source-dynamic-power-assignment");
+    let _ = fs::remove_dir_all(&dir);
+    assert_generate_key_succeeds(&dir, dynamic_power_source());
+    assert_generated_assignment_ops(&dir, &["pow"]);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn prove_witness_accepts_source_dynamic_power_assignment_hints_with_trace_bytes() {
+    assert_witness_accepts(
+        "source-dynamic-power-assignment-witness",
+        dynamic_power_source(),
+        &[2, 3, 8, 5, 0, 1],
+    );
+}
+
+#[test]
+fn prove_witness_rejects_source_dynamic_power_assignment_mismatch_with_trace_bytes() {
+    assert_witness_rejects(
+        "source-dynamic-power-assignment-mismatch",
+        dynamic_power_source(),
+        &[2, 3, 7, 5, 0, 1],
     );
 }
