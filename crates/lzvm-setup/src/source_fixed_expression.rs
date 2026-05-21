@@ -201,6 +201,9 @@ fn evaluate_source_fixed_expression_inner(
                 return canonical_source_fixed_expression_value(context, expression, value)
                     .map(Some);
             }
+            if let Some(value) = evaluate_source_fixed_array_index(context, expression, row)? {
+                return Ok(Some(value));
+            }
             Err(source_fixed_expression_unsupported(context, expression))
         }
         ExpressionKind::StringLiteral(_)
@@ -295,6 +298,40 @@ fn evaluate_source_fixed_template_value_expression_with_static_index(
         .get(index)
         .copied()
         .map(|value| FixedFileTemplateValue::Integer(i128::from(value)))
+}
+
+fn evaluate_source_fixed_array_index(
+    context: &SourceFixedExpressionContext<'_>,
+    expression: &Expression,
+    row: usize,
+) -> Result<Option<u64>, SourceFixedColumnsWriteError> {
+    let ExpressionKind::Index { target, index } = &expression.kind else {
+        return Ok(None);
+    };
+    let Some(array_name) = source_fixed_expression_name(target) else {
+        return Ok(None);
+    };
+    let Some(values) = context.constant_values.arrays.get(array_name) else {
+        return Ok(None);
+    };
+    let Some(index) = evaluate_source_fixed_expression_inner(context, index, row)? else {
+        return Ok(None);
+    };
+    let index = usize::try_from(index)
+        .map_err(|_| source_fixed_expression_integer_out_of_range(context, expression))?;
+    values
+        .get(index)
+        .copied()
+        .map(Some)
+        .ok_or_else(|| source_fixed_expression_unsupported(context, expression))
+}
+
+fn source_fixed_expression_name(expression: &Expression) -> Option<&str> {
+    match &expression.kind {
+        ExpressionKind::Name(name) => Some(name),
+        ExpressionKind::Group(inner) => source_fixed_expression_name(inner),
+        _ => None,
+    }
 }
 
 fn source_fixed_expression_static_integer(
