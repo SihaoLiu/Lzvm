@@ -403,6 +403,8 @@ pub enum ProveRunPlanError {
     AggregationRequired {
         option: &'static str,
     },
+    FinalWrapRequiresFullPass,
+    FinalWrapRequiresFinalAggregation,
     InvalidGpuStreams,
     InvalidWitnessThreadPools,
     InvalidStoredWitnesses,
@@ -435,6 +437,15 @@ impl fmt::Display for ProveRunPlanError {
             Self::EmptyOutputDirectory => write!(f, "prove run plan output directory is empty"),
             Self::AggregationRequired { option } => {
                 write!(f, "prove run plan option {option} requires aggregation")
+            }
+            Self::FinalWrapRequiresFullPass => {
+                write!(f, "prove run plan final wrap requires full pass")
+            }
+            Self::FinalWrapRequiresFinalAggregation => {
+                write!(
+                    f,
+                    "prove run plan final wrap requires final aggregation unit"
+                )
             }
             Self::InvalidGpuStreams => write!(f, "prove run plan GPU stream count is invalid"),
             Self::InvalidWitnessThreadPools => {
@@ -1161,6 +1172,7 @@ pub fn derive_prove_run_plan(
     validate_pass(&request.pass)?;
     validate_run_options(&request.options)?;
     validate_gpu_options(&request.gpu)?;
+    validate_final_wrap_options(&schedule, &request.pass, &request.options)?;
 
     Ok(ProveRunPlan {
         schedule,
@@ -1239,6 +1251,27 @@ fn validate_run_options(options: &ProveRunOptions) -> Result<(), ProveRunPlanErr
         return Err(ProveRunPlanError::AggregationRequired {
             option: "final_wrap",
         });
+    }
+    Ok(())
+}
+
+fn validate_final_wrap_options(
+    schedule: &ProveSchedule,
+    pass: &ProvePassRequest,
+    options: &ProveRunOptions,
+) -> Result<(), ProveRunPlanError> {
+    if !options.final_wrap {
+        return Ok(());
+    }
+    if !matches!(pass, ProvePassRequest::Full(_)) {
+        return Err(ProveRunPlanError::FinalWrapRequiresFullPass);
+    }
+    if !schedule
+        .units
+        .iter()
+        .any(|unit| unit.kind == KeyUnitKind::FinalAggregation)
+    {
+        return Err(ProveRunPlanError::FinalWrapRequiresFinalAggregation);
     }
     Ok(())
 }

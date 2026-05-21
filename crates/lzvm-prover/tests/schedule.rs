@@ -688,7 +688,10 @@ fn rejects_schedules_with_unimplemented_global_hints() {
 
 #[test]
 fn derives_full_prove_run_plan_from_catalog_and_request() {
-    let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
+    let catalog = sample_catalog(vec![
+        sample_unit(KeyUnitKind::Basic, 0, 64),
+        sample_unit(KeyUnitKind::FinalAggregation, 1, 96),
+    ]);
     let request = ProveRunRequest {
         pass: ProvePassRequest::Full(ProvePartitionPlan {
             input_data: Some(PathBuf::from("input.bin")),
@@ -716,7 +719,7 @@ fn derives_full_prove_run_plan_from_catalog_and_request() {
 
     let plan = derive_prove_run_plan(&catalog, request).expect("run plan should derive");
 
-    assert_eq!(plan.schedule.unit_count, 1);
+    assert_eq!(plan.schedule.unit_count, 2);
     assert_eq!(plan.pass.kind(), ProvePassKind::Full);
     assert_eq!(plan.options.output_dir, PathBuf::from("out"));
     assert_eq!(plan.gpu.max_streams, 8);
@@ -729,6 +732,51 @@ fn derives_full_prove_run_plan_from_catalog_and_request() {
         }
         _ => panic!("expected full pass"),
     }
+}
+
+#[test]
+fn rejects_final_wrap_for_contribution_passes() {
+    let catalog = sample_catalog(vec![
+        sample_unit(KeyUnitKind::Basic, 0, 64),
+        sample_unit(KeyUnitKind::FinalAggregation, 1, 96),
+    ]);
+    let mut options = ProveRunOptions::default_for_output(PathBuf::from("out"));
+    options.aggregate = true;
+    options.final_wrap = true;
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Contributions(ProvePartitionPlan::single()),
+        options,
+        gpu: GpuRunOptions::default(),
+    };
+
+    let error = derive_prove_run_plan(&catalog, request)
+        .expect_err("final wrap should reject contribution passes");
+
+    assert_eq!(
+        error.to_string(),
+        "prove run plan final wrap requires full pass"
+    );
+}
+
+#[test]
+fn rejects_final_wrap_without_final_aggregation_unit() {
+    let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
+    let mut options = ProveRunOptions::default_for_output(PathBuf::from("out"));
+    options.aggregate = true;
+    options.final_wrap = true;
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
+        options,
+        gpu: GpuRunOptions::default(),
+    };
+
+    let error = derive_prove_run_plan(&catalog, request)
+        .expect_err("final wrap should require final aggregation material");
+
+    assert_eq!(
+        error.to_string(),
+        "prove run plan final wrap requires final aggregation unit"
+    );
 }
 
 #[test]
