@@ -1023,6 +1023,42 @@ fn derives_prove_execution_plan_without_witness_library() {
 }
 
 #[test]
+fn rejects_final_wrap_execution_plan_without_public_inputs() {
+    let dir = temp_dir("execution-plan-final-wrap-public-inputs");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+
+    let catalog = sample_catalog(vec![
+        sample_unit_with_pcs_material(KeyUnitKind::Basic, 0, 64),
+        sample_unit_with_pcs_material(KeyUnitKind::FinalAggregation, 1, 96),
+    ]);
+    let mut options = ProveRunOptions::default_for_output(dir.join("out"));
+    options.aggregate = true;
+    options.final_wrap = true;
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
+        options,
+        gpu: GpuRunOptions::default(),
+    };
+    let inputs = ProveExecutionInputArtifacts {
+        witness_library: None,
+        guest_image,
+        public_inputs: None,
+    };
+
+    let result = derive_prove_execution_plan(&catalog, request, inputs);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        result,
+        Err(error) if error.to_string()
+            == "prove execution plan final wrap requires public inputs"
+    ));
+}
+
+#[test]
 fn derives_prove_execution_plan_with_program_image_cache() {
     let dir = temp_dir("execution-plan-program-image-cache");
     let _ = fs::remove_dir_all(&dir);

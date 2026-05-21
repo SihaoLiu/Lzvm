@@ -576,6 +576,7 @@ pub enum ProveExecutionPlanError {
     MissingPublicInputs {
         path: PathBuf,
     },
+    FinalWrapRequiresPublicInputs,
     PublicInputsIsNotFile {
         path: PathBuf,
     },
@@ -680,6 +681,9 @@ impl fmt::Display for ProveExecutionPlanError {
                     "prove execution plan public inputs are missing: {}",
                     path.display()
                 )
+            }
+            Self::FinalWrapRequiresPublicInputs => {
+                write!(f, "prove execution plan final wrap requires public inputs")
             }
             Self::PublicInputsIsNotFile { path } => write!(
                 f,
@@ -966,6 +970,9 @@ pub fn derive_prove_execution_plan_with_program_image_cache(
     program_image_cache: Option<PathBuf>,
 ) -> Result<ProveExecutionPlan, ProveExecutionPlanError> {
     let run_plan = derive_prove_run_plan(catalog, request)?;
+    if run_plan.options.final_wrap && inputs.public_inputs.is_none() {
+        return Err(ProveExecutionPlanError::FinalWrapRequiresPublicInputs);
+    }
     validate_execution_pcs_material(&run_plan.schedule)?;
     let witness_library_info = match &inputs.witness_library {
         Some(path) => {
