@@ -959,6 +959,8 @@ fn generate_key_writes_array_fixed_inputs_from_source_dimensions() {
         let mut setup = fixtures::sample_setup_info();
         setup.constant_columns[1].dimension = 2;
         setup.constant_columns[1].lengths = vec![2];
+        setup.n_constants = 3;
+        setup.section_widths.insert("const".to_owned(), 3);
         write_unit_setup_metadata(
             &unit
                 .setup_info_binary()
@@ -1102,6 +1104,8 @@ fn generate_key_writes_array_fixed_inputs_from_source_dimension_functions() {
         let mut setup = fixtures::sample_setup_info();
         setup.constant_columns[1].dimension = 2;
         setup.constant_columns[1].lengths = vec![2];
+        setup.n_constants = 3;
+        setup.section_widths.insert("const".to_owned(), 3);
         write_unit_setup_metadata(
             &unit
                 .setup_info_binary()

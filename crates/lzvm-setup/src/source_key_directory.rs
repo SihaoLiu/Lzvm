@@ -830,8 +830,7 @@ fn source_unit_setup_info(
 
     Ok(UnitSetupInfo {
         n_stages,
-        n_constants: u32::try_from(constant_columns.len())
-            .map_err(|_| unsupported_source_message("too many source fixed columns"))?,
+        n_constants: const_width,
         constant_columns,
         n_publics: Some(
             u32::try_from(public_count)
@@ -872,6 +871,7 @@ fn source_constant_columns(
 ) -> Result<Vec<ConstantColumn>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut columns = Vec::new();
+    let mut next_position = 0_u32;
     for module in &program.modules {
         for declaration in &module.columns {
             if declaration.kind != ColumnKind::Fixed {
@@ -908,8 +908,10 @@ fn source_constant_columns(
                 let lengths =
                     source_item_lengths(program, item, "source fixed-column", declaration_values)?;
                 let dimension = source_column_dimension(&lengths, "source fixed-column")?;
-                let id = u32::try_from(columns.len())
-                    .map_err(|_| unsupported_source_message("too many source fixed columns"))?;
+                let id = next_position;
+                next_position = next_position
+                    .checked_add(dimension)
+                    .ok_or_else(|| unsupported_source_message("source constant width overflow"))?;
                 columns.push(ConstantColumn {
                     name: item.name.clone(),
                     stage: 0,

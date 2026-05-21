@@ -1018,6 +1018,8 @@ fn writes_fixed_column_source_artifacts_with_array_dimensions() {
     let mut setup = fixtures::sample_two_column_setup_info(2, 3, 1, 4);
     setup.constant_columns[1].dimension = 2;
     setup.constant_columns[1].lengths = vec![2];
+    setup.n_constants = 3;
+    setup.section_widths.insert("const".to_owned(), 3);
     let setup_path = dir.join("unit.starkinfo.bin");
     let main_path = dir.join("main.pil");
     let output_path = dir.join("unit.fixed-source.bin");

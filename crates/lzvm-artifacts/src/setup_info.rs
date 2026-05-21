@@ -695,26 +695,30 @@ fn validate_constant_columns(
         return Ok(());
     }
     let expected = n_constants;
-    let n_constants = u32_to_usize(n_constants)?;
-    if columns.len() != n_constants {
-        return Err(SetupInfoError::ConstantColumnCountMismatch {
-            expected,
-            found: columns.len(),
-        });
-    }
-
-    let mut seen = vec![false; n_constants];
+    let constant_width = u32_to_usize(n_constants)?;
+    let mut seen = vec![false; constant_width];
     for (index, column) in columns.iter().enumerate() {
         let id = u32_to_usize(column.pols_map_id)?;
+        let dimension = u32_to_usize(column.dimension)?;
+        let end = id
+            .checked_add(dimension)
+            .ok_or(SetupInfoError::InvalidConstantColumn { index })?;
         if column.stage != 0
             || column.dimension == 0
-            || id >= seen.len()
-            || seen[id]
+            || end > seen.len()
+            || seen[id..end].iter().any(|occupied| *occupied)
             || column.stage_id != column.pols_map_id
         {
             return Err(SetupInfoError::InvalidConstantColumn { index });
         }
-        seen[id] = true;
+        seen[id..end].fill(true);
+    }
+    let occupied = seen.iter().filter(|occupied| **occupied).count();
+    if occupied != constant_width {
+        return Err(SetupInfoError::ConstantColumnCountMismatch {
+            expected,
+            found: occupied,
+        });
     }
 
     Ok(())

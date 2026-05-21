@@ -476,6 +476,58 @@ fn generate_key_uses_template_defaults_for_column_dimensions() {
 }
 
 #[test]
+fn generate_key_uses_fixed_dimension_width_for_constant_layout() {
+    let dir = temp_dir("fixed-dimension-constant-layout");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col fixed table[2] = [5, 1];\n\
+             col fixed tail = [7, 9];\n\
+         }\n\
+         airgroup GroupA { UnitA(); }",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let setup_path = layout.units[0]
+        .setup_info_binary()
+        .expect("setup metadata path should derive");
+    let setup = read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+    assert_eq!(setup.n_constants, 3);
+    assert_eq!(setup.section_widths.get("const"), Some(&3));
+    assert_eq!(setup.constant_columns.len(), 2);
+    assert_eq!(setup.constant_columns[0].name, "table");
+    assert_eq!(setup.constant_columns[0].dimension, 2);
+    assert_eq!(setup.constant_columns[0].pols_map_id, 0);
+    assert_eq!(setup.constant_columns[0].stage_id, 0);
+    assert_eq!(setup.constant_columns[1].name, "tail");
+    assert_eq!(setup.constant_columns[1].dimension, 1);
+    assert_eq!(setup.constant_columns[1].pols_map_id, 2);
+    assert_eq!(setup.constant_columns[1].stage_id, 2);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_uses_template_local_constants_for_column_dimensions() {
     let dir = temp_dir("template-local-constant-dimensions");
     let _ = fs::remove_dir_all(&dir);
