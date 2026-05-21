@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+use lzvm_field::{Felt, FieldError};
+
 pub const WITNESS_OPENING_SEGMENT_ID: u32 = 10_002;
 
 const WITNESS_OPENING_MAGIC: [u8; 4] = *b"wos0";
@@ -77,6 +79,22 @@ pub enum WitnessOpeningSegmentError {
         row_index: u64,
         stage_index: u32,
     },
+    ValueNonCanonical {
+        unit_index: u32,
+        row_index: u64,
+        stage_index: u32,
+        value_index: usize,
+        source: FieldError,
+    },
+    SiblingRootNonCanonical {
+        unit_index: u32,
+        row_index: u64,
+        stage_index: u32,
+        level_index: usize,
+        root_index: usize,
+        word_index: usize,
+        source: FieldError,
+    },
     LengthOverflow,
 }
 
@@ -124,12 +142,52 @@ impl fmt::Display for WitnessOpeningSegmentError {
                 f,
                 "duplicate witness opening stage index: unit {unit_index}, row {row_index}, stage {stage_index}"
             ),
+            Self::ValueNonCanonical {
+                unit_index,
+                row_index,
+                stage_index,
+                value_index,
+                source,
+            } => write!(
+                f,
+                "witness opening unit {unit_index} row {row_index} stage {stage_index} value {value_index} is non-canonical: {source}"
+            ),
+            Self::SiblingRootNonCanonical {
+                unit_index,
+                row_index,
+                stage_index,
+                level_index,
+                root_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "witness opening unit {unit_index} row {row_index} stage {stage_index} sibling level {level_index} root {root_index} word {word_index} is non-canonical: {source}"
+            ),
             Self::LengthOverflow => write!(f, "witness opening segment length overflow"),
         }
     }
 }
 
-impl std::error::Error for WitnessOpeningSegmentError {}
+impl std::error::Error for WitnessOpeningSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ValueNonCanonical { source, .. }
+            | Self::SiblingRootNonCanonical { source, .. } => Some(source),
+            Self::InvalidMagic
+            | Self::UnsupportedVersion { .. }
+            | Self::UnexpectedEof { .. }
+            | Self::TrailingBytes { .. }
+            | Self::EmptyUnits
+            | Self::EmptyQueries { .. }
+            | Self::EmptyStages { .. }
+            | Self::EmptyValues { .. }
+            | Self::DuplicateUnitIndex { .. }
+            | Self::DuplicateStageIndex { .. }
+            | Self::LengthOverflow => None,
+        }
+    }
+}
 
 pub fn encode_witness_opening_segment(
     value: &WitnessOpeningSegment,
@@ -321,6 +379,34 @@ fn validate_witness_opening_segment(
                         row_index: query.row_index,
                         stage_index: stage.stage_index,
                     });
+                }
+                for (value_index, value) in stage.values.iter().copied().enumerate() {
+                    Felt::from_canonical(value).map_err(|source| {
+                        WitnessOpeningSegmentError::ValueNonCanonical {
+                            unit_index: unit.unit_index,
+                            row_index: query.row_index,
+                            stage_index: stage.stage_index,
+                            value_index,
+                            source,
+                        }
+                    })?;
+                }
+                for (level_index, level) in stage.siblings.iter().enumerate() {
+                    for (root_index, root) in level.siblings.iter().enumerate() {
+                        for (word_index, word) in root.iter().copied().enumerate() {
+                            Felt::from_canonical(word).map_err(|source| {
+                                WitnessOpeningSegmentError::SiblingRootNonCanonical {
+                                    unit_index: unit.unit_index,
+                                    row_index: query.row_index,
+                                    stage_index: stage.stage_index,
+                                    level_index,
+                                    root_index,
+                                    word_index,
+                                    source,
+                                }
+                            })?;
+                        }
+                    }
                 }
             }
         }
