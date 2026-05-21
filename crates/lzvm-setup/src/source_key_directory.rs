@@ -357,8 +357,37 @@ fn source_layout_unit_row_count(
 fn validate_supported_source_program(
     program: &SourceProgram,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
+    let constant_values = source_scalar_constant_values(program, SOURCE_GLOBAL_LATTICE_SIZE);
+    let template_values = source_template_constant_value_cache(program, &constant_values);
+    let active_templates = concrete_template_names(program);
     for module in &program.modules {
-        if !module.public_tables.is_empty() {
+        for declaration in &module.public_tables {
+            if declaration_in_function_body(module, declaration.start, declaration.end)
+                || declaration_in_inactive_template(
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    &active_templates,
+                )
+            {
+                continue;
+            }
+            let declaration_values = source_declaration_constant_values_from_cache(
+                module,
+                declaration.start,
+                declaration.end,
+                &constant_values,
+                &template_values,
+            );
+            if source_declaration_in_static_false_branch(
+                program,
+                module,
+                declaration.start,
+                declaration.end,
+                declaration_values,
+            ) {
+                continue;
+            }
             return unsupported("public tables need metadata lowering support");
         }
     }
