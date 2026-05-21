@@ -151,6 +151,98 @@ fn generate_key_lowers_source_later_stage_air_value_constraints() {
 }
 
 #[test]
+fn generate_key_lowers_indexed_source_air_value_constraints() {
+    let dir = temp_dir("indexed-air-value");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airval stage(2) expected[2];\n\
+         airtemplate UnitA() {\n\
+             col witness value;\n\
+             value === expected[1];\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col witness stage(2) aux.later;\n\
+         col fixed rows = [0, 0];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    assert_eq!(setup.unit_value_map.len(), 1);
+    assert_eq!(setup.unit_value_map[0].name, "expected");
+    assert_eq!(setup.unit_value_map[0].stage, 2);
+    assert_eq!(setup.unit_value_map[0].lengths, [2]);
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert_eq!(expressions.constraints.len(), 1);
+    assert!(matches!(
+        expressions.constraints[0].operations[0].sources[1],
+        CodeOperand::AirValue {
+            id: 1,
+            stage: Some(2),
+            air_group_id: None,
+            dimension: 3,
+        }
+    ));
+    let regular = read_regular_program_file(
+        unit.expression_program()
+            .expect("regular program path should derive"),
+    )
+    .expect("regular program should parse");
+    let stage_values = [22, 23].map(Felt::from_u64);
+    let stage_columns = [RegularStageColumns {
+        stage_index: 1,
+        column_count: 1,
+        values: &stage_values,
+    }];
+    let unit_values = [11, 0, 0, 22, 0, 0].map(Felt::from_u64);
+    let results = evaluate_regular_constraints(
+        &regular.constraints,
+        RegularConstraintInputs {
+            domain_size: 2,
+            stage_count: u16::try_from(setup.n_stages).expect("stage count should fit"),
+            stage_columns: &stage_columns,
+            opening_point_offsets: &setup.opening_points,
+            unit_values: &unit_values,
+            ..RegularConstraintInputs::default()
+        },
+    )
+    .expect("regular constraints should evaluate");
+    assert_eq!(results[0].invalid_rows.len(), 1);
+    assert_eq!(results[0].invalid_rows[0].row, 1);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_lowers_template_parameter_static_if_air_values() {
     let dir = temp_dir("template-param-static-if-air-value");
     let _ = fs::remove_dir_all(&dir);

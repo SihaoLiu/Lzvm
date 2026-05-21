@@ -1033,20 +1033,33 @@ fn stage_value_offset(
     values: &[StageValue],
     id: u32,
 ) -> Result<u32, RegularProgramLoweringError> {
-    let id_usize = usize::try_from(id).map_err(|_| RegularProgramLoweringError::LengthOverflow)?;
-    if id_usize >= values.len() {
-        return Err(RegularProgramLoweringError::MissingStageValue { source, id });
-    }
-
+    let mut logical_id = 0_u32;
     let mut offset = 0_u32;
-    for (index, value) in values.iter().enumerate() {
-        if index == id_usize {
-            return Ok(offset);
+    for value in values {
+        let dimension = stage_value_dimension(value)?;
+        if id >= logical_id {
+            let element = id
+                .checked_sub(logical_id)
+                .ok_or(RegularProgramLoweringError::LengthOverflow)?;
+            if element < dimension {
+                let width = if value.stage == 1 { 1 } else { 3 };
+                return add_u32(offset, mul_u32(element, width)?);
+            }
         }
-        offset = add_u32(offset, if value.stage == 1 { 1 } else { 3 })?;
+        let width = if value.stage == 1 { 1 } else { 3 };
+        offset = add_u32(offset, mul_u32(dimension, width)?)?;
+        logical_id = add_u32(logical_id, dimension)?;
     }
 
     Err(RegularProgramLoweringError::MissingStageValue { source, id })
+}
+
+fn stage_value_dimension(value: &StageValue) -> Result<u32, RegularProgramLoweringError> {
+    value.lengths.iter().try_fold(1_u32, |dimension, length| {
+        dimension
+            .checked_mul(*length)
+            .ok_or(RegularProgramLoweringError::LengthOverflow)
+    })
 }
 
 fn add_u32(left: u32, right: u32) -> Result<u32, RegularProgramLoweringError> {

@@ -120,35 +120,41 @@ impl SourceScalarSlots {
         }
 
         let mut unit_values = BTreeMap::new();
-        for (index, value) in setup.unit_value_map.iter().enumerate() {
+        let mut unit_value_id = 0_u32;
+        for value in &setup.unit_value_map {
+            let source_dimension =
+                stage_value_dimension(&value.lengths, "source unit value dimension overflow")?;
             unit_values.insert(
                 value.name.clone(),
                 SourceUnitValueSlot {
-                    id: usize_to_u32(index, "source unit value id overflow")?,
+                    id: unit_value_id,
                     stage: value.stage,
-                    source_dimension: stage_value_dimension(
-                        &value.lengths,
-                        "source unit value dimension overflow",
-                    )?,
+                    source_dimension,
                     operand_dimension: if value.stage == 1 { 1 } else { 3 },
                 },
             );
+            unit_value_id = unit_value_id.checked_add(source_dimension).ok_or(
+                SourceScalarSlotError::LengthOverflow("source unit value id overflow"),
+            )?;
         }
 
         let mut group_values = BTreeMap::new();
-        for (index, value) in setup.group_value_map.iter().enumerate() {
+        let mut group_value_id = 0_u32;
+        for value in &setup.group_value_map {
+            let source_dimension =
+                stage_value_dimension(&value.lengths, "source group value dimension overflow")?;
             group_values.insert(
                 value.name.clone(),
                 SourceGroupValueSlot {
-                    id: usize_to_u32(index, "source group value id overflow")?,
+                    id: group_value_id,
                     stage: value.stage,
-                    source_dimension: stage_value_dimension(
-                        &value.lengths,
-                        "source group value dimension overflow",
-                    )?,
+                    source_dimension,
                     operand_dimension: if value.stage == 1 { 1 } else { 3 },
                 },
             );
+            group_value_id = group_value_id.checked_add(source_dimension).ok_or(
+                SourceScalarSlotError::LengthOverflow("source group value id overflow"),
+            )?;
         }
 
         let mut constants = BTreeMap::new();
@@ -484,6 +490,60 @@ impl SourceScalarSlots {
                 Some(slot.stage),
                 Some(stage_id),
                 3,
+            ));
+        }
+
+        if let Some(slot) = self.unit_values.get(name) {
+            if row_offset != 0 {
+                return Err(SourceScalarSlotError::UnsupportedRowOffset {
+                    name: name.to_owned(),
+                });
+            }
+            if index >= slot.source_dimension {
+                return Err(SourceScalarSlotError::IndexOutOfRange {
+                    name: name.to_owned(),
+                    index,
+                    dimension: slot.source_dimension,
+                });
+            }
+            let id = slot
+                .id
+                .checked_add(index)
+                .ok_or(SourceScalarSlotError::LengthOverflow(
+                    "source unit value id overflow",
+                ))?;
+            return Ok(CodeOperand::air_value(
+                id,
+                Some(slot.stage),
+                None,
+                slot.operand_dimension,
+            ));
+        }
+
+        if let Some(slot) = self.group_values.get(name) {
+            if row_offset != 0 {
+                return Err(SourceScalarSlotError::UnsupportedRowOffset {
+                    name: name.to_owned(),
+                });
+            }
+            if index >= slot.source_dimension {
+                return Err(SourceScalarSlotError::IndexOutOfRange {
+                    name: name.to_owned(),
+                    index,
+                    dimension: slot.source_dimension,
+                });
+            }
+            let id = slot
+                .id
+                .checked_add(index)
+                .ok_or(SourceScalarSlotError::LengthOverflow(
+                    "source group value id overflow",
+                ))?;
+            return Ok(CodeOperand::air_group_value(
+                id,
+                Some(slot.stage),
+                None,
+                slot.operand_dimension,
             ));
         }
 
