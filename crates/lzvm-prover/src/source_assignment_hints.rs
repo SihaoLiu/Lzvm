@@ -76,6 +76,16 @@ fn source_assignment_expression_field(
                         })?;
                         left * inverse
                     }
+                    "mod" => {
+                        let divisor = right.to_u64();
+                        if divisor == 0 {
+                            return Err(ProveWitnessCommitmentError::SourceAssignment {
+                                unit_index,
+                                message: format!("operator mod has zero divisor at row {row}"),
+                            });
+                        }
+                        Felt::from_u64(left.to_u64() % divisor)
+                    }
                     _ => {
                         return source_assignment_error(
                             unit_index,
