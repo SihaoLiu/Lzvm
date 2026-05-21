@@ -83,6 +83,11 @@ pub enum ProofPreflightError {
     PublicValuesField(PublicValueFieldError),
     ProgramImageCache(ProgramImageCacheSegmentError),
     ChallengeValues(ChallengeValuesSegmentError),
+    ChallengeValueNonCanonical {
+        value_index: usize,
+        word_index: usize,
+        source: FieldError,
+    },
     EthBlockInput(EthBlockInputError),
     EthBlockPublicValues(EthBlockPublicValuesError),
     MissingEthBlockInput,
@@ -110,6 +115,14 @@ impl fmt::Display for ProofPreflightError {
             Self::PublicValuesField(error) => write!(f, "{error}"),
             Self::ProgramImageCache(error) => write!(f, "{error}"),
             Self::ChallengeValues(error) => write!(f, "{error}"),
+            Self::ChallengeValueNonCanonical {
+                value_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "invalid challenge values segment value {value_index} word {word_index}: {source}"
+            ),
             Self::EthBlockInput(error) => write!(f, "{error}"),
             Self::EthBlockPublicValues(error) => write!(f, "{error}"),
             Self::MissingEthBlockInput => write!(f, "missing ETH block input proof segment"),
@@ -143,6 +156,7 @@ impl std::error::Error for ProofPreflightError {
             Self::PublicValuesField(error) => Some(error),
             Self::ProgramImageCache(error) => Some(error),
             Self::ChallengeValues(error) => Some(error),
+            Self::ChallengeValueNonCanonical { source, .. } => Some(source),
             Self::EthBlockInput(error) => Some(error),
             Self::EthBlockPublicValues(error) => Some(error),
             Self::ProofArtifact(error) => Some(error),
@@ -228,6 +242,7 @@ pub fn validate_proof_public_values(
     {
         let challenge_values = parse_challenge_values_segment(&segment.data)
             .map_err(ProofPreflightError::ChallengeValues)?;
+        validate_challenge_values_canonical(&challenge_values.values)?;
         challenge_values_segment_byte_counts.push(segment.data.len());
         challenge_values_value_counts.push(challenge_values.values.len());
     }
@@ -394,6 +409,21 @@ pub(crate) fn contains_eth_block_public_values(public_values: &PublicValues) -> 
         .values
         .iter()
         .any(|entry| is_eth_block_public_value_name(&entry.name))
+}
+
+fn validate_challenge_values_canonical(values: &[[u64; 3]]) -> Result<(), ProofPreflightError> {
+    for (value_index, words) in values.iter().enumerate() {
+        for (word_index, word) in words.iter().copied().enumerate() {
+            Felt::from_canonical(word).map_err(|source| {
+                ProofPreflightError::ChallengeValueNonCanonical {
+                    value_index,
+                    word_index,
+                    source,
+                }
+            })?;
+        }
+    }
+    Ok(())
 }
 
 fn is_eth_block_public_value_name(name: &str) -> bool {

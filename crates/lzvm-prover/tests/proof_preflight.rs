@@ -338,6 +338,31 @@ fn rejects_invalid_challenge_values_segments() {
 }
 
 #[test]
+fn rejects_non_canonical_challenge_values_segments() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    proof.segments.push(ProofSegment {
+        id: CHALLENGE_VALUES_SEGMENT_ID,
+        data: encode_challenge_values_segment(&ChallengeValuesSegment {
+            values: vec![[1, 2, MODULUS]],
+        })
+        .expect("challenge values segment should encode"),
+    });
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("challenge values segment should reject non-canonical values");
+
+    assert_eq!(
+        error,
+        ProofPreflightError::ChallengeValueNonCanonical {
+            value_index: 0,
+            word_index: 2,
+            source: FieldError::NonCanonical { value: MODULUS },
+        }
+    );
+}
+
+#[test]
 fn counts_eth_block_input_segments() {
     let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
     let public_values = public_values_from_eth_block_input(sample_hash(0x44), &block_input);
