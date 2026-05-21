@@ -859,7 +859,7 @@ fn source_assignment_binary_operator(op: BinaryOperator) -> Option<&'static str>
         BinaryOperator::Add => Some("add"),
         BinaryOperator::Subtract => Some("sub"),
         BinaryOperator::Multiply => Some("mul"),
-        BinaryOperator::Divide => Some("div"),
+        BinaryOperator::Divide | BinaryOperator::Backslash => Some("div"),
         _ => None,
     }
 }
