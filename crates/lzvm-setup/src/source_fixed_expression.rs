@@ -112,6 +112,12 @@ fn evaluate_source_fixed_expression_inner(
             let Some(lhs) = evaluate_source_fixed_expression_inner(context, left, row)? else {
                 return Ok(None);
             };
+            if *op == BinaryOperator::Power {
+                let exponent = source_fixed_expression_static_integer(context, right)?;
+                let exponent = u64::try_from(exponent)
+                    .map_err(|_| source_fixed_expression_integer_out_of_range(context, right))?;
+                return Ok(Some(field_pow(lhs, exponent)));
+            }
             let Some(rhs) = evaluate_source_fixed_expression_inner(context, right, row)? else {
                 return Ok(None);
             };
@@ -389,4 +395,8 @@ fn field_sub(lhs: u64, rhs: u64) -> u64 {
 fn field_mul(lhs: u64, rhs: u64) -> u64 {
     let modulus = u128::from(MODULUS);
     ((u128::from(lhs) * u128::from(rhs)) % modulus) as u64
+}
+
+fn field_pow(base: u64, exponent: u64) -> u64 {
+    Felt::from_u64(base).pow(exponent).to_u64()
 }
