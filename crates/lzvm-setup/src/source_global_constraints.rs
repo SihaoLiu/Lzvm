@@ -29,6 +29,7 @@ use crate::{
 
 mod hints;
 mod residuals;
+mod top_level_call;
 mod top_level_for;
 mod top_level_if;
 
@@ -319,14 +320,7 @@ fn lower_top_level_global_constraints_range(
                 {
                     index = next_index;
                 } else {
-                    index = lower_top_level_expression_statement(
-                        context.module,
-                        context.tokens,
-                        index,
-                        context.slots,
-                        context.alias_scope,
-                        constraints,
-                    )?;
+                    index = lower_top_level_expression_statement(context, index, constraints)?;
                 }
             }
             TokenKind::Public | TokenKind::Private
@@ -340,14 +334,7 @@ fn lower_top_level_global_constraints_range(
                 index = skip_top_level_item(context.tokens, index)?;
             }
             _ => {
-                index = lower_top_level_expression_statement(
-                    context.module,
-                    context.tokens,
-                    index,
-                    context.slots,
-                    context.alias_scope,
-                    constraints,
-                )?;
+                index = lower_top_level_expression_statement(context, index, constraints)?;
             }
         }
     }
@@ -355,26 +342,26 @@ fn lower_top_level_global_constraints_range(
 }
 
 fn lower_top_level_expression_statement(
-    module: &SourceProgramModule,
-    tokens: &[Token],
+    context: &SourceTopLevelGlobalConstraintContext<'_, '_, '_>,
     index: usize,
-    slots: &SourceGlobalSlots<'_>,
-    alias_scope: &SourceGlobalAliasScope<'_>,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<usize, SourceKeyDirectoryMetadataError> {
-    let next_index = skip_top_level_statement(tokens, index)?;
+    let next_index = skip_top_level_statement(context.tokens, index)?;
     let expression_end = next_index
         .checked_sub(1)
         .ok_or_else(|| unsupported_source_message("top-level statement has no expression"))?;
-    let (expression, consumed) = parse_expression(&module.source, index, expression_end)?;
+    let (expression, consumed) = parse_expression(&context.module.source, index, expression_end)?;
     if consumed != expression_end {
         return unsupported("top-level statement has unsupported trailing tokens");
     }
+    if top_level_call::lower_top_level_function_call(context, &expression, constraints)? {
+        return Ok(next_index);
+    }
     lower_top_level_global_constraint(
         &expression,
-        &module.source.contents[expression.start..expression.end],
-        slots,
-        alias_scope,
+        &context.module.source.contents[expression.start..expression.end],
+        context.slots,
+        context.alias_scope,
         constraints,
     )?;
     Ok(next_index)
