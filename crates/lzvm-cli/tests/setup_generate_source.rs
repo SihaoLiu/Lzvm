@@ -1842,6 +1842,68 @@ fn generate_key_writes_source_public_values_to_global_metadata() {
 }
 
 #[test]
+fn generate_key_skips_inactive_source_public_values() {
+    let dir = temp_dir("inactive-public-value-metadata");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "public inputs[4];\n\
+         function helper() {\n\
+             public helper_public[UNKNOWN_WIDTH];\n\
+         }\n\
+         airtemplate VirtualUnit(const int width) {\n\
+             int dynamic_width = width;\n\
+             public skipped_virtual[dynamic_width];\n\
+         }\n\
+         airtemplate UnitA() {\n\
+             int count = 0;\n\
+             if (count > 0) {\n\
+                 public skipped_static[UNKNOWN_WIDTH];\n\
+             }\n\
+         }\n\
+         airgroup GroupA {\n\
+             virtual VirtualUnit(2);\n\
+             UnitA();\n\
+         }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
+        .expect("source global metadata should parse");
+    assert_eq!(global.n_publics, 1);
+    assert_eq!(global.publics_map.len(), 1);
+    assert_eq!(global.publics_map[0].name, "inputs");
+    assert_eq!(global.publics_map[0].lengths, [4]);
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let setup_path = layout.units[0]
+        .setup_info_binary()
+        .expect("setup metadata path should derive");
+    let setup = read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+    assert_eq!(setup.n_publics, Some(1));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_writes_source_witness_layout_to_unit_metadata() {
     let dir = temp_dir("witness-layout-metadata");
     let _ = fs::remove_dir_all(&dir);

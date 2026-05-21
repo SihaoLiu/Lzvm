@@ -391,7 +391,12 @@ fn source_global_info(
         &active_templates,
         &template_values,
     )?;
-    let publics_map = source_public_values(program, &constant_values)?;
+    let publics_map = source_public_values(
+        program,
+        &constant_values,
+        &active_templates,
+        &template_values,
+    )?;
     let (_, group_aggregation_types) = source_air_group_values(
         program,
         &constant_values,
@@ -474,11 +479,39 @@ fn source_global_info(
 fn source_public_values(
     program: &SourceProgram,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    active_templates: &BTreeSet<String>,
+    template_values: &SourceTemplateConstantValueCache,
 ) -> Result<Vec<PublicValue>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut values = Vec::new();
     for module in &program.modules {
         for declaration in &module.publics {
+            if declaration_in_function_body(module, declaration.start, declaration.end)
+                || declaration_in_inactive_template(
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    active_templates,
+                )
+            {
+                continue;
+            }
+            let declaration_values = source_declaration_constant_values_from_cache(
+                module,
+                declaration.start,
+                declaration.end,
+                constant_values,
+                template_values,
+            );
+            if source_declaration_in_static_false_branch(
+                program,
+                module,
+                declaration.start,
+                declaration.end,
+                declaration_values,
+            ) {
+                continue;
+            }
             if declaration.initializer.is_some() {
                 return unsupported("source public initializers need metadata lowering support");
             }
@@ -498,7 +531,7 @@ fn source_public_values(
                         program,
                         item,
                         "source public value",
-                        constant_values,
+                        declaration_values,
                     )?
                     .into_iter()
                     .map(u64::from)
@@ -949,7 +982,13 @@ fn source_unit_setup_info(
             .and_then(|count| acc.checked_add(count))
     })
     .ok_or_else(|| unsupported_source_message("source challenge count overflow"))?;
-    let public_count = source_public_values(program, &constant_values)?.len();
+    let public_count = source_public_values(
+        program,
+        &constant_values,
+        &active_templates,
+        &template_values,
+    )?
+    .len();
     let const_width = constant_columns
         .iter()
         .try_fold(0_u32, |acc, column| acc.checked_add(column.dimension))
