@@ -338,6 +338,44 @@ fn resolves_fixed_file_pragmas_with_template_parameters() {
 }
 
 #[test]
+fn resolves_fixed_file_pragmas_with_dependent_template_parameter_defaults() {
+    let root = case_dir("fixed-file-dependent-params");
+    write_file(
+        &root,
+        "main.pil",
+        "airtemplate Table(const int RC = 2, const int NEXT = RC + 1) {\n\
+             #pragma extern_fixed_file `${NEXT}.bin`\n\
+         }\n\
+         airgroup GroupA {\n\
+             Table();\n\
+             Table(RC: 4) alias Named;\n\
+             Table(8) alias Positional;\n\
+         }",
+    );
+    let mut loader = SourceProgramLoader::new(SourceLoaderConfig {
+        working_dir: root.clone(),
+        ..SourceLoaderConfig::default()
+    });
+
+    let program = loader
+        .load_main("main.pil")
+        .expect("source program should load");
+    let fixed_files = program
+        .resolved_fixed_file_pragmas()
+        .expect("fixed-file pragmas should resolve");
+
+    assert_eq!(
+        fixed_files
+            .iter()
+            .map(|fixed_file| fixed_file.path.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("3.bin"), Some("5.bin"), Some("9.bin")]
+    );
+
+    fs::remove_dir_all(&root).expect("case directory should be removed");
+}
+
+#[test]
 fn resolves_fixed_file_pragmas_with_constant_expression_template_parameters() {
     let root = case_dir("fixed-file-expression-params");
     write_file(

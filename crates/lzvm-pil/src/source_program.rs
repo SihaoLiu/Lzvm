@@ -1,4 +1,4 @@
-use crate::parser::evaluate_fixed_file_template_value_expression;
+use crate::parser::evaluate_fixed_file_template_value_expression_with_values;
 use crate::{
     parse_air_group_declarations, parse_air_group_value_declarations,
     parse_air_instance_declarations, parse_air_template_declarations, parse_column_declarations,
@@ -19,7 +19,7 @@ use lzvm_artifacts::source_program::{
     SourceProgramArchiveError, SourceProgramArchiveIncludeKind,
     SourceProgramArchiveIncludeVisibility, SourceProgramArchiveSource,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -243,17 +243,23 @@ fn fixed_file_template_values(
         return BTreeMap::new();
     };
     let mut values = BTreeMap::new();
+    let mut provided = BTreeSet::new();
+    if let Some(arguments) = instance.args_expressions.as_ref() {
+        apply_fixed_file_template_call_arguments(template, arguments, &mut values, &mut provided);
+    }
     for parameter in &template.parameters {
+        if provided.contains(&parameter.name) {
+            continue;
+        }
         if let Some(value) = parameter
             .default_expression
             .as_ref()
-            .and_then(evaluate_fixed_file_template_value_expression)
+            .and_then(|expression| {
+                evaluate_fixed_file_template_value_expression_with_values(expression, &values)
+            })
         {
             values.insert(parameter.name.clone(), value);
         }
-    }
-    if let Some(arguments) = instance.args_expressions.as_ref() {
-        apply_fixed_file_template_call_arguments(template, arguments, &mut values);
     }
     values
 }
@@ -262,20 +268,42 @@ fn apply_fixed_file_template_call_arguments(
     template: &AirTemplateDeclaration,
     arguments: &[CallArgument],
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    provided: &mut BTreeSet<String>,
 ) {
     let mut positional_index = 0;
     for argument in arguments {
-        let Some(value) = evaluate_fixed_file_template_value_expression(&argument.value) else {
+        let Some(value) =
+            evaluate_fixed_file_template_value_expression_with_values(&argument.value, values)
+        else {
             continue;
         };
-        if let Some(name) = argument.name.as_ref() {
+        let name = if let Some(name) = argument.name.as_ref() {
+            name
+        } else {
+            while template
+                .parameters
+                .get(positional_index)
+                .is_some_and(|parameter| provided.contains(&parameter.name))
+            {
+                let Some(next) = positional_index.checked_add(1) else {
+                    return;
+                };
+                positional_index = next;
+            }
+            let Some(parameter) = template.parameters.get(positional_index) else {
+                continue;
+            };
+            &parameter.name
+        };
+        if provided.insert(name.clone()) {
             values.insert(name.clone(), value);
-            continue;
         }
-        if let Some(parameter) = template.parameters.get(positional_index) {
-            values.insert(parameter.name.clone(), value);
+        if argument.name.is_none() {
+            let Some(next) = positional_index.checked_add(1) else {
+                return;
+            };
+            positional_index = next;
         }
-        positional_index += 1;
     }
 }
 
