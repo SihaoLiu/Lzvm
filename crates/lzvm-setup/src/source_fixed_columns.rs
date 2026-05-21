@@ -535,18 +535,6 @@ fn fixed_columns_from_source_program(
             if declaration.kind != ColumnKind::Fixed {
                 continue;
             }
-            let Some(item) = declaration.items.first() else {
-                continue;
-            };
-            if !source_fixed_expected_column_matches(&item.name, &expected_columns) {
-                continue;
-            }
-            if declaration.items.len() != 1 || item.template {
-                return Err(SourceFixedColumnsWriteError::UnsupportedColumnShape {
-                    source_name: declaration.source_name.clone(),
-                    column: item.name.clone(),
-                });
-            }
             let declaration_values = source_fixed_declaration_constant_values(
                 module,
                 declaration.start,
@@ -554,37 +542,48 @@ fn fixed_columns_from_source_program(
                 &constant_values,
                 &template_values,
             );
-            let dimensions = source_fixed_column_dimensions(
-                program,
-                &declaration.source_name,
-                &module.source.contents,
-                item,
-                &declaration_values,
-            )?;
-            logical_dimensions
-                .entry(item.name.clone())
-                .or_insert_with(|| dimensions.clone());
-            let physical_columns =
-                source_fixed_physical_columns(&item.name, &dimensions, &expected_columns);
-            for (column_name, column_dimensions) in physical_columns {
-                if !seen_declarations.insert(column_name.clone()) {
+            for item in &declaration.items {
+                if !source_fixed_expected_column_matches(&item.name, &expected_columns) {
                     continue;
                 }
-                let mut column_item = item.clone();
-                column_item.name = column_name;
-                let initializer = if column_item.name == item.name {
-                    declaration.initializer.clone()
-                } else {
-                    None
-                };
-                declarations.push(SourceFixedColumnDeclaration {
-                    source_name: declaration.source_name.clone(),
-                    source: module.source.contents.clone(),
-                    item: column_item,
-                    initializer,
-                    dimensions: column_dimensions,
-                    constant_values: declaration_values.clone(),
-                });
+                if item.template {
+                    return Err(SourceFixedColumnsWriteError::UnsupportedColumnShape {
+                        source_name: declaration.source_name.clone(),
+                        column: item.name.clone(),
+                    });
+                }
+                let dimensions = source_fixed_column_dimensions(
+                    program,
+                    &declaration.source_name,
+                    &module.source.contents,
+                    item,
+                    &declaration_values,
+                )?;
+                logical_dimensions
+                    .entry(item.name.clone())
+                    .or_insert_with(|| dimensions.clone());
+                let physical_columns =
+                    source_fixed_physical_columns(&item.name, &dimensions, &expected_columns);
+                for (column_name, column_dimensions) in physical_columns {
+                    if !seen_declarations.insert(column_name.clone()) {
+                        continue;
+                    }
+                    let mut column_item = item.clone();
+                    column_item.name = column_name;
+                    let initializer = if column_item.name == item.name {
+                        declaration.initializer.clone()
+                    } else {
+                        None
+                    };
+                    declarations.push(SourceFixedColumnDeclaration {
+                        source_name: declaration.source_name.clone(),
+                        source: module.source.contents.clone(),
+                        item: column_item,
+                        initializer,
+                        dimensions: column_dimensions,
+                        constant_values: declaration_values.clone(),
+                    });
+                }
             }
         }
     }

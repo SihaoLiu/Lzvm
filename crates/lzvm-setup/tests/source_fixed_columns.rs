@@ -84,6 +84,65 @@ fn writes_fixed_column_source_artifacts_from_literal_sequences() {
 }
 
 #[test]
+fn writes_fixed_column_source_artifacts_from_multi_item_declarations() {
+    let dir = temp_dir("multi-item-declarations");
+    let _ = fs::remove_dir_all(&dir);
+    let setup = fixtures::sample_base_setup_info();
+    let setup_path = dir.join("unit.starkinfo.bin");
+    let main_path = dir.join("main.pil");
+    let output_path = dir.join("unit.fixed-source.bin");
+    write_file(
+        &setup_path,
+        encode_unit_setup_info(&setup).expect("setup should encode"),
+    );
+    write_file(
+        &main_path,
+        "airtemplate UnitA() {\n\
+             col fixed main.left, main.right;\n\
+             main.left = [5, 1];\n\
+             main.right = [9, 8];\n\
+         }\n\
+         airgroup GroupA { UnitA(); }",
+    );
+
+    write_fixed_columns_from_source_file(&SourceFixedColumnsWriteRequest {
+        working_dir: dir.clone(),
+        include_paths: Vec::new(),
+        include_path_first: false,
+        main_file: main_path,
+        setup_info_path: setup_path,
+        group_name: "group-a".to_owned(),
+        unit_name: "unit-a".to_owned(),
+        output_path: output_path.clone(),
+    })
+    .expect("fixed columns should be written");
+
+    let columns = read_fixed_columns_file(&output_path).expect("fixed columns should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        columns,
+        FixedColumns {
+            group_name: "group-a".to_owned(),
+            unit_name: "unit-a".to_owned(),
+            row_count: 2,
+            columns: vec![
+                FixedColumn {
+                    name: "main.left".to_owned(),
+                    dimensions: vec![1],
+                    values: vec![5, 1],
+                },
+                FixedColumn {
+                    name: "main.right".to_owned(),
+                    dimensions: vec![1],
+                    values: vec![9, 8],
+                },
+            ],
+        }
+    );
+}
+
+#[test]
 fn writes_fixed_column_source_artifacts_from_static_expressions() {
     let dir = temp_dir("static-expressions");
     let _ = fs::remove_dir_all(&dir);
