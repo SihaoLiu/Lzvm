@@ -874,6 +874,12 @@ fn source_assignment_binary_operator(op: BinaryOperator) -> Option<&'static str>
         BinaryOperator::Multiply => Some("mul"),
         BinaryOperator::Divide | BinaryOperator::Backslash => Some("div"),
         BinaryOperator::Modulo => Some("mod"),
+        BinaryOperator::Less => Some("lt"),
+        BinaryOperator::LessEqual => Some("le"),
+        BinaryOperator::Greater => Some("gt"),
+        BinaryOperator::GreaterEqual => Some("ge"),
+        BinaryOperator::EqualEqual => Some("eq"),
+        BinaryOperator::NotEqual => Some("ne"),
         _ => None,
     }
 }

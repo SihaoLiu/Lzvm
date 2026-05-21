@@ -86,6 +86,12 @@ fn source_assignment_expression_field(
                         }
                         Felt::from_u64(left.to_u64() % divisor)
                     }
+                    "lt" => Felt::from_u64(u64::from(left.to_u64() < right.to_u64())),
+                    "le" => Felt::from_u64(u64::from(left.to_u64() <= right.to_u64())),
+                    "gt" => Felt::from_u64(u64::from(left.to_u64() > right.to_u64())),
+                    "ge" => Felt::from_u64(u64::from(left.to_u64() >= right.to_u64())),
+                    "eq" => Felt::from_u64(u64::from(left == right)),
+                    "ne" => Felt::from_u64(u64::from(left != right)),
                     _ => {
                         return source_assignment_error(
                             unit_index,

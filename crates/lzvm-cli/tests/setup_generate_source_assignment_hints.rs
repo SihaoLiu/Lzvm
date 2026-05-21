@@ -1658,6 +1658,237 @@ fn prove_witness_rejects_source_modulo_assignment_mismatch_with_trace_bytes() {
 }
 
 #[test]
+fn generate_key_lowers_source_comparison_assignments_as_regular_hints() {
+    let dir = temp_dir("source-comparison-assignment");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col witness value;\n\
+             col witness limit;\n\
+             col witness out[6];\n\
+             out[0] = value < limit;\n\
+             out[1] = value <= limit;\n\
+             out[2] = value > limit;\n\
+             out[3] = value >= limit;\n\
+             out[4] = value == limit;\n\
+             out[5] = value != limit;\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let expression_path = unit
+        .expression_info_binary()
+        .expect("expression metadata path should derive");
+    let expressions = read_expression_info_binary_file(expression_path)
+        .expect("expression metadata should parse");
+    let expected_ops = ["lt", "le", "gt", "ge", "eq", "ne"];
+    assert_eq!(expressions.hints.len(), expected_ops.len());
+    for (hint, op) in expressions.hints.iter().zip(expected_ops) {
+        assert_eq!(hint.name, SOURCE_ASSIGNMENT_CHECK_HINT);
+        assert_eq!(hint.fields.len(), 2);
+        assert_eq!(hint.fields[0].name, "target");
+        assert_eq!(hint.fields[1].name, "expression");
+        assert_eq!(hint.fields[1].values.len(), 3);
+        assert_eq!(
+            hint.fields[1].values[2].payload,
+            HintPayload::String {
+                value: op.to_owned()
+            }
+        );
+    }
+    let regular = read_regular_program_file(
+        unit.expression_program()
+            .expect("regular program path should derive"),
+    )
+    .expect("regular program should parse");
+    assert_eq!(regular.hints.hints.len(), expected_ops.len());
+    for (hint, op) in regular.hints.hints.iter().zip(expected_ops) {
+        assert_eq!(hint.name, SOURCE_ASSIGNMENT_CHECK_HINT);
+        assert_eq!(hint.fields[1].name, "expression");
+        assert_eq!(hint.fields[1].values.len(), 3);
+        assert_eq!(
+            hint.fields[1].values[2].operand,
+            HintOperand::String(op.to_owned())
+        );
+    }
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn prove_witness_accepts_source_comparison_assignment_hints_with_trace_bytes() {
+    let dir = temp_dir("source-comparison-assignment-witness");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    let guest_image = dir.join("guest.elf");
+    let trace_path = dir.join("trace.bin");
+    let output_dir = dir.join("proof-out");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col witness value;\n\
+             col witness limit;\n\
+             col witness out[6];\n\
+             out[0] = value < limit;\n\
+             out[1] = value <= limit;\n\
+             out[2] = value > limit;\n\
+             out[3] = value >= limit;\n\
+             out[4] = value == limit;\n\
+             out[5] = value != limit;\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+    write_file(&guest_image, sample_guest_image());
+    write_file(
+        &trace_path,
+        sample_trace_bytes(&[4, 4, 0, 1, 0, 1, 1, 0, 8, 3, 0, 0, 1, 1, 0, 1]),
+    );
+
+    let mut setup_stdout = Vec::new();
+    let mut setup_stderr = Vec::new();
+    let setup_code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut setup_stdout,
+        &mut setup_stderr,
+    );
+    assert_eq!(
+        setup_code,
+        0,
+        "stderr={}",
+        String::from_utf8_lossy(&setup_stderr)
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--trace-bytes",
+            trace_path.to_str().expect("trace path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .starts_with("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn prove_witness_rejects_source_comparison_assignment_mismatch_with_trace_bytes() {
+    let dir = temp_dir("source-comparison-assignment-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    let guest_image = dir.join("guest.elf");
+    let trace_path = dir.join("trace.bin");
+    let output_dir = dir.join("proof-out");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col witness value;\n\
+             col witness limit;\n\
+             col witness out[6];\n\
+             out[0] = value < limit;\n\
+             out[1] = value <= limit;\n\
+             out[2] = value > limit;\n\
+             out[3] = value >= limit;\n\
+             out[4] = value == limit;\n\
+             out[5] = value != limit;\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+    write_file(&guest_image, sample_guest_image());
+    write_file(
+        &trace_path,
+        sample_trace_bytes(&[4, 4, 0, 1, 0, 1, 0, 0, 8, 3, 0, 0, 1, 1, 0, 1]),
+    );
+
+    let mut setup_stdout = Vec::new();
+    let mut setup_stderr = Vec::new();
+    let setup_code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut setup_stdout,
+        &mut setup_stderr,
+    );
+    assert_eq!(
+        setup_code,
+        0,
+        "stderr={}",
+        String::from_utf8_lossy(&setup_stderr)
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--trace-bytes",
+            trace_path.to_str().expect("trace path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert!(String::from_utf8(stderr)
+        .expect("stderr should be utf-8")
+        .contains("source assignment validation failed"));
+}
+
+#[test]
 fn generate_key_lowers_source_constrained_assignments() {
     let dir = temp_dir("source-constrained-assignment");
     let _ = fs::remove_dir_all(&dir);
