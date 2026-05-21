@@ -122,7 +122,7 @@ pub enum GlobalInfoError {
     },
     PublicCountMismatch {
         expected: u64,
-        found: usize,
+        found: u64,
     },
     InvalidTranscriptArity,
     Io {
@@ -516,10 +516,11 @@ fn validate_global_info(value: &GlobalInfo) -> Result<(), GlobalInfoError> {
             }
         }
     }
-    if value.n_publics != value.publics_map.len() as u64 {
+    let public_count = global_public_count(&value.publics_map)?;
+    if value.n_publics != public_count {
         return Err(GlobalInfoError::PublicCountMismatch {
             expected: value.n_publics,
-            found: value.publics_map.len(),
+            found: public_count,
         });
     }
     if value.transcript_arity == 0 {
@@ -542,6 +543,19 @@ fn validate_global_info(value: &GlobalInfo) -> Result<(), GlobalInfoError> {
         }
     }
     Ok(())
+}
+
+fn global_public_count(publics: &[PublicValue]) -> Result<u64, GlobalInfoError> {
+    publics.iter().try_fold(0_u64, |count, entry| {
+        let dimension = entry.lengths.iter().try_fold(1_u64, |dimension, length| {
+            dimension
+                .checked_mul(*length)
+                .ok_or(GlobalInfoError::LengthOverflow)
+        })?;
+        count
+            .checked_add(dimension)
+            .ok_or(GlobalInfoError::LengthOverflow)
+    })
 }
 
 fn curve_tag(curve: &CurveKind) -> u8 {

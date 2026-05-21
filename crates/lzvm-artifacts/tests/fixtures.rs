@@ -213,7 +213,7 @@ pub fn sample_global_info_fixture() -> GlobalInfo {
             ],
             Vec::new(),
         ],
-        n_publics: 2,
+        n_publics: 7,
         num_challenges: vec![1, 2, 3],
         num_proof_values: vec![1, 1],
         proof_values_map: vec![

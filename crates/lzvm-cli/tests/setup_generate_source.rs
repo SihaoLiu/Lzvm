@@ -2245,7 +2245,7 @@ fn generate_key_writes_source_public_values_to_global_metadata() {
     assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
     let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
         .expect("source global metadata should parse");
-    assert_eq!(global.n_publics, 1);
+    assert_eq!(global.n_publics, 4);
     assert_eq!(global.publics_map.len(), 1);
     assert_eq!(global.publics_map[0].name, "inputs");
     assert_eq!(global.publics_map[0].stage, 1);
@@ -2302,7 +2302,7 @@ fn generate_key_skips_inactive_source_public_values() {
     assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
     let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
         .expect("source global metadata should parse");
-    assert_eq!(global.n_publics, 1);
+    assert_eq!(global.n_publics, 4);
     assert_eq!(global.publics_map.len(), 1);
     assert_eq!(global.publics_map[0].name, "inputs");
     assert_eq!(global.publics_map[0].lengths, [4]);
@@ -2311,7 +2311,7 @@ fn generate_key_skips_inactive_source_public_values() {
         .setup_info_binary()
         .expect("setup metadata path should derive");
     let setup = read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
-    assert_eq!(setup.n_publics, Some(1));
+    assert_eq!(setup.n_publics, Some(4));
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
     assert!(String::from_utf8(stdout)
         .expect("stdout should be utf-8")
@@ -3146,7 +3146,7 @@ fn generate_key_allows_source_custom_commit_declarations() {
     assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
     let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
         .expect("source global metadata should parse");
-    assert_eq!(global.n_publics, 1);
+    assert_eq!(global.n_publics, 4);
     assert_eq!(global.publics_map[0].name, "root");
     assert_eq!(global.publics_map[0].lengths, [4]);
 

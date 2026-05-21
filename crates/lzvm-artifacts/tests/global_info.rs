@@ -86,6 +86,17 @@ fn encodes_and_parses_global_info_binary() {
 }
 
 #[test]
+fn encodes_public_value_counts_with_array_lengths() {
+    let mut info = fixtures::sample_global_info_fixture();
+    info.n_publics = 7;
+
+    let bytes = encode_global_info(&info).expect("array public counts should encode");
+    let parsed = parse_global_info(&bytes).expect("array public counts should parse");
+
+    assert_eq!(parsed.n_publics, 7);
+}
+
+#[test]
 fn rejects_unsupported_global_info_file_versions() {
     let info = fixtures::sample_global_info_fixture();
     let bytes = encode_global_info(&info).expect("fixture should encode");

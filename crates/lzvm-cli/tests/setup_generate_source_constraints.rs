@@ -471,7 +471,7 @@ fn generate_key_lowers_source_public_scalar_after_array_constraints() {
             .expect("setup metadata path should derive"),
     )
     .expect("setup metadata should parse");
-    assert_eq!(setup.n_publics, Some(2));
+    assert_eq!(setup.n_publics, Some(3));
     let expressions = read_expression_info_binary_file(
         unit.expression_info_binary()
             .expect("expression metadata path should derive"),

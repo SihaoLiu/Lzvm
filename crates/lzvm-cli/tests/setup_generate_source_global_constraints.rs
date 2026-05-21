@@ -626,7 +626,7 @@ fn generate_key_lowers_static_public_array_initializers_as_global_constraints() 
     assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
     let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
         .expect("source global metadata should parse");
-    assert_eq!(global.n_publics, 1);
+    assert_eq!(global.n_publics, 2);
     assert_eq!(global.publics_map.len(), 1);
     assert_eq!(global.publics_map[0].name, "expected");
     assert_eq!(global.publics_map[0].lengths, [2]);

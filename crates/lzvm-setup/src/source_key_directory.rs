@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use lzvm_artifacts::expression_info::ExpressionInfoError;
 use lzvm_artifacts::global_info::{
     encode_global_info, AggregationType, CurveKind, GlobalAir, GlobalInfo, GlobalInfoError,
+    PublicValue,
 };
 use lzvm_artifacts::global_program::{encode_global_program, GlobalProgramError};
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyDirectoryError, KeyUnitPaths};
@@ -518,13 +519,25 @@ fn source_global_info(
         curve: CurveKind::None,
         lattice_size: Some(SOURCE_GLOBAL_LATTICE_SIZE),
         aggregation_types,
-        n_publics: u64::try_from(publics_map.len())
-            .map_err(|_| unsupported_source_message("too many source public values"))?,
+        n_publics: source_public_count(&publics_map)?,
         num_challenges,
         num_proof_values,
         proof_values_map,
         publics_map,
         transcript_arity: 4,
+    })
+}
+
+fn source_public_count(publics: &[PublicValue]) -> Result<u64, SourceKeyDirectoryMetadataError> {
+    publics.iter().try_fold(0_u64, |count, entry| {
+        let dimension = entry.lengths.iter().try_fold(1_u64, |dimension, length| {
+            dimension
+                .checked_mul(*length)
+                .ok_or_else(|| unsupported_source_message("source public value count overflow"))
+        })?;
+        count
+            .checked_add(dimension)
+            .ok_or_else(|| unsupported_source_message("source public value count overflow"))
     })
 }
 
@@ -947,14 +960,13 @@ fn source_unit_setup_info(
             .and_then(|count| acc.checked_add(count))
     })
     .ok_or_else(|| unsupported_source_message("source challenge count overflow"))?;
-    let public_count = source_public_values(
+    let public_count = source_public_count(&source_public_values(
         program,
         &constant_values,
         &active_templates,
         &template_values,
         body_caches,
-    )?
-    .len();
+    )?)?;
     let const_width = constant_columns
         .iter()
         .try_fold(0_u32, |acc, column| acc.checked_add(column.dimension))
