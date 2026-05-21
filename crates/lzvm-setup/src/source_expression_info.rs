@@ -968,6 +968,49 @@ fn lower_source_function_body_statement(
             Err(error) => return Err(error),
         }
     }
+    if statement.kind == FunctionStatementKind::For {
+        match source_static_for_loop_with_tokens(
+            context.program,
+            context.module,
+            context.tokens,
+            statement,
+            values,
+            body_cache,
+        ) {
+            Ok(Some(loop_info)) => {
+                for iteration_value in &loop_info.iteration_values {
+                    let mut loop_alias_scope = alias_scope.clone();
+                    values.insert(loop_info.variable_name.clone(), iteration_value.clone());
+                    for body_statement in loop_info.body_statements.iter() {
+                        if !lower_source_function_body_statement(
+                            context,
+                            body_statement,
+                            values,
+                            &loop_alias_scope,
+                            body_cache,
+                            hints,
+                            constraints,
+                        )? {
+                            return Ok(false);
+                        }
+                        collect_source_template_expression_alias(
+                            body_statement,
+                            &mut loop_alias_scope.expressions,
+                        );
+                        collect_source_template_expression_array_alias(
+                            body_statement,
+                            &mut loop_alias_scope.expression_arrays,
+                        );
+                    }
+                }
+                return Ok(true);
+            }
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
+                return Ok(false);
+            }
+            Err(error) => return Err(error),
+        }
+    }
     if statement.kind != FunctionStatementKind::Expression {
         return Ok(false);
     }
