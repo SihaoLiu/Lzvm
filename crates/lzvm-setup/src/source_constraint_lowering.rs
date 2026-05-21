@@ -83,36 +83,57 @@ fn lower_source_constraint_residual(
     expression: &Expression,
     state: &mut SourceConstraintLoweringState<'_>,
 ) -> Result<Option<CodeOperand>, SourceKeyDirectoryMetadataError> {
-    let ExpressionKind::Binary { op, left, right } = &strip_group_expression(expression).kind
-    else {
-        return Ok(None);
-    };
-    if !matches!(
-        op,
-        BinaryOperator::TripleEqual | BinaryOperator::ConstrainedAssign
-    ) {
-        return Ok(None);
-    }
-    if expression_is_zero(right) {
-        return lower_source_scalar_expression_at(left, state, 0).map(Some);
-    } else if expression_is_zero(left) {
-        return lower_source_scalar_expression_at(right, state, 0).map(Some);
+    let expression = strip_group_expression(expression);
+    if let ExpressionKind::Binary { op, left, right } = &expression.kind {
+        if matches!(
+            op,
+            BinaryOperator::TripleEqual | BinaryOperator::ConstrainedAssign
+        ) {
+            if expression_is_zero(right) {
+                return lower_source_scalar_expression_at(left, state, 0).map(Some);
+            } else if expression_is_zero(left) {
+                return lower_source_scalar_expression_at(right, state, 0).map(Some);
+            }
+
+            let left = lower_source_scalar_expression_at(left, state, 0)?;
+            let right = lower_source_scalar_expression_at(right, state, 0)?;
+            let dimension = source_binary_result_dimension(&left, &right)?;
+            let id = state.next_temporary;
+            state.next_temporary = state.next_temporary.checked_add(1).ok_or_else(|| {
+                unsupported_source_message("source scalar constraint temporary overflow")
+            })?;
+            state.operations.push(CodeOperation {
+                op: OperationKind::Sub,
+                destination: CodeDestination::temporary(id, dimension),
+                sources: vec![left, right],
+            });
+            return Ok(Some(CodeOperand::temporary(id, dimension)));
+        }
     }
 
-    let left = lower_source_scalar_expression_at(left, state, 0)?;
-    let right = lower_source_scalar_expression_at(right, state, 0)?;
-    let dimension = source_binary_result_dimension(&left, &right)?;
-    let id = state.next_temporary;
-    state.next_temporary = state
-        .next_temporary
-        .checked_add(1)
-        .ok_or_else(|| unsupported_source_message("source scalar constraint temporary overflow"))?;
-    state.operations.push(CodeOperation {
-        op: OperationKind::Sub,
-        destination: CodeDestination::temporary(id, dimension),
-        sources: vec![left, right],
-    });
-    Ok(Some(CodeOperand::temporary(id, dimension)))
+    if source_expression_can_be_bare_constraint(expression) {
+        lower_source_scalar_expression_at(expression, state, 0).map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
+fn source_expression_can_be_bare_constraint(expression: &Expression) -> bool {
+    match &strip_group_expression(expression).kind {
+        ExpressionKind::Integer(_)
+        | ExpressionKind::HexInteger(_)
+        | ExpressionKind::Name(_)
+        | ExpressionKind::Unary { .. }
+        | ExpressionKind::Binary { .. }
+        | ExpressionKind::Index { .. }
+        | ExpressionKind::RowOffset { .. } => true,
+        ExpressionKind::StringLiteral(_)
+        | ExpressionKind::TemplateLiteral(_)
+        | ExpressionKind::PositionalParam(_)
+        | ExpressionKind::Group(_)
+        | ExpressionKind::Array(_)
+        | ExpressionKind::Call { .. } => false,
+    }
 }
 
 fn lower_source_scalar_expression_at(
