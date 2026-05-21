@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use lzvm_pil::{
@@ -7,6 +7,8 @@ use lzvm_pil::{
     FunctionStatementKind, SourceFile, SourceProgram, SourceProgramModule, SourceSpan, Token,
     TokenKind, UnaryOperator,
 };
+
+use crate::source_scope::{declaration_in_function_body, declaration_in_inactive_template};
 
 pub(crate) type SourceTemplateConstantValueCache =
     BTreeMap<(String, usize, usize), BTreeMap<String, FixedFileTemplateValue>>;
@@ -871,13 +873,23 @@ fn execute_static_template_statement(
             if unsupported_static_assignment_statement(tokens, index, semicolon) {
                 return Some(semicolon + 1);
             }
-            if execute_source_static_postfix_update(tokens, index, semicolon, values).is_some() {
+            if execute_source_static_postfix_update(
+                program, module, tokens, index, semicolon, values,
+            )
+            .is_some()
+            {
                 return Some(semicolon + 1);
             }
             let (expression, consumed) =
                 parse_expression_tokens(tokens, index, semicolon, &module.source).ok()?;
             if consumed == semicolon {
-                execute_source_static_expression_statement(program, &expression, values);
+                execute_source_static_expression_statement(
+                    program,
+                    module,
+                    tokens.get(index)?.start,
+                    &expression,
+                    values,
+                );
             }
             Some(semicolon + 1)
         }
@@ -1086,6 +1098,8 @@ fn unsupported_static_assignment_statement(tokens: &[Token], index: usize, end: 
 }
 
 fn execute_source_static_postfix_update(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
     tokens: &[Token],
     index: usize,
     end: usize,
@@ -1101,6 +1115,9 @@ fn execute_source_static_postfix_update(
         TokenKind::Decrement => -1,
         _ => return None,
     };
+    if !source_static_assignment_target_visible(program, module, &name.lexeme, name.start, values) {
+        return None;
+    }
     execute_source_static_delta(&name.lexeme, delta, values)
 }
 
@@ -1123,6 +1140,8 @@ fn execute_source_static_delta(
 
 fn execute_source_static_expression_statement(
     program: &SourceProgram,
+    module: &SourceProgramModule,
+    statement_start: usize,
     expression: &Expression,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
 ) -> Option<()> {
@@ -1134,10 +1153,28 @@ fn execute_source_static_expression_statement(
                 UnaryOperator::Decrement => -1,
                 _ => return None,
             };
+            if !source_static_assignment_target_visible(
+                program,
+                module,
+                name,
+                statement_start,
+                values,
+            ) {
+                return None;
+            }
             execute_source_static_delta(name, delta, values)
         }
         ExpressionKind::Binary { op, left, right } => {
             let name = expression_name(left)?.to_owned();
+            if !source_static_assignment_target_visible(
+                program,
+                module,
+                &name,
+                statement_start,
+                values,
+            ) {
+                return None;
+            }
             let right = evaluate_source_static_expression(program, right, values)?;
             let value = match op {
                 BinaryOperator::Assign => right,
@@ -1180,9 +1217,99 @@ fn execute_source_static_expression_statement(
     }
 }
 
-pub(crate) fn source_static_assignment_expression(
+fn source_static_assignment_target_visible(
+    program: &SourceProgram,
     module: &SourceProgramModule,
+    name: &str,
+    statement_start: usize,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> bool {
+    if values.contains_key(name) {
+        return true;
+    }
+    let lookup = SourceStaticAssignmentTargetLookup {
+        program,
+        module,
+        name,
+        statement_start,
+        values,
+    };
+    module.constants.iter().any(|declaration| {
+        source_static_declaration_visible(
+            &lookup,
+            &declaration.name,
+            declaration.start,
+            declaration.end,
+        )
+    }) || module.variables.iter().any(|declaration| {
+        source_static_declaration_visible(
+            &lookup,
+            &declaration.name,
+            declaration.start,
+            declaration.end,
+        )
+    })
+}
+
+struct SourceStaticAssignmentTargetLookup<'a> {
+    program: &'a SourceProgram,
+    module: &'a SourceProgramModule,
+    name: &'a str,
+    statement_start: usize,
+    values: &'a BTreeMap<String, FixedFileTemplateValue>,
+}
+
+fn source_static_declaration_visible(
+    lookup: &SourceStaticAssignmentTargetLookup<'_>,
+    declaration_name: &str,
+    start: usize,
+    end: usize,
+) -> bool {
+    declaration_name == lookup.name
+        && start < lookup.statement_start
+        && source_declaration_visible_from_statement(
+            lookup.module,
+            start,
+            end,
+            lookup.statement_start,
+        )
+        && !declaration_in_function_body(lookup.module, start, end)
+        && !source_declaration_in_static_false_branch(
+            lookup.program,
+            lookup.module,
+            start,
+            end,
+            lookup.values,
+        )
+}
+
+fn source_declaration_visible_from_statement(
+    module: &SourceProgramModule,
+    start: usize,
+    end: usize,
+    statement_start: usize,
+) -> bool {
+    let Some(statement_template) = module.air_templates.iter().find(|template| {
+        template.body.start <= statement_start && statement_start <= template.body.end
+    }) else {
+        return true;
+    };
+    if statement_template.body.start <= start && end <= statement_template.body.end {
+        return true;
+    }
+    !module
+        .air_templates
+        .iter()
+        .any(|template| template.body.start <= start && end <= template.body.end)
+}
+
+pub(crate) fn source_static_assignment_expression(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    active_templates: &BTreeSet<String>,
     expression: Option<&Expression>,
+    base_values: &BTreeMap<String, FixedFileTemplateValue>,
+    template_values: &SourceTemplateConstantValueCache,
 ) -> bool {
     let Some(expression) = expression else {
         return false;
@@ -1208,18 +1335,86 @@ pub(crate) fn source_static_assignment_expression(
         }
         _ => None,
     };
-    name.is_some_and(|name| source_static_name(module, name))
+    name.is_some_and(|name| {
+        source_active_static_name(
+            program,
+            module,
+            active_templates,
+            name,
+            base_values,
+            template_values,
+        )
+    })
 }
 
-fn source_static_name(module: &SourceProgramModule, name: &str) -> bool {
-    module
-        .constants
-        .iter()
-        .any(|declaration| declaration.name == name)
-        || module
-            .variables
-            .iter()
-            .any(|declaration| declaration.name == name)
+pub(crate) fn source_active_static_name(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    active_templates: &BTreeSet<String>,
+    name: &str,
+    base_values: &BTreeMap<String, FixedFileTemplateValue>,
+    template_values: &SourceTemplateConstantValueCache,
+) -> bool {
+    let lookup = SourceActiveStaticNameLookup {
+        program,
+        module,
+        active_templates,
+        name,
+        base_values,
+        template_values,
+    };
+    module.constants.iter().any(|declaration| {
+        source_active_static_declaration_name(
+            &lookup,
+            &declaration.name,
+            declaration.start,
+            declaration.end,
+        )
+    }) || module.variables.iter().any(|declaration| {
+        source_active_static_declaration_name(
+            &lookup,
+            &declaration.name,
+            declaration.start,
+            declaration.end,
+        )
+    })
+}
+
+struct SourceActiveStaticNameLookup<'a> {
+    program: &'a SourceProgram,
+    module: &'a SourceProgramModule,
+    active_templates: &'a BTreeSet<String>,
+    name: &'a str,
+    base_values: &'a BTreeMap<String, FixedFileTemplateValue>,
+    template_values: &'a SourceTemplateConstantValueCache,
+}
+
+fn source_active_static_declaration_name(
+    lookup: &SourceActiveStaticNameLookup<'_>,
+    declaration_name: &str,
+    start: usize,
+    end: usize,
+) -> bool {
+    if declaration_name != lookup.name
+        || declaration_in_function_body(lookup.module, start, end)
+        || declaration_in_inactive_template(lookup.module, start, end, lookup.active_templates)
+    {
+        return false;
+    }
+    let declaration_values = source_declaration_constant_values_from_cache(
+        lookup.module,
+        start,
+        end,
+        lookup.base_values,
+        lookup.template_values,
+    );
+    !source_declaration_in_static_false_branch(
+        lookup.program,
+        lookup.module,
+        start,
+        end,
+        declaration_values,
+    )
 }
 
 pub(crate) fn source_static_if_statement_is_false(

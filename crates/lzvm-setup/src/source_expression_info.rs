@@ -34,7 +34,7 @@ use crate::{
         SourceExpressionArrayAliases, SourceLookupInputs,
     },
     source_static_values::{
-        evaluate_source_static_expression, insert_source_static_array,
+        evaluate_source_static_expression, insert_source_static_array, source_active_static_name,
         source_declaration_constant_values_from_cache, source_declaration_in_static_false_branch,
         source_scalar_constant_values, source_static_array_length, source_static_array_values,
         source_static_assignment_expression, source_template_constant_value_cache,
@@ -91,6 +91,7 @@ pub(crate) fn source_expression_info(
                 scalar_slots: &scalar_slots,
                 opening_points: &setup.opening_points,
                 fixed_columns: &fixed_assignment_columns,
+                active_templates: &active_templates,
                 constant_values: &constant_values,
                 template_values: &template_values,
             };
@@ -331,7 +332,14 @@ fn lower_source_template_statement(
         if apply_source_static_delta(&update.name, update.delta, values) {
             return Ok(());
         }
-        if source_static_name(context.module, &update.name) {
+        if source_active_static_name(
+            context.program,
+            context.module,
+            context.active_templates,
+            &update.name,
+            context.constant_values,
+            context.template_values,
+        ) {
             return Ok(());
         }
         hints.push(lower_unsupported_source_assignment_statement(
@@ -340,7 +348,14 @@ fn lower_source_template_statement(
         ));
         return Ok(());
     }
-    if source_static_assignment_expression(context.module, statement.value_expression.as_ref()) {
+    if source_static_assignment_expression(
+        context.program,
+        context.module,
+        context.active_templates,
+        statement.value_expression.as_ref(),
+        context.constant_values,
+        context.template_values,
+    ) {
         return Ok(());
     }
     let lookup_inputs = SourceLookupInputs {
@@ -1136,17 +1151,6 @@ fn source_static_integer_value(value: Option<&FixedFileTemplateValue>) -> Option
         Some(FixedFileTemplateValue::Boolean(value)) => Some(if *value { 1 } else { 0 }),
         _ => None,
     }
-}
-
-fn source_static_name(module: &SourceProgramModule, name: &str) -> bool {
-    module
-        .constants
-        .iter()
-        .any(|declaration| declaration.name == name)
-        || module
-            .variables
-            .iter()
-            .any(|declaration| declaration.name == name)
 }
 
 fn unsupported<T>(message: impl Into<String>) -> Result<T, SourceKeyDirectoryMetadataError> {
