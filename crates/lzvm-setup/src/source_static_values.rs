@@ -444,6 +444,14 @@ fn evaluate_static_i128(
         ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => parse_i128(value),
         ExpressionKind::Name(name) => values.get(name).copied(),
         ExpressionKind::Group(inner) => evaluate_static_i128(program, inner, values),
+        ExpressionKind::Index { target, index } => {
+            let name = expression_name(target)?;
+            let index = evaluate_static_i128(program, index, values)?;
+            let index = usize::try_from(index).ok()?;
+            values
+                .get(&source_static_array_element_key(name, index))
+                .copied()
+        }
         ExpressionKind::Unary { op, expr } => {
             let value = evaluate_static_i128(program, expr, values)?;
             match op {
@@ -621,17 +629,68 @@ fn execute_static_declaration(
     match statement.declaration.as_ref()? {
         FunctionStatementDeclaration::Constant(declaration) => {
             let expression = declaration.initializer_expression.as_ref()?;
+            if !declaration.array_dims.is_empty() {
+                let elements = source_static_integer_array_expression(program, expression, values)?;
+                insert_static_integer_array(values, &declaration.name, elements)?;
+                return Some(());
+            }
             let value = evaluate_static_i128(program, expression, values)?;
             values.insert(declaration.name.clone(), value);
         }
         FunctionStatementDeclaration::Variable(declaration) => {
             let expression = declaration.initializer_expression.as_ref()?;
+            if !declaration.array_dims.is_empty() {
+                let elements = source_static_integer_array_expression(program, expression, values)?;
+                insert_static_integer_array(values, &declaration.name, elements)?;
+                return Some(());
+            }
             let value = evaluate_static_i128(program, expression, values)?;
             values.insert(declaration.name.clone(), value);
         }
         FunctionStatementDeclaration::Column(_) => return None,
     }
     Some(())
+}
+
+fn insert_static_integer_array(
+    values: &mut BTreeMap<String, i128>,
+    name: &str,
+    elements: Vec<i128>,
+) -> Option<()> {
+    let length = i128::try_from(elements.len()).ok()?;
+    values.insert(source_static_array_length_key(name), length);
+    for (index, value) in elements.into_iter().enumerate() {
+        values.insert(source_static_array_element_key(name, index), value);
+    }
+    Some(())
+}
+
+fn source_static_integer_array_expression(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &BTreeMap<String, i128>,
+) -> Option<Vec<i128>> {
+    match &expression.kind {
+        ExpressionKind::Array(elements) => elements
+            .iter()
+            .map(|element| evaluate_static_i128(program, element, values))
+            .collect(),
+        ExpressionKind::Group(inner) => {
+            source_static_integer_array_expression(program, inner, values)
+        }
+        ExpressionKind::Name(name) => {
+            let length =
+                usize::try_from(*values.get(&source_static_array_length_key(name))?).ok()?;
+            (0..length)
+                .map(|index| {
+                    values
+                        .get(&source_static_array_element_key(name, index))
+                        .copied()
+                })
+                .collect()
+        }
+        _ => None,
+    }
 }
 
 fn execute_static_body(
