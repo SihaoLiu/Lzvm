@@ -1,5 +1,7 @@
 use std::fmt;
 
+use lzvm_field::{Felt, FieldError};
+
 pub const WITNESS_COMMITMENT_SEGMENT_BASE_ID: u32 = 100;
 
 const WITNESS_COMMITMENT_SEGMENT_MAGIC: [u8; 4] = *b"wcs0";
@@ -30,10 +32,23 @@ pub struct WitnessCommitmentStageSegment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WitnessCommitmentSegmentError {
     InvalidMagic,
-    UnsupportedVersion { version: u32 },
-    UnexpectedEof { needed: usize, available: usize },
-    TrailingBytes { trailing: usize },
+    UnsupportedVersion {
+        version: u32,
+    },
+    UnexpectedEof {
+        needed: usize,
+        available: usize,
+    },
+    TrailingBytes {
+        trailing: usize,
+    },
     EmptyStages,
+    StageRootNonCanonical {
+        unit_index: u32,
+        stage_index: u32,
+        word_index: usize,
+        source: FieldError,
+    },
     LengthOverflow,
 }
 
@@ -55,19 +70,38 @@ impl fmt::Display for WitnessCommitmentSegmentError {
                 write!(f, "trailing witness commitment segment bytes: {trailing}")
             }
             Self::EmptyStages => write!(f, "witness commitment segment has no stages"),
+            Self::StageRootNonCanonical {
+                unit_index,
+                stage_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "witness commitment unit {unit_index} stage {stage_index} root word {word_index} is non-canonical: {source}"
+            ),
             Self::LengthOverflow => write!(f, "witness commitment segment length overflow"),
         }
     }
 }
 
-impl std::error::Error for WitnessCommitmentSegmentError {}
+impl std::error::Error for WitnessCommitmentSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::StageRootNonCanonical { source, .. } => Some(source),
+            Self::InvalidMagic
+            | Self::UnsupportedVersion { .. }
+            | Self::UnexpectedEof { .. }
+            | Self::TrailingBytes { .. }
+            | Self::EmptyStages
+            | Self::LengthOverflow => None,
+        }
+    }
+}
 
 pub fn encode_witness_commitment_segment(
     value: &WitnessCommitmentSegment,
 ) -> Result<Vec<u8>, WitnessCommitmentSegmentError> {
-    if value.stages.is_empty() {
-        return Err(WitnessCommitmentSegmentError::EmptyStages);
-    }
+    validate_witness_commitment_segment(value)?;
     let stage_count = u32::try_from(value.stages.len())
         .map_err(|_| WitnessCommitmentSegmentError::LengthOverflow)?;
     let expected_len = value
@@ -142,13 +176,36 @@ pub fn parse_witness_commitment_segment(
     }
     reader.finish()?;
 
-    Ok(WitnessCommitmentSegment {
+    let out = WitnessCommitmentSegment {
         unit_index,
         input_byte_count,
         trace_rows,
         trace_columns,
         stages,
-    })
+    };
+    validate_witness_commitment_segment(&out)?;
+    Ok(out)
+}
+
+fn validate_witness_commitment_segment(
+    value: &WitnessCommitmentSegment,
+) -> Result<(), WitnessCommitmentSegmentError> {
+    if value.stages.is_empty() {
+        return Err(WitnessCommitmentSegmentError::EmptyStages);
+    }
+    for stage in &value.stages {
+        for (word_index, word) in stage.root.iter().copied().enumerate() {
+            Felt::from_canonical(word).map_err(|source| {
+                WitnessCommitmentSegmentError::StageRootNonCanonical {
+                    unit_index: value.unit_index,
+                    stage_index: stage.stage_index,
+                    word_index,
+                    source,
+                }
+            })?;
+        }
+    }
+    Ok(())
 }
 
 fn write_u32(out: &mut Vec<u8>, value: u32) {
