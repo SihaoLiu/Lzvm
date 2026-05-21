@@ -260,7 +260,10 @@ fn lower_source_template_statement(
             }
         })?
     {
-        if matches!(kind, TokenKind::AirValue | TokenKind::Commit) {
+        if matches!(
+            kind,
+            TokenKind::AirGroupValue | TokenKind::AirValue | TokenKind::Commit
+        ) {
             return Ok(());
         }
         if matches!(

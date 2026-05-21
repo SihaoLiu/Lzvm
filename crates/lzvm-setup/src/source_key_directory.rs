@@ -369,10 +369,17 @@ fn source_global_info(
 ) -> Result<GlobalInfo, SourceKeyDirectoryMetadataError> {
     let row_count = row_counts.values().next().copied().unwrap_or(2);
     let constant_values = source_scalar_constant_values(program, row_count);
+    let template_values = source_template_constant_value_cache(program, &constant_values);
+    let active_templates = concrete_template_names(program);
     let num_challenges = source_challenge_counts(program, &constant_values)?;
     let (num_proof_values, proof_values_map) = source_proof_values(program, &constant_values)?;
     let publics_map = source_public_values(program, &constant_values)?;
-    let (_, group_aggregation_types) = source_air_group_values(program, &constant_values)?;
+    let (_, group_aggregation_types) = source_air_group_values(
+        program,
+        &constant_values,
+        &active_templates,
+        &template_values,
+    )?;
     let mut groups = BTreeMap::<usize, (String, BTreeMap<usize, String>)>::new();
     for unit in program
         .air_units()
@@ -705,13 +712,38 @@ fn source_unit_values(
 fn source_air_group_values(
     program: &SourceProgram,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    active_templates: &BTreeSet<String>,
+    template_values: &SourceTemplateConstantValueCache,
 ) -> Result<(Vec<StageValue>, Vec<AggregationType>), SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut values = Vec::new();
     let mut aggregation_types = Vec::new();
     for module in &program.modules {
         for declaration in &module.air_group_values {
-            if declaration_in_function_body(module, declaration.start, declaration.end) {
+            if declaration_in_function_body(module, declaration.start, declaration.end)
+                || declaration_in_inactive_template(
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    active_templates,
+                )
+            {
+                continue;
+            }
+            let declaration_values = source_declaration_constant_values_from_cache(
+                module,
+                declaration.start,
+                declaration.end,
+                constant_values,
+                template_values,
+            );
+            if source_declaration_in_static_false_branch(
+                program,
+                module,
+                declaration.start,
+                declaration.end,
+                declaration_values,
+            ) {
                 continue;
             }
             if declaration.stage == 0 {
@@ -720,11 +752,13 @@ fn source_air_group_values(
             let aggregation_type =
                 source_group_value_aggregation_type(&declaration.aggregate_type)?;
             if let Some(default_expression) = declaration.default_expression.as_ref() {
-                let Some(default_value) =
-                    evaluate_source_static_expression(program, default_expression, constant_values)
-                        .as_ref()
-                        .and_then(static_value_integer)
-                else {
+                let Some(default_value) = evaluate_source_static_expression(
+                    program,
+                    default_expression,
+                    declaration_values,
+                )
+                .as_ref()
+                .and_then(static_value_integer) else {
                     return unsupported(
                         "source air group value defaults need proof lowering support",
                     );
@@ -758,7 +792,7 @@ fn source_air_group_values(
                         program,
                         item,
                         "source air group value",
-                        constant_values,
+                        declaration_values,
                     )?,
                 });
                 aggregation_types.push(AggregationType { aggregation_type });
@@ -816,7 +850,12 @@ fn source_unit_setup_info(
         &active_templates,
         &template_values,
     )?;
-    let (group_value_map, _) = source_air_group_values(program, &constant_values)?;
+    let (group_value_map, _) = source_air_group_values(
+        program,
+        &constant_values,
+        &active_templates,
+        &template_values,
+    )?;
     let opening_points = source_opening_points(
         program,
         &constant_values,
