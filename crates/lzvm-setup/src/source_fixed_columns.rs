@@ -527,12 +527,7 @@ fn fixed_columns_from_source_program(
     let mut declarations = Vec::<SourceFixedColumnDeclaration>::new();
     let constant_values = source_fixed_constant_values(program, setup, row_count)?;
     let template_values = source_template_constant_value_cache(program, &constant_values.scalars);
-    let mut column_values = source_fixed_values_from_template_assignments(
-        program,
-        &expected_columns,
-        row_count_usize,
-        &constant_values,
-    )?;
+    let mut logical_dimensions = BTreeMap::new();
     let mut seen_declarations = BTreeSet::new();
 
     for module in &program.modules {
@@ -566,6 +561,9 @@ fn fixed_columns_from_source_program(
                 item,
                 &declaration_values,
             )?;
+            logical_dimensions
+                .entry(item.name.clone())
+                .or_insert_with(|| dimensions.clone());
             let physical_columns =
                 source_fixed_physical_columns(&item.name, &dimensions, &expected_columns);
             for (column_name, column_dimensions) in physical_columns {
@@ -591,6 +589,13 @@ fn fixed_columns_from_source_program(
         }
     }
 
+    let mut column_values = source_fixed_values_from_template_assignments(
+        program,
+        &expected_columns,
+        &logical_dimensions,
+        row_count_usize,
+        &constant_values,
+    )?;
     let mut resolved_values = vec![None::<Vec<u64>>; declarations.len()];
     loop {
         let mut progressed = false;
@@ -672,6 +677,7 @@ fn source_fixed_declaration_constant_values(
 fn source_fixed_values_from_template_assignments(
     program: &SourceProgram,
     expected_columns: &BTreeSet<String>,
+    logical_dimensions: &BTreeMap<String, Vec<u32>>,
     row_count: usize,
     constant_values: &SourceFixedConstantValues,
 ) -> Result<BTreeMap<String, Vec<u64>>, SourceFixedColumnsWriteError> {
@@ -695,6 +701,7 @@ fn source_fixed_values_from_template_assignments(
                 module,
                 tokens: &tokens,
                 expected_columns,
+                logical_dimensions,
                 row_count,
             };
             for statement in &template.statements {
@@ -725,6 +732,7 @@ struct SourceFixedTemplateAssignmentContext<'a> {
     module: &'a SourceProgramModule,
     tokens: &'a [Token],
     expected_columns: &'a BTreeSet<String>,
+    logical_dimensions: &'a BTreeMap<String, Vec<u32>>,
     row_count: usize,
 }
 
@@ -900,6 +908,7 @@ fn collect_source_fixed_template_assignment(
         &context.module.source_name,
         left,
         context.expected_columns,
+        context.logical_dimensions,
         context.row_count,
         assignment_values,
     )?
@@ -945,9 +954,12 @@ fn collect_source_fixed_element_sequence_assignment(
     assignment_values: &SourceFixedAssignmentValues<'_>,
     partial_values: &mut BTreeMap<String, Vec<Option<u64>>>,
 ) -> Result<bool, SourceFixedColumnsWriteError> {
-    let Some(column_name) =
-        source_fixed_element_assignment_target(left, context.expected_columns, assignment_values)
-    else {
+    let Some(column_name) = source_fixed_element_assignment_target(
+        left,
+        context.expected_columns,
+        context.logical_dimensions,
+        assignment_values,
+    ) else {
         return Ok(false);
     };
     let Some(source) = context.module.source.contents.get(right.start..right.end) else {
@@ -981,24 +993,15 @@ fn collect_source_fixed_element_sequence_assignment(
 fn source_fixed_element_assignment_target(
     expression: &Expression,
     expected_columns: &BTreeSet<String>,
+    logical_dimensions: &BTreeMap<String, Vec<u32>>,
     values: &SourceFixedAssignmentValues<'_>,
 ) -> Option<String> {
-    let ExpressionKind::Index { target, index } =
-        &strip_source_fixed_group_expression(expression).kind
-    else {
-        return None;
-    };
-    let ExpressionKind::Name(column_name) = &strip_source_fixed_group_expression(target).kind
-    else {
-        return None;
-    };
-    let index = evaluate_source_fixed_assignment_value_expression(index, values)?;
-    let index = source_fixed_assignment_integer(&index)?;
-    let index = u32::try_from(index).ok()?;
-    let column_name = format!("{column_name}[{index}]");
-    expected_columns
-        .contains(&column_name)
-        .then_some(column_name)
+    source_fixed_physical_assignment_column_name(
+        expression,
+        expected_columns,
+        logical_dimensions,
+        values,
+    )
 }
 
 fn merge_source_fixed_complete_values(
@@ -1326,6 +1329,7 @@ fn source_fixed_index_assignment_target(
     source_name: &str,
     expression: &Expression,
     expected_columns: &BTreeSet<String>,
+    logical_dimensions: &BTreeMap<String, Vec<u32>>,
     row_count: usize,
     constant_values: &SourceFixedAssignmentValues<'_>,
 ) -> Result<Option<(String, usize)>, SourceFixedColumnsWriteError> {
@@ -1334,9 +1338,12 @@ fn source_fixed_index_assignment_target(
     else {
         return Ok(None);
     };
-    let Some(column_name) =
-        source_fixed_index_assignment_column_name(target, expected_columns, constant_values)
-    else {
+    let Some(column_name) = source_fixed_index_assignment_column_name(
+        target,
+        expected_columns,
+        logical_dimensions,
+        constant_values,
+    ) else {
         return Ok(None);
     };
     let Some(row_value) = evaluate_source_fixed_assignment_value_expression(index, constant_values)
@@ -1371,28 +1378,76 @@ fn source_fixed_index_assignment_target(
 fn source_fixed_index_assignment_column_name(
     expression: &Expression,
     expected_columns: &BTreeSet<String>,
+    logical_dimensions: &BTreeMap<String, Vec<u32>>,
     values: &SourceFixedAssignmentValues<'_>,
 ) -> Option<String> {
+    source_fixed_physical_assignment_column_name(
+        expression,
+        expected_columns,
+        logical_dimensions,
+        values,
+    )
+}
+
+fn source_fixed_physical_assignment_column_name(
+    expression: &Expression,
+    expected_columns: &BTreeSet<String>,
+    logical_dimensions: &BTreeMap<String, Vec<u32>>,
+    values: &SourceFixedAssignmentValues<'_>,
+) -> Option<String> {
+    let (column_name, indices) = source_fixed_assignment_index_path(expression, values)?;
+    if indices.is_empty() {
+        return expected_columns
+            .contains(&column_name)
+            .then_some(column_name);
+    }
+    if let Some(dimensions) = logical_dimensions.get(&column_name) {
+        let index = source_fixed_linear_element_index(&indices, dimensions)?;
+        let physical_name = format!("{column_name}[{index}]");
+        return expected_columns
+            .contains(&physical_name)
+            .then_some(physical_name);
+    }
+    if indices.len() == 1 {
+        let physical_name = format!("{}[{}]", column_name, indices[0]);
+        return expected_columns
+            .contains(&physical_name)
+            .then_some(physical_name);
+    }
+    None
+}
+
+fn source_fixed_assignment_index_path(
+    expression: &Expression,
+    values: &SourceFixedAssignmentValues<'_>,
+) -> Option<(String, Vec<u32>)> {
     match &strip_source_fixed_group_expression(expression).kind {
-        ExpressionKind::Name(column_name) => expected_columns
-            .contains(column_name)
-            .then(|| column_name.clone()),
+        ExpressionKind::Name(column_name) => Some((column_name.clone(), Vec::new())),
         ExpressionKind::Index { target, index } => {
-            let ExpressionKind::Name(column_name) =
-                &strip_source_fixed_group_expression(target).kind
-            else {
-                return None;
-            };
+            let (column_name, mut indices) = source_fixed_assignment_index_path(target, values)?;
             let index = evaluate_source_fixed_assignment_value_expression(index, values)?;
             let index = source_fixed_assignment_integer(&index)?;
             let index = u32::try_from(index).ok()?;
-            let column_name = format!("{column_name}[{index}]");
-            expected_columns
-                .contains(&column_name)
-                .then_some(column_name)
+            indices.push(index);
+            Some((column_name, indices))
         }
         _ => None,
     }
+}
+
+fn source_fixed_linear_element_index(indices: &[u32], dimensions: &[u32]) -> Option<u32> {
+    if indices.len() != dimensions.len() {
+        return None;
+    }
+    indices
+        .iter()
+        .zip(dimensions)
+        .try_fold(0_u32, |acc, (index, dimension)| {
+            if index >= dimension {
+                return None;
+            }
+            acc.checked_mul(*dimension)?.checked_add(*index)
+        })
 }
 
 fn strip_source_fixed_group_expression(expression: &Expression) -> &Expression {
