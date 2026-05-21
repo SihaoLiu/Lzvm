@@ -1,13 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_pil::{
-    lex_source, parse_expression_tokens, parse_function_body_statements, BinaryOperator,
-    Expression, ExpressionKind, FixedFileTemplateValue, FunctionDeclaration, FunctionStatement,
-    FunctionStatementDeclaration, FunctionStatementKind, SourceFile, SourceProgram,
+    lex_source, parse_expression_tokens, BinaryOperator, Expression, ExpressionKind,
+    FixedFileTemplateValue, FunctionStatement, FunctionStatementKind, SourceFile, SourceProgram,
     SourceProgramModule, SourceSpan, Token, TokenKind, UnaryOperator,
 };
 
-use crate::source_scope::{declaration_in_function_body, declaration_in_inactive_template};
+use crate::{
+    source_scope::{declaration_in_function_body, declaration_in_inactive_template},
+    source_static_functions::evaluate_static_i128,
+};
 
 pub(crate) type SourceTemplateConstantValueCache =
     BTreeMap<(String, usize, usize), BTreeMap<String, FixedFileTemplateValue>>;
@@ -101,8 +103,6 @@ pub(crate) fn source_scalar_constant_values(
     values
 }
 
-const STATIC_LOOP_LIMIT: usize = 10_000;
-
 pub(crate) trait SourceStaticValueLookup {
     fn source_static_value(&self, name: &str) -> Option<&FixedFileTemplateValue>;
     fn source_static_array_element(
@@ -180,11 +180,11 @@ pub(crate) fn source_static_array_element(
         .cloned()
 }
 
-fn source_static_array_length_key(name: &str) -> String {
+pub(crate) fn source_static_array_length_key(name: &str) -> String {
     format!("__lzvm_array_len::{name}")
 }
 
-fn source_static_array_element_key(name: &str, index: usize) -> String {
+pub(crate) fn source_static_array_element_key(name: &str, index: usize) -> String {
     format!("__lzvm_array_value::{name}::{index}")
 }
 
@@ -434,441 +434,6 @@ fn integer_values(values: &BTreeMap<String, FixedFileTemplateValue>) -> BTreeMap
         .collect()
 }
 
-fn evaluate_static_i128(
-    program: &SourceProgram,
-    expression: &Expression,
-    values: &BTreeMap<String, i128>,
-) -> Option<i128> {
-    match &expression.kind {
-        ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => parse_i128(value),
-        ExpressionKind::Name(name) => values.get(name).copied(),
-        ExpressionKind::Group(inner) => evaluate_static_i128(program, inner, values),
-        ExpressionKind::Index { target, index } => {
-            let name = expression_name(target)?;
-            let index = evaluate_static_i128(program, index, values)?;
-            let index = usize::try_from(index).ok()?;
-            values
-                .get(&source_static_array_element_key(name, index))
-                .copied()
-        }
-        ExpressionKind::Unary { op, expr } => {
-            let value = evaluate_static_i128(program, expr, values)?;
-            match op {
-                UnaryOperator::Plus => Some(value),
-                UnaryOperator::Minus => value.checked_neg(),
-                UnaryOperator::Not => Some(static_bool(value == 0)),
-                _ => None,
-            }
-        }
-        ExpressionKind::Binary { op, left, right } => {
-            evaluate_static_binary(program, *op, left, right, values)
-        }
-        ExpressionKind::Call { callee, args } if args.is_empty() => {
-            let name = expression_name(callee)?;
-            evaluate_static_zero_arg_function(program, name, values)
-        }
-        _ => None,
-    }
-}
-
-fn evaluate_static_binary(
-    program: &SourceProgram,
-    op: BinaryOperator,
-    left: &Expression,
-    right: &Expression,
-    values: &BTreeMap<String, i128>,
-) -> Option<i128> {
-    if op == BinaryOperator::LogicalAnd {
-        let left = evaluate_static_i128(program, left, values)?;
-        if left == 0 {
-            return Some(0);
-        }
-        return Some(static_bool(
-            evaluate_static_i128(program, right, values)? != 0,
-        ));
-    }
-    if op == BinaryOperator::LogicalOr {
-        let left = evaluate_static_i128(program, left, values)?;
-        if left != 0 {
-            return Some(1);
-        }
-        return Some(static_bool(
-            evaluate_static_i128(program, right, values)? != 0,
-        ));
-    }
-
-    let left = evaluate_static_i128(program, left, values)?;
-    let right = evaluate_static_i128(program, right, values)?;
-    match op {
-        BinaryOperator::Add => left.checked_add(right),
-        BinaryOperator::Subtract => left.checked_sub(right),
-        BinaryOperator::Multiply => left.checked_mul(right),
-        BinaryOperator::Divide | BinaryOperator::Backslash if right != 0 => Some(left / right),
-        BinaryOperator::Modulo if right != 0 => Some(left % right),
-        BinaryOperator::Power => u32::try_from(right)
-            .ok()
-            .and_then(|exponent| left.checked_pow(exponent)),
-        BinaryOperator::ShiftLeft => u32::try_from(right)
-            .ok()
-            .and_then(|amount| left.checked_shl(amount)),
-        BinaryOperator::ShiftRight => u32::try_from(right)
-            .ok()
-            .and_then(|amount| left.checked_shr(amount)),
-        BinaryOperator::Less => Some(static_bool(left < right)),
-        BinaryOperator::LessEqual => Some(static_bool(left <= right)),
-        BinaryOperator::Greater => Some(static_bool(left > right)),
-        BinaryOperator::GreaterEqual => Some(static_bool(left >= right)),
-        BinaryOperator::EqualEqual | BinaryOperator::TripleEqual => {
-            Some(static_bool(left == right))
-        }
-        BinaryOperator::NotEqual => Some(static_bool(left != right)),
-        BinaryOperator::BitAnd => Some(left & right),
-        BinaryOperator::BitXor => Some(left ^ right),
-        BinaryOperator::BitOr => Some(left | right),
-        _ => None,
-    }
-}
-
-fn static_bool(value: bool) -> i128 {
-    if value {
-        1
-    } else {
-        0
-    }
-}
-
-fn evaluate_static_zero_arg_function(
-    program: &SourceProgram,
-    name: &str,
-    values: &BTreeMap<String, i128>,
-) -> Option<i128> {
-    for module in &program.modules {
-        let Some(function) = module
-            .functions
-            .iter()
-            .find(|function| function.name == name && function.parameters.is_empty())
-        else {
-            continue;
-        };
-        return evaluate_static_function(program, module, function, values);
-    }
-    None
-}
-
-fn evaluate_static_function(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
-    function: &FunctionDeclaration,
-    values: &BTreeMap<String, i128>,
-) -> Option<i128> {
-    let mut values = values.clone();
-    match execute_static_statements(program, module, &function.statements, &mut values)? {
-        StaticFlow::Continue => None,
-        StaticFlow::Return(value) => Some(value),
-    }
-}
-
-enum StaticFlow {
-    Continue,
-    Return(i128),
-}
-
-fn execute_static_statements(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
-    statements: &[FunctionStatement],
-    values: &mut BTreeMap<String, i128>,
-) -> Option<StaticFlow> {
-    for statement in statements {
-        if let StaticFlow::Return(value) =
-            execute_static_statement(program, module, statement, values)?
-        {
-            return Some(StaticFlow::Return(value));
-        }
-    }
-    Some(StaticFlow::Continue)
-}
-
-fn execute_static_statement(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
-    statement: &FunctionStatement,
-    values: &mut BTreeMap<String, i128>,
-) -> Option<StaticFlow> {
-    match statement.kind {
-        FunctionStatementKind::Declaration => {
-            execute_static_declaration(program, statement, values)?;
-            Some(StaticFlow::Continue)
-        }
-        FunctionStatementKind::Expression => {
-            execute_static_expression_statement(
-                program,
-                statement.value_expression.as_ref()?,
-                values,
-            )?;
-            Some(StaticFlow::Continue)
-        }
-        FunctionStatementKind::Return => {
-            let value =
-                evaluate_static_i128(program, statement.value_expression.as_ref()?, values)?;
-            Some(StaticFlow::Return(value))
-        }
-        FunctionStatementKind::While => {
-            let condition = statement.header_expression.as_ref()?;
-            let body = statement.body.as_ref()?;
-            for _ in 0..STATIC_LOOP_LIMIT {
-                if evaluate_static_i128(program, condition, values)? == 0 {
-                    return Some(StaticFlow::Continue);
-                }
-                if let StaticFlow::Return(value) =
-                    execute_static_body(program, module, body.start, body.end, values)?
-                {
-                    return Some(StaticFlow::Return(value));
-                }
-            }
-            None
-        }
-        FunctionStatementKind::If => {
-            execute_static_if_statement(program, module, statement, values)
-        }
-        _ => None,
-    }
-}
-
-fn execute_static_declaration(
-    program: &SourceProgram,
-    statement: &FunctionStatement,
-    values: &mut BTreeMap<String, i128>,
-) -> Option<()> {
-    match statement.declaration.as_ref()? {
-        FunctionStatementDeclaration::Constant(declaration) => {
-            let expression = declaration.initializer_expression.as_ref()?;
-            if !declaration.array_dims.is_empty() {
-                let elements = source_static_integer_array_expression(program, expression, values)?;
-                insert_static_integer_array(values, &declaration.name, elements)?;
-                return Some(());
-            }
-            let value = evaluate_static_i128(program, expression, values)?;
-            values.insert(declaration.name.clone(), value);
-        }
-        FunctionStatementDeclaration::Variable(declaration) => {
-            let expression = declaration.initializer_expression.as_ref()?;
-            if !declaration.array_dims.is_empty() {
-                let elements = source_static_integer_array_expression(program, expression, values)?;
-                insert_static_integer_array(values, &declaration.name, elements)?;
-                return Some(());
-            }
-            let value = evaluate_static_i128(program, expression, values)?;
-            values.insert(declaration.name.clone(), value);
-        }
-        FunctionStatementDeclaration::Column(_) => return None,
-    }
-    Some(())
-}
-
-fn insert_static_integer_array(
-    values: &mut BTreeMap<String, i128>,
-    name: &str,
-    elements: Vec<i128>,
-) -> Option<()> {
-    let length = i128::try_from(elements.len()).ok()?;
-    values.insert(source_static_array_length_key(name), length);
-    for (index, value) in elements.into_iter().enumerate() {
-        values.insert(source_static_array_element_key(name, index), value);
-    }
-    Some(())
-}
-
-fn source_static_integer_array_expression(
-    program: &SourceProgram,
-    expression: &Expression,
-    values: &BTreeMap<String, i128>,
-) -> Option<Vec<i128>> {
-    match &expression.kind {
-        ExpressionKind::Array(elements) => elements
-            .iter()
-            .map(|element| evaluate_static_i128(program, element, values))
-            .collect(),
-        ExpressionKind::Group(inner) => {
-            source_static_integer_array_expression(program, inner, values)
-        }
-        ExpressionKind::Name(name) => {
-            let length =
-                usize::try_from(*values.get(&source_static_array_length_key(name))?).ok()?;
-            (0..length)
-                .map(|index| {
-                    values
-                        .get(&source_static_array_element_key(name, index))
-                        .copied()
-                })
-                .collect()
-        }
-        _ => None,
-    }
-}
-
-fn execute_static_body(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
-    start: usize,
-    end: usize,
-    values: &mut BTreeMap<String, i128>,
-) -> Option<StaticFlow> {
-    let tokens = lex_source(&module.source.contents).ok()?;
-    let statements =
-        parse_function_body_statements(&tokens, SourceSpan { start, end }, &module.source).ok()?;
-    execute_static_statements(program, module, &statements, values)
-}
-
-fn execute_static_if_statement(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
-    statement: &FunctionStatement,
-    values: &mut BTreeMap<String, i128>,
-) -> Option<StaticFlow> {
-    let tokens = lex_source(&module.source.contents).ok()?;
-    let start = tokens
-        .iter()
-        .position(|token| token.start == statement.start)?;
-    let end = tokens
-        .iter()
-        .position(|token| token.end == statement.end)?
-        .checked_add(1)?;
-    match static_if_body_span(program, module, &tokens, start, end, values)? {
-        Some(span) => execute_static_body(program, module, span.start, span.end, values),
-        None => Some(StaticFlow::Continue),
-    }
-}
-
-fn static_if_body_span(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
-    tokens: &[Token],
-    index: usize,
-    end: usize,
-    values: &BTreeMap<String, i128>,
-) -> Option<Option<SourceSpan>> {
-    if !matches!(
-        tokens.get(index).map(|token| token.kind),
-        Some(TokenKind::If | TokenKind::ElseIf)
-    ) {
-        return None;
-    }
-    let open = next_token_kind(tokens, index + 1, end, TokenKind::LParen)?;
-    let close = matching_closing_token(tokens, open, end)?;
-    let (condition, consumed) =
-        parse_expression_tokens(tokens, open + 1, close, &module.source).ok()?;
-    if consumed != close {
-        return None;
-    }
-    let body = static_control_body_span(tokens, close + 1, end)?;
-    if evaluate_static_i128(program, &condition, values)? != 0 {
-        return body.braced.then_some(Some(body.span));
-    }
-    static_else_body_span(program, module, tokens, body.after, end, values)
-}
-
-fn static_else_body_span(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
-    tokens: &[Token],
-    index: usize,
-    end: usize,
-    values: &BTreeMap<String, i128>,
-) -> Option<Option<SourceSpan>> {
-    match tokens.get(index).map(|token| token.kind) {
-        Some(TokenKind::ElseIf) => static_if_body_span(program, module, tokens, index, end, values),
-        Some(TokenKind::Else)
-            if tokens
-                .get(index + 1)
-                .is_some_and(|token| token.kind == TokenKind::If) =>
-        {
-            static_if_body_span(program, module, tokens, index + 1, end, values)
-        }
-        Some(TokenKind::Else) => {
-            let body = static_control_body_span(tokens, index + 1, end)?;
-            body.braced.then_some(Some(body.span))
-        }
-        _ => Some(None),
-    }
-}
-
-struct StaticBodySpan {
-    span: SourceSpan,
-    braced: bool,
-    after: usize,
-}
-
-fn static_control_body_span(tokens: &[Token], index: usize, end: usize) -> Option<StaticBodySpan> {
-    match tokens.get(index)?.kind {
-        TokenKind::LBrace => {
-            let close = matching_closing_token(tokens, index, end)?;
-            Some(StaticBodySpan {
-                span: SourceSpan {
-                    start: tokens[index].start,
-                    end: tokens[close].end,
-                },
-                braced: true,
-                after: close + 1,
-            })
-        }
-        _ => {
-            let semicolon = next_static_semicolon_limited(tokens, index, end)?;
-            Some(StaticBodySpan {
-                span: SourceSpan {
-                    start: tokens[index].start,
-                    end: tokens[semicolon].end,
-                },
-                braced: false,
-                after: semicolon + 1,
-            })
-        }
-    }
-}
-
-fn execute_static_expression_statement(
-    program: &SourceProgram,
-    expression: &Expression,
-    values: &mut BTreeMap<String, i128>,
-) -> Option<()> {
-    match &expression.kind {
-        ExpressionKind::Unary { op, expr } => {
-            let name = expression_name(expr)?;
-            let delta = match op {
-                UnaryOperator::Increment => 1,
-                UnaryOperator::Decrement => -1,
-                _ => return None,
-            };
-            execute_static_delta(name, delta, values)
-        }
-        ExpressionKind::Binary { op, left, right } => {
-            let name = expression_name(left)?.to_owned();
-            let right = evaluate_static_i128(program, right, values)?;
-            let current = values.get(&name).copied().unwrap_or_default();
-            let value = match op {
-                BinaryOperator::Assign => right,
-                BinaryOperator::PlusAssign => current.checked_add(right)?,
-                BinaryOperator::MinusAssign => current.checked_sub(right)?,
-                BinaryOperator::StarAssign => current.checked_mul(right)?,
-                _ => return None,
-            };
-            values.insert(name, value);
-            Some(())
-        }
-        _ => None,
-    }
-}
-
-fn execute_static_delta(
-    name: &str,
-    delta: i128,
-    values: &mut BTreeMap<String, i128>,
-) -> Option<()> {
-    let current = values.get(name).copied().unwrap_or_default();
-    values.insert(name.to_owned(), current.checked_add(delta)?);
-    Some(())
-}
-
 fn expression_name(expression: &Expression) -> Option<&str> {
     match &expression.kind {
         ExpressionKind::Name(name) => Some(name),
@@ -987,7 +552,7 @@ pub(crate) fn static_value_truthy(value: &FixedFileTemplateValue) -> bool {
 pub(crate) fn static_value_integer(value: &FixedFileTemplateValue) -> Option<i128> {
     match value {
         FixedFileTemplateValue::Integer(value) => Some(*value),
-        FixedFileTemplateValue::Boolean(value) => Some(static_bool(*value)),
+        FixedFileTemplateValue::Boolean(value) => Some(if *value { 1 } else { 0 }),
         FixedFileTemplateValue::String(_) => None,
     }
 }
