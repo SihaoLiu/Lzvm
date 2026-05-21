@@ -5,7 +5,7 @@ use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::global_program::GlobalProgramError;
 use lzvm_artifacts::hint_program::{global_hint_program_from_expression_info, HintProgram};
 use lzvm_pil::{
-    lex_source, CallArgument, Expression, ExpressionKind, FixedFileTemplateValue,
+    lex_source, BinaryOperator, CallArgument, Expression, ExpressionKind, FixedFileTemplateValue,
     FunctionDeclaration, FunctionParameter, FunctionStatement, FunctionStatementDeclaration,
     FunctionStatementKind, SourceProgram, SourceProgramModule, Token,
 };
@@ -17,12 +17,12 @@ use crate::{
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scalar_slots::SourceScalarSlots,
     source_statement_hints::{
-        lower_source_lookup_statement, SourceExpressionArrayAlias, SourceExpressionArrayAliases,
-        SourceLookupInputs,
+        lower_source_lookup_statement, source_statement_line, SourceExpressionArrayAlias,
+        SourceExpressionArrayAliases, SourceLookupInputs,
     },
     source_static_values::{
         evaluate_source_static_expression, insert_source_static_array,
-        source_static_array_expression, source_static_array_values,
+        source_static_array_expression, source_static_array_length, source_static_array_values,
     },
     source_template_for::source_static_for_loop_with_tokens,
     source_template_if::source_static_if_body_statements_with_tokens,
@@ -190,6 +190,15 @@ fn lower_source_global_hint_statement(
             Ok(())
         }
         FunctionStatementKind::Expression => {
+            if source_global_hint_static_assertion(
+                context.program,
+                context.module,
+                statement,
+                values,
+                alias_scope,
+            )? {
+                return Ok(());
+            }
             if lower_source_global_hint_function_call(context, statement, values, alias_scope)? {
                 return Ok(());
             }
@@ -465,6 +474,127 @@ fn source_call_expression(expression: Option<&Expression>) -> Option<(&str, &[Ca
         return None;
     };
     Some((name.as_str(), args.as_slice()))
+}
+
+fn source_global_hint_static_assertion(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    statement: &FunctionStatement,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceGlobalHintAliasScope,
+) -> Result<bool, SourceKeyDirectoryMetadataError> {
+    let Some((name, arguments)) = source_call_expression(statement.value_expression.as_ref())
+    else {
+        return Ok(false);
+    };
+    if name != "assert" || !(1..=2).contains(&arguments.len()) || arguments[0].name.is_some() {
+        return Ok(false);
+    }
+    match source_global_hint_static_condition(program, &arguments[0].value, values, alias_scope) {
+        Some(true) => Ok(true),
+        Some(false) => Err(SourceKeyDirectoryMetadataError::StaticAssertionFailed {
+            line: source_statement_line(module, statement),
+        }),
+        None => Ok(false),
+    }
+}
+
+fn source_global_hint_static_condition(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceGlobalHintAliasScope,
+) -> Option<bool> {
+    if let Some(value) = evaluate_source_static_expression(program, expression, values) {
+        return Some(source_global_hint_static_truthy_value(&value));
+    }
+    let ExpressionKind::Binary { op, left, right } = &strip_group_expression(expression).kind
+    else {
+        return None;
+    };
+    let left = source_global_hint_static_integer_expression(program, left, values, alias_scope)?;
+    let right = source_global_hint_static_integer_expression(program, right, values, alias_scope)?;
+    match op {
+        BinaryOperator::Less => Some(left < right),
+        BinaryOperator::LessEqual => Some(left <= right),
+        BinaryOperator::Greater => Some(left > right),
+        BinaryOperator::GreaterEqual => Some(left >= right),
+        BinaryOperator::EqualEqual | BinaryOperator::TripleEqual => Some(left == right),
+        BinaryOperator::NotEqual => Some(left != right),
+        _ => None,
+    }
+}
+
+fn source_global_hint_static_integer_expression(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceGlobalHintAliasScope,
+) -> Option<i128> {
+    let expression = strip_group_expression(expression);
+    if let ExpressionKind::Call { callee, args } = &expression.kind {
+        if args.len() == 1 && args[0].name.is_none() {
+            if let ExpressionKind::Name(callee) = &strip_group_expression(callee).kind {
+                if callee == "length" {
+                    let ExpressionKind::Name(name) = &strip_group_expression(&args[0].value).kind
+                    else {
+                        return None;
+                    };
+                    return source_global_hint_array_length(
+                        values,
+                        &alias_scope.expression_arrays,
+                        name,
+                        &mut BTreeSet::new(),
+                    );
+                }
+            }
+        }
+    }
+    let value = evaluate_source_static_expression(program, expression, values)?;
+    source_global_hint_static_integer_value(Some(&value))
+}
+
+fn source_global_hint_array_length(
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    expression_array_aliases: &SourceExpressionArrayAliases,
+    name: &str,
+    resolving_aliases: &mut BTreeSet<String>,
+) -> Option<i128> {
+    if let Some(length) = source_static_array_length(values, name) {
+        return Some(length);
+    }
+    if !resolving_aliases.insert(name.to_owned()) {
+        return None;
+    }
+    let length = match expression_array_aliases.get(name)? {
+        SourceExpressionArrayAlias::Name(alias) => source_global_hint_array_length(
+            values,
+            expression_array_aliases,
+            alias,
+            resolving_aliases,
+        )?,
+        SourceExpressionArrayAlias::Values(expressions) => {
+            i128::try_from(expressions.len()).ok()?
+        }
+    };
+    resolving_aliases.remove(name);
+    Some(length)
+}
+
+fn source_global_hint_static_integer_value(value: Option<&FixedFileTemplateValue>) -> Option<i128> {
+    match value {
+        Some(FixedFileTemplateValue::Integer(value)) => Some(*value),
+        Some(FixedFileTemplateValue::Boolean(value)) => Some(if *value { 1 } else { 0 }),
+        _ => None,
+    }
+}
+
+fn source_global_hint_static_truthy_value(value: &FixedFileTemplateValue) -> bool {
+    match value {
+        FixedFileTemplateValue::Integer(value) => *value != 0,
+        FixedFileTemplateValue::Boolean(value) => *value,
+        FixedFileTemplateValue::String(value) => !value.is_empty(),
+    }
 }
 
 fn source_expression_name(expression: &Expression) -> Option<&str> {
