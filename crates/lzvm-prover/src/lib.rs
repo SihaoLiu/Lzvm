@@ -179,6 +179,7 @@ pub enum ProveScheduleError {
     LengthOverflow,
     KeyDirectory(KeyDirectoryError),
     SetupDirectoryManifest(SetupDirectoryManifestError),
+    UnsupportedGlobalHint { name: String },
     UnsupportedRegularHint { unit_index: usize, name: String },
 }
 
@@ -189,6 +190,9 @@ impl fmt::Display for ProveScheduleError {
             Self::LengthOverflow => write!(f, "prove schedule length overflow"),
             Self::KeyDirectory(error) => write!(f, "prove schedule catalog error: {error}"),
             Self::SetupDirectoryManifest(error) => write!(f, "{error}"),
+            Self::UnsupportedGlobalHint { name } => {
+                write!(f, "prove schedule unsupported global hint {name}")
+            }
             Self::UnsupportedRegularHint { unit_index, name } => {
                 write!(
                     f,
@@ -648,6 +652,7 @@ pub fn derive_prove_schedule(
         return Err(ProveScheduleError::EmptyCatalog);
     }
 
+    validate_schedulable_global_hints(&catalog.global_hints)?;
     let setup_hash = key_directory_catalog_digest(catalog)?;
     let mut total_fixed_bytes = 0_u64;
     let mut total_pcs_material_bytes = 0_u64;
@@ -731,6 +736,19 @@ pub fn derive_prove_schedule(
         max_extended_domain_bits,
         units,
     })
+}
+
+fn validate_schedulable_global_hints(program: &HintProgram) -> Result<(), ProveScheduleError> {
+    if let Some(hint) = program
+        .hints
+        .iter()
+        .find(|hint| source_unimplemented_hint_name(&hint.name))
+    {
+        return Err(ProveScheduleError::UnsupportedGlobalHint {
+            name: hint.name.clone(),
+        });
+    }
+    Ok(())
 }
 
 fn validate_schedulable_regular_hints(

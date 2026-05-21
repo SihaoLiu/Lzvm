@@ -489,6 +489,33 @@ fn rejects_schedules_with_unimplemented_regular_hints() {
 }
 
 #[test]
+fn rejects_schedules_with_unimplemented_global_hints() {
+    let mut catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 128)]);
+    catalog.global_hints = HintProgram {
+        hints: vec![Hint {
+            name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
+            fields: vec![HintField {
+                name: "line".to_owned(),
+                values: vec![HintValue {
+                    operand: HintOperand::String("lookup_proves(7, [value])".to_owned()),
+                    positions: Vec::new(),
+                }],
+            }],
+        }],
+    };
+
+    let error = derive_prove_schedule(&catalog)
+        .expect_err("unimplemented global hints should block prove scheduling");
+
+    assert_eq!(
+        error,
+        ProveScheduleError::UnsupportedGlobalHint {
+            name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
+        }
+    );
+}
+
+#[test]
 fn derives_full_prove_run_plan_from_catalog_and_request() {
     let catalog = sample_catalog(vec![sample_unit(KeyUnitKind::Basic, 0, 64)]);
     let request = ProveRunRequest {
