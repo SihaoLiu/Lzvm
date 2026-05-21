@@ -436,3 +436,59 @@ fn generate_key_skips_source_function_local_static_array_length_assert_calls() {
         .contains("status=ok\n"));
     assert!(stderr.is_empty());
 }
+
+#[test]
+fn generate_key_skips_source_function_local_static_array_element_assert_calls() {
+    let dir = temp_dir("source-function-local-static-array-element-assert");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "function check_expected() {\n\
+             const int expected[] = [3, 5];\n\
+             assert(expected[0] == 3);\n\
+         }\n\
+         airtemplate UnitA() {\n\
+             check_expected();\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert!(expressions.constraints.is_empty());
+    assert!(expressions.hints.is_empty());
+    let regular = read_regular_program_file(
+        unit.expression_program()
+            .expect("regular program path should derive"),
+    )
+    .expect("regular program should parse");
+    assert!(regular.constraints.entries.is_empty());
+    assert!(regular.hints.hints.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}

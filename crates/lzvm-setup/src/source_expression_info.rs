@@ -36,9 +36,9 @@ use crate::{
     source_static_values::{
         evaluate_source_static_expression, insert_source_static_array, source_active_static_name,
         source_declaration_constant_values_from_cache, source_declaration_in_static_false_branch,
-        source_scalar_constant_values, source_static_array_length, source_static_array_values,
-        source_static_assignment_expression, source_template_constant_value_cache,
-        SourceTemplateConstantValueCache,
+        source_scalar_constant_values, source_static_array_element, source_static_array_length,
+        source_static_array_values, source_static_assignment_expression,
+        source_template_constant_value_cache, SourceTemplateConstantValueCache,
     },
     source_template_context::SourceTemplateLoweringContext,
     source_template_for::source_static_for_loop_with_tokens,
@@ -882,6 +882,15 @@ fn source_static_integer_expression(
     values: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> Option<i128> {
     let expression = strip_source_group_expression(expression);
+    if let ExpressionKind::Index { target, index } = &expression.kind {
+        let ExpressionKind::Name(name) = &strip_source_group_expression(target).kind else {
+            return None;
+        };
+        let index = source_static_integer_expression(program, index, values)?;
+        let index = usize::try_from(index).ok()?;
+        let value = source_static_array_element(values, name, index)?;
+        return source_static_integer_value(Some(&value));
+    }
     if let ExpressionKind::Call { callee, args } = &expression.kind {
         if args.len() == 1 && args[0].name.is_none() {
             if let ExpressionKind::Name(callee) = &strip_source_group_expression(callee).kind {
