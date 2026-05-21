@@ -833,7 +833,7 @@ fn source_static_assertion(
     let Some((name, arguments)) = source_call_expression(expression) else {
         return false;
     };
-    if name != "assert" || arguments.len() != 1 || arguments[0].name.is_some() {
+    if name != "assert" || !(1..=2).contains(&arguments.len()) || arguments[0].name.is_some() {
         return false;
     }
     source_static_condition(program, &arguments[0].value, values).unwrap_or(false)
