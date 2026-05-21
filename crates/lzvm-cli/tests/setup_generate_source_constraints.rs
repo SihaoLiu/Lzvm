@@ -1155,6 +1155,105 @@ fn generate_key_lowers_template_parameter_static_if_constraints() {
 }
 
 #[test]
+fn generate_key_lowers_template_parameter_static_if_opening_points() {
+    let dir = temp_dir("template-param-static-if-opening-point");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(const int ENABLED = 1) {\n\
+             col witness value;\n\
+             if (ENABLED) {\n\
+                 value === 5;\n\
+             } else {\n\
+                 value' === 11;\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(ENABLED: 0); }\n\
+         col fixed check = [0, 0, 0, 0];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    assert_eq!(setup.opening_points, [0, 1]);
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert_eq!(expressions.constraints.len(), 1);
+    assert!(expressions.hints.is_empty());
+    let constraint = &expressions.constraints[0];
+    assert_eq!(constraint.offset_min, Some(0));
+    assert_eq!(constraint.offset_max, Some(1));
+    assert_eq!(constraint.operations.len(), 1);
+    assert_eq!(constraint.operations[0].op, OperationKind::Sub);
+    assert!(matches!(
+        constraint.operations[0].sources[0],
+        CodeOperand::Commitment {
+            id: 0,
+            prime: Some(1),
+            dimension: 1,
+        }
+    ));
+    assert!(matches!(
+        constraint.operations[0].sources[1],
+        CodeOperand::Number {
+            value: 11,
+            dimension: 1,
+        }
+    ));
+    let regular = read_regular_program_file(
+        unit.expression_program()
+            .expect("regular program path should derive"),
+    )
+    .expect("regular program should parse");
+    let stage_values = [11, 11, 11, 11].map(Felt::from_u64);
+    let stage_columns = [RegularStageColumns {
+        stage_index: 1,
+        column_count: 1,
+        values: &stage_values,
+    }];
+    let results = evaluate_regular_constraints(
+        &regular.constraints,
+        RegularConstraintInputs {
+            domain_size: 4,
+            stage_count: u16::try_from(setup.n_stages).expect("stage count should fit"),
+            stage_columns: &stage_columns,
+            opening_point_offsets: &setup.opening_points,
+            ..RegularConstraintInputs::default()
+        },
+    )
+    .expect("regular constraints should evaluate");
+    assert!(results[0].invalid_rows.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_lowers_source_constraint_expression_aliases() {
     let dir = temp_dir("constraint-expression-alias");
     let _ = fs::remove_dir_all(&dir);

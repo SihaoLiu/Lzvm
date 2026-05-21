@@ -232,7 +232,12 @@ pub fn write_source_key_directory_metadata(
                 continue;
             };
             let row_count = source_layout_unit_row_count(unit, &row_counts)?;
-            let mut setup_info = source_unit_setup_info(&program, row_count, &mut body_caches)?;
+            let mut setup_info = source_unit_setup_info(
+                &program,
+                row_count,
+                unit.group_name.as_deref().zip(unit.unit_name.as_deref()),
+                &mut body_caches,
+            )?;
             let unit_constant_values = source_scalar_constant_values(&program, row_count);
             let unit_template_values =
                 source_template_constant_value_cache(&program, &unit_constant_values);
@@ -964,6 +969,7 @@ fn unsupported_source_message(message: impl Into<String>) -> SourceKeyDirectoryM
 fn source_unit_setup_info(
     program: &SourceProgram,
     row_count: u64,
+    unit_name: Option<(&str, &str)>,
     body_caches: &mut SourceControlBodyCaches,
 ) -> Result<UnitSetupInfo, SourceKeyDirectoryMetadataError> {
     let n_bits = row_count.trailing_zeros();
@@ -1000,6 +1006,7 @@ fn source_unit_setup_info(
     )?;
     let opening_points = source_opening_points(
         program,
+        unit_name,
         &constant_values,
         &active_templates,
         &template_values,

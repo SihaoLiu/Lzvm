@@ -1,9 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_pil::{
-    lex_source, CallArgument, Expression, ExpressionKind, FixedFileTemplateValue,
-    FunctionDeclaration, FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind,
-    SourceProgram, SourceProgramModule, Token, UnaryOperator,
+    lex_source, AirInstanceDeclaration, AirTemplateDeclaration, CallArgument, Expression,
+    ExpressionKind, FixedFileTemplateValue, FunctionDeclaration, FunctionStatement,
+    FunctionStatementDeclaration, FunctionStatementKind, SourceProgram, SourceProgramModule, Token,
+    UnaryOperator,
 };
 
 use crate::{
@@ -24,12 +25,14 @@ use crate::{
 
 pub(crate) fn source_opening_points(
     program: &SourceProgram,
+    unit_name: Option<(&str, &str)>,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
     active_templates: &BTreeSet<String>,
     template_values: &SourceTemplateConstantValueCache,
     body_caches: &mut SourceControlBodyCaches,
 ) -> Result<Vec<i64>, SourceKeyDirectoryMetadataError> {
     let mut points = vec![0_i64];
+    let unit_instance = source_opening_unit_instance(program, unit_name);
     for module in &program.modules {
         let tokens = lex_source(&module.source.contents).map_err(|source| {
             SourceKeyDirectoryMetadataError::Lex {
@@ -42,6 +45,9 @@ pub(crate) fn source_opening_points(
             if !active_templates.contains(&template.name) {
                 continue;
             }
+            if unit_instance.is_some_and(|instance| template.name != instance.template) {
+                continue;
+            }
             let mut alias_scope = SourceOpeningAliasScope::default();
             let context = SourceOpeningPointContext {
                 program,
@@ -51,14 +57,14 @@ pub(crate) fn source_opening_points(
                 template_values,
             };
             let mut function_call_stack = BTreeSet::new();
-            let mut statement_values = source_declaration_constant_values_from_cache(
+            let mut statement_values = source_opening_template_values(
+                context.program,
                 context.module,
-                template.body.start,
-                template.body.end,
+                template,
+                unit_instance,
                 context.constant_values,
                 context.template_values,
-            )
-            .clone();
+            );
             for statement in &template.statements {
                 collect_source_statement_opening_points(
                     &context,
@@ -81,6 +87,140 @@ pub(crate) fn source_opening_points(
         }
     }
     Ok(points)
+}
+
+fn source_opening_unit_instance<'a>(
+    program: &'a SourceProgram,
+    unit_name: Option<(&str, &str)>,
+) -> Option<&'a AirInstanceDeclaration> {
+    let (group_name, unit_name) = unit_name?;
+    let units = program
+        .air_units()
+        .into_iter()
+        .filter(|unit| !unit.virtual_instance)
+        .collect::<Vec<_>>();
+    let instances = program
+        .modules
+        .iter()
+        .flat_map(|module| module.air_instances.iter())
+        .filter(|instance| !instance.virtual_instance)
+        .collect::<Vec<_>>();
+    units
+        .into_iter()
+        .zip(instances)
+        .find_map(|(unit, instance)| {
+            (unit.group_name == group_name && unit.unit_name == unit_name).then_some(instance)
+        })
+}
+
+fn source_opening_template_values(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    template: &AirTemplateDeclaration,
+    instance: Option<&AirInstanceDeclaration>,
+    base_values: &BTreeMap<String, FixedFileTemplateValue>,
+    template_values: &SourceTemplateConstantValueCache,
+) -> BTreeMap<String, FixedFileTemplateValue> {
+    let cached = source_declaration_constant_values_from_cache(
+        module,
+        template.body.start,
+        template.body.end,
+        base_values,
+        template_values,
+    );
+    let Some(instance) = instance else {
+        return cached.clone();
+    };
+    let mut values = base_values.clone();
+    let mut provided = BTreeSet::new();
+    if let Some(arguments) = instance.args_expressions.as_ref() {
+        apply_source_opening_instance_arguments(
+            program,
+            template,
+            arguments,
+            &mut values,
+            &mut provided,
+        );
+    }
+    bind_source_opening_template_defaults(program, template, &mut values, &provided);
+
+    let parameter_names = template
+        .parameters
+        .iter()
+        .map(|parameter| parameter.name.as_str())
+        .collect::<BTreeSet<_>>();
+    for (name, value) in cached {
+        if !parameter_names.contains(name.as_str()) {
+            values.insert(name.clone(), value.clone());
+        }
+    }
+
+    values
+}
+
+fn bind_source_opening_template_defaults(
+    program: &SourceProgram,
+    template: &AirTemplateDeclaration,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    provided: &BTreeSet<String>,
+) {
+    for parameter in &template.parameters {
+        if provided.contains(&parameter.name) {
+            continue;
+        }
+        let Some(value) = parameter
+            .default_expression
+            .as_ref()
+            .and_then(|expression| evaluate_source_static_expression(program, expression, values))
+        else {
+            values.remove(&parameter.name);
+            continue;
+        };
+        values.insert(parameter.name.clone(), value);
+    }
+}
+
+fn apply_source_opening_instance_arguments(
+    program: &SourceProgram,
+    template: &AirTemplateDeclaration,
+    arguments: &[CallArgument],
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    provided: &mut BTreeSet<String>,
+) {
+    let mut positional_index = 0;
+    for argument in arguments {
+        let Some(value) = evaluate_source_static_expression(program, &argument.value, values)
+        else {
+            continue;
+        };
+        let name = if let Some(name) = argument.name.as_ref() {
+            name
+        } else {
+            while template
+                .parameters
+                .get(positional_index)
+                .is_some_and(|parameter| provided.contains(&parameter.name))
+            {
+                let Some(next) = positional_index.checked_add(1) else {
+                    return;
+                };
+                positional_index = next;
+            }
+            let Some(parameter) = template.parameters.get(positional_index) else {
+                continue;
+            };
+            &parameter.name
+        };
+        if provided.insert(name.clone()) {
+            values.insert(name.clone(), value);
+        }
+        if argument.name.is_none() {
+            let Some(next) = positional_index.checked_add(1) else {
+                return;
+            };
+            positional_index = next;
+        }
+    }
 }
 
 struct SourceOpeningPointContext<'a> {
