@@ -31,6 +31,7 @@ use lzvm_artifacts::setup_manifest::{
 use lzvm_artifacts::unit_values_segment::{parse_unit_values_segment, UNIT_VALUES_SEGMENT_ID};
 use lzvm_artifacts::witness_opening_segment::WITNESS_OPENING_SEGMENT_ID;
 use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
+use lzvm_field::{Felt, FieldError};
 
 use crate::constant_opening::{
     validate_constant_opening_segments, ValidateConstantOpeningSegmentsError,
@@ -145,6 +146,11 @@ pub enum SetupPreflightError {
     PcsFri(ValidateOptionalPcsFriOpeningProofSegmentsError),
     Contribution(ContributionChallengeError),
     ChallengeValues(ChallengeValuesSegmentError),
+    ChallengeValueNonCanonical {
+        value_index: usize,
+        word_index: usize,
+        source: FieldError,
+    },
     DuplicateChallengeValuesSegment,
     ProofValues(LoadPcsProofValuesSegmentError),
     ProofValuePacking(ProvePcsProofValuesSegmentError),
@@ -152,7 +158,9 @@ pub enum SetupPreflightError {
     UnitValues(LoadUnitValuesSegmentError),
     UnitValueQueryPlan(LoadPcsQueryPlanSegmentError),
     ContributionChallengeValuesMismatch,
-    UnexpectedProofSegment { id: u32 },
+    UnexpectedProofSegment {
+        id: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -185,6 +193,14 @@ impl fmt::Display for SetupPreflightError {
             Self::PcsFri(error) => write!(f, "{error}"),
             Self::Contribution(error) => write!(f, "{error}"),
             Self::ChallengeValues(error) => write!(f, "{error}"),
+            Self::ChallengeValueNonCanonical {
+                value_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "invalid challenge values segment value {value_index} word {word_index}: {source}"
+            ),
             Self::DuplicateChallengeValuesSegment => {
                 write!(f, "duplicate challenge values segment")
             }
@@ -232,6 +248,7 @@ impl std::error::Error for SetupPreflightError {
             Self::PcsFri(error) => Some(error),
             Self::Contribution(error) => Some(error),
             Self::ChallengeValues(error) => Some(error),
+            Self::ChallengeValueNonCanonical { source, .. } => Some(source),
             Self::ProofValues(error) => Some(error),
             Self::ProofValuePacking(error) => Some(error),
             Self::GroupValues(error) => Some(error),
@@ -621,9 +638,24 @@ fn validate_optional_challenge_values_segment(
     if segments.next().is_some() {
         return Err(SetupPreflightError::DuplicateChallengeValuesSegment);
     }
-    parse_challenge_values_segment(&segment.data)
-        .map(|_| ())
+    let segment = parse_challenge_values_segment(&segment.data)
         .map_err(SetupPreflightError::ChallengeValues)?;
+    validate_challenge_values_canonical(&segment.values)?;
+    Ok(())
+}
+
+fn validate_challenge_values_canonical(values: &[[u64; 3]]) -> Result<(), SetupPreflightError> {
+    for (value_index, words) in values.iter().enumerate() {
+        for (word_index, word) in words.iter().copied().enumerate() {
+            Felt::from_canonical(word).map_err(|source| {
+                SetupPreflightError::ChallengeValueNonCanonical {
+                    value_index,
+                    word_index,
+                    source,
+                }
+            })?;
+        }
+    }
     Ok(())
 }
 
@@ -730,6 +762,7 @@ mod tests {
     use lzvm_artifacts::pcs_material_segment::PCS_MATERIAL_MANIFEST_SEGMENT_ID;
     use lzvm_artifacts::proof::{ProofArtifact, ProofSegment};
     use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
+    use lzvm_field::{FieldError, MODULUS};
 
     use super::{
         validate_optional_challenge_values_segment, validate_setup_proof_segment_ids,
@@ -791,6 +824,33 @@ mod tests {
 
         validate_optional_challenge_values_segment(&proof)
             .expect("challenge values segment should validate");
+    }
+
+    #[test]
+    fn challenge_values_preflight_rejects_non_canonical_values() {
+        let proof = ProofArtifact {
+            setup_hash: [0; 32],
+            public_values_hash: [0; 32],
+            segments: vec![ProofSegment {
+                id: CHALLENGE_VALUES_SEGMENT_ID,
+                data: encode_challenge_values_segment(&ChallengeValuesSegment {
+                    values: vec![[1, MODULUS, 3]],
+                })
+                .expect("challenge values segment should encode"),
+            }],
+        };
+
+        let error = validate_optional_challenge_values_segment(&proof)
+            .expect_err("non-canonical challenge values should reject");
+
+        assert_eq!(
+            error,
+            SetupPreflightError::ChallengeValueNonCanonical {
+                value_index: 0,
+                word_index: 1,
+                source: FieldError::NonCanonical { value: MODULUS },
+            }
+        );
     }
 
     #[test]
