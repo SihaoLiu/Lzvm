@@ -45,6 +45,7 @@ mod source_fixed_expression;
 mod source_fixed_file_manifest;
 mod source_fixed_sequence;
 mod source_global_constraints;
+mod source_global_values;
 mod source_key_directory;
 mod source_metadata_template;
 mod source_opening_points;

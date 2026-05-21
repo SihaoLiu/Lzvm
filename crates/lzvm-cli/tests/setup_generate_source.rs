@@ -1277,6 +1277,52 @@ fn generate_key_skips_inactive_source_proof_values() {
 }
 
 #[test]
+fn generate_key_skips_template_parameter_inactive_proof_values() {
+    let dir = temp_dir("template-param-inactive-proof-value-metadata");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(const int ENABLED = 1) {\n\
+             if (ENABLED) {\n\
+                 proofval unused;\n\
+             } else {\n\
+                 proofval expected;\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(ENABLED: 0); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
+        .expect("source global metadata should parse");
+    assert_eq!(global.num_proof_values, [1]);
+    assert_eq!(global.proof_values_map.len(), 1);
+    assert_eq!(global.proof_values_map[0].name, "expected");
+    assert_eq!(global.proof_values_map[0].stage, 1);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_writes_source_challenge_counts_to_metadata() {
     let dir = temp_dir("challenge-metadata");
     let _ = fs::remove_dir_all(&dir);
@@ -1370,6 +1416,55 @@ fn generate_key_skips_inactive_source_challenges() {
         .expect("setup metadata path should derive");
     let setup = read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
     assert_eq!(setup.challenge_count, 1);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_skips_template_parameter_inactive_challenges() {
+    let dir = temp_dir("template-param-inactive-challenge-metadata");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(const int ENABLED = 1) {\n\
+             if (ENABLED) {\n\
+                 challenge stage(1) unused[2];\n\
+             } else {\n\
+                 challenge stage(1) expected[3];\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(ENABLED: 0); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
+        .expect("source global metadata should parse");
+    assert_eq!(global.num_challenges, [3]);
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let setup_path = layout.units[0]
+        .setup_info_binary()
+        .expect("setup metadata path should derive");
+    let setup = read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+    assert_eq!(setup.challenge_count, 3);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
     assert!(String::from_utf8(stdout)
         .expect("stdout should be utf-8")

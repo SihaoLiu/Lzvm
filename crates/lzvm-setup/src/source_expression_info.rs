@@ -429,7 +429,12 @@ fn lower_source_template_statement(
     {
         if matches!(
             kind,
-            TokenKind::AirGroupValue | TokenKind::AirValue | TokenKind::Commit | TokenKind::Public
+            TokenKind::AirGroupValue
+                | TokenKind::AirValue
+                | TokenKind::Commit
+                | TokenKind::Public
+                | TokenKind::ProofValue
+                | TokenKind::Challenge
         ) {
             return Ok(());
         }
