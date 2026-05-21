@@ -1,5 +1,5 @@
 use lzvm_artifacts::constraint_program::GlobalConstraintProgram;
-use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
+use lzvm_artifacts::global_info::{CurveKind, GlobalInfo, PublicValue};
 use lzvm_artifacts::hint_program::HintProgram;
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, GlobalKeyPaths, KeyDirectoryCatalog, KeyDirectoryLayout,
@@ -24,11 +24,22 @@ fn sample_catalog() -> KeyDirectoryCatalog {
                 curve: CurveKind::None,
                 lattice_size: None,
                 aggregation_types: Vec::new(),
-                n_publics: 0,
+                n_publics: 5,
                 num_challenges: Vec::new(),
                 num_proof_values: Vec::new(),
                 proof_values_map: Vec::new(),
-                publics_map: Vec::new(),
+                publics_map: vec![
+                    PublicValue {
+                        name: "block_number".to_owned(),
+                        stage: 1,
+                        lengths: Vec::new(),
+                    },
+                    PublicValue {
+                        name: "state_root_words".to_owned(),
+                        stage: 1,
+                        lengths: vec![4],
+                    },
+                ],
                 transcript_arity: 4,
             },
             global_paths: GlobalKeyPaths {
@@ -176,6 +187,27 @@ fn rejects_setup_preflight_public_values_hash_mismatches() {
     assert_eq!(
         error,
         SetupPreflightError::Proof(ProofPreflightError::PublicValuesHashMismatch)
+    );
+}
+
+#[test]
+fn rejects_setup_preflight_public_value_array_shape_mismatches() {
+    let catalog = sample_catalog();
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let mut public_values = sample_public_values(setup_hash);
+    public_values.values[1].elements.pop();
+    let proof = sample_proof(&public_values);
+
+    let error = validate_setup_preflight_hashes(&catalog, &proof, &public_values)
+        .expect_err("public value array shape should match setup metadata");
+
+    assert_eq!(
+        error,
+        SetupPreflightError::PublicValueElementCountMismatch {
+            name: "state_root_words".to_owned(),
+            expected: 4,
+            found: 3,
+        }
     );
 }
 

@@ -18,7 +18,7 @@ use lzvm_artifacts::constraint_program::{
 use lzvm_artifacts::contribution_segment::CONTRIBUTION_SEGMENT_ID;
 use lzvm_artifacts::eth_block_input::{
     build_eth_block_input, build_eth_block_input_with_receipts, encode_eth_block_input,
-    eth_block_input_bytes_digest, parse_eth_block_input,
+    eth_block_input_bytes_digest, parse_eth_block_input, EthBlockInput,
 };
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, parse_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
@@ -29,7 +29,7 @@ use lzvm_artifacts::expression_info::{encode_expression_info, ExpressionInfo};
 use lzvm_artifacts::expression_program::{
     encode_expression_program, ExpressionEntry, ExpressionProgram,
 };
-use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo};
+use lzvm_artifacts::global_info::{encode_global_info, GlobalInfo, PublicValue};
 use lzvm_artifacts::group_values_segment::{
     encode_group_values_segment, parse_group_values_segment, GroupValuesSegment,
     GROUP_VALUES_SEGMENT_ID,
@@ -350,6 +350,41 @@ fn sample_public_values(setup_hash: [u8; 32]) -> PublicValues {
             elements: vec![12_345],
         }],
     }
+}
+
+fn public_values_publics_map(public_values: &PublicValues) -> Vec<PublicValue> {
+    public_values
+        .values
+        .iter()
+        .map(|entry| PublicValue {
+            name: entry.name.clone(),
+            stage: 1,
+            lengths: if entry.elements.len() == 1 {
+                Vec::new()
+            } else {
+                vec![u64::try_from(entry.elements.len()).expect("public value count should fit")]
+            },
+        })
+        .collect()
+}
+
+fn public_values_field_count(public_values: &PublicValues) -> u64 {
+    public_values
+        .values
+        .iter()
+        .map(|entry| u64::try_from(entry.elements.len()).expect("public value count should fit"))
+        .sum()
+}
+
+fn global_info_with_public_values(public_values: &PublicValues) -> GlobalInfo {
+    let mut info = fixtures::sample_global_info();
+    info.n_publics = public_values_field_count(public_values);
+    info.publics_map = public_values_publics_map(public_values);
+    info
+}
+
+fn eth_block_public_values_metadata(input: &EthBlockInput) -> PublicValues {
+    public_values_from_eth_block_input([0; 32], input)
 }
 
 fn sample_proof(public_values: &PublicValues) -> ProofArtifact {
@@ -1453,6 +1488,14 @@ fn write_setup_directory(root: &Path) {
     }
 }
 
+fn write_setup_directory_with_public_values(root: &Path, public_values: &PublicValues) {
+    write_global_files_with_info(root, &global_info_with_public_values(public_values));
+    let layout = read_key_directory_layout(root).expect("layout should parse");
+    for unit in &layout.units {
+        write_unit_files(unit);
+    }
+}
+
 fn sample_source_global_info() -> GlobalInfo {
     let mut info = fixtures::sample_global_info();
     info.air_groups = vec!["GroupA".to_owned()];
@@ -1734,6 +1777,24 @@ fn run_generate_key_command(root: &Path) {
 fn write_execution_ready_setup_directory(root: &Path) {
     write_setup_directory(root);
     run_generate_key_command(root);
+}
+
+fn write_execution_ready_setup_directory_with_public_values(
+    root: &Path,
+    public_values: &PublicValues,
+) {
+    write_setup_directory_with_public_values(root, public_values);
+    run_generate_key_command(root);
+}
+
+fn write_execution_ready_setup_directory_with_eth_block_public_values(
+    root: &Path,
+    input: &EthBlockInput,
+) {
+    write_execution_ready_setup_directory_with_public_values(
+        root,
+        &eth_block_public_values_metadata(input),
+    );
 }
 
 fn write_execution_ready_setup_directory_with_fri_quotient(root: &Path) {
@@ -3481,7 +3542,8 @@ fn prove_inputs_rejects_noncanonical_public_value_fields() {
 fn prove_inputs_generates_eth_block_public_values_when_missing() {
     let dir = temp_dir("prove-inputs-eth-public-values");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory(&dir);
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let expected = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
@@ -3496,7 +3558,6 @@ fn prove_inputs_generates_eth_block_public_values_when_missing() {
         parse_witness_library(&witness_library_bytes).expect("witness library should parse");
     let guest_image_bytes = sample_guest_image();
     let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
-    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
     let encoded_block_input =
         encode_eth_block_input(&block_input).expect("block input should encode");
     let block_input_hash = eth_block_input_bytes_digest(&encoded_block_input);
@@ -3572,7 +3633,6 @@ fn prove_inputs_generates_eth_block_public_values_when_missing() {
 fn prove_inputs_reports_eth_block_receipts_when_present() {
     let dir = temp_dir("prove-inputs-eth-receipts");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory(&dir);
     let output_dir = dir.join("proof-out");
     let witness_library = dir.join("libwitness.so");
     let guest_image = dir.join("guest.elf");
@@ -3584,6 +3644,7 @@ fn prove_inputs_reports_eth_block_receipts_when_present() {
     let block_rlp = sample_block_rlp_with_receipts_root(receipt_build.root);
     let block_input = build_eth_block_input_with_receipts(&block_rlp, &receipts_rlp)
         .expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
     write_bytes(&witness_library, sample_witness_library());
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(
@@ -3632,13 +3693,13 @@ fn prove_inputs_reports_eth_block_receipts_when_present() {
 fn prove_inputs_reports_eth_block_extra_field_counts() {
     let dir = temp_dir("prove-inputs-eth-extra-fields");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory(&dir);
     let output_dir = dir.join("proof-out");
     let witness_library = dir.join("libwitness.so");
     let guest_image = dir.join("guest.elf");
     let block_input_path = dir.join("block.input");
     let block_rlp = sample_block_rlp_with_extra_fields();
     let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
     write_bytes(&witness_library, sample_witness_library());
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(
@@ -3678,7 +3739,6 @@ fn prove_inputs_reports_eth_block_extra_field_counts() {
 fn prove_inputs_reports_eth_block_withdrawal_count_when_present() {
     let dir = temp_dir("prove-inputs-eth-withdrawals");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory(&dir);
     let output_dir = dir.join("proof-out");
     let witness_library = dir.join("libwitness.so");
     let guest_image = dir.join("guest.elf");
@@ -3688,6 +3748,7 @@ fn prove_inputs_reports_eth_block_withdrawal_count_when_present() {
     let withdrawal_build = withdrawals_trie_build(&withdrawals);
     let block_rlp = sample_block_rlp_with_withdrawals(withdrawal_build.root, vec![withdrawal_item]);
     let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
     write_bytes(&witness_library, sample_witness_library());
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(
@@ -3735,7 +3796,8 @@ fn prove_inputs_reports_eth_block_withdrawal_count_when_present() {
 fn prove_inputs_rejects_mismatched_eth_block_public_values() {
     let dir = temp_dir("prove-inputs-eth-public-values-mismatch");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory(&dir);
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let output_dir = dir.join("proof-out");
@@ -3743,7 +3805,6 @@ fn prove_inputs_rejects_mismatched_eth_block_public_values() {
     let guest_image = dir.join("guest.elf");
     let block_input_path = dir.join("block.input");
     let public_values_path = dir.join("mismatched-public-values.bin");
-    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
     let other_block_input =
         build_eth_block_input(&sample_block_rlp_variant()).expect("block input should build");
     write_bytes(&witness_library, sample_witness_library());
@@ -3798,13 +3859,13 @@ fn prove_inputs_rejects_mismatched_eth_block_public_values() {
 fn prove_inputs_rejects_eth_block_public_values_with_wrong_setup_hash() {
     let dir = temp_dir("prove-inputs-eth-public-values-setup-mismatch");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory(&dir);
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
     let output_dir = dir.join("proof-out");
     let witness_library = dir.join("libwitness.so");
     let guest_image = dir.join("guest.elf");
     let block_input_path = dir.join("block.input");
     let public_values_path = dir.join("wrong-setup-public-values.bin");
-    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
     write_bytes(&witness_library, sample_witness_library());
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(
@@ -5631,9 +5692,6 @@ fn embeds_program_image_cache_segment_in_prove_witness_proof_output() {
 fn embeds_program_image_cache_and_eth_block_input_segments_in_prove_witness_proof_output() {
     let dir = temp_dir("prove-witness-program-image-cache-and-eth-block-input");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory(&dir);
-    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
-    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let output_dir = dir.join("proof-out");
     let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
     let guest_image = dir.join("guest.elf");
@@ -5652,6 +5710,9 @@ fn embeds_program_image_cache_and_eth_block_input_segments_in_prove_witness_proo
         .expect("block input should build");
     let block_input_bytes =
         encode_eth_block_input(&block_input).expect("block input should encode");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(&input_data, [7_u8]);
     write_bytes(&program_path, b"packed-program");
@@ -5777,9 +5838,6 @@ fn embeds_program_image_cache_and_eth_block_input_segments_in_prove_witness_proo
 fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     let dir = temp_dir("prove-witness-eth-block-input-segment");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory(&dir);
-    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
-    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let output_dir = dir.join("proof-out");
     let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
     let guest_image = dir.join("guest.elf");
@@ -5799,6 +5857,9 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
     let block_input_bytes =
         encode_eth_block_input(&block_input).expect("block input should encode");
     let block_input_hash = eth_block_input_bytes_digest(&block_input_bytes);
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let other_block_input =
         build_eth_block_input(&sample_block_rlp_variant()).expect("block input should build");
     let other_block_input_bytes =
@@ -6144,9 +6205,6 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
 fn prove_witness_generates_eth_block_public_values_when_missing() {
     let dir = temp_dir("prove-witness-eth-public-values");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory(&dir);
-    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
-    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let output_dir = dir.join("proof-out");
     let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
     let guest_image = dir.join("guest.elf");
@@ -6155,6 +6213,9 @@ fn prove_witness_generates_eth_block_public_values_when_missing() {
     let generated_public_values_path = output_dir.join("eth-block-public-values.bin");
     let proof_path = output_dir.join("proof.bin");
     let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let encoded_block_input =
         encode_eth_block_input(&block_input).expect("block input should encode");
     let block_input_hash = eth_block_input_bytes_digest(&encoded_block_input);
@@ -6257,7 +6318,6 @@ fn prove_witness_generates_eth_block_public_values_when_missing() {
 fn verify_proof_binding_reports_eth_block_withdrawal_count() {
     let dir = temp_dir("verify-proof-eth-withdrawal-count");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory(&dir);
     let output_dir = dir.join("proof-out");
     let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
     let guest_image = dir.join("guest.elf");
@@ -6270,6 +6330,7 @@ fn verify_proof_binding_reports_eth_block_withdrawal_count() {
     let withdrawal_build = withdrawals_trie_build(&withdrawals);
     let block_rlp = sample_block_rlp_with_withdrawals(withdrawal_build.root, vec![withdrawal_item]);
     let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
     let encoded_block_input =
         encode_eth_block_input(&block_input).expect("block input should encode");
     write_bytes(&guest_image, sample_guest_image());
@@ -6346,7 +6407,6 @@ fn verify_proof_binding_reports_eth_block_withdrawal_count() {
 fn verify_proof_binding_reports_eth_block_extra_field_counts() {
     let dir = temp_dir("verify-proof-eth-extra-field-counts");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory(&dir);
     let output_dir = dir.join("proof-out");
     let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
     let guest_image = dir.join("guest.elf");
@@ -6356,6 +6416,7 @@ fn verify_proof_binding_reports_eth_block_extra_field_counts() {
     let proof_path = output_dir.join("proof.bin");
     let block_rlp = sample_block_rlp_with_extra_fields();
     let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
     let encoded_block_input =
         encode_eth_block_input(&block_input).expect("block input should encode");
     write_bytes(&guest_image, sample_guest_image());
@@ -6425,7 +6486,6 @@ fn verify_proof_binding_reports_eth_block_extra_field_counts() {
 fn verify_proof_reports_eth_block_extra_field_counts_from_proof_segment() {
     let dir = temp_dir("verify-proof-segment-eth-extra-field-counts");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory(&dir);
     let output_dir = dir.join("proof-out");
     let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
     let guest_image = dir.join("guest.elf");
@@ -6435,6 +6495,7 @@ fn verify_proof_reports_eth_block_extra_field_counts_from_proof_segment() {
     let proof_path = output_dir.join("proof.bin");
     let block_rlp = sample_block_rlp_with_extra_fields();
     let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
     let encoded_block_input =
         encode_eth_block_input(&block_input).expect("block input should encode");
     write_bytes(&guest_image, sample_guest_image());
@@ -6499,7 +6560,8 @@ fn verify_proof_reports_eth_block_extra_field_counts_from_proof_segment() {
 fn prove_witness_all_units_round_trips_generated_eth_block_public_values_and_program_image_cache() {
     let dir = temp_dir("prove-witness-all-units-eth-public-values");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory(&dir);
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let output_dir = dir.join("proof-out");
@@ -6512,7 +6574,6 @@ fn prove_witness_all_units_round_trips_generated_eth_block_public_values_and_pro
     let root_path = dir.join("root.bin");
     let cache_path = dir.join("program_image.cache");
     let generated_public_values_path = output_dir.join("eth-block-public-values.bin");
-    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
     let encoded_block_input =
         encode_eth_block_input(&block_input).expect("block input should encode");
     let block_input_hash = eth_block_input_bytes_digest(&encoded_block_input);
@@ -6661,7 +6722,8 @@ fn prove_witness_all_units_round_trips_generated_eth_block_public_values_and_pro
 fn prove_witness_rejects_mismatched_eth_block_public_values_before_witness_loading() {
     let dir = temp_dir("prove-witness-eth-public-values-mismatch");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory(&dir);
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let output_dir = dir.join("proof-out");
@@ -6669,7 +6731,6 @@ fn prove_witness_rejects_mismatched_eth_block_public_values_before_witness_loadi
     let guest_image = dir.join("guest.elf");
     let block_input_path = dir.join("block.input");
     let public_values_path = dir.join("mismatched-public-values.bin");
-    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
     let other_block_input =
         build_eth_block_input(&sample_block_rlp_variant()).expect("block input should build");
     write_bytes(&guest_image, sample_guest_image());
@@ -6723,13 +6784,13 @@ fn prove_witness_rejects_mismatched_eth_block_public_values_before_witness_loadi
 fn prove_witness_rejects_eth_block_public_values_with_wrong_setup_hash_before_witness_loading() {
     let dir = temp_dir("prove-witness-eth-public-values-setup-mismatch");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory(&dir);
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
     let output_dir = dir.join("proof-out");
     let witness_library = dir.join("missing-witness.so");
     let guest_image = dir.join("guest.elf");
     let block_input_path = dir.join("block.input");
     let public_values_path = dir.join("wrong-setup-public-values.bin");
-    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(
         &block_input_path,
@@ -6781,13 +6842,13 @@ fn prove_witness_rejects_eth_block_public_values_with_wrong_setup_hash_before_wi
 fn writes_eth_block_public_values_from_setup_directory() {
     let dir = temp_dir("eth-block-public-values-setup-dir");
     let _ = fs::remove_dir_all(&dir);
-    write_execution_ready_setup_directory(&dir);
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
     let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
     let setup_hash_hex = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
     let block_input_path = dir.join("block.input");
     let public_values_path = dir.join("eth-public-values.bin");
-    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
     let block_input_bytes =
         encode_eth_block_input(&block_input).expect("block input should encode");
     write_bytes(&block_input_path, &block_input_bytes);
@@ -11341,10 +11402,10 @@ fn verifies_contribution_challenge_from_proof_artifact() {
 fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
     let dir = temp_dir("verify-contribution-bound-inputs");
     let _ = fs::remove_dir_all(&dir);
-    write_setup_directory(&dir);
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_setup_directory_with_public_values(&dir, &eth_block_public_values_metadata(&block_input));
     let catalog = read_key_directory_catalog(&dir).expect("catalog should parse");
     let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
-    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
     let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
     let entries = sample_contribution_entries(
         catalog

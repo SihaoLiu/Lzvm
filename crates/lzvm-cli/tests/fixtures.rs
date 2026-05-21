@@ -52,7 +52,7 @@ fn sample_global_info_with_options(proof_value: bool, group_value: bool) -> Glob
         } else {
             vec![Vec::new()]
         },
-        n_publics: 0,
+        n_publics: 1,
         num_challenges: vec![1],
         num_proof_values: if proof_value { vec![1] } else { Vec::new() },
         proof_values_map: if proof_value {
@@ -65,7 +65,11 @@ fn sample_global_info_with_options(proof_value: bool, group_value: bool) -> Glob
         } else {
             Vec::new()
         },
-        publics_map: Vec::<PublicValue>::new(),
+        publics_map: vec![PublicValue {
+            name: "block_number".to_owned(),
+            stage: 1,
+            lengths: Vec::new(),
+        }],
         transcript_arity: 4,
     }
 }

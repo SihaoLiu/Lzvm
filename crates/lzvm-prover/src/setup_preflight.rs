@@ -7,6 +7,7 @@ use lzvm_artifacts::challenge_values_segment::{
 use lzvm_artifacts::constant_opening_segment::CONSTANT_OPENING_SEGMENT_ID;
 use lzvm_artifacts::contribution_segment::CONTRIBUTION_SEGMENT_ID;
 use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
+use lzvm_artifacts::global_info::{GlobalInfo, PublicValue};
 use lzvm_artifacts::group_values_segment::GROUP_VALUES_SEGMENT_ID;
 use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, read_key_directory_catalog, KeyDirectoryCatalog,
@@ -167,6 +168,25 @@ pub enum SetupPreflightError {
     UnexpectedProofSegment {
         id: u32,
     },
+    PublicValueEntryCountMismatch {
+        expected: usize,
+        found: usize,
+    },
+    PublicValueNameMismatch {
+        index: usize,
+        expected: String,
+        found: String,
+    },
+    PublicValueElementCountMismatch {
+        name: String,
+        expected: usize,
+        found: usize,
+    },
+    PublicValueFieldCountMismatch {
+        expected: usize,
+        found: usize,
+    },
+    PublicValueCountOverflow,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -224,6 +244,31 @@ impl fmt::Display for SetupPreflightError {
             Self::UnexpectedProofSegment { id } => {
                 write!(f, "unexpected setup proof segment id {id}")
             }
+            Self::PublicValueEntryCountMismatch { expected, found } => write!(
+                f,
+                "public-values entry count mismatch: expected {expected}, found {found}"
+            ),
+            Self::PublicValueNameMismatch {
+                index,
+                expected,
+                found,
+            } => write!(
+                f,
+                "public-values entry {index} name mismatch: expected {expected}, found {found}"
+            ),
+            Self::PublicValueElementCountMismatch {
+                name,
+                expected,
+                found,
+            } => write!(
+                f,
+                "public-values entry {name} element count mismatch: expected {expected}, found {found}"
+            ),
+            Self::PublicValueFieldCountMismatch { expected, found } => write!(
+                f,
+                "public-values field count mismatch: expected {expected}, found {found}"
+            ),
+            Self::PublicValueCountOverflow => write!(f, "public-values count overflow"),
         }
     }
 }
@@ -268,7 +313,12 @@ impl std::error::Error for SetupPreflightError {
             | Self::MissingContributionChallengeValues
             | Self::ContributionChallengeValuesMismatch
             | Self::DuplicateChallengeValuesSegment
-            | Self::UnexpectedProofSegment { .. } => None,
+            | Self::UnexpectedProofSegment { .. }
+            | Self::PublicValueEntryCountMismatch { .. }
+            | Self::PublicValueNameMismatch { .. }
+            | Self::PublicValueElementCountMismatch { .. }
+            | Self::PublicValueFieldCountMismatch { .. }
+            | Self::PublicValueCountOverflow => None,
         }
     }
 }
@@ -380,6 +430,12 @@ pub fn validate_setup_preflight_hashes(
         eth_block_input_withdrawal_preimage_counts,
     } = validate_proof_public_values(proof, public_values).map_err(SetupPreflightError::Proof)?;
 
+    validate_public_values_metadata(
+        &catalog.layout.global_info,
+        public_values,
+        public_value_field_count,
+    )?;
+
     if program_image_caches
         .iter()
         .any(|cache| cache.constraint_system_digest != catalog_hash)
@@ -449,6 +505,73 @@ pub fn validate_setup_preflight_hashes(
         eth_block_input_withdrawal_roots,
         eth_block_input_withdrawal_counts,
         eth_block_input_withdrawal_preimage_counts,
+    })
+}
+
+fn validate_public_values_metadata(
+    global_info: &GlobalInfo,
+    public_values: &PublicValues,
+    public_value_field_count: usize,
+) -> Result<(), SetupPreflightError> {
+    if public_values.values.len() != global_info.publics_map.len() {
+        return Err(SetupPreflightError::PublicValueEntryCountMismatch {
+            expected: global_info.publics_map.len(),
+            found: public_values.values.len(),
+        });
+    }
+
+    let mut expected_field_count = 0_usize;
+    for (index, (expected, found)) in global_info
+        .publics_map
+        .iter()
+        .zip(&public_values.values)
+        .enumerate()
+    {
+        if expected.name != found.name {
+            return Err(SetupPreflightError::PublicValueNameMismatch {
+                index,
+                expected: expected.name.clone(),
+                found: found.name.clone(),
+            });
+        }
+        let expected_elements = public_value_dimension(expected)?;
+        if found.elements.len() != expected_elements {
+            return Err(SetupPreflightError::PublicValueElementCountMismatch {
+                name: expected.name.clone(),
+                expected: expected_elements,
+                found: found.elements.len(),
+            });
+        }
+        expected_field_count = expected_field_count
+            .checked_add(expected_elements)
+            .ok_or(SetupPreflightError::PublicValueCountOverflow)?;
+    }
+
+    let declared_field_count = usize::try_from(global_info.n_publics)
+        .map_err(|_| SetupPreflightError::PublicValueCountOverflow)?;
+    if expected_field_count != declared_field_count {
+        return Err(SetupPreflightError::PublicValueFieldCountMismatch {
+            expected: declared_field_count,
+            found: expected_field_count,
+        });
+    }
+    if public_value_field_count != declared_field_count {
+        return Err(SetupPreflightError::PublicValueFieldCountMismatch {
+            expected: declared_field_count,
+            found: public_value_field_count,
+        });
+    }
+
+    Ok(())
+}
+
+fn public_value_dimension(value: &PublicValue) -> Result<usize, SetupPreflightError> {
+    value.lengths.iter().try_fold(1_usize, |dimension, length| {
+        let length =
+            usize::try_from(*length).map_err(|_| SetupPreflightError::PublicValueCountOverflow)?;
+        dimension
+            .checked_mul(length)
+            .ok_or(SetupPreflightError::PublicValueCountOverflow)
     })
 }
 
