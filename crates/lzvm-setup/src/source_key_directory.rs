@@ -15,9 +15,9 @@ use lzvm_artifacts::setup_info::{
 };
 use lzvm_artifacts::verifier_info::{encode_verifier_info, VerifierInfoError};
 use lzvm_pil::{
-    BinaryOperator, ColumnDeclaration, ColumnItem, ColumnKind, Expression, ExpressionKind,
-    FixedFileTemplateValue, LexError, ParseError, SourceLoaderConfig, SourceProgram,
-    SourceProgramError, SourceProgramLoader, UnaryOperator, ValueDeclarationKind,
+    lex_source, BinaryOperator, ColumnDeclaration, ColumnItem, ColumnKind, Expression,
+    ExpressionKind, FixedFileTemplateValue, LexError, ParseError, SourceLoaderConfig,
+    SourceProgram, SourceProgramError, SourceProgramLoader, UnaryOperator, ValueDeclarationKind,
 };
 
 use crate::{
@@ -25,6 +25,10 @@ use crate::{
     source_control_body_cache::SourceControlBodyCaches,
     source_expression_info::source_expression_info,
     source_global_constraints::source_global_program,
+    source_metadata_template::{
+        source_declaration_in_unselected_static_branch, source_metadata_declaration_template,
+        source_metadata_template_values, source_metadata_unit_instance,
+    },
     source_opening_points::source_opening_points,
     source_row_count::{infer_source_row_counts, SourceUnitRowCounts},
     source_scalar_slots::SourceChallengeSlotMetadata,
@@ -793,13 +797,23 @@ fn source_challenge_slots(
 
 fn source_unit_values(
     program: &SourceProgram,
+    unit_name: Option<(&str, &str)>,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
     active_templates: &BTreeSet<String>,
     template_values: &SourceTemplateConstantValueCache,
+    body_caches: &mut SourceControlBodyCaches,
 ) -> Result<Vec<StageValue>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeMap::<String, (u32, Vec<u32>)>::new();
     let mut values = Vec::new();
+    let unit_instance = source_metadata_unit_instance(program, unit_name);
     for module in &program.modules {
+        let tokens = lex_source(&module.source.contents).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: module.source_name.clone(),
+                source,
+            }
+        })?;
+        let body_cache = body_caches.module_cache(&module.source_name);
         for declaration in &module.values {
             if declaration.kind != ValueDeclarationKind::AirValue
                 || declaration_in_function_body(module, declaration.start, declaration.end)
@@ -812,48 +826,102 @@ fn source_unit_values(
             {
                 continue;
             }
-            let declaration_values = source_declaration_constant_values_from_cache(
+            let Some(declaration_template) =
+                source_metadata_declaration_template(module, declaration.start, declaration.end)
+            else {
+                let declaration_values = source_declaration_constant_values_from_cache(
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    constant_values,
+                    template_values,
+                );
+                if source_declaration_in_static_false_branch(
+                    program,
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    declaration_values,
+                ) {
+                    continue;
+                }
+                source_push_unit_values(
+                    program,
+                    declaration.stage,
+                    &declaration.items,
+                    declaration_values,
+                    &mut seen,
+                    &mut values,
+                )?;
+                continue;
+            };
+            if unit_instance.is_some_and(|instance| declaration_template.name != instance.template)
+            {
+                continue;
+            }
+            let declaration_values = source_metadata_template_values(
+                program,
                 module,
-                declaration.start,
-                declaration.end,
+                declaration_template,
+                unit_instance,
                 constant_values,
                 template_values,
             );
-            if source_declaration_in_static_false_branch(
+            if source_declaration_in_unselected_static_branch(
                 program,
                 module,
+                &tokens,
+                body_cache,
                 declaration.start,
                 declaration.end,
-                declaration_values,
-            ) {
+                &declaration_values,
+            )? {
                 continue;
             }
-            if declaration.stage == 0 {
-                return unsupported("source air value stage must be positive");
-            }
-            for item in &declaration.items {
-                if item.template {
-                    return unsupported("template air-value names need instance lowering support");
-                }
-                let lengths =
-                    source_item_lengths(program, item, "source air value", declaration_values)?;
-                let shape = (declaration.stage, lengths.clone());
-                if let Some(existing) = seen.get(&item.name) {
-                    if *existing != shape {
-                        return unsupported("duplicate source air value name");
-                    }
-                    continue;
-                }
-                seen.insert(item.name.clone(), shape);
-                values.push(StageValue {
-                    name: item.name.clone(),
-                    stage: declaration.stage,
-                    lengths,
-                });
-            }
+            source_push_unit_values(
+                program,
+                declaration.stage,
+                &declaration.items,
+                &declaration_values,
+                &mut seen,
+                &mut values,
+            )?;
         }
     }
     Ok(values)
+}
+
+fn source_push_unit_values(
+    program: &SourceProgram,
+    stage: u32,
+    items: &[ColumnItem],
+    declaration_values: &BTreeMap<String, FixedFileTemplateValue>,
+    seen: &mut BTreeMap<String, (u32, Vec<u32>)>,
+    values: &mut Vec<StageValue>,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    if stage == 0 {
+        return unsupported("source air value stage must be positive");
+    }
+    for item in items {
+        if item.template {
+            return unsupported("template air-value names need instance lowering support");
+        }
+        let lengths = source_item_lengths(program, item, "source air value", declaration_values)?;
+        let shape = (stage, lengths.clone());
+        if let Some(existing) = seen.get(&item.name) {
+            if *existing != shape {
+                return unsupported("duplicate source air value name");
+            }
+            continue;
+        }
+        seen.insert(item.name.clone(), shape);
+        values.push(StageValue {
+            name: item.name.clone(),
+            stage,
+            lengths,
+        });
+    }
+    Ok(())
 }
 
 fn source_air_group_values(
@@ -994,9 +1062,11 @@ fn source_unit_setup_info(
     let (n_stages, commitment_widths) = source_commitment_section_widths(&commitment_columns)?;
     let unit_value_map = source_unit_values(
         program,
+        unit_name,
         &constant_values,
         &active_templates,
         &template_values,
+        body_caches,
     )?;
     let (group_value_map, _) = source_air_group_values(
         program,

@@ -38,16 +38,9 @@ pub(crate) fn source_static_if_body_statements_with_lookup(
     if statement.kind != FunctionStatementKind::If {
         return Ok(None);
     }
-    let Some((start, end)) = body_cache.span_token_bounds(
-        tokens,
-        SourceSpan {
-            start: statement.start,
-            end: statement.end,
-        },
-    ) else {
-        return Ok(None);
-    };
-    let Some(selection) = source_static_if_body_span(program, module, tokens, start, end, values)?
+    let Some(selection) = source_static_if_body_span_with_tokens(
+        program, module, tokens, statement, values, body_cache,
+    )?
     else {
         return Ok(None);
     };
@@ -59,6 +52,29 @@ pub(crate) fn source_static_if_body_statements_with_lookup(
         body,
         &module.source,
     )?))
+}
+
+pub(crate) fn source_static_if_body_span_with_tokens(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    statement: &FunctionStatement,
+    values: &(impl SourceStaticValueLookup + ?Sized),
+    body_cache: &mut SourceControlBodyCache,
+) -> Result<Option<Option<SourceSpan>>, SourceKeyDirectoryMetadataError> {
+    if statement.kind != FunctionStatementKind::If {
+        return Ok(None);
+    }
+    let Some((start, end)) = body_cache.span_token_bounds(
+        tokens,
+        SourceSpan {
+            start: statement.start,
+            end: statement.end,
+        },
+    ) else {
+        return Ok(None);
+    };
+    source_static_if_body_span(program, module, tokens, start, end, values)
 }
 
 fn source_static_if_body_span(
