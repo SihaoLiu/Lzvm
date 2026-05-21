@@ -15,19 +15,21 @@ use lzvm_artifacts::setup_info::{
 };
 use lzvm_artifacts::verifier_info::{encode_verifier_info, VerifierInfoError};
 use lzvm_pil::{
-    lex_source, BinaryOperator, ColumnDeclaration, ColumnItem, ColumnKind, Expression,
-    ExpressionKind, FixedFileTemplateValue, LexError, ParseError, SourceLoaderConfig,
-    SourceProgram, SourceProgramError, SourceProgramLoader, UnaryOperator, ValueDeclarationKind,
+    lex_source, AirGroupValueDeclaration, AirTemplateDeclaration, BinaryOperator,
+    ColumnDeclaration, ColumnItem, ColumnKind, Expression, ExpressionKind, FixedFileTemplateValue,
+    LexError, ParseError, SourceLoaderConfig, SourceProgram, SourceProgramError,
+    SourceProgramLoader, SourceProgramModule, Token, UnaryOperator, ValueDeclarationKind,
 };
 
 use crate::{
     publish_staging_bytes,
-    source_control_body_cache::SourceControlBodyCaches,
+    source_control_body_cache::{SourceControlBodyCache, SourceControlBodyCaches},
     source_expression_info::source_expression_info,
     source_global_constraints::source_global_program,
     source_metadata_template::{
         source_declaration_in_unselected_static_branch, source_metadata_declaration_template,
-        source_metadata_template_values, source_metadata_unit_instance,
+        source_metadata_template_instances, source_metadata_template_values,
+        source_metadata_unit_instance,
     },
     source_opening_points::source_opening_points,
     source_row_count::{infer_source_row_counts, SourceUnitRowCounts},
@@ -442,11 +444,14 @@ fn source_global_info(
         &active_templates,
         &template_values,
     )?;
+    let mut body_caches = SourceControlBodyCaches::default();
     let (_, group_aggregation_types) = source_air_group_values(
         program,
+        None,
         &constant_values,
         &active_templates,
         &template_values,
+        &mut body_caches,
     )?;
     let mut groups = BTreeMap::<usize, (String, BTreeMap<usize, String>)>::new();
     for unit in program
@@ -926,14 +931,32 @@ fn source_push_unit_values(
 
 fn source_air_group_values(
     program: &SourceProgram,
+    unit_name: Option<(&str, &str)>,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
     active_templates: &BTreeSet<String>,
     template_values: &SourceTemplateConstantValueCache,
+    body_caches: &mut SourceControlBodyCaches,
 ) -> Result<(Vec<StageValue>, Vec<AggregationType>), SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut values = Vec::new();
     let mut aggregation_types = Vec::new();
+    let unit_instance = source_metadata_unit_instance(program, unit_name);
     for module in &program.modules {
+        let tokens = lex_source(&module.source.contents).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: module.source_name.clone(),
+                source,
+            }
+        })?;
+        let body_cache = body_caches.module_cache(&module.source_name);
+        let mut template_context = SourceGroupValueTemplateContext {
+            program,
+            module,
+            tokens: &tokens,
+            body_cache,
+            constant_values,
+            template_values,
+        };
         for declaration in &module.air_group_values {
             if declaration_in_function_body(module, declaration.start, declaration.end)
                 || declaration_in_inactive_template(
@@ -945,76 +968,174 @@ fn source_air_group_values(
             {
                 continue;
             }
-            let declaration_values = source_declaration_constant_values_from_cache(
-                module,
-                declaration.start,
-                declaration.end,
-                constant_values,
-                template_values,
-            );
-            if source_declaration_in_static_false_branch(
-                program,
-                module,
-                declaration.start,
-                declaration.end,
-                declaration_values,
-            ) {
-                continue;
-            }
-            if declaration.stage == 0 {
-                return unsupported("source air group value stage must be positive");
-            }
-            let aggregation_type =
-                source_group_value_aggregation_type(&declaration.aggregate_type)?;
-            if let Some(default_expression) = declaration.default_expression.as_ref() {
-                let Some(default_value) = evaluate_source_static_expression(
+            let Some(declaration_template) =
+                source_metadata_declaration_template(module, declaration.start, declaration.end)
+            else {
+                let declaration_values = source_declaration_constant_values_from_cache(
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    constant_values,
+                    template_values,
+                );
+                if source_declaration_in_static_false_branch(
                     program,
-                    default_expression,
+                    module,
+                    declaration.start,
+                    declaration.end,
                     declaration_values,
-                )
-                .as_ref()
-                .and_then(static_value_integer) else {
-                    return unsupported(
-                        "source air group value defaults need proof lowering support",
-                    );
-                };
-                let identity = match aggregation_type {
-                    0 => 0,
-                    1 => 1,
-                    _ => return unsupported("unsupported source air group value aggregation type"),
-                };
-                if default_value != identity {
-                    return unsupported(
-                        "source air group value defaults need proof lowering support",
-                    );
+                ) {
+                    continue;
                 }
-            } else if declaration.default_value.is_some() {
-                return unsupported("source air group value defaults need proof lowering support");
-            }
-            for item in &declaration.items {
-                if item.template {
-                    return unsupported(
-                        "template air-group-value names need instance lowering support",
-                    );
+                source_push_air_group_values(
+                    program,
+                    declaration,
+                    declaration_values,
+                    &mut seen,
+                    &mut values,
+                    &mut aggregation_types,
+                )?;
+                continue;
+            };
+
+            let declaration_values = if let Some(instance) = unit_instance {
+                if declaration_template.name != instance.template {
+                    continue;
                 }
-                if !seen.insert(item.name.clone()) {
-                    return unsupported("duplicate source air group value name");
+                let values = source_metadata_template_values(
+                    program,
+                    module,
+                    declaration_template,
+                    Some(instance),
+                    constant_values,
+                    template_values,
+                );
+                if source_declaration_in_unselected_static_branch(
+                    program,
+                    module,
+                    &tokens,
+                    template_context.body_cache,
+                    declaration.start,
+                    declaration.end,
+                    &values,
+                )? {
+                    continue;
                 }
-                values.push(StageValue {
-                    name: item.name.clone(),
-                    stage: declaration.stage,
-                    lengths: source_item_lengths(
-                        program,
-                        item,
-                        "source air group value",
-                        declaration_values,
-                    )?,
-                });
-                aggregation_types.push(AggregationType { aggregation_type });
-            }
+                Some(values)
+            } else {
+                source_air_group_values_for_any_instance(
+                    &mut template_context,
+                    declaration,
+                    declaration_template,
+                )?
+            };
+            let Some(declaration_values) = declaration_values else {
+                continue;
+            };
+            source_push_air_group_values(
+                program,
+                declaration,
+                &declaration_values,
+                &mut seen,
+                &mut values,
+                &mut aggregation_types,
+            )?;
         }
     }
     Ok((values, aggregation_types))
+}
+
+struct SourceGroupValueTemplateContext<'a, 'b> {
+    program: &'a SourceProgram,
+    module: &'a SourceProgramModule,
+    tokens: &'a [Token],
+    body_cache: &'b mut SourceControlBodyCache,
+    constant_values: &'a BTreeMap<String, FixedFileTemplateValue>,
+    template_values: &'a SourceTemplateConstantValueCache,
+}
+
+fn source_air_group_values_for_any_instance(
+    context: &mut SourceGroupValueTemplateContext<'_, '_>,
+    declaration: &AirGroupValueDeclaration,
+    declaration_template: &AirTemplateDeclaration,
+) -> Result<Option<BTreeMap<String, FixedFileTemplateValue>>, SourceKeyDirectoryMetadataError> {
+    for instance in source_metadata_template_instances(context.program, &declaration_template.name)
+    {
+        let values = source_metadata_template_values(
+            context.program,
+            context.module,
+            declaration_template,
+            Some(instance),
+            context.constant_values,
+            context.template_values,
+        );
+        if source_declaration_in_unselected_static_branch(
+            context.program,
+            context.module,
+            context.tokens,
+            context.body_cache,
+            declaration.start,
+            declaration.end,
+            &values,
+        )? {
+            continue;
+        }
+        return Ok(Some(values));
+    }
+    Ok(None)
+}
+
+fn source_push_air_group_values(
+    program: &SourceProgram,
+    declaration: &AirGroupValueDeclaration,
+    declaration_values: &BTreeMap<String, FixedFileTemplateValue>,
+    seen: &mut BTreeSet<String>,
+    values: &mut Vec<StageValue>,
+    aggregation_types: &mut Vec<AggregationType>,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    if declaration.stage == 0 {
+        return unsupported("source air group value stage must be positive");
+    }
+    let aggregation_type = source_group_value_aggregation_type(&declaration.aggregate_type)?;
+    if let Some(default_expression) = declaration.default_expression.as_ref() {
+        let Some(default_value) =
+            evaluate_source_static_expression(program, default_expression, declaration_values)
+                .as_ref()
+                .and_then(static_value_integer)
+        else {
+            return unsupported("source air group value defaults need proof lowering support");
+        };
+        let identity = match aggregation_type {
+            0 => 0,
+            1 => 1,
+            _ => return unsupported("unsupported source air group value aggregation type"),
+        };
+        if default_value != identity {
+            return unsupported("source air group value defaults need proof lowering support");
+        }
+    } else if declaration.default_value.is_some() {
+        return unsupported("source air group value defaults need proof lowering support");
+    }
+    for item in &declaration.items {
+        if item.template {
+            return unsupported("template air-group-value names need instance lowering support");
+        }
+        if !seen.insert(item.name.clone()) {
+            return unsupported("duplicate source air group value name");
+        }
+        values.push(StageValue {
+            name: item.name.clone(),
+            stage: declaration.stage,
+            lengths: source_item_lengths(
+                program,
+                item,
+                "source air group value",
+                declaration_values,
+            )?,
+        });
+        aggregation_types.push(AggregationType { aggregation_type });
+    }
+    Ok(())
 }
 
 fn source_group_value_aggregation_type(
@@ -1070,9 +1191,11 @@ fn source_unit_setup_info(
     )?;
     let (group_value_map, _) = source_air_group_values(
         program,
+        unit_name,
         &constant_values,
         &active_templates,
         &template_values,
+        body_caches,
     )?;
     let opening_points = source_opening_points(
         program,

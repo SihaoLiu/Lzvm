@@ -42,6 +42,18 @@ pub(crate) fn source_metadata_unit_instance<'a>(
         })
 }
 
+pub(crate) fn source_metadata_template_instances<'a>(
+    program: &'a SourceProgram,
+    template_name: &str,
+) -> Vec<&'a AirInstanceDeclaration> {
+    program
+        .modules
+        .iter()
+        .flat_map(|module| module.air_instances.iter())
+        .filter(|instance| !instance.virtual_instance && instance.template == template_name)
+        .collect()
+}
+
 pub(crate) fn source_metadata_declaration_template(
     module: &SourceProgramModule,
     start: usize,
