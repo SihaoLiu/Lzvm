@@ -99,6 +99,37 @@ fn validates_consistent_global_metadata() {
 }
 
 #[test]
+fn validates_global_proof_value_counts_with_array_lengths() {
+    let mut global = fixtures::sample_metadata_bundle_global_info();
+    global.proof_values_map[0].lengths = vec![2];
+    global.num_proof_values = vec![3];
+
+    validate_global_metadata(&global).expect("metadata should agree");
+}
+
+#[test]
+fn rejects_global_proof_value_count_overflows() {
+    let mut global = fixtures::sample_metadata_bundle_global_info();
+    global.num_proof_values = vec![u64::MAX, 1];
+
+    assert!(matches!(
+        validate_global_metadata(&global),
+        Err(MetadataValidationError::ProofValueCountOverflow)
+    ));
+}
+
+#[test]
+fn rejects_global_proof_value_array_dimension_overflows() {
+    let mut global = fixtures::sample_metadata_bundle_global_info();
+    global.proof_values_map[0].lengths = vec![u64::MAX, 2];
+
+    assert!(matches!(
+        validate_global_metadata(&global),
+        Err(MetadataValidationError::ProofValueCountOverflow)
+    ));
+}
+
+#[test]
 fn rejects_global_metadata_without_challenge_counters() {
     let mut global = fixtures::sample_metadata_bundle_global_info();
     global.num_challenges.clear();

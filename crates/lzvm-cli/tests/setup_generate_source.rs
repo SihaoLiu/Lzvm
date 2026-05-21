@@ -2192,6 +2192,13 @@ fn generate_key_offsets_source_regular_proof_values_after_arrays() {
     );
 
     assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
+        .expect("source global metadata should parse");
+    assert_eq!(global.num_proof_values, [3]);
+    assert_eq!(global.proof_values_map.len(), 2);
+    assert_eq!(global.proof_values_map[0].lengths, [2]);
+    assert!(global.proof_values_map[1].lengths.is_empty());
+
     let layout = read_key_directory_layout(&dir).expect("layout should derive");
     let unit = &layout.units[0];
     let regular_path = unit

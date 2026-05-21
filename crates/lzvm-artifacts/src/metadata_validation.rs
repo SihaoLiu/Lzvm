@@ -38,8 +38,9 @@ pub enum MetadataValidationError {
     NoChallengeStages,
     ProofValueCountMismatch {
         expected: u64,
-        found: usize,
+        found: u64,
     },
+    ProofValueCountOverflow,
 }
 
 impl fmt::Display for MetadataValidationError {
@@ -86,6 +87,7 @@ impl fmt::Display for MetadataValidationError {
                 f,
                 "metadata proof value count mismatch: expected {expected}, found {found}"
             ),
+            Self::ProofValueCountOverflow => write!(f, "metadata proof value count overflow"),
         }
     }
 }
@@ -118,14 +120,37 @@ pub fn validate_global_metadata(global: &GlobalInfo) -> Result<(), MetadataValid
     }
 
     if !global.num_proof_values.is_empty() {
-        let expected = global.num_proof_values.iter().sum::<u64>();
-        let found = global.proof_values_map.len();
-        if expected != found as u64 {
+        let expected = global
+            .num_proof_values
+            .iter()
+            .try_fold(0_u64, |count, value| {
+                count
+                    .checked_add(*value)
+                    .ok_or(MetadataValidationError::ProofValueCountOverflow)
+            })?;
+        let found = proof_value_count(global)?;
+        if expected != found {
             return Err(MetadataValidationError::ProofValueCountMismatch { expected, found });
         }
     }
 
     Ok(())
+}
+
+fn proof_value_count(global: &GlobalInfo) -> Result<u64, MetadataValidationError> {
+    global
+        .proof_values_map
+        .iter()
+        .try_fold(0_u64, |count, entry| {
+            let dimension = entry.lengths.iter().try_fold(1_u64, |dimension, length| {
+                dimension
+                    .checked_mul(*length)
+                    .ok_or(MetadataValidationError::ProofValueCountOverflow)
+            })?;
+            count
+                .checked_add(dimension)
+                .ok_or(MetadataValidationError::ProofValueCountOverflow)
+        })
 }
 
 fn validate_expression_stages(

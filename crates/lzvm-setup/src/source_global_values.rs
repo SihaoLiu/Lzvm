@@ -455,17 +455,16 @@ fn source_push_proof_values(
         if !seen.insert(name.clone()) {
             return unsupported("duplicate source proof value name");
         }
+        let lengths = source_item_lengths(program, item, "source proof value", declaration_values)?;
+        let dimension = source_column_dimension(&lengths, "source proof value")?;
         counts_by_stage[stage - 1] = counts_by_stage[stage - 1]
-            .checked_add(1)
+            .checked_add(u64::from(dimension))
             .ok_or_else(|| unsupported_source_message("source proof value count overflow"))?;
         values.push(NamedStageValue {
             name,
             stage: u64::from(declaration.stage),
             id: None,
-            lengths: source_item_lengths(program, item, "source proof value", declaration_values)?
-                .into_iter()
-                .map(u64::from)
-                .collect(),
+            lengths: lengths.into_iter().map(u64::from).collect(),
         });
     }
     Ok(())
