@@ -893,13 +893,11 @@ fn source_lookup_static_value_payload(
 ) -> Option<HintPayload> {
     let expression =
         parse_source_lookup_expression(context.module, context.line, context.tokens, range)?;
-    match evaluate_source_static_expression(context.program, &expression, context.values)? {
-        FixedFileTemplateValue::Integer(value) => {
-            Some(HintPayload::number(canonical_hint_number(value)?))
-        }
-        FixedFileTemplateValue::Boolean(value) => Some(HintPayload::number(u64::from(value))),
-        FixedFileTemplateValue::String(_) => None,
-    }
+    hint_payload_from_static_value(evaluate_source_static_expression(
+        context.program,
+        &expression,
+        context.values,
+    )?)
 }
 
 fn source_lookup_value_payload(
@@ -948,7 +946,7 @@ fn hint_payload_from_static_value(value: FixedFileTemplateValue) -> Option<HintP
             Some(HintPayload::number(canonical_hint_number(value)?))
         }
         FixedFileTemplateValue::Boolean(value) => Some(HintPayload::number(u64::from(value))),
-        FixedFileTemplateValue::String(_) => None,
+        FixedFileTemplateValue::String(value) => Some(HintPayload::string(value)),
     }
 }
 
