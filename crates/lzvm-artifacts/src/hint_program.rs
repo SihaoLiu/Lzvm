@@ -1,6 +1,8 @@
 use std::fmt;
 use std::path::Path;
 
+use lzvm_field::{Felt, FieldError};
+
 use crate::expression_info::{
     ExpressionInfo, HintFieldInfo as ExpressionHintFieldInfo, HintInfo as ExpressionHintInfo,
     HintPayload, HintValueInfo,
@@ -140,6 +142,10 @@ pub enum HintProgramError {
     Io {
         message: String,
     },
+    NumberNonCanonical {
+        value_index: usize,
+        source: FieldError,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -182,11 +188,36 @@ impl fmt::Display for HintProgramError {
             }
             Self::LengthOverflow => write!(f, "hint program length overflow"),
             Self::Io { message } => write!(f, "hint program io error: {message}"),
+            Self::NumberNonCanonical {
+                value_index,
+                source,
+            } => write!(
+                f,
+                "hint number at value index {value_index} is non-canonical: {source}"
+            ),
         }
     }
 }
 
-impl std::error::Error for HintProgramError {}
+impl std::error::Error for HintProgramError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Sectioned(error) => Some(error),
+            Self::NumberNonCanonical { source, .. } => Some(source),
+            Self::MissingHintSection { .. }
+            | Self::UnexpectedTrailingBytes { .. }
+            | Self::UnexpectedEof { .. }
+            | Self::MissingStringTerminator { .. }
+            | Self::InvalidUtf8
+            | Self::StringContainsNul { .. }
+            | Self::UnknownOperand { .. }
+            | Self::InvalidOperandSection { .. }
+            | Self::MissingOperandField { .. }
+            | Self::LengthOverflow
+            | Self::Io { .. } => None,
+        }
+    }
+}
 
 pub fn read_regular_hint_program_file(
     path: impl AsRef<Path>,
@@ -452,8 +483,8 @@ fn parse_hint_section(
             }
             let mut values = Vec::with_capacity(value_count);
 
-            for _ in 0..value_count {
-                values.push(read_hint_value(&mut reader, kind)?);
+            for value_index in 0..value_count {
+                values.push(read_hint_value(&mut reader, kind, value_index)?);
             }
 
             fields.push(HintField { name, values });
@@ -474,10 +505,15 @@ fn parse_hint_section(
 fn read_hint_value(
     reader: &mut Reader<'_>,
     kind: HintSectionKind,
+    value_index: usize,
 ) -> Result<HintValue, HintProgramError> {
     let op = reader.read_string()?;
     let operand = match op.as_str() {
-        "number" => HintOperand::Number(reader.read_u64()?),
+        "number" => {
+            let value = reader.read_u64()?;
+            validate_number(value_index, value)?;
+            HintOperand::Number(value)
+        }
         "string" => HintOperand::String(reader.read_string()?),
         "airgroupvalue" => match kind {
             HintSectionKind::Global => HintOperand::GroupValue {
@@ -583,8 +619,8 @@ fn encode_hint_section(
                 u32::try_from(field.values.len()).map_err(|_| HintProgramError::LengthOverflow)?,
             );
 
-            for value in &field.values {
-                write_hint_value(&mut out, value, kind)?;
+            for (value_index, value) in field.values.iter().enumerate() {
+                write_hint_value(&mut out, value, kind, value_index)?;
             }
         }
     }
@@ -596,9 +632,11 @@ fn write_hint_value(
     out: &mut Vec<u8>,
     value: &HintValue,
     kind: HintSectionKind,
+    value_index: usize,
 ) -> Result<(), HintProgramError> {
     match &value.operand {
         HintOperand::Number(number) => {
+            validate_number(value_index, *number)?;
             write_string(out, "number")?;
             write_u64(out, *number);
         }
@@ -708,6 +746,15 @@ fn write_hint_value(
         write_u32(out, *position);
     }
     Ok(())
+}
+
+fn validate_number(value_index: usize, value: u64) -> Result<(), HintProgramError> {
+    Felt::from_canonical(value)
+        .map(|_| ())
+        .map_err(|source| HintProgramError::NumberNonCanonical {
+            value_index,
+            source,
+        })
 }
 
 fn invalid_operand_section(op: &'static str, kind: HintSectionKind) -> HintProgramError {

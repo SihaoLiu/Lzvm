@@ -12,8 +12,11 @@ use lzvm_artifacts::hint_program::{
 use lzvm_artifacts::sectioned::{
     encode_sectioned_file, SectionedError, SectionedFile, SectionedSection,
 };
+use lzvm_field::FieldError;
 use std::fs;
 use std::path::PathBuf;
+
+const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
 
 fn sample_global_hint_program() -> HintProgram {
     HintProgram {
@@ -133,6 +136,10 @@ fn push_u32(out: &mut Vec<u8>, value: u32) {
     out.extend_from_slice(&value.to_le_bytes());
 }
 
+fn push_u64(out: &mut Vec<u8>, value: u64) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
 fn push_string(out: &mut Vec<u8>, value: &str) {
     out.extend_from_slice(value.as_bytes());
     out.push(0);
@@ -145,6 +152,28 @@ fn wrap_regular_hint_section(data: Vec<u8>) -> Vec<u8> {
         sections: vec![SectionedSection { id: 3, data }],
     })
     .expect("fixture should encode")
+}
+
+fn wrap_global_hint_section(data: Vec<u8>) -> Vec<u8> {
+    encode_sectioned_file(&SectionedFile {
+        kind: *b"chps",
+        version: 1,
+        sections: vec![SectionedSection { id: 2, data }],
+    })
+    .expect("fixture should encode")
+}
+
+fn number_value_section(value: u64) -> Vec<u8> {
+    let mut section = Vec::new();
+    push_u32(&mut section, 1);
+    push_string(&mut section, "hint");
+    push_u32(&mut section, 1);
+    push_string(&mut section, "field");
+    push_u32(&mut section, 1);
+    push_string(&mut section, "number");
+    push_u64(&mut section, value);
+    push_u32(&mut section, 0);
+    section
 }
 
 fn unknown_operand_file() -> Vec<u8> {
@@ -621,6 +650,66 @@ fn rejects_position_count_that_exceeds_remaining_positions() {
     assert!(matches!(
         parse_regular_hint_program(&position_count_file(1)),
         Err(HintProgramError::LengthOverflow)
+    ));
+}
+
+#[test]
+fn rejects_non_canonical_regular_hint_numbers() {
+    let program = one_value_program(HintOperand::Number(NON_CANONICAL_FIELD));
+
+    assert!(matches!(
+        encode_regular_hint_program(&program),
+        Err(HintProgramError::NumberNonCanonical {
+            value_index: 0,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        })
+    ));
+}
+
+#[test]
+fn rejects_non_canonical_regular_hint_numbers_when_parsing() {
+    let bytes = wrap_regular_hint_section(number_value_section(NON_CANONICAL_FIELD));
+
+    assert!(matches!(
+        parse_regular_hint_program(&bytes),
+        Err(HintProgramError::NumberNonCanonical {
+            value_index: 0,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        })
+    ));
+}
+
+#[test]
+fn rejects_non_canonical_global_hint_numbers() {
+    let program = one_value_program(HintOperand::Number(NON_CANONICAL_FIELD));
+
+    assert!(matches!(
+        encode_global_hint_program(&program),
+        Err(HintProgramError::NumberNonCanonical {
+            value_index: 0,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        })
+    ));
+}
+
+#[test]
+fn rejects_non_canonical_global_hint_numbers_when_parsing() {
+    let bytes = wrap_global_hint_section(number_value_section(NON_CANONICAL_FIELD));
+
+    assert!(matches!(
+        parse_global_hint_program(&bytes),
+        Err(HintProgramError::NumberNonCanonical {
+            value_index: 0,
+            source: FieldError::NonCanonical {
+                value: NON_CANONICAL_FIELD
+            },
+        })
     ));
 }
 
