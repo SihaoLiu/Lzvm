@@ -1,4 +1,4 @@
-use lzvm_artifacts::global_info::GlobalInfo;
+use lzvm_artifacts::global_info::{GlobalInfo, NamedStageValue};
 use lzvm_artifacts::hint_program::{HintOperand, HintProgram};
 use lzvm_artifacts::setup_info::{CommitmentColumn, ConstantColumn, StageValue, UnitSetupInfo};
 use lzvm_field::{Ext3, Felt};
@@ -447,8 +447,12 @@ fn proof_value_offset(
         if index == id {
             return Ok((offset, width));
         }
+        let dimension = proof_value_dimension(entry)?;
+        let field_width = dimension
+            .checked_mul(width)
+            .ok_or(HintEvalError::LengthOverflow)?;
         offset = offset
-            .checked_add(width)
+            .checked_add(field_width)
             .ok_or(HintEvalError::LengthOverflow)?;
     }
 
@@ -457,6 +461,15 @@ fn proof_value_offset(
         index: id,
         width: 1,
         len: global_info.proof_values_map.len(),
+    })
+}
+
+fn proof_value_dimension(entry: &NamedStageValue) -> Result<usize, HintEvalError> {
+    entry.lengths.iter().try_fold(1_usize, |dimension, length| {
+        let length = usize::try_from(*length).map_err(|_| HintEvalError::LengthOverflow)?;
+        dimension
+            .checked_mul(length)
+            .ok_or(HintEvalError::LengthOverflow)
     })
 }
 

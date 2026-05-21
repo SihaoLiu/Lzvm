@@ -103,6 +103,46 @@ fn resolves_global_hint_values_from_runtime_inputs() {
 }
 
 #[test]
+fn resolves_global_hint_proof_value_offsets_with_array_lengths() {
+    let program = HintProgram {
+        hints: vec![Hint {
+            name: "hint-a".to_owned(),
+            fields: vec![HintField {
+                name: "values".to_owned(),
+                values: vec![HintValue {
+                    operand: HintOperand::ProofValue { id: 1 },
+                    positions: vec![0],
+                }],
+            }],
+        }],
+    };
+    let mut global = sample_global_info();
+    global.proof_values_map[0].lengths = vec![2];
+
+    let resolved = resolve_global_hint_field(
+        &global,
+        &program,
+        0,
+        "values",
+        GlobalConstraintInputs {
+            publics: &[],
+            proof_values: &[felt(13), felt(15), felt(17), felt(19), felt(23)],
+            challenges: &[],
+            group_values: &[],
+        },
+    )
+    .expect("hint field should resolve");
+
+    assert_eq!(
+        resolved,
+        vec![ResolvedHintValue {
+            payload: ResolvedHintPayload::Extension(ext([17, 19, 23])),
+            positions: vec![0],
+        }]
+    );
+}
+
+#[test]
 fn rejects_global_hint_temporaries_without_expression_inputs() {
     let program = HintProgram {
         hints: vec![Hint {

@@ -7,7 +7,7 @@ use crate::expression_info::{
     ExpressionInfo, OperationKind,
 };
 use crate::expression_program::{ExpressionEntry, ExpressionProgram};
-use crate::global_info::GlobalInfo;
+use crate::global_info::{GlobalInfo, NamedStageValue};
 use crate::hint_program::{regular_hint_program_from_expression_info, HintProgramError};
 use crate::regular_program::RegularProgram;
 use crate::setup_info::{StageValue, UnitSetupInfo};
@@ -830,9 +830,18 @@ fn proof_value_offsets(global: &GlobalInfo) -> Result<Vec<u32>, RegularProgramLo
     for value in &global.proof_values_map {
         offsets.push(offset);
         let width = if value.stage == 1 { 1 } else { 3 };
-        offset = add_u32(offset, width)?;
+        let dimension = proof_value_dimension(value)?;
+        offset = add_u32(offset, mul_u32(dimension, width)?)?;
     }
     Ok(offsets)
+}
+
+fn proof_value_dimension(value: &NamedStageValue) -> Result<u32, RegularProgramLoweringError> {
+    value.lengths.iter().try_fold(1_u32, |dimension, length| {
+        let length =
+            u32::try_from(*length).map_err(|_| RegularProgramLoweringError::LengthOverflow)?;
+        mul_u32(dimension, length)
+    })
 }
 
 fn proof_value_offset(

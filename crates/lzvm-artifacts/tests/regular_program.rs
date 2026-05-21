@@ -462,6 +462,44 @@ fn builds_verifier_program_from_verifier_info() {
     assert_eq!(program.entries[1].source_line, "query check");
 }
 
+#[test]
+fn lowers_verifier_proof_value_offsets_with_array_lengths() {
+    let info = VerifierInfo {
+        quotient: VerifierCode {
+            expression_id: None,
+            stage: None,
+            line: "quotient check".to_owned(),
+            temporary_count: 1,
+            operations: vec![VerifierOperation {
+                op: VerifierOperationKind::Copy,
+                destination: VerifierDestination::temporary(0, 3),
+                sources: vec![VerifierOperand::number(1, 1)],
+            }],
+        },
+        query: VerifierCode {
+            expression_id: Some(9),
+            stage: Some(3),
+            line: "query check".to_owned(),
+            temporary_count: 1,
+            operations: vec![VerifierOperation {
+                op: VerifierOperationKind::Add,
+                destination: VerifierDestination::temporary(0, 3),
+                sources: vec![
+                    VerifierOperand::boundary_zerofier(1, 1),
+                    VerifierOperand::proof_value(1, 3),
+                ],
+            }],
+        },
+    };
+    let mut global = global_info_with_values();
+    global.proof_values_map[0].lengths = vec![2];
+
+    let program = verifier_program_from_verifier_info(&info, &minimal_setup_info(), &global)
+        .expect("verifier program should lower");
+
+    assert_eq!(&program.args[10..14], &[10, 2, 0, 3]);
+}
+
 fn minimal_setup_info() -> UnitSetupInfo {
     UnitSetupInfo {
         n_stages: 1,
