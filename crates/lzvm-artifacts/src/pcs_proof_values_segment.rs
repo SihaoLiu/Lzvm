@@ -1,5 +1,7 @@
 use std::fmt;
 
+use lzvm_field::{Felt, FieldError};
+
 pub const PCS_PROOF_VALUES_SEGMENT_ID: u32 = 10_007;
 
 const PCS_PROOF_VALUES_MAGIC: [u8; 4] = *b"pvs0";
@@ -17,10 +19,22 @@ pub struct PcsProofValuesSegment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcsProofValuesSegmentError {
     InvalidMagic,
-    UnsupportedVersion { version: u32 },
-    UnexpectedEof { needed: usize, available: usize },
-    TrailingBytes { trailing: usize },
+    UnsupportedVersion {
+        version: u32,
+    },
+    UnexpectedEof {
+        needed: usize,
+        available: usize,
+    },
+    TrailingBytes {
+        trailing: usize,
+    },
     EmptyValues,
+    ValueNonCanonical {
+        value_index: usize,
+        word_index: usize,
+        source: FieldError,
+    },
     LengthOverflow,
 }
 
@@ -39,12 +53,32 @@ impl fmt::Display for PcsProofValuesSegmentError {
                 write!(f, "trailing PCS proof values segment bytes: {trailing}")
             }
             Self::EmptyValues => write!(f, "PCS proof values segment has no values"),
+            Self::ValueNonCanonical {
+                value_index,
+                word_index,
+                source,
+            } => write!(
+                f,
+                "PCS proof values value {value_index} word {word_index} is non-canonical: {source}"
+            ),
             Self::LengthOverflow => write!(f, "PCS proof values segment length overflow"),
         }
     }
 }
 
-impl std::error::Error for PcsProofValuesSegmentError {}
+impl std::error::Error for PcsProofValuesSegmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ValueNonCanonical { source, .. } => Some(source),
+            Self::InvalidMagic
+            | Self::UnsupportedVersion { .. }
+            | Self::UnexpectedEof { .. }
+            | Self::TrailingBytes { .. }
+            | Self::EmptyValues
+            | Self::LengthOverflow => None,
+        }
+    }
+}
 
 pub fn encode_pcs_proof_values_segment(
     value: &PcsProofValuesSegment,
@@ -97,6 +131,17 @@ fn validate_pcs_proof_values_segment(
 ) -> Result<(), PcsProofValuesSegmentError> {
     if value.values.is_empty() {
         return Err(PcsProofValuesSegmentError::EmptyValues);
+    }
+    for (value_index, value) in value.values.iter().enumerate() {
+        for (word_index, word) in value.iter().copied().enumerate() {
+            Felt::from_canonical(word).map_err(|source| {
+                PcsProofValuesSegmentError::ValueNonCanonical {
+                    value_index,
+                    word_index,
+                    source,
+                }
+            })?;
+        }
     }
     Ok(())
 }

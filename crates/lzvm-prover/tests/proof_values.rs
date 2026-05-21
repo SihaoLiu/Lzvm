@@ -3,7 +3,7 @@ use lzvm_artifacts::global_info::{
 };
 use lzvm_artifacts::pcs_proof_values_segment::{
     encode_pcs_proof_values_segment, parse_pcs_proof_values_segment, PcsProofValuesSegment,
-    PCS_PROOF_VALUES_SEGMENT_ID,
+    PcsProofValuesSegmentError, PCS_PROOF_VALUES_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::ProofSegment;
 use lzvm_field::{Ext3, Felt, FieldError, MODULUS};
@@ -12,6 +12,8 @@ use lzvm_prover::proof_values::{
     load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError,
     ProvePcsProofValuesSegmentError,
 };
+
+const FIRST_PCS_PROOF_VALUE_OFFSET: usize = 12;
 
 #[test]
 fn packs_stage_one_values_as_scalars_and_later_stages_as_extensions() {
@@ -163,17 +165,20 @@ fn rejects_loaded_stage_one_extension_components() {
 #[test]
 fn rejects_loaded_noncanonical_pcs_proof_values() {
     let global = sample_global_info(vec![sample_proof_value("extension-value", 2)]);
-    let segment = pcs_proof_values_segment([[MODULUS, 0, 0]]);
+    let mut segment = pcs_proof_values_segment([[7, 0, 0]]);
+    segment.data[FIRST_PCS_PROOF_VALUE_OFFSET..FIRST_PCS_PROOF_VALUE_OFFSET + 8]
+        .copy_from_slice(&MODULUS.to_le_bytes());
 
     let error = load_pcs_proof_values_from_segments(&global, &[segment])
         .expect_err("segment values should be canonical field elements");
 
     assert_eq!(
         error,
-        LoadPcsProofValuesSegmentError::NonCanonicalValue {
-            index: 0,
+        LoadPcsProofValuesSegmentError::Segment(PcsProofValuesSegmentError::ValueNonCanonical {
+            value_index: 0,
+            word_index: 0,
             source: FieldError::NonCanonical { value: MODULUS }
-        }
+        })
     );
 }
 
