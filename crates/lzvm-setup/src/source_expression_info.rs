@@ -43,7 +43,6 @@ use crate::{
     source_final_calls::{source_final_statement_call, SourceFinalScope},
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scalar_slots::{SourceChallengeSlotMetadata, SourceScalarSlots},
-    source_scope::concrete_template_names,
     source_statement_hints::{
         lower_source_annotation_statement, lower_source_assignment_statement,
         lower_source_lookup_statement, lower_unsupported_source_assignment_statement,
@@ -55,8 +54,8 @@ use crate::{
     },
     source_static_values::{
         evaluate_source_static_expression, insert_source_static_array, source_active_static_name,
-        source_scalar_constant_values, source_static_array_values,
-        source_static_assignment_expression, source_template_constant_value_cache,
+        source_static_array_values, source_static_assignment_expression,
+        SourceTemplateConstantValueCache,
     },
     source_template_context::SourceTemplateLoweringContext,
     source_template_for::source_static_for_loop_with_tokens,
@@ -84,19 +83,19 @@ pub(crate) fn source_expression_info(
     publics: &[PublicValue],
     challenges: &[SourceChallengeSlotMetadata],
     proof_values: &[NamedStageValue],
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    active_templates: &BTreeSet<String>,
+    template_values: &SourceTemplateConstantValueCache,
     body_caches: &mut SourceControlBodyCaches,
 ) -> Result<ExpressionInfo, SourceKeyDirectoryMetadataError> {
     let scalar_slots = SourceScalarSlots::from_setup(setup, publics, challenges, proof_values)
         .map_err(|error| unsupported_source_message(error.to_string()))?;
-    let active_templates = concrete_template_names(program);
-    let constant_values = source_scalar_constant_values(program, 1_u64 << setup.stark.n_bits);
-    let template_values = source_template_constant_value_cache(program, &constant_values);
     let unit_instances = source_expression_unit_instances(program, group_name, unit_name);
     let fixed_assignment_columns = source_fixed_assignment_column_names(
         program,
-        &active_templates,
-        &constant_values,
-        &template_values,
+        active_templates,
+        constant_values,
+        template_values,
     );
     let mut hints = Vec::new();
     let mut constraints = Vec::new();

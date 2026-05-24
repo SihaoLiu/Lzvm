@@ -37,6 +37,7 @@ use crate::{
     },
     source_opening_points::source_opening_points,
     source_row_count::{infer_source_row_counts, SourceUnitRowCounts},
+    source_scalar_slots::SourceChallengeSlotMetadata,
     source_scope::{
         concrete_template_names, declaration_in_function_body, declaration_in_inactive_template,
     },
@@ -66,6 +67,15 @@ pub struct SourceKeyDirectoryMetadataReport {
     pub setup_dir: PathBuf,
     pub unit_count: usize,
     pub bytes_written: u64,
+}
+
+struct SourceUnitTemplateContext {
+    constant_values: BTreeMap<String, FixedFileTemplateValue>,
+    template_values: SourceTemplateConstantValueCache,
+    challenge_counts: Vec<u64>,
+    proof_values_map: Vec<NamedStageValue>,
+    publics_map: Vec<PublicValue>,
+    challenge_slots: Vec<SourceChallengeSlotMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -230,25 +240,69 @@ pub fn write_source_key_directory_metadata(
         let mut unit_payloads = Vec::new();
         let mut body_caches = SourceControlBodyCaches::default();
         let active_templates = concrete_template_names(&program);
+        let mut template_contexts = BTreeMap::<u64, SourceUnitTemplateContext>::new();
         for unit in &layout.units {
             let Some(setup_path) = unit.setup_info_binary() else {
                 continue;
             };
             let row_count = source_layout_unit_row_count(unit, &row_counts)?;
+            if !template_contexts.contains_key(&row_count) {
+                let constant_values = source_scalar_constant_values(&program, row_count);
+                let template_values =
+                    source_template_constant_value_cache(&program, &constant_values);
+                let challenge_counts = source_challenge_counts(
+                    &program,
+                    &constant_values,
+                    &active_templates,
+                    &template_values,
+                    &mut body_caches,
+                )?;
+                let (_, proof_values_map) = source_proof_values(
+                    &program,
+                    &constant_values,
+                    &active_templates,
+                    &template_values,
+                    &mut body_caches,
+                )?;
+                let publics_map = source_public_values(
+                    &program,
+                    &constant_values,
+                    &active_templates,
+                    &template_values,
+                    &mut body_caches,
+                )?;
+                let challenge_slots = source_challenge_slots(
+                    &program,
+                    &constant_values,
+                    &active_templates,
+                    &template_values,
+                    &mut body_caches,
+                )?;
+                template_contexts.insert(
+                    row_count,
+                    SourceUnitTemplateContext {
+                        constant_values,
+                        template_values,
+                        challenge_counts,
+                        proof_values_map,
+                        publics_map,
+                        challenge_slots,
+                    },
+                );
+            }
+            let context = template_contexts
+                .get(&row_count)
+                .ok_or_else(|| unsupported_source_message("source template context is missing"))?;
             let mut setup_info = source_unit_setup_info(
                 &program,
                 row_count,
                 unit.group_name.as_deref().zip(unit.unit_name.as_deref()),
-                &mut body_caches,
-            )?;
-            let unit_constant_values = source_scalar_constant_values(&program, row_count);
-            let unit_template_values =
-                source_template_constant_value_cache(&program, &unit_constant_values);
-            let challenge_slots = source_challenge_slots(
-                &program,
-                &unit_constant_values,
+                &context.constant_values,
                 &active_templates,
-                &unit_template_values,
+                &context.template_values,
+                &context.challenge_counts,
+                &context.proof_values_map,
+                &context.publics_map,
                 &mut body_caches,
             )?;
             let expression_info = source_expression_info(
@@ -257,8 +311,11 @@ pub fn write_source_key_directory_metadata(
                 unit.group_name.as_deref(),
                 unit.unit_name.as_deref(),
                 &global_info.publics_map,
-                &challenge_slots,
+                &context.challenge_slots,
                 &global_info.proof_values_map,
+                &context.constant_values,
+                &active_templates,
+                &context.template_values,
                 &mut body_caches,
             )?;
             include_expression_opening_points(&mut setup_info, &expression_info);
@@ -898,84 +955,66 @@ fn source_unit_setup_info(
     program: &SourceProgram,
     row_count: u64,
     unit_name: Option<(&str, &str)>,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    active_templates: &BTreeSet<String>,
+    template_values: &SourceTemplateConstantValueCache,
+    challenge_counts: &[u64],
+    proof_values_map: &[NamedStageValue],
+    publics_map: &[PublicValue],
     body_caches: &mut SourceControlBodyCaches,
 ) -> Result<UnitSetupInfo, SourceKeyDirectoryMetadataError> {
     let n_bits = row_count.trailing_zeros();
     let n_bits_ext = n_bits
         .checked_add(1)
         .ok_or_else(|| unsupported_source_message("source domain is too large"))?;
-    let constant_values = source_scalar_constant_values(program, row_count);
-    let template_values = source_template_constant_value_cache(program, &constant_values);
-    let active_templates = concrete_template_names(program);
     let constant_columns = source_constant_columns(
         program,
         unit_name,
-        &constant_values,
-        &active_templates,
-        &template_values,
+        constant_values,
+        active_templates,
+        template_values,
         body_caches,
     )?;
     let commitment_columns = source_commitment_columns(
         program,
         unit_name,
-        &constant_values,
-        &active_templates,
-        &template_values,
+        constant_values,
+        active_templates,
+        template_values,
         body_caches,
     )?;
     let unit_value_map = source_unit_values(
         program,
         unit_name,
-        &constant_values,
-        &active_templates,
-        &template_values,
+        constant_values,
+        active_templates,
+        template_values,
         body_caches,
     )?;
     let (group_value_map, _) = source_air_group_values(
         program,
         unit_name,
-        &constant_values,
-        &active_templates,
-        &template_values,
-        body_caches,
-    )?;
-    let challenge_counts = source_challenge_counts(
-        program,
-        &constant_values,
-        &active_templates,
-        &template_values,
-        body_caches,
-    )?;
-    let (_, proof_values_map) = source_proof_values(
-        program,
-        &constant_values,
-        &active_templates,
-        &template_values,
-        body_caches,
-    )?;
-    let publics_map = source_public_values(
-        program,
-        &constant_values,
-        &active_templates,
-        &template_values,
+        constant_values,
+        active_templates,
+        template_values,
         body_caches,
     )?;
     let required_max_stage = source_required_setup_max_stage(
         &commitment_columns,
         &unit_value_map,
         &group_value_map,
-        &challenge_counts,
-        &proof_values_map,
-        &publics_map,
+        challenge_counts,
+        proof_values_map,
+        publics_map,
     )?;
     let (n_stages, commitment_widths) =
         source_commitment_section_widths(&commitment_columns, required_max_stage)?;
     let opening_points = source_opening_points(
         program,
         unit_name,
-        &constant_values,
-        &active_templates,
-        &template_values,
+        constant_values,
+        active_templates,
+        template_values,
         body_caches,
     )?;
     let challenge_count = challenge_counts
@@ -987,7 +1026,7 @@ fn source_unit_setup_info(
                 .and_then(|count| acc.checked_add(count))
         })
         .ok_or_else(|| unsupported_source_message("source challenge count overflow"))?;
-    let public_count = source_public_count(&publics_map)?;
+    let public_count = source_public_count(publics_map)?;
     let const_width = constant_columns
         .iter()
         .try_fold(0_u32, |acc, column| acc.checked_add(column.dimension))
