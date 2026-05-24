@@ -696,22 +696,11 @@ fn append_comma_mul_factor_fill(
     current: i128,
     factor: u128,
 ) -> Result<(), SourceFixedColumnsWriteError> {
-    let mut value = current;
-    let factor =
-        i128::try_from(factor).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
-            source_name: segment.context.source_name.to_owned(),
-            source_span: segment.context.source_span,
-            expression: progression_expression(segment),
-        })?;
+    let mut value = field_progression_value(current, segment)?;
+    let factor = field_factor_from_u128(factor);
     while values.len() < segment.row_count {
-        value = value.checked_mul(factor).ok_or_else(|| {
-            SourceFixedColumnsWriteError::IntegerOutOfRange {
-                source_name: segment.context.source_name.to_owned(),
-                source_span: segment.context.source_span,
-                expression: progression_expression(segment),
-            }
-        })?;
-        push_progression_value(values, segment, value)?;
+        value = value * factor;
+        push_progression_value(values, segment, i128::from(value.to_u64()))?;
     }
     Ok(())
 }
@@ -1003,24 +992,17 @@ fn append_mul_progression_fill(
     factor: u128,
     repeat: usize,
 ) -> Result<(), SourceFixedColumnsWriteError> {
-    let mut value = current;
+    let mut value = field_progression_value(current, segment)?;
+    let factor = field_factor_from_u128(factor);
     while values.len() < segment.row_count {
-        push_repeated_progression_value_truncated(values, segment, value, repeat);
+        push_repeated_progression_value_truncated(
+            values,
+            segment,
+            i128::from(value.to_u64()),
+            repeat,
+        );
         if values.len() < segment.row_count {
-            let factor = i128::try_from(factor).map_err(|_| {
-                SourceFixedColumnsWriteError::IntegerOutOfRange {
-                    source_name: segment.context.source_name.to_owned(),
-                    source_span: segment.context.source_span,
-                    expression: progression_expression(segment),
-                }
-            })?;
-            value = value.checked_mul(factor).ok_or_else(|| {
-                SourceFixedColumnsWriteError::IntegerOutOfRange {
-                    source_name: segment.context.source_name.to_owned(),
-                    source_span: segment.context.source_span,
-                    expression: progression_expression(segment),
-                }
-            })?;
+            value = value * factor;
         }
     }
     Ok(())
@@ -1252,6 +1234,10 @@ fn field_progression_value(
     let canonical = value.rem_euclid(modulus);
     let canonical = u64::try_from(canonical).map_err(|_| progression_unsupported(segment))?;
     Ok(Felt::from_u64(canonical))
+}
+
+fn field_factor_from_u128(value: u128) -> Felt {
+    Felt::from_u64((value % u128::from(MODULUS)) as u64)
 }
 
 fn progression_unsupported(segment: &ProgressionSegment<'_, '_>) -> SourceFixedColumnsWriteError {
