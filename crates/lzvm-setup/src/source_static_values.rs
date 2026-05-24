@@ -11,6 +11,8 @@ use crate::{
     source_static_functions::evaluate_static_i128,
 };
 
+const STATIC_TEMPLATE_FOR_LOOP_LIMIT: usize = 10_000;
+
 pub(crate) type SourceTemplateConstantValueCache =
     BTreeMap<(String, usize, usize), BTreeMap<String, FixedFileTemplateValue>>;
 
@@ -613,6 +615,7 @@ fn execute_static_template_statement(
 ) -> Option<usize> {
     match tokens.get(index)?.kind {
         TokenKind::If => execute_static_template_if(program, module, tokens, index, end, values),
+        TokenKind::For => execute_static_template_for(program, module, tokens, index, end, values),
         kind if static_declaration_start(kind) => {
             execute_static_template_declaration(program, module, tokens, index, values);
             skip_static_template_statement(tokens, index, end)
@@ -672,6 +675,139 @@ fn execute_static_template_if(
         return skip_static_else_tail(tokens, after_body, end);
     }
     execute_static_else_tail(program, module, tokens, after_body, end, values)
+}
+
+fn execute_static_template_for(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    index: usize,
+    end: usize,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<usize> {
+    let checkpoint = values.clone();
+    let next = execute_static_template_for_inner(program, module, tokens, index, end, values);
+    if next.is_none() {
+        *values = checkpoint;
+    }
+    next
+}
+
+fn execute_static_template_for_inner(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    index: usize,
+    end: usize,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<usize> {
+    let open = next_token_kind(tokens, index + 1, end, TokenKind::LParen)?;
+    let close = matching_closing_token(tokens, open, end)?;
+    let [initializer, condition, update] = static_for_header_ranges(tokens, open + 1, close)?;
+    let (body_start, body_end, after_body) = control_body_range(tokens, close + 1, end)?;
+    let loop_variable =
+        execute_static_for_initializer(program, module, tokens, initializer, values)?;
+
+    for _ in 0..STATIC_TEMPLATE_FOR_LOOP_LIMIT {
+        let condition = evaluate_source_static_token_range(
+            program,
+            &module.source,
+            tokens,
+            condition.0,
+            condition.1,
+            values,
+        )?;
+        if !static_value_truthy(&condition) {
+            values.remove(&loop_variable);
+            return Some(after_body);
+        }
+        execute_static_template_tokens(program, module, tokens, body_start, body_end, values)?;
+        execute_static_for_update(program, module, tokens, update, values)?;
+    }
+    None
+}
+
+fn static_for_header_ranges(
+    tokens: &[Token],
+    start: usize,
+    end: usize,
+) -> Option<[(usize, usize); 3]> {
+    let mut ranges = Vec::new();
+    let mut range_start = start;
+    let mut stack = Vec::<TokenKind>::new();
+    for (index, token) in tokens.iter().enumerate().take(end).skip(start) {
+        if stack.is_empty() && token.kind == TokenKind::Semicolon {
+            ranges.push((range_start, index));
+            range_start = index + 1;
+            continue;
+        }
+        update_static_delimiter_stack(token.kind, &mut stack)?;
+    }
+    ranges.push((range_start, end));
+    if !stack.is_empty() {
+        return None;
+    }
+    <[(usize, usize); 3]>::try_from(ranges).ok()
+}
+
+fn execute_static_for_initializer(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    range: (usize, usize),
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<String> {
+    let mut cursor = range.0;
+    if tokens.get(cursor).map(|token| token.kind) == Some(TokenKind::Const) {
+        cursor += 1;
+    }
+    if tokens.get(cursor).map(|token| token.kind) != Some(TokenKind::Int) {
+        return None;
+    }
+    let name = tokens.get(cursor + 1)?;
+    if name.kind != TokenKind::Identifier {
+        return None;
+    }
+    if tokens.get(cursor + 2).map(|token| token.kind) != Some(TokenKind::Assign) {
+        return None;
+    }
+    let value = evaluate_source_static_token_range(
+        program,
+        &module.source,
+        tokens,
+        cursor + 3,
+        range.1,
+        values,
+    )?;
+    let value = static_value_integer(&value)?;
+    values.insert(name.lexeme.clone(), FixedFileTemplateValue::Integer(value));
+    Some(name.lexeme.clone())
+}
+
+fn execute_static_for_update(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    range: (usize, usize),
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<()> {
+    if execute_source_static_postfix_update(program, module, tokens, range.0, range.1, values)
+        .is_some()
+    {
+        return Some(());
+    }
+    let (expression, consumed) =
+        parse_expression_tokens(tokens, range.0, range.1, &module.source).ok()?;
+    if consumed != range.1 {
+        return None;
+    }
+    execute_source_static_expression_statement(
+        program,
+        module,
+        tokens.get(range.0)?.start,
+        &expression,
+        values,
+    )
 }
 
 fn execute_static_else_tail(
@@ -1291,6 +1427,21 @@ fn matching_closing_token(tokens: &[Token], open: usize, end: usize) -> Option<u
         }
     }
     None
+}
+
+fn update_static_delimiter_stack(kind: TokenKind, stack: &mut Vec<TokenKind>) -> Option<()> {
+    match kind {
+        TokenKind::LParen => stack.push(TokenKind::RParen),
+        TokenKind::LBracket => stack.push(TokenKind::RBracket),
+        TokenKind::LBrace => stack.push(TokenKind::RBrace),
+        TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+            if stack.pop()? != kind {
+                return None;
+            }
+        }
+        _ => {}
+    }
+    Some(())
 }
 
 fn next_static_semicolon_limited(tokens: &[Token], index: usize, end: usize) -> Option<usize> {
