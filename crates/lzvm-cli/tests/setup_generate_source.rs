@@ -2951,6 +2951,63 @@ fn generate_key_uses_source_template_row_count_for_fill_sequences() {
 }
 
 #[test]
+fn generate_key_materializes_source_table_fill_calls() {
+    let dir = temp_dir("source-table-fill");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(const int N = 4) {\n\
+             col fixed main.left, main.right;\n\
+             Tables.fill(7, main.left, 1, N - 2);\n\
+             Tables.fill(5, main.right, 0, 3);\n\
+             Tables.print(main.left, 0, N);\n\
+         }\n\
+         airgroup GroupA { UnitA(); }",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    let columns = parse_raw_fixed_columns(
+        &fs::read(&unit.fixed_columns).expect("fixed columns should read"),
+        &setup,
+        unit.group_name.as_deref().unwrap_or("raw"),
+        unit.unit_name.as_deref().unwrap_or("unit"),
+    )
+    .expect("fixed columns should parse");
+    assert_eq!(columns.row_count, 4);
+    assert_eq!(columns.columns[0].name, "main.left");
+    assert_eq!(columns.columns[0].values, [0, 7, 7, 0]);
+    assert_eq!(columns.columns[1].name, "main.right");
+    assert_eq!(columns.columns[1].values, [5, 5, 5, 0]);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_rejects_boolean_template_row_count_below_supported_domain() {
     let dir = temp_dir("boolean-template-row-count-domain");
     let _ = fs::remove_dir_all(&dir);

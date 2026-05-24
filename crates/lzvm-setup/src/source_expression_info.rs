@@ -345,6 +345,9 @@ fn lower_source_template_statement(
     ) {
         return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
+    if source_noop_call_statement(statement) {
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
+    }
     if apply_source_static_expression_statement(
         context.program,
         statement.value_expression.as_ref(),
@@ -852,7 +855,7 @@ fn lower_source_template_function_call_expression(
 
 fn source_noop_call_statement(statement: &FunctionStatement) -> bool {
     source_call_expression(statement.value_expression.as_ref())
-        .is_some_and(|(name, _)| name == "println")
+        .is_some_and(|(name, _)| matches!(name, "println" | "Tables.fill" | "Tables.print"))
 }
 
 fn source_function_shared_static_values(

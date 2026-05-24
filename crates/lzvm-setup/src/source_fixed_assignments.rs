@@ -32,6 +32,7 @@ pub(crate) fn source_fixed_values_from_template_assignments(
     unit_instance: Option<&AirInstanceDeclaration>,
 ) -> Result<BTreeMap<String, Vec<u64>>, SourceFixedColumnsWriteError> {
     let mut partial_values = BTreeMap::<String, Vec<Option<u64>>>::new();
+    let mut zero_default_columns = BTreeSet::<String>::new();
     let active_templates = concrete_template_names(program);
     for module in &program.modules {
         let tokens = lex_source(&module.source.contents).map_err(|source| {
@@ -84,6 +85,7 @@ pub(crate) fn source_fixed_values_from_template_assignments(
                     &assignment_values,
                     &mut body_cache,
                     &mut partial_values,
+                    &mut zero_default_columns,
                 )?;
             }
         }
@@ -92,6 +94,12 @@ pub(crate) fn source_fixed_values_from_template_assignments(
     Ok(partial_values
         .into_iter()
         .filter_map(|(name, values)| {
+            if zero_default_columns.contains(&name) {
+                return Some((
+                    name,
+                    values.into_iter().map(|value| value.unwrap_or(0)).collect(),
+                ));
+            }
             values
                 .into_iter()
                 .collect::<Option<Vec<_>>>()
@@ -309,6 +317,7 @@ fn collect_source_fixed_template_assignment(
     assignment_values: &SourceFixedAssignmentValues<'_>,
     body_cache: &mut SourceControlBodyCache,
     partial_values: &mut BTreeMap<String, Vec<Option<u64>>>,
+    zero_default_columns: &mut BTreeSet<String>,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     if statement.kind == FunctionStatementKind::If {
         match source_static_if_body_statements_with_lookup(
@@ -327,6 +336,7 @@ fn collect_source_fixed_template_assignment(
                         assignment_values,
                         body_cache,
                         partial_values,
+                        zero_default_columns,
                     )?;
                 }
             }
@@ -360,6 +370,7 @@ fn collect_source_fixed_template_assignment(
                             &iteration_assignment_values,
                             body_cache,
                             partial_values,
+                            zero_default_columns,
                         )?;
                     }
                 }
@@ -372,6 +383,15 @@ fn collect_source_fixed_template_assignment(
         return Ok(());
     }
     if statement.kind != FunctionStatementKind::Expression {
+        return Ok(());
+    }
+    if collect_source_fixed_table_fill_statement(
+        context,
+        statement,
+        assignment_values,
+        partial_values,
+        zero_default_columns,
+    )? {
         return Ok(());
     }
     if collect_source_fixed_sequence_assignment_statement(
@@ -443,6 +463,176 @@ fn collect_source_fixed_template_assignment(
             Ok(())
         }
     }
+}
+
+fn collect_source_fixed_table_fill_statement(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    statement: &FunctionStatement,
+    assignment_values: &SourceFixedAssignmentValues<'_>,
+    partial_values: &mut BTreeMap<String, Vec<Option<u64>>>,
+    zero_default_columns: &mut BTreeSet<String>,
+) -> Result<bool, SourceFixedColumnsWriteError> {
+    let Some((name, arguments)) = source_fixed_call_statement(statement) else {
+        return Ok(false);
+    };
+    if name != "Tables.fill" {
+        return Ok(false);
+    }
+    if arguments.len() != 4 || arguments.iter().any(|argument| argument.name.is_some()) {
+        return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
+            source_name: context.module.source_name.clone(),
+            source_span: SourceSpan {
+                start: statement.start,
+                end: statement.end,
+            },
+            expression: source_fixed_statement_text(context, statement),
+        });
+    }
+
+    let Some(column_name) = source_fixed_physical_assignment_column_name(
+        &arguments[1].value,
+        context.expected_columns,
+        context.logical_dimensions,
+        assignment_values,
+    ) else {
+        return Ok(false);
+    };
+    let value =
+        source_fixed_static_integer_argument(context, &arguments[0].value, assignment_values)?;
+    let offset =
+        source_fixed_static_usize_argument(context, &arguments[2].value, assignment_values)?;
+    let count =
+        source_fixed_static_usize_argument(context, &arguments[3].value, assignment_values)?;
+    let end = offset.checked_add(count).ok_or_else(|| {
+        SourceFixedColumnsWriteError::IntegerOutOfRange {
+            source_name: context.module.source_name.clone(),
+            source_span: SourceSpan {
+                start: arguments[3].value.start,
+                end: arguments[3].value.end,
+            },
+            expression: count.to_string(),
+        }
+    })?;
+    if end > context.row_count {
+        return Err(SourceFixedColumnsWriteError::IntegerOutOfRange {
+            source_name: context.module.source_name.clone(),
+            source_span: SourceSpan {
+                start: arguments[3].value.start,
+                end: arguments[3].value.end,
+            },
+            expression: end.to_string(),
+        });
+    }
+    let value = canonical_fixed_value(
+        value,
+        &context.module.source_name,
+        SourceSpan {
+            start: arguments[0].value.start,
+            end: arguments[0].value.end,
+        },
+    )?;
+    let values = partial_values
+        .entry(column_name.clone())
+        .or_insert_with(|| vec![None; context.row_count]);
+    zero_default_columns.insert(column_name.clone());
+    for row in offset..end {
+        match values[row] {
+            Some(existing) if existing != value => {
+                return Err(SourceFixedColumnsWriteError::UnsupportedInitializer {
+                    source_name: context.module.source_name.clone(),
+                    column: column_name,
+                });
+            }
+            Some(_) => {}
+            None => values[row] = Some(value),
+        }
+    }
+    Ok(true)
+}
+
+fn source_fixed_call_statement(statement: &FunctionStatement) -> Option<(&str, &[CallArgument])> {
+    let ExpressionKind::Call { callee, args } =
+        &strip_source_fixed_group_expression(statement.value_expression.as_ref()?).kind
+    else {
+        return None;
+    };
+    let ExpressionKind::Name(name) = &strip_source_fixed_group_expression(callee).kind else {
+        return None;
+    };
+    Some((name.as_str(), args.as_slice()))
+}
+
+fn source_fixed_static_integer_argument(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    expression: &Expression,
+    assignment_values: &SourceFixedAssignmentValues<'_>,
+) -> Result<i128, SourceFixedColumnsWriteError> {
+    let Some(value) =
+        evaluate_source_fixed_assignment_value_expression(expression, assignment_values)
+    else {
+        return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
+            source_name: context.module.source_name.clone(),
+            source_span: SourceSpan {
+                start: expression.start,
+                end: expression.end,
+            },
+            expression: source_fixed_expression_text(context, expression),
+        });
+    };
+    source_fixed_assignment_integer(&value).ok_or_else(|| {
+        SourceFixedColumnsWriteError::UnsupportedExpression {
+            source_name: context.module.source_name.clone(),
+            source_span: SourceSpan {
+                start: expression.start,
+                end: expression.end,
+            },
+            expression: source_fixed_expression_text(context, expression),
+        }
+    })
+}
+
+fn source_fixed_static_usize_argument(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    expression: &Expression,
+    assignment_values: &SourceFixedAssignmentValues<'_>,
+) -> Result<usize, SourceFixedColumnsWriteError> {
+    let value = source_fixed_static_integer_argument(context, expression, assignment_values)?;
+    usize::try_from(value).map_err(|_| SourceFixedColumnsWriteError::IntegerOutOfRange {
+        source_name: context.module.source_name.clone(),
+        source_span: SourceSpan {
+            start: expression.start,
+            end: expression.end,
+        },
+        expression: value.to_string(),
+    })
+}
+
+fn source_fixed_statement_text(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    statement: &FunctionStatement,
+) -> String {
+    context
+        .module
+        .source
+        .contents
+        .get(statement.start..statement.end)
+        .unwrap_or("Tables.fill")
+        .trim()
+        .to_owned()
+}
+
+fn source_fixed_expression_text(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    expression: &Expression,
+) -> String {
+    context
+        .module
+        .source
+        .contents
+        .get(expression.start..expression.end)
+        .unwrap_or("<expression>")
+        .trim()
+        .to_owned()
 }
 
 fn collect_source_fixed_sequence_assignment_statement(
