@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use lzvm_pil::{
     parse_expression_tokens, BinaryOperator, Expression, ExpressionKind, FixedFileTemplateValue,
-    SourceProgram, SourceProgramModule, Token,
+    SourceProgram, SourceProgramModule, Token, UnaryOperator,
 };
 
 use crate::source_static_values::{
@@ -31,9 +31,24 @@ fn execute_source_static_array_assignment_expression(
     expression: &Expression,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
 ) -> Option<()> {
-    let ExpressionKind::Binary { op, left, right } = &expression.kind else {
-        return None;
-    };
+    match &expression.kind {
+        ExpressionKind::Binary { op, left, right } => {
+            execute_source_static_array_binary_assignment(program, values, *op, left, right)
+        }
+        ExpressionKind::Unary { op, expr } => {
+            execute_source_static_array_unary_update(program, values, *op, expr)
+        }
+        _ => None,
+    }
+}
+
+fn execute_source_static_array_binary_assignment(
+    program: &SourceProgram,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    op: BinaryOperator,
+    left: &Expression,
+    right: &Expression,
+) -> Option<()> {
     if !matches!(
         op,
         BinaryOperator::Assign
@@ -68,6 +83,36 @@ fn execute_source_static_array_assignment_expression(
         }
         _ => return None,
     };
+    values.insert(source_static_array_element_key(name, index), value);
+    Some(())
+}
+
+fn execute_source_static_array_unary_update(
+    program: &SourceProgram,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    op: UnaryOperator,
+    expression: &Expression,
+) -> Option<()> {
+    let delta = match op {
+        UnaryOperator::Increment => 1,
+        UnaryOperator::Decrement => -1,
+        _ => return None,
+    };
+    let ExpressionKind::Index { target, index } = &expression.kind else {
+        return None;
+    };
+    let name = expression_name(target)?;
+    let length = usize::try_from(source_static_array_length(values, name)?).ok()?;
+    let index = evaluate_source_static_expression(program, index, values)?;
+    let index = usize::try_from(static_value_integer(&index)?).ok()?;
+    if index >= length {
+        return None;
+    }
+
+    let current = source_static_array_element(values, name, index)?;
+    let value = static_value_integer(&current)?
+        .checked_add(delta)
+        .map(FixedFileTemplateValue::Integer)?;
     values.insert(source_static_array_element_key(name, index), value);
     Some(())
 }
