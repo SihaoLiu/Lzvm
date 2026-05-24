@@ -117,7 +117,8 @@ impl SourceScalarSlots {
     ) -> Result<Self, SourceScalarSlotError> {
         let mut commitments = BTreeMap::new();
         for (index, column) in setup.commitment_columns.iter().enumerate() {
-            commitments.insert(
+            insert_source_scalar_slot(
+                &mut commitments,
                 column.name.clone(),
                 SourceCommitmentSlot {
                     id: usize_to_u32(index, "source commitment id overflow")?,
@@ -133,7 +134,8 @@ impl SourceScalarSlots {
         for value in &setup.unit_value_map {
             let source_dimension =
                 stage_value_dimension(&value.lengths, "source unit value dimension overflow")?;
-            unit_values.insert(
+            insert_source_scalar_slot(
+                &mut unit_values,
                 value.name.clone(),
                 SourceUnitValueSlot {
                     id: unit_value_id,
@@ -153,7 +155,8 @@ impl SourceScalarSlots {
         for value in &setup.group_value_map {
             let source_dimension =
                 stage_value_dimension(&value.lengths, "source group value dimension overflow")?;
-            group_values.insert(
+            insert_source_scalar_slot(
+                &mut group_values,
                 value.name.clone(),
                 SourceGroupValueSlot {
                     id: group_value_id,
@@ -170,7 +173,8 @@ impl SourceScalarSlots {
 
         let mut constants = BTreeMap::new();
         for column in &setup.constant_columns {
-            constants.insert(
+            insert_source_scalar_slot(
+                &mut constants,
                 column.name.clone(),
                 SourceConstantSlot {
                     id: column.pols_map_id,
@@ -186,7 +190,8 @@ impl SourceScalarSlots {
         for value in public_values {
             let dimension = public_value_dimension(&value.lengths)?;
             let lengths = public_value_lengths(&value.lengths)?;
-            publics.insert(
+            insert_source_scalar_slot(
+                &mut publics,
                 value.name.clone(),
                 SourcePublicSlot {
                     offset: public_offset,
@@ -202,8 +207,9 @@ impl SourceScalarSlots {
 
         let challenges = challenge_values
             .iter()
-            .map(|value| {
-                (
+            .fold(BTreeMap::new(), |mut slots, value| {
+                insert_source_scalar_slot(
+                    &mut slots,
                     value.name.clone(),
                     SourceChallengeSlot {
                         id: value.id,
@@ -212,9 +218,9 @@ impl SourceScalarSlots {
                         dimension: value.dimension,
                         lengths: value.lengths.clone(),
                     },
-                )
-            })
-            .collect();
+                );
+                slots
+            });
 
         let mut proof_value_slots = BTreeMap::new();
         let mut proof_value_offset = 0_u32;
@@ -228,7 +234,8 @@ impl SourceScalarSlots {
             let field_width = source_dimension.checked_mul(operand_dimension).ok_or(
                 SourceScalarSlotError::LengthOverflow("source proof value offset overflow"),
             )?;
-            proof_value_slots.insert(
+            insert_source_scalar_slot(
+                &mut proof_value_slots,
                 value.name.clone(),
                 SourceProofValueSlot {
                     offset: proof_value_offset,
@@ -263,7 +270,8 @@ impl SourceScalarSlots {
         for value in public_values {
             let dimension = public_value_dimension(&value.lengths)?;
             let lengths = public_value_lengths(&value.lengths)?;
-            publics.insert(
+            insert_source_scalar_slot(
+                &mut publics,
                 value.name.clone(),
                 SourcePublicSlot {
                     offset: public_offset,
@@ -289,7 +297,8 @@ impl SourceScalarSlots {
             let field_width = source_dimension.checked_mul(operand_dimension).ok_or(
                 SourceScalarSlotError::LengthOverflow("source proof value offset overflow"),
             )?;
-            proof_value_slots.insert(
+            insert_source_scalar_slot(
+                &mut proof_value_slots,
                 value.name.clone(),
                 SourceProofValueSlot {
                     offset: proof_value_offset,
@@ -856,6 +865,16 @@ fn stage_value_dimension(
         acc.checked_mul(*length)
             .ok_or(SourceScalarSlotError::LengthOverflow(overflow_message))
     })
+}
+
+fn insert_source_scalar_slot<T: Clone>(slots: &mut BTreeMap<String, T>, name: String, slot: T) {
+    let local_name = name
+        .rsplit_once('.')
+        .map(|(_, local_name)| local_name.to_owned());
+    slots.insert(name, slot.clone());
+    if let Some(local_name) = local_name {
+        slots.entry(local_name).or_insert(slot);
+    }
 }
 
 fn public_value_dimension(lengths: &[u64]) -> Result<u32, SourceScalarSlotError> {
