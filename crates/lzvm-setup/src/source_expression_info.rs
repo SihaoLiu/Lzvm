@@ -605,14 +605,16 @@ fn lower_source_template_statement(
         }
         Err(error) => return Err(error),
     }
+    let mut call_stack = BTreeSet::new();
+    let mut output = SourceTemplateFunctionOutput { hints, constraints };
     if lower_source_template_function_call(
         context,
         statement,
         values,
         alias_scope,
         body_cache,
-        hints,
-        constraints,
+        &mut call_stack,
+        &mut output,
     )? {
         return Ok(());
     }
@@ -639,8 +641,8 @@ fn lower_source_template_function_call(
     values: &BTreeMap<String, FixedFileTemplateValue>,
     alias_scope: &SourceExpressionAliasScope,
     body_cache: &mut SourceControlBodyCache,
-    hints: &mut Vec<HintInfo>,
-    constraints: &mut Vec<ConstraintCode>,
+    call_stack: &mut BTreeSet<String>,
+    output: &mut SourceTemplateFunctionOutput<'_>,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
     let Some((name, arguments)) = source_call_expression(statement.value_expression.as_ref())
     else {
@@ -668,31 +670,53 @@ fn lower_source_template_function_call(
         return Ok(false);
     };
 
+    if !call_stack.insert(function.name.clone()) {
+        return Ok(false);
+    }
     let mut function_hints = Vec::new();
     let mut function_constraints = Vec::new();
+    let mut function_output = SourceTemplateFunctionOutput {
+        hints: &mut function_hints,
+        constraints: &mut function_constraints,
+    };
     let mut body_alias_scope = bindings.alias_scope;
-    for body_statement in &function.statements {
-        if !lower_source_function_body_statement(
-            context,
-            body_statement,
-            &mut bindings.values,
-            &body_alias_scope,
-            body_cache,
-            &mut function_hints,
-            &mut function_constraints,
-        )? {
-            return Ok(false);
+    let lowered: Result<bool, SourceKeyDirectoryMetadataError> = (|| {
+        for body_statement in &function.statements {
+            if !lower_source_function_body_statement(
+                context,
+                body_statement,
+                &mut bindings.values,
+                &body_alias_scope,
+                body_cache,
+                call_stack,
+                &mut function_output,
+            )? {
+                return Ok(false);
+            }
+            collect_source_template_expression_alias(
+                body_statement,
+                &mut body_alias_scope.expressions,
+            );
+            collect_source_template_expression_array_alias(
+                body_statement,
+                &mut body_alias_scope.expression_arrays,
+            );
         }
-        collect_source_template_expression_alias(body_statement, &mut body_alias_scope.expressions);
-        collect_source_template_expression_array_alias(
-            body_statement,
-            &mut body_alias_scope.expression_arrays,
-        );
+        Ok(true)
+    })();
+    call_stack.remove(&function.name);
+    if !lowered? {
+        return Ok(false);
     }
 
-    hints.extend(function_hints);
-    constraints.extend(function_constraints);
+    output.hints.extend(function_hints);
+    output.constraints.extend(function_constraints);
     Ok(true)
+}
+
+struct SourceTemplateFunctionOutput<'a> {
+    hints: &'a mut Vec<HintInfo>,
+    constraints: &'a mut Vec<ConstraintCode>,
 }
 
 struct SourceFunctionCallBindings {
@@ -1094,8 +1118,8 @@ fn lower_source_function_body_statement(
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
     alias_scope: &SourceExpressionAliasScope,
     body_cache: &mut SourceControlBodyCache,
-    hints: &mut Vec<HintInfo>,
-    constraints: &mut Vec<ConstraintCode>,
+    call_stack: &mut BTreeSet<String>,
+    output: &mut SourceTemplateFunctionOutput<'_>,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
         let applied = apply_source_static_declaration(context.program, statement, values);
@@ -1119,8 +1143,8 @@ fn lower_source_function_body_statement(
                         values,
                         &body_alias_scope,
                         body_cache,
-                        hints,
-                        constraints,
+                        call_stack,
+                        output,
                     )? {
                         return Ok(false);
                     }
@@ -1161,8 +1185,8 @@ fn lower_source_function_body_statement(
                             values,
                             &loop_alias_scope,
                             body_cache,
-                            hints,
-                            constraints,
+                            call_stack,
+                            output,
                         )? {
                             return Ok(false);
                         }
@@ -1214,7 +1238,18 @@ fn lower_source_function_body_statement(
             }
         })?
     {
-        hints.push(hint);
+        output.hints.push(hint);
+        return Ok(true);
+    }
+    if lower_source_template_function_call(
+        context,
+        statement,
+        values,
+        alias_scope,
+        body_cache,
+        call_stack,
+        output,
+    )? {
         return Ok(true);
     }
     match lower_source_template_boolean_constraint(
@@ -1227,7 +1262,7 @@ fn lower_source_function_body_statement(
         &alias_scope.expression_arrays,
     ) {
         Ok(Some(constraint)) => {
-            constraints.push(constraint);
+            output.constraints.push(constraint);
             Ok(true)
         }
         Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
