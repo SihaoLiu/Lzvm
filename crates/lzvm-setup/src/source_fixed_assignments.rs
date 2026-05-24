@@ -411,6 +411,10 @@ fn collect_source_fixed_template_assignment(
     }
     if statement.kind == FunctionStatementKind::For {
         let mut static_loop_applied = false;
+        let partial_value_count_before = source_fixed_partial_value_count(partial_values);
+        let zero_default_count_before = zero_default_columns.len();
+        let copy_count_before = copy_operations.len();
+        let dynamic_count_before = dynamic_operations.len();
         match source_static_for_loop_with_lookup(
             context.program,
             context.module,
@@ -447,7 +451,12 @@ fn collect_source_fixed_template_assignment(
                 return Err(source_fixed_template_assignment_error(statement, error));
             }
         }
-        if static_loop_applied {
+        let static_loop_progressed = partial_value_count_before
+            != source_fixed_partial_value_count(partial_values)
+            || zero_default_count_before != zero_default_columns.len()
+            || copy_count_before != copy_operations.len()
+            || dynamic_count_before != dynamic_operations.len();
+        if static_loop_applied && static_loop_progressed {
             return Ok(());
         }
         collect_source_fixed_dynamic_for_assignment(
@@ -555,6 +564,13 @@ fn collect_source_fixed_template_assignment(
             Ok(())
         }
     }
+}
+
+fn source_fixed_partial_value_count(values: &BTreeMap<String, Vec<Option<u64>>>) -> usize {
+    values
+        .values()
+        .map(|values| values.iter().filter(|value| value.is_some()).count())
+        .sum()
 }
 
 fn collect_source_fixed_table_fill_statement(

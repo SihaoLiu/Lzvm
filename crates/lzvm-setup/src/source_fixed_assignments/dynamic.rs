@@ -29,6 +29,7 @@ pub(crate) struct SourceFixedDynamicOperation {
     loop_variable: String,
     start: usize,
     count: usize,
+    prefix_statements: Vec<FunctionStatement>,
     expression: Expression,
     constant_values: SourceFixedConstantValues,
 }
@@ -63,18 +64,31 @@ pub(crate) fn apply_source_fixed_dynamic_operations(
                 operation.loop_variable.clone(),
                 FixedFileTemplateValue::Integer(row_value),
             );
-            let Some(value) = source_fixed_expression_value_at_row(
-                &SourceFixedExpressionValueAtRowRequest {
+            for statement in &operation.prefix_statements {
+                if !apply_source_fixed_dynamic_local_statement(
                     program,
-                    source_name: &operation.source_name,
-                    source: &operation.source,
-                    column_name: &operation.target_column,
-                    expression: &operation.expression,
+                    operation,
+                    statement,
+                    row,
                     row_count,
-                    constant_values: &constant_values,
+                    &mut constant_values,
                     column_values,
-                },
+                )? {
+                    unresolved = true;
+                    break;
+                }
+            }
+            if unresolved {
+                break;
+            }
+            let Some(value) = source_fixed_dynamic_expression_value(
+                program,
+                operation,
+                &operation.expression,
                 row,
+                row_count,
+                &constant_values,
+                column_values,
             )?
             else {
                 unresolved = true;
@@ -115,6 +129,7 @@ pub(super) fn collect_source_fixed_dynamic_for_assignment(
         return Ok(());
     };
     let mut operations = Vec::new();
+    let mut prefix_statements = Vec::new();
     for body_statement in loop_info.body_statements.iter() {
         let Some((target_column, expression)) = source_fixed_dynamic_assignment_statement(
             context,
@@ -123,6 +138,10 @@ pub(super) fn collect_source_fixed_dynamic_for_assignment(
             assignment_values,
         )?
         else {
+            if source_fixed_dynamic_local_statement(body_statement) {
+                prefix_statements.push(body_statement.clone());
+                continue;
+            }
             return Ok(());
         };
         operations.push(SourceFixedDynamicOperation {
@@ -136,12 +155,133 @@ pub(super) fn collect_source_fixed_dynamic_for_assignment(
             loop_variable: loop_info.variable_name.clone(),
             start: loop_info.start,
             count: loop_info.count,
+            prefix_statements: prefix_statements.clone(),
             expression,
             constant_values: assignment_values.fixed_constant_values(),
         });
     }
     dynamic_operations.extend(operations);
     Ok(())
+}
+
+fn apply_source_fixed_dynamic_local_statement(
+    program: &SourceProgram,
+    operation: &SourceFixedDynamicOperation,
+    statement: &FunctionStatement,
+    row: usize,
+    row_count: usize,
+    constant_values: &mut SourceFixedConstantValues,
+    column_values: &BTreeMap<String, Vec<u64>>,
+) -> Result<bool, SourceFixedColumnsWriteError> {
+    if let Some((name, expression)) = source_fixed_dynamic_local_declaration(statement) {
+        let Some(value) = source_fixed_dynamic_expression_value(
+            program,
+            operation,
+            expression,
+            row,
+            row_count,
+            constant_values,
+            column_values,
+        )?
+        else {
+            return Ok(false);
+        };
+        constant_values.scalars.insert(
+            name.to_owned(),
+            FixedFileTemplateValue::Integer(i128::from(value)),
+        );
+        return Ok(true);
+    }
+
+    let Some((name, expression)) = source_fixed_dynamic_local_assignment(statement) else {
+        return Ok(false);
+    };
+    let Some(value) = source_fixed_dynamic_expression_value(
+        program,
+        operation,
+        expression,
+        row,
+        row_count,
+        constant_values,
+        column_values,
+    )?
+    else {
+        return Ok(false);
+    };
+    constant_values.scalars.insert(
+        name.to_owned(),
+        FixedFileTemplateValue::Integer(i128::from(value)),
+    );
+    Ok(true)
+}
+
+fn source_fixed_dynamic_expression_value(
+    program: &SourceProgram,
+    operation: &SourceFixedDynamicOperation,
+    expression: &Expression,
+    row: usize,
+    row_count: usize,
+    constant_values: &SourceFixedConstantValues,
+    column_values: &BTreeMap<String, Vec<u64>>,
+) -> Result<Option<u64>, SourceFixedColumnsWriteError> {
+    source_fixed_expression_value_at_row(
+        &SourceFixedExpressionValueAtRowRequest {
+            program,
+            source_name: &operation.source_name,
+            source: &operation.source,
+            column_name: &operation.target_column,
+            expression,
+            row_count,
+            constant_values,
+            column_values,
+        },
+        row,
+    )
+}
+
+fn source_fixed_dynamic_local_statement(statement: &FunctionStatement) -> bool {
+    source_fixed_dynamic_local_declaration(statement).is_some()
+        || source_fixed_dynamic_local_assignment(statement).is_some()
+}
+
+fn source_fixed_dynamic_local_declaration(
+    statement: &FunctionStatement,
+) -> Option<(&str, &Expression)> {
+    if statement.kind != FunctionStatementKind::Declaration {
+        return None;
+    }
+    let Some(FunctionStatementDeclaration::Variable(declaration)) = statement.declaration.as_ref()
+    else {
+        return None;
+    };
+    if declaration.type_name != "int" || !declaration.array_dims.is_empty() {
+        return None;
+    }
+    declaration
+        .initializer_expression
+        .as_ref()
+        .map(|expression| (declaration.name.as_str(), expression))
+}
+
+fn source_fixed_dynamic_local_assignment(
+    statement: &FunctionStatement,
+) -> Option<(&str, &Expression)> {
+    if statement.kind != FunctionStatementKind::Expression {
+        return None;
+    }
+    let expression = statement.value_expression.as_ref()?;
+    let ExpressionKind::Binary {
+        op: BinaryOperator::Assign,
+        left,
+        right,
+    } = &strip_source_fixed_group_expression(expression).kind
+    else {
+        return None;
+    };
+    let ExpressionKind::Name(name) = &strip_source_fixed_group_expression(left).kind else {
+        return None;
+    };
+    Some((name.as_str(), right))
 }
 
 struct SourceFixedDynamicForLoop {
