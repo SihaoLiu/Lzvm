@@ -17,8 +17,8 @@ use crate::{
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scalar_slots::SourceScalarSlots,
     source_statement_hints::{
-        lower_source_lookup_statement, source_statement_line, SourceExpressionArrayAlias,
-        SourceExpressionArrayAliases, SourceLookupInputs,
+        lower_source_annotation_statement, lower_source_lookup_statement, source_statement_line,
+        SourceExpressionArrayAlias, SourceExpressionArrayAliases, SourceLookupInputs,
     },
     source_static_values::{
         evaluate_source_static_expression, insert_source_static_array,
@@ -237,6 +237,16 @@ fn lower_source_global_hint_statement(
                         source_name: context.module.source_name.clone(),
                         source,
                     }
+                })?
+            {
+                if source_global_hint_is_structured(&hint) {
+                    context.hints.push(hint);
+                }
+            }
+            if let Some(hint) = lower_source_annotation_statement(&lookup_inputs, statement)
+                .map_err(|source| SourceKeyDirectoryMetadataError::Lex {
+                    source_name: context.module.source_name.clone(),
+                    source,
                 })?
             {
                 if source_global_hint_is_structured(&hint) {

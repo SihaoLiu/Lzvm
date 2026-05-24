@@ -35,12 +35,13 @@ use crate::{
         concrete_template_names, declaration_in_function_body, declaration_in_inactive_template,
     },
     source_statement_hints::{
-        lower_source_assignment_statement, lower_source_lookup_statement,
-        lower_unsupported_source_assignment_statement, lower_unsupported_source_call_statement,
-        lower_unsupported_source_constraint_statement, lower_unsupported_source_template_statement,
-        source_statement_contains_assignment_operator, source_statement_first_token_kind,
-        source_statement_is_source_directive, source_statement_line, SourceExpressionArrayAlias,
-        SourceExpressionArrayAliases, SourceLookupInputs,
+        lower_source_annotation_statement, lower_source_assignment_statement,
+        lower_source_lookup_statement, lower_unsupported_source_assignment_statement,
+        lower_unsupported_source_call_statement, lower_unsupported_source_constraint_statement,
+        lower_unsupported_source_template_statement, source_statement_contains_assignment_operator,
+        source_statement_first_token_kind, source_statement_is_source_directive,
+        source_statement_line, SourceExpressionArrayAlias, SourceExpressionArrayAliases,
+        SourceLookupInputs,
     },
     source_static_values::{
         evaluate_source_static_expression, insert_source_static_array, source_active_static_name,
@@ -531,6 +532,17 @@ fn lower_source_template_statement(
     };
     if let Some(hint) =
         lower_source_lookup_statement(&lookup_inputs, statement).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: context.module.source_name.clone(),
+                source,
+            }
+        })?
+    {
+        hints.push(hint);
+        return Ok(());
+    }
+    if let Some(hint) =
+        lower_source_annotation_statement(&lookup_inputs, statement).map_err(|source| {
             SourceKeyDirectoryMetadataError::Lex {
                 source_name: context.module.source_name.clone(),
                 source,
@@ -1512,6 +1524,17 @@ fn lower_source_function_body_statement(
     };
     if let Some(hint) =
         lower_source_lookup_statement(&lookup_inputs, statement).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: context.module.source_name.clone(),
+                source,
+            }
+        })?
+    {
+        output.hints.push(hint);
+        return Ok(true);
+    }
+    if let Some(hint) =
+        lower_source_annotation_statement(&lookup_inputs, statement).map_err(|source| {
             SourceKeyDirectoryMetadataError::Lex {
                 source_name: context.module.source_name.clone(),
                 source,

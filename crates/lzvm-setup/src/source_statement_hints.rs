@@ -160,6 +160,35 @@ pub(crate) fn lower_source_assignment_statement(
     }))
 }
 
+pub(crate) fn lower_source_annotation_statement(
+    inputs: &SourceLookupInputs<'_>,
+    statement: &FunctionStatement,
+) -> Result<Option<HintInfo>, LexError> {
+    let line = source_statement_line(inputs.module, statement);
+    let tokens = lex_source(&line)?;
+    let Some(name) = source_annotation_name(&tokens) else {
+        return Ok(None);
+    };
+    let context = SourceLookupLowering {
+        program: inputs.program,
+        module: inputs.module,
+        line: &line,
+        tokens: &tokens,
+        values: inputs.values,
+        expression_aliases: inputs.expression_aliases,
+        expression_array_aliases: inputs.expression_array_aliases,
+        scalar_slots: inputs.scalar_slots,
+        opening_points: inputs.opening_points,
+    };
+    let Some(fields) = source_annotation_fields(&context) else {
+        return Ok(None);
+    };
+    Ok(Some(HintInfo {
+        name: name.to_owned(),
+        fields,
+    }))
+}
+
 pub(crate) fn source_lookup_statement_expressions(
     module: &SourceProgramModule,
     statement: &FunctionStatement,
@@ -450,6 +479,81 @@ fn source_lookup_call_matches(hint_name: &str, call_name: &str) -> bool {
     }
 }
 
+fn source_annotation_name(tokens: &[Token]) -> Option<&str> {
+    let name = tokens.first()?;
+    (name.kind == TokenKind::AtIdentifier).then_some(name.lexeme.as_str())
+}
+
+fn source_annotation_fields(context: &SourceLookupLowering<'_>) -> Option<Vec<HintFieldInfo>> {
+    let second = context.tokens.get(1)?;
+    match second.kind {
+        TokenKind::LBrace => source_annotation_object_fields(context),
+        TokenKind::LBracket => source_annotation_array_field(context),
+        _ => source_annotation_value_field(context),
+    }
+}
+
+fn source_annotation_object_fields(
+    context: &SourceLookupLowering<'_>,
+) -> Option<Vec<HintFieldInfo>> {
+    let close_index = context
+        .tokens
+        .iter()
+        .rposition(|token| token.kind == TokenKind::RBrace)?;
+    if close_index + 1 != context.tokens.len() {
+        return None;
+    }
+    let ranges = top_level_argument_ranges(context.tokens, 1, close_index)?;
+    let mut fields = Vec::new();
+    for range in ranges {
+        let argument = split_named_argument(context.tokens, range);
+        let field_name = source_annotation_field_name(context, &argument)?;
+        let value_range = source_lookup_argument_value_range(&argument)?;
+        let values = source_lookup_values(context, value_range)?.values;
+        fields.push(HintFieldInfo {
+            name: field_name,
+            values,
+        });
+    }
+    Some(fields)
+}
+
+fn source_annotation_array_field(context: &SourceLookupLowering<'_>) -> Option<Vec<HintFieldInfo>> {
+    if !context
+        .tokens
+        .last()
+        .is_some_and(|token| token.kind == TokenKind::RBracket)
+    {
+        return None;
+    }
+    Some(vec![HintFieldInfo {
+        name: "values".to_owned(),
+        values: source_lookup_values(context, (1, context.tokens.len()))?.values,
+    }])
+}
+
+fn source_annotation_value_field(context: &SourceLookupLowering<'_>) -> Option<Vec<HintFieldInfo>> {
+    Some(vec![HintFieldInfo {
+        name: "value".to_owned(),
+        values: source_lookup_values(context, (1, context.tokens.len()))?.values,
+    }])
+}
+
+fn source_annotation_field_name(
+    context: &SourceLookupLowering<'_>,
+    argument: &SourceLookupArgument,
+) -> Option<String> {
+    if let Some(name) = argument.name.as_ref() {
+        return Some(name.clone());
+    }
+    source_lookup_bare_name(
+        context.module,
+        context.line,
+        context.tokens,
+        argument.value_range,
+    )
+}
+
 fn top_level_argument_ranges(
     tokens: &[Token],
     open_index: usize,
@@ -468,8 +572,8 @@ fn top_level_argument_ranges(
         .skip(open_index + 1)
     {
         match token.kind {
-            TokenKind::LParen | TokenKind::LBracket => depth += 1,
-            TokenKind::RParen | TokenKind::RBracket => depth -= 1,
+            TokenKind::LParen | TokenKind::LBracket | TokenKind::LBrace => depth += 1,
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => depth -= 1,
             TokenKind::Comma if depth == 0 => {
                 if start == index {
                     return None;

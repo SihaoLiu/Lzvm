@@ -341,12 +341,12 @@ impl SourceScalarSlots {
 
     pub(crate) fn operand(&self, name: &str) -> Result<CodeOperand, SourceScalarSlotError> {
         if let Some(slot) = self.commitments.get(name) {
-            if slot.stage != 1 || slot.dimension != 1 {
+            if !slot.lengths.is_empty() {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
                 });
             }
-            return Ok(CodeOperand::commitment(slot.id, 1));
+            return Ok(CodeOperand::commitment(slot.id, slot.dimension));
         }
 
         if let Some(slot) = self.unit_values.get(name) {
