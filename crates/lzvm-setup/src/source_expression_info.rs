@@ -31,8 +31,8 @@ use crate::{
         lower_unsupported_source_assignment_statement, lower_unsupported_source_call_statement,
         lower_unsupported_source_constraint_statement, lower_unsupported_source_template_statement,
         source_statement_contains_assignment_operator, source_statement_first_token_kind,
-        source_statement_line, SourceExpressionArrayAlias, SourceExpressionArrayAliases,
-        SourceLookupInputs,
+        source_statement_is_source_directive, source_statement_line, SourceExpressionArrayAlias,
+        SourceExpressionArrayAliases, SourceLookupInputs,
     },
     source_static_values::{
         evaluate_source_static_expression, insert_source_static_array, source_active_static_name,
@@ -412,6 +412,14 @@ fn lower_source_template_statement(
             Err(error) => return Err(error),
         }
     }
+    if source_statement_is_source_directive(context.module, statement).map_err(|source| {
+        SourceKeyDirectoryMetadataError::Lex {
+            source_name: context.module.source_name.clone(),
+            source,
+        }
+    })? {
+        return Ok(());
+    }
     if statement.kind != FunctionStatementKind::Expression {
         hints.push(lower_unsupported_source_template_statement(
             context.module,
@@ -436,12 +444,6 @@ fn lower_source_template_statement(
                 | TokenKind::Public
                 | TokenKind::ProofValue
                 | TokenKind::Challenge
-        ) {
-            return Ok(());
-        }
-        if matches!(
-            kind,
-            TokenKind::Include | TokenKind::Require | TokenKind::Use
         ) {
             return Ok(());
         }

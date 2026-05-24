@@ -42,6 +42,33 @@ pub(crate) fn source_statement_first_token_kind(
     Ok(tokens.first().map(|token| token.kind))
 }
 
+pub(crate) fn source_statement_is_source_directive(
+    module: &SourceProgramModule,
+    statement: &FunctionStatement,
+) -> Result<bool, LexError> {
+    let text = &module.source.contents[statement.start..statement.end];
+    let tokens = lex_source(text)?;
+    let Some(first) = tokens.first() else {
+        return Ok(false);
+    };
+    if source_directive_token(first.kind) {
+        return Ok(true);
+    }
+    if matches!(first.kind, TokenKind::Public | TokenKind::Private) {
+        return Ok(tokens
+            .get(1)
+            .is_some_and(|token| source_directive_token(token.kind)));
+    }
+    Ok(false)
+}
+
+fn source_directive_token(kind: TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Include | TokenKind::Require | TokenKind::Use
+    )
+}
+
 pub(crate) fn source_statement_contains_assignment_operator(
     module: &SourceProgramModule,
     statement: &FunctionStatement,
