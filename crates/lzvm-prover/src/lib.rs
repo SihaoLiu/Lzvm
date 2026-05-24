@@ -32,6 +32,7 @@ use crate::setup_preflight::{validate_public_values_metadata, SetupPreflightErro
 pub mod constant_opening;
 pub mod constant_tree_opening;
 pub mod contribution;
+mod contribution_eth_block;
 mod fixed_material;
 pub mod fri_polynomial;
 pub mod global_constraints;

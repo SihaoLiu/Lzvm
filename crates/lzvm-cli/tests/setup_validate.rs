@@ -12108,6 +12108,7 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
     .expect("challenge should derive");
     let proof_path = dir.join("proof.bin");
     let public_values_path = dir.join("public_values.bin");
+    let challenge_values_path = dir.join("challenge_values.bin");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
@@ -12132,11 +12133,68 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
         &mut stdout,
         &mut stderr,
     );
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let mut writer_stdout = Vec::new();
+    let mut writer_stderr = Vec::new();
+    let writer_code = run_cli(
+        &[
+            "prove",
+            "write-contribution-challenges",
+            dir.to_str().expect("setup path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+            challenge_values_path
+                .to_str()
+                .expect("challenge path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+        ],
+        &mut writer_stdout,
+        &mut writer_stderr,
+    );
+
+    let mut challenge_stdout = Vec::new();
+    let mut challenge_stderr = Vec::new();
+    let challenge_code = run_cli(
+        &[
+            "verify",
+            "contribution-challenge",
+            dir.to_str().expect("setup path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+            challenge_values_path
+                .to_str()
+                .expect("challenge path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+        ],
+        &mut challenge_stdout,
+        &mut challenge_stderr,
+    );
 
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
     assert!(stderr.is_empty());
     let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert_eq!(
+        writer_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&writer_stderr)
+    );
+    assert!(writer_stderr.is_empty());
+    let writer_stdout_text =
+        String::from_utf8(writer_stdout).expect("writer stdout should be utf-8");
+    assert_eq!(
+        challenge_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&challenge_stderr)
+    );
+    assert!(challenge_stderr.is_empty());
+    let challenge_stdout_text =
+        String::from_utf8(challenge_stdout).expect("challenge stdout should be utf-8");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
     assert!(stdout_text.contains("program_image_caches=1\n"));
     assert!(stdout_text.contains(&format!(
         "program_image_cache_segment_hash={}\n",
@@ -12180,6 +12238,42 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
         block_input.block_rlp.len()
     )));
     assert!(stdout_text.contains("eth_extra_header_fields=1\neth_extra_body_fields=1\n"));
+    assert_eth_block_binding_summary(
+        &stdout_text,
+        &block_input,
+        &block_segment_hash,
+        proof
+            .segments
+            .iter()
+            .find(|segment| segment.id == ETH_BLOCK_INPUT_SEGMENT_ID)
+            .expect("block segment should exist")
+            .data
+            .len(),
+    );
+    assert_eth_block_binding_summary(
+        &writer_stdout_text,
+        &block_input,
+        &block_segment_hash,
+        proof
+            .segments
+            .iter()
+            .find(|segment| segment.id == ETH_BLOCK_INPUT_SEGMENT_ID)
+            .expect("block segment should exist")
+            .data
+            .len(),
+    );
+    assert_eth_block_binding_summary(
+        &challenge_stdout_text,
+        &block_input,
+        &block_segment_hash,
+        proof
+            .segments
+            .iter()
+            .find(|segment| segment.id == ETH_BLOCK_INPUT_SEGMENT_ID)
+            .expect("block segment should exist")
+            .data
+            .len(),
+    );
     assert!(stdout_text.contains(&format!(
         "contribution_challenge={},{},{}\n",
         expected_challenge.c0.to_u64(),
@@ -13309,6 +13403,107 @@ fn verify_proof_rejects_missing_program_image_cache_value_before_next_option() {
 
 fn format_hash(hash: &[u8; 32]) -> String {
     format_hex(hash)
+}
+
+fn assert_eth_block_binding_summary(
+    stdout_text: &str,
+    block_input: &EthBlockInput,
+    block_segment_hash: &[u8; 32],
+    block_segment_bytes: usize,
+) {
+    assert!(stdout_text.contains("eth_block_inputs=1\n"));
+    assert!(stdout_text.contains(&format!(
+        "eth_block_input_hash={}\n",
+        format_hash(block_segment_hash)
+    )));
+    assert!(stdout_text.contains(&format!("eth_block_input_bytes={block_segment_bytes}\n")));
+    assert!(stdout_text.contains(&format!(
+        "eth_block_rlp_bytes={}\n",
+        block_input.block_rlp.len()
+    )));
+    assert!(stdout_text.contains(&format!(
+        "eth_block_hash={}\n",
+        format_hash(&block_input.block_hash)
+    )));
+    assert!(stdout_text.contains(&format!(
+        "eth_parent_hash={}\n",
+        format_hash(&block_input.parent_hash)
+    )));
+    assert!(stdout_text.contains(&format!(
+        "eth_ommers_hash={}\n",
+        format_hash(&block_input.ommers_hash)
+    )));
+    assert!(stdout_text.contains(&format!(
+        "eth_beneficiary={}\n",
+        format_hex(&block_input.beneficiary)
+    )));
+    assert!(stdout_text.contains(&format!(
+        "eth_state_root={}\n",
+        format_hash(&block_input.state_root)
+    )));
+    assert!(stdout_text.contains(&format!(
+        "eth_receipts_root={}\n",
+        format_hash(&block_input.receipts_root)
+    )));
+    assert!(stdout_text.contains(&format!(
+        "eth_logs_bloom={}\n",
+        format_hex(&block_input.logs_bloom)
+    )));
+    assert!(stdout_text.contains(&format!(
+        "eth_difficulty={}\n",
+        format_u256(&block_input.difficulty)
+    )));
+    assert!(stdout_text.contains(&format!("eth_block_number={}\n", block_input.block_number)));
+    assert!(stdout_text.contains(&format!("eth_block_timestamp={}\n", block_input.timestamp)));
+    assert!(stdout_text.contains(&format!(
+        "eth_extra_data={}\n",
+        format_hex(&block_input.extra_data)
+    )));
+    assert!(stdout_text.contains(&format!("eth_gas_limit={}\n", block_input.gas_limit)));
+    assert!(stdout_text.contains(&format!("eth_gas_used={}\n", block_input.gas_used)));
+    assert!(stdout_text.contains(&format!(
+        "eth_base_fee_per_gas={}\n",
+        format_optional_u256(block_input.base_fee_per_gas.as_ref())
+    )));
+    assert!(stdout_text.contains(&format!(
+        "eth_mix_hash={}\n",
+        format_hash(&block_input.mix_hash)
+    )));
+    assert!(stdout_text.contains(&format!("eth_nonce={}\n", format_hex(&block_input.nonce))));
+    assert!(stdout_text.contains(&format!(
+        "eth_transactions_root={}\n",
+        format_hash(&block_input.transactions_root)
+    )));
+    assert!(stdout_text.contains(&format!(
+        "eth_transaction_trie_preimages={}\n",
+        block_input.transactions.hash_preimages.len()
+    )));
+    match (&block_input.receipts, &block_input.receipts_rlp) {
+        (Some(receipts), Some(receipts_rlp)) => {
+            assert!(stdout_text.contains("eth_receipts=present\n"));
+            assert!(
+                stdout_text.contains(&format!("eth_receipts_rlp_bytes={}\n", receipts_rlp.len()))
+            );
+            assert!(stdout_text.contains(&format!(
+                "eth_receipt_trie_preimages={}\n",
+                receipts.hash_preimages.len()
+            )));
+        }
+        (None, None) => assert!(stdout_text.contains("eth_receipts=absent\n")),
+        _ => panic!("receipt fixture should be internally consistent"),
+    }
+    match (&block_input.withdrawals_root, &block_input.withdrawals) {
+        (Some(root), Some(withdrawals)) => {
+            assert!(stdout_text.contains("eth_withdrawals=present\n"));
+            assert!(stdout_text.contains(&format!("eth_withdrawals_root={}\n", format_hash(root))));
+            assert!(stdout_text.contains(&format!(
+                "eth_withdrawal_trie_preimages={}\n",
+                withdrawals.hash_preimages.len()
+            )));
+        }
+        (None, None) => assert!(stdout_text.contains("eth_withdrawals=absent\n")),
+        _ => panic!("withdrawal fixture should be internally consistent"),
+    }
 }
 
 fn format_hex(bytes: &[u8]) -> String {

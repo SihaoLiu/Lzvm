@@ -21,6 +21,7 @@ use lzvm_artifacts::setup_manifest::SetupDirectoryManifestError;
 use lzvm_artifacts::verification_key::VerificationKeyRoot;
 use lzvm_field::{poseidon2_hash_16, Ext3, Felt, FieldError, PoseidonTranscript, TranscriptError};
 
+use crate::contribution_eth_block::contribution_eth_block_input_reports;
 use crate::proof_preflight::{public_values_as_fields, PublicValueFieldError};
 use crate::proof_values::{
     flatten_pcs_proof_values, load_pcs_proof_values_from_segments, LoadPcsProofValuesSegmentError,
@@ -32,6 +33,8 @@ use crate::setup_preflight::{
 };
 use crate::{ProveUnitSchedule, ProveWitnessTraceCommitments};
 use sha2::{Digest, Sha256};
+
+pub use crate::contribution_eth_block::ContributionEthBlockInputReport;
 
 const CONTRIBUTION_ROOT_SLOT_START: usize = 4;
 const CONTRIBUTION_ROOT_SLOT_END: usize = 8;
@@ -67,6 +70,7 @@ pub struct ContributionChallengeReport {
     pub eth_block_input_block_rlp_byte_counts: Vec<usize>,
     pub eth_block_input_extra_header_field_counts: Vec<usize>,
     pub eth_block_input_extra_body_field_counts: Vec<usize>,
+    pub eth_block_inputs: Vec<ContributionEthBlockInputReport>,
     pub proof_value_count: usize,
     pub contribution_count: usize,
     pub challenge: Ext3,
@@ -711,6 +715,7 @@ pub fn derive_global_challenge_from_files(
         &entries,
     )?;
     validate_optional_contribution_challenge_values(&proof.segments, challenge)?;
+    let eth_block_inputs = contribution_eth_block_input_reports(&public_report);
 
     Ok(ContributionChallengeReport {
         proof_count: 1,
@@ -729,6 +734,7 @@ pub fn derive_global_challenge_from_files(
             .eth_block_input_extra_header_field_counts,
         eth_block_input_extra_body_field_counts: public_report
             .eth_block_input_extra_body_field_counts,
+        eth_block_inputs,
         proof_value_count: packed_proof_values.len(),
         contribution_count: entries.len(),
         challenge,
@@ -763,6 +769,7 @@ pub fn derive_global_challenge_from_contribution_proofs(
     let mut eth_block_input_block_rlp_byte_counts = None::<Vec<usize>>;
     let mut eth_block_input_extra_header_field_counts = None::<Vec<usize>>;
     let mut eth_block_input_extra_body_field_counts = None::<Vec<usize>>;
+    let mut eth_block_inputs = None::<Vec<ContributionEthBlockInputReport>>;
     let mut packed_proof_values = None::<Vec<Felt>>;
     let mut bound_segments = None::<Vec<ProofSegment>>;
     let mut entries = Vec::new();
@@ -802,6 +809,9 @@ pub fn derive_global_challenge_from_contribution_proofs(
                 .eth_block_input_extra_body_field_counts
                 .clone(),
         ));
+        if eth_block_inputs.is_none() {
+            eth_block_inputs = Some(contribution_eth_block_input_reports(&public_report));
+        }
 
         let proof_values =
             load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)?;
@@ -867,6 +877,7 @@ pub fn derive_global_challenge_from_contribution_proofs(
             .unwrap_or_default(),
         eth_block_input_extra_body_field_counts: eth_block_input_extra_body_field_counts
             .unwrap_or_default(),
+        eth_block_inputs: eth_block_inputs.unwrap_or_default(),
         proof_value_count,
         contribution_count: entries.len(),
         challenge,

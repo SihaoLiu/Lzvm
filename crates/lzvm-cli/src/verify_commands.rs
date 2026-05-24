@@ -23,7 +23,7 @@ use lzvm_prover::contribution::{
 use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
 use lzvm_prover::setup_preflight::validate_setup_preflight_from_files;
 
-use crate::{program_image_cache, prove_plan};
+use crate::{eth_block_output, program_image_cache, prove_plan};
 
 pub(super) fn verify_preflight(
     proof_bin: &str,
@@ -1102,31 +1102,8 @@ fn write_contribution_binding_summary(
     }
     if report.eth_block_input_count > 0 {
         let _ = writeln!(stdout, "eth_block_inputs={}", report.eth_block_input_count);
-        for (index, hash) in report.eth_block_input_hashes.iter().enumerate() {
-            let _ = writeln!(
-                stdout,
-                "eth_block_input_hash={}",
-                prove_plan::format_hash(hash)
-            );
-            if let Some(byte_count) = report.eth_block_input_byte_counts.get(index) {
-                let _ = writeln!(stdout, "eth_block_input_bytes={byte_count}");
-            }
-            if let Some(block_rlp_bytes) = report.eth_block_input_block_rlp_byte_counts.get(index) {
-                let _ = writeln!(stdout, "eth_block_rlp_bytes={block_rlp_bytes}");
-            }
-            write_eth_extra_field_summary(
-                stdout,
-                report
-                    .eth_block_input_extra_header_field_counts
-                    .get(index)
-                    .copied()
-                    .unwrap_or(0),
-                report
-                    .eth_block_input_extra_body_field_counts
-                    .get(index)
-                    .copied()
-                    .unwrap_or(0),
-            );
+        for input in &report.eth_block_inputs {
+            eth_block_output::write_contribution_eth_block_input(stdout, input);
         }
     }
 }

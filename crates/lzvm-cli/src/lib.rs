@@ -13,6 +13,7 @@ use lzvm_setup::{
 
 mod contribution_challenge;
 mod eth_block_input;
+mod eth_block_output;
 mod eth_block_prove_input;
 mod eth_block_public_values;
 mod eth_block_summary;
