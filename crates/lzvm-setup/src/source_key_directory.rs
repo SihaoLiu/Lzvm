@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use lzvm_artifacts::expression_info::{CodeOperand, ExpressionInfo, ExpressionInfoError};
 use lzvm_artifacts::global_info::{
@@ -15,11 +16,11 @@ use lzvm_artifacts::setup_info::{
 };
 use lzvm_artifacts::verifier_info::{encode_verifier_info, VerifierInfoError};
 use lzvm_pil::{
-    lex_source, parse_expression_tokens, AirGroupValueDeclaration, AirTemplateDeclaration,
-    BinaryOperator, ColumnDeclaration, ColumnItem, ColumnKind, Expression, ExpressionKind,
-    FixedFileTemplateValue, LexError, ParseError, SourceFile, SourceLoaderConfig, SourceProgram,
-    SourceProgramError, SourceProgramLoader, SourceProgramModule, Token, UnaryOperator,
-    ValueDeclarationKind,
+    lex_source, parse_expression_tokens, AirGroupValueDeclaration, AirInstanceDeclaration,
+    AirTemplateDeclaration, BinaryOperator, ColumnDeclaration, ColumnItem, ColumnKind, Expression,
+    ExpressionKind, FixedFileTemplateValue, LexError, ParseError, SourceFile, SourceLoaderConfig,
+    SourceProgram, SourceProgramError, SourceProgramLoader, SourceProgramModule, Token,
+    UnaryOperator, ValueDeclarationKind,
 };
 
 use crate::{
@@ -107,6 +108,28 @@ struct SourceUnitMetadataPayload {
     expression_path: Option<PathBuf>,
     expression_bytes: Vec<u8>,
     verifier_path: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SourceUnitMetadataPayloadKey {
+    setup_path: PathBuf,
+    expression_path: Option<PathBuf>,
+    verifier_path: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct SourceMetadataTemplateValueKey {
+    source_name: String,
+    template_start: usize,
+    template_end: usize,
+    instance_source_name: Option<String>,
+    instance_start: Option<usize>,
+    instance_end: Option<usize>,
+}
+
+#[derive(Default)]
+struct SourceMetadataTemplateValueCache {
+    values: BTreeMap<SourceMetadataTemplateValueKey, Arc<BTreeMap<String, FixedFileTemplateValue>>>,
 }
 
 impl fmt::Display for SourceKeyDirectoryMetadataError {
@@ -241,10 +264,13 @@ pub fn write_source_key_directory_metadata(
         let mut body_caches = SourceControlBodyCaches::default();
         let active_templates = concrete_template_names(&program);
         let mut template_contexts = BTreeMap::<u64, SourceUnitTemplateContext>::new();
-        for unit in &layout.units {
-            let Some(setup_path) = unit.setup_info_binary() else {
+        for (unit_index, unit) in layout.units.iter().enumerate() {
+            let Some(payload_key) = source_unit_metadata_payload_key(unit) else {
                 continue;
             };
+            if !source_unit_metadata_payload_is_last_writer(&layout.units, unit_index) {
+                continue;
+            }
             let row_count = source_layout_unit_row_count(unit, &row_counts)?;
             if !template_contexts.contains_key(&row_count) {
                 let constant_values = source_scalar_constant_values(&program, row_count);
@@ -334,11 +360,11 @@ pub fn write_source_key_directory_metadata(
             let expression_bytes =
                 lzvm_artifacts::expression_info::encode_expression_info(&expression_info)?;
             unit_payloads.push(SourceUnitMetadataPayload {
-                setup_path,
+                setup_path: payload_key.setup_path,
                 setup_bytes,
-                expression_path: unit.expression_info_binary(),
+                expression_path: payload_key.expression_path,
                 expression_bytes,
-                verifier_path: unit.verifier_info_binary(),
+                verifier_path: payload_key.verifier_path,
             });
         }
         Ok::<_, SourceKeyDirectoryMetadataError>((layout.units.len(), unit_payloads))
@@ -427,6 +453,58 @@ fn source_layout_unit_row_count(
         .next()
         .copied()
         .ok_or_else(|| unsupported_source_message("source row counts are empty"))
+}
+
+fn source_unit_metadata_payload_is_last_writer(units: &[KeyUnitPaths], index: usize) -> bool {
+    let Some(unit) = units.get(index) else {
+        return false;
+    };
+    let Some(key) = source_unit_metadata_payload_key(unit) else {
+        return false;
+    };
+    !units[index + 1..]
+        .iter()
+        .any(|unit| source_unit_metadata_payload_key(unit).is_some_and(|later| later == key))
+}
+
+fn source_unit_metadata_payload_key(unit: &KeyUnitPaths) -> Option<SourceUnitMetadataPayloadKey> {
+    Some(SourceUnitMetadataPayloadKey {
+        setup_path: unit.setup_info_binary()?,
+        expression_path: unit.expression_info_binary(),
+        verifier_path: unit.verifier_info_binary(),
+    })
+}
+
+fn source_metadata_template_values_cached(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    template: &AirTemplateDeclaration,
+    instance: Option<&AirInstanceDeclaration>,
+    base_values: &BTreeMap<String, FixedFileTemplateValue>,
+    template_values: &SourceTemplateConstantValueCache,
+    cache: &mut SourceMetadataTemplateValueCache,
+) -> Arc<BTreeMap<String, FixedFileTemplateValue>> {
+    let key = SourceMetadataTemplateValueKey {
+        source_name: module.source_name.clone(),
+        template_start: template.body.start,
+        template_end: template.body.end,
+        instance_source_name: instance.map(|instance| instance.source_name.clone()),
+        instance_start: instance.map(|instance| instance.start),
+        instance_end: instance.map(|instance| instance.end),
+    };
+    if let Some(values) = cache.values.get(&key) {
+        return Arc::clone(values);
+    }
+    let values = Arc::new(source_metadata_template_values(
+        program,
+        module,
+        template,
+        instance,
+        base_values,
+        template_values,
+    ));
+    cache.values.insert(key, Arc::clone(&values));
+    values
 }
 
 fn validate_supported_source_program(
@@ -607,6 +685,7 @@ fn source_unit_values(
     active_templates: &BTreeSet<String>,
     template_values: &SourceTemplateConstantValueCache,
     body_caches: &mut SourceControlBodyCaches,
+    metadata_values: &mut SourceMetadataTemplateValueCache,
 ) -> Result<Vec<StageValue>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeMap::<String, (u32, Vec<u32>)>::new();
     let mut values = Vec::new();
@@ -664,13 +743,14 @@ fn source_unit_values(
             {
                 continue;
             }
-            let declaration_values = source_metadata_template_values(
+            let declaration_values = source_metadata_template_values_cached(
                 program,
                 module,
                 declaration_template,
                 unit_instance,
                 constant_values,
                 template_values,
+                metadata_values,
             );
             if source_declaration_in_unselected_static_branch(
                 program,
@@ -735,6 +815,27 @@ pub(crate) fn source_air_group_values(
     template_values: &SourceTemplateConstantValueCache,
     body_caches: &mut SourceControlBodyCaches,
 ) -> Result<(Vec<StageValue>, Vec<AggregationType>), SourceKeyDirectoryMetadataError> {
+    let mut metadata_values = SourceMetadataTemplateValueCache::default();
+    source_air_group_values_with_cache(
+        program,
+        unit_name,
+        constant_values,
+        active_templates,
+        template_values,
+        body_caches,
+        &mut metadata_values,
+    )
+}
+
+fn source_air_group_values_with_cache(
+    program: &SourceProgram,
+    unit_name: Option<(&str, &str)>,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    active_templates: &BTreeSet<String>,
+    template_values: &SourceTemplateConstantValueCache,
+    body_caches: &mut SourceControlBodyCaches,
+    metadata_values: &mut SourceMetadataTemplateValueCache,
+) -> Result<(Vec<StageValue>, Vec<AggregationType>), SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut values = Vec::new();
     let mut aggregation_types = Vec::new();
@@ -754,6 +855,7 @@ pub(crate) fn source_air_group_values(
             body_cache,
             constant_values,
             template_values,
+            metadata_values,
         };
         for declaration in &module.air_group_values {
             if declaration_in_function_body(module, declaration.start, declaration.end)
@@ -800,13 +902,14 @@ pub(crate) fn source_air_group_values(
                 if declaration_template.name != instance.template {
                     continue;
                 }
-                let values = source_metadata_template_values(
+                let values = source_metadata_template_values_cached(
                     program,
                     module,
                     declaration_template,
                     Some(instance),
                     constant_values,
                     template_values,
+                    template_context.metadata_values,
                 );
                 if source_declaration_in_unselected_static_branch(
                     program,
@@ -850,22 +953,25 @@ struct SourceGroupValueTemplateContext<'a, 'b> {
     body_cache: &'b mut SourceControlBodyCache,
     constant_values: &'a BTreeMap<String, FixedFileTemplateValue>,
     template_values: &'a SourceTemplateConstantValueCache,
+    metadata_values: &'b mut SourceMetadataTemplateValueCache,
 }
 
 fn source_air_group_values_for_any_instance(
     context: &mut SourceGroupValueTemplateContext<'_, '_>,
     declaration: &AirGroupValueDeclaration,
     declaration_template: &AirTemplateDeclaration,
-) -> Result<Option<BTreeMap<String, FixedFileTemplateValue>>, SourceKeyDirectoryMetadataError> {
+) -> Result<Option<Arc<BTreeMap<String, FixedFileTemplateValue>>>, SourceKeyDirectoryMetadataError>
+{
     for instance in source_metadata_template_instances(context.program, &declaration_template.name)
     {
-        let values = source_metadata_template_values(
+        let values = source_metadata_template_values_cached(
             context.program,
             context.module,
             declaration_template,
             Some(instance),
             context.constant_values,
             context.template_values,
+            context.metadata_values,
         );
         if source_declaration_in_unselected_static_branch(
             context.program,
@@ -967,6 +1073,7 @@ fn source_unit_setup_info(
     let n_bits_ext = n_bits
         .checked_add(1)
         .ok_or_else(|| unsupported_source_message("source domain is too large"))?;
+    let mut metadata_values = SourceMetadataTemplateValueCache::default();
     let constant_columns = source_constant_columns(
         program,
         unit_name,
@@ -974,6 +1081,7 @@ fn source_unit_setup_info(
         active_templates,
         template_values,
         body_caches,
+        &mut metadata_values,
     )?;
     let commitment_columns = source_commitment_columns(
         program,
@@ -982,6 +1090,7 @@ fn source_unit_setup_info(
         active_templates,
         template_values,
         body_caches,
+        &mut metadata_values,
     )?;
     let unit_value_map = source_unit_values(
         program,
@@ -990,14 +1099,16 @@ fn source_unit_setup_info(
         active_templates,
         template_values,
         body_caches,
+        &mut metadata_values,
     )?;
-    let (group_value_map, _) = source_air_group_values(
+    let (group_value_map, _) = source_air_group_values_with_cache(
         program,
         unit_name,
         constant_values,
         active_templates,
         template_values,
         body_caches,
+        &mut metadata_values,
     )?;
     let required_max_stage = source_required_setup_max_stage(
         &commitment_columns,
@@ -1160,6 +1271,7 @@ fn source_constant_columns(
     active_templates: &BTreeSet<String>,
     template_values: &SourceTemplateConstantValueCache,
     body_caches: &mut SourceControlBodyCaches,
+    metadata_values: &mut SourceMetadataTemplateValueCache,
 ) -> Result<Vec<ConstantColumn>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut columns = Vec::new();
@@ -1221,13 +1333,14 @@ fn source_constant_columns(
                 if declaration_template.name != instance.template {
                     continue;
                 }
-                source_metadata_template_values(
+                source_metadata_template_values_cached(
                     program,
                     module,
                     declaration_template,
                     Some(instance),
                     constant_values,
                     template_values,
+                    metadata_values,
                 )
             } else {
                 continue;
@@ -1295,6 +1408,7 @@ fn source_commitment_columns(
     active_templates: &BTreeSet<String>,
     template_values: &SourceTemplateConstantValueCache,
     body_caches: &mut SourceControlBodyCaches,
+    metadata_values: &mut SourceMetadataTemplateValueCache,
 ) -> Result<Vec<CommitmentColumn>, SourceKeyDirectoryMetadataError> {
     let mut seen = BTreeSet::new();
     let mut columns = Vec::new();
@@ -1356,22 +1470,24 @@ fn source_commitment_columns(
                 if declaration_template.name != instance.template {
                     continue;
                 }
-                source_metadata_template_values(
+                source_metadata_template_values_cached(
                     program,
                     module,
                     declaration_template,
                     Some(instance),
                     constant_values,
                     template_values,
+                    metadata_values,
                 )
             } else {
-                source_metadata_template_values(
+                source_metadata_template_values_cached(
                     program,
                     module,
                     declaration_template,
                     None,
                     constant_values,
                     template_values,
+                    metadata_values,
                 )
             };
             if source_declaration_in_unselected_static_branch(
@@ -1770,5 +1886,85 @@ fn parse_i128_literal(value: &str) -> Result<i128, SourceKeyDirectoryMetadataErr
         value
             .parse::<i128>()
             .map_err(|_| unsupported_source_message("invalid source integer literal"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use lzvm_artifacts::key_directory::{KeyUnitKind, KeyUnitPaths};
+
+    use super::source_unit_metadata_payload_is_last_writer;
+
+    #[test]
+    fn metadata_payload_last_writer_skips_overwritten_shared_paths() {
+        let shared_metadata = PathBuf::from("root/program/group/recursive2/recursive2");
+        let units = vec![
+            key_unit(
+                KeyUnitKind::Basic,
+                Some(0),
+                Some(0),
+                "root/program/group/airs/a/air/a",
+                "root/program/group/airs/a/air/a",
+            ),
+            key_unit(
+                KeyUnitKind::RecursiveFirst,
+                Some(0),
+                Some(0),
+                "root/program/group/airs/a/recursive1/recursive1",
+                shared_metadata.clone(),
+            ),
+            key_unit(
+                KeyUnitKind::Basic,
+                Some(0),
+                Some(1),
+                "root/program/group/airs/b/air/b",
+                "root/program/group/airs/b/air/b",
+            ),
+            key_unit(
+                KeyUnitKind::RecursiveFirst,
+                Some(0),
+                Some(1),
+                "root/program/group/airs/b/recursive1/recursive1",
+                shared_metadata.clone(),
+            ),
+            key_unit(
+                KeyUnitKind::RecursiveSecond,
+                Some(0),
+                None,
+                shared_metadata.clone(),
+                shared_metadata,
+            ),
+        ];
+
+        assert!(source_unit_metadata_payload_is_last_writer(&units, 0));
+        assert!(!source_unit_metadata_payload_is_last_writer(&units, 1));
+        assert!(source_unit_metadata_payload_is_last_writer(&units, 2));
+        assert!(!source_unit_metadata_payload_is_last_writer(&units, 3));
+        assert!(source_unit_metadata_payload_is_last_writer(&units, 4));
+    }
+
+    fn key_unit(
+        kind: KeyUnitKind,
+        group_id: Option<usize>,
+        unit_id: Option<usize>,
+        prefix: impl Into<PathBuf>,
+        metadata_prefix: impl Into<PathBuf>,
+    ) -> KeyUnitPaths {
+        let prefix = prefix.into();
+        KeyUnitPaths {
+            kind,
+            group_id,
+            unit_id,
+            group_name: group_id.map(|_| "group".to_owned()),
+            unit_name: unit_id.map(|id| format!("unit{id}")),
+            prefix: prefix.clone(),
+            metadata_prefix: Some(metadata_prefix.into()),
+            program_prefix: Some(prefix.clone()),
+            verification_key_prefix: prefix.clone(),
+            fixed_columns: prefix.with_extension("const"),
+            constant_tree: prefix.with_extension("consttree"),
+        }
     }
 }

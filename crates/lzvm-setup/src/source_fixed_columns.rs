@@ -362,14 +362,26 @@ pub fn write_fixed_columns_from_source_directory(
             .map_err(SourceFixedColumnsWriteError::from)?;
         let group_name = unit.group_name.as_deref().unwrap_or("raw");
         let unit_name = unit.unit_name.as_deref().unwrap_or("unit");
-        let report = write_fixed_columns_from_source_program(
-            &program,
-            &setup,
-            group_name,
-            unit_name,
-            unit.fixed_columns.clone(),
-            SourceFixedColumnsOutputFormat::Raw,
-        )?;
+        let raw_layout = raw_fixed_column_layout(&setup, group_name, unit_name)
+            .map_err(SourceFixedColumnsWriteError::from)?;
+        let report = if raw_layout.byte_count == 0 {
+            write_empty_raw_fixed_columns(
+                &setup,
+                group_name,
+                unit_name,
+                unit.fixed_columns.clone(),
+                raw_layout.row_count,
+            )?
+        } else {
+            write_fixed_columns_from_source_program(
+                &program,
+                &setup,
+                group_name,
+                unit_name,
+                unit.fixed_columns.clone(),
+                SourceFixedColumnsOutputFormat::Raw,
+            )?
+        };
         bytes_written = bytes_written.saturating_add(report.bytes_written);
     }
 
@@ -507,6 +519,26 @@ fn write_fixed_columns_from_source_program(
 enum SourceFixedColumnsOutputFormat {
     Portable,
     Raw,
+}
+
+fn write_empty_raw_fixed_columns(
+    setup: &UnitSetupInfo,
+    group_name: &str,
+    unit_name: &str,
+    output_path: PathBuf,
+    row_count: u64,
+) -> Result<SourceFixedColumnsWriteReport, SourceFixedColumnsWriteError> {
+    let staging_path =
+        write_staging_bytes(&output_path, &[], "write source fixed columns staging file")?;
+    read_fixed_columns_file_for_setup(&staging_path, setup, group_name, unit_name)?;
+    let bytes_written =
+        publish_staging_bytes(&staging_path, &output_path, "publish source fixed columns")?;
+    Ok(SourceFixedColumnsWriteReport {
+        output_path,
+        bytes_written,
+        column_count: 0,
+        row_count,
+    })
 }
 
 fn source_fixed_unit_instance<'a>(
