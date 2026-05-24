@@ -5,10 +5,10 @@ use lzvm_artifacts::expression_info::{ConstraintCode, ExpressionInfo, HintInfo};
 use lzvm_artifacts::global_info::{NamedStageValue, PublicValue};
 use lzvm_artifacts::setup_info::UnitSetupInfo;
 use lzvm_pil::{
-    lex_source, parse_expression_tokens, AirInstanceDeclaration, BinaryOperator, CallArgument,
-    ColumnKind, Expression, ExpressionKind, FixedFileTemplateValue, FunctionDeclaration,
-    FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind, SourceFile,
-    SourceProgram, SourceProgramModule, SourceSpan, Token, TokenKind,
+    lex_source, parse_expression_tokens, BinaryOperator, CallArgument, Expression, ExpressionKind,
+    FixedFileTemplateValue, FunctionDeclaration, FunctionStatement, FunctionStatementDeclaration,
+    FunctionStatementKind, SourceFile, SourceProgram, SourceProgramModule, SourceSpan, Token,
+    TokenKind,
 };
 
 use crate::{
@@ -35,12 +35,13 @@ use crate::{
         apply_source_static_expression_statement,
     },
     source_expression_template_values::source_expression_template_values,
+    source_expression_units::{
+        source_expression_unit_instance, source_fixed_assignment_column_names,
+    },
     source_final_calls::{source_final_statement_call, SourceFinalScope},
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scalar_slots::{SourceChallengeSlotMetadata, SourceScalarSlots},
-    source_scope::{
-        concrete_template_names, declaration_in_function_body, declaration_in_inactive_template,
-    },
+    source_scope::concrete_template_names,
     source_statement_hints::{
         lower_source_annotation_statement, lower_source_assignment_statement,
         lower_source_lookup_statement, lower_unsupported_source_assignment_statement,
@@ -52,10 +53,8 @@ use crate::{
     },
     source_static_values::{
         evaluate_source_static_expression, insert_source_static_array, source_active_static_name,
-        source_declaration_constant_values_from_cache, source_declaration_in_static_false_branch,
         source_scalar_constant_values, source_static_array_length, source_static_array_values,
         source_static_assignment_expression, source_template_constant_value_cache,
-        SourceTemplateConstantValueCache,
     },
     source_template_context::SourceTemplateLoweringContext,
     source_template_for::source_static_for_loop_with_tokens,
@@ -145,6 +144,15 @@ pub(crate) fn source_expression_info(
                     &mut alias_scope,
                 );
             }
+            lower_source_template_final_air_calls(
+                &context,
+                &template.statements,
+                &mut statement_values,
+                &alias_scope,
+                body_cache,
+                &mut hints,
+                &mut constraints,
+            )?;
         }
     }
     Ok(ExpressionInfo {
@@ -152,73 +160,6 @@ pub(crate) fn source_expression_info(
         expressions: Vec::new(),
         constraints,
     })
-}
-
-fn source_fixed_assignment_column_names(
-    program: &SourceProgram,
-    active_templates: &BTreeSet<String>,
-    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
-    template_values: &SourceTemplateConstantValueCache,
-) -> BTreeSet<String> {
-    program
-        .modules
-        .iter()
-        .flat_map(|module| {
-            module.columns.iter().filter(|declaration| {
-                if declaration.kind != ColumnKind::Fixed
-                    || declaration.initializer.is_some()
-                    || declaration_in_function_body(module, declaration.start, declaration.end)
-                    || declaration_in_inactive_template(
-                        module,
-                        declaration.start,
-                        declaration.end,
-                        active_templates,
-                    )
-                {
-                    return false;
-                }
-                let declaration_values = source_declaration_constant_values_from_cache(
-                    module,
-                    declaration.start,
-                    declaration.end,
-                    constant_values,
-                    template_values,
-                );
-                !source_declaration_in_static_false_branch(
-                    program,
-                    module,
-                    declaration.start,
-                    declaration.end,
-                    declaration_values,
-                )
-            })
-        })
-        .flat_map(|declaration| declaration.items.iter().map(|item| item.name.clone()))
-        .collect()
-}
-
-fn source_expression_unit_instance<'a>(
-    program: &'a SourceProgram,
-    unit_name: Option<(&str, &str)>,
-) -> Option<&'a AirInstanceDeclaration> {
-    let (group_name, unit_name) = unit_name?;
-    let units = program
-        .air_units()
-        .into_iter()
-        .filter(|unit| !unit.virtual_instance)
-        .collect::<Vec<_>>();
-    let instances = program
-        .modules
-        .iter()
-        .flat_map(|module| module.air_instances.iter())
-        .filter(|instance| !instance.virtual_instance)
-        .collect::<Vec<_>>();
-    units
-        .into_iter()
-        .zip(instances)
-        .find_map(|(unit, instance)| {
-            (unit.group_name == group_name && unit.unit_name == unit_name).then_some(instance)
-        })
 }
 
 fn lower_source_template_statement(
@@ -332,25 +273,7 @@ fn lower_source_template_statement(
     if let Some(call) = source_final_statement_call(context.tokens, context.module, statement)? {
         match call.scope {
             SourceFinalScope::Proof => return Ok(()),
-            SourceFinalScope::Air => {
-                if !context.final_air_calls_enabled {
-                    return Ok(());
-                }
-                let mut call_stack = BTreeSet::new();
-                let mut output = SourceTemplateFunctionOutput { hints, constraints };
-                if lower_source_template_function_call_expression(
-                    context,
-                    &call.expression,
-                    values,
-                    alias_scope,
-                    body_cache,
-                    &mut call_stack,
-                    &mut output,
-                    true,
-                )? {
-                    return Ok(());
-                }
-            }
+            SourceFinalScope::Air => return Ok(()),
             SourceFinalScope::AirGroup => {}
         }
     }
@@ -584,6 +507,7 @@ fn lower_source_template_statement(
         body_cache,
         &mut call_stack,
         &mut output,
+        None,
     )? {
         return Ok(());
     }
@@ -604,6 +528,161 @@ fn lower_source_template_statement(
     ))
 }
 
+struct SourceTemplateFinalAirCall {
+    source_line: String,
+    priority: i128,
+    source_order: usize,
+    expression: Expression,
+}
+
+struct SourceTemplateFinalAirQueue {
+    calls: Vec<SourceTemplateFinalAirCall>,
+    current_priority: Option<i128>,
+    next_source_order: usize,
+}
+
+impl SourceTemplateFinalAirQueue {
+    fn new(next_source_order: usize) -> Self {
+        Self {
+            calls: Vec::new(),
+            current_priority: None,
+            next_source_order,
+        }
+    }
+
+    fn push_call(
+        &mut self,
+        context: &SourceTemplateLoweringContext<'_>,
+        statement: &FunctionStatement,
+        call: crate::source_final_calls::SourceFinalCall,
+        values: &BTreeMap<String, FixedFileTemplateValue>,
+        source_order: usize,
+    ) -> Result<(), SourceKeyDirectoryMetadataError> {
+        let priority =
+            source_final_air_priority(context, statement, call.priority.as_ref(), values)?;
+        self.calls.push(SourceTemplateFinalAirCall {
+            source_line: source_statement_line(context.module, statement),
+            priority,
+            source_order,
+            expression: call.expression,
+        });
+        Ok(())
+    }
+
+    fn push_reentrant_call(
+        &mut self,
+        context: &SourceTemplateLoweringContext<'_>,
+        statement: &FunctionStatement,
+        call: crate::source_final_calls::SourceFinalCall,
+        values: &BTreeMap<String, FixedFileTemplateValue>,
+    ) -> Result<(), SourceKeyDirectoryMetadataError> {
+        let priority =
+            source_final_air_priority(context, statement, call.priority.as_ref(), values)?;
+        if self
+            .current_priority
+            .is_some_and(|current_priority| priority >= current_priority)
+        {
+            return Ok(());
+        }
+        let source_order = self.next_source_order;
+        self.next_source_order = self.next_source_order.saturating_add(1);
+        self.calls.push(SourceTemplateFinalAirCall {
+            source_line: source_statement_line(context.module, statement),
+            priority,
+            source_order,
+            expression: call.expression,
+        });
+        Ok(())
+    }
+
+    fn pop_next(&mut self) -> Option<SourceTemplateFinalAirCall> {
+        self.calls.sort_by(|left, right| {
+            right
+                .priority
+                .cmp(&left.priority)
+                .then_with(|| left.source_order.cmp(&right.source_order))
+        });
+        if self.calls.is_empty() {
+            None
+        } else {
+            Some(self.calls.remove(0))
+        }
+    }
+}
+
+fn source_final_air_priority(
+    context: &SourceTemplateLoweringContext<'_>,
+    statement: &FunctionStatement,
+    priority: Option<&Expression>,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<i128, SourceKeyDirectoryMetadataError> {
+    let Some(expression) = priority else {
+        return Ok(0);
+    };
+    let Some(value) = evaluate_source_static_expression(context.program, expression, values) else {
+        return unsupported(format!(
+            "source final air priority needs static expression: {}",
+            source_statement_line(context.module, statement)
+        ));
+    };
+    let Some(priority) = source_static_integer_value(Some(&value)) else {
+        return unsupported(format!(
+            "source final air priority needs integer expression: {}",
+            source_statement_line(context.module, statement)
+        ));
+    };
+    Ok(priority)
+}
+
+fn lower_source_template_final_air_calls(
+    context: &SourceTemplateLoweringContext<'_>,
+    statements: &[FunctionStatement],
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceExpressionAliasScope,
+    body_cache: &mut SourceControlBodyCache,
+    hints: &mut Vec<HintInfo>,
+    constraints: &mut Vec<ConstraintCode>,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    if !context.final_air_calls_enabled {
+        return Ok(());
+    }
+    let mut queue = SourceTemplateFinalAirQueue::new(statements.len());
+    for (source_order, statement) in statements.iter().enumerate() {
+        let Some(call) = source_final_statement_call(context.tokens, context.module, statement)?
+        else {
+            continue;
+        };
+        if call.scope != SourceFinalScope::Air {
+            continue;
+        }
+        queue.push_call(context, statement, call, values, source_order)?;
+    }
+    while let Some(call) = queue.pop_next() {
+        let mut call_stack = BTreeSet::new();
+        let mut output = SourceTemplateFunctionOutput { hints, constraints };
+        queue.current_priority = Some(call.priority);
+        if !lower_source_template_function_call_expression(
+            context,
+            &call.expression,
+            values,
+            alias_scope,
+            body_cache,
+            &mut call_stack,
+            &mut output,
+            true,
+            Some(&mut queue),
+        )? {
+            queue.current_priority = None;
+            return unsupported(format!(
+                "air template statements need constraint lowering support: {}",
+                call.source_line
+            ));
+        }
+        queue.current_priority = None;
+    }
+    Ok(())
+}
+
 fn lower_source_template_function_call(
     context: &SourceTemplateLoweringContext<'_>,
     statement: &FunctionStatement,
@@ -612,6 +691,7 @@ fn lower_source_template_function_call(
     body_cache: &mut SourceControlBodyCache,
     call_stack: &mut BTreeSet<String>,
     output: &mut SourceTemplateFunctionOutput<'_>,
+    final_air_queue: Option<&mut SourceTemplateFinalAirQueue>,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
     let Some(expression) = statement.value_expression.as_ref() else {
         return Ok(false);
@@ -625,6 +705,7 @@ fn lower_source_template_function_call(
         call_stack,
         output,
         false,
+        final_air_queue,
     )
 }
 
@@ -637,6 +718,7 @@ fn lower_source_template_function_call_expression(
     call_stack: &mut BTreeSet<String>,
     output: &mut SourceTemplateFunctionOutput<'_>,
     propagate_shared_values: bool,
+    mut final_air_queue: Option<&mut SourceTemplateFinalAirQueue>,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
     let Some((name, arguments)) = source_call_expression(Some(expression)) else {
         return Ok(false);
@@ -688,6 +770,7 @@ fn lower_source_template_function_call_expression(
                 body_cache,
                 call_stack,
                 &mut function_output,
+                final_air_queue.as_deref_mut(),
             )? {
                 return Ok(false);
             }
@@ -1376,6 +1459,7 @@ fn lower_source_function_body_statement(
     body_cache: &mut SourceControlBodyCache,
     call_stack: &mut BTreeSet<String>,
     output: &mut SourceTemplateFunctionOutput<'_>,
+    mut final_air_queue: Option<&mut SourceTemplateFinalAirQueue>,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
         let applied =
@@ -1403,6 +1487,7 @@ fn lower_source_function_body_statement(
                         body_cache,
                         call_stack,
                         output,
+                        final_air_queue.as_deref_mut(),
                     )? {
                         return Ok(false);
                     }
@@ -1445,6 +1530,7 @@ fn lower_source_function_body_statement(
                             body_cache,
                             call_stack,
                             output,
+                            final_air_queue.as_deref_mut(),
                         )? {
                             return Ok(false);
                         }
@@ -1481,6 +1567,10 @@ fn lower_source_function_body_statement(
                 if !context.final_air_calls_enabled {
                     return Ok(true);
                 }
+                if let Some(queue) = final_air_queue.as_deref_mut() {
+                    queue.push_reentrant_call(context, statement, call, values)?;
+                    return Ok(true);
+                }
                 lower_source_template_function_call_expression(
                     context,
                     &call.expression,
@@ -1490,6 +1580,7 @@ fn lower_source_function_body_statement(
                     call_stack,
                     output,
                     true,
+                    None,
                 )
             }
             SourceFinalScope::AirGroup => Ok(false),
@@ -1574,6 +1665,7 @@ fn lower_source_function_body_statement(
         body_cache,
         call_stack,
         output,
+        final_air_queue.as_deref_mut(),
     )? {
         return Ok(true);
     }

@@ -14,6 +14,7 @@ pub(crate) enum SourceFinalScope {
 
 pub(crate) struct SourceFinalCall {
     pub(crate) scope: SourceFinalScope,
+    pub(crate) priority: Option<Expression>,
     pub(crate) expression: Expression,
     pub(crate) next_index: usize,
 }
@@ -32,14 +33,21 @@ pub(crate) fn source_final_call_at(
     }
 
     let mut cursor = index + 2;
+    let mut priority = None;
     if tokens
         .get(cursor)
         .is_some_and(|token| token.kind == TokenKind::LParen)
     {
-        let Some(next) = skip_balanced_delimiter(tokens, cursor, TokenKind::RParen) else {
+        let Some(close_index) = balanced_delimiter_close(tokens, cursor, TokenKind::RParen) else {
             return Ok(None);
         };
-        cursor = next;
+        let (expression, next_index) =
+            parse_expression_tokens(tokens, cursor + 1, close_index, source)?;
+        if next_index != close_index {
+            return Ok(None);
+        }
+        priority = Some(expression);
+        cursor = close_index + 1;
     }
     let Some(scope) = source_final_scope(tokens.get(cursor).map(|token| token.kind)) else {
         return Ok(None);
@@ -56,6 +64,7 @@ pub(crate) fn source_final_call_at(
     }
     Ok(Some(SourceFinalCall {
         scope,
+        priority,
         expression,
         next_index: semicolon_index + 1,
     }))
@@ -117,7 +126,11 @@ fn skip_final_call_statement(tokens: &[Token], index: usize) -> Option<usize> {
     None
 }
 
-fn skip_balanced_delimiter(tokens: &[Token], open_index: usize, close: TokenKind) -> Option<usize> {
+fn balanced_delimiter_close(
+    tokens: &[Token],
+    open_index: usize,
+    close: TokenKind,
+) -> Option<usize> {
     let mut expected = vec![close];
     let mut cursor = open_index + 1;
     while let Some(token) = tokens.get(cursor) {
@@ -130,7 +143,7 @@ fn skip_balanced_delimiter(tokens: &[Token], open_index: usize, close: TokenKind
                     return None;
                 }
                 if expected.is_empty() {
-                    return Some(cursor + 1);
+                    return Some(cursor);
                 }
             }
             TokenKind::EndOfInput => return None,

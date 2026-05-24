@@ -45,6 +45,7 @@ mod source_expression_return_values;
 mod source_expression_statements;
 mod source_expression_strings;
 mod source_expression_template_values;
+mod source_expression_units;
 mod source_final_calls;
 mod source_fixed_columns;
 mod source_fixed_expression;

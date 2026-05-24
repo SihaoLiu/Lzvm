@@ -483,6 +483,158 @@ fn generate_key_runs_final_air_function_with_airgroup_static_assignment() {
 }
 
 #[test]
+fn generate_key_runs_final_air_functions_by_descending_priority() {
+    let dir = temp_dir("final-air-descending-priority");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "int counter = 0;\n\
+         function first() {\n\
+             assert_eq(counter, 0);\n\
+             counter += 1;\n\
+         }\n\
+         function second() {\n\
+             assert_eq(counter, 1);\n\
+             counter += 1;\n\
+         }\n\
+         function third() {\n\
+             assert_eq(counter, 2);\n\
+             counter += 1;\n\
+         }\n\
+         airtemplate UnitA() {\n\
+             on final(1) air third();\n\
+             on final(3) air first();\n\
+             on final(2) air second();\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_runs_reentrant_final_air_function_at_lower_priority() {
+    let dir = temp_dir("reentrant-final-air-lower-priority");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "int counter = 0;\n\
+         function first() {\n\
+             assert_eq(counter, 0);\n\
+             counter += 1;\n\
+             on final(2) air third();\n\
+         }\n\
+         function second() {\n\
+             assert_eq(counter, 1);\n\
+             counter += 1;\n\
+         }\n\
+         function third() {\n\
+             assert_eq(counter, 2);\n\
+             counter += 1;\n\
+         }\n\
+         airtemplate UnitA() {\n\
+             on final(5) air first();\n\
+             on final(3) air second();\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_skips_reentrant_final_air_function_above_current_priority() {
+    let dir = temp_dir("reentrant-final-air-higher-priority");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "int counter = 0;\n\
+         function first() {\n\
+             assert_eq(counter, 0);\n\
+             counter += 1;\n\
+             on final(6) air earlier();\n\
+         }\n\
+         function earlier() {\n\
+             assert_eq(counter, 0);\n\
+         }\n\
+         function second() {\n\
+             assert_eq(counter, 1);\n\
+             counter += 1;\n\
+         }\n\
+         airtemplate UnitA() {\n\
+             on final(5) air first();\n\
+             on final(3) air second();\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_lowers_source_function_calls_with_static_if_bodies() {
     let dir = temp_dir("source-function-static-if");
     let _ = fs::remove_dir_all(&dir);
