@@ -6,6 +6,7 @@ use lzvm_artifacts::hint_program::{
 };
 use lzvm_artifacts::key_directory::read_key_directory_layout;
 use lzvm_artifacts::regular_program::read_regular_program_file;
+use lzvm_artifacts::setup_info::read_unit_setup_info_binary_file;
 use lzvm_cli::run_cli;
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -160,6 +161,76 @@ fn generate_key_lowers_source_lookup_value_expressions() {
         .fields
         .iter()
         .all(|field| field.name != "value_lengths"));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn generate_key_lowers_accumulated_source_lookup_value_expression() {
+    let dir = temp_dir("source-lookup-accumulated-value-expression");
+    let _ = fs::remove_dir_all(&dir);
+    assert_generate_key_succeeds(
+        &dir,
+        "airtemplate UnitA() {\n\
+             col witness value;\n\
+             expr packed = 0;\n\
+             packed += value;\n\
+             packed += value';\n\
+             lookup_proves(7, [packed]);\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    assert_eq!(setup.opening_points, vec![0, 1]);
+    let regular = read_regular_program_file(
+        unit.expression_program()
+            .expect("regular program path should derive"),
+    )
+    .expect("regular program should parse");
+
+    assert_eq!(regular.hints.hints.len(), 1);
+    assert_eq!(regular.hints.hints[0].name, SOURCE_LOOKUP_PROVES_HINT);
+    assert_eq!(regular.hints.hints[0].fields[1].name, "values");
+    assert_eq!(regular.hints.hints[0].fields[1].values.len(), 5);
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[0].operand,
+        HintOperand::Number(0)
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[1].operand,
+        HintOperand::Commitment {
+            id: 0,
+            row_offset_index: 0
+        }
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[2].operand,
+        HintOperand::String("add".to_owned())
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[3].operand,
+        HintOperand::Commitment {
+            id: 0,
+            row_offset_index: 1
+        }
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[4].operand,
+        HintOperand::String("add".to_owned())
+    );
+    assert_eq!(regular.hints.hints[0].fields[2].name, "value_lengths");
+    assert_eq!(
+        regular.hints.hints[0].fields[2].values[0].operand,
+        HintOperand::Number(5)
+    );
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }

@@ -900,11 +900,25 @@ fn source_assignment_expression_values(
     context: &SourceLookupLowering<'_>,
     expression: &Expression,
 ) -> Option<Vec<HintValueInfo>> {
+    let mut resolving_aliases = BTreeSet::new();
+    source_assignment_expression_values_inner(context, expression, &mut resolving_aliases)
+}
+
+fn source_assignment_expression_values_inner(
+    context: &SourceLookupLowering<'_>,
+    expression: &Expression,
+    resolving_aliases: &mut BTreeSet<String>,
+) -> Option<Vec<HintValueInfo>> {
     let expression = strip_group_expression(expression);
     if let ExpressionKind::Binary { op, left, right } = &expression.kind {
         let op = source_assignment_binary_operator(*op)?;
-        let mut values = source_assignment_expression_values(context, left)?;
-        values.extend(source_assignment_expression_values(context, right)?);
+        let mut values =
+            source_assignment_expression_values_inner(context, left, resolving_aliases)?;
+        values.extend(source_assignment_expression_values_inner(
+            context,
+            right,
+            resolving_aliases,
+        )?);
         values.push(HintValueInfo {
             positions: Vec::new(),
             payload: HintPayload::string(op),
@@ -913,13 +927,19 @@ fn source_assignment_expression_values(
     }
     if let ExpressionKind::Unary { op, expr } = &expression.kind {
         match op {
-            UnaryOperator::Plus => return source_assignment_expression_values(context, expr),
+            UnaryOperator::Plus => {
+                return source_assignment_expression_values_inner(context, expr, resolving_aliases);
+            }
             UnaryOperator::Minus => {
                 let mut values = vec![HintValueInfo {
                     positions: Vec::new(),
                     payload: HintPayload::number(0),
                 }];
-                values.extend(source_assignment_expression_values(context, expr)?);
+                values.extend(source_assignment_expression_values_inner(
+                    context,
+                    expr,
+                    resolving_aliases,
+                )?);
                 values.push(HintValueInfo {
                     positions: Vec::new(),
                     payload: HintPayload::string("sub"),
@@ -927,7 +947,8 @@ fn source_assignment_expression_values(
                 return Some(values);
             }
             UnaryOperator::Not => {
-                let mut values = source_assignment_expression_values(context, expr)?;
+                let mut values =
+                    source_assignment_expression_values_inner(context, expr, resolving_aliases)?;
                 values.push(HintValueInfo {
                     positions: Vec::new(),
                     payload: HintPayload::string("not"),
@@ -935,6 +956,17 @@ fn source_assignment_expression_values(
                 return Some(values);
             }
             _ => return None,
+        }
+    }
+    if let ExpressionKind::Name(name) = &expression.kind {
+        if let Some(alias) = context.expression_aliases.get(name) {
+            if !resolving_aliases.insert(name.clone()) {
+                return None;
+            }
+            let values =
+                source_assignment_expression_values_inner(context, alias, resolving_aliases);
+            resolving_aliases.remove(name);
+            return values;
         }
     }
 

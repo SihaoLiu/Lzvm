@@ -10,6 +10,7 @@ use lzvm_pil::{
 use crate::{
     source_constraint_lowering::SourceExpressionAliases,
     source_control_body_cache::{SourceControlBodyCache, SourceControlBodyCaches},
+    source_expression_aliases::collect_source_template_expression_alias,
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_statement_hints::{
         source_lookup_statement_expressions, SourceExpressionArrayAlias,
@@ -1092,29 +1093,7 @@ fn collect_source_opening_point_expression_alias(
     statement: &FunctionStatement,
     expression_aliases: &mut SourceExpressionAliases,
 ) {
-    match statement.declaration.as_ref() {
-        Some(FunctionStatementDeclaration::Constant(declaration)) => {
-            if declaration.type_name.as_deref() != Some("expr")
-                || !declaration.array_dims.is_empty()
-            {
-                return;
-            }
-            let Some(expression) = declaration.initializer_expression.as_ref() else {
-                return;
-            };
-            expression_aliases.insert(declaration.name.clone(), expression.clone());
-        }
-        Some(FunctionStatementDeclaration::Variable(declaration)) => {
-            if declaration.type_name != "expr" || !declaration.array_dims.is_empty() {
-                return;
-            }
-            let Some(expression) = declaration.initializer_expression.as_ref() else {
-                return;
-            };
-            expression_aliases.insert(declaration.name.clone(), expression.clone());
-        }
-        _ => {}
-    }
+    collect_source_template_expression_alias(statement, expression_aliases);
 }
 
 fn collect_source_opening_point_expression_array_alias(

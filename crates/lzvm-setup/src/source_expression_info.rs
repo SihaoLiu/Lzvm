@@ -16,7 +16,10 @@ use crate::{
         lower_source_template_boolean_constraint, SourceExpressionAliases,
     },
     source_control_body_cache::{SourceControlBodyCache, SourceControlBodyCaches},
-    source_expression_aliases::collect_source_template_expression_alias,
+    source_expression_aliases::{
+        collect_source_template_expression_alias, source_expression_alias_assignment,
+        source_expression_alias_assignment_target,
+    },
     source_expression_filters::{
         source_expression_assigns_fixed_index, source_expression_is_assignment,
         source_expression_is_constrained_assignment, source_expression_is_equality_constraint,
@@ -440,7 +443,6 @@ fn lower_source_template_statement(
         ));
         return Ok(());
     }
-
     if let Some(kind) =
         source_statement_first_token_kind(context.module, statement).map_err(|source| {
             SourceKeyDirectoryMetadataError::Lex {
@@ -502,6 +504,18 @@ fn lower_source_template_statement(
             context.module,
             statement,
         ));
+        return Ok(());
+    }
+    let mut expression_aliases = alias_scope.expressions.clone();
+    if source_expression_alias_assignment(
+        statement.value_expression.as_ref(),
+        &mut expression_aliases,
+    ) {
+        if let Some(name) =
+            source_expression_alias_assignment_target(statement.value_expression.as_ref())
+        {
+            values.remove(name);
+        }
         return Ok(());
     }
     if source_static_assignment_expression(
@@ -1472,6 +1486,18 @@ fn lower_source_function_body_statement(
         return Ok(true);
     }
     if source_static_assertion(context.program, context.module, statement, values)? {
+        return Ok(true);
+    }
+    let mut expression_aliases = alias_scope.expressions.clone();
+    if source_expression_alias_assignment(
+        statement.value_expression.as_ref(),
+        &mut expression_aliases,
+    ) {
+        if let Some(name) =
+            source_expression_alias_assignment_target(statement.value_expression.as_ref())
+        {
+            values.remove(name);
+        }
         return Ok(true);
     }
     let mut expression_arrays = alias_scope.expression_arrays.clone();
