@@ -34,6 +34,7 @@ mod residuals;
 mod top_level_call;
 mod top_level_for;
 mod top_level_if;
+mod top_level_metadata;
 
 use directives::{skip_source_directive_statement, source_directive_statement_start};
 
@@ -344,7 +345,10 @@ fn lower_top_level_global_constraints_range(
             }
             TokenKind::Identifier => {
                 if let Some(next_index) =
-                    skip_known_top_level_metadata_directive(context.tokens, index)
+                    top_level_metadata::skip_known_top_level_metadata_directive(
+                        context.tokens,
+                        index,
+                    )
                 {
                     index = next_index;
                 } else {
@@ -1676,22 +1680,6 @@ fn source_u32_to_u16(
     message: &'static str,
 ) -> Result<u16, SourceKeyDirectoryMetadataError> {
     u16::try_from(value).map_err(|_| unsupported_source_message(message))
-}
-
-fn skip_known_top_level_metadata_directive(tokens: &[Token], index: usize) -> Option<usize> {
-    let name = tokens.get(index)?;
-    let open = tokens.get(index + 1)?;
-    let close = tokens.get(index + 2)?;
-    let semicolon = tokens.get(index + 3)?;
-    if name.lexeme == "enable_range_stats"
-        && open.kind == TokenKind::LParen
-        && close.kind == TokenKind::RParen
-        && semicolon.kind == TokenKind::Semicolon
-    {
-        Some(index + 4)
-    } else {
-        None
-    }
 }
 
 fn top_level_declaration_start(kind: TokenKind) -> bool {
