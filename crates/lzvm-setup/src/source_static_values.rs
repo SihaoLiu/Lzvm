@@ -469,7 +469,7 @@ fn parse_i128(value: &str) -> Option<i128> {
     value.parse::<i128>().ok()
 }
 
-fn evaluate_source_static_expression_or_token_span(
+pub(crate) fn evaluate_source_static_expression_or_token_span(
     program: &SourceProgram,
     source: &SourceFile,
     tokens: &[Token],
@@ -646,7 +646,9 @@ fn execute_static_template_statement(
             execute_static_template_switch(program, module, tokens, index, end, values)
         }
         kind if static_declaration_start(kind) => {
-            execute_static_template_declaration(program, module, tokens, index, values);
+            crate::source_static_declarations::execute_static_template_declaration(
+                program, module, tokens, index, values,
+            );
             skip_static_template_statement(tokens, index, end)
                 .map(StaticTemplateStatementResult::fallthrough)
         }
@@ -1187,68 +1189,6 @@ fn skip_static_if_statement(tokens: &[Token], index: usize, end: usize) -> Optio
     let close = matching_closing_token(tokens, open, end)?;
     let (_, _, after_body) = control_body_range(tokens, close + 1, end)?;
     skip_static_else_tail(tokens, after_body, end)
-}
-
-fn execute_static_template_declaration(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
-    tokens: &[Token],
-    index: usize,
-    values: &mut BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<()> {
-    let start = tokens.get(index)?.start;
-    if let Some(declaration) = module
-        .constants
-        .iter()
-        .find(|declaration| declaration.start == start)
-    {
-        if values.contains_key(&declaration.name) {
-            return Some(());
-        }
-        if !declaration.array_dims.is_empty() {
-            let elements = source_static_array_expression(
-                program,
-                declaration.initializer_expression.as_ref()?,
-                values,
-            )?;
-            insert_source_static_array(values, &declaration.name, elements)?;
-            return Some(());
-        }
-        let value = evaluate_source_static_expression_or_token_span(
-            program,
-            &module.source,
-            tokens,
-            declaration.initializer_expression.as_ref(),
-            declaration.initializer,
-            values,
-        )?;
-        values.insert(declaration.name.clone(), value);
-        return Some(());
-    }
-
-    let declaration = module
-        .variables
-        .iter()
-        .find(|declaration| declaration.start == start)?;
-    if !declaration.array_dims.is_empty() {
-        let elements = source_static_array_expression(
-            program,
-            declaration.initializer_expression.as_ref()?,
-            values,
-        )?;
-        insert_source_static_array(values, &declaration.name, elements)?;
-        return Some(());
-    }
-    let value = evaluate_source_static_expression_or_token_span(
-        program,
-        &module.source,
-        tokens,
-        declaration.initializer_expression.as_ref(),
-        declaration.initializer,
-        values,
-    )?;
-    values.insert(declaration.name.clone(), value);
-    Some(())
 }
 
 fn static_statement_contains_assignment_operator(
