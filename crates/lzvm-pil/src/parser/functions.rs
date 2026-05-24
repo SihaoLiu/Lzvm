@@ -300,7 +300,7 @@ fn parse_function_statement(
         }
         _ => {
             let (span, next_index) =
-                parse_semicolon_statement_span(tokens, index, limit_index, source)?;
+                parse_expression_statement_span(tokens, index, limit_index, source)?;
             (FunctionStatementKind::Expression, span, next_index)
         }
     };
@@ -481,6 +481,25 @@ fn parse_semicolon_statement_span(
     limit_index: usize,
     source: &SourceFile,
 ) -> Result<(SourceSpan, usize), ParseError> {
+    parse_statement_span_until_terminator(tokens, index, limit_index, source, false)
+}
+
+fn parse_expression_statement_span(
+    tokens: &[Token],
+    index: usize,
+    limit_index: usize,
+    source: &SourceFile,
+) -> Result<(SourceSpan, usize), ParseError> {
+    parse_statement_span_until_terminator(tokens, index, limit_index, source, true)
+}
+
+fn parse_statement_span_until_terminator(
+    tokens: &[Token],
+    index: usize,
+    limit_index: usize,
+    source: &SourceFile,
+    allow_closing_brace: bool,
+) -> Result<(SourceSpan, usize), ParseError> {
     let start = tokens
         .get(index)
         .ok_or_else(|| ParseError::ExpectedTerminator {
@@ -518,6 +537,22 @@ fn parse_semicolon_statement_span(
             _ => {}
         }
         cursor += 1;
+    }
+
+    if allow_closing_brace
+        && stack.is_empty()
+        && cursor > index
+        && tokens
+            .get(limit_index)
+            .is_some_and(|token| token.kind == TokenKind::RBrace)
+    {
+        return Ok((
+            SourceSpan {
+                start,
+                end: tokens[cursor - 1].end,
+            },
+            cursor,
+        ));
     }
 
     Err(ParseError::ExpectedTerminator {

@@ -11,7 +11,7 @@ use super::{
     FunctionStatementDeclaration, FunctionStatementKind, FunctionVisibility, IncludeKind,
     IncludeVisibility, ParseError, UnaryOperator, ValueDeclarationKind,
 };
-use crate::SourceFile;
+use crate::{lex_source, parse_function_body_statements, SourceFile};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -1436,6 +1436,28 @@ fn parses_function_hint_annotation_without_statement_terminator_before_loop() {
     assert_eq!(
         declarations[0].statements[1].kind,
         FunctionStatementKind::For
+    );
+}
+
+#[test]
+fn parses_function_expression_before_closing_brace_without_semicolon() {
+    let source = source("function choose(int flag) { if (flag) { value = 3 } else { value = 4 } }");
+
+    let declarations = parse_function_declarations(&source).expect("functions should parse");
+
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(declarations[0].statements.len(), 1);
+    let statement = &declarations[0].statements[0];
+    assert_eq!(statement.kind, FunctionStatementKind::If);
+    let body = statement.body.expect("if body should be recorded");
+    let tokens = lex_source(&source.contents).expect("source should lex");
+    let body_statements =
+        parse_function_body_statements(&tokens, body, &source).expect("body should parse");
+    assert_eq!(body_statements.len(), 1);
+    assert_eq!(body_statements[0].kind, FunctionStatementKind::Expression);
+    assert_eq!(
+        &source.contents[body_statements[0].start..body_statements[0].end],
+        "value = 3"
     );
 }
 
