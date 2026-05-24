@@ -35,6 +35,11 @@ pub(crate) fn source_scalar_constant_values(
             "N".to_owned(),
             FixedFileTemplateValue::Integer(i128::from(row_count)),
         ),
+        (
+            "AIRGROUP_ID".to_owned(),
+            FixedFileTemplateValue::Integer(-1),
+        ),
+        ("AIR_ID".to_owned(), FixedFileTemplateValue::Integer(-1)),
     ]);
     let declarations = program
         .modules

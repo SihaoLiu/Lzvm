@@ -36,9 +36,9 @@ mod top_level_final;
 mod top_level_for;
 mod top_level_if;
 mod top_level_metadata;
+mod top_level_static_assertion;
 
 use directives::{skip_source_directive_statement, source_directive_statement_start};
-
 pub(crate) fn source_global_program(
     program: &SourceProgram,
     global_info: &GlobalInfo,
@@ -397,9 +397,17 @@ fn lower_top_level_expression_statement(
     if top_level_call::lower_top_level_function_call(context, &expression, constraints)? {
         return Ok(next_index);
     }
+    let source_line = &context.module.source.contents[expression.start..expression.end];
+    if top_level_static_assertion::lower_top_level_static_assertion(
+        context,
+        &expression,
+        source_line,
+    )? {
+        return Ok(next_index);
+    }
     lower_top_level_global_constraint(
         &expression,
-        &context.module.source.contents[expression.start..expression.end],
+        source_line,
         context.slots,
         context.alias_scope,
         constraints,
@@ -472,7 +480,6 @@ struct SourceProofValueSlot {
     dimension: u32,
     lengths: Vec<u32>,
 }
-
 #[derive(Debug, Clone)]
 struct SourcePublicValueSlot {
     offset: u32,
