@@ -122,7 +122,9 @@ pub(crate) fn source_expression_info(
                 )?;
                 collect_source_template_expression_alias(statement, &mut alias_scope.expressions);
                 collect_source_template_expression_array_alias(
+                    context.program,
                     statement,
+                    &statement_values,
                     &mut alias_scope.expression_arrays,
                 );
             }
@@ -351,7 +353,9 @@ fn lower_source_template_statement(
                         &mut body_alias_scope.expressions,
                     );
                     collect_source_template_expression_array_alias(
+                        context.program,
                         body_statement,
+                        values,
                         &mut body_alias_scope.expression_arrays,
                     );
                 }
@@ -395,7 +399,9 @@ fn lower_source_template_statement(
                             &mut loop_alias_scope.expressions,
                         );
                         collect_source_template_expression_array_alias(
+                            context.program,
                             body_statement,
+                            values,
                             &mut loop_alias_scope.expression_arrays,
                         );
                     }
@@ -545,6 +551,15 @@ fn lower_source_template_statement(
     }
     let is_assignment = source_expression_is_assignment(statement.value_expression.as_ref());
     if is_assignment {
+        let mut expression_arrays = alias_scope.expression_arrays.clone();
+        if source_expression_array_alias_assignment(
+            context.program,
+            statement.value_expression.as_ref(),
+            values,
+            &mut expression_arrays,
+        ) {
+            return Ok(());
+        }
         if let Some(hint) =
             lower_source_assignment_statement(&lookup_inputs, statement).map_err(|source| {
                 SourceKeyDirectoryMetadataError::Lex {
@@ -696,7 +711,9 @@ fn lower_source_template_function_call(
                 &mut body_alias_scope.expressions,
             );
             collect_source_template_expression_array_alias(
+                context.program,
                 body_statement,
+                &bindings.values,
                 &mut body_alias_scope.expression_arrays,
             );
         }
@@ -901,22 +918,188 @@ fn source_expression_array_alias(expression: &Expression) -> Option<SourceExpres
 }
 
 fn collect_source_template_expression_array_alias(
+    program: &SourceProgram,
     statement: &FunctionStatement,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
     expression_array_aliases: &mut SourceExpressionArrayAliases,
 ) {
-    let Some(FunctionStatementDeclaration::Constant(declaration)) = statement.declaration.as_ref()
+    match statement.declaration.as_ref() {
+        Some(FunctionStatementDeclaration::Constant(declaration)) => {
+            if declaration.type_name.as_deref() != Some("expr") || declaration.array_dims.is_empty()
+            {
+                return;
+            }
+            if let Some(alias) = source_declaration_expression_array_alias(
+                program,
+                &declaration.name,
+                &declaration.array_dim_expressions,
+                declaration.initializer_expression.as_ref(),
+                &declaration.source_name,
+                declaration.start,
+                values,
+            ) {
+                expression_array_aliases.insert(declaration.name.clone(), alias);
+            }
+        }
+        Some(FunctionStatementDeclaration::Variable(declaration)) => {
+            if declaration.type_name != "expr" || declaration.array_dims.is_empty() {
+                return;
+            }
+            if let Some(alias) = source_declaration_expression_array_alias(
+                program,
+                &declaration.name,
+                &declaration.array_dim_expressions,
+                declaration.initializer_expression.as_ref(),
+                &declaration.source_name,
+                declaration.start,
+                values,
+            ) {
+                expression_array_aliases.insert(declaration.name.clone(), alias);
+            }
+        }
+        _ => {
+            source_expression_array_alias_assignment(
+                program,
+                statement.value_expression.as_ref(),
+                values,
+                expression_array_aliases,
+            );
+        }
+    }
+}
+
+fn source_declaration_expression_array_alias(
+    program: &SourceProgram,
+    name: &str,
+    dim_expressions: &[Option<Expression>],
+    initializer: Option<&Expression>,
+    source_name: &str,
+    start: usize,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<SourceExpressionArrayAlias> {
+    if let Some(expression) = initializer {
+        return source_expression_array_alias(expression);
+    }
+    let lengths = dim_expressions
+        .iter()
+        .map(|expression| {
+            let value = evaluate_source_static_expression(program, expression.as_ref()?, values)?;
+            usize::try_from(source_static_integer_value(Some(&value))?).ok()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if lengths.is_empty() {
+        return None;
+    }
+    Some(SourceExpressionArrayAlias::Values(
+        source_zero_expression_array(name, source_name, start, &lengths)?,
+    ))
+}
+
+fn source_zero_expression_array(
+    name: &str,
+    source_name: &str,
+    start: usize,
+    lengths: &[usize],
+) -> Option<Vec<Expression>> {
+    let (&length, rest) = lengths.split_first()?;
+    Some(
+        (0..length)
+            .map(|_| {
+                if rest.is_empty() {
+                    source_zero_expression(source_name, start)
+                } else {
+                    Expression {
+                        kind: ExpressionKind::Array(
+                            source_zero_expression_array(name, source_name, start, rest)
+                                .unwrap_or_default(),
+                        ),
+                        source_name: source_name.to_owned(),
+                        start,
+                        end: start.saturating_add(name.len()),
+                    }
+                }
+            })
+            .collect(),
+    )
+}
+
+fn source_zero_expression(source_name: &str, start: usize) -> Expression {
+    Expression {
+        kind: ExpressionKind::Integer("0".to_owned()),
+        source_name: source_name.to_owned(),
+        start,
+        end: start,
+    }
+}
+
+fn source_expression_array_alias_assignment(
+    program: &SourceProgram,
+    expression: Option<&Expression>,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    expression_array_aliases: &mut SourceExpressionArrayAliases,
+) -> bool {
+    let Some(Expression {
+        kind: ExpressionKind::Binary { op, left, right },
+        ..
+    }) = expression.map(strip_source_group_expression)
     else {
-        return;
+        return false;
     };
-    if declaration.type_name.as_deref() != Some("expr") || declaration.array_dims.is_empty() {
-        return;
+    if *op != BinaryOperator::Assign {
+        return false;
     }
-    let Some(expression) = declaration.initializer_expression.as_ref() else {
-        return;
+    let Some((name, index_expressions)) = source_expression_index_chain(left) else {
+        return false;
     };
-    if let Some(alias) = source_expression_array_alias(expression) {
-        expression_array_aliases.insert(declaration.name.clone(), alias);
+    let Some(alias) = expression_array_aliases.get_mut(name) else {
+        return false;
+    };
+    let Some(indices) = index_expressions
+        .iter()
+        .map(|index| {
+            let value = evaluate_source_static_expression(program, index, values)?;
+            usize::try_from(source_static_integer_value(Some(&value))?).ok()
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    assign_source_expression_array_alias(alias, &indices, (**right).clone())
+}
+
+fn assign_source_expression_array_alias(
+    alias: &mut SourceExpressionArrayAlias,
+    indices: &[usize],
+    value: Expression,
+) -> bool {
+    let SourceExpressionArrayAlias::Values(expressions) = alias else {
+        return false;
+    };
+    assign_source_expression_array_values(expressions, indices, value)
+}
+
+fn assign_source_expression_array_values(
+    expressions: &mut Vec<Expression>,
+    indices: &[usize],
+    value: Expression,
+) -> bool {
+    let Some((&index, rest)) = indices.split_first() else {
+        return false;
+    };
+    while expressions.len() <= index {
+        expressions.push(source_zero_expression(&value.source_name, value.start));
     }
+    if rest.is_empty() {
+        expressions[index] = value;
+        return true;
+    }
+    if !matches!(expressions[index].kind, ExpressionKind::Array(_)) {
+        expressions[index].kind = ExpressionKind::Array(Vec::new());
+    }
+    let ExpressionKind::Array(inner) = &mut expressions[index].kind else {
+        return false;
+    };
+    assign_source_expression_array_values(inner, rest, value)
 }
 
 fn source_static_array_expression(
@@ -1151,7 +1334,9 @@ fn lower_source_function_body_statement(
                         &mut body_alias_scope.expressions,
                     );
                     collect_source_template_expression_array_alias(
+                        context.program,
                         body_statement,
+                        values,
                         &mut body_alias_scope.expression_arrays,
                     );
                 }
@@ -1193,7 +1378,9 @@ fn lower_source_function_body_statement(
                             &mut loop_alias_scope.expressions,
                         );
                         collect_source_template_expression_array_alias(
+                            context.program,
                             body_statement,
+                            values,
                             &mut loop_alias_scope.expression_arrays,
                         );
                     }
@@ -1225,6 +1412,15 @@ fn lower_source_function_body_statement(
         return Ok(true);
     }
     if source_static_assertion(context.program, context.module, statement, values)? {
+        return Ok(true);
+    }
+    let mut expression_arrays = alias_scope.expression_arrays.clone();
+    if source_expression_array_alias_assignment(
+        context.program,
+        statement.value_expression.as_ref(),
+        values,
+        &mut expression_arrays,
+    ) {
         return Ok(true);
     }
     let lookup_inputs = SourceLookupInputs {
@@ -1279,11 +1475,19 @@ fn lower_source_function_body_statement(
 }
 
 fn source_expr_alias_declaration(statement: &FunctionStatement) -> bool {
-    let Some(FunctionStatementDeclaration::Constant(declaration)) = statement.declaration.as_ref()
-    else {
-        return false;
-    };
-    declaration.type_name.as_deref() == Some("expr") && declaration.initializer_expression.is_some()
+    match statement.declaration.as_ref() {
+        Some(FunctionStatementDeclaration::Constant(declaration)) => {
+            declaration.type_name.as_deref() == Some("expr")
+                && (declaration.initializer_expression.is_some()
+                    || !declaration.array_dims.is_empty())
+        }
+        Some(FunctionStatementDeclaration::Variable(declaration)) => {
+            declaration.type_name == "expr"
+                && (declaration.initializer_expression.is_some()
+                    || !declaration.array_dims.is_empty())
+        }
+        _ => false,
+    }
 }
 
 fn apply_source_static_declaration(
@@ -1466,6 +1670,18 @@ fn source_expression_name(expression: &Expression) -> Option<&str> {
     match &expression.kind {
         ExpressionKind::Name(name) => Some(name),
         ExpressionKind::Group(inner) => source_expression_name(inner),
+        _ => None,
+    }
+}
+
+fn source_expression_index_chain(expression: &Expression) -> Option<(&str, Vec<&Expression>)> {
+    match &strip_source_group_expression(expression).kind {
+        ExpressionKind::Name(name) => Some((name, Vec::new())),
+        ExpressionKind::Index { target, index } => {
+            let (name, mut indices) = source_expression_index_chain(target)?;
+            indices.push(index);
+            Some((name, indices))
+        }
         _ => None,
     }
 }
