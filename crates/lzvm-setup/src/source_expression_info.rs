@@ -1206,6 +1206,14 @@ fn lower_source_function_body_statement(
             Err(error) => return Err(error),
         }
     }
+    if source_statement_is_source_directive(context.module, statement).map_err(|source| {
+        SourceKeyDirectoryMetadataError::Lex {
+            source_name: context.module.source_name.clone(),
+            source,
+        }
+    })? {
+        return Ok(true);
+    }
     if statement.kind != FunctionStatementKind::Expression {
         return Ok(false);
     }

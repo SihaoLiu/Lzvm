@@ -10,6 +10,10 @@ use super::types::{
 };
 use crate::{lex_source, SourceFile, Token, TokenKind};
 
+mod directives;
+
+use directives::{parse_source_directive_statement_span, source_directive_statement_start};
+
 pub fn parse_function_declarations(
     source: &SourceFile,
 ) -> Result<Vec<FunctionDeclaration>, ParseError> {
@@ -273,6 +277,11 @@ fn parse_function_statement(
             let (span, next_index) =
                 parse_nested_function_statement_span(tokens, index, limit_index, source)?;
             (FunctionStatementKind::Declaration, span, next_index)
+        }
+        _ if source_directive_statement_start(tokens, index).is_some() => {
+            let (span, next_index) =
+                parse_source_directive_statement_span(tokens, index, limit_index, source)?;
+            (FunctionStatementKind::Expression, span, next_index)
         }
         TokenKind::AtIdentifier => {
             let (span, next_index) =
