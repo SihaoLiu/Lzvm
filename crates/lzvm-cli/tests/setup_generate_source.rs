@@ -1776,6 +1776,61 @@ fn generate_key_writes_source_air_values_to_unit_metadata() {
 }
 
 #[test]
+fn generate_key_extends_source_stages_for_late_air_values() {
+    let dir = temp_dir("late-air-value-metadata");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             airval stage(11) air.late;\n\
+             airgroupval aggregate(prod) stage(11) group.late;\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let setup_path = layout.units[0]
+        .setup_info_binary()
+        .expect("setup metadata path should derive");
+    let setup = read_unit_setup_info_binary_file(setup_path).expect("setup metadata should parse");
+    assert_eq!(setup.n_stages, 10);
+    assert_eq!(
+        setup
+            .stage_commit_widths()
+            .expect("stage widths should exist"),
+        vec![1; 11]
+    );
+    assert_eq!(setup.unit_value_map.len(), 1);
+    assert_eq!(setup.unit_value_map[0].name, "air.late");
+    assert_eq!(setup.unit_value_map[0].stage, 11);
+    assert_eq!(setup.group_value_map.len(), 1);
+    assert_eq!(setup.group_value_map[0].name, "group.late");
+    assert_eq!(setup.group_value_map[0].stage, 11);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_writes_source_air_group_values_to_metadata() {
     let dir = temp_dir("air-group-value-metadata");
     let _ = fs::remove_dir_all(&dir);

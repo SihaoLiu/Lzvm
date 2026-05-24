@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use lzvm_artifacts::expression_info::ExpressionInfoError;
 use lzvm_artifacts::global_info::{
     encode_global_info, AggregationType, CurveKind, GlobalAir, GlobalInfo, GlobalInfoError,
-    PublicValue,
+    NamedStageValue, PublicValue,
 };
 use lzvm_artifacts::global_program::{encode_global_program, GlobalProgramError};
 use lzvm_artifacts::key_directory::{read_key_directory_layout, KeyDirectoryError, KeyUnitPaths};
@@ -922,7 +922,6 @@ fn source_unit_setup_info(
         &template_values,
         body_caches,
     )?;
-    let (n_stages, commitment_widths) = source_commitment_section_widths(&commitment_columns)?;
     let unit_value_map = source_unit_values(
         program,
         unit_name,
@@ -939,6 +938,37 @@ fn source_unit_setup_info(
         &template_values,
         body_caches,
     )?;
+    let challenge_counts = source_challenge_counts(
+        program,
+        &constant_values,
+        &active_templates,
+        &template_values,
+        body_caches,
+    )?;
+    let (_, proof_values_map) = source_proof_values(
+        program,
+        &constant_values,
+        &active_templates,
+        &template_values,
+        body_caches,
+    )?;
+    let publics_map = source_public_values(
+        program,
+        &constant_values,
+        &active_templates,
+        &template_values,
+        body_caches,
+    )?;
+    let required_max_stage = source_required_setup_max_stage(
+        &commitment_columns,
+        &unit_value_map,
+        &group_value_map,
+        &challenge_counts,
+        &proof_values_map,
+        &publics_map,
+    )?;
+    let (n_stages, commitment_widths) =
+        source_commitment_section_widths(&commitment_columns, required_max_stage)?;
     let opening_points = source_opening_points(
         program,
         unit_name,
@@ -947,27 +977,16 @@ fn source_unit_setup_info(
         &template_values,
         body_caches,
     )?;
-    let challenge_count = source_challenge_counts(
-        program,
-        &constant_values,
-        &active_templates,
-        &template_values,
-        body_caches,
-    )?
-    .into_iter()
-    .try_fold(0_usize, |acc, count| {
-        usize::try_from(count)
-            .ok()
-            .and_then(|count| acc.checked_add(count))
-    })
-    .ok_or_else(|| unsupported_source_message("source challenge count overflow"))?;
-    let public_count = source_public_count(&source_public_values(
-        program,
-        &constant_values,
-        &active_templates,
-        &template_values,
-        body_caches,
-    )?)?;
+    let challenge_count = challenge_counts
+        .iter()
+        .copied()
+        .try_fold(0_usize, |acc, count| {
+            usize::try_from(count)
+                .ok()
+                .and_then(|count| acc.checked_add(count))
+        })
+        .ok_or_else(|| unsupported_source_message("source challenge count overflow"))?;
+    let public_count = source_public_count(&publics_map)?;
     let const_width = constant_columns
         .iter()
         .try_fold(0_u32, |acc, column| acc.checked_add(column.dimension))
@@ -1008,6 +1027,45 @@ fn source_unit_setup_info(
             merkle_tree_custom: Some(true),
         },
     })
+}
+
+fn source_required_setup_max_stage(
+    commitment_columns: &[CommitmentColumn],
+    unit_value_map: &[StageValue],
+    group_value_map: &[StageValue],
+    challenge_counts: &[u64],
+    proof_values_map: &[NamedStageValue],
+    publics_map: &[PublicValue],
+) -> Result<u32, SourceKeyDirectoryMetadataError> {
+    let mut max_stage = commitment_columns
+        .iter()
+        .map(|column| column.stage)
+        .max()
+        .unwrap_or(0);
+    max_stage = max_stage.max(source_stage_values_max_stage(unit_value_map));
+    max_stage = max_stage.max(source_stage_values_max_stage(group_value_map));
+    max_stage = max_stage.max(
+        u32::try_from(challenge_counts.len())
+            .map_err(|_| unsupported_source_message("source challenge stage overflow"))?,
+    );
+    for value in proof_values_map {
+        max_stage =
+            max_stage
+                .max(u32::try_from(value.stage).map_err(|_| {
+                    unsupported_source_message("source proof value stage overflow")
+                })?);
+    }
+    for value in publics_map {
+        max_stage = max_stage.max(
+            u32::try_from(value.stage)
+                .map_err(|_| unsupported_source_message("source public value stage overflow"))?,
+        );
+    }
+    Ok(max_stage)
+}
+
+fn source_stage_values_max_stage(values: &[StageValue]) -> u32 {
+    values.iter().map(|value| value.stage).max().unwrap_or(0)
 }
 
 fn source_fri_steps(n_bits_ext: u32) -> Vec<FriStep> {
@@ -1324,11 +1382,19 @@ fn source_push_commitment_columns(
 
 fn source_commitment_section_widths(
     columns: &[CommitmentColumn],
+    required_max_stage: u32,
 ) -> Result<(u32, BTreeMap<String, u32>), SourceKeyDirectoryMetadataError> {
     if columns.is_empty() {
+        let max_stage = required_max_stage.max(2);
+        let mut widths = BTreeMap::new();
+        for stage in 1..=max_stage {
+            widths.insert(format!("cm{stage}"), 1);
+        }
         return Ok((
-            1,
-            BTreeMap::from([("cm1".to_owned(), 1), ("cm2".to_owned(), 1)]),
+            max_stage
+                .checked_sub(1)
+                .ok_or_else(|| unsupported_source_message("source commitment stage underflow"))?,
+            widths,
         ));
     }
 
@@ -1343,10 +1409,12 @@ fn source_commitment_section_widths(
             .and_modify(|width| *width = (*width).max(end))
             .or_insert(end);
     }
-    let max_stage = *widths
+    let max_stage = widths
         .keys()
+        .copied()
         .next_back()
-        .ok_or_else(|| unsupported_source_message("source commitment stage set is empty"))?;
+        .ok_or_else(|| unsupported_source_message("source commitment stage set is empty"))?
+        .max(required_max_stage);
     let mut section_widths = BTreeMap::new();
     for stage in 1..=max_stage {
         let width = widths.get(&stage).copied().unwrap_or(1);
