@@ -79,8 +79,8 @@ fn generate_key_records_unsupported_source_control_statements_as_regular_hints()
 }
 
 #[test]
-fn generate_key_records_unsupported_source_include_blocks_as_regular_hints() {
-    let dir = temp_dir("unsupported-source-include-block");
+fn generate_key_ignores_source_include_and_require_blocks_as_regular_hints() {
+    let dir = temp_dir("source-include-require-block");
     let _ = fs::remove_dir_all(&dir);
     let source_path = dir.join("source").join("main.pil");
     let include_path = dir.join("source").join("extra.pil");
@@ -89,6 +89,7 @@ fn generate_key_records_unsupported_source_include_blocks_as_regular_hints() {
         &source_path,
         "airtemplate UnitA() {\n\
              include \"extra.pil\"\n\
+             require \"extra.pil\"\n\
              col witness value;\n\
          }\n\
          airgroup GroupA { UnitA(); }\n\
@@ -117,18 +118,13 @@ fn generate_key_records_unsupported_source_include_blocks_as_regular_hints() {
             .expect("expression metadata path should derive"),
     )
     .expect("expression metadata should parse");
-    assert_eq!(expressions.hints.len(), 1);
-    assert_eq!(expressions.hints[0].name, SOURCE_UNSUPPORTED_STATEMENT_HINT);
+    assert!(expressions.hints.is_empty());
     let regular = read_regular_program_file(
         unit.expression_program()
             .expect("regular program path should derive"),
     )
     .expect("regular program should parse");
-    assert_eq!(regular.hints.hints.len(), 1);
-    assert_eq!(
-        regular.hints.hints[0].name,
-        SOURCE_UNSUPPORTED_STATEMENT_HINT
-    );
+    assert!(regular.hints.hints.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
     assert!(String::from_utf8(stdout)
         .expect("stdout should be utf-8")
@@ -137,8 +133,8 @@ fn generate_key_records_unsupported_source_include_blocks_as_regular_hints() {
 }
 
 #[test]
-fn generate_key_records_unsupported_source_use_directives_as_regular_hints() {
-    let dir = temp_dir("unsupported-source-use-directive");
+fn generate_key_ignores_source_use_directives_as_regular_hints() {
+    let dir = temp_dir("source-use-directive");
     let _ = fs::remove_dir_all(&dir);
     let source_path = dir.join("source").join("main.pil");
     write_file(
@@ -173,18 +169,13 @@ fn generate_key_records_unsupported_source_use_directives_as_regular_hints() {
             .expect("expression metadata path should derive"),
     )
     .expect("expression metadata should parse");
-    assert_eq!(expressions.hints.len(), 1);
-    assert_eq!(expressions.hints[0].name, SOURCE_UNSUPPORTED_STATEMENT_HINT);
+    assert!(expressions.hints.is_empty());
     let regular = read_regular_program_file(
         unit.expression_program()
             .expect("regular program path should derive"),
     )
     .expect("regular program should parse");
-    assert_eq!(regular.hints.hints.len(), 1);
-    assert_eq!(
-        regular.hints.hints[0].name,
-        SOURCE_UNSUPPORTED_STATEMENT_HINT
-    );
+    assert!(regular.hints.hints.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
     assert!(String::from_utf8(stdout)
         .expect("stdout should be utf-8")

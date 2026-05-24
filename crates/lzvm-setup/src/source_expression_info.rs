@@ -443,10 +443,6 @@ fn lower_source_template_statement(
             kind,
             TokenKind::Include | TokenKind::Require | TokenKind::Use
         ) {
-            hints.push(lower_unsupported_source_template_statement(
-                context.module,
-                statement,
-            ));
             return Ok(());
         }
     }
