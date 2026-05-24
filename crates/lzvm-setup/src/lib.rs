@@ -43,6 +43,7 @@ mod source_expression_info;
 mod source_expression_return_arrays;
 mod source_expression_return_values;
 mod source_expression_statements;
+mod source_expression_static_assertions;
 mod source_expression_strings;
 mod source_expression_template_values;
 mod source_expression_units;

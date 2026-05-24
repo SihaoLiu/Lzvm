@@ -34,6 +34,7 @@ use crate::{
         apply_source_static_array_assignment_statement, apply_source_static_declaration,
         apply_source_static_expression_statement,
     },
+    source_expression_static_assertions::source_static_assertion,
     source_expression_template_values::source_expression_template_values,
     source_expression_units::{
         source_expression_template_instances, source_expression_unit_instances,
@@ -54,7 +55,7 @@ use crate::{
     },
     source_static_values::{
         evaluate_source_static_expression, insert_source_static_array, source_active_static_name,
-        source_scalar_constant_values, source_static_array_length, source_static_array_values,
+        source_scalar_constant_values, source_static_array_values,
         source_static_assignment_expression, source_template_constant_value_cache,
     },
     source_template_context::SourceTemplateLoweringContext,
@@ -66,6 +67,13 @@ use crate::{
 pub(crate) struct SourceExpressionAliasScope {
     pub(crate) expressions: SourceExpressionAliases,
     pub(crate) expression_arrays: SourceExpressionArrayAliases,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SourceTemplateStatementFlow {
+    Fallthrough,
+    Break,
+    Continue,
 }
 
 pub(crate) fn source_expression_info(
@@ -132,7 +140,7 @@ pub(crate) fn source_expression_info(
                     context.template_values,
                 );
                 for statement in &template.statements {
-                    lower_source_template_statement(
+                    let flow = lower_source_template_statement(
                         &context,
                         statement,
                         &mut statement_values,
@@ -141,6 +149,11 @@ pub(crate) fn source_expression_info(
                         &mut hints,
                         &mut constraints,
                     )?;
+                    if flow != SourceTemplateStatementFlow::Fallthrough {
+                        return Err(unsupported_source_message(
+                            "source control statement outside static loop",
+                        ));
+                    }
                     collect_source_template_expression_aliases(
                         &context,
                         statement,
@@ -176,12 +189,12 @@ fn lower_source_template_statement(
     body_cache: &mut SourceControlBodyCache,
     hints: &mut Vec<HintInfo>,
     constraints: &mut Vec<ConstraintCode>,
-) -> Result<(), SourceKeyDirectoryMetadataError> {
+) -> Result<SourceTemplateStatementFlow, SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
         if !apply_source_expression_string_declaration(context, statement, values, alias_scope) {
             apply_source_static_declaration(context.program, statement, values);
         }
-        return Ok(());
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
     if statement.kind == FunctionStatementKind::If {
         match source_static_if_body_statements_with_tokens(
@@ -195,7 +208,7 @@ fn lower_source_template_statement(
             Ok(Some(body_statements)) => {
                 let mut body_alias_scope = alias_scope.clone();
                 for body_statement in body_statements.iter() {
-                    lower_source_template_statement(
+                    let flow = lower_source_template_statement(
                         context,
                         body_statement,
                         values,
@@ -204,6 +217,9 @@ fn lower_source_template_statement(
                         hints,
                         constraints,
                     )?;
+                    if flow != SourceTemplateStatementFlow::Fallthrough {
+                        return Ok(flow);
+                    }
                     collect_source_template_expression_aliases(
                         context,
                         body_statement,
@@ -212,14 +228,14 @@ fn lower_source_template_statement(
                         &mut body_alias_scope,
                     );
                 }
-                return Ok(());
+                return Ok(SourceTemplateStatementFlow::Fallthrough);
             }
             Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
                 hints.push(lower_unsupported_source_template_statement(
                     context.module,
                     statement,
                 ));
-                return Ok(());
+                return Ok(SourceTemplateStatementFlow::Fallthrough);
             }
             Err(error) => return Err(error),
         }
@@ -238,7 +254,7 @@ fn lower_source_template_statement(
                     let mut loop_alias_scope = alias_scope.clone();
                     values.insert(loop_info.variable_name.clone(), iteration_value.clone());
                     for body_statement in loop_info.body_statements.iter() {
-                        lower_source_template_statement(
+                        let flow = lower_source_template_statement(
                             context,
                             body_statement,
                             values,
@@ -247,6 +263,13 @@ fn lower_source_template_statement(
                             hints,
                             constraints,
                         )?;
+                        match flow {
+                            SourceTemplateStatementFlow::Fallthrough => {}
+                            SourceTemplateStatementFlow::Continue => break,
+                            SourceTemplateStatementFlow::Break => {
+                                return Ok(SourceTemplateStatementFlow::Fallthrough);
+                            }
+                        }
                         collect_source_template_expression_aliases(
                             context,
                             body_statement,
@@ -256,14 +279,14 @@ fn lower_source_template_statement(
                         );
                     }
                 }
-                return Ok(());
+                return Ok(SourceTemplateStatementFlow::Fallthrough);
             }
             Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
                 hints.push(lower_unsupported_source_template_statement(
                     context.module,
                     statement,
                 ));
-                return Ok(());
+                return Ok(SourceTemplateStatementFlow::Fallthrough);
             }
             Err(error) => return Err(error),
         }
@@ -274,12 +297,18 @@ fn lower_source_template_statement(
             source,
         }
     })? {
-        return Ok(());
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
+    }
+    if statement.kind == FunctionStatementKind::Break {
+        return Ok(SourceTemplateStatementFlow::Break);
+    }
+    if statement.kind == FunctionStatementKind::Continue {
+        return Ok(SourceTemplateStatementFlow::Continue);
     }
     if let Some(call) = source_final_statement_call(context.tokens, context.module, statement)? {
         match call.scope {
-            SourceFinalScope::Proof => return Ok(()),
-            SourceFinalScope::Air => return Ok(()),
+            SourceFinalScope::Proof => return Ok(SourceTemplateStatementFlow::Fallthrough),
+            SourceFinalScope::Air => return Ok(SourceTemplateStatementFlow::Fallthrough),
             SourceFinalScope::AirGroup => {}
         }
     }
@@ -288,7 +317,7 @@ fn lower_source_template_statement(
             context.module,
             statement,
         ));
-        return Ok(());
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
     if let Some(kind) =
         source_statement_first_token_kind(context.module, statement).map_err(|source| {
@@ -307,30 +336,30 @@ fn lower_source_template_statement(
                 | TokenKind::ProofValue
                 | TokenKind::Challenge
         ) {
-            return Ok(());
+            return Ok(SourceTemplateStatementFlow::Fallthrough);
         }
     }
     if source_expression_assigns_fixed_index(
         statement.value_expression.as_ref(),
         context.fixed_columns,
     ) {
-        return Ok(());
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
     if apply_source_static_expression_statement(
         context.program,
         statement.value_expression.as_ref(),
         values,
     ) {
-        return Ok(());
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
     if apply_source_expression_string_assignment(context, statement, values, alias_scope) {
-        return Ok(());
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
     if apply_source_static_array_assignment_statement(context, statement, values) {
-        return Ok(());
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
     if source_static_assertion(context.program, context.module, statement, values)? {
-        return Ok(());
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
     if let Some(update) =
         source_static_postfix_update(context.module, statement).map_err(|source| {
@@ -341,7 +370,7 @@ fn lower_source_template_statement(
         })?
     {
         if apply_source_static_delta(&update.name, update.delta, values) {
-            return Ok(());
+            return Ok(SourceTemplateStatementFlow::Fallthrough);
         }
         if source_active_static_name(
             context.program,
@@ -351,13 +380,13 @@ fn lower_source_template_statement(
             context.constant_values,
             context.template_values,
         ) {
-            return Ok(());
+            return Ok(SourceTemplateStatementFlow::Fallthrough);
         }
         hints.push(lower_unsupported_source_assignment_statement(
             context.module,
             statement,
         ));
-        return Ok(());
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
     let mut expression_aliases = alias_scope.expressions.clone();
     if source_expression_alias_assignment(
@@ -369,7 +398,7 @@ fn lower_source_template_statement(
         {
             values.remove(name);
         }
-        return Ok(());
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
     if source_static_assignment_expression(
         context.program,
@@ -379,7 +408,7 @@ fn lower_source_template_statement(
         context.constant_values,
         context.template_values,
     ) {
-        return Ok(());
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
     let lookup_inputs = SourceLookupInputs {
         program: context.program,
@@ -399,7 +428,7 @@ fn lower_source_template_statement(
         })?
     {
         hints.push(hint);
-        return Ok(());
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
     if let Some(hint) =
         lower_source_annotation_statement(&lookup_inputs, statement).map_err(|source| {
@@ -410,7 +439,7 @@ fn lower_source_template_statement(
         })?
     {
         hints.push(hint);
-        return Ok(());
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
     if source_expression_is_constrained_assignment(statement.value_expression.as_ref()) {
         let lowered = lower_source_template_boolean_constraint(
@@ -432,7 +461,7 @@ fn lower_source_template_statement(
             }
             Err(error) => return Err(error),
         }
-        return Ok(());
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
     let is_assignment = source_expression_is_assignment(statement.value_expression.as_ref());
     if is_assignment {
@@ -443,7 +472,7 @@ fn lower_source_template_statement(
             values,
             &mut expression_arrays,
         ) {
-            return Ok(());
+            return Ok(SourceTemplateStatementFlow::Fallthrough);
         }
         if let Some(hint) =
             lower_source_assignment_statement(&lookup_inputs, statement).map_err(|source| {
@@ -454,7 +483,7 @@ fn lower_source_template_statement(
             })?
         {
             hints.push(hint);
-            return Ok(());
+            return Ok(SourceTemplateStatementFlow::Fallthrough);
         }
     }
     let contains_assignment_operator =
@@ -469,7 +498,7 @@ fn lower_source_template_statement(
             context.module,
             statement,
         ));
-        return Ok(());
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
     match lower_source_template_boolean_constraint(
         context.program,
@@ -482,7 +511,7 @@ fn lower_source_template_statement(
     ) {
         Ok(Some(constraint)) => {
             constraints.push(constraint);
-            return Ok(());
+            return Ok(SourceTemplateStatementFlow::Fallthrough);
         }
         Ok(None)
             if source_expression_is_equality_constraint(statement.value_expression.as_ref()) =>
@@ -491,7 +520,7 @@ fn lower_source_template_statement(
                 context.module,
                 statement,
             ));
-            return Ok(());
+            return Ok(SourceTemplateStatementFlow::Fallthrough);
         }
         Ok(None) => {}
         Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
@@ -499,7 +528,7 @@ fn lower_source_template_statement(
                 context.module,
                 statement,
             ));
-            return Ok(());
+            return Ok(SourceTemplateStatementFlow::Fallthrough);
         }
         Err(error) => return Err(error),
     }
@@ -515,7 +544,7 @@ fn lower_source_template_statement(
         &mut output,
         None,
     )? {
-        return Ok(());
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
     if let Some(hint) =
         lower_unsupported_source_call_statement(context.module, statement).map_err(|source| {
@@ -526,7 +555,7 @@ fn lower_source_template_statement(
         })?
     {
         hints.push(hint);
-        return Ok(());
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
     unsupported(format!(
         "air template statements need constraint lowering support: {}",
@@ -1358,102 +1387,10 @@ pub(crate) fn source_call_expression(
     Some((name.as_str(), args.as_slice()))
 }
 
-fn source_static_assertion(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
-    statement: &FunctionStatement,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-) -> Result<bool, SourceKeyDirectoryMetadataError> {
-    let Some((name, arguments)) = source_call_expression(statement.value_expression.as_ref())
-    else {
-        return Ok(false);
-    };
-    if name == "assert" && (1..=2).contains(&arguments.len()) && arguments[0].name.is_none() {
-        return match source_static_condition(program, &arguments[0].value, values) {
-            Some(true) => Ok(true),
-            Some(false) => Err(SourceKeyDirectoryMetadataError::StaticAssertionFailed {
-                line: source_statement_line(module, statement),
-            }),
-            None => Ok(false),
-        };
-    }
-    if name != "assert_eq" || arguments.len() != 2 || arguments.iter().any(|arg| arg.name.is_some())
-    {
-        return Ok(false);
-    }
-    let left = evaluate_source_static_expression(program, &arguments[0].value, values);
-    let right = evaluate_source_static_expression(program, &arguments[1].value, values);
-    match (left, right) {
-        (Some(left), Some(right)) if left == right => Ok(true),
-        (Some(_), Some(_)) => Err(SourceKeyDirectoryMetadataError::StaticAssertionFailed {
-            line: source_statement_line(module, statement),
-        }),
-        _ => Ok(false),
-    }
-}
-
-fn source_static_condition(
-    program: &SourceProgram,
-    expression: &Expression,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<bool> {
-    if let Some(value) = evaluate_source_static_expression(program, expression, values) {
-        return Some(source_static_truthy_value(&value));
-    }
-    let ExpressionKind::Binary { op, left, right } =
-        &strip_source_group_expression(expression).kind
-    else {
-        return None;
-    };
-    let left = source_static_integer_expression(program, left, values)?;
-    let right = source_static_integer_expression(program, right, values)?;
-    match op {
-        BinaryOperator::Less => Some(left < right),
-        BinaryOperator::LessEqual => Some(left <= right),
-        BinaryOperator::Greater => Some(left > right),
-        BinaryOperator::GreaterEqual => Some(left >= right),
-        BinaryOperator::EqualEqual | BinaryOperator::TripleEqual => Some(left == right),
-        BinaryOperator::NotEqual => Some(left != right),
-        _ => None,
-    }
-}
-
-fn source_static_integer_expression(
-    program: &SourceProgram,
-    expression: &Expression,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<i128> {
-    let expression = strip_source_group_expression(expression);
-    if let ExpressionKind::Call { callee, args } = &expression.kind {
-        if args.len() == 1 && args[0].name.is_none() {
-            if let ExpressionKind::Name(callee) = &strip_source_group_expression(callee).kind {
-                if callee == "length" {
-                    let ExpressionKind::Name(name) =
-                        &strip_source_group_expression(&args[0].value).kind
-                    else {
-                        return None;
-                    };
-                    return source_static_array_length(values, name);
-                }
-            }
-        }
-    }
-    let value = evaluate_source_static_expression(program, expression, values)?;
-    source_static_integer_value(Some(&value))
-}
-
 fn strip_source_group_expression(expression: &Expression) -> &Expression {
     match &expression.kind {
         ExpressionKind::Group(inner) => strip_source_group_expression(inner),
         _ => expression,
-    }
-}
-
-fn source_static_truthy_value(value: &FixedFileTemplateValue) -> bool {
-    match value {
-        FixedFileTemplateValue::Integer(value) => *value != 0,
-        FixedFileTemplateValue::Boolean(value) => *value,
-        FixedFileTemplateValue::String(value) => !value.is_empty(),
     }
 }
 
