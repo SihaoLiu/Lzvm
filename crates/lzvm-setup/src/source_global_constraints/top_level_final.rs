@@ -16,12 +16,19 @@ pub(super) fn lower_top_level_final_statement(
     let Some(call) = source_final_call_at(context.tokens, index, &context.module.source)? else {
         return lower_top_level_expression_statement(context, index, constraints);
     };
-    if call.scope != SourceFinalScope::Proof {
-        return lower_top_level_expression_statement(context, index, constraints);
-    }
-    if top_level_call::lower_top_level_function_call(context, &call.expression, constraints)? {
-        Ok(call.next_index)
-    } else {
-        lower_top_level_expression_statement(context, index, constraints)
+    match call.scope {
+        SourceFinalScope::Proof => {
+            if top_level_call::lower_top_level_function_call(
+                context,
+                &call.expression,
+                constraints,
+            )? {
+                Ok(call.next_index)
+            } else {
+                lower_top_level_expression_statement(context, index, constraints)
+            }
+        }
+        SourceFinalScope::AirGroup => Ok(call.next_index),
+        SourceFinalScope::Air => lower_top_level_expression_statement(context, index, constraints),
     }
 }
