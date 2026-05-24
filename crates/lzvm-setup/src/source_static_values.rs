@@ -11,8 +11,9 @@ use crate::{
     source_static_functions::evaluate_static_i128,
     source_static_tokens::{
         control_body_range, matching_closing_token, next_static_semicolon_limited, next_token_kind,
-        source_token_index_after_end, source_token_index_at_start, static_switch_label_colon,
-        update_static_delimiter_stack,
+        skip_static_do_while_statement, source_token_index_after_end, source_token_index_at_start,
+        static_switch_label_colon, update_static_delimiter_stack, StaticTemplateFlow,
+        StaticTemplateStatementResult,
     },
 };
 
@@ -580,7 +581,7 @@ fn execute_static_template_range(
         .iter()
         .position(|token| token.start >= end)
         .unwrap_or(tokens.len());
-    execute_static_template_tokens(program, module, &tokens, start, end, values)
+    execute_static_template_tokens(program, module, &tokens, start, end, values).map(|_| ())
 }
 
 fn execute_static_template_tokens(
@@ -590,24 +591,38 @@ fn execute_static_template_tokens(
     mut index: usize,
     end: usize,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<()> {
+) -> Option<StaticTemplateFlow> {
     while index < end {
         match tokens.get(index).map(|token| token.kind) {
             Some(TokenKind::LBrace | TokenKind::RBrace | TokenKind::Semicolon) => {
                 index += 1;
             }
+            Some(TokenKind::Break) => {
+                next_static_semicolon_limited(tokens, index, end)?;
+                return Some(StaticTemplateFlow::Break);
+            }
+            Some(TokenKind::Continue) => {
+                next_static_semicolon_limited(tokens, index, end)?;
+                return Some(StaticTemplateFlow::Continue);
+            }
             Some(TokenKind::EndOfInput) | None => break,
             _ => {
-                let next =
+                let result =
                     execute_static_template_statement(program, module, tokens, index, end, values)
-                        .or_else(|| skip_static_template_statement(tokens, index, end))
-                        .filter(|next| *next > index)
-                        .unwrap_or(index + 1);
-                index = next;
+                        .or_else(|| {
+                            skip_static_template_statement(tokens, index, end)
+                                .map(StaticTemplateStatementResult::fallthrough)
+                        })
+                        .filter(|result| result.next > index)
+                        .unwrap_or_else(|| StaticTemplateStatementResult::fallthrough(index + 1));
+                if result.flow != StaticTemplateFlow::Fallthrough {
+                    return Some(result.flow);
+                }
+                index = result.next;
             }
         }
     }
-    Some(())
+    Some(StaticTemplateFlow::Fallthrough)
 }
 
 fn execute_static_template_statement(
@@ -617,7 +632,7 @@ fn execute_static_template_statement(
     index: usize,
     end: usize,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<usize> {
+) -> Option<StaticTemplateStatementResult> {
     match tokens.get(index)?.kind {
         TokenKind::If => execute_static_template_if(program, module, tokens, index, end, values),
         TokenKind::For => execute_static_template_for(program, module, tokens, index, end, values),
@@ -633,28 +648,29 @@ fn execute_static_template_statement(
         kind if static_declaration_start(kind) => {
             execute_static_template_declaration(program, module, tokens, index, values);
             skip_static_template_statement(tokens, index, end)
+                .map(StaticTemplateStatementResult::fallthrough)
         }
         _ => {
             let semicolon = next_static_semicolon_limited(tokens, index, end)?;
             if !static_statement_contains_assignment_operator(tokens, index, semicolon) {
-                return Some(semicolon + 1);
+                return Some(StaticTemplateStatementResult::fallthrough(semicolon + 1));
             }
             if crate::source_static_array_assignment::execute_source_static_array_assignment_statement(
                 program, module, tokens, index, semicolon, values,
             )
             .is_some()
             {
-                return Some(semicolon + 1);
+                return Some(StaticTemplateStatementResult::fallthrough(semicolon + 1));
             }
             if unsupported_static_assignment_statement(tokens, index, semicolon) {
-                return Some(semicolon + 1);
+                return Some(StaticTemplateStatementResult::fallthrough(semicolon + 1));
             }
             if execute_source_static_postfix_update(
                 program, module, tokens, index, semicolon, values,
             )
             .is_some()
             {
-                return Some(semicolon + 1);
+                return Some(StaticTemplateStatementResult::fallthrough(semicolon + 1));
             }
             let (expression, consumed) =
                 parse_expression_tokens(tokens, index, semicolon, &module.source).ok()?;
@@ -667,7 +683,7 @@ fn execute_static_template_statement(
                     values,
                 );
             }
-            Some(semicolon + 1)
+            Some(StaticTemplateStatementResult::fallthrough(semicolon + 1))
         }
     }
 }
@@ -679,7 +695,7 @@ fn execute_static_template_if(
     index: usize,
     end: usize,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<usize> {
+) -> Option<StaticTemplateStatementResult> {
     let open = next_token_kind(tokens, index + 1, end, TokenKind::LParen)?;
     let close = matching_closing_token(tokens, open, end)?;
     let condition = evaluate_source_static_token_range(
@@ -692,8 +708,13 @@ fn execute_static_template_if(
     )?;
     let (body_start, body_end, after_body) = control_body_range(tokens, close + 1, end)?;
     if static_value_truthy(&condition) {
-        execute_static_template_tokens(program, module, tokens, body_start, body_end, values);
-        return skip_static_else_tail(tokens, after_body, end);
+        let flow =
+            execute_static_template_tokens(program, module, tokens, body_start, body_end, values)?;
+        if flow != StaticTemplateFlow::Fallthrough {
+            return Some(StaticTemplateStatementResult::control(after_body, flow));
+        }
+        return skip_static_else_tail(tokens, after_body, end)
+            .map(StaticTemplateStatementResult::fallthrough);
     }
     execute_static_else_tail(program, module, tokens, after_body, end, values)
 }
@@ -705,7 +726,7 @@ fn execute_static_template_for(
     index: usize,
     end: usize,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<usize> {
+) -> Option<StaticTemplateStatementResult> {
     let checkpoint = values.clone();
     let next = execute_static_template_for_inner(program, module, tokens, index, end, values);
     if next.is_none() {
@@ -721,7 +742,7 @@ fn execute_static_template_for_inner(
     index: usize,
     end: usize,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<usize> {
+) -> Option<StaticTemplateStatementResult> {
     let open = next_token_kind(tokens, index + 1, end, TokenKind::LParen)?;
     let close = matching_closing_token(tokens, open, end)?;
     let [initializer, condition, update] = static_for_header_ranges(tokens, open + 1, close)?;
@@ -740,9 +761,14 @@ fn execute_static_template_for_inner(
         )?;
         if !static_value_truthy(&condition) {
             values.remove(&loop_variable);
-            return Some(after_body);
+            return Some(StaticTemplateStatementResult::fallthrough(after_body));
         }
-        execute_static_template_tokens(program, module, tokens, body_start, body_end, values)?;
+        let flow =
+            execute_static_template_tokens(program, module, tokens, body_start, body_end, values)?;
+        if flow == StaticTemplateFlow::Break {
+            values.remove(&loop_variable);
+            return Some(StaticTemplateStatementResult::fallthrough(after_body));
+        }
         execute_static_for_update(program, module, tokens, update, values)?;
     }
     None
@@ -838,7 +864,7 @@ fn execute_static_template_while(
     index: usize,
     end: usize,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<usize> {
+) -> Option<StaticTemplateStatementResult> {
     let checkpoint = values.clone();
     let next = execute_static_template_while_inner(program, module, tokens, index, end, values);
     if next.is_none() {
@@ -854,7 +880,7 @@ fn execute_static_template_while_inner(
     index: usize,
     end: usize,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<usize> {
+) -> Option<StaticTemplateStatementResult> {
     let open = next_token_kind(tokens, index + 1, end, TokenKind::LParen)?;
     let close = matching_closing_token(tokens, open, end)?;
     let (body_start, body_end, after_body) = control_body_range(tokens, close + 1, end)?;
@@ -868,9 +894,13 @@ fn execute_static_template_while_inner(
             values,
         )?;
         if !static_value_truthy(&condition) {
-            return Some(after_body);
+            return Some(StaticTemplateStatementResult::fallthrough(after_body));
         }
-        execute_static_template_tokens(program, module, tokens, body_start, body_end, values)?;
+        let flow =
+            execute_static_template_tokens(program, module, tokens, body_start, body_end, values)?;
+        if flow == StaticTemplateFlow::Break {
+            return Some(StaticTemplateStatementResult::fallthrough(after_body));
+        }
     }
     None
 }
@@ -882,7 +912,7 @@ fn execute_static_template_do_while(
     index: usize,
     end: usize,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<usize> {
+) -> Option<StaticTemplateStatementResult> {
     let checkpoint = values.clone();
     let next = execute_static_template_do_while_inner(program, module, tokens, index, end, values);
     if next.is_none() {
@@ -898,7 +928,7 @@ fn execute_static_template_do_while_inner(
     index: usize,
     end: usize,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<usize> {
+) -> Option<StaticTemplateStatementResult> {
     let (body_start, body_end, after_body) = control_body_range(tokens, index + 1, end)?;
     if tokens.get(after_body).map(|token| token.kind) != Some(TokenKind::While) {
         return None;
@@ -914,7 +944,11 @@ fn execute_static_template_do_while_inner(
     }
 
     for _ in 0..STATIC_TEMPLATE_LOOP_LIMIT {
-        execute_static_template_tokens(program, module, tokens, body_start, body_end, values)?;
+        let flow =
+            execute_static_template_tokens(program, module, tokens, body_start, body_end, values)?;
+        if flow == StaticTemplateFlow::Break {
+            return Some(StaticTemplateStatementResult::fallthrough(semicolon + 1));
+        }
         let condition = evaluate_source_static_token_range(
             program,
             &module.source,
@@ -924,7 +958,7 @@ fn execute_static_template_do_while_inner(
             values,
         )?;
         if !static_value_truthy(&condition) {
-            return Some(semicolon + 1);
+            return Some(StaticTemplateStatementResult::fallthrough(semicolon + 1));
         }
     }
     None
@@ -937,7 +971,7 @@ fn execute_static_template_switch(
     index: usize,
     end: usize,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<usize> {
+) -> Option<StaticTemplateStatementResult> {
     let checkpoint = values.clone();
     let next = execute_static_template_switch_inner(program, module, tokens, index, end, values);
     if next.is_none() {
@@ -953,7 +987,7 @@ fn execute_static_template_switch_inner(
     index: usize,
     end: usize,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<usize> {
+) -> Option<StaticTemplateStatementResult> {
     let open = next_token_kind(tokens, index + 1, end, TokenKind::LParen)?;
     let close = matching_closing_token(tokens, open, end)?;
     let condition = evaluate_source_static_token_range(
@@ -969,9 +1003,13 @@ fn execute_static_template_switch_inner(
         program, module, tokens, body_start, body_end, values, &condition,
     )?;
     if let Some(branch_start) = branch_start {
-        execute_static_switch_branch(program, module, tokens, branch_start, body_end, values)?;
+        let flow =
+            execute_static_switch_branch(program, module, tokens, branch_start, body_end, values)?;
+        if flow == StaticTemplateFlow::Continue {
+            return Some(StaticTemplateStatementResult::control(after_body, flow));
+        }
     }
-    Some(after_body)
+    Some(StaticTemplateStatementResult::fallthrough(after_body))
 }
 
 fn static_switch_branch_start(
@@ -1034,7 +1072,7 @@ fn execute_static_switch_branch(
     mut index: usize,
     end: usize,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<()> {
+) -> Option<StaticTemplateFlow> {
     while index < end {
         match tokens.get(index).map(|token| token.kind) {
             Some(TokenKind::LBrace | TokenKind::RBrace | TokenKind::Semicolon) => {
@@ -1044,21 +1082,31 @@ fn execute_static_switch_branch(
                 index = static_switch_label_colon(tokens, index + 1, end)? + 1;
             }
             Some(TokenKind::Break) => {
-                let semicolon = next_static_semicolon_limited(tokens, index, end)?;
-                return (semicolon < end).then_some(());
+                next_static_semicolon_limited(tokens, index, end)?;
+                return Some(StaticTemplateFlow::Break);
+            }
+            Some(TokenKind::Continue) => {
+                next_static_semicolon_limited(tokens, index, end)?;
+                return Some(StaticTemplateFlow::Continue);
             }
             Some(TokenKind::EndOfInput) | None => break,
             _ => {
-                let next =
+                let result =
                     execute_static_template_statement(program, module, tokens, index, end, values)
-                        .or_else(|| skip_static_template_statement(tokens, index, end))
-                        .filter(|next| *next > index)
-                        .unwrap_or(index + 1);
-                index = next;
+                        .or_else(|| {
+                            skip_static_template_statement(tokens, index, end)
+                                .map(StaticTemplateStatementResult::fallthrough)
+                        })
+                        .filter(|result| result.next > index)
+                        .unwrap_or_else(|| StaticTemplateStatementResult::fallthrough(index + 1));
+                if result.flow != StaticTemplateFlow::Fallthrough {
+                    return Some(result.flow);
+                }
+                index = result.next;
             }
         }
     }
-    Some(())
+    Some(StaticTemplateFlow::Fallthrough)
 }
 
 fn execute_static_else_tail(
@@ -1068,7 +1116,7 @@ fn execute_static_else_tail(
     index: usize,
     end: usize,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<usize> {
+) -> Option<StaticTemplateStatementResult> {
     match tokens.get(index).map(|token| token.kind) {
         Some(TokenKind::ElseIf) => {
             execute_static_template_if(program, module, tokens, index, end, values)
@@ -1082,10 +1130,12 @@ fn execute_static_else_tail(
         }
         Some(TokenKind::Else) => {
             let (body_start, body_end, after_body) = control_body_range(tokens, index + 1, end)?;
-            execute_static_template_tokens(program, module, tokens, body_start, body_end, values);
-            Some(after_body)
+            let flow = execute_static_template_tokens(
+                program, module, tokens, body_start, body_end, values,
+            )?;
+            Some(StaticTemplateStatementResult::control(after_body, flow))
         }
-        _ => Some(index),
+        _ => Some(StaticTemplateStatementResult::fallthrough(index)),
     }
 }
 
@@ -1130,21 +1180,6 @@ fn skip_static_template_statement(tokens: &[Token], index: usize, end: usize) ->
         TokenKind::Do => skip_static_do_while_statement(tokens, index, end),
         _ => next_static_semicolon_limited(tokens, index, end).map(|semicolon| semicolon + 1),
     }
-}
-
-fn skip_static_do_while_statement(tokens: &[Token], index: usize, end: usize) -> Option<usize> {
-    let (_, _, after_body) = control_body_range(tokens, index + 1, end)?;
-    if tokens.get(after_body).map(|token| token.kind) != Some(TokenKind::While) {
-        return None;
-    }
-    let open = after_body + 1;
-    if tokens.get(open).map(|token| token.kind) != Some(TokenKind::LParen) {
-        return None;
-    }
-    let close = matching_closing_token(tokens, open, end)?;
-    let semicolon = close + 1;
-    (tokens.get(semicolon).map(|token| token.kind) == Some(TokenKind::Semicolon))
-        .then_some(semicolon + 1)
 }
 
 fn skip_static_if_statement(tokens: &[Token], index: usize, end: usize) -> Option<usize> {

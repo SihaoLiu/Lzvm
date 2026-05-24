@@ -1,5 +1,30 @@
 use lzvm_pil::{Token, TokenKind};
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StaticTemplateFlow {
+    Fallthrough,
+    Break,
+    Continue,
+}
+
+pub(crate) struct StaticTemplateStatementResult {
+    pub(crate) next: usize,
+    pub(crate) flow: StaticTemplateFlow,
+}
+
+impl StaticTemplateStatementResult {
+    pub(crate) fn fallthrough(next: usize) -> Self {
+        Self {
+            next,
+            flow: StaticTemplateFlow::Fallthrough,
+        }
+    }
+
+    pub(crate) fn control(next: usize, flow: StaticTemplateFlow) -> Self {
+        Self { next, flow }
+    }
+}
+
 pub(crate) fn control_body_range(
     tokens: &[Token],
     index: usize,
@@ -15,6 +40,25 @@ pub(crate) fn control_body_range(
             Some((index, semicolon + 1, semicolon + 1))
         }
     }
+}
+
+pub(crate) fn skip_static_do_while_statement(
+    tokens: &[Token],
+    index: usize,
+    end: usize,
+) -> Option<usize> {
+    let (_, _, after_body) = control_body_range(tokens, index + 1, end)?;
+    if tokens.get(after_body).map(|token| token.kind) != Some(TokenKind::While) {
+        return None;
+    }
+    let open = after_body + 1;
+    if tokens.get(open).map(|token| token.kind) != Some(TokenKind::LParen) {
+        return None;
+    }
+    let close = matching_closing_token(tokens, open, end)?;
+    let semicolon = close + 1;
+    (tokens.get(semicolon).map(|token| token.kind) == Some(TokenKind::Semicolon))
+        .then_some(semicolon + 1)
 }
 
 pub(crate) fn next_token_kind(
