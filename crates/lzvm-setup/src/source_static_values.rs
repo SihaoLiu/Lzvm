@@ -11,7 +11,7 @@ use crate::{
     source_static_functions::evaluate_static_i128,
 };
 
-const STATIC_TEMPLATE_FOR_LOOP_LIMIT: usize = 10_000;
+const STATIC_TEMPLATE_LOOP_LIMIT: usize = 10_000;
 
 pub(crate) type SourceTemplateConstantValueCache =
     BTreeMap<(String, usize, usize), BTreeMap<String, FixedFileTemplateValue>>;
@@ -616,6 +616,9 @@ fn execute_static_template_statement(
     match tokens.get(index)?.kind {
         TokenKind::If => execute_static_template_if(program, module, tokens, index, end, values),
         TokenKind::For => execute_static_template_for(program, module, tokens, index, end, values),
+        TokenKind::While => {
+            execute_static_template_while(program, module, tokens, index, end, values)
+        }
         kind if static_declaration_start(kind) => {
             execute_static_template_declaration(program, module, tokens, index, values);
             skip_static_template_statement(tokens, index, end)
@@ -708,7 +711,7 @@ fn execute_static_template_for_inner(
     let loop_variable =
         execute_static_for_initializer(program, module, tokens, initializer, values)?;
 
-    for _ in 0..STATIC_TEMPLATE_FOR_LOOP_LIMIT {
+    for _ in 0..STATIC_TEMPLATE_LOOP_LIMIT {
         let condition = evaluate_source_static_token_range(
             program,
             &module.source,
@@ -808,6 +811,50 @@ fn execute_static_for_update(
         &expression,
         values,
     )
+}
+
+fn execute_static_template_while(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    index: usize,
+    end: usize,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<usize> {
+    let checkpoint = values.clone();
+    let next = execute_static_template_while_inner(program, module, tokens, index, end, values);
+    if next.is_none() {
+        *values = checkpoint;
+    }
+    next
+}
+
+fn execute_static_template_while_inner(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    index: usize,
+    end: usize,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<usize> {
+    let open = next_token_kind(tokens, index + 1, end, TokenKind::LParen)?;
+    let close = matching_closing_token(tokens, open, end)?;
+    let (body_start, body_end, after_body) = control_body_range(tokens, close + 1, end)?;
+    for _ in 0..STATIC_TEMPLATE_LOOP_LIMIT {
+        let condition = evaluate_source_static_token_range(
+            program,
+            &module.source,
+            tokens,
+            open + 1,
+            close,
+            values,
+        )?;
+        if !static_value_truthy(&condition) {
+            return Some(after_body);
+        }
+        execute_static_template_tokens(program, module, tokens, body_start, body_end, values)?;
+    }
+    None
 }
 
 fn execute_static_else_tail(
