@@ -48,6 +48,7 @@ mod source_expression_strings;
 mod source_expression_template_values;
 mod source_expression_units;
 mod source_final_calls;
+mod source_fixed_assignments;
 mod source_fixed_columns;
 mod source_fixed_expression;
 mod source_fixed_file_manifest;
