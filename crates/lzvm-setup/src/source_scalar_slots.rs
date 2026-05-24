@@ -569,7 +569,11 @@ impl SourceScalarSlots {
                 });
             }
             if slot.dimension == 1 {
-                return self.operand_at(name, row_offset);
+                return Ok(CodeOperand::commitment_at(
+                    slot.id,
+                    (row_offset != 0).then_some(row_offset),
+                    1,
+                ));
             }
             return Ok(CodeOperand::commitment_element_at(
                 slot.id,

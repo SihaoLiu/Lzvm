@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use lzvm_artifacts::expression_info::ExpressionInfoError;
+use lzvm_artifacts::expression_info::{CodeOperand, ExpressionInfo, ExpressionInfoError};
 use lzvm_artifacts::global_info::{
     encode_global_info, AggregationType, CurveKind, GlobalAir, GlobalInfo, GlobalInfoError,
     NamedStageValue, PublicValue,
@@ -261,6 +261,7 @@ pub fn write_source_key_directory_metadata(
                 &global_info.proof_values_map,
                 &mut body_caches,
             )?;
+            include_expression_opening_points(&mut setup_info, &expression_info);
             setup_info.n_constraints = Some(
                 u32::try_from(expression_info.constraints.len())
                     .map_err(|_| unsupported_source_message("too many source constraints"))?,
@@ -1066,6 +1067,43 @@ fn source_required_setup_max_stage(
 
 fn source_stage_values_max_stage(values: &[StageValue]) -> u32 {
     values.iter().map(|value| value.stage).max().unwrap_or(0)
+}
+
+fn include_expression_opening_points(setup: &mut UnitSetupInfo, expressions: &ExpressionInfo) {
+    for expression in &expressions.expressions {
+        for operation in &expression.operations {
+            include_operation_opening_points(&mut setup.opening_points, operation.sources.iter());
+        }
+    }
+    for constraint in &expressions.constraints {
+        for operation in &constraint.operations {
+            include_operation_opening_points(&mut setup.opening_points, operation.sources.iter());
+        }
+    }
+}
+
+fn include_operation_opening_points<'a>(
+    opening_points: &mut Vec<i64>,
+    operands: impl Iterator<Item = &'a CodeOperand>,
+) {
+    for operand in operands {
+        let prime = match operand {
+            CodeOperand::ConstantAt { prime, .. }
+            | CodeOperand::Commitment { prime, .. }
+            | CodeOperand::CommitmentElement { prime, .. }
+            | CodeOperand::CustomCommitment { prime, .. } => *prime,
+            _ => None,
+        };
+        if let Some(prime) = prime {
+            include_opening_point(opening_points, prime);
+        }
+    }
+}
+
+fn include_opening_point(opening_points: &mut Vec<i64>, point: i64) {
+    if !opening_points.contains(&point) {
+        opening_points.push(point);
+    }
 }
 
 fn source_fri_steps(n_bits_ext: u32) -> Vec<FriStep> {
