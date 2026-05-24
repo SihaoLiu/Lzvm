@@ -303,6 +303,30 @@ fn source_returned_expression_body(
     None
 }
 
+pub(crate) fn source_resolved_expression_value(
+    context: &SourceTemplateLoweringContext<'_>,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceExpressionAliasScope,
+    body_cache: &mut SourceControlBodyCache,
+    call_stack: &mut BTreeSet<String>,
+    resolve_aliases: bool,
+) -> Option<Expression> {
+    let mut changed = false;
+    let mut resolving_aliases = BTreeSet::new();
+    source_resolve_expression(
+        context,
+        expression,
+        values,
+        alias_scope,
+        body_cache,
+        call_stack,
+        resolve_aliases,
+        &mut resolving_aliases,
+        &mut changed,
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn source_resolve_expression(
     context: &SourceTemplateLoweringContext<'_>,

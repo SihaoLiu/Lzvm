@@ -11,6 +11,7 @@ use crate::{
     source_constraint_lowering::SourceExpressionAliases,
     source_control_body_cache::{SourceControlBodyCache, SourceControlBodyCaches},
     source_expression_aliases::collect_source_template_expression_alias,
+    source_expression_return_values::insert_source_expr_array_alias_length,
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_statement_hints::{
         source_lookup_statement_expressions, SourceExpressionArrayAlias,
@@ -606,6 +607,12 @@ fn source_opening_function_call_bindings(
         if source_opening_expr_array_parameter(parameter) {
             if let Some(expression) = parameter.default_expression.as_ref() {
                 let alias = source_opening_expression_array_alias(expression)?;
+                let _ = insert_source_expr_array_alias_length(
+                    &mut function_values,
+                    &parameter.name,
+                    &alias,
+                    &function_alias_scope.expression_arrays,
+                );
                 function_alias_scope
                     .expression_arrays
                     .insert(parameter.name.clone(), alias);
@@ -675,6 +682,12 @@ fn source_bind_opening_function_argument(
     }
     if source_opening_expr_array_parameter(parameter) {
         let alias = source_opening_expression_array_alias(expression)?;
+        let _ = insert_source_expr_array_alias_length(
+            values,
+            &parameter.name,
+            &alias,
+            expression_array_aliases,
+        );
         expression_array_aliases.insert(parameter.name.clone(), alias);
         return Some(());
     }

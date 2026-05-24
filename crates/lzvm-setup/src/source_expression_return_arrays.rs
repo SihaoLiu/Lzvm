@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_pil::{
-    lex_source, CallArgument, Expression, ExpressionKind, FixedFileTemplateValue,
+    lex_source, BinaryOperator, Expression, ExpressionKind, FixedFileTemplateValue,
     FunctionDeclaration, FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind,
     SourceProgramModule, TokenKind,
 };
@@ -15,6 +15,7 @@ use crate::{
         source_expression_array_alias_assignment, source_function_call_bindings,
         SourceExpressionAliasScope,
     },
+    source_expression_return_values::source_resolved_expression_value,
     source_statement_hints::SourceExpressionArrayAlias,
     source_static_values::evaluate_source_static_expression,
     source_template_context::SourceTemplateLoweringContext,
@@ -136,12 +137,6 @@ fn source_returned_expression_array_body(
             statement.value_expression.as_ref(),
             values,
         );
-        source_expression_array_alias_assignment(
-            context.program,
-            statement.value_expression.as_ref(),
-            values,
-            &mut alias_scope.expression_arrays,
-        );
         collect_source_template_expression_alias(statement, &mut alias_scope.expressions);
         collect_returned_expression_array_alias(
             context,
@@ -202,11 +197,13 @@ fn collect_returned_expression_array_alias(
             )
         }
         _ => {
-            source_expression_array_alias_assignment(
-                context.program,
+            source_returned_expression_array_alias_assignment(
+                context,
                 statement.value_expression.as_ref(),
                 values,
-                &mut alias_scope.expression_arrays,
+                body_cache,
+                call_stack,
+                alias_scope,
             );
             None
         }
@@ -214,6 +211,60 @@ fn collect_returned_expression_array_alias(
     if let Some((name, alias)) = alias {
         alias_scope.expression_arrays.insert(name, alias);
     }
+}
+
+fn source_returned_expression_array_alias_assignment(
+    context: &SourceTemplateLoweringContext<'_>,
+    expression: Option<&Expression>,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    body_cache: &mut SourceControlBodyCache,
+    call_stack: &mut BTreeSet<String>,
+    alias_scope: &mut SourceExpressionAliasScope,
+) -> bool {
+    let Some(Expression {
+        kind: ExpressionKind::Binary { op, left, right },
+        source_name,
+        start,
+        end,
+    }) = expression.map(source_strip_group_expression)
+    else {
+        return false;
+    };
+    if *op != BinaryOperator::Assign {
+        return false;
+    }
+    let Some(resolved_right) = source_resolved_expression_value(
+        context,
+        right,
+        values,
+        alias_scope,
+        body_cache,
+        call_stack,
+        true,
+    ) else {
+        return source_expression_array_alias_assignment(
+            context.program,
+            expression,
+            values,
+            &mut alias_scope.expression_arrays,
+        );
+    };
+    let resolved_expression = Expression {
+        kind: ExpressionKind::Binary {
+            op: *op,
+            left: left.clone(),
+            right: Box::new(resolved_right),
+        },
+        source_name: source_name.clone(),
+        start: *start,
+        end: *end,
+    };
+    source_expression_array_alias_assignment(
+        context.program,
+        Some(&resolved_expression),
+        values,
+        &mut alias_scope.expression_arrays,
+    )
 }
 
 struct ReturnedExpressionArrayDeclaration<'a> {
@@ -275,7 +326,14 @@ fn source_resolved_expression_array_alias(
     call_stack: &mut BTreeSet<String>,
 ) -> Option<SourceExpressionArrayAlias> {
     if let Some(alias) = source_expression_array_alias(expression) {
-        return source_resolve_expression_array_alias(&alias, alias_scope);
+        return source_resolve_expression_array_alias(
+            context,
+            &alias,
+            values,
+            alias_scope,
+            body_cache,
+            call_stack,
+        );
     }
     source_returned_expression_array_alias(
         context,
@@ -288,85 +346,44 @@ fn source_resolved_expression_array_alias(
 }
 
 fn source_resolve_expression_array_alias(
+    context: &SourceTemplateLoweringContext<'_>,
     alias: &SourceExpressionArrayAlias,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
     alias_scope: &SourceExpressionAliasScope,
+    body_cache: &mut SourceControlBodyCache,
+    call_stack: &mut BTreeSet<String>,
 ) -> Option<SourceExpressionArrayAlias> {
     match alias {
         SourceExpressionArrayAlias::Name(name) => alias_scope
             .expression_arrays
             .get(name)
-            .map(|alias| source_resolve_expression_array_alias(alias, alias_scope))
+            .map(|alias| {
+                source_resolve_expression_array_alias(
+                    context,
+                    alias,
+                    values,
+                    alias_scope,
+                    body_cache,
+                    call_stack,
+                )
+            })
             .unwrap_or_else(|| Some(SourceExpressionArrayAlias::Name(name.clone()))),
-        SourceExpressionArrayAlias::Values(expressions) => expressions
-            .iter()
-            .map(|expression| source_resolve_expression_alias(expression, alias_scope))
-            .collect::<Option<Vec<_>>>()
-            .map(SourceExpressionArrayAlias::Values),
-    }
-}
-
-fn source_resolve_expression_alias(
-    expression: &Expression,
-    alias_scope: &SourceExpressionAliasScope,
-) -> Option<Expression> {
-    let kind = match &expression.kind {
-        ExpressionKind::Name(name) => {
-            if let Some(alias) = alias_scope.expressions.get(name) {
-                return source_resolve_expression_alias(alias, alias_scope);
+        SourceExpressionArrayAlias::Values(expressions) => {
+            let mut resolved = Vec::with_capacity(expressions.len());
+            for expression in expressions {
+                resolved.push(source_resolved_expression_value(
+                    context,
+                    expression,
+                    values,
+                    alias_scope,
+                    body_cache,
+                    call_stack,
+                    true,
+                )?);
             }
-            ExpressionKind::Name(name.clone())
+            Some(SourceExpressionArrayAlias::Values(resolved))
         }
-        ExpressionKind::Group(inner) => ExpressionKind::Group(Box::new(
-            source_resolve_expression_alias(inner, alias_scope)?,
-        )),
-        ExpressionKind::Array(expressions) => ExpressionKind::Array(
-            expressions
-                .iter()
-                .map(|expression| source_resolve_expression_alias(expression, alias_scope))
-                .collect::<Option<Vec<_>>>()?,
-        ),
-        ExpressionKind::Unary { op, expr } => ExpressionKind::Unary {
-            op: *op,
-            expr: Box::new(source_resolve_expression_alias(expr, alias_scope)?),
-        },
-        ExpressionKind::Binary { op, left, right } => ExpressionKind::Binary {
-            op: *op,
-            left: Box::new(source_resolve_expression_alias(left, alias_scope)?),
-            right: Box::new(source_resolve_expression_alias(right, alias_scope)?),
-        },
-        ExpressionKind::Index { target, index } => ExpressionKind::Index {
-            target: Box::new(source_resolve_expression_alias(target, alias_scope)?),
-            index: Box::new(source_resolve_expression_alias(index, alias_scope)?),
-        },
-        ExpressionKind::RowOffset {
-            target,
-            offset,
-            prior,
-        } => ExpressionKind::RowOffset {
-            target: Box::new(source_resolve_expression_alias(target, alias_scope)?),
-            offset: Box::new(source_resolve_expression_alias(offset, alias_scope)?),
-            prior: *prior,
-        },
-        ExpressionKind::Call { callee, args } => ExpressionKind::Call {
-            callee: Box::new(source_resolve_expression_alias(callee, alias_scope)?),
-            args: args
-                .iter()
-                .map(|arg| {
-                    Some(CallArgument {
-                        name: arg.name.clone(),
-                        value: source_resolve_expression_alias(&arg.value, alias_scope)?,
-                    })
-                })
-                .collect::<Option<Vec<_>>>()?,
-        },
-        _ => expression.kind.clone(),
-    };
-    Some(Expression {
-        kind,
-        source_name: expression.source_name.clone(),
-        start: expression.start,
-        end: expression.end,
-    })
+    }
 }
 
 fn source_function_returns_expr_array(
@@ -396,6 +413,13 @@ fn source_function_returns_expr_array(
         && tokens[type_index].lexeme == "expr"
         && tokens[type_index + 1].kind == TokenKind::LBracket
         && tokens[type_index + 2].kind == TokenKind::RBracket
+}
+
+fn source_strip_group_expression(expression: &Expression) -> &Expression {
+    match &expression.kind {
+        ExpressionKind::Group(inner) => source_strip_group_expression(inner),
+        _ => expression,
+    }
 }
 
 fn source_zero_expression_array(
