@@ -209,6 +209,9 @@ pub(crate) fn evaluate_source_static_expression_with_lookup(
     expression: &Expression,
     values: &(impl SourceStaticValueLookup + ?Sized),
 ) -> Option<FixedFileTemplateValue> {
+    if let Some(value) = source_static_length_call(expression, values) {
+        return Some(value);
+    }
     if let Some(value) =
         evaluate_source_template_value_expression_with_lookup(program, expression, values)
     {
@@ -233,6 +236,39 @@ fn evaluate_source_static_expression_with_integer_env(
         }
         evaluate_static_i128(program, expression, integer_env).map(FixedFileTemplateValue::Integer)
     })
+}
+
+fn source_static_length_call(
+    expression: &Expression,
+    values: &(impl SourceStaticValueLookup + ?Sized),
+) -> Option<FixedFileTemplateValue> {
+    let ExpressionKind::Call { callee, args } = &strip_static_group_expression(expression).kind
+    else {
+        return None;
+    };
+    if args.len() != 1 || args[0].name.is_some() {
+        return None;
+    }
+    let ExpressionKind::Name(callee) = &strip_static_group_expression(callee).kind else {
+        return None;
+    };
+    if callee != "length" {
+        return None;
+    }
+    let ExpressionKind::Name(name) = &strip_static_group_expression(&args[0].value).kind else {
+        return None;
+    };
+    values
+        .source_static_value(&source_static_array_length_key(name))
+        .and_then(static_value_integer)
+        .map(FixedFileTemplateValue::Integer)
+}
+
+fn strip_static_group_expression(expression: &Expression) -> &Expression {
+    match &expression.kind {
+        ExpressionKind::Group(inner) => strip_static_group_expression(inner),
+        _ => expression,
+    }
 }
 
 fn source_expression_needs_integer_env(expression: &Expression) -> bool {

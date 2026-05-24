@@ -320,6 +320,103 @@ fn generate_key_lowers_returned_source_lookup_value_expression() {
 }
 
 #[test]
+fn generate_key_lowers_returned_source_lookup_value_expression_array_loop() {
+    let dir = temp_dir("source-lookup-returned-value-expression-array-loop");
+    let _ = fs::remove_dir_all(&dir);
+    assert_generate_key_succeeds(
+        &dir,
+        "function pack(const expr input[]): expr {\n\
+             const int len = length(input);\n\
+             expr packed = 0;\n\
+             for (int j = 0; j < len; j++) {\n\
+                 packed += input[j] * (j + 1);\n\
+             }\n\
+             return packed;\n\
+         }\n\
+         airtemplate UnitA() {\n\
+             col witness value;\n\
+             const expr packed = pack([value, value']);\n\
+             lookup_proves(7, [packed]);\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    assert_eq!(setup.opening_points, vec![0, 1]);
+    let regular = read_regular_program_file(
+        unit.expression_program()
+            .expect("regular program path should derive"),
+    )
+    .expect("regular program should parse");
+
+    assert_eq!(regular.hints.hints.len(), 1);
+    assert_eq!(regular.hints.hints[0].name, SOURCE_LOOKUP_PROVES_HINT);
+    assert!(
+        regular.hints.hints[0].fields.len() >= 3,
+        "expected structured lookup fields, got {:?}",
+        regular.hints.hints[0].fields
+    );
+    assert_eq!(regular.hints.hints[0].fields[1].name, "values");
+    assert_eq!(regular.hints.hints[0].fields[1].values.len(), 9);
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[0].operand,
+        HintOperand::Number(0)
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[1].operand,
+        HintOperand::Commitment {
+            id: 0,
+            row_offset_index: 0
+        }
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[2].operand,
+        HintOperand::Number(1)
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[3].operand,
+        HintOperand::String("mul".to_owned())
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[4].operand,
+        HintOperand::String("add".to_owned())
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[5].operand,
+        HintOperand::Commitment {
+            id: 0,
+            row_offset_index: 1
+        }
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[6].operand,
+        HintOperand::Number(2)
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[7].operand,
+        HintOperand::String("mul".to_owned())
+    );
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[8].operand,
+        HintOperand::String("add".to_owned())
+    );
+    assert_eq!(regular.hints.hints[0].fields[2].name, "value_lengths");
+    assert_eq!(
+        regular.hints.hints[0].fields[2].values[0].operand,
+        HintOperand::Number(9)
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn prove_witness_accepts_source_lookup_value_expressions() {
     let dir = temp_dir("source-lookup-value-expression-witness");
     let _ = fs::remove_dir_all(&dir);

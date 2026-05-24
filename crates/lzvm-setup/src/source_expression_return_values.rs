@@ -17,10 +17,47 @@ use crate::{
         source_expression_array_alias_assignment, source_function_call_bindings,
         SourceExpressionAliasScope,
     },
+    source_statement_hints::{SourceExpressionArrayAlias, SourceExpressionArrayAliases},
+    source_static_values::{
+        evaluate_source_static_expression, source_static_array_length,
+        source_static_array_length_key,
+    },
     source_template_context::SourceTemplateLoweringContext,
     source_template_for::source_static_for_loop_with_tokens,
     source_template_if::source_static_if_body_statements_with_tokens,
 };
+
+pub(crate) fn insert_source_expr_array_alias_length(
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    target_name: &str,
+    alias: &SourceExpressionArrayAlias,
+    expression_array_aliases: &SourceExpressionArrayAliases,
+) -> Option<()> {
+    let length = source_expression_array_alias_length(values, alias, expression_array_aliases)?;
+    let length = i128::try_from(length).ok()?;
+    values.insert(
+        source_static_array_length_key(target_name),
+        FixedFileTemplateValue::Integer(length),
+    );
+    Some(())
+}
+
+fn source_expression_array_alias_length(
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias: &SourceExpressionArrayAlias,
+    expression_array_aliases: &SourceExpressionArrayAliases,
+) -> Option<usize> {
+    match alias {
+        SourceExpressionArrayAlias::Name(name) => source_static_array_length(values, name)
+            .and_then(|length| usize::try_from(length).ok())
+            .or_else(|| {
+                expression_array_aliases.get(name).and_then(|alias| {
+                    source_expression_array_alias_length(values, alias, expression_array_aliases)
+                })
+            }),
+        SourceExpressionArrayAlias::Values(expressions) => Some(expressions.len()),
+    }
+}
 
 pub(crate) fn collect_source_template_expression_aliases(
     context: &SourceTemplateLoweringContext<'_>,
@@ -279,25 +316,31 @@ fn source_resolve_expression(
     changed: &mut bool,
 ) -> Option<Expression> {
     let kind = match &expression.kind {
-        ExpressionKind::Name(name) if resolve_aliases => {
-            if let Some(alias) = alias_scope.expressions.get(name) {
-                if !resolving_aliases.insert(name.clone()) {
-                    return None;
+        ExpressionKind::Name(name) => {
+            if resolve_aliases {
+                if let Some(alias) = alias_scope.expressions.get(name) {
+                    if !resolving_aliases.insert(name.clone()) {
+                        return None;
+                    }
+                    let resolved = source_resolve_expression(
+                        context,
+                        alias,
+                        values,
+                        alias_scope,
+                        body_cache,
+                        call_stack,
+                        resolve_aliases,
+                        resolving_aliases,
+                        changed,
+                    )?;
+                    resolving_aliases.remove(name);
+                    *changed = true;
+                    return Some(resolved);
                 }
-                let resolved = source_resolve_expression(
-                    context,
-                    alias,
-                    values,
-                    alias_scope,
-                    body_cache,
-                    call_stack,
-                    resolve_aliases,
-                    resolving_aliases,
-                    changed,
-                )?;
-                resolving_aliases.remove(name);
+            }
+            if let Some(expression) = source_static_value_expression(context, expression, values) {
                 *changed = true;
-                return Some(resolved);
+                return Some(expression);
             }
             ExpressionKind::Name(name.clone())
         }
@@ -414,8 +457,8 @@ fn source_resolve_expression(
                 changed,
             )?),
         },
-        ExpressionKind::Index { target, index } => ExpressionKind::Index {
-            target: Box::new(source_resolve_expression(
+        ExpressionKind::Index { target, index } => {
+            let target = source_resolve_expression(
                 context,
                 target,
                 values,
@@ -425,8 +468,8 @@ fn source_resolve_expression(
                 resolve_aliases,
                 resolving_aliases,
                 changed,
-            )?),
-            index: Box::new(source_resolve_expression(
+            )?;
+            let index = source_resolve_expression(
                 context,
                 index,
                 values,
@@ -436,8 +479,34 @@ fn source_resolve_expression(
                 resolve_aliases,
                 resolving_aliases,
                 changed,
-            )?),
-        },
+            )?;
+            let indexed = Expression {
+                kind: ExpressionKind::Index {
+                    target: Box::new(target),
+                    index: Box::new(index),
+                },
+                source_name: expression.source_name.clone(),
+                start: expression.start,
+                end: expression.end,
+            };
+            if let Some(expression) =
+                source_resolved_expression_array_element(&indexed, context, values, alias_scope)
+            {
+                *changed = true;
+                return source_resolve_expression(
+                    context,
+                    &expression,
+                    values,
+                    alias_scope,
+                    body_cache,
+                    call_stack,
+                    resolve_aliases,
+                    resolving_aliases,
+                    changed,
+                );
+            }
+            indexed.kind
+        }
         ExpressionKind::RowOffset {
             target,
             offset,
@@ -469,12 +538,127 @@ fn source_resolve_expression(
         },
         _ => expression.kind.clone(),
     };
+    let resolved = Expression {
+        kind,
+        source_name: expression.source_name.clone(),
+        start: expression.start,
+        end: expression.end,
+    };
+    if let Some(expression) = source_static_value_expression(context, &resolved, values) {
+        *changed = true;
+        return Some(expression);
+    }
+    Some(resolved)
+}
+
+fn source_static_value_expression(
+    context: &SourceTemplateLoweringContext<'_>,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<Expression> {
+    let value = evaluate_source_static_expression(context.program, expression, values)?;
+    let kind = match value {
+        FixedFileTemplateValue::Integer(value) => ExpressionKind::Integer(value.to_string()),
+        FixedFileTemplateValue::Boolean(value) => {
+            ExpressionKind::Integer(if value { "1" } else { "0" }.to_owned())
+        }
+        FixedFileTemplateValue::String(value) => ExpressionKind::StringLiteral(value),
+    };
     Some(Expression {
         kind,
         source_name: expression.source_name.clone(),
         start: expression.start,
         end: expression.end,
     })
+}
+
+fn source_resolved_expression_array_element(
+    expression: &Expression,
+    context: &SourceTemplateLoweringContext<'_>,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceExpressionAliasScope,
+) -> Option<Expression> {
+    let (name, index_expressions) = source_expression_index_chain(expression)?;
+    let indices = index_expressions
+        .iter()
+        .map(|index| source_expression_index(context, index, values))
+        .collect::<Option<Vec<_>>>()?;
+    let alias = alias_scope.expression_arrays.get(name)?;
+    source_expression_array_alias_element(alias, &indices, alias_scope)
+}
+
+fn source_expression_array_alias_element(
+    alias: &SourceExpressionArrayAlias,
+    indices: &[usize],
+    alias_scope: &SourceExpressionAliasScope,
+) -> Option<Expression> {
+    match alias {
+        SourceExpressionArrayAlias::Name(name) => alias_scope
+            .expression_arrays
+            .get(name)
+            .and_then(|alias| source_expression_array_alias_element(alias, indices, alias_scope)),
+        SourceExpressionArrayAlias::Values(expressions) => {
+            source_expression_array_element(expressions, indices, alias_scope)
+        }
+    }
+}
+
+fn source_expression_array_element(
+    expressions: &[Expression],
+    indices: &[usize],
+    alias_scope: &SourceExpressionAliasScope,
+) -> Option<Expression> {
+    let (index, rest) = indices.split_first()?;
+    let expression = expressions.get(*index)?;
+    if rest.is_empty() {
+        return Some(expression.clone());
+    }
+    match &source_strip_group_expression(expression).kind {
+        ExpressionKind::Array(expressions) => {
+            source_expression_array_element(expressions, rest, alias_scope)
+        }
+        ExpressionKind::Name(name) => {
+            let alias = alias_scope.expression_arrays.get(name)?;
+            source_expression_array_alias_element(alias, rest, alias_scope)
+        }
+        _ => None,
+    }
+}
+
+fn source_expression_index(
+    context: &SourceTemplateLoweringContext<'_>,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<usize> {
+    let value = evaluate_source_static_expression(context.program, expression, values)?;
+    usize::try_from(source_static_integer_value(&value)?).ok()
+}
+
+fn source_expression_index_chain(expression: &Expression) -> Option<(&str, Vec<&Expression>)> {
+    match &source_strip_group_expression(expression).kind {
+        ExpressionKind::Name(name) => Some((name, Vec::new())),
+        ExpressionKind::Index { target, index } => {
+            let (name, mut indices) = source_expression_index_chain(target)?;
+            indices.push(index);
+            Some((name, indices))
+        }
+        _ => None,
+    }
+}
+
+fn source_strip_group_expression(expression: &Expression) -> &Expression {
+    match &expression.kind {
+        ExpressionKind::Group(inner) => source_strip_group_expression(inner),
+        _ => expression,
+    }
+}
+
+fn source_static_integer_value(value: &FixedFileTemplateValue) -> Option<i128> {
+    match value {
+        FixedFileTemplateValue::Integer(value) => Some(*value),
+        FixedFileTemplateValue::Boolean(value) => Some(if *value { 1 } else { 0 }),
+        FixedFileTemplateValue::String(_) => None,
+    }
 }
 
 fn source_statement_expression_alias_name(statement: &FunctionStatement) -> Option<String> {

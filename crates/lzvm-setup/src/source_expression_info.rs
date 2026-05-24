@@ -27,6 +27,7 @@ use crate::{
     source_expression_return_values::{
         collect_source_template_expression_aliases,
         collect_source_template_expression_aliases_with_stack,
+        insert_source_expr_array_alias_length,
     },
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scalar_slots::{SourceChallengeSlotMetadata, SourceScalarSlots},
@@ -830,8 +831,14 @@ fn source_bind_function_argument(
         return Some(());
     }
     if source_expr_array_parameter(parameter) {
-        insert_source_expr_array_static_values(program, expression, values, &parameter.name)?;
         let alias = source_expression_array_alias(expression)?;
+        insert_source_expr_array_static_values(program, expression, values, &parameter.name)?;
+        let _ = insert_source_expr_array_alias_length(
+            values,
+            &parameter.name,
+            &alias,
+            expression_array_aliases,
+        );
         if matches!(&alias, SourceExpressionArrayAlias::Name(name) if name == &parameter.name) {
             return Some(());
         }
@@ -869,8 +876,14 @@ fn source_bind_function_default(
     }
     if source_expr_array_parameter(parameter) {
         let expression = parameter.default_expression.as_ref()?;
-        insert_source_expr_array_static_values(program, expression, values, &parameter.name)?;
         let alias = source_expression_array_alias(expression)?;
+        insert_source_expr_array_static_values(program, expression, values, &parameter.name)?;
+        let _ = insert_source_expr_array_alias_length(
+            values,
+            &parameter.name,
+            &alias,
+            expression_array_aliases,
+        );
         expression_array_aliases.insert(parameter.name.clone(), alias);
         return Some(());
     }
