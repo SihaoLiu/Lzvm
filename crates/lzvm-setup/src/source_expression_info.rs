@@ -8,7 +8,7 @@ use lzvm_pil::{
     lex_source, parse_expression_tokens, AirInstanceDeclaration, AirTemplateDeclaration,
     BinaryOperator, CallArgument, ColumnKind, Expression, ExpressionKind, FixedFileTemplateValue,
     FunctionDeclaration, FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind,
-    SourceFile, SourceProgram, SourceProgramModule, SourceSpan, Token, TokenKind, UnaryOperator,
+    SourceFile, SourceProgram, SourceProgramModule, SourceSpan, Token, TokenKind,
 };
 
 use crate::{
@@ -29,6 +29,11 @@ use crate::{
         collect_source_template_expression_aliases_with_stack,
         insert_source_expr_array_alias_length,
     },
+    source_expression_statements::{
+        apply_source_expression_string_assignment, apply_source_expression_string_declaration,
+        apply_source_static_array_assignment_statement, apply_source_static_declaration,
+        apply_source_static_expression_statement,
+    },
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scalar_slots::{SourceChallengeSlotMetadata, SourceScalarSlots},
     source_scope::{
@@ -43,7 +48,6 @@ use crate::{
         source_statement_line, SourceExpressionArrayAlias, SourceExpressionArrayAliases,
         SourceLookupInputs,
     },
-    source_static_tokens::{source_token_index_after_end, source_token_index_at_start},
     source_static_values::{
         evaluate_source_static_expression, insert_source_static_array, source_active_static_name,
         source_declaration_constant_values_from_cache, source_declaration_in_static_false_branch,
@@ -334,7 +338,9 @@ fn lower_source_template_statement(
     constraints: &mut Vec<ConstraintCode>,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
-        apply_source_static_declaration(context.program, statement, values);
+        if !apply_source_expression_string_declaration(context, statement, values, alias_scope) {
+            apply_source_static_declaration(context.program, statement, values);
+        }
         return Ok(());
     }
     if statement.kind == FunctionStatementKind::If {
@@ -468,6 +474,9 @@ fn lower_source_template_statement(
         statement.value_expression.as_ref(),
         values,
     ) {
+        return Ok(());
+    }
+    if apply_source_expression_string_assignment(context, statement, values, alias_scope) {
         return Ok(());
     }
     if apply_source_static_array_assignment_statement(context, statement, values) {
@@ -1389,7 +1398,9 @@ fn lower_source_function_body_statement(
     output: &mut SourceTemplateFunctionOutput<'_>,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
-        let applied = apply_source_static_declaration(context.program, statement, values);
+        let applied =
+            apply_source_expression_string_declaration(context, statement, values, alias_scope)
+                || apply_source_static_declaration(context.program, statement, values);
         return Ok(applied || source_expr_alias_declaration(statement));
     }
     if statement.kind == FunctionStatementKind::If {
@@ -1493,6 +1504,9 @@ fn lower_source_function_body_statement(
     ) {
         return Ok(true);
     }
+    if apply_source_expression_string_assignment(context, statement, values, alias_scope) {
+        return Ok(true);
+    }
     if apply_source_static_array_assignment_statement(context, statement, values) {
         return Ok(true);
     }
@@ -1593,180 +1607,6 @@ fn source_expr_alias_declaration(statement: &FunctionStatement) -> bool {
             declaration.type_name == "expr"
                 && (declaration.initializer_expression.is_some()
                     || !declaration.array_dims.is_empty())
-        }
-        _ => false,
-    }
-}
-
-pub(crate) fn apply_source_static_declaration(
-    program: &SourceProgram,
-    statement: &FunctionStatement,
-    values: &mut BTreeMap<String, FixedFileTemplateValue>,
-) -> bool {
-    match statement.declaration.as_ref() {
-        Some(FunctionStatementDeclaration::Constant(declaration)) => {
-            if !declaration.array_dims.is_empty() {
-                let Some(expression) = declaration.initializer_expression.as_ref() else {
-                    return false;
-                };
-                let Some(elements) = source_static_array_expression(program, expression, values)
-                else {
-                    return false;
-                };
-                return insert_source_static_array(values, &declaration.name, elements).is_some();
-            }
-            let Some(expression) = declaration.initializer_expression.as_ref() else {
-                return false;
-            };
-            let Some(value) = evaluate_source_static_expression(program, expression, values) else {
-                return false;
-            };
-            values.insert(declaration.name.clone(), value);
-            true
-        }
-        Some(FunctionStatementDeclaration::Variable(declaration)) => {
-            if !declaration.array_dims.is_empty() {
-                let Some(elements) = source_static_variable_array_elements(
-                    program,
-                    declaration.initializer_expression.as_ref(),
-                    &declaration.array_dim_expressions,
-                    values,
-                ) else {
-                    return false;
-                };
-                return insert_source_static_array(values, &declaration.name, elements).is_some();
-            }
-            let Some(expression) = declaration.initializer_expression.as_ref() else {
-                return false;
-            };
-            let Some(value) = evaluate_source_static_expression(program, expression, values) else {
-                return false;
-            };
-            values.insert(declaration.name.clone(), value);
-            true
-        }
-        _ => false,
-    }
-}
-
-fn source_static_variable_array_elements(
-    program: &SourceProgram,
-    initializer_expression: Option<&Expression>,
-    dim_expressions: &[Option<Expression>],
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<Vec<FixedFileTemplateValue>> {
-    if let Some(expression) = initializer_expression {
-        return source_static_array_expression(program, expression, values);
-    }
-    let mut length = 1_usize;
-    for expression in dim_expressions {
-        let value = evaluate_source_static_expression(program, expression.as_ref()?, values)?;
-        let dimension = usize::try_from(source_static_integer_value(Some(&value))?).ok()?;
-        if dimension == 0 {
-            return None;
-        }
-        length = length.checked_mul(dimension)?;
-    }
-    Some(vec![FixedFileTemplateValue::Integer(0); length])
-}
-
-fn apply_source_static_array_assignment_statement(
-    context: &SourceTemplateLoweringContext<'_>,
-    statement: &FunctionStatement,
-    values: &mut BTreeMap<String, FixedFileTemplateValue>,
-) -> bool {
-    let Some(value) = statement.value.as_ref() else {
-        return false;
-    };
-    let Some(index) = source_token_index_at_start(context.tokens, value.start) else {
-        return false;
-    };
-    let Some(end) = source_token_index_after_end(context.tokens, value.end) else {
-        return false;
-    };
-    crate::source_static_array_assignment::execute_source_static_array_assignment_statement(
-        context.program,
-        context.module,
-        context.tokens,
-        index,
-        end,
-        values,
-    )
-    .is_some()
-}
-
-pub(crate) fn apply_source_static_expression_statement(
-    program: &SourceProgram,
-    expression: Option<&Expression>,
-    values: &mut BTreeMap<String, FixedFileTemplateValue>,
-) -> bool {
-    let Some(expression) = expression else {
-        return false;
-    };
-    match &expression.kind {
-        ExpressionKind::Unary { op, expr } => {
-            let delta = match op {
-                UnaryOperator::Increment => 1,
-                UnaryOperator::Decrement => -1,
-                _ => return false,
-            };
-            let Some(name) = source_expression_name(expr) else {
-                return false;
-            };
-            apply_source_static_delta(name, delta, values)
-        }
-        ExpressionKind::Binary { op, left, right } => {
-            let Some(name) = source_expression_name(left) else {
-                return false;
-            };
-            if !values.contains_key(name) {
-                return false;
-            }
-            let Some(right) = evaluate_source_static_expression(program, right, values) else {
-                return false;
-            };
-            let value = match op {
-                BinaryOperator::Assign => right,
-                BinaryOperator::PlusAssign => {
-                    let Some(current) = source_static_integer_value(values.get(name)) else {
-                        return false;
-                    };
-                    let Some(right) = source_static_integer_value(Some(&right)) else {
-                        return false;
-                    };
-                    let Some(value) = current.checked_add(right) else {
-                        return false;
-                    };
-                    FixedFileTemplateValue::Integer(value)
-                }
-                BinaryOperator::MinusAssign => {
-                    let Some(current) = source_static_integer_value(values.get(name)) else {
-                        return false;
-                    };
-                    let Some(right) = source_static_integer_value(Some(&right)) else {
-                        return false;
-                    };
-                    let Some(value) = current.checked_sub(right) else {
-                        return false;
-                    };
-                    FixedFileTemplateValue::Integer(value)
-                }
-                BinaryOperator::StarAssign => {
-                    let Some(current) = source_static_integer_value(values.get(name)) else {
-                        return false;
-                    };
-                    let Some(right) = source_static_integer_value(Some(&right)) else {
-                        return false;
-                    };
-                    let Some(value) = current.checked_mul(right) else {
-                        return false;
-                    };
-                    FixedFileTemplateValue::Integer(value)
-                }
-                _ => return false,
-            };
-            values.insert(name.to_owned(), value);
-            true
         }
         _ => false,
     }

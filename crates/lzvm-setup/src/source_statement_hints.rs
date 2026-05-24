@@ -18,6 +18,7 @@ use lzvm_pil::{
 
 use crate::{
     source_constraint_lowering::SourceExpressionAliases,
+    source_expression_strings::source_expression_string_call_value,
     source_scalar_slots::SourceScalarSlots,
     source_static_values::{
         evaluate_source_static_expression, source_static_array_element, source_static_array_values,
@@ -1133,6 +1134,15 @@ fn source_lookup_value_payload_from_expression(
 ) -> Option<HintPayload> {
     if let Some(value) = source_lookup_static_array_element(context, expression) {
         return hint_payload_from_static_value(value);
+    }
+    if let Some(value) = source_expression_string_call_value(
+        context.program,
+        expression,
+        context.values,
+        context.expression_aliases,
+        context.expression_array_aliases,
+    ) {
+        return Some(HintPayload::string(value));
     }
     if let Some(value) =
         evaluate_source_static_expression(context.program, expression, context.values)

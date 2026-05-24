@@ -10,12 +10,14 @@ use crate::{
     source_control_body_cache::SourceControlBodyCache,
     source_expression_aliases::collect_source_template_expression_alias,
     source_expression_info::{
-        apply_source_static_declaration, apply_source_static_expression_statement,
         source_call_expression, source_expression_array_alias,
         source_expression_array_alias_assignment, source_function_call_bindings,
         SourceExpressionAliasScope,
     },
     source_expression_return_values::source_resolved_expression_value,
+    source_expression_statements::{
+        apply_source_static_declaration, apply_source_static_expression_statement,
+    },
     source_statement_hints::SourceExpressionArrayAlias,
     source_static_values::evaluate_source_static_expression,
     source_template_context::SourceTemplateLoweringContext,

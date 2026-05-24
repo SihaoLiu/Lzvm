@@ -12,10 +12,12 @@ use crate::{
         collect_source_template_expression_alias, source_expression_alias_assignment_target,
     },
     source_expression_info::{
-        apply_source_static_declaration, apply_source_static_expression_statement,
         collect_source_template_expression_array_alias, source_call_expression,
         source_expression_array_alias_assignment, source_function_call_bindings,
         SourceExpressionAliasScope,
+    },
+    source_expression_statements::{
+        apply_source_static_declaration, apply_source_static_expression_statement,
     },
     source_statement_hints::{SourceExpressionArrayAlias, SourceExpressionArrayAliases},
     source_static_values::{
