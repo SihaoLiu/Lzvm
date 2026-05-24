@@ -4969,6 +4969,157 @@ fn runs_prove_witness_with_source_generated_key_directory() {
 }
 
 #[test]
+fn prove_witness_source_generated_key_directory_round_trips_eth_block_public_values() {
+    let dir = temp_dir("prove-witness-source-generated-eth-block");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_bytes(
+        &source_path,
+        "public eth_block_hash_u32_be[8];\n\
+         public eth_parent_hash_u32_be[8];\n\
+         public eth_beneficiary_u32_be[5];\n\
+         public eth_state_root_u32_be[8];\n\
+         public eth_receipts_root_u32_be[8];\n\
+         public eth_logs_bloom_u32_be[64];\n\
+         public eth_difficulty_u32_be[8];\n\
+         public eth_block_number_u32_le[2];\n\
+         public eth_block_timestamp_u32_le[2];\n\
+         public eth_extra_data_len;\n\
+         public eth_extra_data_u32_be[8];\n\
+         public eth_gas_limit_u32_le[2];\n\
+         public eth_gas_used_u32_le[2];\n\
+         public eth_base_fee_per_gas_present;\n\
+         public eth_base_fee_per_gas_u32_be[8];\n\
+         public eth_mix_hash_u32_be[8];\n\
+         public eth_nonce_u32_be[2];\n\
+         public eth_ommers_hash_u32_be[8];\n\
+         public eth_transactions_root_u32_be[8];\n\
+         public eth_withdrawals_root_present;\n\
+         public eth_withdrawals_root_u32_be[8];\n\
+         airtemplate UnitA() {\n\
+             col witness values[2];\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut generate_stdout = Vec::new();
+    let mut generate_stderr = Vec::new();
+    let generate_code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut generate_stdout,
+        &mut generate_stderr,
+    );
+    assert_eq!(
+        generate_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&generate_stderr)
+    );
+    assert!(generate_stderr.is_empty());
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let trace_path = dir.join("trace.bin");
+    let block_input_path = dir.join("block.input");
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let encoded_block_input =
+        encode_eth_block_input(&block_input).expect("block input should encode");
+    let block_input_hash = eth_block_input_bytes_digest(&encoded_block_input);
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+    write_bytes(&trace_path, sample_trace_bytes(23));
+    write_bytes(&block_input_path, &encoded_block_input);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--trace-bytes",
+            trace_path.to_str().expect("trace path should be utf-8"),
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let generated_public_values_path = output_dir.join("eth-block-public-values.bin");
+    let generated_bytes =
+        fs::read(&generated_public_values_path).expect("generated public values should read");
+    let generated_public_values =
+        parse_public_values(&generated_bytes).expect("generated public values should parse");
+    assert_eq!(
+        generated_public_values,
+        public_values_from_eth_block_input(setup_hash, &block_input)
+    );
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("source_fixed_file_manifest=present\n"));
+    assert!(stdout_text.contains("source_program_archive=present\n"));
+    assert!(stdout_text.contains("public_inputs_generated=eth_block_input\n"));
+    assert!(stdout_text.contains(&format!(
+        "eth_block_input_hash={}\n",
+        format_hash(&block_input_hash)
+    )));
+
+    let proof_path = output_dir.join("proof.bin");
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "proof",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            generated_public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
+
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert!(verify_stderr.is_empty());
+    let verify_stdout_text =
+        String::from_utf8(verify_stdout).expect("verify stdout should be utf-8");
+    assert!(verify_stdout_text.contains("source_fixed_file_manifest=present\n"));
+    assert!(verify_stdout_text.contains("source_program_archive=present\n"));
+    assert!(verify_stdout_text.contains("eth_block_input_match=ok\n"));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn runs_prove_witness_commitments_from_trace_bundle() {
     let dir = temp_dir("prove-witness-trace-bundle");
     let _ = fs::remove_dir_all(&dir);
