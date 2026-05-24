@@ -780,6 +780,612 @@ fn generate_key_lowers_row_mapped_fixed_assignments_through_local_switches() {
 }
 
 #[test]
+fn generate_key_lowers_row_mapped_fixed_assignments_through_unbraced_switch_branches() {
+    let dir = temp_dir("row-mapped-fixed-assignments-unbraced-switch-branches");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(int N = 1024) {\n\
+             col fixed table.op = [0..3]...;\n\
+             col fixed table.out;\n\
+             for (int index = 0; index < N; ++index) {\n\
+                 int op = table.op[index];\n\
+                 int value = 0;\n\
+                 switch (op) {\n\
+                     case 0:\n\
+                         if (index == 0) value = 7;\n\
+                         else value = index + 10;\n\
+                     case 1:\n\
+                         value = index + 20;\n\
+                     default:\n\
+                         value = index + 30;\n\
+                 }\n\
+                 table.out[index] = value;\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(); }",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    let columns = parse_raw_fixed_columns(
+        &fs::read(&unit.fixed_columns).expect("fixed columns should read"),
+        &setup,
+        unit.group_name.as_deref().unwrap_or("raw"),
+        unit.unit_name.as_deref().unwrap_or("unit"),
+    )
+    .expect("fixed columns should parse");
+    assert_eq!(columns.row_count, 1024);
+    let output = columns
+        .columns
+        .iter()
+        .find(|column| column.name == "table.out")
+        .expect("output column should exist");
+    assert_eq!(output.values[0], 7);
+    assert_eq!(output.values[1], 21);
+    assert_eq!(output.values[2], 32);
+    assert_eq!(output.values[3], 33);
+    assert_eq!(output.values[4], 14);
+    assert_eq!(output.values[1023], 1053);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_lowers_row_mapped_fixed_assignments_through_conditional_array_outputs() {
+    let dir = temp_dir("row-mapped-fixed-assignments-conditional-array-outputs");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(int N = 1024) {\n\
+             col fixed table.base = [0..3]...;\n\
+             col fixed table.out[2];\n\
+             for (int index = 0; index < N; ++index) {\n\
+                 int value = table.base[index];\n\
+                 if (index % 2 == 0) {\n\
+                     table.out[0][index] = value + 10;\n\
+                     table.out[1][index] = value + 20;\n\
+                 } else {\n\
+                     table.out[0][index] = value + 30;\n\
+                     table.out[1][index] = value + 40;\n\
+                 }\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(); }",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    let columns = parse_raw_fixed_columns(
+        &fs::read(&unit.fixed_columns).expect("fixed columns should read"),
+        &setup,
+        unit.group_name.as_deref().unwrap_or("raw"),
+        unit.unit_name.as_deref().unwrap_or("unit"),
+    )
+    .expect("fixed columns should parse");
+    assert_eq!(columns.row_count, 1024);
+    let first = columns
+        .columns
+        .iter()
+        .find(|column| column.name == "table.out[0]")
+        .expect("first output column should exist");
+    let second = columns
+        .columns
+        .iter()
+        .find(|column| column.name == "table.out[1]")
+        .expect("second output column should exist");
+    assert_eq!(first.values[0], 10);
+    assert_eq!(second.values[0], 20);
+    assert_eq!(first.values[1], 31);
+    assert_eq!(second.values[1], 41);
+    assert_eq!(first.values[1022], 12);
+    assert_eq!(second.values[1023], 43);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_lowers_row_mapped_fixed_assignments_through_conditional_inner_loops() {
+    let dir = temp_dir("row-mapped-fixed-assignments-conditional-inner-loops");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(int N = 1024) {\n\
+             col fixed table.base = [0..3]...;\n\
+             col fixed table.out[2];\n\
+             for (int index = 0; index < N; ++index) {\n\
+                 int value = table.base[index];\n\
+                 if (index % 2 == 0) {\n\
+                     for (int slot = 0; slot < 2; slot++) {\n\
+                         table.out[slot][index] = value + slot * 10;\n\
+                     }\n\
+                 } else {\n\
+                     table.out[0][index] = value + 30;\n\
+                     table.out[1][index] = value + 40;\n\
+                 }\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(); }",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    let columns = parse_raw_fixed_columns(
+        &fs::read(&unit.fixed_columns).expect("fixed columns should read"),
+        &setup,
+        unit.group_name.as_deref().unwrap_or("raw"),
+        unit.unit_name.as_deref().unwrap_or("unit"),
+    )
+    .expect("fixed columns should parse");
+    assert_eq!(columns.row_count, 1024);
+    let first = columns
+        .columns
+        .iter()
+        .find(|column| column.name == "table.out[0]")
+        .expect("first output column should exist");
+    let second = columns
+        .columns
+        .iter()
+        .find(|column| column.name == "table.out[1]")
+        .expect("second output column should exist");
+    assert_eq!(first.values[0], 0);
+    assert_eq!(second.values[0], 10);
+    assert_eq!(first.values[1], 31);
+    assert_eq!(second.values[1], 41);
+    assert_eq!(first.values[1022], 2);
+    assert_eq!(second.values[1023], 43);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_lowers_row_mapped_fixed_assignments_through_local_target_indices() {
+    let dir = temp_dir("row-mapped-fixed-assignments-local-target-indices");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(int N = 1024) {\n\
+             col fixed table.base = [0..3]...;\n\
+             col fixed table.out[2];\n\
+             const int first_index = 0;\n\
+             int second_index = 1;\n\
+             for (int index = 0; index < N; ++index) {\n\
+                 int value = table.base[index];\n\
+                 if (index % 2 == 0) {\n\
+                     for (int slot = 0; slot < 2; slot++) {\n\
+                         table.out[slot][index] = value + slot * 10;\n\
+                     }\n\
+                 } else {\n\
+                     table.out[first_index][index] = value + 30;\n\
+                     table.out[second_index][index] = value + 40;\n\
+                 }\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(); }",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    let columns = parse_raw_fixed_columns(
+        &fs::read(&unit.fixed_columns).expect("fixed columns should read"),
+        &setup,
+        unit.group_name.as_deref().unwrap_or("raw"),
+        unit.unit_name.as_deref().unwrap_or("unit"),
+    )
+    .expect("fixed columns should parse");
+    assert_eq!(columns.row_count, 1024);
+    let first = columns
+        .columns
+        .iter()
+        .find(|column| column.name == "table.out[0]")
+        .expect("first output column should exist");
+    let second = columns
+        .columns
+        .iter()
+        .find(|column| column.name == "table.out[1]")
+        .expect("second output column should exist");
+    assert_eq!(first.values[0], 0);
+    assert_eq!(second.values[0], 10);
+    assert_eq!(first.values[1], 31);
+    assert_eq!(second.values[1], 41);
+    assert_eq!(first.values[1022], 2);
+    assert_eq!(second.values[1023], 43);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_lowers_row_mapped_fixed_assignments_from_indexed_fixed_arrays() {
+    let dir = temp_dir("row-mapped-fixed-assignments-indexed-fixed-arrays");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(int N = 1024) {\n\
+             col fixed table.base[2];\n\
+             table.base[0] = [0..3]...;\n\
+             table.base[1] = [10..13]...;\n\
+             col fixed table.out;\n\
+             for (int index = 0; index < N; ++index) {\n\
+                 table.out[index] = table.base[0][index] + table.base[1][index];\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(); }",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    let columns = parse_raw_fixed_columns(
+        &fs::read(&unit.fixed_columns).expect("fixed columns should read"),
+        &setup,
+        unit.group_name.as_deref().unwrap_or("raw"),
+        unit.unit_name.as_deref().unwrap_or("unit"),
+    )
+    .expect("fixed columns should parse");
+    assert_eq!(columns.row_count, 1024);
+    let output = columns
+        .columns
+        .iter()
+        .find(|column| column.name == "table.out")
+        .expect("output column should exist");
+    assert_eq!(output.values[0], 10);
+    assert_eq!(output.values[1], 12);
+    assert_eq!(output.values[2], 14);
+    assert_eq!(output.values[3], 16);
+    assert_eq!(output.values[1023], 16);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_lowers_row_mapped_fixed_assignments_from_nested_sequence_columns() {
+    let dir = temp_dir("row-mapped-fixed-assignments-nested-sequence-columns");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "const int R = 2;\n\
+         airtemplate UnitA(int N = 1024) {\n\
+             col fixed source = [[0:R, 1:R]:2, [2:R, 3:R]:2]...;\n\
+             col fixed out;\n\
+             for (int index = 0; index < N; ++index) {\n\
+                 out[index] = source[index];\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(); }",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    let columns = parse_raw_fixed_columns(
+        &fs::read(&unit.fixed_columns).expect("fixed columns should read"),
+        &setup,
+        unit.group_name.as_deref().unwrap_or("raw"),
+        unit.unit_name.as_deref().unwrap_or("unit"),
+    )
+    .expect("fixed columns should parse");
+    assert_eq!(columns.row_count, 1024);
+    let output = columns
+        .columns
+        .iter()
+        .find(|column| column.name == "out")
+        .expect("output column should exist");
+    assert_eq!(
+        &output.values[0..16],
+        &[0, 0, 1, 1, 0, 0, 1, 1, 2, 2, 3, 3, 2, 2, 3, 3]
+    );
+    assert_eq!(output.values[1023], 3);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_lowers_row_mapped_fixed_assignments_through_local_ternary_outputs() {
+    let dir = temp_dir("row-mapped-fixed-assignments-local-ternary-outputs");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(int N = 1024) {\n\
+             col fixed table.base = [0..3]...;\n\
+             col fixed table.out[2];\n\
+             for (int index = 0; index < N; ++index) {\n\
+                 int value = table.base[index];\n\
+                 for (int slot = 0; slot < 2; slot++) {\n\
+                     table.out[slot][index] = slot == 0 ? value : value + 10;\n\
+                 }\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(); }",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    let columns = parse_raw_fixed_columns(
+        &fs::read(&unit.fixed_columns).expect("fixed columns should read"),
+        &setup,
+        unit.group_name.as_deref().unwrap_or("raw"),
+        unit.unit_name.as_deref().unwrap_or("unit"),
+    )
+    .expect("fixed columns should parse");
+    assert_eq!(columns.row_count, 1024);
+    let first = columns
+        .columns
+        .iter()
+        .find(|column| column.name == "table.out[0]")
+        .expect("first output column should exist");
+    let second = columns
+        .columns
+        .iter()
+        .find(|column| column.name == "table.out[1]")
+        .expect("second output column should exist");
+    assert_eq!(first.values[0], 0);
+    assert_eq!(second.values[0], 10);
+    assert_eq!(first.values[1], 1);
+    assert_eq!(second.values[1], 11);
+    assert_eq!(first.values[1023], 3);
+    assert_eq!(second.values[1023], 13);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_lowers_row_mapped_fixed_assignments_before_ignored_local_effects() {
+    let dir = temp_dir("row-mapped-fixed-assignments-before-ignored-local-effects");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(int N = 1024) {\n\
+             col fixed table.base = [0..3]...;\n\
+             col fixed table.out[2];\n\
+             col fixed table.flag;\n\
+             int count = 0;\n\
+             for (int index = 0; index < N; ++index) {\n\
+                 int value = table.base[index];\n\
+                 if (index % 2 == 0) {\n\
+                     for (int slot = 0; slot < 2; slot++) {\n\
+                         table.out[slot][index] = value + slot * 10;\n\
+                     }\n\
+                 } else {\n\
+                     table.out[0][index] = value + 30;\n\
+                     table.out[1][index] = value + 40;\n\
+                 }\n\
+                 table.flag[index] = value + 50;\n\
+                 ++count;\n\
+                 println(\"{}\", count);\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(); }",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    let columns = parse_raw_fixed_columns(
+        &fs::read(&unit.fixed_columns).expect("fixed columns should read"),
+        &setup,
+        unit.group_name.as_deref().unwrap_or("raw"),
+        unit.unit_name.as_deref().unwrap_or("unit"),
+    )
+    .expect("fixed columns should parse");
+    assert_eq!(columns.row_count, 1024);
+    let output = columns
+        .columns
+        .iter()
+        .find(|column| column.name == "table.out[0]")
+        .expect("first output column should exist");
+    let second = columns
+        .columns
+        .iter()
+        .find(|column| column.name == "table.out[1]")
+        .expect("second output column should exist");
+    let flag = columns
+        .columns
+        .iter()
+        .find(|column| column.name == "table.flag")
+        .expect("flag column should exist");
+    assert_eq!(output.values[0], 0);
+    assert_eq!(second.values[0], 10);
+    assert_eq!(output.values[1], 31);
+    assert_eq!(second.values[1], 41);
+    assert_eq!(output.values[1022], 2);
+    assert_eq!(second.values[1023], 43);
+    assert_eq!(flag.values[0], 50);
+    assert_eq!(flag.values[1], 51);
+    assert_eq!(flag.values[1023], 53);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_reuses_fixed_assignment_scalar_values() {
     let dir = temp_dir("many-scalar-fixed-assignments");
     let _ = fs::remove_dir_all(&dir);

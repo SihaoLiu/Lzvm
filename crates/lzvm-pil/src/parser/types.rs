@@ -292,6 +292,11 @@ pub enum ExpressionKind {
         left: Box<Expression>,
         right: Box<Expression>,
     },
+    Ternary {
+        condition: Box<Expression>,
+        then_expr: Box<Expression>,
+        else_expr: Box<Expression>,
+    },
     Call {
         callee: Box<Expression>,
         args: Vec<CallArgument>,

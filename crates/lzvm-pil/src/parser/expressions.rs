@@ -253,6 +253,14 @@ impl ExpressionParser<'_> {
             let Some(token) = self.peek() else {
                 break;
             };
+            if token.kind == TokenKind::Question {
+                let left_bp = 2;
+                if left_bp < min_bp {
+                    break;
+                }
+                lhs = self.parse_ternary(lhs)?;
+                continue;
+            }
             let Some((op, left_bp, right_bp)) = binary_operator(token.kind) else {
                 break;
             };
@@ -277,6 +285,35 @@ impl ExpressionParser<'_> {
         }
 
         Ok(lhs)
+    }
+
+    fn parse_ternary(&mut self, condition: Expression) -> Result<Expression, ParseError> {
+        let start = condition.start;
+        self.cursor += 1;
+        let then_expr = self.parse_expression(0)?;
+        let colon = self.peek().ok_or_else(|| ParseError::ExpectedName {
+            source_name: self.source.source_name.clone(),
+            start: missing_start(self.tokens, self.cursor),
+        })?;
+        if colon.kind != TokenKind::Colon {
+            return Err(ParseError::ExpectedName {
+                source_name: self.source.source_name.clone(),
+                start: colon.start,
+            });
+        }
+        self.cursor += 1;
+        let else_expr = self.parse_expression(2)?;
+        let end = else_expr.end;
+        Ok(Expression {
+            kind: ExpressionKind::Ternary {
+                condition: Box::new(condition),
+                then_expr: Box::new(then_expr),
+                else_expr: Box::new(else_expr),
+            },
+            source_name: self.source.source_name.clone(),
+            start,
+            end,
+        })
     }
 
     fn parse_prefix(&mut self) -> Result<Expression, ParseError> {

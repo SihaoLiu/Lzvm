@@ -199,6 +199,21 @@ fn evaluate_source_fixed_expression_inner(
                 _ => Err(source_fixed_expression_unsupported(context, expression)),
             }
         }
+        ExpressionKind::Ternary {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            let Some(condition) = evaluate_source_fixed_expression_inner(context, condition, row)?
+            else {
+                return Ok(None);
+            };
+            if source_fixed_truthy(condition) {
+                evaluate_source_fixed_expression_inner(context, then_expr, row)
+            } else {
+                evaluate_source_fixed_expression_inner(context, else_expr, row)
+            }
+        }
         ExpressionKind::RowOffset {
             target,
             offset,
@@ -231,7 +246,7 @@ fn evaluate_source_fixed_expression_inner(
             if let Some(value) = evaluate_source_fixed_array_index(context, expression, row)? {
                 return Ok(Some(value));
             }
-            if source_fixed_expression_name(target).is_some() {
+            if source_fixed_expression_column_reference(context, target, row)?.is_some() {
                 return evaluate_source_fixed_column_index(context, target, index, row);
             }
             Err(source_fixed_expression_unsupported(context, expression))
@@ -379,6 +394,24 @@ pub(crate) fn evaluate_source_fixed_template_value_expression_with_parts(
         return Some(value);
     }
 
+    if let ExpressionKind::Ternary {
+        condition,
+        then_expr,
+        else_expr,
+    } = &expression.kind
+    {
+        let condition =
+            evaluate_source_fixed_template_value_expression_with_parts(condition, scalars, arrays)?;
+        if source_fixed_template_truthy(&condition) {
+            return evaluate_source_fixed_template_value_expression_with_parts(
+                then_expr, scalars, arrays,
+            );
+        }
+        return evaluate_source_fixed_template_value_expression_with_parts(
+            else_expr, scalars, arrays,
+        );
+    }
+
     let ExpressionKind::Index { target, index } = &expression.kind else {
         return None;
     };
@@ -471,7 +504,7 @@ fn evaluate_source_fixed_column_index(
     index: &Expression,
     row: usize,
 ) -> Result<Option<u64>, SourceFixedColumnsWriteError> {
-    let Some(reference) = source_fixed_expression_name(target) else {
+    let Some(reference) = source_fixed_expression_column_reference(context, target, row)? else {
         return Ok(None);
     };
     let Some(source_row) = evaluate_source_fixed_expression_inner(context, index, row)? else {
@@ -482,7 +515,7 @@ fn evaluate_source_fixed_column_index(
     if source_row >= context.row_count {
         return Err(source_fixed_expression_integer_out_of_range(context, index));
     }
-    for candidate in fixed_column_reference_candidates(context.column_name, reference) {
+    for candidate in fixed_column_reference_candidates(context.column_name, &reference) {
         if let Some(values) = context.column_values.get(&candidate) {
             return Ok(values.get(source_row).copied());
         }
@@ -490,11 +523,41 @@ fn evaluate_source_fixed_column_index(
     Ok(None)
 }
 
+fn source_fixed_expression_column_reference(
+    context: &SourceFixedExpressionContext<'_>,
+    expression: &Expression,
+    row: usize,
+) -> Result<Option<String>, SourceFixedColumnsWriteError> {
+    match &strip_source_fixed_expression_group(expression).kind {
+        ExpressionKind::Name(name) => Ok(Some(name.clone())),
+        ExpressionKind::Index { target, index } => {
+            let Some(mut target) = source_fixed_expression_column_reference(context, target, row)?
+            else {
+                return Ok(None);
+            };
+            let Some(index) = evaluate_source_fixed_expression_inner(context, index, row)? else {
+                return Ok(None);
+            };
+            target.push('[');
+            target.push_str(&index.to_string());
+            target.push(']');
+            Ok(Some(target))
+        }
+        _ => Ok(None),
+    }
+}
+
 fn source_fixed_expression_name(expression: &Expression) -> Option<&str> {
-    match &expression.kind {
+    match &strip_source_fixed_expression_group(expression).kind {
         ExpressionKind::Name(name) => Some(name),
-        ExpressionKind::Group(inner) => source_fixed_expression_name(inner),
         _ => None,
+    }
+}
+
+fn strip_source_fixed_expression_group(expression: &Expression) -> &Expression {
+    match &expression.kind {
+        ExpressionKind::Group(inner) => strip_source_fixed_expression_group(inner),
+        _ => expression,
     }
 }
 

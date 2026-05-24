@@ -789,6 +789,39 @@ fn collect_source_opening_points(
                 resolving_array_aliases,
             )
         }
+        ExpressionKind::Ternary {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            collect_source_opening_points(
+                program,
+                condition,
+                constant_values,
+                alias_scope,
+                points,
+                resolving_aliases,
+                resolving_array_aliases,
+            )?;
+            collect_source_opening_points(
+                program,
+                then_expr,
+                constant_values,
+                alias_scope,
+                points,
+                resolving_aliases,
+                resolving_array_aliases,
+            )?;
+            collect_source_opening_points(
+                program,
+                else_expr,
+                constant_values,
+                alias_scope,
+                points,
+                resolving_aliases,
+                resolving_array_aliases,
+            )
+        }
         ExpressionKind::Array(values) => {
             for value in values {
                 collect_source_opening_points(

@@ -934,12 +934,9 @@ fn function_statement_expression_supported(
         return false;
     }
 
-    !tokens[start_index..end_index].iter().any(|token| {
-        matches!(
-            token.kind,
-            TokenKind::Question | TokenKind::In | TokenKind::Is
-        )
-    })
+    !tokens[start_index..end_index]
+        .iter()
+        .any(|token| matches!(token.kind, TokenKind::In | TokenKind::Is))
 }
 
 fn function_statement_has_header(kind: FunctionStatementKind) -> bool {

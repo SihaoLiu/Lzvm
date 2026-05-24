@@ -596,6 +596,18 @@ fn evaluate_template_expression_value(
                 }
             }
         }
+        ExpressionKind::Ternary {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            let condition = evaluate_template_expression_value(condition, bindings)?;
+            if condition.truthy() {
+                evaluate_template_expression_value(then_expr, bindings)
+            } else {
+                evaluate_template_expression_value(else_expr, bindings)
+            }
+        }
         _ => None,
     }
 }

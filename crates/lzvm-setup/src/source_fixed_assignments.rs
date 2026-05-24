@@ -654,8 +654,8 @@ fn collect_source_fixed_table_fill_statement(
         .entry(column_name.clone())
         .or_insert_with(|| vec![None; context.row_count]);
     zero_default_columns.insert(column_name.clone());
-    for row in offset..end {
-        match values[row] {
+    for value_slot in values.iter_mut().take(end).skip(offset) {
+        match *value_slot {
             Some(existing) if existing != value => {
                 return Err(SourceFixedColumnsWriteError::UnsupportedInitializer {
                     source_name: context.module.source_name.clone(),
@@ -663,7 +663,7 @@ fn collect_source_fixed_table_fill_statement(
                 });
             }
             Some(_) => {}
-            None => values[row] = Some(value),
+            None => *value_slot = Some(value),
         }
     }
     Ok(true)
@@ -1097,6 +1097,18 @@ fn evaluate_source_fixed_assignment_value_expression(
             }
             let right = evaluate_source_fixed_assignment_value_expression(right, values)?;
             evaluate_source_fixed_assignment_binary(*op, left, right)
+        }
+        ExpressionKind::Ternary {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            let condition = evaluate_source_fixed_assignment_value_expression(condition, values)?;
+            if source_fixed_assignment_truthy(&condition) {
+                evaluate_source_fixed_assignment_value_expression(then_expr, values)
+            } else {
+                evaluate_source_fixed_assignment_value_expression(else_expr, values)
+            }
         }
         ExpressionKind::Index { target, index } => {
             let ExpressionKind::Name(array_name) =

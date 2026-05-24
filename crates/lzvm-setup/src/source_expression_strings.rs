@@ -159,6 +159,43 @@ fn source_expression_string_value(
             )?;
             format!("{left} {op} {right}")
         }
+        ExpressionKind::Ternary {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            let condition = source_expression_string_value(
+                program,
+                condition,
+                values,
+                expression_aliases,
+                expression_array_aliases,
+                resolving_aliases,
+                resolving_array_aliases,
+                precedence,
+            )?;
+            let then_expr = source_expression_string_value(
+                program,
+                then_expr,
+                values,
+                expression_aliases,
+                expression_array_aliases,
+                resolving_aliases,
+                resolving_array_aliases,
+                0,
+            )?;
+            let else_expr = source_expression_string_value(
+                program,
+                else_expr,
+                values,
+                expression_aliases,
+                expression_array_aliases,
+                resolving_aliases,
+                resolving_array_aliases,
+                precedence,
+            )?;
+            format!("{condition} ? {then_expr} : {else_expr}")
+        }
         ExpressionKind::Call { callee, args } => {
             let callee = source_expression_string_value(
                 program,
@@ -433,6 +470,7 @@ fn source_expression_string_precedence(expression: &Expression) -> u8 {
             | BinaryOperator::RangeFill
             | BinaryOperator::RangeMulFill => 0,
         },
+        ExpressionKind::Ternary { .. } => 1,
         ExpressionKind::Unary { .. } => 12,
         ExpressionKind::Call { .. }
         | ExpressionKind::Index { .. }

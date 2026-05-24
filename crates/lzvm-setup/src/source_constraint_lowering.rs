@@ -132,6 +132,7 @@ fn source_expression_can_be_bare_constraint(expression: &Expression) -> bool {
         | ExpressionKind::PositionalParam(_)
         | ExpressionKind::Group(_)
         | ExpressionKind::Array(_)
+        | ExpressionKind::Ternary { .. }
         | ExpressionKind::Call { .. } => false,
     }
 }
