@@ -532,6 +532,9 @@ fn source_bind_opening_function_argument(
     expression_array_aliases: &mut SourceExpressionArrayAliases,
 ) -> Option<()> {
     if source_opening_expr_scalar_parameter(parameter) {
+        if source_expression_name(expression) == Some(parameter.name.as_str()) {
+            return Some(());
+        }
         expression_aliases.insert(parameter.name.clone(), expression.clone());
         return Some(());
     }
@@ -882,6 +885,14 @@ fn source_opening_index_chain(expression: &Expression) -> Option<(&str, Vec<&Exp
             indices.push(index);
             Some((name, indices))
         }
+        _ => None,
+    }
+}
+
+fn source_expression_name(expression: &Expression) -> Option<&str> {
+    match &expression.kind {
+        ExpressionKind::Name(name) => Some(name),
+        ExpressionKind::Group(inner) => source_expression_name(inner),
         _ => None,
     }
 }
