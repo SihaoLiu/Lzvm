@@ -1351,6 +1351,42 @@ fn generate_key_allows_known_source_metadata_directives() {
 }
 
 #[test]
+fn generate_key_allows_qualified_source_use_directives() {
+    let dir = temp_dir("qualified-source-use");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "private use proof.main;\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(dir.join(SETUP_DIRECTORY_MANIFEST_FILE).is_file());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_writes_source_proof_values_to_global_metadata() {
     let dir = temp_dir("proof-value-metadata");
     let _ = fs::remove_dir_all(&dir);

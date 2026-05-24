@@ -324,7 +324,10 @@ fn lower_top_level_global_constraints_range(
                 if context.tokens.get(index + 1).is_some_and(|next| {
                     matches!(
                         next.kind,
-                        TokenKind::Include | TokenKind::Require | TokenKind::Function
+                        TokenKind::Include
+                            | TokenKind::Require
+                            | TokenKind::Use
+                            | TokenKind::Function
                     )
                 }) =>
             {
