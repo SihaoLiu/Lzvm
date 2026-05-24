@@ -27,12 +27,15 @@ use crate::{
     },
 };
 
+mod directives;
 mod hints;
 mod indices;
 mod residuals;
 mod top_level_call;
 mod top_level_for;
 mod top_level_if;
+
+use directives::{skip_source_directive_statement, source_directive_statement_start};
 
 pub(crate) fn source_global_program(
     program: &SourceProgram,
@@ -307,6 +310,14 @@ fn lower_top_level_global_constraints_range(
             TokenKind::If => {
                 index =
                     top_level_if::lower_top_level_static_if_statement(context, index, constraints)?;
+            }
+            _ if source_directive_statement_start(context.tokens, index).is_some() => {
+                index = skip_source_directive_statement(
+                    context.tokens,
+                    index,
+                    end,
+                    &context.module.source.contents,
+                )?;
             }
             kind if top_level_declaration_start(kind) => {
                 index = skip_top_level_item(context.tokens, index)?;
