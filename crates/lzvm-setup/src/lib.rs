@@ -56,6 +56,7 @@ mod source_scope;
 mod source_statement_hints;
 mod source_static_array_assignment;
 mod source_static_functions;
+mod source_static_tokens;
 mod source_static_values;
 mod source_template_context;
 mod source_template_for;

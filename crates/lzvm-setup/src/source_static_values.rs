@@ -9,6 +9,11 @@ use lzvm_pil::{
 use crate::{
     source_scope::{declaration_in_function_body, declaration_in_inactive_template},
     source_static_functions::evaluate_static_i128,
+    source_static_tokens::{
+        control_body_range, matching_closing_token, next_static_semicolon_limited, next_token_kind,
+        source_token_index_after_end, source_token_index_at_start, static_switch_label_colon,
+        update_static_delimiter_stack,
+    },
 };
 
 const STATIC_TEMPLATE_LOOP_LIMIT: usize = 10_000;
@@ -619,6 +624,9 @@ fn execute_static_template_statement(
         TokenKind::While => {
             execute_static_template_while(program, module, tokens, index, end, values)
         }
+        TokenKind::Do => {
+            execute_static_template_do_while(program, module, tokens, index, end, values)
+        }
         TokenKind::Switch => {
             execute_static_template_switch(program, module, tokens, index, end, values)
         }
@@ -867,6 +875,61 @@ fn execute_static_template_while_inner(
     None
 }
 
+fn execute_static_template_do_while(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    index: usize,
+    end: usize,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<usize> {
+    let checkpoint = values.clone();
+    let next = execute_static_template_do_while_inner(program, module, tokens, index, end, values);
+    if next.is_none() {
+        *values = checkpoint;
+    }
+    next
+}
+
+fn execute_static_template_do_while_inner(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    index: usize,
+    end: usize,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<usize> {
+    let (body_start, body_end, after_body) = control_body_range(tokens, index + 1, end)?;
+    if tokens.get(after_body).map(|token| token.kind) != Some(TokenKind::While) {
+        return None;
+    }
+    let open = after_body + 1;
+    if tokens.get(open).map(|token| token.kind) != Some(TokenKind::LParen) {
+        return None;
+    }
+    let close = matching_closing_token(tokens, open, end)?;
+    let semicolon = close + 1;
+    if tokens.get(semicolon).map(|token| token.kind) != Some(TokenKind::Semicolon) {
+        return None;
+    }
+
+    for _ in 0..STATIC_TEMPLATE_LOOP_LIMIT {
+        execute_static_template_tokens(program, module, tokens, body_start, body_end, values)?;
+        let condition = evaluate_source_static_token_range(
+            program,
+            &module.source,
+            tokens,
+            open + 1,
+            close,
+            values,
+        )?;
+        if !static_value_truthy(&condition) {
+            return Some(semicolon + 1);
+        }
+    }
+    None
+}
+
 fn execute_static_template_switch(
     program: &SourceProgram,
     module: &SourceProgramModule,
@@ -1064,8 +1127,24 @@ fn skip_static_template_statement(tokens: &[Token], index: usize, end: usize) ->
             let (_, _, after_body) = control_body_range(tokens, close + 1, end)?;
             Some(after_body)
         }
+        TokenKind::Do => skip_static_do_while_statement(tokens, index, end),
         _ => next_static_semicolon_limited(tokens, index, end).map(|semicolon| semicolon + 1),
     }
+}
+
+fn skip_static_do_while_statement(tokens: &[Token], index: usize, end: usize) -> Option<usize> {
+    let (_, _, after_body) = control_body_range(tokens, index + 1, end)?;
+    if tokens.get(after_body).map(|token| token.kind) != Some(TokenKind::While) {
+        return None;
+    }
+    let open = after_body + 1;
+    if tokens.get(open).map(|token| token.kind) != Some(TokenKind::LParen) {
+        return None;
+    }
+    let close = matching_closing_token(tokens, open, end)?;
+    let semicolon = close + 1;
+    (tokens.get(semicolon).map(|token| token.kind) == Some(TokenKind::Semicolon))
+        .then_some(semicolon + 1)
 }
 
 fn skip_static_if_statement(tokens: &[Token], index: usize, end: usize) -> Option<usize> {
@@ -1566,130 +1645,6 @@ fn static_declaration_start(kind: TokenKind) -> bool {
             | TokenKind::Expr
             | TokenKind::String
     )
-}
-
-fn control_body_range(tokens: &[Token], index: usize, end: usize) -> Option<(usize, usize, usize)> {
-    match tokens.get(index)?.kind {
-        TokenKind::LBrace => {
-            let close = matching_closing_token(tokens, index, end)?;
-            Some((index + 1, close, close + 1))
-        }
-        _ => {
-            let semicolon = next_static_semicolon_limited(tokens, index, end)?;
-            Some((index, semicolon + 1, semicolon + 1))
-        }
-    }
-}
-
-fn next_token_kind(tokens: &[Token], start: usize, end: usize, kind: TokenKind) -> Option<usize> {
-    tokens
-        .iter()
-        .enumerate()
-        .take(end)
-        .skip(start)
-        .find_map(|(index, token)| (token.kind == kind).then_some(index))
-}
-
-fn matching_closing_token(tokens: &[Token], open: usize, end: usize) -> Option<usize> {
-    let close_kind = match tokens.get(open)?.kind {
-        TokenKind::LParen => TokenKind::RParen,
-        TokenKind::LBracket => TokenKind::RBracket,
-        TokenKind::LBrace => TokenKind::RBrace,
-        _ => return None,
-    };
-    let mut expected = vec![close_kind];
-    for (index, token) in tokens.iter().enumerate().take(end).skip(open + 1) {
-        match token.kind {
-            TokenKind::LParen => expected.push(TokenKind::RParen),
-            TokenKind::LBracket => expected.push(TokenKind::RBracket),
-            TokenKind::LBrace => expected.push(TokenKind::RBrace),
-            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
-                if expected.pop()? != token.kind {
-                    return None;
-                }
-                if expected.is_empty() {
-                    return Some(index);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-fn update_static_delimiter_stack(kind: TokenKind, stack: &mut Vec<TokenKind>) -> Option<()> {
-    match kind {
-        TokenKind::LParen => stack.push(TokenKind::RParen),
-        TokenKind::LBracket => stack.push(TokenKind::RBracket),
-        TokenKind::LBrace => stack.push(TokenKind::RBrace),
-        TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
-            if stack.pop()? != kind {
-                return None;
-            }
-        }
-        _ => {}
-    }
-    Some(())
-}
-
-fn static_switch_label_colon(tokens: &[Token], start: usize, end: usize) -> Option<usize> {
-    let mut expected = Vec::<TokenKind>::new();
-    let mut ternary_depth = 0_usize;
-    for (index, token) in tokens.iter().enumerate().take(end).skip(start) {
-        match token.kind {
-            TokenKind::LParen => expected.push(TokenKind::RParen),
-            TokenKind::LBracket => expected.push(TokenKind::RBracket),
-            TokenKind::LBrace => expected.push(TokenKind::RBrace),
-            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
-                if expected.pop()? != token.kind {
-                    return None;
-                }
-            }
-            TokenKind::Question if expected.is_empty() => {
-                ternary_depth = ternary_depth.checked_add(1)?;
-            }
-            TokenKind::Colon if expected.is_empty() && ternary_depth > 0 => {
-                ternary_depth -= 1;
-            }
-            TokenKind::Colon if expected.is_empty() => return Some(index),
-            TokenKind::EndOfInput => return None,
-            _ => {}
-        }
-    }
-    None
-}
-
-fn next_static_semicolon_limited(tokens: &[Token], index: usize, end: usize) -> Option<usize> {
-    let mut expected = Vec::<TokenKind>::new();
-    for (cursor, token) in tokens.iter().enumerate().take(end).skip(index) {
-        match token.kind {
-            TokenKind::LParen => expected.push(TokenKind::RParen),
-            TokenKind::LBracket => expected.push(TokenKind::RBracket),
-            TokenKind::LBrace => expected.push(TokenKind::RBrace),
-            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
-                if expected.pop()? != token.kind {
-                    return None;
-                }
-            }
-            TokenKind::Semicolon if expected.is_empty() => return Some(cursor),
-            TokenKind::EndOfInput => return None,
-            _ => {}
-        }
-    }
-    None
-}
-
-fn source_token_index_at_start(tokens: &[Token], start: usize) -> Option<usize> {
-    tokens
-        .iter()
-        .position(|token| token.start == start && token.kind != TokenKind::EndOfInput)
-}
-
-fn source_token_index_after_end(tokens: &[Token], end: usize) -> Option<usize> {
-    tokens
-        .iter()
-        .position(|token| token.end == end)
-        .and_then(|index| index.checked_add(1))
 }
 
 pub(crate) fn source_static_array_expression(
