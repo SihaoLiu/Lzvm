@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use lzvm_pil::{
     lex_source, parse_expression_tokens, AirInstanceDeclaration, AirTemplateDeclaration,
     BinaryOperator, CallArgument, Expression, ExpressionKind, FixedFileTemplateValue,
-    FunctionStatement, FunctionStatementKind, SourceProgram, SourceProgramModule, SourceSpan,
-    Token, TokenKind, UnaryOperator,
+    FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind, SourceProgram,
+    SourceProgramModule, SourceSpan, Token, TokenKind, UnaryOperator,
 };
 
 use crate::{
@@ -230,6 +230,9 @@ impl<'a> SourceFixedAssignmentValues<'a> {
     }
 
     fn apply_static_statement(&mut self, program: &SourceProgram, statement: &FunctionStatement) {
+        if !self.static_statement_can_update_values(statement) {
+            return;
+        }
         let mut scalars = self.fixed_constant_values().scalars;
         let updated = if statement.kind == FunctionStatementKind::Declaration {
             apply_source_static_declaration(program, statement, &mut scalars)
@@ -245,6 +248,23 @@ impl<'a> SourceFixedAssignmentValues<'a> {
         if updated {
             self.replace_scalars(scalars);
         }
+    }
+
+    fn static_statement_can_update_values(&self, statement: &FunctionStatement) -> bool {
+        if statement.kind == FunctionStatementKind::Declaration {
+            return matches!(
+                statement.declaration.as_ref(),
+                Some(
+                    FunctionStatementDeclaration::Constant(_)
+                        | FunctionStatementDeclaration::Variable(_)
+                )
+            );
+        }
+        if statement.kind != FunctionStatementKind::Expression {
+            return false;
+        }
+        source_fixed_static_expression_target_name(statement.value_expression.as_ref())
+            .is_some_and(|name| self.source_static_value(name).is_some())
     }
 }
 
@@ -366,6 +386,36 @@ impl SourceStaticValueLookup for SourceFixedAssignmentValues<'_> {
             }
         }
         values
+    }
+}
+
+fn source_fixed_static_expression_target_name(expression: Option<&Expression>) -> Option<&str> {
+    let expression = strip_source_fixed_group_expression(expression?);
+    match &expression.kind {
+        ExpressionKind::Unary { op, expr }
+            if matches!(op, UnaryOperator::Increment | UnaryOperator::Decrement) =>
+        {
+            source_fixed_static_lvalue_name(expr)
+        }
+        ExpressionKind::Binary { op, left, .. }
+            if matches!(
+                op,
+                BinaryOperator::Assign
+                    | BinaryOperator::PlusAssign
+                    | BinaryOperator::MinusAssign
+                    | BinaryOperator::StarAssign
+            ) =>
+        {
+            source_fixed_static_lvalue_name(left)
+        }
+        _ => None,
+    }
+}
+
+fn source_fixed_static_lvalue_name(expression: &Expression) -> Option<&str> {
+    match &strip_source_fixed_group_expression(expression).kind {
+        ExpressionKind::Name(name) => Some(name),
+        _ => None,
     }
 }
 
@@ -857,6 +907,22 @@ fn collect_source_fixed_sequence_assignment_statement(
     assignment_values: &SourceFixedAssignmentValues<'_>,
     partial_values: &mut BTreeMap<String, Vec<Option<u64>>>,
 ) -> Result<bool, SourceFixedColumnsWriteError> {
+    if let Some(expression) = statement.value_expression.as_ref() {
+        let ExpressionKind::Binary {
+            op: BinaryOperator::Assign,
+            right,
+            ..
+        } = &strip_source_fixed_group_expression(expression).kind
+        else {
+            return Ok(false);
+        };
+        let Some(source) = context.module.source.contents.get(right.start..right.end) else {
+            return Ok(false);
+        };
+        if !source.trim_start().starts_with('[') {
+            return Ok(false);
+        }
+    }
     let Some(value_span) = statement.value else {
         return Ok(false);
     };
