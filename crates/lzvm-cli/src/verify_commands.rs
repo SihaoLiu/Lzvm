@@ -1090,11 +1090,13 @@ fn write_contribution_binding_summary(
             "program_image_caches={}",
             report.program_image_cache_count
         );
-        for hash in &report.program_image_cache_hashes {
-            let _ = writeln!(
-                stdout,
-                "program_image_cache_segment_hash={}",
-                prove_plan::format_hash(hash)
+        for (cache, hash) in report
+            .program_image_caches
+            .iter()
+            .zip(&report.program_image_cache_hashes)
+        {
+            program_image_cache::write_program_image_cache_fields_with_segment_hash(
+                stdout, cache, hash,
             );
         }
     }

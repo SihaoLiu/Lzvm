@@ -12142,6 +12142,24 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
         "program_image_cache_segment_hash={}\n",
         format_hash(&cache_segment_hash)
     )));
+    assert!(stdout_text.contains(&format!(
+        "program_image_cache_program_digest={}\n",
+        format_hash(&cache.program_digest)
+    )));
+    assert!(stdout_text.contains(&format!(
+        "program_image_cache_source_image_digest={}\n",
+        format_hash(&cache.source_image_digest)
+    )));
+    assert!(stdout_text.contains(&format!(
+        "program_image_cache_constraint_system_digest={}\n",
+        format_hash(&setup_hash)
+    )));
+    assert!(stdout_text.contains("program_image_cache_tree_root=11,12,13,14\n"));
+    assert!(stdout_text.contains("program_image_cache_trace_rows=1024\n"));
+    assert!(stdout_text.contains("program_image_cache_trace_columns=17\n"));
+    assert!(stdout_text.contains("program_image_cache_blowup_factor=8\n"));
+    assert!(stdout_text.contains("program_image_cache_arity=4\n"));
+    assert!(stdout_text.contains("program_image_cache_gpu_mode=cpu\n"));
     assert!(stdout_text.contains("eth_block_inputs=1\n"));
     assert!(stdout_text.contains(&format!(
         "eth_block_input_hash={}\n",

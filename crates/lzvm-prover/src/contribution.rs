@@ -12,6 +12,7 @@ use lzvm_artifacts::contribution_segment::{
 use lzvm_artifacts::eth_block_input_segment::ETH_BLOCK_INPUT_SEGMENT_ID;
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo, NamedStageValue};
 use lzvm_artifacts::key_directory::{read_key_directory_catalog, KeyDirectoryError};
+use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
 use lzvm_artifacts::program_image_segment::PROGRAM_IMAGE_CACHE_SEGMENT_ID;
 use lzvm_artifacts::proof::{read_proof_artifact_file, ProofArtifactError, ProofSegment};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValuesError};
@@ -58,6 +59,7 @@ pub struct ContributionChallengeReport {
     pub public_values_hash: [u8; 32],
     pub public_value_field_count: usize,
     pub program_image_cache_count: usize,
+    pub program_image_caches: Vec<ProgramImageCommitmentCache>,
     pub program_image_cache_hashes: Vec<[u8; 32]>,
     pub eth_block_input_count: usize,
     pub eth_block_input_hashes: Vec<[u8; 32]>,
@@ -717,6 +719,7 @@ pub fn derive_global_challenge_from_files(
         public_values_hash: public_report.public_values_hash,
         public_value_field_count: public_report.public_value_field_count,
         program_image_cache_count: public_report.program_image_cache_count,
+        program_image_caches: public_report.program_image_caches,
         program_image_cache_hashes: public_report.program_image_cache_hashes,
         eth_block_input_count: public_report.eth_block_input_count,
         eth_block_input_hashes: public_report.eth_block_input_hashes,
@@ -752,6 +755,7 @@ pub fn derive_global_challenge_from_contribution_proofs(
     let mut public_values_hash = None;
     let mut proof_value_count = 0_usize;
     let mut program_image_cache_count = None;
+    let mut program_image_caches = None::<Vec<ProgramImageCommitmentCache>>;
     let mut program_image_cache_hashes = None::<Vec<[u8; 32]>>;
     let mut eth_block_input_count = None;
     let mut eth_block_input_hashes = None::<Vec<[u8; 32]>>;
@@ -775,6 +779,8 @@ pub fn derive_global_challenge_from_contribution_proofs(
         public_values_hash = public_values_hash.or(Some(public_report.public_values_hash));
         program_image_cache_count =
             program_image_cache_count.or(Some(public_report.program_image_cache_count));
+        program_image_caches =
+            program_image_caches.or(Some(public_report.program_image_caches.clone()));
         program_image_cache_hashes =
             program_image_cache_hashes.or(Some(public_report.program_image_cache_hashes.clone()));
         eth_block_input_count = eth_block_input_count.or(Some(public_report.eth_block_input_count));
@@ -850,6 +856,7 @@ pub fn derive_global_challenge_from_contribution_proofs(
         public_values_hash: public_values_hash.unwrap_or([0; 32]),
         public_value_field_count: public_fields.len(),
         program_image_cache_count: program_image_cache_count.unwrap_or(0),
+        program_image_caches: program_image_caches.unwrap_or_default(),
         program_image_cache_hashes: program_image_cache_hashes.unwrap_or_default(),
         eth_block_input_count: eth_block_input_count.unwrap_or(0),
         eth_block_input_hashes: eth_block_input_hashes.unwrap_or_default(),
