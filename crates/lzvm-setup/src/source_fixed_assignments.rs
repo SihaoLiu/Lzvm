@@ -26,9 +26,15 @@ use crate::{
     source_template_if::source_static_if_body_statements_with_lookup,
 };
 
+mod dynamic;
+
+use dynamic::collect_source_fixed_dynamic_for_assignment;
+pub(crate) use dynamic::{apply_source_fixed_dynamic_operations, SourceFixedDynamicOperation};
+
 pub(crate) struct SourceFixedTemplateAssignments {
     pub(crate) values: BTreeMap<String, Vec<u64>>,
     pub(crate) copy_operations: Vec<SourceFixedCopyOperation>,
+    pub(crate) dynamic_operations: Vec<SourceFixedDynamicOperation>,
 }
 
 pub(crate) struct SourceFixedCopyOperation {
@@ -52,6 +58,7 @@ pub(crate) fn source_fixed_values_from_template_assignments(
     let mut partial_values = BTreeMap::<String, Vec<Option<u64>>>::new();
     let mut zero_default_columns = BTreeSet::<String>::new();
     let mut copy_operations = Vec::<SourceFixedCopyOperation>::new();
+    let mut dynamic_operations = Vec::<SourceFixedDynamicOperation>::new();
     let active_templates = concrete_template_names(program);
     for module in &program.modules {
         let tokens = lex_source(&module.source.contents).map_err(|source| {
@@ -106,6 +113,7 @@ pub(crate) fn source_fixed_values_from_template_assignments(
                     &mut partial_values,
                     &mut zero_default_columns,
                     &mut copy_operations,
+                    &mut dynamic_operations,
                 )?;
             }
         }
@@ -129,6 +137,7 @@ pub(crate) fn source_fixed_values_from_template_assignments(
     Ok(SourceFixedTemplateAssignments {
         values,
         copy_operations,
+        dynamic_operations,
     })
 }
 
@@ -368,6 +377,7 @@ fn collect_source_fixed_template_assignment(
     partial_values: &mut BTreeMap<String, Vec<Option<u64>>>,
     zero_default_columns: &mut BTreeSet<String>,
     copy_operations: &mut Vec<SourceFixedCopyOperation>,
+    dynamic_operations: &mut Vec<SourceFixedDynamicOperation>,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     if statement.kind == FunctionStatementKind::If {
         match source_static_if_body_statements_with_lookup(
@@ -388,6 +398,7 @@ fn collect_source_fixed_template_assignment(
                         partial_values,
                         zero_default_columns,
                         copy_operations,
+                        dynamic_operations,
                     )?;
                 }
             }
@@ -399,6 +410,7 @@ fn collect_source_fixed_template_assignment(
         return Ok(());
     }
     if statement.kind == FunctionStatementKind::For {
+        let mut static_loop_applied = false;
         match source_static_for_loop_with_lookup(
             context.program,
             context.module,
@@ -424,15 +436,27 @@ fn collect_source_fixed_template_assignment(
                             partial_values,
                             zero_default_columns,
                             copy_operations,
+                            dynamic_operations,
                         )?;
                     }
                 }
+                static_loop_applied = true;
             }
             Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
             Err(error) => {
                 return Err(source_fixed_template_assignment_error(statement, error));
             }
         }
+        if static_loop_applied {
+            return Ok(());
+        }
+        collect_source_fixed_dynamic_for_assignment(
+            context,
+            statement,
+            assignment_values,
+            body_cache,
+            dynamic_operations,
+        )?;
         return Ok(());
     }
     if statement.kind == FunctionStatementKind::Declaration {

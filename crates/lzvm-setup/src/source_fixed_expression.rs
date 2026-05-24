@@ -26,6 +26,17 @@ pub(crate) struct SourceFixedExpressionValuesRequest<'a> {
     pub(crate) column_values: &'a BTreeMap<String, Vec<u64>>,
 }
 
+pub(crate) struct SourceFixedExpressionValueAtRowRequest<'a> {
+    pub(crate) program: &'a SourceProgram,
+    pub(crate) source_name: &'a str,
+    pub(crate) source: &'a str,
+    pub(crate) column_name: &'a str,
+    pub(crate) expression: &'a Expression,
+    pub(crate) row_count: usize,
+    pub(crate) constant_values: &'a SourceFixedConstantValues,
+    pub(crate) column_values: &'a BTreeMap<String, Vec<u64>>,
+}
+
 pub(crate) fn source_fixed_column_expression_values(
     request: &SourceFixedExpressionValuesRequest<'_>,
 ) -> Result<Option<Vec<u64>>, SourceFixedColumnsWriteError> {
@@ -54,6 +65,22 @@ pub(crate) fn source_fixed_column_expression_values(
     }
 
     Ok(Some(values))
+}
+
+pub(crate) fn source_fixed_expression_value_at_row(
+    request: &SourceFixedExpressionValueAtRowRequest<'_>,
+    row: usize,
+) -> Result<Option<u64>, SourceFixedColumnsWriteError> {
+    let context = SourceFixedExpressionContext {
+        program: request.program,
+        source_name: request.source_name,
+        source: request.source,
+        column_name: request.column_name,
+        row_count: request.row_count,
+        constant_values: request.constant_values,
+        column_values: request.column_values,
+    };
+    evaluate_source_fixed_expression_inner(&context, request.expression, row)
 }
 
 struct SourceFixedExpressionContext<'a> {
@@ -193,7 +220,7 @@ fn evaluate_source_fixed_expression_inner(
             let source_row = shifted.rem_euclid(row_count) as usize;
             evaluate_source_fixed_expression_inner(context, target, source_row)
         }
-        ExpressionKind::Index { .. } => {
+        ExpressionKind::Index { target, index } => {
             if let Some(value) = evaluate_source_fixed_static_value_expression(context, expression)
                 .as_ref()
                 .and_then(static_value_integer)
@@ -203,6 +230,9 @@ fn evaluate_source_fixed_expression_inner(
             }
             if let Some(value) = evaluate_source_fixed_array_index(context, expression, row)? {
                 return Ok(Some(value));
+            }
+            if source_fixed_expression_name(target).is_some() {
+                return evaluate_source_fixed_column_index(context, target, index, row);
             }
             Err(source_fixed_expression_unsupported(context, expression))
         }
@@ -433,6 +463,31 @@ fn evaluate_source_fixed_array_index(
         .copied()
         .map(Some)
         .ok_or_else(|| source_fixed_expression_unsupported(context, expression))
+}
+
+fn evaluate_source_fixed_column_index(
+    context: &SourceFixedExpressionContext<'_>,
+    target: &Expression,
+    index: &Expression,
+    row: usize,
+) -> Result<Option<u64>, SourceFixedColumnsWriteError> {
+    let Some(reference) = source_fixed_expression_name(target) else {
+        return Ok(None);
+    };
+    let Some(source_row) = evaluate_source_fixed_expression_inner(context, index, row)? else {
+        return Ok(None);
+    };
+    let source_row = usize::try_from(source_row)
+        .map_err(|_| source_fixed_expression_integer_out_of_range(context, index))?;
+    if source_row >= context.row_count {
+        return Err(source_fixed_expression_integer_out_of_range(context, index));
+    }
+    for candidate in fixed_column_reference_candidates(context.column_name, reference) {
+        if let Some(values) = context.column_values.get(&candidate) {
+            return Ok(values.get(source_row).copied());
+        }
+    }
+    Ok(None)
 }
 
 fn source_fixed_expression_name(expression: &Expression) -> Option<&str> {

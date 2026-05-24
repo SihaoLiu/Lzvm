@@ -20,7 +20,8 @@ use lzvm_pil::{
 use crate::{
     publish_staging_bytes,
     source_fixed_assignments::{
-        source_fixed_values_from_template_assignments, SourceFixedCopyOperation,
+        apply_source_fixed_dynamic_operations, source_fixed_values_from_template_assignments,
+        SourceFixedCopyOperation,
     },
     source_fixed_expression::SourceFixedConstantValues,
     source_fixed_expression::{
@@ -686,6 +687,14 @@ fn fixed_columns_from_source_program(
         let mut progressed = false;
         if apply_source_fixed_copy_operations(
             &template_assignments.copy_operations,
+            row_count_usize,
+            &mut column_values,
+        )? {
+            progressed = true;
+        }
+        if apply_source_fixed_dynamic_operations(
+            program,
+            &template_assignments.dynamic_operations,
             row_count_usize,
             &mut column_values,
         )? {
