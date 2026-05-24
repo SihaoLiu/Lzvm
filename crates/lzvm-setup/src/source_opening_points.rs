@@ -248,6 +248,40 @@ fn collect_source_statement_opening_points(
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
         apply_source_opening_static_declaration(context.program, statement, values);
+        collect_source_declaration_initializer_opening_points(
+            context,
+            statement,
+            values,
+            alias_scope,
+            body_cache,
+            function_call_stack,
+            points,
+        )?;
+        return Ok(());
+    }
+    if statement.kind == FunctionStatementKind::Return {
+        if let Some(expression) = statement.value_expression.as_ref() {
+            let mut resolving_aliases = BTreeSet::new();
+            let mut resolving_array_aliases = BTreeSet::new();
+            collect_source_opening_points(
+                context.program,
+                expression,
+                values,
+                alias_scope,
+                points,
+                &mut resolving_aliases,
+                &mut resolving_array_aliases,
+            )?;
+            collect_source_returned_function_call_opening_points(
+                context,
+                expression,
+                values,
+                alias_scope,
+                body_cache,
+                function_call_stack,
+                points,
+            )?;
+        }
         return Ok(());
     }
     if statement.kind == FunctionStatementKind::If {
@@ -377,6 +411,77 @@ fn collect_source_statement_opening_points(
     Ok(())
 }
 
+fn collect_source_declaration_initializer_opening_points(
+    context: &SourceOpeningPointContext<'_>,
+    statement: &FunctionStatement,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceOpeningAliasScope,
+    body_cache: &mut SourceControlBodyCache,
+    function_call_stack: &mut BTreeSet<String>,
+    points: &mut Vec<i64>,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    let expression = match statement.declaration.as_ref() {
+        Some(FunctionStatementDeclaration::Constant(declaration)) => {
+            declaration.initializer_expression.as_ref()
+        }
+        Some(FunctionStatementDeclaration::Variable(declaration)) => {
+            declaration.initializer_expression.as_ref()
+        }
+        _ => None,
+    };
+    let Some(expression) = expression else {
+        return Ok(());
+    };
+    collect_source_returned_function_call_opening_points(
+        context,
+        expression,
+        values,
+        alias_scope,
+        body_cache,
+        function_call_stack,
+        points,
+    )?;
+    Ok(())
+}
+
+fn collect_source_returned_function_call_opening_points(
+    context: &SourceOpeningPointContext<'_>,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceOpeningAliasScope,
+    body_cache: &mut SourceControlBodyCache,
+    function_call_stack: &mut BTreeSet<String>,
+    points: &mut Vec<i64>,
+) -> Result<bool, SourceKeyDirectoryMetadataError> {
+    let Some((name, arguments)) = source_call_expression(Some(expression)) else {
+        return Ok(false);
+    };
+    let Some(function) = context
+        .module
+        .functions
+        .iter()
+        .find(|function| function.name == name)
+    else {
+        return Ok(false);
+    };
+    if function.return_type.is_none() {
+        return Ok(false);
+    }
+    let mut call_state = SourceOpeningFunctionCallState {
+        body_cache,
+        function_call_stack,
+        points,
+    };
+    collect_source_function_body_opening_points(
+        context,
+        function,
+        arguments,
+        values,
+        alias_scope,
+        &mut call_state,
+    )
+}
+
 fn collect_source_function_call_opening_points(
     context: &SourceOpeningPointContext<'_>,
     statement: &FunctionStatement,
@@ -402,10 +507,35 @@ fn collect_source_function_call_opening_points(
         return Ok(false);
     }
 
-    let function_name = function.name.clone();
-    if !function_call_stack.insert(function_name.clone()) {
-        return unsupported("source opening point function call cycle");
-    }
+    let mut call_state = SourceOpeningFunctionCallState {
+        body_cache,
+        function_call_stack,
+        points,
+    };
+    collect_source_function_body_opening_points(
+        context,
+        function,
+        arguments,
+        values,
+        alias_scope,
+        &mut call_state,
+    )
+}
+
+struct SourceOpeningFunctionCallState<'a> {
+    body_cache: &'a mut SourceControlBodyCache,
+    function_call_stack: &'a mut BTreeSet<String>,
+    points: &'a mut Vec<i64>,
+}
+
+fn collect_source_function_body_opening_points(
+    context: &SourceOpeningPointContext<'_>,
+    function: &FunctionDeclaration,
+    arguments: &[CallArgument],
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceOpeningAliasScope,
+    call_state: &mut SourceOpeningFunctionCallState<'_>,
+) -> Result<bool, SourceKeyDirectoryMetadataError> {
     let Some(mut bindings) = source_opening_function_call_bindings(
         context.program,
         function,
@@ -413,9 +543,13 @@ fn collect_source_function_call_opening_points(
         values,
         alias_scope,
     ) else {
-        function_call_stack.remove(&function_name);
         return Ok(false);
     };
+
+    let function_name = function.name.clone();
+    if !call_state.function_call_stack.insert(function_name.clone()) {
+        return unsupported("source opening point function call cycle");
+    }
 
     let mut body_alias_scope = bindings.alias_scope;
     let result: Result<(), SourceKeyDirectoryMetadataError> = (|| {
@@ -425,9 +559,9 @@ fn collect_source_function_call_opening_points(
                 body_statement,
                 &mut bindings.values,
                 &body_alias_scope,
-                body_cache,
-                function_call_stack,
-                points,
+                call_state.body_cache,
+                call_state.function_call_stack,
+                call_state.points,
             )?;
             collect_source_opening_point_expression_alias(
                 body_statement,
@@ -440,7 +574,7 @@ fn collect_source_function_call_opening_points(
         }
         Ok(())
     })();
-    function_call_stack.remove(&function_name);
+    call_state.function_call_stack.remove(&function_name);
     result?;
     Ok(true)
 }
@@ -958,17 +1092,29 @@ fn collect_source_opening_point_expression_alias(
     statement: &FunctionStatement,
     expression_aliases: &mut SourceExpressionAliases,
 ) {
-    let Some(FunctionStatementDeclaration::Constant(declaration)) = statement.declaration.as_ref()
-    else {
-        return;
-    };
-    if declaration.type_name.as_deref() != Some("expr") || !declaration.array_dims.is_empty() {
-        return;
+    match statement.declaration.as_ref() {
+        Some(FunctionStatementDeclaration::Constant(declaration)) => {
+            if declaration.type_name.as_deref() != Some("expr")
+                || !declaration.array_dims.is_empty()
+            {
+                return;
+            }
+            let Some(expression) = declaration.initializer_expression.as_ref() else {
+                return;
+            };
+            expression_aliases.insert(declaration.name.clone(), expression.clone());
+        }
+        Some(FunctionStatementDeclaration::Variable(declaration)) => {
+            if declaration.type_name != "expr" || !declaration.array_dims.is_empty() {
+                return;
+            }
+            let Some(expression) = declaration.initializer_expression.as_ref() else {
+                return;
+            };
+            expression_aliases.insert(declaration.name.clone(), expression.clone());
+        }
+        _ => {}
     }
-    let Some(expression) = declaration.initializer_expression.as_ref() else {
-        return;
-    };
-    expression_aliases.insert(declaration.name.clone(), expression.clone());
 }
 
 fn collect_source_opening_point_expression_array_alias(

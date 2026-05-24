@@ -6,15 +6,27 @@ pub(crate) fn collect_source_template_expression_alias(
     statement: &FunctionStatement,
     expression_aliases: &mut SourceExpressionAliases,
 ) {
-    let Some(FunctionStatementDeclaration::Constant(declaration)) = statement.declaration.as_ref()
-    else {
-        return;
-    };
-    if declaration.type_name.as_deref() != Some("expr") || !declaration.array_dims.is_empty() {
-        return;
+    match statement.declaration.as_ref() {
+        Some(FunctionStatementDeclaration::Constant(declaration)) => {
+            if declaration.type_name.as_deref() != Some("expr")
+                || !declaration.array_dims.is_empty()
+            {
+                return;
+            }
+            let Some(expression) = declaration.initializer_expression.as_ref() else {
+                return;
+            };
+            expression_aliases.insert(declaration.name.clone(), expression.clone());
+        }
+        Some(FunctionStatementDeclaration::Variable(declaration)) => {
+            if declaration.type_name != "expr" || !declaration.array_dims.is_empty() {
+                return;
+            }
+            let Some(expression) = declaration.initializer_expression.as_ref() else {
+                return;
+            };
+            expression_aliases.insert(declaration.name.clone(), expression.clone());
+        }
+        _ => {}
     }
-    let Some(expression) = declaration.initializer_expression.as_ref() else {
-        return;
-    };
-    expression_aliases.insert(declaration.name.clone(), expression.clone());
 }

@@ -21,6 +21,7 @@ use crate::{
         source_expression_assigns_fixed_index, source_expression_is_assignment,
         source_expression_is_constrained_assignment, source_expression_is_equality_constraint,
     },
+    source_expression_return_arrays::source_returned_expression_array_alias,
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scalar_slots::{SourceChallengeSlotMetadata, SourceScalarSlots},
     source_scope::{
@@ -47,9 +48,9 @@ use crate::{
 };
 
 #[derive(Clone, Default)]
-struct SourceExpressionAliasScope {
-    expressions: SourceExpressionAliases,
-    expression_arrays: SourceExpressionArrayAliases,
+pub(crate) struct SourceExpressionAliasScope {
+    pub(crate) expressions: SourceExpressionAliases,
+    pub(crate) expression_arrays: SourceExpressionArrayAliases,
 }
 
 pub(crate) fn source_expression_info(
@@ -122,9 +123,11 @@ pub(crate) fn source_expression_info(
                 )?;
                 collect_source_template_expression_alias(statement, &mut alias_scope.expressions);
                 collect_source_template_expression_array_alias(
-                    context.program,
+                    &context,
                     statement,
                     &statement_values,
+                    body_cache,
+                    &alias_scope.expressions,
                     &mut alias_scope.expression_arrays,
                 );
             }
@@ -353,9 +356,11 @@ fn lower_source_template_statement(
                         &mut body_alias_scope.expressions,
                     );
                     collect_source_template_expression_array_alias(
-                        context.program,
+                        context,
                         body_statement,
                         values,
+                        body_cache,
+                        &body_alias_scope.expressions,
                         &mut body_alias_scope.expression_arrays,
                     );
                 }
@@ -399,9 +404,11 @@ fn lower_source_template_statement(
                             &mut loop_alias_scope.expressions,
                         );
                         collect_source_template_expression_array_alias(
-                            context.program,
+                            context,
                             body_statement,
                             values,
+                            body_cache,
+                            &loop_alias_scope.expressions,
                             &mut loop_alias_scope.expression_arrays,
                         );
                     }
@@ -711,9 +718,11 @@ fn lower_source_template_function_call(
                 &mut body_alias_scope.expressions,
             );
             collect_source_template_expression_array_alias(
-                context.program,
+                context,
                 body_statement,
                 &bindings.values,
+                body_cache,
+                &body_alias_scope.expressions,
                 &mut body_alias_scope.expression_arrays,
             );
         }
@@ -734,12 +743,12 @@ struct SourceTemplateFunctionOutput<'a> {
     constraints: &'a mut Vec<ConstraintCode>,
 }
 
-struct SourceFunctionCallBindings {
-    values: BTreeMap<String, FixedFileTemplateValue>,
-    alias_scope: SourceExpressionAliasScope,
+pub(crate) struct SourceFunctionCallBindings {
+    pub(crate) values: BTreeMap<String, FixedFileTemplateValue>,
+    pub(crate) alias_scope: SourceExpressionAliasScope,
 }
 
-fn source_function_call_bindings(
+pub(crate) fn source_function_call_bindings(
     program: &SourceProgram,
     module: &SourceProgramModule,
     function: &FunctionDeclaration,
@@ -907,7 +916,9 @@ fn source_expr_array_parameter(parameter: &lzvm_pil::FunctionParameter) -> bool 
     !parameter.by_reference && !parameter.array_dims.is_empty() && parameter.type_name == "expr"
 }
 
-fn source_expression_array_alias(expression: &Expression) -> Option<SourceExpressionArrayAlias> {
+pub(crate) fn source_expression_array_alias(
+    expression: &Expression,
+) -> Option<SourceExpressionArrayAlias> {
     match &strip_source_group_expression(expression).kind {
         ExpressionKind::Name(name) => Some(SourceExpressionArrayAlias::Name(name.clone())),
         ExpressionKind::Array(expressions) => {
@@ -918,9 +929,11 @@ fn source_expression_array_alias(expression: &Expression) -> Option<SourceExpres
 }
 
 fn collect_source_template_expression_array_alias(
-    program: &SourceProgram,
+    context: &SourceTemplateLoweringContext<'_>,
     statement: &FunctionStatement,
     values: &BTreeMap<String, FixedFileTemplateValue>,
+    body_cache: &mut SourceControlBodyCache,
+    expression_aliases: &SourceExpressionAliases,
     expression_array_aliases: &mut SourceExpressionArrayAliases,
 ) {
     match statement.declaration.as_ref() {
@@ -929,14 +942,20 @@ fn collect_source_template_expression_array_alias(
             {
                 return;
             }
+            let current_array_aliases = expression_array_aliases.clone();
             if let Some(alias) = source_declaration_expression_array_alias(
-                program,
-                &declaration.name,
-                &declaration.array_dim_expressions,
-                declaration.initializer_expression.as_ref(),
-                &declaration.source_name,
-                declaration.start,
+                context,
+                SourceExpressionArrayDeclaration {
+                    name: &declaration.name,
+                    dim_expressions: &declaration.array_dim_expressions,
+                    initializer: declaration.initializer_expression.as_ref(),
+                    source_name: &declaration.source_name,
+                    start: declaration.start,
+                },
                 values,
+                body_cache,
+                expression_aliases,
+                &current_array_aliases,
             ) {
                 expression_array_aliases.insert(declaration.name.clone(), alias);
             }
@@ -945,21 +964,27 @@ fn collect_source_template_expression_array_alias(
             if declaration.type_name != "expr" || declaration.array_dims.is_empty() {
                 return;
             }
+            let current_array_aliases = expression_array_aliases.clone();
             if let Some(alias) = source_declaration_expression_array_alias(
-                program,
-                &declaration.name,
-                &declaration.array_dim_expressions,
-                declaration.initializer_expression.as_ref(),
-                &declaration.source_name,
-                declaration.start,
+                context,
+                SourceExpressionArrayDeclaration {
+                    name: &declaration.name,
+                    dim_expressions: &declaration.array_dim_expressions,
+                    initializer: declaration.initializer_expression.as_ref(),
+                    source_name: &declaration.source_name,
+                    start: declaration.start,
+                },
                 values,
+                body_cache,
+                expression_aliases,
+                &current_array_aliases,
             ) {
                 expression_array_aliases.insert(declaration.name.clone(), alias);
             }
         }
         _ => {
             source_expression_array_alias_assignment(
-                program,
+                context.program,
                 statement.value_expression.as_ref(),
                 values,
                 expression_array_aliases,
@@ -968,22 +993,46 @@ fn collect_source_template_expression_array_alias(
     }
 }
 
-fn source_declaration_expression_array_alias(
-    program: &SourceProgram,
-    name: &str,
-    dim_expressions: &[Option<Expression>],
-    initializer: Option<&Expression>,
-    source_name: &str,
+struct SourceExpressionArrayDeclaration<'a> {
+    name: &'a str,
+    dim_expressions: &'a [Option<Expression>],
+    initializer: Option<&'a Expression>,
+    source_name: &'a str,
     start: usize,
+}
+
+fn source_declaration_expression_array_alias(
+    context: &SourceTemplateLoweringContext<'_>,
+    declaration: SourceExpressionArrayDeclaration<'_>,
     values: &BTreeMap<String, FixedFileTemplateValue>,
+    body_cache: &mut SourceControlBodyCache,
+    expression_aliases: &SourceExpressionAliases,
+    expression_array_aliases: &SourceExpressionArrayAliases,
 ) -> Option<SourceExpressionArrayAlias> {
-    if let Some(expression) = initializer {
-        return source_expression_array_alias(expression);
+    if let Some(expression) = declaration.initializer {
+        if let Some(alias) = source_expression_array_alias(expression) {
+            return Some(alias);
+        }
+        let alias_scope = SourceExpressionAliasScope {
+            expressions: expression_aliases.clone(),
+            expression_arrays: expression_array_aliases.clone(),
+        };
+        let mut call_stack = BTreeSet::new();
+        return source_returned_expression_array_alias(
+            context,
+            expression,
+            values,
+            &alias_scope,
+            body_cache,
+            &mut call_stack,
+        );
     }
-    let lengths = dim_expressions
+    let lengths = declaration
+        .dim_expressions
         .iter()
         .map(|expression| {
-            let value = evaluate_source_static_expression(program, expression.as_ref()?, values)?;
+            let value =
+                evaluate_source_static_expression(context.program, expression.as_ref()?, values)?;
             usize::try_from(source_static_integer_value(Some(&value))?).ok()
         })
         .collect::<Option<Vec<_>>>()?;
@@ -991,7 +1040,12 @@ fn source_declaration_expression_array_alias(
         return None;
     }
     Some(SourceExpressionArrayAlias::Values(
-        source_zero_expression_array(name, source_name, start, &lengths)?,
+        source_zero_expression_array(
+            declaration.name,
+            declaration.source_name,
+            declaration.start,
+            &lengths,
+        )?,
     ))
 }
 
@@ -1032,7 +1086,7 @@ fn source_zero_expression(source_name: &str, start: usize) -> Expression {
     }
 }
 
-fn source_expression_array_alias_assignment(
+pub(crate) fn source_expression_array_alias_assignment(
     program: &SourceProgram,
     expression: Option<&Expression>,
     values: &BTreeMap<String, FixedFileTemplateValue>,
@@ -1196,7 +1250,9 @@ fn source_top_level_ranges(
     Some(ranges)
 }
 
-fn source_call_expression(expression: Option<&Expression>) -> Option<(&str, &[CallArgument])> {
+pub(crate) fn source_call_expression(
+    expression: Option<&Expression>,
+) -> Option<(&str, &[CallArgument])> {
     let ExpressionKind::Call { callee, args } = &expression?.kind else {
         return None;
     };
@@ -1334,9 +1390,11 @@ fn lower_source_function_body_statement(
                         &mut body_alias_scope.expressions,
                     );
                     collect_source_template_expression_array_alias(
-                        context.program,
+                        context,
                         body_statement,
                         values,
+                        body_cache,
+                        &body_alias_scope.expressions,
                         &mut body_alias_scope.expression_arrays,
                     );
                 }
@@ -1378,9 +1436,11 @@ fn lower_source_function_body_statement(
                             &mut loop_alias_scope.expressions,
                         );
                         collect_source_template_expression_array_alias(
-                            context.program,
+                            context,
                             body_statement,
                             values,
+                            body_cache,
+                            &loop_alias_scope.expressions,
                             &mut loop_alias_scope.expression_arrays,
                         );
                     }
@@ -1490,7 +1550,7 @@ fn source_expr_alias_declaration(statement: &FunctionStatement) -> bool {
     }
 }
 
-fn apply_source_static_declaration(
+pub(crate) fn apply_source_static_declaration(
     program: &SourceProgram,
     statement: &FunctionStatement,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
@@ -1540,7 +1600,7 @@ fn apply_source_static_declaration(
     }
 }
 
-fn apply_source_static_expression_statement(
+pub(crate) fn apply_source_static_expression_statement(
     program: &SourceProgram,
     expression: Option<&Expression>,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
