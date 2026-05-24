@@ -43,6 +43,7 @@ use crate::{
         source_statement_line, SourceExpressionArrayAlias, SourceExpressionArrayAliases,
         SourceLookupInputs,
     },
+    source_static_tokens::{source_token_index_after_end, source_token_index_at_start},
     source_static_values::{
         evaluate_source_static_expression, insert_source_static_array, source_active_static_name,
         source_declaration_constant_values_from_cache, source_declaration_in_static_false_branch,
@@ -467,6 +468,9 @@ fn lower_source_template_statement(
         statement.value_expression.as_ref(),
         values,
     ) {
+        return Ok(());
+    }
+    if apply_source_static_array_assignment_statement(context, statement, values) {
         return Ok(());
     }
     if source_static_assertion(context.program, context.module, statement, values)? {
@@ -1489,6 +1493,9 @@ fn lower_source_function_body_statement(
     ) {
         return Ok(true);
     }
+    if apply_source_static_array_assignment_statement(context, statement, values) {
+        return Ok(true);
+    }
     if source_static_assertion(context.program, context.module, statement, values)? {
         return Ok(true);
     }
@@ -1619,11 +1626,12 @@ pub(crate) fn apply_source_static_declaration(
         }
         Some(FunctionStatementDeclaration::Variable(declaration)) => {
             if !declaration.array_dims.is_empty() {
-                let Some(expression) = declaration.initializer_expression.as_ref() else {
-                    return false;
-                };
-                let Some(elements) = source_static_array_expression(program, expression, values)
-                else {
+                let Some(elements) = source_static_variable_array_elements(
+                    program,
+                    declaration.initializer_expression.as_ref(),
+                    &declaration.array_dim_expressions,
+                    values,
+                ) else {
                     return false;
                 };
                 return insert_source_static_array(values, &declaration.name, elements).is_some();
@@ -1639,6 +1647,52 @@ pub(crate) fn apply_source_static_declaration(
         }
         _ => false,
     }
+}
+
+fn source_static_variable_array_elements(
+    program: &SourceProgram,
+    initializer_expression: Option<&Expression>,
+    dim_expressions: &[Option<Expression>],
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<Vec<FixedFileTemplateValue>> {
+    if let Some(expression) = initializer_expression {
+        return source_static_array_expression(program, expression, values);
+    }
+    let mut length = 1_usize;
+    for expression in dim_expressions {
+        let value = evaluate_source_static_expression(program, expression.as_ref()?, values)?;
+        let dimension = usize::try_from(source_static_integer_value(Some(&value))?).ok()?;
+        if dimension == 0 {
+            return None;
+        }
+        length = length.checked_mul(dimension)?;
+    }
+    Some(vec![FixedFileTemplateValue::Integer(0); length])
+}
+
+fn apply_source_static_array_assignment_statement(
+    context: &SourceTemplateLoweringContext<'_>,
+    statement: &FunctionStatement,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> bool {
+    let Some(value) = statement.value.as_ref() else {
+        return false;
+    };
+    let Some(index) = source_token_index_at_start(context.tokens, value.start) else {
+        return false;
+    };
+    let Some(end) = source_token_index_after_end(context.tokens, value.end) else {
+        return false;
+    };
+    crate::source_static_array_assignment::execute_source_static_array_assignment_statement(
+        context.program,
+        context.module,
+        context.tokens,
+        index,
+        end,
+        values,
+    )
+    .is_some()
 }
 
 pub(crate) fn apply_source_static_expression_statement(

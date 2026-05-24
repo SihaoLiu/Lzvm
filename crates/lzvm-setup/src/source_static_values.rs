@@ -212,6 +212,9 @@ pub(crate) fn evaluate_source_static_expression_with_lookup(
     if let Some(value) = source_static_length_call(expression, values) {
         return Some(value);
     }
+    if let Some(value) = source_static_string_call(program, expression, values) {
+        return Some(value);
+    }
     if let Some(value) =
         evaluate_source_template_value_expression_with_lookup(program, expression, values)
     {
@@ -262,6 +265,30 @@ fn source_static_length_call(
         .source_static_value(&source_static_array_length_key(name))
         .and_then(static_value_integer)
         .map(FixedFileTemplateValue::Integer)
+}
+
+fn source_static_string_call(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &(impl SourceStaticValueLookup + ?Sized),
+) -> Option<FixedFileTemplateValue> {
+    let ExpressionKind::Call { callee, args } = &strip_static_group_expression(expression).kind
+    else {
+        return None;
+    };
+    if args.len() != 1 || args[0].name.is_some() {
+        return None;
+    }
+    let ExpressionKind::Name(callee) = &strip_static_group_expression(callee).kind else {
+        return None;
+    };
+    if callee != "string" {
+        return None;
+    }
+    let value = evaluate_source_static_expression_with_lookup(program, &args[0].value, values)?;
+    Some(FixedFileTemplateValue::String(
+        source_template_value_string(value),
+    ))
 }
 
 fn strip_static_group_expression(expression: &Expression) -> &Expression {

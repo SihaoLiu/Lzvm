@@ -309,6 +309,7 @@ impl ExpressionParser<'_> {
             TokenKind::Identifier | TokenKind::Air | TokenKind::AirGroup | TokenKind::Proof => {
                 self.parse_name()
             }
+            TokenKind::String => self.parse_atom(ExpressionKind::Name(token.lexeme.clone())),
             TokenKind::LParen => self.parse_group(),
             TokenKind::LBracket => self.parse_array(),
             _ => Err(ParseError::ExpectedName {
