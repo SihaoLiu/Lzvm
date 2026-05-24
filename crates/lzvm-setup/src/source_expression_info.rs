@@ -17,14 +17,17 @@ use crate::{
     },
     source_control_body_cache::{SourceControlBodyCache, SourceControlBodyCaches},
     source_expression_aliases::{
-        collect_source_template_expression_alias, source_expression_alias_assignment,
-        source_expression_alias_assignment_target,
+        source_expression_alias_assignment, source_expression_alias_assignment_target,
     },
     source_expression_filters::{
         source_expression_assigns_fixed_index, source_expression_is_assignment,
         source_expression_is_constrained_assignment, source_expression_is_equality_constraint,
     },
     source_expression_return_arrays::source_returned_expression_array_alias,
+    source_expression_return_values::{
+        collect_source_template_expression_aliases,
+        collect_source_template_expression_aliases_with_stack,
+    },
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scalar_slots::{SourceChallengeSlotMetadata, SourceScalarSlots},
     source_scope::{
@@ -124,14 +127,12 @@ pub(crate) fn source_expression_info(
                     &mut hints,
                     &mut constraints,
                 )?;
-                collect_source_template_expression_alias(statement, &mut alias_scope.expressions);
-                collect_source_template_expression_array_alias(
+                collect_source_template_expression_aliases(
                     &context,
                     statement,
-                    &statement_values,
+                    &mut statement_values,
                     body_cache,
-                    &alias_scope.expressions,
-                    &mut alias_scope.expression_arrays,
+                    &mut alias_scope,
                 );
             }
         }
@@ -354,17 +355,12 @@ fn lower_source_template_statement(
                         hints,
                         constraints,
                     )?;
-                    collect_source_template_expression_alias(
-                        body_statement,
-                        &mut body_alias_scope.expressions,
-                    );
-                    collect_source_template_expression_array_alias(
+                    collect_source_template_expression_aliases(
                         context,
                         body_statement,
                         values,
                         body_cache,
-                        &body_alias_scope.expressions,
-                        &mut body_alias_scope.expression_arrays,
+                        &mut body_alias_scope,
                     );
                 }
                 return Ok(());
@@ -402,17 +398,12 @@ fn lower_source_template_statement(
                             hints,
                             constraints,
                         )?;
-                        collect_source_template_expression_alias(
-                            body_statement,
-                            &mut loop_alias_scope.expressions,
-                        );
-                        collect_source_template_expression_array_alias(
+                        collect_source_template_expression_aliases(
                             context,
                             body_statement,
                             values,
                             body_cache,
-                            &loop_alias_scope.expressions,
-                            &mut loop_alias_scope.expression_arrays,
+                            &mut loop_alias_scope,
                         );
                     }
                 }
@@ -727,17 +718,13 @@ fn lower_source_template_function_call(
             )? {
                 return Ok(false);
             }
-            collect_source_template_expression_alias(
-                body_statement,
-                &mut body_alias_scope.expressions,
-            );
-            collect_source_template_expression_array_alias(
+            collect_source_template_expression_aliases_with_stack(
                 context,
                 body_statement,
-                &bindings.values,
+                &mut bindings.values,
                 body_cache,
-                &body_alias_scope.expressions,
-                &mut body_alias_scope.expression_arrays,
+                call_stack,
+                &mut body_alias_scope,
             );
         }
         Ok(true)
@@ -942,7 +929,7 @@ pub(crate) fn source_expression_array_alias(
     }
 }
 
-fn collect_source_template_expression_array_alias(
+pub(crate) fn collect_source_template_expression_array_alias(
     context: &SourceTemplateLoweringContext<'_>,
     statement: &FunctionStatement,
     values: &BTreeMap<String, FixedFileTemplateValue>,
@@ -1399,17 +1386,13 @@ fn lower_source_function_body_statement(
                     )? {
                         return Ok(false);
                     }
-                    collect_source_template_expression_alias(
-                        body_statement,
-                        &mut body_alias_scope.expressions,
-                    );
-                    collect_source_template_expression_array_alias(
+                    collect_source_template_expression_aliases_with_stack(
                         context,
                         body_statement,
                         values,
                         body_cache,
-                        &body_alias_scope.expressions,
-                        &mut body_alias_scope.expression_arrays,
+                        call_stack,
+                        &mut body_alias_scope,
                     );
                 }
                 return Ok(true);
@@ -1445,17 +1428,13 @@ fn lower_source_function_body_statement(
                         )? {
                             return Ok(false);
                         }
-                        collect_source_template_expression_alias(
-                            body_statement,
-                            &mut loop_alias_scope.expressions,
-                        );
-                        collect_source_template_expression_array_alias(
+                        collect_source_template_expression_aliases_with_stack(
                             context,
                             body_statement,
                             values,
                             body_cache,
-                            &loop_alias_scope.expressions,
-                            &mut loop_alias_scope.expression_arrays,
+                            call_stack,
+                            &mut loop_alias_scope,
                         );
                     }
                 }

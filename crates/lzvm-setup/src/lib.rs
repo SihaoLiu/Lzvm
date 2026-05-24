@@ -41,6 +41,7 @@ mod source_expression_aliases;
 mod source_expression_filters;
 mod source_expression_info;
 mod source_expression_return_arrays;
+mod source_expression_return_values;
 mod source_fixed_columns;
 mod source_fixed_expression;
 mod source_fixed_file_manifest;
