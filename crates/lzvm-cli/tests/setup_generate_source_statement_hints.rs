@@ -539,3 +539,69 @@ fn generate_key_lowers_annotation_hints_without_stage_one_commitments() {
         .contains("status=ok\n"));
     assert!(stderr.is_empty());
 }
+
+#[test]
+fn generate_key_lowers_annotation_hints_that_reference_fixed_columns() {
+    let dir = temp_dir("fixed-column-annotation");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col fixed table[2];\n\
+             table[0] = [0, 1];\n\
+             table[1] = [2, 3];\n\
+             col fixed scalar = [4, 5];\n\
+             @record {left: table[0], right: scalar}\n\
+         }\n\
+         airgroup GroupA { UnitA(); }",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let regular = read_regular_program_file(
+        unit.expression_program()
+            .expect("regular program path should derive"),
+    )
+    .expect("regular program should parse");
+    assert_eq!(regular.hints.hints.len(), 1);
+    let hint = &regular.hints.hints[0];
+    assert_eq!(hint.name, "record");
+    assert_eq!(hint.fields.len(), 2);
+    assert_eq!(hint.fields[0].name, "left");
+    assert_eq!(
+        hint.fields[0].values[0].operand,
+        HintOperand::Constant {
+            id: 0,
+            row_offset_index: 0
+        }
+    );
+    assert_eq!(hint.fields[1].name, "right");
+    assert_eq!(
+        hint.fields[1].values[0].operand,
+        HintOperand::Constant {
+            id: 2,
+            row_offset_index: 0
+        }
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}

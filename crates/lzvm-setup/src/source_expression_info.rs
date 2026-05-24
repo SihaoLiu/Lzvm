@@ -441,6 +441,21 @@ fn lower_source_template_statement(
         hints.push(hint);
         return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
+    if matches!(
+        source_statement_first_token_kind(context.module, statement).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: context.module.source_name.clone(),
+                source,
+            }
+        })?,
+        Some(TokenKind::AtIdentifier)
+    ) {
+        hints.push(lower_unsupported_source_template_statement(
+            context.module,
+            statement,
+        ));
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
+    }
     if source_expression_is_constrained_assignment(statement.value_expression.as_ref()) {
         let lowered = lower_source_template_boolean_constraint(
             context.program,
