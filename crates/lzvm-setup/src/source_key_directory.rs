@@ -998,7 +998,7 @@ fn source_unit_setup_info(
             n_bits,
             n_bits_ext,
             n_queries: 1,
-            steps: vec![FriStep { n_bits: n_bits_ext }, FriStep { n_bits: 1 }],
+            steps: source_fri_steps(n_bits_ext),
             hash_commits: true,
             last_level_verification: 2,
             pow_bits: 0,
@@ -1008,6 +1008,14 @@ fn source_unit_setup_info(
             merkle_tree_custom: Some(true),
         },
     })
+}
+
+fn source_fri_steps(n_bits_ext: u32) -> Vec<FriStep> {
+    let final_bits = if n_bits_ext == 1 { 0 } else { 1 };
+    vec![
+        FriStep { n_bits: n_bits_ext },
+        FriStep { n_bits: final_bits },
+    ]
 }
 
 fn source_constant_columns(

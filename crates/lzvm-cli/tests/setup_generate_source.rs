@@ -2903,7 +2903,7 @@ fn generate_key_rejects_boolean_template_row_count_below_supported_domain() {
     write_file(
         &source_path,
         "const int SELECTED = 1;\n\
-         airtemplate UnitA(const int N = SELECTED == 1) { }\n\
+         airtemplate UnitA(const int N = SELECTED == 0) { }\n\
          airgroup GroupA { UnitA(); }\n\
          col fixed main.left = [5, 1];",
     );
@@ -2926,7 +2926,7 @@ fn generate_key_rejects_boolean_template_row_count_below_supported_domain() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "setup key generation failed: unsupported source setup metadata: source row count must be at least two\n"
+        "setup key generation failed: unsupported source setup metadata: source row count must be at least one\n"
     );
     let _ = fs::remove_dir_all(&dir);
 }
@@ -3142,6 +3142,101 @@ fn generate_key_writes_per_unit_source_row_counts() {
     .expect("second setup metadata should parse");
     assert_eq!(first_setup.stark.n_bits, 1);
     assert_eq!(second_setup.stark.n_bits, 2);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_uses_airgroup_static_values_for_source_row_counts() {
+    let dir = temp_dir("airgroup-static-row-count");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(const int N = 1024, const int kind = 0) { }\n\
+         airgroup GroupA {\n\
+             int rows = 8;\n\
+             UnitA(rows, 0);\n\
+         }",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
+        .expect("source global metadata should parse");
+    assert_eq!(global.airs[0][0].num_rows, 8);
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let setup = read_unit_setup_info_binary_file(
+        layout.units[0]
+            .setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    assert_eq!(setup.stark.n_bits, 3);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_allows_single_row_source_units() {
+    let dir = temp_dir("single-row-unit");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA(const int N = 1) { }\n\
+         airgroup GroupA { UnitA(); }",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
+        .expect("source global metadata should parse");
+    assert_eq!(global.airs[0][0].num_rows, 1);
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let setup = read_unit_setup_info_binary_file(
+        layout.units[0]
+            .setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    assert_eq!(setup.stark.n_bits, 0);
+    assert_eq!(setup.stark.n_bits_ext, 1);
+    assert_eq!(setup.stark.steps.len(), 2);
+    assert_eq!(setup.stark.steps[0].n_bits, 1);
+    assert_eq!(setup.stark.steps[1].n_bits, 0);
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
     assert!(String::from_utf8(stdout)
         .expect("stdout should be utf-8")

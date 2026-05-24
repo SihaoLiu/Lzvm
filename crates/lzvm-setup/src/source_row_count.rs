@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use lzvm_pil::{
     evaluate_fixed_file_template_value_expression_with_values, lex_source, parse_expression,
     AirInstanceDeclaration, AirTemplateDeclaration, CallArgument, ColumnInitializerKind,
-    ColumnKind, FixedFileTemplateValue, SourceFile, SourceProgram,
+    ColumnKind, FixedFileTemplateValue, SourceFile, SourceProgram, SourceProgramModule,
 };
 
 use crate::source_key_directory::SourceKeyDirectoryMetadataError;
@@ -12,9 +12,9 @@ use crate::source_scope::{
     concrete_template_names, declaration_in_function_body, declaration_in_inactive_template,
 };
 use crate::source_static_values::{
-    evaluate_source_static_expression, source_declaration_constant_values_from_cache,
-    source_declaration_in_static_false_branch, source_template_constant_value_cache,
-    static_value_integer,
+    evaluate_source_static_expression, execute_static_template_range,
+    source_declaration_constant_values_from_cache, source_declaration_in_static_false_branch,
+    source_template_constant_value_cache, static_value_integer,
 };
 
 pub(crate) type SourceUnitRowCounts = BTreeMap<(usize, usize), u64>;
@@ -121,10 +121,15 @@ fn infer_source_row_counts_from_air_units(
     let instances = program
         .modules
         .iter()
-        .flat_map(|module| module.air_instances.iter())
-        .filter(|instance| !instance.virtual_instance)
+        .flat_map(|module| {
+            module
+                .air_instances
+                .iter()
+                .filter(|instance| !instance.virtual_instance)
+                .map(move |instance| (module, instance))
+        })
         .collect::<Vec<_>>();
-    for (unit, instance) in units.into_iter().zip(instances) {
+    for (unit, (module, instance)) in units.into_iter().zip(instances) {
         let group_id = usize::try_from(unit.group_id)
             .map_err(|_| unsupported_source_message("negative source group id"))?;
         let unit_id = usize::try_from(unit.unit_id)
@@ -135,7 +140,8 @@ fn infer_source_row_counts_from_air_units(
         let Some(template) = templates.get(instance.template.as_str()).copied() else {
             continue;
         };
-        let values = source_air_instance_parameter_values(program, template, instance, &constants);
+        let values =
+            source_air_instance_parameter_values(program, module, template, instance, &constants);
         let Some(value) = values.get("N").and_then(static_value_integer) else {
             continue;
         };
@@ -149,11 +155,13 @@ fn infer_source_row_counts_from_air_units(
 
 fn source_air_instance_parameter_values(
     program: &SourceProgram,
+    module: &SourceProgramModule,
     template: &AirTemplateDeclaration,
     instance: &AirInstanceDeclaration,
     constants: &BTreeMap<String, FixedFileTemplateValue>,
 ) -> BTreeMap<String, FixedFileTemplateValue> {
     let mut values = constants.clone();
+    apply_source_airgroup_static_values(program, module, instance, &mut values);
     let mut provided = BTreeSet::new();
     if let Some(arguments) = instance.args_expressions.as_ref() {
         apply_source_air_instance_arguments(
@@ -180,6 +188,23 @@ fn source_air_instance_parameter_values(
     values
 }
 
+fn apply_source_airgroup_static_values(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    instance: &AirInstanceDeclaration,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) {
+    let Some(group) = module
+        .air_groups
+        .iter()
+        .find(|group| group.name == instance.air_group)
+    else {
+        return;
+    };
+    let _ =
+        execute_static_template_range(program, module, group.body.start, instance.start, values);
+}
+
 fn apply_source_air_instance_arguments(
     program: &SourceProgram,
     template: &AirTemplateDeclaration,
@@ -189,12 +214,8 @@ fn apply_source_air_instance_arguments(
 ) {
     let mut positional_index = 0;
     for argument in arguments {
-        let Some(value) = evaluate_source_static_expression(program, &argument.value, values)
-        else {
-            continue;
-        };
-        let name = if let Some(name) = argument.name.as_ref() {
-            name
+        let name = if let Some(name) = argument.name.clone() {
+            Some(name)
         } else {
             while template
                 .parameters
@@ -206,13 +227,20 @@ fn apply_source_air_instance_arguments(
                 };
                 positional_index = next;
             }
-            let Some(parameter) = template.parameters.get(positional_index) else {
-                continue;
-            };
-            &parameter.name
+            template
+                .parameters
+                .get(positional_index)
+                .map(|parameter| parameter.name.clone())
         };
-        if provided.insert(name.clone()) {
-            values.insert(name.clone(), value);
+        let value = evaluate_source_static_expression(program, &argument.value, values);
+        if let Some(name) = name {
+            if provided.insert(name.clone()) {
+                if let Some(value) = value {
+                    values.insert(name, value);
+                } else {
+                    values.remove(&name);
+                }
+            }
         }
         if argument.name.is_none() {
             let Some(next) = positional_index.checked_add(1) else {
@@ -309,8 +337,8 @@ fn merge_source_sequence_count(
 }
 
 fn validate_source_row_count(value: u64) -> Result<(), SourceKeyDirectoryMetadataError> {
-    if value < 2 {
-        return unsupported("source row count must be at least two");
+    if value == 0 {
+        return unsupported("source row count must be at least one");
     }
     if !value.is_power_of_two() {
         return unsupported("source row count must be a power of two");
