@@ -10,8 +10,9 @@ use crate::{
     source_control_body_cache::SourceControlBodyCache,
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_static_values::{
-        evaluate_source_static_expression, source_declaration_constant_values_from_cache,
-        source_declaration_in_static_false_branch, SourceTemplateConstantValueCache,
+        evaluate_source_static_expression, source_declaration_constant_values,
+        source_declaration_constant_values_from_cache, source_declaration_in_static_false_branch,
+        SourceTemplateConstantValueCache,
     },
     source_template_if::{
         source_static_if_body_span_with_tokens, source_static_if_body_statements_with_tokens,
@@ -96,18 +97,13 @@ pub(crate) fn source_metadata_template_values(
     }
     bind_source_metadata_template_defaults(program, template, &mut values, &provided);
 
-    let parameter_names = template
-        .parameters
-        .iter()
-        .map(|parameter| parameter.name.as_str())
-        .collect::<BTreeSet<_>>();
-    for (name, value) in cached {
-        if !parameter_names.contains(name.as_str()) {
-            values.insert(name.clone(), value.clone());
-        }
-    }
-
-    values
+    source_declaration_constant_values(
+        program,
+        module,
+        template.body.end,
+        template.body.end,
+        &values,
+    )
 }
 
 fn bind_source_metadata_template_defaults(
