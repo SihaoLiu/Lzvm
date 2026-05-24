@@ -44,6 +44,7 @@ mod source_expression_return_arrays;
 mod source_expression_return_values;
 mod source_expression_statements;
 mod source_expression_strings;
+mod source_final_proof_calls;
 mod source_fixed_columns;
 mod source_fixed_expression;
 mod source_fixed_file_manifest;

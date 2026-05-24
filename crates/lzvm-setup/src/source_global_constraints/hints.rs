@@ -15,8 +15,10 @@ use crate::{
     source_constraint_lowering::SourceExpressionAliases,
     source_control_body_cache::{SourceControlBodyCache, SourceControlBodyCaches},
     source_expression_aliases::collect_source_template_expression_alias,
+    source_final_proof_calls::source_final_proof_statement_call,
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scalar_slots::SourceScalarSlots,
+    source_scope::concrete_template_names,
     source_statement_hints::{
         lower_source_annotation_statement, lower_source_lookup_statement, source_statement_line,
         SourceExpressionArrayAlias, SourceExpressionArrayAliases, SourceLookupInputs,
@@ -40,6 +42,7 @@ pub(super) fn source_global_hints(
     let scalar_slots =
         SourceScalarSlots::from_global(&global_info.publics_map, &global_info.proof_values_map)
             .map_err(|error| unsupported_source_message(error.to_string()))?;
+    let active_templates = concrete_template_names(program);
     let mut hints = Vec::<HintInfo>::new();
 
     for module in &program.modules {
@@ -61,6 +64,34 @@ pub(super) fn source_global_hints(
                 hints: &mut hints,
             };
             lower_source_global_top_level_hints(&mut context, &mut values)?;
+        }
+        for template in &module.air_templates {
+            if !active_templates.contains(&template.name) {
+                continue;
+            }
+            let mut values = static_values.clone();
+            let mut alias_scope = SourceGlobalHintAliasScope::default();
+            let mut context = SourceGlobalHintLoweringContext {
+                program,
+                module,
+                tokens: &tokens,
+                scalar_slots: &scalar_slots,
+                body_cache,
+                hints: &mut hints,
+            };
+            for statement in &template.statements {
+                lower_source_global_template_final_proof_statement(
+                    &mut context,
+                    statement,
+                    &mut values,
+                    &alias_scope,
+                )?;
+                collect_source_template_expression_alias(statement, &mut alias_scope.expressions);
+                collect_source_global_hint_expression_array_alias(
+                    statement,
+                    &mut alias_scope.expression_arrays,
+                );
+            }
         }
         for group in &module.air_groups {
             let mut values = static_values.clone();
@@ -264,6 +295,129 @@ fn skip_top_level_balanced_delimiter(
     None
 }
 
+fn lower_source_global_template_final_proof_statement(
+    context: &mut SourceGlobalHintLoweringContext<'_, '_>,
+    statement: &FunctionStatement,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceGlobalHintAliasScope,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    match statement.kind {
+        FunctionStatementKind::Declaration => {
+            apply_source_global_hint_static_declaration(context.program, statement, values);
+            Ok(())
+        }
+        FunctionStatementKind::If => {
+            match source_static_if_body_statements_with_tokens(
+                context.program,
+                context.module,
+                context.tokens,
+                statement,
+                values,
+                context.body_cache,
+            ) {
+                Ok(Some(body_statements)) => {
+                    let mut body_alias_scope = alias_scope.clone();
+                    for body_statement in body_statements.iter() {
+                        lower_source_global_template_final_proof_statement(
+                            context,
+                            body_statement,
+                            values,
+                            &body_alias_scope,
+                        )?;
+                        collect_source_template_expression_alias(
+                            body_statement,
+                            &mut body_alias_scope.expressions,
+                        );
+                        collect_source_global_hint_expression_array_alias(
+                            body_statement,
+                            &mut body_alias_scope.expression_arrays,
+                        );
+                    }
+                }
+                Ok(None)
+                | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
+                Err(error) => return Err(error),
+            }
+            Ok(())
+        }
+        FunctionStatementKind::For => {
+            match source_static_for_loop_with_tokens(
+                context.program,
+                context.module,
+                context.tokens,
+                statement,
+                values,
+                context.body_cache,
+            ) {
+                Ok(Some(loop_info)) => {
+                    let previous = values.get(&loop_info.variable_name).cloned();
+                    for iteration_value in &loop_info.iteration_values {
+                        let mut loop_alias_scope = alias_scope.clone();
+                        values.insert(loop_info.variable_name.clone(), iteration_value.clone());
+                        for body_statement in loop_info.body_statements.iter() {
+                            lower_source_global_template_final_proof_statement(
+                                context,
+                                body_statement,
+                                values,
+                                &loop_alias_scope,
+                            )?;
+                            collect_source_template_expression_alias(
+                                body_statement,
+                                &mut loop_alias_scope.expressions,
+                            );
+                            collect_source_global_hint_expression_array_alias(
+                                body_statement,
+                                &mut loop_alias_scope.expression_arrays,
+                            );
+                        }
+                    }
+                    if let Some(previous) = previous {
+                        values.insert(loop_info.variable_name, previous);
+                    } else {
+                        values.remove(&loop_info.variable_name);
+                    }
+                }
+                Ok(None)
+                | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
+                Err(error) => return Err(error),
+            }
+            Ok(())
+        }
+        FunctionStatementKind::Expression => {
+            if apply_source_global_hint_static_expression_statement(
+                context.program,
+                statement.value_expression.as_ref(),
+                values,
+            ) {
+                return Ok(());
+            }
+            if let Some(update) =
+                source_global_hint_static_postfix_update(context.module, statement).map_err(
+                    |source| SourceKeyDirectoryMetadataError::Lex {
+                        source_name: context.module.source_name.clone(),
+                        source,
+                    },
+                )?
+            {
+                apply_source_global_hint_static_delta(&update.name, update.delta, values);
+                return Ok(());
+            }
+            if let Some(expression) =
+                source_final_proof_statement_call(context.tokens, context.module, statement)?
+            {
+                lower_source_global_hint_function_call_expression(
+                    context,
+                    &expression,
+                    values,
+                    alias_scope,
+                )?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
 fn lower_source_global_hint_statement(
     context: &mut SourceGlobalHintLoweringContext<'_, '_>,
     statement: &FunctionStatement,
@@ -353,6 +507,17 @@ fn lower_source_global_hint_statement(
             Ok(())
         }
         FunctionStatementKind::Expression => {
+            if let Some(expression) =
+                source_final_proof_statement_call(context.tokens, context.module, statement)?
+            {
+                lower_source_global_hint_function_call_expression(
+                    context,
+                    &expression,
+                    values,
+                    alias_scope,
+                )?;
+                return Ok(());
+            }
             if apply_source_global_hint_static_expression_statement(
                 context.program,
                 statement.value_expression.as_ref(),
@@ -428,8 +593,19 @@ fn lower_source_global_hint_function_call(
     values: &BTreeMap<String, FixedFileTemplateValue>,
     alias_scope: &SourceGlobalHintAliasScope,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
-    let Some((name, arguments)) = source_call_expression(statement.value_expression.as_ref())
-    else {
+    let Some(expression) = statement.value_expression.as_ref() else {
+        return Ok(false);
+    };
+    lower_source_global_hint_function_call_expression(context, expression, values, alias_scope)
+}
+
+fn lower_source_global_hint_function_call_expression(
+    context: &mut SourceGlobalHintLoweringContext<'_, '_>,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceGlobalHintAliasScope,
+) -> Result<bool, SourceKeyDirectoryMetadataError> {
+    let Some((name, arguments)) = source_call_expression(Some(expression)) else {
         return Ok(false);
     };
     let Some(function) = context

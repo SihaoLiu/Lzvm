@@ -32,6 +32,7 @@ mod hints;
 mod indices;
 mod residuals;
 mod top_level_call;
+mod top_level_final;
 mod top_level_for;
 mod top_level_if;
 mod top_level_metadata;
@@ -342,6 +343,10 @@ fn lower_top_level_global_constraints_range(
             }
             kind if top_level_declaration_start(kind) => {
                 index = skip_top_level_item(context.tokens, index)?;
+            }
+            TokenKind::On => {
+                index =
+                    top_level_final::lower_top_level_final_statement(context, index, constraints)?;
             }
             TokenKind::Identifier => {
                 if let Some(next_index) =

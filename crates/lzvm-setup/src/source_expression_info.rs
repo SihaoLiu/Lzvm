@@ -34,6 +34,7 @@ use crate::{
         apply_source_static_array_assignment_statement, apply_source_static_declaration,
         apply_source_static_expression_statement,
     },
+    source_final_proof_calls::source_final_proof_statement_call,
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scalar_slots::{SourceChallengeSlotMetadata, SourceScalarSlots},
     source_scope::{
@@ -434,6 +435,9 @@ fn lower_source_template_statement(
             source,
         }
     })? {
+        return Ok(());
+    }
+    if source_final_proof_statement_call(context.tokens, context.module, statement)?.is_some() {
         return Ok(());
     }
     if statement.kind != FunctionStatementKind::Expression {
@@ -1492,6 +1496,9 @@ fn lower_source_function_body_statement(
             source,
         }
     })? {
+        return Ok(true);
+    }
+    if source_final_proof_statement_call(context.tokens, context.module, statement)?.is_some() {
         return Ok(true);
     }
     if statement.kind != FunctionStatementKind::Expression {
