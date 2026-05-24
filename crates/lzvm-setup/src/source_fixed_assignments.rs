@@ -410,6 +410,17 @@ fn collect_source_fixed_template_assignment(
         return Ok(());
     }
     if statement.kind == FunctionStatementKind::For {
+        let dynamic_count_before = dynamic_operations.len();
+        collect_source_fixed_dynamic_for_assignment(
+            context,
+            statement,
+            assignment_values,
+            body_cache,
+            dynamic_operations,
+        )?;
+        if dynamic_count_before != dynamic_operations.len() {
+            return Ok(());
+        }
         let mut static_loop_applied = false;
         let partial_value_count_before = source_fixed_partial_value_count(partial_values);
         let zero_default_count_before = zero_default_columns.len();

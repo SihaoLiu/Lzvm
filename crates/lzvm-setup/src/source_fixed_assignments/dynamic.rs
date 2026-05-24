@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_pil::{
-    parse_expression_tokens, BinaryOperator, Expression, ExpressionKind, FixedFileTemplateValue,
-    FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind, SourceProgram,
-    SourceSpan, Token, TokenKind, UnaryOperator,
+    parse_expression_tokens, parse_function_statement_tokens, BinaryOperator, Expression,
+    ExpressionKind, FixedFileTemplateValue, FunctionStatement, FunctionStatementDeclaration,
+    FunctionStatementKind, SourceProgram, SourceSpan, Token, TokenKind, UnaryOperator,
 };
 
 use crate::{
@@ -29,9 +29,43 @@ pub(crate) struct SourceFixedDynamicOperation {
     loop_variable: String,
     start: usize,
     count: usize,
-    prefix_statements: Vec<FunctionStatement>,
+    prefix_statements: Vec<SourceFixedDynamicLocalStatement>,
     expression: Expression,
     constant_values: SourceFixedConstantValues,
+}
+
+#[derive(Clone)]
+enum SourceFixedDynamicLocalStatement {
+    Declaration {
+        name: String,
+        expression: Expression,
+    },
+    Assignment {
+        name: String,
+        expression: Expression,
+    },
+    DeclarationBatch {
+        declarations: Vec<(String, Expression)>,
+    },
+    If {
+        branches: Vec<SourceFixedDynamicIfBranch>,
+    },
+    Switch {
+        expression: Expression,
+        branches: Vec<SourceFixedDynamicSwitchBranch>,
+    },
+}
+
+#[derive(Clone)]
+struct SourceFixedDynamicIfBranch {
+    condition: Option<Expression>,
+    statements: Vec<SourceFixedDynamicLocalStatement>,
+}
+
+#[derive(Clone)]
+struct SourceFixedDynamicSwitchBranch {
+    matches: Vec<Expression>,
+    statements: Option<Vec<SourceFixedDynamicLocalStatement>>,
 }
 
 pub(crate) fn apply_source_fixed_dynamic_operations(
@@ -138,8 +172,10 @@ pub(super) fn collect_source_fixed_dynamic_for_assignment(
             assignment_values,
         )?
         else {
-            if source_fixed_dynamic_local_statement(body_statement) {
-                prefix_statements.push(body_statement.clone());
+            if let Some(local_statement) =
+                collect_source_fixed_dynamic_local_statement(context, body_statement, body_cache)?
+            {
+                prefix_statements.push(local_statement);
                 continue;
             }
             return Ok(());
@@ -167,35 +203,72 @@ pub(super) fn collect_source_fixed_dynamic_for_assignment(
 fn apply_source_fixed_dynamic_local_statement(
     program: &SourceProgram,
     operation: &SourceFixedDynamicOperation,
-    statement: &FunctionStatement,
+    statement: &SourceFixedDynamicLocalStatement,
     row: usize,
     row_count: usize,
     constant_values: &mut SourceFixedConstantValues,
     column_values: &BTreeMap<String, Vec<u64>>,
 ) -> Result<bool, SourceFixedColumnsWriteError> {
-    if let Some((name, expression)) = source_fixed_dynamic_local_declaration(statement) {
-        let Some(value) = source_fixed_dynamic_expression_value(
+    match statement {
+        SourceFixedDynamicLocalStatement::Declaration { name, expression }
+        | SourceFixedDynamicLocalStatement::Assignment { name, expression } => {
+            apply_source_fixed_dynamic_scalar_statement(
+                program,
+                operation,
+                (name, expression),
+                row,
+                row_count,
+                constant_values,
+                column_values,
+            )
+        }
+        SourceFixedDynamicLocalStatement::DeclarationBatch { declarations } => {
+            apply_source_fixed_dynamic_declaration_batch(
+                program,
+                operation,
+                declarations,
+                row,
+                row_count,
+                constant_values,
+                column_values,
+            )
+        }
+        SourceFixedDynamicLocalStatement::If { branches } => {
+            apply_source_fixed_dynamic_if_statement(
+                program,
+                operation,
+                branches,
+                row,
+                row_count,
+                constant_values,
+                column_values,
+            )
+        }
+        SourceFixedDynamicLocalStatement::Switch {
+            expression,
+            branches,
+        } => apply_source_fixed_dynamic_switch_statement(
             program,
             operation,
-            expression,
+            (expression, branches),
             row,
             row_count,
             constant_values,
             column_values,
-        )?
-        else {
-            return Ok(false);
-        };
-        constant_values.scalars.insert(
-            name.to_owned(),
-            FixedFileTemplateValue::Integer(i128::from(value)),
-        );
-        return Ok(true);
+        ),
     }
+}
 
-    let Some((name, expression)) = source_fixed_dynamic_local_assignment(statement) else {
-        return Ok(false);
-    };
+fn apply_source_fixed_dynamic_scalar_statement(
+    program: &SourceProgram,
+    operation: &SourceFixedDynamicOperation,
+    assignment: (&str, &Expression),
+    row: usize,
+    row_count: usize,
+    constant_values: &mut SourceFixedConstantValues,
+    column_values: &BTreeMap<String, Vec<u64>>,
+) -> Result<bool, SourceFixedColumnsWriteError> {
+    let (name, expression) = assignment;
     let Some(value) = source_fixed_dynamic_expression_value(
         program,
         operation,
@@ -212,6 +285,184 @@ fn apply_source_fixed_dynamic_local_statement(
         name.to_owned(),
         FixedFileTemplateValue::Integer(i128::from(value)),
     );
+    Ok(true)
+}
+
+fn apply_source_fixed_dynamic_declaration_batch(
+    program: &SourceProgram,
+    operation: &SourceFixedDynamicOperation,
+    declarations: &[(String, Expression)],
+    row: usize,
+    row_count: usize,
+    constant_values: &mut SourceFixedConstantValues,
+    column_values: &BTreeMap<String, Vec<u64>>,
+) -> Result<bool, SourceFixedColumnsWriteError> {
+    let mut values = Vec::with_capacity(declarations.len());
+    for (name, expression) in declarations {
+        let Some(value) = source_fixed_dynamic_expression_value(
+            program,
+            operation,
+            expression,
+            row,
+            row_count,
+            constant_values,
+            column_values,
+        )?
+        else {
+            return Ok(false);
+        };
+        values.push((name.clone(), value));
+    }
+    for (name, value) in values {
+        constant_values
+            .scalars
+            .insert(name, FixedFileTemplateValue::Integer(i128::from(value)));
+    }
+    Ok(true)
+}
+
+fn apply_source_fixed_dynamic_if_statement(
+    program: &SourceProgram,
+    operation: &SourceFixedDynamicOperation,
+    branches: &[SourceFixedDynamicIfBranch],
+    row: usize,
+    row_count: usize,
+    constant_values: &mut SourceFixedConstantValues,
+    column_values: &BTreeMap<String, Vec<u64>>,
+) -> Result<bool, SourceFixedColumnsWriteError> {
+    for branch in branches {
+        let selected = match branch.condition.as_ref() {
+            Some(condition) => {
+                let Some(value) = source_fixed_dynamic_expression_value(
+                    program,
+                    operation,
+                    condition,
+                    row,
+                    row_count,
+                    constant_values,
+                    column_values,
+                )?
+                else {
+                    return Ok(false);
+                };
+                value != 0
+            }
+            None => true,
+        };
+        if !selected {
+            continue;
+        }
+        for statement in &branch.statements {
+            if !apply_source_fixed_dynamic_local_statement(
+                program,
+                operation,
+                statement,
+                row,
+                row_count,
+                constant_values,
+                column_values,
+            )? {
+                return Ok(false);
+            }
+        }
+        return Ok(true);
+    }
+    Ok(true)
+}
+
+fn apply_source_fixed_dynamic_switch_statement(
+    program: &SourceProgram,
+    operation: &SourceFixedDynamicOperation,
+    switch: (&Expression, &[SourceFixedDynamicSwitchBranch]),
+    row: usize,
+    row_count: usize,
+    constant_values: &mut SourceFixedConstantValues,
+    column_values: &BTreeMap<String, Vec<u64>>,
+) -> Result<bool, SourceFixedColumnsWriteError> {
+    let (expression, branches) = switch;
+    let Some(selector) = source_fixed_dynamic_expression_value(
+        program,
+        operation,
+        expression,
+        row,
+        row_count,
+        constant_values,
+        column_values,
+    )?
+    else {
+        return Ok(false);
+    };
+    let mut default_branch = None;
+    for branch in branches {
+        if branch.matches.is_empty() {
+            default_branch = default_branch.or(Some(branch));
+            continue;
+        }
+        for candidate in &branch.matches {
+            let Some(value) = source_fixed_dynamic_expression_value(
+                program,
+                operation,
+                candidate,
+                row,
+                row_count,
+                constant_values,
+                column_values,
+            )?
+            else {
+                return Ok(false);
+            };
+            if value == selector {
+                return apply_source_fixed_dynamic_switch_branch(
+                    program,
+                    operation,
+                    branch,
+                    row,
+                    row_count,
+                    constant_values,
+                    column_values,
+                );
+            }
+        }
+    }
+    if let Some(branch) = default_branch {
+        return apply_source_fixed_dynamic_switch_branch(
+            program,
+            operation,
+            branch,
+            row,
+            row_count,
+            constant_values,
+            column_values,
+        );
+    }
+    Ok(true)
+}
+
+fn apply_source_fixed_dynamic_switch_branch(
+    program: &SourceProgram,
+    operation: &SourceFixedDynamicOperation,
+    branch: &SourceFixedDynamicSwitchBranch,
+    row: usize,
+    row_count: usize,
+    constant_values: &mut SourceFixedConstantValues,
+    column_values: &BTreeMap<String, Vec<u64>>,
+) -> Result<bool, SourceFixedColumnsWriteError> {
+    let Some(statements) = branch.statements.as_ref() else {
+        return Ok(false);
+    };
+    for statement in statements {
+        if !apply_source_fixed_dynamic_local_statement(
+            program,
+            operation,
+            statement,
+            row,
+            row_count,
+            constant_values,
+            column_values,
+        )? {
+            return Ok(false);
+        }
+    }
     Ok(true)
 }
 
@@ -239,9 +490,36 @@ fn source_fixed_dynamic_expression_value(
     )
 }
 
-fn source_fixed_dynamic_local_statement(statement: &FunctionStatement) -> bool {
-    source_fixed_dynamic_local_declaration(statement).is_some()
-        || source_fixed_dynamic_local_assignment(statement).is_some()
+fn collect_source_fixed_dynamic_local_statement(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    statement: &FunctionStatement,
+    body_cache: &mut SourceControlBodyCache,
+) -> Result<Option<SourceFixedDynamicLocalStatement>, SourceFixedColumnsWriteError> {
+    if let Some((name, expression)) = source_fixed_dynamic_local_declaration(statement) {
+        return Ok(Some(SourceFixedDynamicLocalStatement::Declaration {
+            name: name.to_owned(),
+            expression: expression.clone(),
+        }));
+    }
+    if let Some((name, expression)) = source_fixed_dynamic_local_assignment(statement) {
+        return Ok(Some(SourceFixedDynamicLocalStatement::Assignment {
+            name: name.to_owned(),
+            expression: expression.clone(),
+        }));
+    }
+    if let Some(declarations) =
+        source_fixed_dynamic_local_destructuring_declaration(context, statement, body_cache)?
+    {
+        return Ok(Some(SourceFixedDynamicLocalStatement::DeclarationBatch {
+            declarations,
+        }));
+    }
+    if let Some(switch_statement) =
+        source_fixed_dynamic_local_switch_statement(context, statement, body_cache)?
+    {
+        return Ok(Some(switch_statement));
+    }
+    source_fixed_dynamic_local_if_statement(context, statement, body_cache)
 }
 
 fn source_fixed_dynamic_local_declaration(
@@ -282,6 +560,618 @@ fn source_fixed_dynamic_local_assignment(
         return None;
     };
     Some((name.as_str(), right))
+}
+
+fn source_fixed_dynamic_local_destructuring_declaration(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    statement: &FunctionStatement,
+    body_cache: &mut SourceControlBodyCache,
+) -> Result<Option<Vec<(String, Expression)>>, SourceFixedColumnsWriteError> {
+    if statement.kind != FunctionStatementKind::Declaration || statement.declaration.is_some() {
+        return Ok(None);
+    }
+    let Some((start_index, end_index)) = body_cache.span_token_bounds(
+        context.tokens,
+        SourceSpan {
+            start: statement.start,
+            end: statement.end,
+        },
+    ) else {
+        return Ok(None);
+    };
+    if !context
+        .tokens
+        .get(start_index)
+        .is_some_and(|token| token.kind == TokenKind::Int)
+    {
+        return Ok(None);
+    }
+    let names_open = start_index + 1;
+    if !context
+        .tokens
+        .get(names_open)
+        .is_some_and(|token| token.kind == TokenKind::LBracket)
+    {
+        return Ok(None);
+    }
+    let Some(names_close) = source_fixed_dynamic_delimited_end(context.tokens, names_open) else {
+        return Ok(None);
+    };
+    let Some(names) = source_fixed_dynamic_name_list(context.tokens, names_open + 1, names_close)
+    else {
+        return Ok(None);
+    };
+    let assign_index = names_close + 1;
+    if !context
+        .tokens
+        .get(assign_index)
+        .is_some_and(|token| token.kind == TokenKind::Assign)
+    {
+        return Ok(None);
+    }
+    let values_open = assign_index + 1;
+    if !context
+        .tokens
+        .get(values_open)
+        .is_some_and(|token| token.kind == TokenKind::LBracket)
+    {
+        return Ok(None);
+    }
+    let Some(values_close) = source_fixed_dynamic_delimited_end(context.tokens, values_open) else {
+        return Ok(None);
+    };
+    let Some(semicolon_index) = end_index.checked_sub(1) else {
+        return Ok(None);
+    };
+    if values_close + 1 != semicolon_index
+        || !context
+            .tokens
+            .get(semicolon_index)
+            .is_some_and(|token| token.kind == TokenKind::Semicolon)
+    {
+        return Ok(None);
+    }
+    let Some(expressions) =
+        source_fixed_dynamic_expression_list(context, values_open + 1, values_close)?
+    else {
+        return Ok(None);
+    };
+    if names.len() != expressions.len() {
+        return Ok(None);
+    }
+    Ok(Some(names.into_iter().zip(expressions).collect()))
+}
+
+fn source_fixed_dynamic_local_if_statement(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    statement: &FunctionStatement,
+    body_cache: &mut SourceControlBodyCache,
+) -> Result<Option<SourceFixedDynamicLocalStatement>, SourceFixedColumnsWriteError> {
+    if statement.kind != FunctionStatementKind::If {
+        return Ok(None);
+    }
+    let Some(condition) = statement.header_expression.as_ref() else {
+        return Ok(None);
+    };
+    let Some(body) = statement.body else {
+        return Ok(None);
+    };
+    let Some((_, statement_end)) = body_cache.span_token_bounds(
+        context.tokens,
+        SourceSpan {
+            start: statement.start,
+            end: statement.end,
+        },
+    ) else {
+        return Ok(None);
+    };
+    let Some((_, mut cursor)) = body_cache.span_token_bounds(context.tokens, body) else {
+        return Ok(None);
+    };
+    let Some(statements) = collect_source_fixed_dynamic_local_body(context, body, body_cache)?
+    else {
+        return Ok(None);
+    };
+    let mut branches = vec![SourceFixedDynamicIfBranch {
+        condition: Some(condition.clone()),
+        statements,
+    }];
+    while cursor < statement_end {
+        let Some(branch) =
+            source_fixed_dynamic_local_if_tail(context, cursor, statement_end, body_cache)?
+        else {
+            return Ok(None);
+        };
+        cursor = branch.next_index;
+        branches.push(branch.branch);
+    }
+    Ok(Some(SourceFixedDynamicLocalStatement::If { branches }))
+}
+
+struct SourceFixedDynamicIfTail {
+    branch: SourceFixedDynamicIfBranch,
+    next_index: usize,
+}
+
+fn source_fixed_dynamic_local_if_tail(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    cursor: usize,
+    statement_end: usize,
+    body_cache: &mut SourceControlBodyCache,
+) -> Result<Option<SourceFixedDynamicIfTail>, SourceFixedColumnsWriteError> {
+    let Some(token) = context.tokens.get(cursor) else {
+        return Ok(None);
+    };
+    match token.kind {
+        TokenKind::ElseIf => {
+            source_fixed_dynamic_conditional_branch(context, cursor, statement_end, body_cache)
+        }
+        TokenKind::Else => {
+            let next = cursor + 1;
+            match context.tokens.get(next).map(|token| token.kind) {
+                Some(TokenKind::If) => source_fixed_dynamic_conditional_branch(
+                    context,
+                    next,
+                    statement_end,
+                    body_cache,
+                ),
+                Some(TokenKind::LBrace) => {
+                    let Some((body, next_index)) =
+                        source_fixed_dynamic_braced_body_at(context.tokens, next, statement_end)
+                    else {
+                        return Ok(None);
+                    };
+                    let Some(statements) =
+                        collect_source_fixed_dynamic_local_body(context, body, body_cache)?
+                    else {
+                        return Ok(None);
+                    };
+                    Ok(Some(SourceFixedDynamicIfTail {
+                        branch: SourceFixedDynamicIfBranch {
+                            condition: None,
+                            statements,
+                        },
+                        next_index,
+                    }))
+                }
+                _ => Ok(None),
+            }
+        }
+        _ => Ok(None),
+    }
+}
+
+fn source_fixed_dynamic_conditional_branch(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    keyword_index: usize,
+    statement_end: usize,
+    body_cache: &mut SourceControlBodyCache,
+) -> Result<Option<SourceFixedDynamicIfTail>, SourceFixedColumnsWriteError> {
+    if !matches!(
+        context.tokens.get(keyword_index).map(|token| token.kind),
+        Some(TokenKind::If | TokenKind::ElseIf)
+    ) {
+        return Ok(None);
+    }
+    let open_index = keyword_index + 1;
+    if !context
+        .tokens
+        .get(open_index)
+        .is_some_and(|token| token.kind == TokenKind::LParen)
+    {
+        return Ok(None);
+    }
+    let Some(close_index) = source_fixed_dynamic_delimited_end(context.tokens, open_index) else {
+        return Ok(None);
+    };
+    let body_index = close_index + 1;
+    let Some((body, next_index)) =
+        source_fixed_dynamic_braced_body_at(context.tokens, body_index, statement_end)
+    else {
+        return Ok(None);
+    };
+    let (condition, consumed) = parse_expression_tokens(
+        context.tokens,
+        open_index,
+        close_index + 1,
+        &context.module.source,
+    )
+    .map_err(|source| SourceFixedColumnsWriteError::ExpressionParse {
+        source_name: context.module.source_name.clone(),
+        source_span: SourceSpan {
+            start: context.tokens[open_index].start,
+            end: context.tokens[close_index].end,
+        },
+        source,
+    })?;
+    if consumed != close_index + 1 {
+        return Ok(None);
+    }
+    let Some(statements) = collect_source_fixed_dynamic_local_body(context, body, body_cache)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(SourceFixedDynamicIfTail {
+        branch: SourceFixedDynamicIfBranch {
+            condition: Some(condition),
+            statements,
+        },
+        next_index,
+    }))
+}
+
+fn collect_source_fixed_dynamic_local_body(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    body: SourceSpan,
+    body_cache: &mut SourceControlBodyCache,
+) -> Result<Option<Vec<SourceFixedDynamicLocalStatement>>, SourceFixedColumnsWriteError> {
+    let body_statements = body_cache
+        .body_statements(context.tokens, body, &context.module.source)
+        .map_err(|source| SourceFixedColumnsWriteError::ExpressionParse {
+            source_name: context.module.source_name.clone(),
+            source_span: body,
+            source,
+        })?;
+    let mut statements = Vec::with_capacity(body_statements.len());
+    for statement in body_statements.iter() {
+        let Some(local_statement) =
+            collect_source_fixed_dynamic_local_statement(context, statement, body_cache)?
+        else {
+            return Ok(None);
+        };
+        statements.push(local_statement);
+    }
+    Ok(Some(statements))
+}
+
+fn source_fixed_dynamic_local_switch_statement(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    statement: &FunctionStatement,
+    body_cache: &mut SourceControlBodyCache,
+) -> Result<Option<SourceFixedDynamicLocalStatement>, SourceFixedColumnsWriteError> {
+    if statement.kind != FunctionStatementKind::Switch {
+        return Ok(None);
+    }
+    let Some(expression) = statement.header_expression.as_ref() else {
+        return Ok(None);
+    };
+    let Some(body) = statement.body else {
+        return Ok(None);
+    };
+    let Some(branches) = source_fixed_dynamic_switch_branches(context, body, body_cache)? else {
+        return Ok(None);
+    };
+    Ok(Some(SourceFixedDynamicLocalStatement::Switch {
+        expression: expression.clone(),
+        branches,
+    }))
+}
+
+fn source_fixed_dynamic_switch_branches(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    body: SourceSpan,
+    body_cache: &mut SourceControlBodyCache,
+) -> Result<Option<Vec<SourceFixedDynamicSwitchBranch>>, SourceFixedColumnsWriteError> {
+    let Some((open_index, close_after)) = body_cache.span_token_bounds(context.tokens, body) else {
+        return Ok(None);
+    };
+    let Some(body_end) = close_after.checked_sub(1) else {
+        return Ok(None);
+    };
+    let mut cursor = open_index + 1;
+    let mut branches = Vec::new();
+    while cursor < body_end {
+        while cursor < body_end
+            && context
+                .tokens
+                .get(cursor)
+                .is_some_and(|token| token.kind == TokenKind::Semicolon)
+        {
+            cursor += 1;
+        }
+        if cursor >= body_end {
+            break;
+        }
+        let Some(token) = context.tokens.get(cursor) else {
+            return Ok(None);
+        };
+        let (matches, statements_start) = match token.kind {
+            TokenKind::Case => {
+                let Some(colon) =
+                    source_fixed_dynamic_switch_label_colon(context.tokens, cursor + 1, body_end)
+                else {
+                    return Ok(None);
+                };
+                let Some(expressions) =
+                    source_fixed_dynamic_expression_list(context, cursor + 1, colon)?
+                else {
+                    return Ok(None);
+                };
+                (expressions, colon + 1)
+            }
+            TokenKind::Default => {
+                let Some(colon) =
+                    source_fixed_dynamic_switch_label_colon(context.tokens, cursor + 1, body_end)
+                else {
+                    return Ok(None);
+                };
+                (Vec::new(), colon + 1)
+            }
+            _ => return Ok(None),
+        };
+        let statements_end =
+            source_fixed_dynamic_next_switch_label(context.tokens, statements_start, body_end)
+                .unwrap_or(body_end);
+        let statements = collect_source_fixed_dynamic_local_statement_range(
+            context,
+            statements_start,
+            statements_end,
+            body_cache,
+        )?;
+        branches.push(SourceFixedDynamicSwitchBranch {
+            matches,
+            statements,
+        });
+        cursor = statements_end;
+    }
+    Ok(Some(branches))
+}
+
+fn collect_source_fixed_dynamic_local_statement_range(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    start_index: usize,
+    end_index: usize,
+    body_cache: &mut SourceControlBodyCache,
+) -> Result<Option<Vec<SourceFixedDynamicLocalStatement>>, SourceFixedColumnsWriteError> {
+    let statements = parse_function_statement_tokens(
+        context.tokens,
+        start_index,
+        end_index,
+        &context.module.source,
+    )
+    .map_err(|source| SourceFixedColumnsWriteError::ExpressionParse {
+        source_name: context.module.source_name.clone(),
+        source_span: SourceSpan {
+            start: context
+                .tokens
+                .get(start_index)
+                .map_or(0, |token| token.start),
+            end: context
+                .tokens
+                .get(end_index.saturating_sub(1))
+                .map_or(0, |token| token.end),
+        },
+        source,
+    })?;
+    let mut local_statements = Vec::new();
+    for statement in statements.iter() {
+        if statement.kind == FunctionStatementKind::Break {
+            break;
+        }
+        let Some(local_statement) =
+            collect_source_fixed_dynamic_local_statement(context, statement, body_cache)?
+        else {
+            return Ok(None);
+        };
+        local_statements.push(local_statement);
+    }
+    Ok(Some(local_statements))
+}
+
+fn source_fixed_dynamic_switch_label_colon(
+    tokens: &[Token],
+    start_index: usize,
+    end_index: usize,
+) -> Option<usize> {
+    let mut stack = Vec::new();
+    for (index, token) in tokens.iter().enumerate().take(end_index).skip(start_index) {
+        if stack.is_empty() && token.kind == TokenKind::Colon {
+            return Some(index);
+        }
+        match token.kind {
+            TokenKind::LParen => stack.push(TokenKind::RParen),
+            TokenKind::LBracket => stack.push(TokenKind::RBracket),
+            TokenKind::LBrace => stack.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                if stack.pop()? != token.kind {
+                    return None;
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn source_fixed_dynamic_next_switch_label(
+    tokens: &[Token],
+    start_index: usize,
+    end_index: usize,
+) -> Option<usize> {
+    let mut stack = Vec::new();
+    for (index, token) in tokens.iter().enumerate().take(end_index).skip(start_index) {
+        if stack.is_empty() && matches!(token.kind, TokenKind::Case | TokenKind::Default) {
+            return Some(index);
+        }
+        match token.kind {
+            TokenKind::LParen => stack.push(TokenKind::RParen),
+            TokenKind::LBracket => stack.push(TokenKind::RBracket),
+            TokenKind::LBrace => stack.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                if stack.pop()? != token.kind {
+                    return None;
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn source_fixed_dynamic_braced_body_at(
+    tokens: &[Token],
+    open_index: usize,
+    limit_index: usize,
+) -> Option<(SourceSpan, usize)> {
+    if open_index >= limit_index
+        || !tokens
+            .get(open_index)
+            .is_some_and(|token| token.kind == TokenKind::LBrace)
+    {
+        return None;
+    }
+    let close_index = source_fixed_dynamic_delimited_end(tokens, open_index)?;
+    if close_index >= limit_index {
+        return None;
+    }
+    Some((
+        SourceSpan {
+            start: tokens[open_index].start,
+            end: tokens[close_index].end,
+        },
+        close_index + 1,
+    ))
+}
+
+fn source_fixed_dynamic_delimited_end(tokens: &[Token], open_index: usize) -> Option<usize> {
+    let expected = match tokens.get(open_index)?.kind {
+        TokenKind::LParen => TokenKind::RParen,
+        TokenKind::LBracket => TokenKind::RBracket,
+        TokenKind::LBrace => TokenKind::RBrace,
+        _ => return None,
+    };
+    let mut stack = vec![expected];
+    for (index, token) in tokens.iter().enumerate().skip(open_index + 1) {
+        match token.kind {
+            TokenKind::LParen => stack.push(TokenKind::RParen),
+            TokenKind::LBracket => stack.push(TokenKind::RBracket),
+            TokenKind::LBrace => stack.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                if stack.pop()? != token.kind {
+                    return None;
+                }
+                if stack.is_empty() {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn source_fixed_dynamic_name_list(
+    tokens: &[Token],
+    start_index: usize,
+    end_index: usize,
+) -> Option<Vec<String>> {
+    if start_index >= end_index {
+        return None;
+    }
+    let mut names = Vec::new();
+    let mut cursor = start_index;
+    loop {
+        let token = tokens.get(cursor)?;
+        if token.kind != TokenKind::Identifier {
+            return None;
+        }
+        names.push(token.lexeme.clone());
+        cursor += 1;
+        if cursor == end_index {
+            return Some(names);
+        }
+        if !tokens
+            .get(cursor)
+            .is_some_and(|token| token.kind == TokenKind::Comma)
+        {
+            return None;
+        }
+        cursor += 1;
+        if cursor >= end_index {
+            return None;
+        }
+    }
+}
+
+fn source_fixed_dynamic_expression_list(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    start_index: usize,
+    end_index: usize,
+) -> Result<Option<Vec<Expression>>, SourceFixedColumnsWriteError> {
+    if start_index >= end_index {
+        return Ok(Some(Vec::new()));
+    }
+    let mut expressions = Vec::new();
+    let mut segment_start = start_index;
+    let mut stack = Vec::new();
+    let mut cursor = start_index;
+    while cursor < end_index {
+        let Some(token) = context.tokens.get(cursor) else {
+            return Ok(None);
+        };
+        match token.kind {
+            TokenKind::LParen => stack.push(TokenKind::RParen),
+            TokenKind::LBracket => stack.push(TokenKind::RBracket),
+            TokenKind::LBrace => stack.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                let Some(expected) = stack.pop() else {
+                    return Ok(None);
+                };
+                if expected != token.kind {
+                    return Ok(None);
+                }
+            }
+            TokenKind::Comma if stack.is_empty() => {
+                if segment_start >= cursor {
+                    return Ok(None);
+                }
+                let Some(expression) =
+                    source_fixed_dynamic_expression_segment(context, segment_start, cursor)?
+                else {
+                    return Ok(None);
+                };
+                expressions.push(expression);
+                segment_start = cursor + 1;
+            }
+            _ => {}
+        }
+        cursor += 1;
+    }
+    if !stack.is_empty() || segment_start >= end_index {
+        return Ok(None);
+    }
+    let Some(expression) =
+        source_fixed_dynamic_expression_segment(context, segment_start, end_index)?
+    else {
+        return Ok(None);
+    };
+    expressions.push(expression);
+    Ok(Some(expressions))
+}
+
+fn source_fixed_dynamic_expression_segment(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    start_index: usize,
+    end_index: usize,
+) -> Result<Option<Expression>, SourceFixedColumnsWriteError> {
+    if start_index >= end_index {
+        return Ok(None);
+    }
+    let (expression, consumed) = parse_expression_tokens(
+        context.tokens,
+        start_index,
+        end_index,
+        &context.module.source,
+    )
+    .map_err(|source| SourceFixedColumnsWriteError::ExpressionParse {
+        source_name: context.module.source_name.clone(),
+        source_span: SourceSpan {
+            start: context.tokens[start_index].start,
+            end: context.tokens[end_index - 1].end,
+        },
+        source,
+    })?;
+    Ok((consumed == end_index).then_some(expression))
 }
 
 struct SourceFixedDynamicForLoop {

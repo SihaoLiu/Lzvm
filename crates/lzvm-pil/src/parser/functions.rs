@@ -191,14 +191,23 @@ pub fn parse_function_body_statements(
             start: body.start,
         })?;
 
+    parse_function_statement_tokens(tokens, open_index + 1, close_index, source)
+}
+
+pub fn parse_function_statement_tokens(
+    tokens: &[Token],
+    start_index: usize,
+    end_index: usize,
+    source: &SourceFile,
+) -> Result<Vec<FunctionStatement>, ParseError> {
     let mut statements = Vec::new();
-    let mut cursor = open_index + 1;
-    while cursor < close_index {
+    let mut cursor = start_index;
+    while cursor < end_index {
         if tokens[cursor].kind == TokenKind::Pragma {
             cursor += 1;
             continue;
         }
-        let parsed = parse_function_statement(tokens, cursor, close_index, source)?;
+        let parsed = parse_function_statement(tokens, cursor, end_index, source)?;
         cursor = parsed.next_index;
         statements.push(parsed.statement);
     }
