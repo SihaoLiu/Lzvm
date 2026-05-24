@@ -311,6 +311,26 @@ fn lower_top_level_global_constraints_range(
                 index =
                     top_level_if::lower_top_level_static_if_statement(context, index, constraints)?;
             }
+            TokenKind::AtIdentifier => {
+                index = if context
+                    .tokens
+                    .get(index + 1)
+                    .is_some_and(|token| token.kind == TokenKind::LBrace)
+                {
+                    let mut next =
+                        skip_balanced_delimiter(context.tokens, index + 1, TokenKind::RBrace)?;
+                    if context
+                        .tokens
+                        .get(next)
+                        .is_some_and(|token| token.kind == TokenKind::Semicolon)
+                    {
+                        next += 1;
+                    }
+                    next
+                } else {
+                    skip_top_level_statement(context.tokens, index)?
+                };
+            }
             _ if source_directive_statement_start(context.tokens, index).is_some() => {
                 index = skip_source_directive_statement(
                     context.tokens,

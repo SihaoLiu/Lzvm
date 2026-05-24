@@ -7,7 +7,8 @@ use lzvm_artifacts::hint_program::{global_hint_program_from_expression_info, Hin
 use lzvm_pil::{
     lex_source, BinaryOperator, CallArgument, Expression, ExpressionKind, FixedFileTemplateValue,
     FunctionDeclaration, FunctionParameter, FunctionStatement, FunctionStatementDeclaration,
-    FunctionStatementKind, SourceProgram, SourceProgramModule, Token, TokenKind, UnaryOperator,
+    FunctionStatementKind, SourceProgram, SourceProgramModule, SourceSpan, Token, TokenKind,
+    UnaryOperator,
 };
 
 use crate::{
@@ -49,6 +50,18 @@ pub(super) fn source_global_hints(
             }
         })?;
         let body_cache = body_caches.module_cache(&module.source_name);
+        {
+            let mut values = static_values.clone();
+            let mut context = SourceGlobalHintLoweringContext {
+                program,
+                module,
+                tokens: &tokens,
+                scalar_slots: &scalar_slots,
+                body_cache,
+                hints: &mut hints,
+            };
+            lower_source_global_top_level_hints(&mut context, &mut values)?;
+        }
         for group in &module.air_groups {
             let mut values = static_values.clone();
             let mut alias_scope = SourceGlobalHintAliasScope::default();
@@ -99,6 +112,156 @@ struct SourceGlobalHintLoweringContext<'a, 'b> {
 struct SourceGlobalHintAliasScope {
     expressions: SourceExpressionAliases,
     expression_arrays: SourceExpressionArrayAliases,
+}
+
+fn lower_source_global_top_level_hints(
+    context: &mut SourceGlobalHintLoweringContext<'_, '_>,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    let alias_scope = SourceGlobalHintAliasScope::default();
+    let mut expected = Vec::<TokenKind>::new();
+    let mut index = 0_usize;
+    while let Some(token) = context.tokens.get(index) {
+        if token.kind == TokenKind::EndOfInput {
+            break;
+        }
+        if expected.is_empty() && token.kind == TokenKind::AtIdentifier {
+            let Some(next_index) = top_level_annotation_next_index(context.tokens, index) else {
+                index += 1;
+                continue;
+            };
+            let statement =
+                top_level_annotation_statement(context.module, context.tokens, index, next_index);
+            let lookup_inputs = SourceLookupInputs {
+                program: context.program,
+                module: context.module,
+                values,
+                expression_aliases: &alias_scope.expressions,
+                expression_array_aliases: &alias_scope.expression_arrays,
+                scalar_slots: context.scalar_slots,
+                opening_points: &[],
+            };
+            if let Some(hint) = lower_source_annotation_statement(&lookup_inputs, &statement)
+                .map_err(|source| SourceKeyDirectoryMetadataError::Lex {
+                    source_name: context.module.source_name.clone(),
+                    source,
+                })?
+            {
+                if source_global_hint_is_structured(&hint) {
+                    context.hints.push(hint);
+                }
+            }
+            index = next_index;
+            continue;
+        }
+
+        match token.kind {
+            TokenKind::LParen => expected.push(TokenKind::RParen),
+            TokenKind::LBracket => expected.push(TokenKind::RBracket),
+            TokenKind::LBrace => expected.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                if expected.pop().is_none_or(|kind| kind != token.kind) {
+                    expected.clear();
+                }
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    Ok(())
+}
+
+fn top_level_annotation_next_index(tokens: &[Token], index: usize) -> Option<usize> {
+    if tokens
+        .get(index + 1)
+        .is_some_and(|token| token.kind == TokenKind::LBrace)
+    {
+        let mut next = skip_top_level_balanced_delimiter(tokens, index + 1, TokenKind::RBrace)?;
+        if tokens
+            .get(next)
+            .is_some_and(|token| token.kind == TokenKind::Semicolon)
+        {
+            next += 1;
+        }
+        Some(next)
+    } else {
+        skip_top_level_semicolon_statement(tokens, index)
+    }
+}
+
+fn top_level_annotation_statement(
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    index: usize,
+    next_index: usize,
+) -> FunctionStatement {
+    let start = tokens[index].start;
+    let end = tokens[next_index - 1].end;
+    FunctionStatement {
+        kind: FunctionStatementKind::Expression,
+        declaration: None,
+        header_declaration: None,
+        header: None,
+        body: None,
+        value: Some(SourceSpan { start, end }),
+        header_expression: None,
+        value_expression: None,
+        source_name: module.source_name.clone(),
+        start,
+        end,
+    }
+}
+
+fn skip_top_level_semicolon_statement(tokens: &[Token], index: usize) -> Option<usize> {
+    let mut expected = Vec::<TokenKind>::new();
+    let mut cursor = index;
+    while let Some(token) = tokens.get(cursor) {
+        if expected.is_empty() && token.kind == TokenKind::Semicolon {
+            return Some(cursor + 1);
+        }
+        match token.kind {
+            TokenKind::LParen => expected.push(TokenKind::RParen),
+            TokenKind::LBracket => expected.push(TokenKind::RBracket),
+            TokenKind::LBrace => expected.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                if expected.pop()? != token.kind {
+                    return None;
+                }
+            }
+            TokenKind::EndOfInput => return None,
+            _ => {}
+        }
+        cursor += 1;
+    }
+    None
+}
+
+fn skip_top_level_balanced_delimiter(
+    tokens: &[Token],
+    open_index: usize,
+    close: TokenKind,
+) -> Option<usize> {
+    let mut expected = vec![close];
+    let mut cursor = open_index + 1;
+    while let Some(token) = tokens.get(cursor) {
+        match token.kind {
+            TokenKind::LParen => expected.push(TokenKind::RParen),
+            TokenKind::LBracket => expected.push(TokenKind::RBracket),
+            TokenKind::LBrace => expected.push(TokenKind::RBrace),
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                if expected.pop()? != token.kind {
+                    return None;
+                }
+                if expected.is_empty() {
+                    return Some(cursor + 1);
+                }
+            }
+            TokenKind::EndOfInput => return None,
+            _ => {}
+        }
+        cursor += 1;
+    }
+    None
 }
 
 fn lower_source_global_hint_statement(
