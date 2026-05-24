@@ -54,6 +54,7 @@ mod source_row_count;
 mod source_scalar_slots;
 mod source_scope;
 mod source_statement_hints;
+mod source_static_array_assignment;
 mod source_static_functions;
 mod source_static_values;
 mod source_template_context;

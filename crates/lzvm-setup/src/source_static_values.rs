@@ -631,6 +631,13 @@ fn execute_static_template_statement(
             if !static_statement_contains_assignment_operator(tokens, index, semicolon) {
                 return Some(semicolon + 1);
             }
+            if crate::source_static_array_assignment::execute_source_static_array_assignment_statement(
+                program, module, tokens, index, semicolon, values,
+            )
+            .is_some()
+            {
+                return Some(semicolon + 1);
+            }
             if unsupported_static_assignment_statement(tokens, index, semicolon) {
                 return Some(semicolon + 1);
             }
