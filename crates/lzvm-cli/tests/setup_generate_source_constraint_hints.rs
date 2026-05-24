@@ -154,6 +154,222 @@ fn generate_key_lowers_nonzero_equality_constraints() {
 }
 
 #[test]
+fn generate_key_lowers_constraints_using_deferred_expr_alias_assignments() {
+    let dir = temp_dir("source-deferred-expr-alias-constraint");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col witness selector;\n\
+             col witness left;\n\
+             col witness right;\n\
+             const expr diff;\n\
+             diff = left + right;\n\
+             selector * diff === 0;\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert_eq!(expressions.hints.len(), 0);
+    assert_eq!(expressions.constraints.len(), 1);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_lowers_constraints_using_multiple_deferred_expr_alias_assignments() {
+    let dir = temp_dir("source-multiple-deferred-expr-alias-constraint");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col witness flag;\n\
+             col witness left;\n\
+             col witness right;\n\
+             const expr flag_alias;\n\
+             const expr diff;\n\
+             flag_alias = flag;\n\
+             diff = left + right;\n\
+             (1 - flag_alias) * diff === 0;\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert_eq!(expressions.hints.len(), 0);
+    assert_eq!(expressions.constraints.len(), 1);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_lowers_constraints_using_composite_deferred_expr_alias_assignments() {
+    let dir = temp_dir("source-composite-deferred-expr-alias-constraint");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "const int SCALE = 16;\n\
+         airtemplate UnitA() {\n\
+             col witness a;\n\
+             col witness b;\n\
+             col witness c;\n\
+             col witness d;\n\
+             const expr flag_alias;\n\
+             const expr diff;\n\
+             flag_alias = a + b;\n\
+             diff = c + d * SCALE;\n\
+             (1 - flag_alias) * diff === 0;\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert_eq!(expressions.hints.len(), 0);
+    assert_eq!(expressions.constraints.len(), 1);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_lowers_constraints_using_deferred_expr_aliases_assigned_in_static_if() {
+    let dir = temp_dir("source-static-if-deferred-expr-alias-constraint");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "const int ENABLED = 1;\n\
+         const int SCALE = 16;\n\
+         airtemplate UnitA() {\n\
+             col witness a;\n\
+             col witness b;\n\
+             col witness c;\n\
+             col witness d;\n\
+             const expr flag_alias;\n\
+             const expr diff;\n\
+             if (ENABLED) {\n\
+                 flag_alias = a + b;\n\
+                 diff = c + d * SCALE;\n\
+             } else {\n\
+                 flag_alias = 0;\n\
+                 diff = 0;\n\
+             }\n\
+             (1 - flag_alias) * diff === 0;\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert_eq!(expressions.hints.len(), 0);
+    assert_eq!(expressions.constraints.len(), 1);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_lowers_air_scoped_witness_boolean_constraints() {
     let dir = temp_dir("source-air-scoped-witness-boolean");
     let _ = fs::remove_dir_all(&dir);

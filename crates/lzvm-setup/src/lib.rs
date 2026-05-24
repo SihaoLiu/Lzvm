@@ -59,6 +59,7 @@ mod source_key_directory;
 mod source_metadata_template;
 mod source_opening_points;
 mod source_program_archive;
+mod source_range_check_hints;
 mod source_row_count;
 mod source_scalar_slots;
 mod source_scope;

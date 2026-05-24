@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -42,6 +43,7 @@ use crate::{
     },
     source_final_calls::{source_final_statement_call, SourceFinalScope},
     source_key_directory::SourceKeyDirectoryMetadataError,
+    source_range_check_hints::{lower_source_range_check_statement, SourceRangeCheckIds},
     source_scalar_slots::{SourceChallengeSlotMetadata, SourceScalarSlots},
     source_statement_hints::{
         lower_source_annotation_statement, lower_source_assignment_statement,
@@ -87,6 +89,7 @@ pub(crate) fn source_expression_info(
     active_templates: &BTreeSet<String>,
     template_values: &SourceTemplateConstantValueCache,
     body_caches: &mut SourceControlBodyCaches,
+    range_checks: &RefCell<SourceRangeCheckIds>,
 ) -> Result<ExpressionInfo, SourceKeyDirectoryMetadataError> {
     let scalar_slots = SourceScalarSlots::from_setup(setup, publics, challenges, proof_values)
         .map_err(|error| unsupported_source_message(error.to_string()))?;
@@ -124,6 +127,7 @@ pub(crate) fn source_expression_info(
                     scalar_slots: &scalar_slots,
                     opening_points: &setup.opening_points,
                     fixed_columns: &fixed_assignment_columns,
+                    range_checks,
                     active_templates: &active_templates,
                     constant_values: &constant_values,
                     template_values: &template_values,
@@ -421,6 +425,16 @@ fn lower_source_template_statement(
         scalar_slots: context.scalar_slots,
         opening_points: context.opening_points,
     };
+    if let Some(hint) =
+        lower_source_range_check_statement(&lookup_inputs, context.range_checks, statement)
+            .map_err(|source| SourceKeyDirectoryMetadataError::Lex {
+                source_name: context.module.source_name.clone(),
+                source,
+            })?
+    {
+        hints.push(hint);
+        return Ok(SourceTemplateStatementFlow::Fallthrough);
+    }
     if let Some(hint) =
         lower_source_lookup_statement(&lookup_inputs, statement).map_err(|source| {
             SourceKeyDirectoryMetadataError::Lex {
@@ -1607,6 +1621,16 @@ fn lower_source_function_body_statement(
         scalar_slots: context.scalar_slots,
         opening_points: context.opening_points,
     };
+    if let Some(hint) =
+        lower_source_range_check_statement(&lookup_inputs, context.range_checks, statement)
+            .map_err(|source| SourceKeyDirectoryMetadataError::Lex {
+                source_name: context.module.source_name.clone(),
+                source,
+            })?
+    {
+        output.hints.push(hint);
+        return Ok(true);
+    }
     if let Some(hint) =
         lower_source_lookup_statement(&lookup_inputs, statement).map_err(|source| {
             SourceKeyDirectoryMetadataError::Lex {

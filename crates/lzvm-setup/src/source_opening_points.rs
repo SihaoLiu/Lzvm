@@ -10,7 +10,9 @@ use lzvm_pil::{
 use crate::{
     source_constraint_lowering::SourceExpressionAliases,
     source_control_body_cache::{SourceControlBodyCache, SourceControlBodyCaches},
-    source_expression_aliases::collect_source_template_expression_alias,
+    source_expression_aliases::{
+        collect_source_template_expression_alias, source_expression_is_self_reference,
+    },
     source_expression_return_values::insert_source_expr_array_alias_length,
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_statement_hints::{
@@ -932,6 +934,9 @@ fn collect_source_opening_points(
         }
         ExpressionKind::Name(name) => {
             if let Some(alias) = alias_scope.expressions.get(name) {
+                if source_expression_is_self_reference(name, alias) {
+                    return Ok(());
+                }
                 if !resolving_aliases.insert(name.clone()) {
                     return unsupported("source opening point expression alias cycle");
                 }

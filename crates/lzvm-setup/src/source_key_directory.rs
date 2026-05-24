@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -37,6 +38,7 @@ use crate::{
         source_metadata_unit_instance,
     },
     source_opening_points::source_opening_points,
+    source_range_check_hints::SourceRangeCheckIds,
     source_row_count::{infer_source_row_counts, SourceUnitRowCounts},
     source_scalar_slots::SourceChallengeSlotMetadata,
     source_scope::{
@@ -262,6 +264,7 @@ pub fn write_source_key_directory_metadata(
         let layout = read_key_directory_layout(&request.setup_dir)?;
         let mut unit_payloads = Vec::new();
         let mut body_caches = SourceControlBodyCaches::default();
+        let range_checks = RefCell::new(SourceRangeCheckIds::default());
         let active_templates = concrete_template_names(&program);
         let mut template_contexts = BTreeMap::<u64, SourceUnitTemplateContext>::new();
         for (unit_index, unit) in layout.units.iter().enumerate() {
@@ -343,6 +346,7 @@ pub fn write_source_key_directory_metadata(
                 &active_templates,
                 &context.template_values,
                 &mut body_caches,
+                &range_checks,
             )?;
             include_expression_opening_points(&mut setup_info, &expression_info);
             setup_info.n_constraints = Some(

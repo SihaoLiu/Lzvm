@@ -68,14 +68,14 @@ pub(crate) fn collect_source_template_expression_aliases(
     body_cache: &mut SourceControlBodyCache,
     alias_scope: &mut SourceExpressionAliasScope,
 ) {
-    collect_source_returned_expression_alias(context, statement, values, body_cache, alias_scope);
-    collect_source_template_expression_array_alias(
+    let mut call_stack = BTreeSet::new();
+    collect_source_template_expression_aliases_with_stack(
         context,
         statement,
         values,
         body_cache,
-        &alias_scope.expressions,
-        &mut alias_scope.expression_arrays,
+        &mut call_stack,
+        alias_scope,
     );
 }
 
@@ -87,6 +87,16 @@ pub(crate) fn collect_source_template_expression_aliases_with_stack(
     call_stack: &mut BTreeSet<String>,
     alias_scope: &mut SourceExpressionAliasScope,
 ) {
+    if collect_source_static_if_expression_aliases(
+        context,
+        statement,
+        values,
+        body_cache,
+        call_stack,
+        alias_scope,
+    ) {
+        return;
+    }
     collect_source_returned_expression_alias_with_stack(
         context,
         statement,
@@ -105,22 +115,38 @@ pub(crate) fn collect_source_template_expression_aliases_with_stack(
     );
 }
 
-pub(crate) fn collect_source_returned_expression_alias(
+fn collect_source_static_if_expression_aliases(
     context: &SourceTemplateLoweringContext<'_>,
     statement: &FunctionStatement,
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
     body_cache: &mut SourceControlBodyCache,
+    call_stack: &mut BTreeSet<String>,
     alias_scope: &mut SourceExpressionAliasScope,
 ) -> bool {
-    let mut call_stack = BTreeSet::new();
-    collect_source_returned_expression_alias_with_stack(
-        context,
+    if statement.kind != FunctionStatementKind::If {
+        return false;
+    }
+    let Ok(Some(body_statements)) = source_static_if_body_statements_with_tokens(
+        context.program,
+        context.module,
+        context.tokens,
         statement,
         values,
         body_cache,
-        &mut call_stack,
-        alias_scope,
-    )
+    ) else {
+        return false;
+    };
+    for body_statement in body_statements.iter() {
+        collect_source_template_expression_aliases_with_stack(
+            context,
+            body_statement,
+            values,
+            body_cache,
+            call_stack,
+            alias_scope,
+        );
+    }
+    true
 }
 
 pub(crate) fn collect_source_returned_expression_alias_with_stack(

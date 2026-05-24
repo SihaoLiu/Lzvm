@@ -447,6 +447,14 @@ fn lower_structured_source_lookup_hint(
     }))
 }
 
+pub(crate) fn lower_structured_source_lookup_line(
+    inputs: &SourceLookupInputs<'_>,
+    name: &str,
+    line: &str,
+) -> Result<Option<HintInfo>, LexError> {
+    lower_structured_source_lookup_hint(inputs, name, line)
+}
+
 fn source_lookup_line_hint(name: &str, line: String) -> HintInfo {
     HintInfo {
         name: name.to_owned(),

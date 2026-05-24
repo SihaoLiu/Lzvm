@@ -15,20 +15,36 @@ pub(crate) fn collect_source_template_expression_alias(
             {
                 return false;
             }
-            let Some(expression) = declaration.initializer_expression.as_ref() else {
-                return false;
-            };
-            expression_aliases.insert(declaration.name.clone(), expression.clone());
+            let expression = declaration
+                .initializer_expression
+                .clone()
+                .unwrap_or_else(|| {
+                    source_expression_self_reference(
+                        declaration.name.clone(),
+                        declaration.source_name.clone(),
+                        declaration.start,
+                        declaration.end,
+                    )
+                });
+            expression_aliases.insert(declaration.name.clone(), expression);
             true
         }
         Some(FunctionStatementDeclaration::Variable(declaration)) => {
             if declaration.type_name != "expr" || !declaration.array_dims.is_empty() {
                 return false;
             }
-            let Some(expression) = declaration.initializer_expression.as_ref() else {
-                return false;
-            };
-            expression_aliases.insert(declaration.name.clone(), expression.clone());
+            let expression = declaration
+                .initializer_expression
+                .clone()
+                .unwrap_or_else(|| {
+                    source_expression_self_reference(
+                        declaration.name.clone(),
+                        declaration.source_name.clone(),
+                        declaration.start,
+                        declaration.end,
+                    )
+                });
+            expression_aliases.insert(declaration.name.clone(), expression);
             true
         }
         _ => source_expression_alias_assignment(
@@ -36,6 +52,27 @@ pub(crate) fn collect_source_template_expression_alias(
             expression_aliases,
         ),
     }
+}
+
+fn source_expression_self_reference(
+    name: String,
+    source_name: String,
+    start: usize,
+    end: usize,
+) -> Expression {
+    Expression {
+        kind: ExpressionKind::Name(name),
+        source_name,
+        start,
+        end,
+    }
+}
+
+pub(crate) fn source_expression_is_self_reference(name: &str, expression: &Expression) -> bool {
+    matches!(
+        &strip_group_expression(expression).kind,
+        ExpressionKind::Name(candidate) if candidate == name
+    )
 }
 
 pub(crate) fn source_expression_alias_assignment(
