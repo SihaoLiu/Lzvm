@@ -10,7 +10,7 @@ use crate::{
     source_control_body_cache::SourceControlBodyCache,
     source_expression_aliases::collect_source_template_expression_alias,
     source_key_directory::SourceKeyDirectoryMetadataError,
-    source_statement_hints::source_statement_line,
+    source_statement_hints::{source_statement_is_source_directive, source_statement_line},
     source_static_values::{
         evaluate_source_static_expression, insert_source_static_array,
         source_static_array_expression, source_static_array_length,
@@ -368,6 +368,14 @@ fn lower_function_body_statement(
             }
             Err(error) => Err(error),
         };
+    }
+    if source_statement_is_source_directive(context.module, statement).map_err(|source| {
+        SourceKeyDirectoryMetadataError::Lex {
+            source_name: context.module.source_name.clone(),
+            source,
+        }
+    })? {
+        return Ok(true);
     }
     if statement.kind != FunctionStatementKind::Expression {
         return Ok(false);

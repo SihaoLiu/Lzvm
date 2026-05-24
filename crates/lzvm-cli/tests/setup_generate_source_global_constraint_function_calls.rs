@@ -157,6 +157,73 @@ fn generate_key_lowers_nested_source_function_global_constraints() {
 }
 
 #[test]
+fn generate_key_ignores_source_directives_in_global_constraint_functions() {
+    let dir = temp_dir("source-function-directive");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    let include_path = dir.join("source").join("extra.pil");
+    write_file(&include_path, "");
+    write_file(
+        &source_path,
+        "function constrain_flag(expr value) {\n\
+             require \"extra.pil\"\n\
+             value * (1 - value);\n\
+         }\n\
+         public flag;\n\
+         constrain_flag(flag);\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let program = read_global_program_file(dir.join("pilout.globalConstraints.bin"))
+        .expect("source global program should parse");
+    assert_eq!(program.constraints.entries.len(), 1);
+    assert_eq!(program.constraints.entries[0].destination_dimension, 1);
+
+    let satisfied = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            publics: &[Felt::ONE],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("boolean public flag should evaluate");
+    assert_eq!(satisfied, [Ext3::ZERO]);
+
+    let unsatisfied = evaluate_global_constraints(
+        &program.constraints,
+        GlobalConstraintInputs {
+            publics: &[Felt::from_u64(2)],
+            ..GlobalConstraintInputs::default()
+        },
+    )
+    .expect("non-boolean public flag should evaluate");
+    assert_ne!(unsatisfied, [Ext3::ZERO]);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_applies_source_function_static_updates_global_constraints() {
     let dir = temp_dir("source-function-static-updates");
     let _ = fs::remove_dir_all(&dir);
