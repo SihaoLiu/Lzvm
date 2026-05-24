@@ -854,8 +854,12 @@ fn lower_source_template_function_call_expression(
 }
 
 fn source_noop_call_statement(statement: &FunctionStatement) -> bool {
-    source_call_expression(statement.value_expression.as_ref())
-        .is_some_and(|(name, _)| matches!(name, "println" | "Tables.fill" | "Tables.print"))
+    source_call_expression(statement.value_expression.as_ref()).is_some_and(|(name, _)| {
+        matches!(
+            name,
+            "println" | "Tables.fill" | "Tables.copy" | "Tables.print"
+        )
+    })
 }
 
 fn source_function_shared_static_values(

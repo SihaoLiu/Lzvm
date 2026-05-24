@@ -9,6 +9,9 @@ use lzvm_pil::{
 
 use crate::{
     source_control_body_cache::SourceControlBodyCache,
+    source_expression_statements::{
+        apply_source_static_declaration, apply_source_static_expression_statement,
+    },
     source_fixed_columns::SourceFixedColumnsWriteError,
     source_fixed_expression::{
         evaluate_source_fixed_template_value_expression_with_parts, SourceFixedConstantValues,
@@ -23,6 +26,21 @@ use crate::{
     source_template_if::source_static_if_body_statements_with_lookup,
 };
 
+pub(crate) struct SourceFixedTemplateAssignments {
+    pub(crate) values: BTreeMap<String, Vec<u64>>,
+    pub(crate) copy_operations: Vec<SourceFixedCopyOperation>,
+}
+
+pub(crate) struct SourceFixedCopyOperation {
+    pub(crate) source_name: String,
+    pub(crate) source_span: SourceSpan,
+    pub(crate) source_column: String,
+    pub(crate) source_offset: usize,
+    pub(crate) target_column: String,
+    pub(crate) target_offset: usize,
+    pub(crate) count: usize,
+}
+
 pub(crate) fn source_fixed_values_from_template_assignments(
     program: &SourceProgram,
     expected_columns: &BTreeSet<String>,
@@ -30,9 +48,10 @@ pub(crate) fn source_fixed_values_from_template_assignments(
     row_count: usize,
     constant_values: &SourceFixedConstantValues,
     unit_instance: Option<&AirInstanceDeclaration>,
-) -> Result<BTreeMap<String, Vec<u64>>, SourceFixedColumnsWriteError> {
+) -> Result<SourceFixedTemplateAssignments, SourceFixedColumnsWriteError> {
     let mut partial_values = BTreeMap::<String, Vec<Option<u64>>>::new();
     let mut zero_default_columns = BTreeSet::<String>::new();
+    let mut copy_operations = Vec::<SourceFixedCopyOperation>::new();
     let active_templates = concrete_template_names(program);
     for module in &program.modules {
         let tokens = lex_source(&module.source.contents).map_err(|source| {
@@ -47,7 +66,7 @@ pub(crate) fn source_fixed_values_from_template_assignments(
         })?;
         let mut body_cache = SourceControlBodyCache::default();
         for template in &module.air_templates {
-            let assignment_values = if let Some(instance) = unit_instance {
+            let mut assignment_values = if let Some(instance) = unit_instance {
                 if template.name != instance.template {
                     continue;
                 }
@@ -82,16 +101,17 @@ pub(crate) fn source_fixed_values_from_template_assignments(
                 collect_source_fixed_template_assignment(
                     &context,
                     statement,
-                    &assignment_values,
+                    &mut assignment_values,
                     &mut body_cache,
                     &mut partial_values,
                     &mut zero_default_columns,
+                    &mut copy_operations,
                 )?;
             }
         }
     }
 
-    Ok(partial_values
+    let values = partial_values
         .into_iter()
         .filter_map(|(name, values)| {
             if zero_default_columns.contains(&name) {
@@ -105,7 +125,11 @@ pub(crate) fn source_fixed_values_from_template_assignments(
                 .collect::<Option<Vec<_>>>()
                 .map(|values| (name, values))
         })
-        .collect())
+        .collect();
+    Ok(SourceFixedTemplateAssignments {
+        values,
+        copy_operations,
+    })
 }
 
 struct SourceFixedTemplateAssignmentContext<'a> {
@@ -186,6 +210,31 @@ impl<'a> SourceFixedAssignmentValues<'a> {
         SourceFixedConstantValues {
             scalars,
             arrays: self.arrays.clone(),
+        }
+    }
+
+    fn replace_scalars(&mut self, scalars: BTreeMap<String, FixedFileTemplateValue>) {
+        self.overlays = scalars
+            .into_iter()
+            .filter(|(name, value)| self.base_scalars.get(name) != Some(value))
+            .collect();
+    }
+
+    fn apply_static_statement(&mut self, program: &SourceProgram, statement: &FunctionStatement) {
+        let mut scalars = self.fixed_constant_values().scalars;
+        let updated = if statement.kind == FunctionStatementKind::Declaration {
+            apply_source_static_declaration(program, statement, &mut scalars)
+        } else if statement.kind == FunctionStatementKind::Expression {
+            apply_source_static_expression_statement(
+                program,
+                statement.value_expression.as_ref(),
+                &mut scalars,
+            )
+        } else {
+            false
+        };
+        if updated {
+            self.replace_scalars(scalars);
         }
     }
 }
@@ -314,10 +363,11 @@ impl SourceStaticValueLookup for SourceFixedAssignmentValues<'_> {
 fn collect_source_fixed_template_assignment(
     context: &SourceFixedTemplateAssignmentContext<'_>,
     statement: &FunctionStatement,
-    assignment_values: &SourceFixedAssignmentValues<'_>,
+    assignment_values: &mut SourceFixedAssignmentValues<'_>,
     body_cache: &mut SourceControlBodyCache,
     partial_values: &mut BTreeMap<String, Vec<Option<u64>>>,
     zero_default_columns: &mut BTreeSet<String>,
+    copy_operations: &mut Vec<SourceFixedCopyOperation>,
 ) -> Result<(), SourceFixedColumnsWriteError> {
     if statement.kind == FunctionStatementKind::If {
         match source_static_if_body_statements_with_lookup(
@@ -337,6 +387,7 @@ fn collect_source_fixed_template_assignment(
                         body_cache,
                         partial_values,
                         zero_default_columns,
+                        copy_operations,
                     )?;
                 }
             }
@@ -358,19 +409,21 @@ fn collect_source_fixed_template_assignment(
         ) {
             Ok(Some(loop_info)) => {
                 for iteration_value in &loop_info.iteration_values {
-                    let iteration_assignment_values = SourceFixedAssignmentValues::with_loop_value(
-                        assignment_values,
-                        &loop_info.variable_name,
-                        iteration_value,
-                    );
+                    let mut iteration_assignment_values =
+                        SourceFixedAssignmentValues::with_loop_value(
+                            assignment_values,
+                            &loop_info.variable_name,
+                            iteration_value,
+                        );
                     for body_statement in loop_info.body_statements.iter() {
                         collect_source_fixed_template_assignment(
                             context,
                             body_statement,
-                            &iteration_assignment_values,
+                            &mut iteration_assignment_values,
                             body_cache,
                             partial_values,
                             zero_default_columns,
+                            copy_operations,
                         )?;
                     }
                 }
@@ -382,6 +435,10 @@ fn collect_source_fixed_template_assignment(
         }
         return Ok(());
     }
+    if statement.kind == FunctionStatementKind::Declaration {
+        assignment_values.apply_static_statement(context.program, statement);
+        return Ok(());
+    }
     if statement.kind != FunctionStatementKind::Expression {
         return Ok(());
     }
@@ -391,6 +448,14 @@ fn collect_source_fixed_template_assignment(
         assignment_values,
         partial_values,
         zero_default_columns,
+    )? {
+        return Ok(());
+    }
+    if collect_source_fixed_table_copy_statement(
+        context,
+        statement,
+        assignment_values,
+        copy_operations,
     )? {
         return Ok(());
     }
@@ -411,6 +476,7 @@ fn collect_source_fixed_template_assignment(
         return Ok(());
     };
     if *op != BinaryOperator::Assign {
+        assignment_values.apply_static_statement(context.program, statement);
         return Ok(());
     }
     if collect_source_fixed_element_sequence_assignment(
@@ -431,12 +497,14 @@ fn collect_source_fixed_template_assignment(
         assignment_values,
     )?
     else {
+        assignment_values.apply_static_statement(context.program, statement);
         return Ok(());
     };
     let Some(value) = evaluate_source_fixed_assignment_value_expression(right, assignment_values)
         .as_ref()
         .and_then(source_fixed_assignment_integer)
     else {
+        assignment_values.apply_static_statement(context.program, statement);
         return Ok(());
     };
     let value = canonical_fixed_value(
@@ -548,6 +616,103 @@ fn collect_source_fixed_table_fill_statement(
         }
     }
     Ok(true)
+}
+
+fn collect_source_fixed_table_copy_statement(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    statement: &FunctionStatement,
+    assignment_values: &SourceFixedAssignmentValues<'_>,
+    copy_operations: &mut Vec<SourceFixedCopyOperation>,
+) -> Result<bool, SourceFixedColumnsWriteError> {
+    let Some((name, arguments)) = source_fixed_call_statement(statement) else {
+        return Ok(false);
+    };
+    if name != "Tables.copy" {
+        return Ok(false);
+    }
+    if arguments.len() != 5 || arguments.iter().any(|argument| argument.name.is_some()) {
+        return Err(SourceFixedColumnsWriteError::UnsupportedExpression {
+            source_name: context.module.source_name.clone(),
+            source_span: SourceSpan {
+                start: statement.start,
+                end: statement.end,
+            },
+            expression: source_fixed_statement_text(context, statement),
+        });
+    }
+
+    let Some(source_column) = source_fixed_physical_assignment_column_name(
+        &arguments[0].value,
+        context.expected_columns,
+        context.logical_dimensions,
+        assignment_values,
+    ) else {
+        return Ok(false);
+    };
+    let source_offset =
+        source_fixed_static_usize_argument(context, &arguments[1].value, assignment_values)?;
+    let Some(target_column) = source_fixed_physical_assignment_column_name(
+        &arguments[2].value,
+        context.expected_columns,
+        context.logical_dimensions,
+        assignment_values,
+    ) else {
+        return Ok(false);
+    };
+    let target_offset =
+        source_fixed_static_usize_argument(context, &arguments[3].value, assignment_values)?;
+    let count =
+        source_fixed_static_usize_argument(context, &arguments[4].value, assignment_values)?;
+    source_fixed_checked_range_end(
+        context,
+        &arguments[3].value,
+        target_offset,
+        count,
+        context.row_count,
+    )?;
+    copy_operations.push(SourceFixedCopyOperation {
+        source_name: context.module.source_name.clone(),
+        source_span: SourceSpan {
+            start: statement.start,
+            end: statement.end,
+        },
+        source_column,
+        source_offset,
+        target_column,
+        target_offset,
+        count,
+    });
+    Ok(true)
+}
+
+fn source_fixed_checked_range_end(
+    context: &SourceFixedTemplateAssignmentContext<'_>,
+    expression: &Expression,
+    offset: usize,
+    count: usize,
+    row_count: usize,
+) -> Result<usize, SourceFixedColumnsWriteError> {
+    let end = offset.checked_add(count).ok_or_else(|| {
+        SourceFixedColumnsWriteError::IntegerOutOfRange {
+            source_name: context.module.source_name.clone(),
+            source_span: SourceSpan {
+                start: expression.start,
+                end: expression.end,
+            },
+            expression: count.to_string(),
+        }
+    })?;
+    if end > row_count {
+        return Err(SourceFixedColumnsWriteError::IntegerOutOfRange {
+            source_name: context.module.source_name.clone(),
+            source_span: SourceSpan {
+                start: expression.start,
+                end: expression.end,
+            },
+            expression: end.to_string(),
+        });
+    }
+    Ok(end)
 }
 
 fn source_fixed_call_statement(statement: &FunctionStatement) -> Option<(&str, &[CallArgument])> {

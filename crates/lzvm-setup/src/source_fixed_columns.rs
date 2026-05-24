@@ -19,7 +19,9 @@ use lzvm_pil::{
 
 use crate::{
     publish_staging_bytes,
-    source_fixed_assignments::source_fixed_values_from_template_assignments,
+    source_fixed_assignments::{
+        source_fixed_values_from_template_assignments, SourceFixedCopyOperation,
+    },
     source_fixed_expression::SourceFixedConstantValues,
     source_fixed_expression::{
         source_fixed_column_expression_values, SourceFixedExpressionValuesRequest,
@@ -670,7 +672,7 @@ fn fixed_columns_from_source_program(
         }
     }
 
-    let mut column_values = source_fixed_values_from_template_assignments(
+    let template_assignments = source_fixed_values_from_template_assignments(
         program,
         &expected_columns,
         &logical_dimensions,
@@ -678,9 +680,17 @@ fn fixed_columns_from_source_program(
         &constant_values,
         unit_instance,
     )?;
+    let mut column_values = template_assignments.values;
     let mut resolved_values = vec![None::<Vec<u64>>; declarations.len()];
     loop {
         let mut progressed = false;
+        if apply_source_fixed_copy_operations(
+            &template_assignments.copy_operations,
+            row_count_usize,
+            &mut column_values,
+        )? {
+            progressed = true;
+        }
         for (index, declaration) in declarations.iter().enumerate() {
             if resolved_values[index].is_some() {
                 continue;
@@ -718,8 +728,10 @@ fn fixed_columns_from_source_program(
 
     let mut columns = Vec::with_capacity(declarations.len());
     for (index, declaration) in declarations.into_iter().enumerate() {
-        let values = resolved_values[index]
-            .take()
+        let values = column_values
+            .get(&declaration.item.name)
+            .cloned()
+            .or_else(|| resolved_values[index].take())
             .expect("resolved fixed column values should exist");
         columns.push(FixedColumn {
             name: declaration.item.name,
@@ -734,6 +746,76 @@ fn fixed_columns_from_source_program(
         row_count,
         columns,
     })
+}
+
+fn apply_source_fixed_copy_operations(
+    operations: &[SourceFixedCopyOperation],
+    row_count: usize,
+    column_values: &mut BTreeMap<String, Vec<u64>>,
+) -> Result<bool, SourceFixedColumnsWriteError> {
+    let mut original_targets = BTreeMap::<String, Option<Vec<u64>>>::new();
+    for operation in operations {
+        let Some(source_values) = column_values.get(&operation.source_column) else {
+            continue;
+        };
+        let source_end = source_fixed_copy_range_end(
+            operation,
+            operation.source_offset,
+            operation.count,
+            source_values.len(),
+        )?;
+        let target_end = source_fixed_copy_range_end(
+            operation,
+            operation.target_offset,
+            operation.count,
+            row_count,
+        )?;
+        let copied_values = source_values[operation.source_offset..source_end].to_vec();
+        original_targets
+            .entry(operation.target_column.clone())
+            .or_insert_with(|| column_values.get(&operation.target_column).cloned());
+        let target_values = column_values
+            .entry(operation.target_column.clone())
+            .or_insert_with(|| vec![0; row_count]);
+        if target_values.len() != row_count {
+            return Err(SourceFixedColumnsWriteError::UnsupportedInitializer {
+                source_name: operation.source_name.clone(),
+                column: operation.target_column.clone(),
+            });
+        }
+        for (target_value, copied_value) in target_values[operation.target_offset..target_end]
+            .iter_mut()
+            .zip(copied_values)
+        {
+            *target_value = copied_value;
+        }
+    }
+    Ok(original_targets
+        .into_iter()
+        .any(|(name, original)| column_values.get(&name).cloned() != original))
+}
+
+fn source_fixed_copy_range_end(
+    operation: &SourceFixedCopyOperation,
+    offset: usize,
+    count: usize,
+    row_count: usize,
+) -> Result<usize, SourceFixedColumnsWriteError> {
+    let end = offset.checked_add(count).ok_or_else(|| {
+        SourceFixedColumnsWriteError::IntegerOutOfRange {
+            source_name: operation.source_name.clone(),
+            source_span: operation.source_span,
+            expression: count.to_string(),
+        }
+    })?;
+    if end > row_count {
+        return Err(SourceFixedColumnsWriteError::IntegerOutOfRange {
+            source_name: operation.source_name.clone(),
+            source_span: operation.source_span,
+            expression: end.to_string(),
+        });
+    }
+    Ok(end)
 }
 
 fn source_fixed_declaration_constant_values(
