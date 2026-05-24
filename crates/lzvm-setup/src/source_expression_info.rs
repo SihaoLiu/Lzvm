@@ -309,7 +309,7 @@ fn lower_source_template_statement(
         match call.scope {
             SourceFinalScope::Proof => return Ok(SourceTemplateStatementFlow::Fallthrough),
             SourceFinalScope::Air => return Ok(SourceTemplateStatementFlow::Fallthrough),
-            SourceFinalScope::AirGroup => {}
+            SourceFinalScope::AirGroup => return Ok(SourceTemplateStatementFlow::Fallthrough),
         }
     }
     if statement.kind != FunctionStatementKind::Expression {
@@ -833,6 +833,11 @@ fn lower_source_template_function_call_expression(
         }
     }
     Ok(true)
+}
+
+fn source_noop_call_statement(statement: &FunctionStatement) -> bool {
+    source_call_expression(statement.value_expression.as_ref())
+        .is_some_and(|(name, _)| name == "println")
 }
 
 fn source_function_shared_static_values(
@@ -1526,11 +1531,14 @@ fn lower_source_function_body_statement(
                     None,
                 )
             }
-            SourceFinalScope::AirGroup => Ok(false),
+            SourceFinalScope::AirGroup => Ok(true),
         };
     }
     if statement.kind != FunctionStatementKind::Expression {
         return Ok(false);
+    }
+    if source_noop_call_statement(statement) {
+        return Ok(true);
     }
     if apply_source_static_expression_statement(
         context.program,
