@@ -12050,7 +12050,8 @@ fn verifies_contribution_challenge_from_proof_artifact() {
 fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
     let dir = temp_dir("verify-contribution-bound-inputs");
     let _ = fs::remove_dir_all(&dir);
-    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let block_input = build_eth_block_input(&sample_block_rlp_with_extra_fields())
+        .expect("block input should build");
     write_setup_directory_with_public_values(&dir, &eth_block_public_values_metadata(&block_input));
     let catalog = read_key_directory_catalog(&dir).expect("catalog should parse");
     let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
@@ -12156,6 +12157,11 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
             .data
             .len()
     )));
+    assert!(stdout_text.contains(&format!(
+        "eth_block_rlp_bytes={}\n",
+        block_input.block_rlp.len()
+    )));
+    assert!(stdout_text.contains("eth_extra_header_fields=1\neth_extra_body_fields=1\n"));
     assert!(stdout_text.contains(&format!(
         "contribution_challenge={},{},{}\n",
         expected_challenge.c0.to_u64(),

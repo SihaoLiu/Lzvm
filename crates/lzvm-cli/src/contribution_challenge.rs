@@ -216,8 +216,36 @@ fn write_contribution_binding_summary(
             if let Some(byte_count) = report.eth_block_input_byte_counts.get(index) {
                 let _ = writeln!(stdout, "eth_block_input_bytes={byte_count}");
             }
+            if let Some(block_rlp_bytes) = report.eth_block_input_block_rlp_byte_counts.get(index) {
+                let _ = writeln!(stdout, "eth_block_rlp_bytes={block_rlp_bytes}");
+            }
+            write_eth_extra_field_summary(
+                stdout,
+                report
+                    .eth_block_input_extra_header_field_counts
+                    .get(index)
+                    .copied()
+                    .unwrap_or(0),
+                report
+                    .eth_block_input_extra_body_field_counts
+                    .get(index)
+                    .copied()
+                    .unwrap_or(0),
+            );
         }
     }
+}
+
+fn write_eth_extra_field_summary(
+    stdout: &mut dyn Write,
+    extra_header_field_count: usize,
+    extra_body_field_count: usize,
+) {
+    if extra_header_field_count == 0 && extra_body_field_count == 0 {
+        return;
+    }
+    let _ = writeln!(stdout, "eth_extra_header_fields={extra_header_field_count}");
+    let _ = writeln!(stdout, "eth_extra_body_fields={extra_body_field_count}");
 }
 
 pub(crate) fn write_usage(stderr: &mut dyn Write) -> i32 {

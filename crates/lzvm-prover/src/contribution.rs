@@ -62,6 +62,9 @@ pub struct ContributionChallengeReport {
     pub eth_block_input_count: usize,
     pub eth_block_input_hashes: Vec<[u8; 32]>,
     pub eth_block_input_byte_counts: Vec<usize>,
+    pub eth_block_input_block_rlp_byte_counts: Vec<usize>,
+    pub eth_block_input_extra_header_field_counts: Vec<usize>,
+    pub eth_block_input_extra_body_field_counts: Vec<usize>,
     pub proof_value_count: usize,
     pub contribution_count: usize,
     pub challenge: Ext3,
@@ -718,6 +721,11 @@ pub fn derive_global_challenge_from_files(
         eth_block_input_count: public_report.eth_block_input_count,
         eth_block_input_hashes: public_report.eth_block_input_hashes,
         eth_block_input_byte_counts: public_report.eth_block_input_byte_counts,
+        eth_block_input_block_rlp_byte_counts: public_report.eth_block_input_block_rlp_byte_counts,
+        eth_block_input_extra_header_field_counts: public_report
+            .eth_block_input_extra_header_field_counts,
+        eth_block_input_extra_body_field_counts: public_report
+            .eth_block_input_extra_body_field_counts,
         proof_value_count: packed_proof_values.len(),
         contribution_count: entries.len(),
         challenge,
@@ -748,6 +756,9 @@ pub fn derive_global_challenge_from_contribution_proofs(
     let mut eth_block_input_count = None;
     let mut eth_block_input_hashes = None::<Vec<[u8; 32]>>;
     let mut eth_block_input_byte_counts = None::<Vec<usize>>;
+    let mut eth_block_input_block_rlp_byte_counts = None::<Vec<usize>>;
+    let mut eth_block_input_extra_header_field_counts = None::<Vec<usize>>;
+    let mut eth_block_input_extra_body_field_counts = None::<Vec<usize>>;
     let mut packed_proof_values = None::<Vec<Felt>>;
     let mut bound_segments = None::<Vec<ProofSegment>>;
     let mut entries = Vec::new();
@@ -771,6 +782,20 @@ pub fn derive_global_challenge_from_contribution_proofs(
             eth_block_input_hashes.or(Some(public_report.eth_block_input_hashes.clone()));
         eth_block_input_byte_counts =
             eth_block_input_byte_counts.or(Some(public_report.eth_block_input_byte_counts.clone()));
+        eth_block_input_block_rlp_byte_counts = eth_block_input_block_rlp_byte_counts.or(Some(
+            public_report.eth_block_input_block_rlp_byte_counts.clone(),
+        ));
+        eth_block_input_extra_header_field_counts =
+            eth_block_input_extra_header_field_counts.or(Some(
+                public_report
+                    .eth_block_input_extra_header_field_counts
+                    .clone(),
+            ));
+        eth_block_input_extra_body_field_counts = eth_block_input_extra_body_field_counts.or(Some(
+            public_report
+                .eth_block_input_extra_body_field_counts
+                .clone(),
+        ));
 
         let proof_values =
             load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)?;
@@ -829,6 +854,12 @@ pub fn derive_global_challenge_from_contribution_proofs(
         eth_block_input_count: eth_block_input_count.unwrap_or(0),
         eth_block_input_hashes: eth_block_input_hashes.unwrap_or_default(),
         eth_block_input_byte_counts: eth_block_input_byte_counts.unwrap_or_default(),
+        eth_block_input_block_rlp_byte_counts: eth_block_input_block_rlp_byte_counts
+            .unwrap_or_default(),
+        eth_block_input_extra_header_field_counts: eth_block_input_extra_header_field_counts
+            .unwrap_or_default(),
+        eth_block_input_extra_body_field_counts: eth_block_input_extra_body_field_counts
+            .unwrap_or_default(),
         proof_value_count,
         contribution_count: entries.len(),
         challenge,
