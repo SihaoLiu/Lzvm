@@ -5,10 +5,10 @@ use lzvm_artifacts::expression_info::{ConstraintCode, ExpressionInfo, HintInfo};
 use lzvm_artifacts::global_info::{NamedStageValue, PublicValue};
 use lzvm_artifacts::setup_info::UnitSetupInfo;
 use lzvm_pil::{
-    lex_source, parse_expression_tokens, AirInstanceDeclaration, AirTemplateDeclaration,
-    BinaryOperator, CallArgument, ColumnKind, Expression, ExpressionKind, FixedFileTemplateValue,
-    FunctionDeclaration, FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind,
-    SourceFile, SourceProgram, SourceProgramModule, SourceSpan, Token, TokenKind,
+    lex_source, parse_expression_tokens, AirInstanceDeclaration, BinaryOperator, CallArgument,
+    ColumnKind, Expression, ExpressionKind, FixedFileTemplateValue, FunctionDeclaration,
+    FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind, SourceFile,
+    SourceProgram, SourceProgramModule, SourceSpan, Token, TokenKind,
 };
 
 use crate::{
@@ -34,7 +34,8 @@ use crate::{
         apply_source_static_array_assignment_statement, apply_source_static_declaration,
         apply_source_static_expression_statement,
     },
-    source_final_proof_calls::source_final_proof_statement_call,
+    source_expression_template_values::source_expression_template_values,
+    source_final_calls::{source_final_statement_call, SourceFinalScope},
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scalar_slots::{SourceChallengeSlotMetadata, SourceScalarSlots},
     source_scope::{
@@ -115,6 +116,7 @@ pub(crate) fn source_expression_info(
                 active_templates: &active_templates,
                 constant_values: &constant_values,
                 template_values: &template_values,
+                final_air_calls_enabled: unit_instance.is_some(),
             };
             let mut alias_scope = SourceExpressionAliasScope::default();
             let mut statement_values = source_expression_template_values(
@@ -217,116 +219,6 @@ fn source_expression_unit_instance<'a>(
         .find_map(|(unit, instance)| {
             (unit.group_name == group_name && unit.unit_name == unit_name).then_some(instance)
         })
-}
-
-fn source_expression_template_values(
-    program: &SourceProgram,
-    module: &SourceProgramModule,
-    template: &AirTemplateDeclaration,
-    instance: Option<&AirInstanceDeclaration>,
-    base_values: &BTreeMap<String, FixedFileTemplateValue>,
-    template_values: &SourceTemplateConstantValueCache,
-) -> BTreeMap<String, FixedFileTemplateValue> {
-    let cached = source_declaration_constant_values_from_cache(
-        module,
-        template.body.start,
-        template.body.end,
-        base_values,
-        template_values,
-    );
-    let Some(instance) = instance else {
-        return cached.clone();
-    };
-    let mut values = base_values.clone();
-    let mut provided = BTreeSet::new();
-    if let Some(arguments) = instance.args_expressions.as_ref() {
-        apply_source_expression_instance_arguments(
-            program,
-            template,
-            arguments,
-            &mut values,
-            &mut provided,
-        );
-    }
-    bind_source_expression_template_defaults(program, template, &mut values, &provided);
-
-    let parameter_names = template
-        .parameters
-        .iter()
-        .map(|parameter| parameter.name.as_str())
-        .collect::<BTreeSet<_>>();
-    for (name, value) in cached {
-        if !parameter_names.contains(name.as_str()) {
-            values.insert(name.clone(), value.clone());
-        }
-    }
-
-    values
-}
-
-fn bind_source_expression_template_defaults(
-    program: &SourceProgram,
-    template: &AirTemplateDeclaration,
-    values: &mut BTreeMap<String, FixedFileTemplateValue>,
-    provided: &BTreeSet<String>,
-) {
-    for parameter in &template.parameters {
-        if provided.contains(&parameter.name) {
-            continue;
-        }
-        let Some(value) = parameter
-            .default_expression
-            .as_ref()
-            .and_then(|expression| evaluate_source_static_expression(program, expression, values))
-        else {
-            values.remove(&parameter.name);
-            continue;
-        };
-        values.insert(parameter.name.clone(), value);
-    }
-}
-
-fn apply_source_expression_instance_arguments(
-    program: &SourceProgram,
-    template: &AirTemplateDeclaration,
-    arguments: &[CallArgument],
-    values: &mut BTreeMap<String, FixedFileTemplateValue>,
-    provided: &mut BTreeSet<String>,
-) {
-    let mut positional_index = 0;
-    for argument in arguments {
-        let Some(value) = evaluate_source_static_expression(program, &argument.value, values)
-        else {
-            continue;
-        };
-        let name = if let Some(name) = argument.name.as_ref() {
-            name
-        } else {
-            while template
-                .parameters
-                .get(positional_index)
-                .is_some_and(|parameter| provided.contains(&parameter.name))
-            {
-                let Some(next) = positional_index.checked_add(1) else {
-                    return;
-                };
-                positional_index = next;
-            }
-            let Some(parameter) = template.parameters.get(positional_index) else {
-                continue;
-            };
-            &parameter.name
-        };
-        if provided.insert(name.clone()) {
-            values.insert(name.clone(), value);
-        }
-        if argument.name.is_none() {
-            let Some(next) = positional_index.checked_add(1) else {
-                return;
-            };
-            positional_index = next;
-        }
-    }
 }
 
 fn lower_source_template_statement(
@@ -437,8 +329,30 @@ fn lower_source_template_statement(
     })? {
         return Ok(());
     }
-    if source_final_proof_statement_call(context.tokens, context.module, statement)?.is_some() {
-        return Ok(());
+    if let Some(call) = source_final_statement_call(context.tokens, context.module, statement)? {
+        match call.scope {
+            SourceFinalScope::Proof => return Ok(()),
+            SourceFinalScope::Air => {
+                if !context.final_air_calls_enabled {
+                    return Ok(());
+                }
+                let mut call_stack = BTreeSet::new();
+                let mut output = SourceTemplateFunctionOutput { hints, constraints };
+                if lower_source_template_function_call_expression(
+                    context,
+                    &call.expression,
+                    values,
+                    alias_scope,
+                    body_cache,
+                    &mut call_stack,
+                    &mut output,
+                    true,
+                )? {
+                    return Ok(());
+                }
+            }
+            SourceFinalScope::AirGroup => {}
+        }
     }
     if statement.kind != FunctionStatementKind::Expression {
         hints.push(lower_unsupported_source_template_statement(
@@ -693,14 +607,38 @@ fn lower_source_template_statement(
 fn lower_source_template_function_call(
     context: &SourceTemplateLoweringContext<'_>,
     statement: &FunctionStatement,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
     alias_scope: &SourceExpressionAliasScope,
     body_cache: &mut SourceControlBodyCache,
     call_stack: &mut BTreeSet<String>,
     output: &mut SourceTemplateFunctionOutput<'_>,
 ) -> Result<bool, SourceKeyDirectoryMetadataError> {
-    let Some((name, arguments)) = source_call_expression(statement.value_expression.as_ref())
-    else {
+    let Some(expression) = statement.value_expression.as_ref() else {
+        return Ok(false);
+    };
+    lower_source_template_function_call_expression(
+        context,
+        expression,
+        values,
+        alias_scope,
+        body_cache,
+        call_stack,
+        output,
+        false,
+    )
+}
+
+fn lower_source_template_function_call_expression(
+    context: &SourceTemplateLoweringContext<'_>,
+    expression: &Expression,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceExpressionAliasScope,
+    body_cache: &mut SourceControlBodyCache,
+    call_stack: &mut BTreeSet<String>,
+    output: &mut SourceTemplateFunctionOutput<'_>,
+    propagate_shared_values: bool,
+) -> Result<bool, SourceKeyDirectoryMetadataError> {
+    let Some((name, arguments)) = source_call_expression(Some(expression)) else {
         return Ok(false);
     };
     let Some(function) = context
@@ -714,6 +652,11 @@ fn lower_source_template_function_call(
     if function.return_type.is_some() {
         return Ok(false);
     }
+    let shared_values = if propagate_shared_values {
+        source_function_shared_static_values(values, function)
+    } else {
+        BTreeSet::new()
+    };
     let Some(mut bindings) = source_function_call_bindings(
         context.program,
         context.module,
@@ -766,7 +709,28 @@ fn lower_source_template_function_call(
 
     output.hints.extend(function_hints);
     output.constraints.extend(function_constraints);
+    for name in shared_values {
+        if let Some(value) = bindings.values.get(&name).cloned() {
+            values.insert(name, value);
+        }
+    }
     Ok(true)
+}
+
+fn source_function_shared_static_values(
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    function: &FunctionDeclaration,
+) -> BTreeSet<String> {
+    let parameters = function
+        .parameters
+        .iter()
+        .map(|parameter| parameter.name.as_str())
+        .collect::<BTreeSet<_>>();
+    values
+        .keys()
+        .filter(|name| !parameters.contains(name.as_str()))
+        .cloned()
+        .collect()
 }
 
 struct SourceTemplateFunctionOutput<'a> {
@@ -1315,15 +1279,27 @@ fn source_static_assertion(
     else {
         return Ok(false);
     };
-    if name != "assert" || !(1..=2).contains(&arguments.len()) || arguments[0].name.is_some() {
+    if name == "assert" && (1..=2).contains(&arguments.len()) && arguments[0].name.is_none() {
+        return match source_static_condition(program, &arguments[0].value, values) {
+            Some(true) => Ok(true),
+            Some(false) => Err(SourceKeyDirectoryMetadataError::StaticAssertionFailed {
+                line: source_statement_line(module, statement),
+            }),
+            None => Ok(false),
+        };
+    }
+    if name != "assert_eq" || arguments.len() != 2 || arguments.iter().any(|arg| arg.name.is_some())
+    {
         return Ok(false);
     }
-    match source_static_condition(program, &arguments[0].value, values) {
-        Some(true) => Ok(true),
-        Some(false) => Err(SourceKeyDirectoryMetadataError::StaticAssertionFailed {
+    let left = evaluate_source_static_expression(program, &arguments[0].value, values);
+    let right = evaluate_source_static_expression(program, &arguments[1].value, values);
+    match (left, right) {
+        (Some(left), Some(right)) if left == right => Ok(true),
+        (Some(_), Some(_)) => Err(SourceKeyDirectoryMetadataError::StaticAssertionFailed {
             line: source_statement_line(module, statement),
         }),
-        None => Ok(false),
+        _ => Ok(false),
     }
 }
 
@@ -1498,8 +1474,26 @@ fn lower_source_function_body_statement(
     })? {
         return Ok(true);
     }
-    if source_final_proof_statement_call(context.tokens, context.module, statement)?.is_some() {
-        return Ok(true);
+    if let Some(call) = source_final_statement_call(context.tokens, context.module, statement)? {
+        return match call.scope {
+            SourceFinalScope::Proof => Ok(true),
+            SourceFinalScope::Air => {
+                if !context.final_air_calls_enabled {
+                    return Ok(true);
+                }
+                lower_source_template_function_call_expression(
+                    context,
+                    &call.expression,
+                    values,
+                    alias_scope,
+                    body_cache,
+                    call_stack,
+                    output,
+                    true,
+                )
+            }
+            SourceFinalScope::AirGroup => Ok(false),
+        };
     }
     if statement.kind != FunctionStatementKind::Expression {
         return Ok(false);

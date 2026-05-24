@@ -222,6 +222,267 @@ fn generate_key_rejects_failed_source_static_assert_calls() {
 }
 
 #[test]
+fn generate_key_runs_final_air_function_static_assertions() {
+    let dir = temp_dir("final-air-static-assert");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "function finish(const int expected) {\n\
+             assert(expected == 7);\n\
+         }\n\
+         airtemplate UnitA() {\n\
+             on final air finish(7);\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert!(expressions.hints.is_empty());
+    assert!(expressions.constraints.is_empty());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_rejects_failed_final_air_function_static_assertions() {
+    let dir = temp_dir("failed-final-air-static-assert");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "function finish(const int expected) {\n\
+             assert(expected == 7);\n\
+         }\n\
+         airtemplate UnitA() {\n\
+             on final air finish(3);\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "setup key generation failed: source static assertion failed: assert(expected == 7)\n"
+    );
+}
+
+#[test]
+fn generate_key_runs_final_air_function_assert_eq_static_updates() {
+    let dir = temp_dir("final-air-assert-eq-static-updates");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "int counter = 0;\n\
+         int delta = 2;\n\
+         function finish() {\n\
+             assert_eq(counter, 0);\n\
+             counter += delta;\n\
+             assert_eq(counter, 2);\n\
+         }\n\
+         airtemplate UnitA() {\n\
+             on final air finish();\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_rejects_failed_final_air_function_assert_eq() {
+    let dir = temp_dir("failed-final-air-assert-eq");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "int counter = 1;\n\
+         function finish() {\n\
+             assert_eq(counter, 0);\n\
+         }\n\
+         airtemplate UnitA() {\n\
+             on final air finish();\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "setup key generation failed: source static assertion failed: assert_eq(counter, 0)\n"
+    );
+}
+
+#[test]
+fn generate_key_runs_final_air_functions_with_shared_static_updates() {
+    let dir = temp_dir("final-air-shared-static-updates");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "int counter = 0;\n\
+         function first() {\n\
+             assert_eq(counter, 0);\n\
+             counter += 1;\n\
+         }\n\
+         function second() {\n\
+             assert_eq(counter, 1);\n\
+             counter += 1;\n\
+         }\n\
+         airtemplate UnitA() {\n\
+             on final air first();\n\
+             on final air second();\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_runs_final_air_function_with_airgroup_static_assignment() {
+    let dir = temp_dir("final-air-airgroup-static-assignment");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "int counter = 0;\n\
+         function check() {\n\
+             assert_eq(counter, 2);\n\
+         }\n\
+         airtemplate UnitA() {\n\
+             on final air check();\n\
+         }\n\
+         airgroup GroupA {\n\
+             counter = 2;\n\
+             UnitA();\n\
+         }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_lowers_source_function_calls_with_static_if_bodies() {
     let dir = temp_dir("source-function-static-if");
     let _ = fs::remove_dir_all(&dir);

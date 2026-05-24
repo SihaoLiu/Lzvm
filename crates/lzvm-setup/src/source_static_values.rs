@@ -15,6 +15,7 @@ use crate::{
         static_switch_label_colon, update_static_delimiter_stack, StaticTemplateFlow,
         StaticTemplateStatementResult,
     },
+    source_static_variable_values::insert_source_scalar_variable_values,
 };
 
 const STATIC_TEMPLATE_LOOP_LIMIT: usize = 10_000;
@@ -87,6 +88,8 @@ pub(crate) fn source_scalar_constant_values(
             break;
         }
     }
+
+    insert_source_scalar_variable_values(program, &mut values);
 
     let mut resolved_arrays = vec![false; declarations.len()];
     loop {
@@ -633,7 +636,7 @@ pub(crate) fn static_value_integer(value: &FixedFileTemplateValue) -> Option<i12
     }
 }
 
-fn execute_static_template_range(
+pub(crate) fn execute_static_template_range(
     program: &SourceProgram,
     module: &SourceProgramModule,
     start: usize,

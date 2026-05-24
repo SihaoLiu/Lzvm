@@ -15,4 +15,5 @@ pub(crate) struct SourceTemplateLoweringContext<'a> {
     pub(crate) active_templates: &'a BTreeSet<String>,
     pub(crate) constant_values: &'a BTreeMap<String, FixedFileTemplateValue>,
     pub(crate) template_values: &'a SourceTemplateConstantValueCache,
+    pub(crate) final_air_calls_enabled: bool,
 }

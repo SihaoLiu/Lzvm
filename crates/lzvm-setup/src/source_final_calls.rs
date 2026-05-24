@@ -5,16 +5,24 @@ use lzvm_pil::{
 
 use crate::source_key_directory::SourceKeyDirectoryMetadataError;
 
-pub(crate) struct SourceFinalProofCall {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SourceFinalScope {
+    Air,
+    AirGroup,
+    Proof,
+}
+
+pub(crate) struct SourceFinalCall {
+    pub(crate) scope: SourceFinalScope,
     pub(crate) expression: Expression,
     pub(crate) next_index: usize,
 }
 
-pub(crate) fn source_final_proof_call_at(
+pub(crate) fn source_final_call_at(
     tokens: &[Token],
     index: usize,
     source: &SourceFile,
-) -> Result<Option<SourceFinalProofCall>, SourceKeyDirectoryMetadataError> {
+) -> Result<Option<SourceFinalCall>, SourceKeyDirectoryMetadataError> {
     if !matches!(
         (tokens.get(index), tokens.get(index + 1)),
         (Some(on), Some(final_token))
@@ -33,12 +41,9 @@ pub(crate) fn source_final_proof_call_at(
         };
         cursor = next;
     }
-    if !tokens
-        .get(cursor)
-        .is_some_and(|token| token.kind == TokenKind::Proof)
-    {
+    let Some(scope) = source_final_scope(tokens.get(cursor).map(|token| token.kind)) else {
         return Ok(None);
-    }
+    };
 
     let call_start = cursor + 1;
     let Some(semicolon_index) = skip_final_call_statement(tokens, call_start) else {
@@ -49,24 +54,25 @@ pub(crate) fn source_final_proof_call_at(
     if next_index != semicolon_index || !matches!(expression.kind, ExpressionKind::Call { .. }) {
         return Ok(None);
     }
-    Ok(Some(SourceFinalProofCall {
+    Ok(Some(SourceFinalCall {
+        scope,
         expression,
         next_index: semicolon_index + 1,
     }))
 }
 
-pub(crate) fn source_final_proof_statement_call(
+pub(crate) fn source_final_statement_call(
     tokens: &[Token],
     module: &SourceProgramModule,
     statement: &FunctionStatement,
-) -> Result<Option<Expression>, SourceKeyDirectoryMetadataError> {
+) -> Result<Option<SourceFinalCall>, SourceKeyDirectoryMetadataError> {
     let Some(index) = tokens
         .iter()
         .position(|token| token.start == statement.start)
     else {
         return Ok(None);
     };
-    let Some(call) = source_final_proof_call_at(tokens, index, &module.source)? else {
+    let Some(call) = source_final_call_at(tokens, index, &module.source)? else {
         return Ok(None);
     };
     if tokens
@@ -75,7 +81,16 @@ pub(crate) fn source_final_proof_statement_call(
     {
         return Ok(None);
     }
-    Ok(Some(call.expression))
+    Ok(Some(call))
+}
+
+fn source_final_scope(kind: Option<TokenKind>) -> Option<SourceFinalScope> {
+    match kind? {
+        TokenKind::Air => Some(SourceFinalScope::Air),
+        TokenKind::AirGroup => Some(SourceFinalScope::AirGroup),
+        TokenKind::Proof => Some(SourceFinalScope::Proof),
+        _ => None,
+    }
 }
 
 fn skip_final_call_statement(tokens: &[Token], index: usize) -> Option<usize> {

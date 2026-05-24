@@ -15,7 +15,7 @@ use crate::{
     source_constraint_lowering::SourceExpressionAliases,
     source_control_body_cache::{SourceControlBodyCache, SourceControlBodyCaches},
     source_expression_aliases::collect_source_template_expression_alias,
-    source_final_proof_calls::source_final_proof_statement_call,
+    source_final_calls::{source_final_statement_call, SourceFinalScope},
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scalar_slots::SourceScalarSlots,
     source_scope::concrete_template_names,
@@ -402,12 +402,13 @@ fn lower_source_global_template_final_proof_statement(
                 apply_source_global_hint_static_delta(&update.name, update.delta, values);
                 return Ok(());
             }
-            if let Some(expression) =
-                source_final_proof_statement_call(context.tokens, context.module, statement)?
+            if let Some(call) =
+                source_final_statement_call(context.tokens, context.module, statement)?
+                    .filter(|call| call.scope == SourceFinalScope::Proof)
             {
                 lower_source_global_hint_function_call_expression(
                     context,
-                    &expression,
+                    &call.expression,
                     values,
                     alias_scope,
                 )?;
@@ -507,12 +508,13 @@ fn lower_source_global_hint_statement(
             Ok(())
         }
         FunctionStatementKind::Expression => {
-            if let Some(expression) =
-                source_final_proof_statement_call(context.tokens, context.module, statement)?
+            if let Some(call) =
+                source_final_statement_call(context.tokens, context.module, statement)?
+                    .filter(|call| call.scope == SourceFinalScope::Proof)
             {
                 lower_source_global_hint_function_call_expression(
                     context,
-                    &expression,
+                    &call.expression,
                     values,
                     alias_scope,
                 )?;
