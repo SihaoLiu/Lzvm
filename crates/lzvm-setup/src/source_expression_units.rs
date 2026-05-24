@@ -53,11 +53,11 @@ pub(crate) fn source_fixed_assignment_column_names(
         .collect()
 }
 
-pub(crate) fn source_expression_unit_instance<'a>(
+pub(crate) fn source_expression_unit_instances<'a>(
     program: &'a SourceProgram,
-    unit_name: Option<(&str, &str)>,
-) -> Option<&'a AirInstanceDeclaration> {
-    let (group_name, unit_name) = unit_name?;
+    group_name: Option<&str>,
+    unit_name: Option<&str>,
+) -> Option<Vec<&'a AirInstanceDeclaration>> {
     let units = program
         .air_units()
         .into_iter()
@@ -69,10 +69,34 @@ pub(crate) fn source_expression_unit_instance<'a>(
         .flat_map(|module| module.air_instances.iter())
         .filter(|instance| !instance.virtual_instance)
         .collect::<Vec<_>>();
-    units
-        .into_iter()
-        .zip(instances)
-        .find_map(|(unit, instance)| {
-            (unit.group_name == group_name && unit.unit_name == unit_name).then_some(instance)
-        })
+    Some(
+        units
+            .into_iter()
+            .zip(instances)
+            .filter_map(|(unit, instance)| {
+                if group_name.is_some_and(|group_name| unit.group_name != group_name) {
+                    return None;
+                }
+                if unit_name.is_some_and(|unit_name| unit.unit_name != unit_name) {
+                    return None;
+                }
+                Some(instance)
+            })
+            .collect(),
+    )
+}
+
+pub(crate) fn source_expression_template_instances<'a>(
+    instances: Option<&[&'a AirInstanceDeclaration]>,
+    template_name: &str,
+) -> Vec<Option<&'a AirInstanceDeclaration>> {
+    let Some(instances) = instances else {
+        return vec![None];
+    };
+    instances
+        .iter()
+        .copied()
+        .filter(|instance| instance.template == template_name)
+        .map(Some)
+        .collect()
 }

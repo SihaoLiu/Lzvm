@@ -30,6 +30,7 @@ pub(crate) fn source_expression_template_values(
         return cached.clone();
     };
     let mut values = base_values.clone();
+    apply_source_expression_unit_ids(program, instance, &mut values);
     apply_source_expression_airgroup_static_values(program, module, instance, &mut values);
     let mut provided = BTreeSet::new();
     if let Some(arguments) = instance.args_expressions.as_ref() {
@@ -50,6 +51,44 @@ pub(crate) fn source_expression_template_values(
         template.body.end,
         &values,
     )
+}
+
+fn apply_source_expression_unit_ids(
+    program: &SourceProgram,
+    instance: &AirInstanceDeclaration,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) {
+    let units = program
+        .air_units()
+        .into_iter()
+        .filter(|unit| !unit.virtual_instance)
+        .collect::<Vec<_>>();
+    let instances = program
+        .modules
+        .iter()
+        .flat_map(|module| module.air_instances.iter())
+        .filter(|instance| !instance.virtual_instance)
+        .collect::<Vec<_>>();
+    let Some(unit) = units
+        .into_iter()
+        .zip(instances)
+        .find_map(|(unit, candidate)| {
+            (candidate.source_name == instance.source_name
+                && candidate.start == instance.start
+                && candidate.end == instance.end)
+                .then_some(unit)
+        })
+    else {
+        return;
+    };
+    values.insert(
+        "AIRGROUP_ID".to_owned(),
+        FixedFileTemplateValue::Integer(unit.group_id),
+    );
+    values.insert(
+        "AIR_ID".to_owned(),
+        FixedFileTemplateValue::Integer(unit.unit_id),
+    );
 }
 
 fn apply_source_expression_airgroup_static_values(

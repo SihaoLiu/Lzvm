@@ -3312,6 +3312,46 @@ fn generate_key_allows_top_level_source_assert_eq_calls() {
 }
 
 #[test]
+fn generate_key_uses_concrete_unit_ids_for_template_assert_eq_calls() {
+    let dir = temp_dir("template-unit-id-assert-eq");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "assert_eq(AIRGROUP_ID, -1);\n\
+         assert_eq(AIR_ID, -1);\n\
+         airtemplate UnitA(int agid = 0, int aid = 0) {\n\
+             assert_eq(AIRGROUP_ID, agid);\n\
+             assert_eq(AIR_ID, aid);\n\
+         }\n\
+         airgroup GroupA { UnitA(agid: 0, aid: 0); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+    assert!(dir.join("pilout.globalInfo.bin").exists());
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn generate_key_rejects_top_level_expression_statements() {
     let dir = temp_dir("top-level-expression");
     let _ = fs::remove_dir_all(&dir);

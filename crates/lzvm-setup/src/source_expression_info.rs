@@ -36,7 +36,8 @@ use crate::{
     },
     source_expression_template_values::source_expression_template_values,
     source_expression_units::{
-        source_expression_unit_instance, source_fixed_assignment_column_names,
+        source_expression_template_instances, source_expression_unit_instances,
+        source_fixed_assignment_column_names,
     },
     source_final_calls::{source_final_statement_call, SourceFinalScope},
     source_key_directory::SourceKeyDirectoryMetadataError,
@@ -70,7 +71,8 @@ pub(crate) struct SourceExpressionAliasScope {
 pub(crate) fn source_expression_info(
     program: &SourceProgram,
     setup: &UnitSetupInfo,
-    unit_name: Option<(&str, &str)>,
+    group_name: Option<&str>,
+    unit_name: Option<&str>,
     publics: &[PublicValue],
     challenges: &[SourceChallengeSlotMetadata],
     proof_values: &[NamedStageValue],
@@ -81,7 +83,7 @@ pub(crate) fn source_expression_info(
     let active_templates = concrete_template_names(program);
     let constant_values = source_scalar_constant_values(program, 1_u64 << setup.stark.n_bits);
     let template_values = source_template_constant_value_cache(program, &constant_values);
-    let unit_instance = source_expression_unit_instance(program, unit_name);
+    let unit_instances = source_expression_unit_instances(program, group_name, unit_name);
     let fixed_assignment_columns = source_fixed_assignment_column_names(
         program,
         &active_templates,
@@ -102,57 +104,61 @@ pub(crate) fn source_expression_info(
             if !active_templates.contains(&template.name) {
                 continue;
             }
-            if unit_instance.is_some_and(|instance| template.name != instance.template) {
+            let template_instances =
+                source_expression_template_instances(unit_instances.as_deref(), &template.name);
+            if template_instances.is_empty() {
                 continue;
             }
-            let context = SourceTemplateLoweringContext {
-                program,
-                module,
-                tokens: &tokens,
-                scalar_slots: &scalar_slots,
-                opening_points: &setup.opening_points,
-                fixed_columns: &fixed_assignment_columns,
-                active_templates: &active_templates,
-                constant_values: &constant_values,
-                template_values: &template_values,
-                final_air_calls_enabled: unit_instance.is_some(),
-            };
-            let mut alias_scope = SourceExpressionAliasScope::default();
-            let mut statement_values = source_expression_template_values(
-                context.program,
-                context.module,
-                template,
-                unit_instance,
-                context.constant_values,
-                context.template_values,
-            );
-            for statement in &template.statements {
-                lower_source_template_statement(
+            for unit_instance in template_instances {
+                let context = SourceTemplateLoweringContext {
+                    program,
+                    module,
+                    tokens: &tokens,
+                    scalar_slots: &scalar_slots,
+                    opening_points: &setup.opening_points,
+                    fixed_columns: &fixed_assignment_columns,
+                    active_templates: &active_templates,
+                    constant_values: &constant_values,
+                    template_values: &template_values,
+                    final_air_calls_enabled: unit_instance.is_some(),
+                };
+                let mut alias_scope = SourceExpressionAliasScope::default();
+                let mut statement_values = source_expression_template_values(
+                    context.program,
+                    context.module,
+                    template,
+                    unit_instance,
+                    context.constant_values,
+                    context.template_values,
+                );
+                for statement in &template.statements {
+                    lower_source_template_statement(
+                        &context,
+                        statement,
+                        &mut statement_values,
+                        &alias_scope,
+                        body_cache,
+                        &mut hints,
+                        &mut constraints,
+                    )?;
+                    collect_source_template_expression_aliases(
+                        &context,
+                        statement,
+                        &mut statement_values,
+                        body_cache,
+                        &mut alias_scope,
+                    );
+                }
+                lower_source_template_final_air_calls(
                     &context,
-                    statement,
+                    &template.statements,
                     &mut statement_values,
                     &alias_scope,
                     body_cache,
                     &mut hints,
                     &mut constraints,
                 )?;
-                collect_source_template_expression_aliases(
-                    &context,
-                    statement,
-                    &mut statement_values,
-                    body_cache,
-                    &mut alias_scope,
-                );
             }
-            lower_source_template_final_air_calls(
-                &context,
-                &template.statements,
-                &mut statement_values,
-                &alias_scope,
-                body_cache,
-                &mut hints,
-                &mut constraints,
-            )?;
         }
     }
     Ok(ExpressionInfo {
