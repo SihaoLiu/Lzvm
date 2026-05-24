@@ -1468,7 +1468,7 @@ fn lower_global_base_residual_operand(
         ExpressionKind::Binary { op, left, right } => {
             let kind = match op {
                 BinaryOperator::Add => 0,
-                BinaryOperator::Subtract => 1,
+                BinaryOperator::Subtract | BinaryOperator::TripleEqual => 1,
                 BinaryOperator::Multiply => 2,
                 BinaryOperator::Divide | BinaryOperator::Backslash => {
                     return lower_global_base_static_divisor_operand(left, right, context);

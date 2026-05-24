@@ -284,7 +284,7 @@ fn lower_global_mixed_binary_operand(
     }
     let kind = match op {
         BinaryOperator::Add => 0,
-        BinaryOperator::Subtract => 1,
+        BinaryOperator::Subtract | BinaryOperator::TripleEqual => 1,
         BinaryOperator::Multiply => 2,
         _ => return Ok(None),
     };

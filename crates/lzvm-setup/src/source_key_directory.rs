@@ -1340,9 +1340,7 @@ fn source_commitment_section_widths(
         .ok_or_else(|| unsupported_source_message("source commitment stage set is empty"))?;
     let mut section_widths = BTreeMap::new();
     for stage in 1..=max_stage {
-        let Some(width) = widths.get(&stage).copied() else {
-            return unsupported("source commitment stages must be contiguous");
-        };
+        let width = widths.get(&stage).copied().unwrap_or(1);
         section_widths.insert(format!("cm{stage}"), width);
     }
     let n_stages = max_stage
