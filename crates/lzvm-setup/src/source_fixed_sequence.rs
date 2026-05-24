@@ -32,6 +32,12 @@ pub(crate) fn parse_literal_sequence(
     .collect()
 }
 
+pub(crate) fn pad_short_literal_sequence(values: &mut Vec<u64>, row_count: usize) {
+    if values.len() < row_count {
+        values.resize(row_count, 0);
+    }
+}
+
 pub(crate) fn parse_literal_sequence_values(
     program: &SourceProgram,
     source_name: &str,

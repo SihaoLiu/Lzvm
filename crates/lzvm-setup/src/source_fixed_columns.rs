@@ -25,7 +25,8 @@ use crate::{
         source_fixed_column_expression_values, SourceFixedExpressionValuesRequest,
     },
     source_fixed_sequence::{
-        canonical_fixed_value, parse_literal_sequence, parse_literal_sequence_values,
+        canonical_fixed_value, pad_short_literal_sequence, parse_literal_sequence,
+        parse_literal_sequence_values,
     },
     source_key_directory::source_item_name,
     source_metadata_template::{
@@ -785,15 +786,16 @@ fn source_fixed_column_values_from_initializer(
     match initializer.kind {
         ColumnInitializerKind::Sequence => {
             let source = &declaration.source[initializer.span.start..initializer.span.end];
-            parse_literal_sequence(
+            let mut values = parse_literal_sequence(
                 program,
                 &declaration.source_name,
                 initializer.span,
                 source,
                 row_count,
                 &declaration.constant_values,
-            )
-            .map(Some)
+            )?;
+            pad_short_literal_sequence(&mut values, row_count);
+            Ok(Some(values))
         }
         ColumnInitializerKind::Expression => {
             source_fixed_column_expression_values(&SourceFixedExpressionValuesRequest {

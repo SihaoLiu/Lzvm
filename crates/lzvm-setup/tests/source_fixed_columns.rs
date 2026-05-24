@@ -1760,6 +1760,120 @@ fn writes_fixed_column_source_artifacts_from_fill_suffix_sequences() {
 }
 
 #[test]
+fn writes_fixed_column_source_artifacts_from_short_sequences() {
+    let dir = temp_dir("short-sequences");
+    let _ = fs::remove_dir_all(&dir);
+    let setup = fixtures::sample_two_column_setup_info(2, 3, 1, 4);
+    let setup_path = dir.join("unit.starkinfo.bin");
+    let main_path = dir.join("main.pil");
+    let output_path = dir.join("unit.fixed-source.bin");
+    write_file(
+        &setup_path,
+        encode_unit_setup_info(&setup).expect("setup should encode"),
+    );
+    write_file(
+        &main_path,
+        "col fixed main.left = [7, 6];\n\
+         col fixed main.right = [5:2, 4];",
+    );
+
+    write_fixed_columns_from_source_file(&SourceFixedColumnsWriteRequest {
+        working_dir: dir.clone(),
+        include_paths: Vec::new(),
+        include_path_first: false,
+        main_file: main_path,
+        setup_info_path: setup_path,
+        group_name: "group-a".to_owned(),
+        unit_name: "unit-a".to_owned(),
+        output_path: output_path.clone(),
+    })
+    .expect("fixed columns should be written");
+
+    let columns = read_fixed_columns_file(&output_path).expect("fixed columns should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        columns,
+        FixedColumns {
+            group_name: "group-a".to_owned(),
+            unit_name: "unit-a".to_owned(),
+            row_count: 4,
+            columns: vec![
+                FixedColumn {
+                    name: "main.left".to_owned(),
+                    dimensions: vec![1],
+                    values: vec![7, 6, 0, 0],
+                },
+                FixedColumn {
+                    name: "main.right".to_owned(),
+                    dimensions: vec![1],
+                    values: vec![5, 5, 4, 0],
+                },
+            ],
+        }
+    );
+}
+
+#[test]
+fn writes_fixed_column_source_artifacts_from_short_sequence_assignments() {
+    let dir = temp_dir("short-sequence-assignments");
+    let _ = fs::remove_dir_all(&dir);
+    let setup = fixtures::sample_two_column_setup_info(2, 3, 1, 4);
+    let setup_path = dir.join("unit.starkinfo.bin");
+    let main_path = dir.join("main.pil");
+    let output_path = dir.join("unit.fixed-source.bin");
+    write_file(
+        &setup_path,
+        encode_unit_setup_info(&setup).expect("setup should encode"),
+    );
+    write_file(
+        &main_path,
+        "airtemplate UnitA() {\n\
+             col fixed main.left, main.right;\n\
+             main.left = [7, 6];\n\
+             main.right = [5:2, 4];\n\
+         }\n\
+         airgroup GroupA { UnitA(); }",
+    );
+
+    write_fixed_columns_from_source_file(&SourceFixedColumnsWriteRequest {
+        working_dir: dir.clone(),
+        include_paths: Vec::new(),
+        include_path_first: false,
+        main_file: main_path,
+        setup_info_path: setup_path,
+        group_name: "group-a".to_owned(),
+        unit_name: "unit-a".to_owned(),
+        output_path: output_path.clone(),
+    })
+    .expect("fixed columns should be written");
+
+    let columns = read_fixed_columns_file(&output_path).expect("fixed columns should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        columns,
+        FixedColumns {
+            group_name: "group-a".to_owned(),
+            unit_name: "unit-a".to_owned(),
+            row_count: 4,
+            columns: vec![
+                FixedColumn {
+                    name: "main.left".to_owned(),
+                    dimensions: vec![1],
+                    values: vec![7, 6, 0, 0],
+                },
+                FixedColumn {
+                    name: "main.right".to_owned(),
+                    dimensions: vec![1],
+                    values: vec![5, 5, 4, 0],
+                },
+            ],
+        }
+    );
+}
+
+#[test]
 fn writes_fixed_column_source_artifacts_from_static_ranges() {
     let dir = temp_dir("static-ranges");
     let _ = fs::remove_dir_all(&dir);

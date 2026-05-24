@@ -13,7 +13,9 @@ use crate::{
     source_fixed_expression::{
         evaluate_source_fixed_template_value_expression_with_parts, SourceFixedConstantValues,
     },
-    source_fixed_sequence::{canonical_fixed_value, parse_literal_sequence},
+    source_fixed_sequence::{
+        canonical_fixed_value, pad_short_literal_sequence, parse_literal_sequence,
+    },
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scope::concrete_template_names,
     source_static_values::{evaluate_source_static_expression, SourceStaticValueLookup},
@@ -541,7 +543,7 @@ fn collect_source_fixed_element_sequence_assignment_from_span(
         return Ok(false);
     };
     let constant_values = assignment_values.fixed_constant_values();
-    let values = parse_literal_sequence(
+    let mut values = parse_literal_sequence(
         context.program,
         &context.module.source_name,
         right_span,
@@ -549,6 +551,7 @@ fn collect_source_fixed_element_sequence_assignment_from_span(
         context.row_count,
         &constant_values,
     )?;
+    pad_short_literal_sequence(&mut values, context.row_count);
     merge_source_fixed_complete_values(
         &context.module.source_name,
         &column_name,
