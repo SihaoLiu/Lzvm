@@ -969,6 +969,184 @@ fn generate_key_unrolls_static_source_for_loop_row_offsets() {
     assert!(stderr.is_empty());
 }
 
+#[test]
+fn generate_key_collects_static_source_while_row_offsets() {
+    let dir = temp_dir("static-while-row-offset");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col witness values[2];\n\
+             int index = 0;\n\
+             while (index < 2) {\n\
+                 values[index]' === values[index];\n\
+                 ++index;\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [0, 0, 0, 0];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    assert_eq!(setup.opening_points, [0, 1]);
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert_eq!(expressions.constraints.len(), 2);
+    assert!(expressions.hints.is_empty());
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_lowers_static_source_do_while_row_offsets() {
+    let dir = temp_dir("static-do-while-row-offset");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col witness values[2];\n\
+             int index = 0;\n\
+             do {\n\
+                 values[index]' === values[index];\n\
+                 ++index;\n\
+             } while (index < 2);\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [0, 0, 0, 0];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    assert_eq!(setup.opening_points, [0, 1]);
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert_eq!(expressions.constraints.len(), 2);
+    assert!(
+        expressions.hints.is_empty(),
+        "unexpected hints: {:?}",
+        expressions.hints
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_honors_static_while_continue_opening_points() {
+    let dir = temp_dir("static-while-continue-opening-points");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             col witness value;\n\
+             int index = 0;\n\
+             while (index < 2) {\n\
+                 ++index;\n\
+                 if (index == 1) {\n\
+                     continue;\n\
+                 }\n\
+                 value'(index) === value;\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [0, 0, 0, 0];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    assert_eq!(setup.opening_points, [0, 2]);
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert_eq!(expressions.constraints.len(), 1);
+    assert!(expressions.hints.is_empty());
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
 fn constraint_uses_commitment_element(
     constraint: &lzvm_artifacts::expression_info::ConstraintCode,
     element: u32,

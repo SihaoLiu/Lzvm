@@ -22,6 +22,18 @@ pub(crate) struct SourceStaticForLoop {
     pub(crate) body_statements: Arc<[FunctionStatement]>,
     pub(crate) iteration_values: Vec<FixedFileTemplateValue>,
     pub(crate) variable_name: String,
+    pub(crate) final_variable_value: Option<FixedFileTemplateValue>,
+}
+
+impl SourceStaticForLoop {
+    pub(crate) fn apply_final_variable_value(
+        &self,
+        values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    ) {
+        if let Some(value) = &self.final_variable_value {
+            values.insert(self.variable_name.clone(), value.clone());
+        }
+    }
 }
 
 pub(crate) fn source_static_for_loop_with_tokens(
@@ -49,20 +61,18 @@ pub(crate) fn source_static_for_loop_with_lookup(
     let Some(body) = statement.body else {
         return Ok(None);
     };
-    let Some(variable) = source_for_loop_variable(statement) else {
-        return Ok(None);
-    };
-    let Some(initializer) = variable.initializer_expression.as_ref() else {
-        return Ok(None);
-    };
-    let Some(initial_value) = source_static_integer(program, initializer, base_values) else {
-        return Ok(None);
-    };
-
     let Some(header) = statement.header else {
         return Ok(None);
     };
-    let Some((condition, update)) = source_for_loop_header(tokens, header, module, body_cache)?
+    let Some((initializer, condition, update)) = source_for_loop_header(
+        program,
+        tokens,
+        header,
+        statement,
+        module,
+        base_values,
+        body_cache,
+    )?
     else {
         return Ok(None);
     };
@@ -70,8 +80,8 @@ pub(crate) fn source_static_for_loop_with_lookup(
 
     let mut values = SourceForLoopValues::new(
         base_values,
-        &variable.name,
-        FixedFileTemplateValue::Integer(initial_value),
+        &initializer.variable_name,
+        FixedFileTemplateValue::Integer(initializer.initial_value),
     );
     let mut iteration_values = Vec::new();
     for _ in 0..STATIC_FOR_LOOP_LIMIT {
@@ -81,14 +91,19 @@ pub(crate) fn source_static_for_loop_with_lookup(
             return Ok(None);
         };
         if !static_value_truthy(&condition_value) {
+            let final_variable_value = initializer
+                .updates_existing_variable
+                .then(|| values.variable_value().clone());
             return Ok(Some(SourceStaticForLoop {
                 body_statements,
                 iteration_values,
-                variable_name: variable.name.clone(),
+                variable_name: initializer.variable_name,
+                final_variable_value,
             }));
         }
         iteration_values.push(values.variable_value().clone());
-        if !apply_source_for_loop_update(program, &update, &variable.name, &mut values) {
+        if !apply_source_for_loop_update(program, &update, &initializer.variable_name, &mut values)
+        {
             return Ok(None);
         }
     }
@@ -164,17 +179,41 @@ fn source_for_loop_variable(
     Some(declaration)
 }
 
+struct SourceForLoopInitializer {
+    variable_name: String,
+    initial_value: i128,
+    updates_existing_variable: bool,
+}
+
 fn source_for_loop_header(
+    program: &SourceProgram,
     tokens: &[Token],
     header: SourceSpan,
+    statement: &FunctionStatement,
     module: &SourceProgramModule,
+    base_values: &(impl SourceStaticValueLookup + ?Sized),
     body_cache: &mut SourceControlBodyCache,
-) -> Result<Option<(Expression, SourceForLoopUpdate)>, SourceKeyDirectoryMetadataError> {
+) -> Result<
+    Option<(SourceForLoopInitializer, Expression, SourceForLoopUpdate)>,
+    SourceKeyDirectoryMetadataError,
+> {
     let Some((open, close)) = source_header_token_bounds(tokens, header, body_cache) else {
         return Ok(None);
     };
     let semicolons = source_for_header_semicolons(tokens, open + 1, close);
     let [first_semicolon, second_semicolon] = semicolons.as_slice() else {
+        return Ok(None);
+    };
+    let Some(initializer) = source_for_loop_initializer(
+        program,
+        tokens,
+        open + 1,
+        *first_semicolon,
+        statement,
+        module,
+        base_values,
+    )?
+    else {
         return Ok(None);
     };
     let (condition, consumed) = parse_expression_tokens(
@@ -189,7 +228,57 @@ fn source_for_loop_header(
     let Some(update) = source_for_loop_update(tokens, second_semicolon + 1, close, module)? else {
         return Ok(None);
     };
-    Ok(Some((condition, update)))
+    Ok(Some((initializer, condition, update)))
+}
+
+fn source_for_loop_initializer(
+    program: &SourceProgram,
+    tokens: &[Token],
+    start: usize,
+    end: usize,
+    statement: &FunctionStatement,
+    module: &SourceProgramModule,
+    base_values: &(impl SourceStaticValueLookup + ?Sized),
+) -> Result<Option<SourceForLoopInitializer>, SourceKeyDirectoryMetadataError> {
+    if let Some(variable) = source_for_loop_variable(statement) {
+        let Some(initializer) = variable.initializer_expression.as_ref() else {
+            return Ok(None);
+        };
+        let Some(initial_value) = source_static_integer(program, initializer, base_values) else {
+            return Ok(None);
+        };
+        return Ok(Some(SourceForLoopInitializer {
+            variable_name: variable.name.clone(),
+            initial_value,
+            updates_existing_variable: false,
+        }));
+    }
+    let (expression, consumed) = parse_expression_tokens(tokens, start, end, &module.source)?;
+    if consumed != end {
+        return Ok(None);
+    }
+    let ExpressionKind::Binary {
+        op: BinaryOperator::Assign,
+        left,
+        right,
+    } = &expression.kind
+    else {
+        return Ok(None);
+    };
+    let Some(variable_name) = source_expression_name(left) else {
+        return Ok(None);
+    };
+    if base_values.source_static_value(variable_name).is_none() {
+        return Ok(None);
+    }
+    let Some(initial_value) = source_static_integer(program, right, base_values) else {
+        return Ok(None);
+    };
+    Ok(Some(SourceForLoopInitializer {
+        variable_name: variable_name.to_owned(),
+        initial_value,
+        updates_existing_variable: true,
+    }))
 }
 
 fn source_header_token_bounds(

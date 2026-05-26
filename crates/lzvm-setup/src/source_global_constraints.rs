@@ -36,9 +36,11 @@ mod top_level_final;
 mod top_level_for;
 mod top_level_if;
 mod top_level_metadata;
+mod top_level_scan;
 mod top_level_static_assertion;
 
 use directives::{skip_source_directive_statement, source_directive_statement_start};
+use top_level_scan::{skip_balanced_delimiter, skip_top_level_item, top_level_declaration_start};
 pub(crate) fn source_global_program(
     program: &SourceProgram,
     global_info: &GlobalInfo,
@@ -291,27 +293,41 @@ fn lower_top_level_global_constraints_range(
     end: usize,
     constraints: &mut SourceGlobalConstraintBuilder,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
+    let mut alias_scope = context.alias_scope.clone();
     let mut index = start;
     while index < end {
+        let scoped_context = SourceTopLevelGlobalConstraintContext {
+            program: context.program,
+            module: context.module,
+            tokens: context.tokens,
+            slots: context.slots,
+            alias_scope: &alias_scope,
+        };
         let token = &context.tokens[index];
         match token.kind {
             TokenKind::Pragma => {
                 index += 1;
             }
             TokenKind::For => {
-                if let Some(next_index) = top_level_for::lower_top_level_static_for_statement(
-                    context,
+                if let Some(outcome) = top_level_for::lower_top_level_static_for_statement(
+                    &scoped_context,
                     index,
                     constraints,
                 )? {
-                    index = next_index;
+                    index = outcome.next_index;
+                    if let Some((name, value)) = outcome.final_variable_value {
+                        alias_scope.static_values.insert(name, value);
+                    }
                 } else {
                     index = skip_top_level_item(context.tokens, index)?;
                 }
             }
             TokenKind::If => {
-                index =
-                    top_level_if::lower_top_level_static_if_statement(context, index, constraints)?;
+                index = top_level_if::lower_top_level_static_if_statement(
+                    &scoped_context,
+                    index,
+                    constraints,
+                )?;
             }
             TokenKind::AtIdentifier => {
                 index = if context
@@ -345,8 +361,11 @@ fn lower_top_level_global_constraints_range(
                 index = skip_top_level_item(context.tokens, index)?;
             }
             TokenKind::On => {
-                index =
-                    top_level_final::lower_top_level_final_statement(context, index, constraints)?;
+                index = top_level_final::lower_top_level_final_statement(
+                    &scoped_context,
+                    index,
+                    constraints,
+                )?;
             }
             TokenKind::Identifier => {
                 if let Some(next_index) =
@@ -357,7 +376,8 @@ fn lower_top_level_global_constraints_range(
                 {
                     index = next_index;
                 } else {
-                    index = lower_top_level_expression_statement(context, index, constraints)?;
+                    index =
+                        lower_top_level_expression_statement(&scoped_context, index, constraints)?;
                 }
             }
             TokenKind::Public | TokenKind::Private
@@ -374,7 +394,7 @@ fn lower_top_level_global_constraints_range(
                 index = skip_top_level_item(context.tokens, index)?;
             }
             _ => {
-                index = lower_top_level_expression_statement(context, index, constraints)?;
+                index = lower_top_level_expression_statement(&scoped_context, index, constraints)?;
             }
         }
     }
@@ -515,6 +535,7 @@ struct SourceBooleanTarget {
     indices: Vec<u32>,
 }
 
+#[derive(Clone)]
 struct SourceGlobalAliasScope<'a> {
     program: &'a SourceProgram,
     expressions: SourceGlobalExpressionAliases,
@@ -1692,99 +1713,6 @@ fn source_u32_to_u16(
     message: &'static str,
 ) -> Result<u16, SourceKeyDirectoryMetadataError> {
     u16::try_from(value).map_err(|_| unsupported_source_message(message))
-}
-
-fn top_level_declaration_start(kind: TokenKind) -> bool {
-    matches!(
-        kind,
-        TokenKind::AirGroup
-            | TokenKind::AirGroupValue
-            | TokenKind::AirTemplate
-            | TokenKind::AirValue
-            | TokenKind::Challenge
-            | TokenKind::Col
-            | TokenKind::Commit
-            | TokenKind::Const
-            | TokenKind::Constant
-            | TokenKind::Container
-            | TokenKind::Declare
-            | TokenKind::Expr
-            | TokenKind::Fe
-            | TokenKind::For
-            | TokenKind::Function
-            | TokenKind::Include
-            | TokenKind::Int
-            | TokenKind::Package
-            | TokenKind::ProofValue
-            | TokenKind::Public
-            | TokenKind::PublicTable
-            | TokenKind::Require
-            | TokenKind::String
-            | TokenKind::Switch
-            | TokenKind::Use
-    )
-}
-
-fn skip_top_level_item(
-    tokens: &[Token],
-    index: usize,
-) -> Result<usize, SourceKeyDirectoryMetadataError> {
-    let mut stack = Vec::<TokenKind>::new();
-    let mut cursor = index;
-    while let Some(token) = tokens.get(cursor) {
-        if stack.is_empty() && token.kind == TokenKind::Semicolon {
-            return Ok(cursor + 1);
-        }
-        if stack.is_empty() && token.kind == TokenKind::LBrace {
-            return skip_balanced_delimiter(tokens, cursor, TokenKind::RBrace);
-        }
-
-        match token.kind {
-            TokenKind::LParen => stack.push(TokenKind::RParen),
-            TokenKind::LBracket => stack.push(TokenKind::RBracket),
-            TokenKind::LBrace => stack.push(TokenKind::RBrace),
-            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
-                let Some(expected) = stack.pop() else {
-                    return unsupported("source declaration has an unmatched closing delimiter");
-                };
-                if token.kind != expected {
-                    return unsupported("source declaration delimiters are not balanced");
-                }
-            }
-            _ => {}
-        }
-        cursor += 1;
-    }
-    unsupported("source declaration has no terminator")
-}
-
-fn skip_balanced_delimiter(
-    tokens: &[Token],
-    index: usize,
-    close_kind: TokenKind,
-) -> Result<usize, SourceKeyDirectoryMetadataError> {
-    let open_kind = tokens
-        .get(index)
-        .map(|token| token.kind)
-        .ok_or_else(|| unsupported_source_message("source declaration has no body"))?;
-    let mut depth = 0_usize;
-    let mut cursor = index;
-    while let Some(token) = tokens.get(cursor) {
-        if token.kind == open_kind {
-            depth = depth
-                .checked_add(1)
-                .ok_or_else(|| unsupported_source_message("source declaration nesting overflow"))?;
-        } else if token.kind == close_kind {
-            depth = depth
-                .checked_sub(1)
-                .ok_or_else(|| unsupported_source_message("source declaration body underflow"))?;
-            if depth == 0 {
-                return Ok(cursor + 1);
-            }
-        }
-        cursor += 1;
-    }
-    unsupported("source declaration body is not closed")
 }
 
 fn unsupported<T>(message: impl Into<String>) -> Result<T, SourceKeyDirectoryMetadataError> {

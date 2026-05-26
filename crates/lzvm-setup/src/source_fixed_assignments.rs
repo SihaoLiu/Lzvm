@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_pil::{
@@ -21,9 +23,15 @@ use crate::{
     },
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scope::concrete_template_names,
-    source_static_values::{evaluate_source_static_expression, SourceStaticValueLookup},
+    source_static_values::{
+        evaluate_source_static_expression, evaluate_source_static_expression_with_lookup,
+        static_value_truthy, SourceStaticValueLookup,
+    },
+    source_template_do_while::source_static_do_while_loop_with_tokens,
     source_template_for::source_static_for_loop_with_lookup,
     source_template_if::source_static_if_body_statements_with_lookup,
+    source_template_switch::source_static_switch_body_statements,
+    source_template_while::{source_static_while_loop_with_tokens, STATIC_WHILE_LOOP_LIMIT},
 };
 
 mod dynamic;
@@ -229,6 +237,10 @@ impl<'a> SourceFixedAssignmentValues<'a> {
             .collect();
     }
 
+    fn set_scalar_value(&mut self, name: &str, value: FixedFileTemplateValue) {
+        self.overlays.push((name.to_owned(), value));
+    }
+
     fn apply_static_statement(&mut self, program: &SourceProgram, statement: &FunctionStatement) {
         if !self.static_statement_can_update_values(statement) {
             return;
@@ -392,22 +404,19 @@ impl SourceStaticValueLookup for SourceFixedAssignmentValues<'_> {
 fn source_fixed_static_expression_target_name(expression: Option<&Expression>) -> Option<&str> {
     let expression = strip_source_fixed_group_expression(expression?);
     match &expression.kind {
-        ExpressionKind::Unary { op, expr }
-            if matches!(op, UnaryOperator::Increment | UnaryOperator::Decrement) =>
-        {
-            source_fixed_static_lvalue_name(expr)
-        }
-        ExpressionKind::Binary { op, left, .. }
-            if matches!(
-                op,
+        ExpressionKind::Unary {
+            op: UnaryOperator::Increment | UnaryOperator::Decrement,
+            expr,
+        } => source_fixed_static_lvalue_name(expr),
+        ExpressionKind::Binary {
+            op:
                 BinaryOperator::Assign
-                    | BinaryOperator::PlusAssign
-                    | BinaryOperator::MinusAssign
-                    | BinaryOperator::StarAssign
-            ) =>
-        {
-            source_fixed_static_lvalue_name(left)
-        }
+                | BinaryOperator::PlusAssign
+                | BinaryOperator::MinusAssign
+                | BinaryOperator::StarAssign,
+            left,
+            ..
+        } => source_fixed_static_lvalue_name(left),
         _ => None,
     }
 }
@@ -459,6 +468,37 @@ fn collect_source_fixed_template_assignment(
         }
         return Ok(());
     }
+    if statement.kind == FunctionStatementKind::Switch {
+        let scalars = assignment_values.fixed_constant_values().scalars;
+        match source_static_switch_body_statements(
+            context.program,
+            context.module,
+            context.tokens,
+            statement,
+            &scalars,
+            body_cache,
+        ) {
+            Ok(Some(body_statements)) => {
+                for body_statement in body_statements.iter() {
+                    collect_source_fixed_template_assignment(
+                        context,
+                        body_statement,
+                        assignment_values,
+                        body_cache,
+                        partial_values,
+                        zero_default_columns,
+                        copy_operations,
+                        dynamic_operations,
+                    )?;
+                }
+            }
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
+            Err(error) => {
+                return Err(source_fixed_template_assignment_error(statement, error));
+            }
+        }
+        return Ok(());
+    }
     if statement.kind == FunctionStatementKind::For {
         let dynamic_count_before = dynamic_operations.len();
         collect_source_fixed_dynamic_for_assignment(
@@ -476,6 +516,7 @@ fn collect_source_fixed_template_assignment(
         let zero_default_count_before = zero_default_columns.len();
         let copy_count_before = copy_operations.len();
         let dynamic_count_before = dynamic_operations.len();
+        let mut static_loop_state_updated = false;
         match source_static_for_loop_with_lookup(
             context.program,
             context.module,
@@ -505,6 +546,10 @@ fn collect_source_fixed_template_assignment(
                         )?;
                     }
                 }
+                if let Some(final_value) = loop_info.final_variable_value {
+                    assignment_values.set_scalar_value(&loop_info.variable_name, final_value);
+                    static_loop_state_updated = true;
+                }
                 static_loop_applied = true;
             }
             Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
@@ -517,7 +562,7 @@ fn collect_source_fixed_template_assignment(
             || zero_default_count_before != zero_default_columns.len()
             || copy_count_before != copy_operations.len()
             || dynamic_count_before != dynamic_operations.len();
-        if static_loop_applied && static_loop_progressed {
+        if static_loop_applied && (static_loop_progressed || static_loop_state_updated) {
             return Ok(());
         }
         collect_source_fixed_dynamic_for_assignment(
@@ -527,6 +572,94 @@ fn collect_source_fixed_template_assignment(
             body_cache,
             dynamic_operations,
         )?;
+        return Ok(());
+    }
+    if statement.kind == FunctionStatementKind::While {
+        let scalars = assignment_values.fixed_constant_values().scalars;
+        match source_static_while_loop_with_tokens(
+            context.program,
+            context.module,
+            context.tokens,
+            statement,
+            &scalars,
+            body_cache,
+        ) {
+            Ok(Some(loop_info)) => {
+                for _ in 0..STATIC_WHILE_LOOP_LIMIT {
+                    let Some(condition_value) = evaluate_source_static_expression_with_lookup(
+                        context.program,
+                        &loop_info.condition,
+                        assignment_values,
+                    ) else {
+                        return Ok(());
+                    };
+                    if !static_value_truthy(&condition_value) {
+                        return Ok(());
+                    }
+                    for body_statement in loop_info.body_statements.iter() {
+                        collect_source_fixed_template_assignment(
+                            context,
+                            body_statement,
+                            assignment_values,
+                            body_cache,
+                            partial_values,
+                            zero_default_columns,
+                            copy_operations,
+                            dynamic_operations,
+                        )?;
+                    }
+                }
+                return Ok(());
+            }
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
+            Err(error) => {
+                return Err(source_fixed_template_assignment_error(statement, error));
+            }
+        }
+        return Ok(());
+    }
+    if statement.kind == FunctionStatementKind::Do {
+        let scalars = assignment_values.fixed_constant_values().scalars;
+        match source_static_do_while_loop_with_tokens(
+            context.program,
+            context.module,
+            context.tokens,
+            statement,
+            &scalars,
+            body_cache,
+        ) {
+            Ok(Some(loop_info)) => {
+                for _ in 0..STATIC_WHILE_LOOP_LIMIT {
+                    for body_statement in loop_info.body_statements.iter() {
+                        collect_source_fixed_template_assignment(
+                            context,
+                            body_statement,
+                            assignment_values,
+                            body_cache,
+                            partial_values,
+                            zero_default_columns,
+                            copy_operations,
+                            dynamic_operations,
+                        )?;
+                    }
+                    let Some(condition_value) = evaluate_source_static_expression_with_lookup(
+                        context.program,
+                        &loop_info.condition,
+                        assignment_values,
+                    ) else {
+                        return Ok(());
+                    };
+                    if !static_value_truthy(&condition_value) {
+                        return Ok(());
+                    }
+                }
+                return Ok(());
+            }
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
+            Err(error) => {
+                return Err(source_fixed_template_assignment_error(statement, error));
+            }
+        }
         return Ok(());
     }
     if statement.kind == FunctionStatementKind::Declaration {
@@ -567,6 +700,7 @@ fn collect_source_fixed_template_assignment(
     let ExpressionKind::Binary { op, left, right } =
         &strip_source_fixed_group_expression(expression).kind
     else {
+        assignment_values.apply_static_statement(context.program, statement);
         return Ok(());
     };
     if *op != BinaryOperator::Assign {

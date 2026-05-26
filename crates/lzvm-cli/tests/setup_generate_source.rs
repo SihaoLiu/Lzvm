@@ -22,6 +22,23 @@ fn temp_dir(name: &str) -> PathBuf {
     ))
 }
 
+fn target_temp_dir(name: &str) -> PathBuf {
+    std::env::current_dir()
+        .expect("current directory should be available")
+        .join("target")
+        .join(format!(
+            "lzvm-cli-setup-generate-source-{}-{name}",
+            std::process::id()
+        ))
+}
+
+fn relative_to_current_dir(path: &Path) -> PathBuf {
+    let current_dir = std::env::current_dir().expect("current directory should be available");
+    path.strip_prefix(&current_dir)
+        .expect("path should be inside current directory")
+        .to_path_buf()
+}
+
 fn write_file(path: &Path, contents: impl AsRef<[u8]>) {
     fs::create_dir_all(path.parent().expect("path should have a parent"))
         .expect("fixture directory should be created");
@@ -100,6 +117,31 @@ fn generate_key_bootstraps_empty_directory_from_source() {
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
     assert!(catalog.source_program_archive.is_some());
     assert!(catalog.source_fixed_file_manifest.is_some());
+
+    let mut validate_stdout = Vec::new();
+    let mut validate_stderr = Vec::new();
+    let validate_code = run_cli(
+        &[
+            "setup",
+            "validate",
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut validate_stdout,
+        &mut validate_stderr,
+    );
+    assert_eq!(
+        validate_code,
+        0,
+        "stderr={}",
+        String::from_utf8_lossy(&validate_stderr)
+    );
+    let validate_stdout = String::from_utf8(validate_stdout).expect("stdout should be utf-8");
+    assert!(validate_stdout.starts_with("status=ok\n"));
+    assert!(validate_stdout.contains("source_program_archive=present\n"));
+    assert!(validate_stdout.contains("source_fixed_file_manifest=present\n"));
+    assert!(validate_stdout.contains("setup_hash="));
+    assert!(validate_stderr.is_empty());
+
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
@@ -109,6 +151,68 @@ fn generate_key_bootstraps_empty_directory_from_source() {
     assert!(stdout.contains(&format!("units={unit_count}\n")));
     assert!(stdout.contains("setup_hash="));
     assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_deduplicates_requires_loaded_through_relative_include_paths() {
+    let dir = target_temp_dir("relative-include-root");
+    let _ = fs::remove_dir_all(&dir);
+    let setup_dir = dir.join("setup");
+    let source_dir = dir.join("pil");
+    let lib_dir = dir.join("lib");
+    let main_path = source_dir.join("main.pil");
+    write_file(
+        &main_path,
+        "require \"ops.pil\";\n\
+         require \"child.pil\";\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+    write_file(&source_dir.join("ops.pil"), "constant OPS = 1;");
+    write_file(&lib_dir.join("child.pil"), "require \"ops.pil\";");
+
+    let main_arg = relative_to_current_dir(&main_path);
+    let source_arg = relative_to_current_dir(&source_dir);
+    let lib_arg = relative_to_current_dir(&lib_dir);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            main_arg.to_str().expect("main path should be utf-8"),
+            "--include-path",
+            source_arg.to_str().expect("source path should be utf-8"),
+            "--include-path",
+            lib_arg.to_str().expect("library path should be utf-8"),
+            setup_dir.to_str().expect("setup path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let catalog = read_key_directory_catalog(&setup_dir).expect("catalog should load");
+    let archive = catalog
+        .source_program_archive
+        .expect("source archive should be present");
+    let source_names = archive
+        .sources
+        .iter()
+        .map(|source| source.source_name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(source_names, vec!["main.pil", "ops.pil", "child.pil"]);
+    for source_name in source_names {
+        assert!(!Path::new(source_name).is_absolute());
+        assert!(!source_name.contains(dir.to_str().expect("dir should be utf-8")));
+    }
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
 #[test]

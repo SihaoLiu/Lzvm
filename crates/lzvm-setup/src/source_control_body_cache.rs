@@ -1,9 +1,13 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use lzvm_artifacts::expression_info::{CodeOperand, CodeOperation};
 use lzvm_pil::{
-    parse_function_body_statements, FunctionStatement, ParseError, SourceFile, SourceSpan, Token,
+    parse_function_body_statements, Expression, FunctionStatement, ParseError, SourceFile,
+    SourceSpan, Token,
 };
+
+use crate::source_statement_hints::SourceExpressionArrayAlias;
 
 #[derive(Debug, Default)]
 pub(crate) struct SourceControlBodyCaches {
@@ -20,9 +24,127 @@ impl SourceControlBodyCaches {
 pub(crate) struct SourceControlBodyCache {
     statements: BTreeMap<(usize, usize), Arc<[FunctionStatement]>>,
     token_bounds: BTreeMap<(usize, usize), Option<(usize, usize)>>,
+    returned_expression_array_aliases:
+        BTreeMap<SourceReturnedArrayCallKey, Option<SourceExpressionArrayAlias>>,
+    returned_expression_array_elements: BTreeMap<SourceReturnedArrayElementKey, Option<Expression>>,
+    returned_constraint_array_elements:
+        BTreeMap<SourceReturnedConstraintElementKey, Option<SourceConstraintFragment>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(crate) struct SourceReturnedArrayCallKey {
+    source_name: String,
+    start: usize,
+    end: usize,
+    static_values: Vec<(String, String)>,
+}
+
+impl SourceReturnedArrayCallKey {
+    pub(crate) fn new(
+        source_name: String,
+        start: usize,
+        end: usize,
+        static_values: Vec<(String, String)>,
+    ) -> Self {
+        Self {
+            source_name,
+            start,
+            end,
+            static_values,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(crate) struct SourceReturnedArrayElementKey {
+    call: SourceReturnedArrayCallKey,
+    indices: Vec<usize>,
+}
+
+impl SourceReturnedArrayElementKey {
+    pub(crate) fn new(call: SourceReturnedArrayCallKey, indices: Vec<usize>) -> Self {
+        Self { call, indices }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(crate) struct SourceReturnedConstraintElementKey {
+    call: SourceReturnedArrayCallKey,
+    indices: Vec<u32>,
+    row_offset: i64,
+}
+
+impl SourceReturnedConstraintElementKey {
+    pub(crate) fn new(
+        call: SourceReturnedArrayCallKey,
+        indices: Vec<u32>,
+        row_offset: i64,
+    ) -> Self {
+        Self {
+            call,
+            indices,
+            row_offset,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SourceConstraintFragment {
+    pub(crate) operations: Vec<CodeOperation>,
+    pub(crate) result: CodeOperand,
+    pub(crate) temporary_count: u32,
+    pub(crate) offset_min: i64,
+    pub(crate) offset_max: i64,
 }
 
 impl SourceControlBodyCache {
+    pub(crate) fn returned_expression_array_alias(
+        &self,
+        key: &SourceReturnedArrayCallKey,
+    ) -> Option<Option<SourceExpressionArrayAlias>> {
+        self.returned_expression_array_aliases.get(key).cloned()
+    }
+
+    pub(crate) fn insert_returned_expression_array_alias(
+        &mut self,
+        key: SourceReturnedArrayCallKey,
+        alias: Option<SourceExpressionArrayAlias>,
+    ) {
+        self.returned_expression_array_aliases.insert(key, alias);
+    }
+
+    pub(crate) fn returned_expression_array_element(
+        &self,
+        key: &SourceReturnedArrayElementKey,
+    ) -> Option<Option<Expression>> {
+        self.returned_expression_array_elements.get(key).cloned()
+    }
+
+    pub(crate) fn insert_returned_expression_array_element(
+        &mut self,
+        key: SourceReturnedArrayElementKey,
+        expression: Option<Expression>,
+    ) {
+        self.returned_expression_array_elements
+            .insert(key, expression);
+    }
+
+    pub(crate) fn returned_constraint_array_element(
+        &self,
+        key: &SourceReturnedConstraintElementKey,
+    ) -> Option<Option<SourceConstraintFragment>> {
+        self.returned_constraint_array_elements.get(key).cloned()
+    }
+
+    pub(crate) fn insert_returned_constraint_array_element(
+        &mut self,
+        key: SourceReturnedConstraintElementKey,
+        fragment: Option<SourceConstraintFragment>,
+    ) {
+        self.returned_constraint_array_elements
+            .insert(key, fragment);
+    }
+
     pub(crate) fn span_token_bounds(
         &mut self,
         tokens: &[Token],

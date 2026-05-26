@@ -334,6 +334,17 @@ fn sample_public_values(setup_hash: [u8; 32]) -> PublicValues {
     }
 }
 
+fn sample_rom_root_public_values(setup_hash: [u8; 32], rom_root: [u64; 4]) -> PublicValues {
+    PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: vec![PublicValueEntry {
+            name: "rom_root".to_owned(),
+            elements: rom_root.to_vec(),
+        }],
+    }
+}
+
 fn declare_sample_public_value_metadata(catalog: &mut KeyDirectoryCatalog) {
     catalog.layout.global_info.n_publics = 1;
     catalog.layout.global_info.publics_map = vec![PublicValue {
@@ -343,11 +354,30 @@ fn declare_sample_public_value_metadata(catalog: &mut KeyDirectoryCatalog) {
     }];
 }
 
+fn declare_rom_root_public_value_metadata(catalog: &mut KeyDirectoryCatalog) {
+    catalog.layout.global_info.n_publics = 4;
+    catalog.layout.global_info.publics_map = vec![PublicValue {
+        name: "rom_root".to_owned(),
+        stage: 1,
+        lengths: vec![4],
+    }];
+}
+
 fn write_public_inputs(path: &Path, catalog: &KeyDirectoryCatalog) {
     let setup_hash = key_directory_catalog_digest(catalog).expect("catalog digest should compute");
     fs::write(
         path,
         encode_public_values(&sample_public_values(setup_hash))
+            .expect("public inputs should encode"),
+    )
+    .expect("public inputs should be written");
+}
+
+fn write_rom_root_public_inputs(path: &Path, catalog: &KeyDirectoryCatalog, rom_root: [u64; 4]) {
+    let setup_hash = key_directory_catalog_digest(catalog).expect("catalog digest should compute");
+    fs::write(
+        path,
+        encode_public_values(&sample_rom_root_public_values(setup_hash, rom_root))
             .expect("public inputs should encode"),
     )
     .expect("public inputs should be written");
@@ -1217,6 +1247,61 @@ fn rejects_prove_execution_plan_with_program_image_cache_setup_hash_mismatch() {
         format!(
             "program image cache setup hash mismatch at {}",
             cache_path.display()
+        )
+    );
+}
+
+#[test]
+fn rejects_prove_execution_plan_with_mismatched_program_image_cache_public_inputs() {
+    let dir = temp_dir("execution-plan-program-image-cache-public-inputs-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let public_inputs = dir.join("public.bin");
+    let cache_path = dir.join("program-image-cache.bin");
+    fs::write(&witness_library, sample_witness_library())
+        .expect("witness library should be written");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    let guest_digest = read_guest_image_file(&guest_image)
+        .expect("guest image should parse")
+        .digest;
+
+    let mut catalog = sample_catalog(vec![sample_unit_with_pcs_material(
+        KeyUnitKind::Basic,
+        0,
+        64,
+    )]);
+    declare_rom_root_public_value_metadata(&mut catalog);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    write_program_image_cache(&cache_path, guest_digest, setup_hash);
+    write_rom_root_public_inputs(&public_inputs, &catalog, [9, 8, 7, 6]);
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
+        options: ProveRunOptions::default_for_output(dir.join("out")),
+        gpu: GpuRunOptions::default(),
+    };
+    let inputs = ProveExecutionInputArtifacts {
+        witness_library: Some(witness_library),
+        guest_image,
+        public_inputs: Some(public_inputs.clone()),
+    };
+
+    let result = derive_prove_execution_plan_with_program_image_cache(
+        &catalog,
+        request,
+        inputs,
+        Some(cache_path),
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        result
+            .expect_err("program image cache root should match public inputs")
+            .to_string(),
+        format!(
+            "prove execution plan program image cache public inputs mismatch: {}: program image cache tree root does not match public value: rom_root",
+            public_inputs.display()
         )
     );
 }

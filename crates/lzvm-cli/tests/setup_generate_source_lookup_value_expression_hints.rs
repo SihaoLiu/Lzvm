@@ -241,6 +241,153 @@ fn generate_key_lowers_accumulated_source_lookup_value_expression() {
 }
 
 #[test]
+fn generate_key_lowers_static_while_lookup_value_expression_opening_points() {
+    let dir = temp_dir("source-lookup-static-while-opening-points");
+    let _ = fs::remove_dir_all(&dir);
+    assert_generate_key_succeeds(
+        &dir,
+        "airtemplate UnitA() {\n\
+             col witness value;\n\
+             int index = 0;\n\
+             while (index < 1) {\n\
+                 lookup_proves(7, [value']);\n\
+                 ++index;\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    assert_eq!(setup.opening_points, vec![0, 1]);
+    let regular = read_regular_program_file(
+        unit.expression_program()
+            .expect("regular program path should derive"),
+    )
+    .expect("regular program should parse");
+
+    assert_eq!(regular.hints.hints.len(), 1);
+    assert_eq!(regular.hints.hints[0].name, SOURCE_LOOKUP_PROVES_HINT);
+    assert_eq!(regular.hints.hints[0].fields[1].name, "values");
+    assert_eq!(regular.hints.hints[0].fields[1].values.len(), 1);
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[0].operand,
+        HintOperand::Commitment {
+            id: 0,
+            row_offset_index: 1
+        }
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn generate_key_lowers_static_while_postfix_update_lookup_value_expression_opening_points() {
+    let dir = temp_dir("source-lookup-static-while-postfix-opening-points");
+    let _ = fs::remove_dir_all(&dir);
+    assert_generate_key_succeeds(
+        &dir,
+        "airtemplate UnitA() {\n\
+             col witness value;\n\
+             int index = 0;\n\
+             while (index < 1) {\n\
+                 lookup_proves(7, [value']);\n\
+                 index++;\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    assert_eq!(setup.opening_points, vec![0, 1]);
+    let regular = read_regular_program_file(
+        unit.expression_program()
+            .expect("regular program path should derive"),
+    )
+    .expect("regular program should parse");
+
+    assert_eq!(regular.hints.hints.len(), 1);
+    assert_eq!(regular.hints.hints[0].name, SOURCE_LOOKUP_PROVES_HINT);
+    assert_eq!(regular.hints.hints[0].fields[1].name, "values");
+    assert_eq!(regular.hints.hints[0].fields[1].values.len(), 1);
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[0].operand,
+        HintOperand::Commitment {
+            id: 0,
+            row_offset_index: 1
+        }
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn generate_key_lowers_static_switch_lookup_value_expression_opening_points() {
+    let dir = temp_dir("source-lookup-static-switch-opening-points");
+    let _ = fs::remove_dir_all(&dir);
+    assert_generate_key_succeeds(
+        &dir,
+        "airtemplate UnitA() {\n\
+             col witness value;\n\
+             const int port = 1;\n\
+             switch (port) {\n\
+                 case 0:\n\
+                     lookup_proves(7, [value]);\n\
+                     break;\n\
+                 case 1:\n\
+                     lookup_proves(7, [value']);\n\
+                     break;\n\
+                 default:\n\
+                     lookup_proves(7, [value]);\n\
+             }\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let setup = read_unit_setup_info_binary_file(
+        unit.setup_info_binary()
+            .expect("setup metadata path should derive"),
+    )
+    .expect("setup metadata should parse");
+    assert_eq!(setup.opening_points, vec![0, 1]);
+    let regular = read_regular_program_file(
+        unit.expression_program()
+            .expect("regular program path should derive"),
+    )
+    .expect("regular program should parse");
+
+    assert_eq!(regular.hints.hints.len(), 1);
+    assert_eq!(regular.hints.hints[0].name, SOURCE_LOOKUP_PROVES_HINT);
+    assert_eq!(regular.hints.hints[0].fields[1].name, "values");
+    assert_eq!(regular.hints.hints[0].fields[1].values.len(), 1);
+    assert_eq!(
+        regular.hints.hints[0].fields[1].values[0].operand,
+        HintOperand::Commitment {
+            id: 0,
+            row_offset_index: 1
+        }
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn generate_key_lowers_returned_source_lookup_value_expression() {
     let dir = temp_dir("source-lookup-returned-value-expression");
     let _ = fs::remove_dir_all(&dir);

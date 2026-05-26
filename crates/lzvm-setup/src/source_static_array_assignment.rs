@@ -6,8 +6,9 @@ use lzvm_pil::{
 };
 
 use crate::source_static_values::{
-    evaluate_source_static_expression, source_static_array_element,
-    source_static_array_element_key, source_static_array_length, static_value_integer,
+    evaluate_source_static_expression, insert_source_static_array, source_static_array_element,
+    source_static_array_element_key, source_static_array_expression, source_static_array_length,
+    static_value_integer,
 };
 
 pub(crate) fn execute_source_static_array_assignment_statement(
@@ -94,14 +95,26 @@ fn execute_source_static_array_binary_assignment(
     ) {
         return None;
     }
-    let ExpressionKind::Index { target, index } = &left.kind else {
+    let (name, index_expressions) = expression_index_chain(left)?;
+    let indices = index_expressions
+        .iter()
+        .map(|index| {
+            let index = evaluate_source_static_expression(program, index, values)?;
+            usize::try_from(static_value_integer(&index)?).ok()
+        })
+        .collect::<Option<Vec<_>>>()?;
+
+    if op == BinaryOperator::Assign {
+        if let Some(elements) = source_static_array_expression(program, right, values) {
+            return assign_source_static_array_values(values, name, &indices, elements);
+        }
+    }
+
+    let [index] = indices.as_slice() else {
         return None;
     };
-    let name = expression_name(target)?;
     let length = usize::try_from(source_static_array_length(values, name)?).ok()?;
-    let index = evaluate_source_static_expression(program, index, values)?;
-    let index = usize::try_from(static_value_integer(&index)?).ok()?;
-    if index >= length {
+    if *index >= length {
         return None;
     }
 
@@ -109,17 +122,44 @@ fn execute_source_static_array_binary_assignment(
     let value = match op {
         BinaryOperator::Assign => right,
         BinaryOperator::PlusAssign => {
-            source_static_array_integer_update(values, name, index, &right, i128::checked_add)?
+            source_static_array_integer_update(values, name, *index, &right, i128::checked_add)?
         }
         BinaryOperator::MinusAssign => {
-            source_static_array_integer_update(values, name, index, &right, i128::checked_sub)?
+            source_static_array_integer_update(values, name, *index, &right, i128::checked_sub)?
         }
         BinaryOperator::StarAssign => {
-            source_static_array_integer_update(values, name, index, &right, i128::checked_mul)?
+            source_static_array_integer_update(values, name, *index, &right, i128::checked_mul)?
         }
         _ => return None,
     };
-    values.insert(source_static_array_element_key(name, index), value);
+    values.insert(source_static_array_element_key(name, *index), value);
+    Some(())
+}
+
+fn assign_source_static_array_values(
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    name: &str,
+    indices: &[usize],
+    elements: Vec<FixedFileTemplateValue>,
+) -> Option<()> {
+    if indices.is_empty() {
+        return insert_source_static_array(values, name, elements);
+    }
+    let [row_index] = indices else {
+        return None;
+    };
+    let row_name = source_static_indexed_array_name(name, *row_index);
+    insert_source_static_array(values, &row_name, elements.clone())?;
+
+    let row_len = elements.len();
+    let total_len = usize::try_from(source_static_array_length(values, name)?).ok()?;
+    let base = row_index.checked_mul(row_len)?;
+    if base.checked_add(row_len)? > total_len {
+        return None;
+    }
+    for (offset, value) in elements.into_iter().enumerate() {
+        values.insert(source_static_array_element_key(name, base + offset), value);
+    }
     Some(())
 }
 
@@ -184,6 +224,23 @@ fn expression_name(expression: &Expression) -> Option<&str> {
         ExpressionKind::Group(inner) => expression_name(inner),
         _ => None,
     }
+}
+
+fn expression_index_chain(expression: &Expression) -> Option<(&str, Vec<&Expression>)> {
+    match &expression.kind {
+        ExpressionKind::Name(name) => Some((name, Vec::new())),
+        ExpressionKind::Group(inner) => expression_index_chain(inner),
+        ExpressionKind::Index { target, index } => {
+            let (name, mut indices) = expression_index_chain(target)?;
+            indices.push(index);
+            Some((name, indices))
+        }
+        _ => None,
+    }
+}
+
+fn source_static_indexed_array_name(name: &str, index: usize) -> String {
+    format!("{name}[{index}]")
 }
 
 fn static_array_index_close(tokens: &[Token], open: usize, end: usize) -> Option<usize> {

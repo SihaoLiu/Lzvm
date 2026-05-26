@@ -3,9 +3,11 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::eth_block_public_values::{
-    public_values_from_eth_block_input, validate_eth_block_public_values,
+    public_values_from_eth_block_input_for_metadata,
+    validate_eth_block_public_values_with_program_image_cache,
 };
 use lzvm_artifacts::key_directory::{key_directory_catalog_digest, KeyDirectoryCatalog};
+use lzvm_artifacts::program_image::read_program_image_commitment_cache_file;
 use lzvm_artifacts::public_values::{
     encode_public_values, public_values_digest, read_public_values_file, PublicValues,
 };
@@ -343,8 +345,14 @@ fn prepare_public_inputs(
         if public_values.setup_hash != setup_hash {
             return Err("public inputs setup hash mismatch".to_owned());
         }
-        validate_eth_block_public_values(&summary.input, &public_values)
-            .map_err(|error| error.to_string())?;
+        let program_image_cache =
+            read_optional_program_image_cache(parsed.run_args.program_image_cache.as_deref())?;
+        validate_eth_block_public_values_with_program_image_cache(
+            &summary.input,
+            &public_values,
+            program_image_cache.as_ref(),
+        )
+        .map_err(|error| error.to_string())?;
         return Ok(PreparedPublicInputs {
             inputs,
             generated: false,
@@ -353,7 +361,15 @@ fn prepare_public_inputs(
 
     let output_dir = &parsed.run_args.positionals[1];
     let public_inputs = output_dir.join("eth-block-public-values.bin");
-    let public_values = public_values_from_eth_block_input(setup_hash, &summary.input);
+    let program_image_cache =
+        read_optional_program_image_cache(parsed.run_args.program_image_cache.as_deref())?;
+    let public_values = public_values_from_eth_block_input_for_metadata(
+        setup_hash,
+        &summary.input,
+        &catalog.layout.global_info,
+        program_image_cache.as_ref(),
+    )
+    .map_err(|error| format!("encode ETH block public values failed: {error}"))?;
     let encoded = encode_public_values(&public_values)
         .map_err(|error| format!("encode ETH block public values failed: {error}"))?;
     if let Some(parent) = public_inputs.parent() {
@@ -377,6 +393,20 @@ fn prepare_public_inputs(
         inputs,
         generated: true,
     })
+}
+
+fn read_optional_program_image_cache(
+    path: Option<&Path>,
+) -> Result<Option<lzvm_artifacts::program_image::ProgramImageCommitmentCache>, String> {
+    path.map(|path| {
+        read_program_image_commitment_cache_file(path).map_err(|error| {
+            format!(
+                "read program-image cache failed: {}: {error}",
+                path.display()
+            )
+        })
+    })
+    .transpose()
 }
 
 fn validate_trace_bytes(path: &Option<PathBuf>) -> Result<Option<u64>, String> {

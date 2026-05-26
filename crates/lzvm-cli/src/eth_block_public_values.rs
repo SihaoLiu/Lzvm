@@ -7,9 +7,14 @@ use lzvm_artifacts::eth_block_input::{
     eth_block_input_transaction_kind_counts, eth_block_input_withdrawal_count,
     parse_eth_block_input,
 };
-use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
+use lzvm_artifacts::eth_block_public_values::{
+    public_values_from_eth_block_input, public_values_from_eth_block_input_for_metadata,
+};
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::key_directory::{key_directory_catalog_digest, KeyDirectoryCatalog};
+use lzvm_artifacts::program_image::{
+    read_program_image_commitment_cache_file, ProgramImageCommitmentCache,
+};
 use lzvm_artifacts::public_values::{encode_public_values, public_values_digest, PublicValues};
 use lzvm_prover::setup_preflight::validate_public_values_metadata;
 
@@ -25,7 +30,53 @@ pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write)
                     return 1;
                 }
             };
-            write_block_public_values(setup_hash, None, input_path, output_path, stdout, stderr)
+            write_block_public_values(
+                setup_hash,
+                None,
+                None,
+                input_path,
+                output_path,
+                stdout,
+                stderr,
+            )
+        }
+        ["--setup-dir", setup_dir, "--program-image-cache", cache_path, input_path, output_path] => {
+            let catalog = match setup_catalog_from_directory(setup_dir) {
+                Ok(catalog) => catalog,
+                Err(message) => {
+                    let _ = writeln!(stderr, "eth block public values failed: {message}");
+                    return 1;
+                }
+            };
+            let setup_hash = match key_directory_catalog_digest(&catalog) {
+                Ok(hash) => hash,
+                Err(error) => {
+                    let _ = writeln!(
+                        stderr,
+                        "eth block public values failed: derive setup hash failed: {setup_dir}: {error}"
+                    );
+                    return 1;
+                }
+            };
+            let cache = match read_program_image_commitment_cache_file(cache_path) {
+                Ok(cache) => cache,
+                Err(error) => {
+                    let _ = writeln!(
+                        stderr,
+                        "eth block public values failed: read program-image cache failed: {cache_path}: {error}"
+                    );
+                    return 1;
+                }
+            };
+            write_block_public_values(
+                setup_hash,
+                Some(&catalog.layout.global_info),
+                Some(&cache),
+                input_path,
+                output_path,
+                stdout,
+                stderr,
+            )
         }
         ["--setup-dir", setup_dir, input_path, output_path] => {
             let catalog = match setup_catalog_from_directory(setup_dir) {
@@ -48,6 +99,7 @@ pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write)
             write_block_public_values(
                 setup_hash,
                 Some(&catalog.layout.global_info),
+                None,
                 input_path,
                 output_path,
                 stdout,
@@ -61,6 +113,7 @@ pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write)
 fn write_block_public_values(
     setup_hash: [u8; 32],
     setup_public_metadata: Option<&GlobalInfo>,
+    program_image_cache: Option<&ProgramImageCommitmentCache>,
     input_path: &str,
     output_path: &str,
     stdout: &mut dyn Write,
@@ -105,7 +158,21 @@ fn write_block_public_values(
             return 1;
         }
     };
-    let public_values = public_values_from_eth_block_input(setup_hash, &input);
+    let public_values = match setup_public_metadata {
+        Some(global_info) => match public_values_from_eth_block_input_for_metadata(
+            setup_hash,
+            &input,
+            global_info,
+            program_image_cache,
+        ) {
+            Ok(public_values) => public_values,
+            Err(error) => {
+                let _ = writeln!(stderr, "eth block public values failed: {error}");
+                return 1;
+            }
+        },
+        None => public_values_from_eth_block_input(setup_hash, &input),
+    };
     if let Some(global_info) = setup_public_metadata {
         if let Err(error) = validate_public_values_metadata(global_info, &public_values) {
             let _ = writeln!(stderr, "eth block public values failed: {error}");
@@ -363,7 +430,7 @@ impl fmt::Display for HashHexError {
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm eth write-block-public-values (--setup-hash <hex32> | --setup-dir <setup-dir>) <block-input> <out-public-values>"
+        "usage: lzvm eth write-block-public-values (--setup-hash <hex32> | --setup-dir <setup-dir> [--program-image-cache <cache-bin>]) <block-input> <out-public-values>"
     );
     2
 }

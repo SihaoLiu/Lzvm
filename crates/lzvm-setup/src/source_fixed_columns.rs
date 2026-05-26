@@ -599,8 +599,15 @@ fn fixed_columns_from_source_program(
             if declaration.kind != ColumnKind::Fixed {
                 continue;
             }
-            if declaration_in_function_body(module, declaration.start, declaration.end)
-                || declaration_in_inactive_template(
+            let in_function_body =
+                declaration_in_function_body(module, declaration.start, declaration.end);
+            if in_function_body
+                && !source_function_body_fixed_declaration_expected(declaration, &expected_columns)
+            {
+                continue;
+            }
+            if !in_function_body
+                && declaration_in_inactive_template(
                     module,
                     declaration.start,
                     declaration.end,
@@ -650,13 +657,15 @@ fn fixed_columns_from_source_program(
             } else {
                 declaration_values
             };
-            if source_declaration_in_static_false_branch(
-                program,
-                module,
-                declaration.start,
-                declaration.end,
-                &declaration_values.scalars,
-            ) {
+            if !in_function_body
+                && source_declaration_in_static_false_branch(
+                    program,
+                    module,
+                    declaration.start,
+                    declaration.end,
+                    &declaration_values.scalars,
+                )
+            {
                 continue;
             }
             for item in &declaration.items {
@@ -787,6 +796,16 @@ fn fixed_columns_from_source_program(
         row_count,
         columns,
     })
+}
+
+fn source_function_body_fixed_declaration_expected(
+    declaration: &lzvm_pil::ColumnDeclaration,
+    expected_columns: &BTreeSet<String>,
+) -> bool {
+    declaration
+        .items
+        .iter()
+        .any(|item| item.name == "air.__L1__" && expected_columns.contains(&item.name))
 }
 
 fn apply_source_fixed_copy_operations(

@@ -1,28 +1,38 @@
+#![allow(clippy::only_used_in_recursion)]
+
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use lzvm_pil::{
     lex_source, BinaryOperator, Expression, ExpressionKind, FixedFileTemplateValue,
     FunctionDeclaration, FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind,
-    SourceProgramModule, TokenKind,
+    SourceProgram, SourceProgramModule, TokenKind,
 };
 
 use crate::{
     source_control_body_cache::SourceControlBodyCache,
-    source_expression_aliases::collect_source_template_expression_alias,
+    source_expression_aliases::{
+        collect_source_template_expression_alias, source_template_expression_alias_can_apply,
+    },
     source_expression_info::{
         source_call_expression, source_expression_array_alias,
         source_expression_array_alias_assignment, source_function_call_bindings,
         SourceExpressionAliasScope,
     },
-    source_expression_return_values::source_resolved_expression_value,
+    source_expression_return_values::{
+        collect_source_expr_destructuring_aliases, source_function_returns_expr,
+        source_resolved_expression_value_without_returned_calls,
+    },
     source_expression_statements::{
         apply_source_static_declaration, apply_source_static_expression_statement,
     },
     source_statement_hints::SourceExpressionArrayAlias,
-    source_static_values::evaluate_source_static_expression,
+    source_static_values::{evaluate_source_static_expression, static_value_truthy},
     source_template_context::SourceTemplateLoweringContext,
+    source_template_do_while::source_static_do_while_loop_with_tokens,
     source_template_for::source_static_for_loop_with_tokens,
-    source_template_if::source_static_if_body_statements_with_tokens,
+    source_template_if::source_static_if_body_statements_with_aliases,
+    source_template_while::{source_static_while_loop_with_tokens, STATIC_WHILE_LOOP_LIMIT},
 };
 
 pub(crate) fn source_returned_expression_array_alias(
@@ -39,16 +49,19 @@ pub(crate) fn source_returned_expression_array_alias(
         .functions
         .iter()
         .find(|function| function.name == name)?;
-    if !source_function_returns_expr_array(context.module, function) {
+    if !source_function_returns_expr_array(context.module, function)
+        && !source_function_returns_expr(context.module, function)
+    {
         return None;
     }
     let mut bindings = source_function_call_bindings(
-        context.program,
-        context.module,
+        context,
         function,
         arguments,
         values,
         alias_scope,
+        body_cache,
+        call_stack,
     )?;
     if !call_stack.insert(function.name.clone()) {
         return None;
@@ -64,6 +77,28 @@ pub(crate) fn source_returned_expression_array_alias(
     );
     call_stack.remove(&function.name);
     alias
+}
+
+pub(crate) fn source_returned_expression_array_call_alias(
+    context: &SourceTemplateLoweringContext<'_>,
+    expression: &Expression,
+    lengths: Vec<usize>,
+) -> Option<SourceExpressionArrayAlias> {
+    let (name, _) = source_call_expression(Some(expression))?;
+    let function = context
+        .module
+        .functions
+        .iter()
+        .find(|function| function.name == name)?;
+    if !source_function_returns_expr_array(context.module, function)
+        && !source_function_returns_expr(context.module, function)
+    {
+        return None;
+    }
+    Some(SourceExpressionArrayAlias::Call {
+        expression: Box::new(expression.clone()),
+        lengths,
+    })
 }
 
 fn source_returned_expression_array_body(
@@ -87,12 +122,13 @@ fn source_returned_expression_array_body(
             );
         }
         if statement.kind == FunctionStatementKind::If {
-            if let Ok(Some(body)) = source_static_if_body_statements_with_tokens(
+            if let Ok(Some(body)) = source_static_if_body_statements_with_aliases(
                 context.program,
                 context.module,
                 context.tokens,
                 statement,
                 values,
+                &alias_scope.expressions,
                 body_cache,
             ) {
                 if let Some(alias) = source_returned_expression_array_body(
@@ -130,6 +166,71 @@ fn source_returned_expression_array_body(
                         return Some(alias);
                     }
                 }
+                loop_info.apply_final_variable_value(values);
+            }
+            continue;
+        }
+        if statement.kind == FunctionStatementKind::While {
+            if let Ok(Some(loop_info)) = source_static_while_loop_with_tokens(
+                context.program,
+                context.module,
+                context.tokens,
+                statement,
+                values,
+                body_cache,
+            ) {
+                for _ in 0..STATIC_WHILE_LOOP_LIMIT {
+                    let condition_value = evaluate_source_static_expression(
+                        context.program,
+                        &loop_info.condition,
+                        values,
+                    )?;
+                    if !static_value_truthy(&condition_value) {
+                        break;
+                    }
+                    if let Some(alias) = source_returned_expression_array_body(
+                        context,
+                        &loop_info.body_statements,
+                        values,
+                        alias_scope,
+                        body_cache,
+                        call_stack,
+                    ) {
+                        return Some(alias);
+                    }
+                }
+            }
+            continue;
+        }
+        if statement.kind == FunctionStatementKind::Do {
+            if let Ok(Some(loop_info)) = source_static_do_while_loop_with_tokens(
+                context.program,
+                context.module,
+                context.tokens,
+                statement,
+                values,
+                body_cache,
+            ) {
+                for _ in 0..STATIC_WHILE_LOOP_LIMIT {
+                    if let Some(alias) = source_returned_expression_array_body(
+                        context,
+                        &loop_info.body_statements,
+                        values,
+                        alias_scope,
+                        body_cache,
+                        call_stack,
+                    ) {
+                        return Some(alias);
+                    }
+                    let condition_value = evaluate_source_static_expression(
+                        context.program,
+                        &loop_info.condition,
+                        values,
+                    )?;
+                    if !static_value_truthy(&condition_value) {
+                        break;
+                    }
+                }
             }
             continue;
         }
@@ -139,7 +240,19 @@ fn source_returned_expression_array_body(
             statement.value_expression.as_ref(),
             values,
         );
-        collect_source_template_expression_alias(statement, &mut alias_scope.expressions);
+        if collect_source_expr_destructuring_aliases(
+            context,
+            statement,
+            values,
+            body_cache,
+            call_stack,
+            alias_scope,
+        ) {
+            continue;
+        }
+        if source_template_expression_alias_can_apply(statement, &alias_scope.expressions) {
+            collect_source_template_expression_alias(statement, alias_scope.expressions_mut());
+        }
         collect_returned_expression_array_alias(
             context,
             statement,
@@ -147,6 +260,7 @@ fn source_returned_expression_array_body(
             body_cache,
             call_stack,
             alias_scope,
+            true,
         );
     }
     None
@@ -159,6 +273,7 @@ fn collect_returned_expression_array_alias(
     body_cache: &mut SourceControlBodyCache,
     call_stack: &mut BTreeSet<String>,
     alias_scope: &mut SourceExpressionAliasScope,
+    resolve_assignment_values: bool,
 ) {
     let alias = match statement.declaration.as_ref() {
         Some(FunctionStatementDeclaration::Constant(declaration))
@@ -206,12 +321,13 @@ fn collect_returned_expression_array_alias(
                 body_cache,
                 call_stack,
                 alias_scope,
+                resolve_assignment_values,
             );
             None
         }
     };
     if let Some((name, alias)) = alias {
-        alias_scope.expression_arrays.insert(name, alias);
+        alias_scope.expression_arrays_mut().insert(name, alias);
     }
 }
 
@@ -222,6 +338,7 @@ fn source_returned_expression_array_alias_assignment(
     body_cache: &mut SourceControlBodyCache,
     call_stack: &mut BTreeSet<String>,
     alias_scope: &mut SourceExpressionAliasScope,
+    resolve_assignment_values: bool,
 ) -> bool {
     let Some(Expression {
         kind: ExpressionKind::Binary { op, left, right },
@@ -235,20 +352,27 @@ fn source_returned_expression_array_alias_assignment(
     if *op != BinaryOperator::Assign {
         return false;
     }
-    let Some(resolved_right) = source_resolved_expression_value(
+    if !resolve_assignment_values {
+        return source_expression_array_alias_assignment(
+            context.program,
+            expression,
+            values,
+            alias_scope.expression_arrays_mut(),
+        );
+    }
+    let Some(resolved_right) = source_resolved_expression_value_without_returned_calls(
         context,
         right,
         values,
         alias_scope,
         body_cache,
         call_stack,
-        true,
     ) else {
         return source_expression_array_alias_assignment(
             context.program,
             expression,
             values,
-            &mut alias_scope.expression_arrays,
+            alias_scope.expression_arrays_mut(),
         );
     };
     let resolved_expression = Expression {
@@ -265,7 +389,7 @@ fn source_returned_expression_array_alias_assignment(
         context.program,
         Some(&resolved_expression),
         values,
-        &mut alias_scope.expression_arrays,
+        alias_scope.expression_arrays_mut(),
     )
 }
 
@@ -285,30 +409,32 @@ fn source_returned_declaration_expression_array_alias(
     call_stack: &mut BTreeSet<String>,
     alias_scope: &SourceExpressionAliasScope,
 ) -> Option<(String, SourceExpressionArrayAlias)> {
+    let declared_lengths = source_expression_array_declaration_lengths(
+        context.program,
+        declaration.dim_expressions,
+        values,
+    );
     let alias = if let Some(expression) = declaration.initializer {
-        source_expression_array_alias(expression).or_else(|| {
-            source_returned_expression_array_alias(
-                context,
-                expression,
-                values,
-                alias_scope,
-                body_cache,
-                call_stack,
-            )
-        })?
-    } else {
-        let lengths = declaration
-            .dim_expressions
-            .iter()
-            .map(|expression| {
-                let value = evaluate_source_static_expression(
-                    context.program,
-                    expression.as_ref()?,
+        source_expression_array_alias(expression)
+            .or_else(|| {
+                source_returned_expression_array_alias(
+                    context,
+                    expression,
                     values,
-                )?;
-                usize::try_from(source_static_integer_value(Some(&value))?).ok()
+                    alias_scope,
+                    body_cache,
+                    call_stack,
+                )
             })
-            .collect::<Option<Vec<_>>>()?;
+            .or_else(|| {
+                source_returned_expression_array_call_alias(
+                    context,
+                    expression,
+                    declared_lengths.clone().unwrap_or_default(),
+                )
+            })?
+    } else {
+        let lengths = declared_lengths?;
         SourceExpressionArrayAlias::Values(source_zero_expression_array(
             declaration.name,
             declaration.source_name,
@@ -317,6 +443,20 @@ fn source_returned_declaration_expression_array_alias(
         )?)
     };
     Some((declaration.name.to_owned(), alias))
+}
+
+fn source_expression_array_declaration_lengths(
+    program: &SourceProgram,
+    dim_expressions: &[Option<Expression>],
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<Vec<usize>> {
+    dim_expressions
+        .iter()
+        .map(|expression| {
+            let value = evaluate_source_static_expression(program, expression.as_ref()?, values)?;
+            usize::try_from(source_static_integer_value(Some(&value))?).ok()
+        })
+        .collect()
 }
 
 fn source_resolved_expression_array_alias(
@@ -328,14 +468,15 @@ fn source_resolved_expression_array_alias(
     call_stack: &mut BTreeSet<String>,
 ) -> Option<SourceExpressionArrayAlias> {
     if let Some(alias) = source_expression_array_alias(expression) {
-        return source_resolve_expression_array_alias(
+        let alias = source_resolve_expression_array_alias(
             context,
             &alias,
             values,
             alias_scope,
             body_cache,
             call_stack,
-        );
+        )?;
+        return Some(source_scoped_expression_array_alias(alias, alias_scope));
     }
     source_returned_expression_array_alias(
         context,
@@ -345,6 +486,21 @@ fn source_resolved_expression_array_alias(
         body_cache,
         call_stack,
     )
+}
+
+fn source_scoped_expression_array_alias(
+    alias: SourceExpressionArrayAlias,
+    alias_scope: &SourceExpressionAliasScope,
+) -> SourceExpressionArrayAlias {
+    match alias {
+        SourceExpressionArrayAlias::Values(expressions) => {
+            SourceExpressionArrayAlias::ScopedValues {
+                expressions,
+                scope: Arc::new(alias_scope.clone()),
+            }
+        }
+        alias => alias,
+    }
 }
 
 fn source_resolve_expression_array_alias(
@@ -371,24 +527,25 @@ fn source_resolve_expression_array_alias(
             })
             .unwrap_or_else(|| Some(SourceExpressionArrayAlias::Name(name.clone()))),
         SourceExpressionArrayAlias::Values(expressions) => {
-            let mut resolved = Vec::with_capacity(expressions.len());
-            for expression in expressions {
-                resolved.push(source_resolved_expression_value(
-                    context,
-                    expression,
-                    values,
-                    alias_scope,
-                    body_cache,
-                    call_stack,
-                    true,
-                )?);
-            }
-            Some(SourceExpressionArrayAlias::Values(resolved))
+            Some(SourceExpressionArrayAlias::Values(expressions.clone()))
         }
+        SourceExpressionArrayAlias::ScopedValues { expressions, scope } => {
+            Some(SourceExpressionArrayAlias::ScopedValues {
+                expressions: expressions.clone(),
+                scope: Arc::clone(scope),
+            })
+        }
+        SourceExpressionArrayAlias::Call {
+            expression,
+            lengths,
+        } => Some(SourceExpressionArrayAlias::Call {
+            expression: expression.clone(),
+            lengths: lengths.clone(),
+        }),
     }
 }
 
-fn source_function_returns_expr_array(
+pub(crate) fn source_function_returns_expr_array(
     module: &SourceProgramModule,
     function: &FunctionDeclaration,
 ) -> bool {

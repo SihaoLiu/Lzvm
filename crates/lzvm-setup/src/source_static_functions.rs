@@ -1,14 +1,20 @@
+#![allow(clippy::items_after_test_module)]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_pil::{
-    lex_source, parse_expression_tokens, parse_function_body_statements, BinaryOperator,
-    CallArgument, Expression, ExpressionKind, FunctionDeclaration, FunctionParameter,
-    FunctionStatement, FunctionStatementDeclaration, FunctionStatementKind, SourceProgram,
-    SourceProgramModule, SourceSpan, Token, TokenKind, UnaryOperator,
+    lex_source, parse_expression_tokens, parse_function_body_statements,
+    parse_function_statement_tokens, BinaryOperator, CallArgument, Expression, ExpressionKind,
+    FunctionDeclaration, FunctionParameter, FunctionStatement, FunctionStatementDeclaration,
+    FunctionStatementKind, SourceProgram, SourceProgramModule, SourceSpan, Token, TokenKind,
+    UnaryOperator,
 };
 
-use crate::source_static_values::{
-    source_static_array_element_key, source_static_array_length_key,
+use crate::{
+    source_static_tokens::{
+        static_switch_case_value_ranges, static_switch_label_colon, update_static_delimiter_stack,
+    },
+    source_static_values::{source_static_array_element_key, source_static_array_length_key},
 };
 
 const STATIC_LOOP_LIMIT: usize = 10_000;
@@ -130,10 +136,113 @@ fn evaluate_static_function_call(
         else {
             continue;
         };
+        if let Some(value) =
+            evaluate_simple_static_return_function_call(program, function, arguments, values)
+        {
+            return Some(value);
+        }
         let bindings = static_function_call_bindings(program, function, arguments, values)?;
         return evaluate_static_function(program, module, function, &bindings);
     }
     None
+}
+
+fn evaluate_simple_static_return_function_call(
+    program: &SourceProgram,
+    function: &FunctionDeclaration,
+    arguments: &[CallArgument],
+    values: &BTreeMap<String, i128>,
+) -> Option<i128> {
+    let bindings = simple_static_function_call_bindings(program, function, arguments, values)?;
+    for statement in &function.statements {
+        match statement.kind {
+            FunctionStatementKind::Expression => {
+                evaluate_static_assert_statement(
+                    program,
+                    statement.value_expression.as_ref()?,
+                    &bindings,
+                )?;
+            }
+            FunctionStatementKind::Return => {
+                return evaluate_static_i128(
+                    program,
+                    statement.value_expression.as_ref()?,
+                    &bindings,
+                );
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
+fn simple_static_function_call_bindings(
+    program: &SourceProgram,
+    function: &FunctionDeclaration,
+    arguments: &[CallArgument],
+    values: &BTreeMap<String, i128>,
+) -> Option<BTreeMap<String, i128>> {
+    if function
+        .parameters
+        .iter()
+        .any(|parameter| !static_integer_parameter(parameter))
+    {
+        return None;
+    }
+
+    let mut bindings = BTreeMap::new();
+    let mut provided = BTreeSet::new();
+    let mut positional_index = 0_usize;
+    for argument in arguments {
+        let parameter = if let Some(name) = argument.name.as_ref() {
+            function
+                .parameters
+                .iter()
+                .find(|parameter| parameter.name == *name)?
+        } else {
+            while function
+                .parameters
+                .get(positional_index)
+                .is_some_and(|parameter| provided.contains(&parameter.name))
+            {
+                positional_index = positional_index.checked_add(1)?;
+            }
+            function.parameters.get(positional_index)?
+        };
+        if provided.contains(&parameter.name) {
+            return None;
+        }
+        let value = evaluate_static_i128(program, &argument.value, values)?;
+        bindings.insert(parameter.name.clone(), value);
+        provided.insert(parameter.name.clone());
+        if argument.name.is_none() {
+            positional_index = positional_index.checked_add(1)?;
+        }
+    }
+
+    (provided.len() == function.parameters.len()).then_some(bindings)
+}
+
+fn evaluate_static_assert_statement(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &BTreeMap<String, i128>,
+) -> Option<()> {
+    let ExpressionKind::Call { callee, args } = &expression.kind else {
+        return None;
+    };
+    if static_expression_name(callee)? != "assert" {
+        return None;
+    }
+    for argument in args {
+        if argument.name.is_some() {
+            return None;
+        }
+        if evaluate_static_i128(program, &argument.value, values)? == 0 {
+            return None;
+        }
+    }
+    Some(())
 }
 
 fn static_function_call_bindings(
@@ -231,11 +340,14 @@ fn evaluate_static_function(
     match execute_static_statements(program, module, &function.statements, &mut values)? {
         StaticFlow::Continue => None,
         StaticFlow::Return(value) => Some(value),
+        StaticFlow::Break | StaticFlow::LoopContinue => None,
     }
 }
 
 enum StaticFlow {
     Continue,
+    Break,
+    LoopContinue,
     Return(i128),
 }
 
@@ -246,10 +358,9 @@ fn execute_static_statements(
     values: &mut BTreeMap<String, i128>,
 ) -> Option<StaticFlow> {
     for statement in statements {
-        if let StaticFlow::Return(value) =
-            execute_static_statement(program, module, statement, values)?
-        {
-            return Some(StaticFlow::Return(value));
+        match execute_static_statement(program, module, statement, values)? {
+            StaticFlow::Continue => {}
+            flow => return Some(flow),
         }
     }
     Some(StaticFlow::Continue)
@@ -279,20 +390,31 @@ fn execute_static_statement(
                 evaluate_static_i128(program, statement.value_expression.as_ref()?, values)?;
             Some(StaticFlow::Return(value))
         }
+        FunctionStatementKind::Break => Some(StaticFlow::Break),
+        FunctionStatementKind::Continue => Some(StaticFlow::LoopContinue),
         FunctionStatementKind::While => {
+            let Some(body) = statement.body.as_ref() else {
+                return Some(StaticFlow::Continue);
+            };
             let condition = statement.header_expression.as_ref()?;
-            let body = statement.body.as_ref()?;
             for _ in 0..STATIC_LOOP_LIMIT {
                 if evaluate_static_i128(program, condition, values)? == 0 {
                     return Some(StaticFlow::Continue);
                 }
-                if let StaticFlow::Return(value) =
-                    execute_static_body(program, module, body.start, body.end, values)?
-                {
-                    return Some(StaticFlow::Return(value));
+                match execute_static_body(program, module, body.start, body.end, values)? {
+                    StaticFlow::Continue => {}
+                    StaticFlow::LoopContinue => continue,
+                    StaticFlow::Break => return Some(StaticFlow::Continue),
+                    StaticFlow::Return(value) => return Some(StaticFlow::Return(value)),
                 }
             }
             None
+        }
+        FunctionStatementKind::Do => {
+            execute_static_do_statement(program, module, statement, values)
+        }
+        FunctionStatementKind::Switch => {
+            execute_static_switch_statement(program, module, statement, values)
         }
         FunctionStatementKind::If => {
             execute_static_if_statement(program, module, statement, values)
@@ -384,9 +506,181 @@ fn execute_static_body(
     values: &mut BTreeMap<String, i128>,
 ) -> Option<StaticFlow> {
     let tokens = lex_source(&module.source.contents).ok()?;
-    let statements =
-        parse_function_body_statements(&tokens, SourceSpan { start, end }, &module.source).ok()?;
+    let start_index = tokens.iter().position(|token| token.start == start)?;
+    let end_index = tokens
+        .iter()
+        .position(|token| token.end == end)?
+        .checked_add(1)?;
+    let statements = if tokens
+        .get(start_index)
+        .is_some_and(|token| token.kind == TokenKind::LBrace)
+    {
+        parse_function_body_statements(&tokens, SourceSpan { start, end }, &module.source).ok()?
+    } else {
+        parse_function_statement_tokens(&tokens, start_index, end_index, &module.source).ok()?
+    };
     execute_static_statements(program, module, &statements, values)
+}
+
+fn execute_static_statement_tokens(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    start: usize,
+    end: usize,
+    values: &mut BTreeMap<String, i128>,
+) -> Option<StaticFlow> {
+    let statements = parse_function_statement_tokens(tokens, start, end, &module.source).ok()?;
+    execute_static_statements(program, module, &statements, values)
+}
+
+fn execute_static_do_statement(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    statement: &FunctionStatement,
+    values: &mut BTreeMap<String, i128>,
+) -> Option<StaticFlow> {
+    let body = statement.body?;
+    let tokens = lex_source(&module.source.contents).ok()?;
+    let close_after = tokens
+        .iter()
+        .position(|token| token.end == body.end)?
+        .checked_add(1)?;
+    if tokens.get(close_after).map(|token| token.kind) != Some(TokenKind::While) {
+        return None;
+    }
+    let open = close_after.checked_add(1)?;
+    if tokens.get(open).map(|token| token.kind) != Some(TokenKind::LParen) {
+        return None;
+    }
+    let close = matching_closing_token(&tokens, open, tokens.len())?;
+    if tokens.get(close.checked_add(1)?).map(|token| token.kind) != Some(TokenKind::Semicolon) {
+        return None;
+    }
+    let (condition, consumed) =
+        parse_expression_tokens(&tokens, open + 1, close, &module.source).ok()?;
+    if consumed != close {
+        return None;
+    }
+    for _ in 0..STATIC_LOOP_LIMIT {
+        match execute_static_body(program, module, body.start, body.end, values)? {
+            StaticFlow::Continue | StaticFlow::LoopContinue => {}
+            StaticFlow::Break => return Some(StaticFlow::Continue),
+            StaticFlow::Return(value) => return Some(StaticFlow::Return(value)),
+        }
+        if evaluate_static_i128(program, &condition, values)? == 0 {
+            return Some(StaticFlow::Continue);
+        }
+    }
+    None
+}
+
+fn execute_static_switch_statement(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    statement: &FunctionStatement,
+    values: &mut BTreeMap<String, i128>,
+) -> Option<StaticFlow> {
+    let body = statement.body?;
+    let condition = evaluate_static_i128(program, statement.header_expression.as_ref()?, values)?;
+    let tokens = lex_source(&module.source.contents).ok()?;
+    let open = tokens
+        .iter()
+        .position(|token| token.kind == TokenKind::LBrace && token.start == body.start)?;
+    let close = tokens
+        .iter()
+        .position(|token| token.kind == TokenKind::RBrace && token.end == body.end)?;
+    let Some((start, end)) =
+        static_switch_branch_range(program, module, &tokens, open + 1, close, values, condition)?
+    else {
+        return Some(StaticFlow::Continue);
+    };
+    match execute_static_statement_tokens(program, module, &tokens, start, end, values)? {
+        StaticFlow::Break | StaticFlow::Continue => Some(StaticFlow::Continue),
+        StaticFlow::LoopContinue => Some(StaticFlow::LoopContinue),
+        StaticFlow::Return(value) => Some(StaticFlow::Return(value)),
+    }
+}
+
+fn static_switch_branch_range(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    start: usize,
+    end: usize,
+    values: &BTreeMap<String, i128>,
+    condition: i128,
+) -> Option<Option<(usize, usize)>> {
+    let mut default_branch = None;
+    let mut cursor = start;
+    while cursor < end {
+        while tokens
+            .get(cursor)
+            .is_some_and(|token| token.kind == TokenKind::Semicolon)
+        {
+            cursor += 1;
+        }
+        if cursor >= end {
+            break;
+        }
+        let token = tokens.get(cursor)?;
+        let colon = match token.kind {
+            TokenKind::Case | TokenKind::Default => {
+                static_switch_label_colon(tokens, cursor + 1, end)?
+            }
+            _ => return None,
+        };
+        let branch_start = colon + 1;
+        let branch_end = next_static_switch_label(tokens, branch_start, end).unwrap_or(end);
+        if token.kind == TokenKind::Default {
+            default_branch.get_or_insert((branch_start, branch_end));
+        } else if static_switch_case_matches(
+            program,
+            module,
+            tokens,
+            cursor + 1,
+            colon,
+            values,
+            condition,
+        )? {
+            return Some(Some((branch_start, branch_end)));
+        }
+        cursor = branch_end;
+    }
+    Some(default_branch)
+}
+
+fn static_switch_case_matches(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    start: usize,
+    end: usize,
+    values: &BTreeMap<String, i128>,
+    condition: i128,
+) -> Option<bool> {
+    for (start, end) in static_switch_case_value_ranges(tokens, start, end)? {
+        let (expression, consumed) =
+            parse_expression_tokens(tokens, start, end, &module.source).ok()?;
+        if consumed != end {
+            return None;
+        }
+        if evaluate_static_i128(program, &expression, values)? == condition {
+            return Some(true);
+        }
+    }
+    Some(false)
+}
+
+fn next_static_switch_label(tokens: &[Token], start: usize, end: usize) -> Option<usize> {
+    let mut stack = Vec::new();
+    for (index, token) in tokens.iter().enumerate().take(end).skip(start) {
+        if stack.is_empty() && matches!(token.kind, TokenKind::Case | TokenKind::Default) {
+            return Some(index);
+        }
+        update_static_delimiter_stack(token.kind, &mut stack)?;
+    }
+    None
 }
 
 fn execute_static_if_statement(
@@ -404,7 +698,7 @@ fn execute_static_if_statement(
         .position(|token| token.end == statement.end)?
         .checked_add(1)?;
     match static_if_body_span(program, module, &tokens, start, end, values)? {
-        Some(span) => execute_static_body(program, module, span.start, span.end, values),
+        Some(body) => execute_static_body_span(program, module, &tokens, &body, values),
         None => Some(StaticFlow::Continue),
     }
 }
@@ -416,7 +710,7 @@ fn static_if_body_span(
     index: usize,
     end: usize,
     values: &BTreeMap<String, i128>,
-) -> Option<Option<SourceSpan>> {
+) -> Option<Option<StaticBodySpan>> {
     if !matches!(
         tokens.get(index).map(|token| token.kind),
         Some(TokenKind::If | TokenKind::ElseIf)
@@ -432,7 +726,7 @@ fn static_if_body_span(
     }
     let body = static_control_body_span(tokens, close + 1, end)?;
     if evaluate_static_i128(program, &condition, values)? != 0 {
-        return body.braced.then_some(Some(body.span));
+        return Some(Some(body));
     }
     static_else_body_span(program, module, tokens, body.after, end, values)
 }
@@ -444,7 +738,7 @@ fn static_else_body_span(
     index: usize,
     end: usize,
     values: &BTreeMap<String, i128>,
-) -> Option<Option<SourceSpan>> {
+) -> Option<Option<StaticBodySpan>> {
     match tokens.get(index).map(|token| token.kind) {
         Some(TokenKind::ElseIf) => static_if_body_span(program, module, tokens, index, end, values),
         Some(TokenKind::Else)
@@ -456,10 +750,30 @@ fn static_else_body_span(
         }
         Some(TokenKind::Else) => {
             let body = static_control_body_span(tokens, index + 1, end)?;
-            body.braced.then_some(Some(body.span))
+            Some(Some(body))
         }
         _ => Some(None),
     }
+}
+
+fn execute_static_body_span(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    tokens: &[Token],
+    body: &StaticBodySpan,
+    values: &mut BTreeMap<String, i128>,
+) -> Option<StaticFlow> {
+    if body.braced {
+        return execute_static_body(program, module, body.span.start, body.span.end, values);
+    }
+    let start = tokens
+        .iter()
+        .position(|token| token.start == body.span.start)?;
+    let end = tokens
+        .iter()
+        .position(|token| token.end == body.span.end)?
+        .checked_add(1)?;
+    execute_static_statement_tokens(program, module, tokens, start, end, values)
 }
 
 struct StaticBodySpan {
@@ -505,18 +819,17 @@ fn execute_static_for_statement(
     let initializer = variable.initializer_expression.as_ref()?;
     let initial_value = evaluate_static_i128(program, initializer, values)?;
     let tokens = lex_source(&module.source.contents).ok()?;
-    let (condition, update) = static_for_loop_header(&tokens, statement.header?, module)?;
-    let body = statement.body?;
+    let header = statement.header?;
+    let (condition, update) = static_for_loop_header(&tokens, header, module)?;
+    let body = static_control_body_after_header(&tokens, header, statement.end)?;
     let previous = values.insert(variable.name.clone(), initial_value);
-    let flow = execute_static_for_loop(
-        program,
-        module,
+    let loop_body = StaticForLoop {
         body,
-        &condition,
-        &update,
-        &variable.name,
-        values,
-    );
+        condition: &condition,
+        update: &update,
+        variable_name: &variable.name,
+    };
+    let flow = execute_static_for_loop(program, module, &tokens, loop_body, values);
     match previous {
         Some(value) => {
             values.insert(variable.name.clone(), value);
@@ -528,27 +841,48 @@ fn execute_static_for_statement(
     flow
 }
 
+struct StaticForLoop<'a> {
+    body: StaticBodySpan,
+    condition: &'a Expression,
+    update: &'a StaticForLoopUpdate,
+    variable_name: &'a str,
+}
+
 fn execute_static_for_loop(
     program: &SourceProgram,
     module: &SourceProgramModule,
-    body: SourceSpan,
-    condition: &Expression,
-    update: &StaticForLoopUpdate,
-    variable_name: &str,
+    tokens: &[Token],
+    loop_body: StaticForLoop<'_>,
     values: &mut BTreeMap<String, i128>,
 ) -> Option<StaticFlow> {
     for _ in 0..STATIC_LOOP_LIMIT {
-        if evaluate_static_i128(program, condition, values)? == 0 {
+        if evaluate_static_i128(program, loop_body.condition, values)? == 0 {
             return Some(StaticFlow::Continue);
         }
-        if let StaticFlow::Return(value) =
-            execute_static_body(program, module, body.start, body.end, values)?
-        {
-            return Some(StaticFlow::Return(value));
+        match execute_static_body_span(program, module, tokens, &loop_body.body, values)? {
+            StaticFlow::Continue | StaticFlow::LoopContinue => {}
+            StaticFlow::Break => return Some(StaticFlow::Continue),
+            StaticFlow::Return(value) => return Some(StaticFlow::Return(value)),
         }
-        apply_static_for_loop_update(program, update, variable_name, values)?;
+        apply_static_for_loop_update(program, loop_body.update, loop_body.variable_name, values)?;
     }
     None
+}
+
+fn static_control_body_after_header(
+    tokens: &[Token],
+    header: SourceSpan,
+    statement_end: usize,
+) -> Option<StaticBodySpan> {
+    let after_header = tokens
+        .iter()
+        .position(|token| token.end == header.end)?
+        .checked_add(1)?;
+    let end = tokens
+        .iter()
+        .position(|token| token.end == statement_end)?
+        .checked_add(1)?;
+    static_control_body_span(tokens, after_header, end)
 }
 
 fn static_for_loop_variable(
@@ -789,6 +1123,54 @@ fn parse_i128(value: &str) -> Option<i128> {
         return i128::from_str_radix(hex, 16).ok();
     }
     value.parse::<i128>().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use lzvm_pil::{lex_source, parse_expression_tokens, SourceLoaderConfig, SourceProgramLoader};
+
+    use super::*;
+
+    #[test]
+    fn evaluates_static_return_functions_after_assert_calls() {
+        let dir = std::env::temp_dir().join(format!(
+            "lzvm-setup-static-functions-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("fixture directory should be created");
+        fs::write(
+            dir.join("main.pil"),
+            "function slot(const int x, const int y, const int z): int {\n\
+                 assert(x >= 0);\n\
+                 assert(y >= 0);\n\
+                 assert(z >= 0);\n\
+                 return 64 * x + 320 * y + z;\n\
+             }",
+        )
+        .expect("fixture should be written");
+
+        let mut loader = SourceProgramLoader::new(SourceLoaderConfig {
+            working_dir: dir.clone(),
+            include_paths: Vec::new(),
+            include_path_first: false,
+        });
+        let program = loader
+            .load_main("main.pil")
+            .expect("source program should parse");
+        let source = &program.modules[0].source;
+        let tokens = lex_source("slot(2, 3, 4)").expect("expression should lex");
+        let (expression, consumed) = parse_expression_tokens(&tokens, 0, tokens.len(), source)
+            .expect("expression should parse");
+        assert_eq!(consumed, tokens.len());
+
+        let value = evaluate_static_i128(&program, &expression, &BTreeMap::new());
+
+        fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+        assert_eq!(value, Some(1092));
+    }
 }
 
 fn next_token_kind(tokens: &[Token], start: usize, end: usize, kind: TokenKind) -> Option<usize> {

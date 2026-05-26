@@ -84,12 +84,9 @@ fn source_static_integer_expression(
         if args.len() == 1 && args[0].name.is_none() {
             if let ExpressionKind::Name(callee) = &strip_source_group_expression(callee).kind {
                 if callee == "length" {
-                    let ExpressionKind::Name(name) =
-                        &strip_source_group_expression(&args[0].value).kind
-                    else {
-                        return None;
-                    };
-                    return source_static_array_length(values, name);
+                    let name =
+                        source_static_indexed_array_target_name(program, &args[0].value, values)?;
+                    return source_static_array_length(values, &name);
                 }
             }
         }
@@ -102,6 +99,23 @@ fn strip_source_group_expression(expression: &Expression) -> &Expression {
     match &expression.kind {
         ExpressionKind::Group(inner) => strip_source_group_expression(inner),
         _ => expression,
+    }
+}
+
+fn source_static_indexed_array_target_name(
+    program: &SourceProgram,
+    expression: &Expression,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<String> {
+    match &strip_source_group_expression(expression).kind {
+        ExpressionKind::Name(name) => Some(name.clone()),
+        ExpressionKind::Index { target, index } => {
+            let name = source_static_indexed_array_target_name(program, target, values)?;
+            let index = evaluate_source_static_expression(program, index, values)?;
+            let index = usize::try_from(static_value_integer(&index)?).ok()?;
+            Some(format!("{name}[{index}]"))
+        }
+        _ => None,
     }
 }
 

@@ -27,11 +27,18 @@ use crate::{
         evaluate_source_static_expression, insert_source_static_array,
         source_static_array_expression, source_static_array_length, source_static_array_values,
     },
+    source_template_do_while::source_static_do_while_loop_with_tokens,
     source_template_for::source_static_for_loop_with_tokens,
     source_template_if::source_static_if_body_statements_with_tokens,
+    source_template_switch::source_static_switch_body_statements,
+    source_template_while::{source_static_while_loop_with_tokens, STATIC_WHILE_LOOP_LIMIT},
 };
 
-use super::{strip_group_expression, unsupported_source_message};
+use super::{
+    strip_group_expression, top_level_for,
+    top_level_scan::{skip_balanced_delimiter, skip_top_level_item, top_level_declaration_start},
+    unsupported_source_message,
+};
 
 pub(super) fn source_global_hints(
     program: &SourceProgram,
@@ -150,56 +157,142 @@ fn lower_source_global_top_level_hints(
     values: &mut BTreeMap<String, FixedFileTemplateValue>,
 ) -> Result<(), SourceKeyDirectoryMetadataError> {
     let alias_scope = SourceGlobalHintAliasScope::default();
-    let mut expected = Vec::<TokenKind>::new();
-    let mut index = 0_usize;
-    while let Some(token) = context.tokens.get(index) {
-        if token.kind == TokenKind::EndOfInput {
-            break;
-        }
-        if expected.is_empty() && token.kind == TokenKind::AtIdentifier {
-            let Some(next_index) = top_level_annotation_next_index(context.tokens, index) else {
-                index += 1;
-                continue;
-            };
-            let statement =
-                top_level_annotation_statement(context.module, context.tokens, index, next_index);
-            let lookup_inputs = SourceLookupInputs {
-                program: context.program,
-                module: context.module,
-                values,
-                expression_aliases: &alias_scope.expressions,
-                expression_array_aliases: &alias_scope.expression_arrays,
-                scalar_slots: context.scalar_slots,
-                opening_points: &[],
-            };
-            if let Some(hint) = lower_source_annotation_statement(&lookup_inputs, &statement)
-                .map_err(|source| SourceKeyDirectoryMetadataError::Lex {
-                    source_name: context.module.source_name.clone(),
-                    source,
-                })?
-            {
-                if source_global_hint_is_structured(&hint) {
-                    context.hints.push(hint);
-                }
-            }
-            index = next_index;
-            continue;
-        }
+    lower_source_global_top_level_hints_range(
+        context,
+        values,
+        &alias_scope,
+        0,
+        context.tokens.len(),
+    )
+}
 
+fn lower_source_global_top_level_hints_range(
+    context: &mut SourceGlobalHintLoweringContext<'_, '_>,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceGlobalHintAliasScope,
+    start: usize,
+    end: usize,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    let mut index = start;
+    while index < end {
+        let Some(token) = context.tokens.get(index) else {
+            break;
+        };
         match token.kind {
-            TokenKind::LParen => expected.push(TokenKind::RParen),
-            TokenKind::LBracket => expected.push(TokenKind::RBracket),
-            TokenKind::LBrace => expected.push(TokenKind::RBrace),
-            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
-                if expected.pop().is_none_or(|kind| kind != token.kind) {
-                    expected.clear();
+            TokenKind::EndOfInput => break,
+            TokenKind::AtIdentifier => {
+                let Some(next_index) = top_level_annotation_next_index(context.tokens, index)
+                else {
+                    index += 1;
+                    continue;
+                };
+                lower_source_global_top_level_annotation(
+                    context,
+                    values,
+                    alias_scope,
+                    index,
+                    next_index,
+                )?;
+                index = next_index;
+            }
+            TokenKind::For => {
+                if let Some(next_index) =
+                    lower_source_global_top_level_for_hints(context, values, alias_scope, index)?
+                {
+                    index = next_index;
+                } else {
+                    index = skip_top_level_item(context.tokens, index)?;
                 }
             }
-            _ => {}
+            TokenKind::LBrace => {
+                index = skip_balanced_delimiter(context.tokens, index, TokenKind::RBrace)?;
+            }
+            kind if top_level_declaration_start(kind) => {
+                index = skip_top_level_item(context.tokens, index)?;
+            }
+            _ => {
+                index += 1;
+            }
         }
-        index += 1;
     }
     Ok(())
+}
+
+fn lower_source_global_top_level_annotation(
+    context: &mut SourceGlobalHintLoweringContext<'_, '_>,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceGlobalHintAliasScope,
+    index: usize,
+    next_index: usize,
+) -> Result<(), SourceKeyDirectoryMetadataError> {
+    let statement =
+        top_level_annotation_statement(context.module, context.tokens, index, next_index);
+    let lookup_inputs = SourceLookupInputs {
+        program: context.program,
+        module: context.module,
+        values,
+        constant_values: values,
+        expression_aliases: &alias_scope.expressions,
+        expression_array_aliases: &alias_scope.expression_arrays,
+        scalar_slots: context.scalar_slots,
+        opening_points: &[],
+    };
+    if let Some(hint) =
+        lower_source_annotation_statement(&lookup_inputs, &statement).map_err(|source| {
+            SourceKeyDirectoryMetadataError::Lex {
+                source_name: context.module.source_name.clone(),
+                source,
+            }
+        })?
+    {
+        if source_global_hint_is_structured(&hint) {
+            context.hints.push(hint);
+        }
+    }
+    Ok(())
+}
+
+fn lower_source_global_top_level_for_hints(
+    context: &mut SourceGlobalHintLoweringContext<'_, '_>,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceGlobalHintAliasScope,
+    index: usize,
+) -> Result<Option<usize>, SourceKeyDirectoryMetadataError> {
+    let Some(loop_info) = top_level_for::parse_top_level_for_loop(
+        context.program,
+        context.module,
+        context.tokens,
+        index,
+        values,
+    )?
+    else {
+        return Ok(None);
+    };
+
+    let mut loop_values = values.clone();
+    loop_info.apply_initial_value(&mut loop_values);
+    for _ in 0..top_level_for::STATIC_TOP_LEVEL_FOR_LOOP_LIMIT {
+        let Some(condition_truthy) = loop_info.condition_truthy(context.program, &loop_values)
+        else {
+            return Ok(None);
+        };
+        if !condition_truthy {
+            if let Some((name, value)) = loop_info.final_variable_value(&loop_values) {
+                values.insert(name, value);
+            }
+            return Ok(Some(loop_info.next_index()));
+        }
+        let mut iteration_values = loop_values.clone();
+        lower_source_global_top_level_hints_range(
+            context,
+            &mut iteration_values,
+            alias_scope,
+            loop_info.body_start(),
+            loop_info.body_end(),
+        )?;
+        loop_info.apply_update(context.program, &mut loop_values)?;
+    }
+    Ok(None)
 }
 
 fn top_level_annotation_next_index(tokens: &[Token], index: usize) -> Option<usize> {
@@ -371,11 +464,115 @@ fn lower_source_global_template_final_proof_statement(
                             );
                         }
                     }
-                    if let Some(previous) = previous {
+                    if loop_info.final_variable_value.is_some() {
+                        loop_info.apply_final_variable_value(values);
+                    } else if let Some(previous) = previous {
                         values.insert(loop_info.variable_name, previous);
                     } else {
                         values.remove(&loop_info.variable_name);
                     }
+                }
+                Ok(None)
+                | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
+                Err(error) => return Err(error),
+            }
+            Ok(())
+        }
+        FunctionStatementKind::While => {
+            match source_static_while_loop_with_tokens(
+                context.program,
+                context.module,
+                context.tokens,
+                statement,
+                values,
+                context.body_cache,
+            ) {
+                Ok(Some(loop_info)) => {
+                    let checkpoint = values.clone();
+                    let mut loop_alias_scope = alias_scope.clone();
+                    for _ in 0..STATIC_WHILE_LOOP_LIMIT {
+                        let Some(condition_truthy) = source_global_hint_static_condition(
+                            context.program,
+                            context.scalar_slots,
+                            &loop_info.condition,
+                            values,
+                            &loop_alias_scope,
+                        ) else {
+                            *values = checkpoint;
+                            return Ok(());
+                        };
+                        if !condition_truthy {
+                            return Ok(());
+                        }
+                        for body_statement in loop_info.body_statements.iter() {
+                            lower_source_global_template_final_proof_statement(
+                                context,
+                                body_statement,
+                                values,
+                                &loop_alias_scope,
+                            )?;
+                            collect_source_template_expression_alias(
+                                body_statement,
+                                &mut loop_alias_scope.expressions,
+                            );
+                            collect_source_global_hint_expression_array_alias(
+                                body_statement,
+                                &mut loop_alias_scope.expression_arrays,
+                            );
+                        }
+                    }
+                    *values = checkpoint;
+                }
+                Ok(None)
+                | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
+                Err(error) => return Err(error),
+            }
+            Ok(())
+        }
+        FunctionStatementKind::Do => {
+            match source_static_do_while_loop_with_tokens(
+                context.program,
+                context.module,
+                context.tokens,
+                statement,
+                values,
+                context.body_cache,
+            ) {
+                Ok(Some(loop_info)) => {
+                    let checkpoint = values.clone();
+                    let mut loop_alias_scope = alias_scope.clone();
+                    for _ in 0..STATIC_WHILE_LOOP_LIMIT {
+                        for body_statement in loop_info.body_statements.iter() {
+                            lower_source_global_template_final_proof_statement(
+                                context,
+                                body_statement,
+                                values,
+                                &loop_alias_scope,
+                            )?;
+                            collect_source_template_expression_alias(
+                                body_statement,
+                                &mut loop_alias_scope.expressions,
+                            );
+                            collect_source_global_hint_expression_array_alias(
+                                body_statement,
+                                &mut loop_alias_scope.expression_arrays,
+                            );
+                        }
+                        let Some(condition_truthy) = source_global_hint_static_condition(
+                            context.program,
+                            context.scalar_slots,
+                            &loop_info.condition,
+                            values,
+                            &loop_alias_scope,
+                        ) else {
+                            *values = checkpoint;
+                            return Ok(());
+                        };
+                        if !condition_truthy {
+                            return Ok(());
+                        }
+                    }
+                    *values = checkpoint;
                 }
                 Ok(None)
                 | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
@@ -495,10 +692,148 @@ fn lower_source_global_hint_statement(
                             );
                         }
                     }
-                    if let Some(previous) = previous {
+                    if loop_info.final_variable_value.is_some() {
+                        loop_info.apply_final_variable_value(values);
+                    } else if let Some(previous) = previous {
                         values.insert(loop_info.variable_name, previous);
                     } else {
                         values.remove(&loop_info.variable_name);
+                    }
+                }
+                Ok(None)
+                | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
+                Err(error) => return Err(error),
+            }
+            Ok(())
+        }
+        FunctionStatementKind::While => {
+            match source_static_while_loop_with_tokens(
+                context.program,
+                context.module,
+                context.tokens,
+                statement,
+                values,
+                context.body_cache,
+            ) {
+                Ok(Some(loop_info)) => {
+                    let checkpoint = values.clone();
+                    let mut loop_alias_scope = alias_scope.clone();
+                    for _ in 0..STATIC_WHILE_LOOP_LIMIT {
+                        let Some(condition_truthy) = source_global_hint_static_condition(
+                            context.program,
+                            context.scalar_slots,
+                            &loop_info.condition,
+                            values,
+                            &loop_alias_scope,
+                        ) else {
+                            *values = checkpoint;
+                            return Ok(());
+                        };
+                        if !condition_truthy {
+                            return Ok(());
+                        }
+                        for body_statement in loop_info.body_statements.iter() {
+                            lower_source_global_hint_statement(
+                                context,
+                                body_statement,
+                                values,
+                                &loop_alias_scope,
+                            )?;
+                            collect_source_template_expression_alias(
+                                body_statement,
+                                &mut loop_alias_scope.expressions,
+                            );
+                            collect_source_global_hint_expression_array_alias(
+                                body_statement,
+                                &mut loop_alias_scope.expression_arrays,
+                            );
+                        }
+                    }
+                    *values = checkpoint;
+                }
+                Ok(None)
+                | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
+                Err(error) => return Err(error),
+            }
+            Ok(())
+        }
+        FunctionStatementKind::Do => {
+            match source_static_do_while_loop_with_tokens(
+                context.program,
+                context.module,
+                context.tokens,
+                statement,
+                values,
+                context.body_cache,
+            ) {
+                Ok(Some(loop_info)) => {
+                    let checkpoint = values.clone();
+                    let mut loop_alias_scope = alias_scope.clone();
+                    for _ in 0..STATIC_WHILE_LOOP_LIMIT {
+                        for body_statement in loop_info.body_statements.iter() {
+                            lower_source_global_hint_statement(
+                                context,
+                                body_statement,
+                                values,
+                                &loop_alias_scope,
+                            )?;
+                            collect_source_template_expression_alias(
+                                body_statement,
+                                &mut loop_alias_scope.expressions,
+                            );
+                            collect_source_global_hint_expression_array_alias(
+                                body_statement,
+                                &mut loop_alias_scope.expression_arrays,
+                            );
+                        }
+                        let Some(condition_truthy) = source_global_hint_static_condition(
+                            context.program,
+                            context.scalar_slots,
+                            &loop_info.condition,
+                            values,
+                            &loop_alias_scope,
+                        ) else {
+                            *values = checkpoint;
+                            return Ok(());
+                        };
+                        if !condition_truthy {
+                            return Ok(());
+                        }
+                    }
+                    *values = checkpoint;
+                }
+                Ok(None)
+                | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
+                Err(error) => return Err(error),
+            }
+            Ok(())
+        }
+        FunctionStatementKind::Switch => {
+            match source_static_switch_body_statements(
+                context.program,
+                context.module,
+                context.tokens,
+                statement,
+                values,
+                context.body_cache,
+            ) {
+                Ok(Some(body_statements)) => {
+                    let mut switch_alias_scope = alias_scope.clone();
+                    for body_statement in body_statements.iter() {
+                        lower_source_global_hint_statement(
+                            context,
+                            body_statement,
+                            values,
+                            &switch_alias_scope,
+                        )?;
+                        collect_source_template_expression_alias(
+                            body_statement,
+                            &mut switch_alias_scope.expressions,
+                        );
+                        collect_source_global_hint_expression_array_alias(
+                            body_statement,
+                            &mut switch_alias_scope.expression_arrays,
+                        );
                     }
                 }
                 Ok(None)
@@ -556,6 +891,7 @@ fn lower_source_global_hint_statement(
                 program: context.program,
                 module: context.module,
                 values,
+                constant_values: values,
                 expression_aliases: &alias_scope.expressions,
                 expression_array_aliases: &alias_scope.expression_arrays,
                 scalar_slots: context.scalar_slots,
@@ -1055,6 +1391,12 @@ fn source_global_hint_array_length(
         )?,
         SourceExpressionArrayAlias::Values(expressions) => {
             i128::try_from(expressions.len()).ok()?
+        }
+        SourceExpressionArrayAlias::ScopedValues { expressions, .. } => {
+            i128::try_from(expressions.len()).ok()?
+        }
+        SourceExpressionArrayAlias::Call { lengths, .. } => {
+            i128::try_from(lengths.first().copied()?).ok()?
         }
     };
     resolving_aliases.remove(name);

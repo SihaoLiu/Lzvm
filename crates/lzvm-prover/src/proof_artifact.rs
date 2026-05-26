@@ -24,7 +24,7 @@ use crate::contribution::{
 };
 use crate::group_values::build_group_values_segment;
 use crate::pcs_transcript::aggregate_pcs_final_query_challenges;
-use crate::proof_preflight::{contains_eth_block_public_values, public_values_as_fields};
+use crate::proof_preflight::{contains_named_eth_block_public_values, public_values_as_fields};
 use crate::proof_values::{
     build_pcs_proof_values_segment_from_packed_values, flatten_pcs_proof_values,
     load_pcs_proof_values_from_segments,
@@ -676,7 +676,7 @@ fn validate_eth_block_binding(
     if let Some(input) = input {
         validate_eth_block_public_values(input, public_values)
             .map_err(|error| error.to_string())?;
-    } else if contains_eth_block_public_values(public_values) {
+    } else if contains_named_eth_block_public_values(public_values) {
         return Err("missing ETH block input proof segment".to_owned());
     }
     Ok(())

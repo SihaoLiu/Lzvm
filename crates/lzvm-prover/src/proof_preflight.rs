@@ -86,6 +86,12 @@ pub enum ProofPreflightError {
         word_index: usize,
         source: FieldError,
     },
+    MissingProgramImageCachePublicValue {
+        name: String,
+    },
+    ProgramImageCachePublicValueMismatch {
+        name: String,
+    },
     ChallengeValues(ChallengeValuesSegmentError),
     ChallengeValueNonCanonical {
         value_index: usize,
@@ -122,6 +128,18 @@ impl fmt::Display for ProofPreflightError {
                 f,
                 "program image cache tree root word {word_index} is non-canonical: {source}"
             ),
+            Self::MissingProgramImageCachePublicValue { name } => {
+                write!(
+                    f,
+                    "missing program image cache proof segment for public value: {name}"
+                )
+            }
+            Self::ProgramImageCachePublicValueMismatch { name } => {
+                write!(
+                    f,
+                    "program image cache tree root does not match public value: {name}"
+                )
+            }
             Self::ChallengeValues(error) => write!(f, "{error}"),
             Self::ChallengeValueNonCanonical {
                 value_index,
@@ -171,6 +189,8 @@ impl std::error::Error for ProofPreflightError {
             Self::ProofArtifact(error) => Some(error),
             Self::SetupHashMismatch
             | Self::PublicValuesHashMismatch
+            | Self::MissingProgramImageCachePublicValue { .. }
+            | Self::ProgramImageCachePublicValueMismatch { .. }
             | Self::MissingEthBlockInput => None,
         }
     }
@@ -243,6 +263,7 @@ pub fn validate_proof_public_values(
         program_image_caches.push(cache);
     }
     let program_image_cache_count = program_image_caches.len();
+    validate_program_image_cache_public_values(&program_image_caches, public_values)?;
     let mut challenge_values_segment_byte_counts = Vec::new();
     let mut challenge_values_value_counts = Vec::new();
     for segment in proof
@@ -294,7 +315,7 @@ pub fn validate_proof_public_values(
     let mut eth_block_input_mix_hashes = Vec::new();
     let mut eth_block_input_nonces = Vec::new();
     let mut eth_block_input_transaction_roots = Vec::new();
-    if eth_block_input_count == 0 && contains_eth_block_public_values(public_values) {
+    if eth_block_input_count == 0 && contains_named_eth_block_public_values(public_values) {
         return Err(ProofPreflightError::MissingEthBlockInput);
     }
     for segment in proof
@@ -414,7 +435,7 @@ pub fn validate_proof_public_values(
     })
 }
 
-pub(crate) fn contains_eth_block_public_values(public_values: &PublicValues) -> bool {
+pub(crate) fn contains_named_eth_block_public_values(public_values: &PublicValues) -> bool {
     public_values
         .values
         .iter()
@@ -443,6 +464,27 @@ fn validate_program_image_cache_tree_root_canonical(
         Felt::from_canonical(word).map_err(|source| {
             ProofPreflightError::ProgramImageCacheTreeRootNonCanonical { word_index, source }
         })?;
+    }
+    Ok(())
+}
+
+fn validate_program_image_cache_public_values(
+    caches: &[ProgramImageCommitmentCache],
+    public_values: &PublicValues,
+) -> Result<(), ProofPreflightError> {
+    for entry in &public_values.values {
+        if entry.name == "rom_root" && entry.elements.len() == 4 {
+            let Some(cache) = caches.first() else {
+                return Err(ProofPreflightError::MissingProgramImageCachePublicValue {
+                    name: entry.name.clone(),
+                });
+            };
+            if entry.elements.as_slice() != cache.tree_root.as_slice() {
+                return Err(ProofPreflightError::ProgramImageCachePublicValueMismatch {
+                    name: entry.name.clone(),
+                });
+            }
+        }
     }
     Ok(())
 }

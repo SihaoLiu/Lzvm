@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_pil::{
-    lex_source, AirInstanceDeclaration, AirTemplateDeclaration, CallArgument, Expression,
-    ExpressionKind, FixedFileTemplateValue, FunctionDeclaration, FunctionStatement,
+    lex_source, AirInstanceDeclaration, AirTemplateDeclaration, BinaryOperator, CallArgument,
+    Expression, ExpressionKind, FixedFileTemplateValue, FunctionDeclaration, FunctionStatement,
     FunctionStatementDeclaration, FunctionStatementKind, SourceProgram, SourceProgramModule, Token,
-    UnaryOperator,
+    TokenKind, UnaryOperator,
 };
 
 use crate::{
@@ -21,10 +21,13 @@ use crate::{
     },
     source_static_values::{
         evaluate_source_static_expression, source_declaration_constant_values_from_cache,
-        static_value_integer, SourceTemplateConstantValueCache,
+        static_value_integer, static_value_truthy, SourceTemplateConstantValueCache,
     },
+    source_template_do_while::source_static_do_while_loop_with_tokens,
     source_template_for::source_static_for_loop_with_tokens,
-    source_template_if::source_static_if_body_statements_with_tokens,
+    source_template_if::source_static_if_body_statements_with_aliases,
+    source_template_switch::source_static_switch_body_statements,
+    source_template_while::{source_static_while_loop_with_tokens, STATIC_WHILE_LOOP_LIMIT},
 };
 
 pub(crate) fn source_opening_points(
@@ -70,7 +73,7 @@ pub(crate) fn source_opening_points(
                 context.template_values,
             );
             for statement in &template.statements {
-                collect_source_statement_opening_points(
+                let _ = collect_source_statement_opening_points(
                     &context,
                     statement,
                     &mut statement_values,
@@ -241,6 +244,13 @@ struct SourceOpeningAliasScope {
     expression_arrays: SourceExpressionArrayAliases,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SourceOpeningStatementFlow {
+    Fallthrough,
+    Break,
+    Continue,
+}
+
 fn collect_source_statement_opening_points(
     context: &SourceOpeningPointContext<'_>,
     statement: &FunctionStatement,
@@ -249,7 +259,7 @@ fn collect_source_statement_opening_points(
     body_cache: &mut SourceControlBodyCache,
     function_call_stack: &mut BTreeSet<String>,
     points: &mut Vec<i64>,
-) -> Result<(), SourceKeyDirectoryMetadataError> {
+) -> Result<SourceOpeningStatementFlow, SourceKeyDirectoryMetadataError> {
     if statement.kind == FunctionStatementKind::Declaration {
         apply_source_opening_static_declaration(context.program, statement, values);
         collect_source_declaration_initializer_opening_points(
@@ -261,7 +271,7 @@ fn collect_source_statement_opening_points(
             function_call_stack,
             points,
         )?;
-        return Ok(());
+        return Ok(SourceOpeningStatementFlow::Fallthrough);
     }
     if statement.kind == FunctionStatementKind::Return {
         if let Some(expression) = statement.value_expression.as_ref() {
@@ -286,21 +296,22 @@ fn collect_source_statement_opening_points(
                 points,
             )?;
         }
-        return Ok(());
+        return Ok(SourceOpeningStatementFlow::Fallthrough);
     }
     if statement.kind == FunctionStatementKind::If {
-        match source_static_if_body_statements_with_tokens(
+        match source_static_if_body_statements_with_aliases(
             context.program,
             context.module,
             context.tokens,
             statement,
             values,
+            &alias_scope.expressions,
             body_cache,
         ) {
             Ok(Some(body_statements)) => {
                 let mut body_alias_scope = alias_scope.clone();
                 for body_statement in body_statements.iter() {
-                    collect_source_statement_opening_points(
+                    let flow = collect_source_statement_opening_points(
                         context,
                         body_statement,
                         values,
@@ -309,6 +320,9 @@ fn collect_source_statement_opening_points(
                         function_call_stack,
                         points,
                     )?;
+                    if flow != SourceOpeningStatementFlow::Fallthrough {
+                        return Ok(flow);
+                    }
                     collect_source_opening_point_expression_alias(
                         body_statement,
                         &mut body_alias_scope.expressions,
@@ -318,10 +332,10 @@ fn collect_source_statement_opening_points(
                         &mut body_alias_scope.expression_arrays,
                     );
                 }
-                return Ok(());
+                return Ok(SourceOpeningStatementFlow::Fallthrough);
             }
             Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
-                return Ok(());
+                return Ok(SourceOpeningStatementFlow::Fallthrough);
             }
             Err(error) => return Err(error),
         }
@@ -340,7 +354,7 @@ fn collect_source_statement_opening_points(
                     let mut loop_alias_scope = alias_scope.clone();
                     values.insert(loop_info.variable_name.clone(), iteration_value.clone());
                     for body_statement in loop_info.body_statements.iter() {
-                        collect_source_statement_opening_points(
+                        let flow = collect_source_statement_opening_points(
                             context,
                             body_statement,
                             values,
@@ -349,6 +363,13 @@ fn collect_source_statement_opening_points(
                             function_call_stack,
                             points,
                         )?;
+                        match flow {
+                            SourceOpeningStatementFlow::Fallthrough => {}
+                            SourceOpeningStatementFlow::Continue => break,
+                            SourceOpeningStatementFlow::Break => {
+                                return Ok(SourceOpeningStatementFlow::Fallthrough)
+                            }
+                        }
                         collect_source_opening_point_expression_alias(
                             body_statement,
                             &mut loop_alias_scope.expressions,
@@ -359,16 +380,196 @@ fn collect_source_statement_opening_points(
                         );
                     }
                 }
-                return Ok(());
+                loop_info.apply_final_variable_value(values);
+                return Ok(SourceOpeningStatementFlow::Fallthrough);
             }
             Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
-                return Ok(());
+                return Ok(SourceOpeningStatementFlow::Fallthrough);
             }
             Err(error) => return Err(error),
         }
     }
+    if statement.kind == FunctionStatementKind::While {
+        match source_static_while_loop_with_tokens(
+            context.program,
+            context.module,
+            context.tokens,
+            statement,
+            values,
+            body_cache,
+        ) {
+            Ok(Some(loop_info)) => {
+                let mut loop_values = values.clone();
+                let mut loop_alias_scope = alias_scope.clone();
+                let mut loop_points = points.clone();
+                for _ in 0..STATIC_WHILE_LOOP_LIMIT {
+                    let Some(condition_value) = evaluate_source_static_expression(
+                        context.program,
+                        &loop_info.condition,
+                        &loop_values,
+                    ) else {
+                        return Ok(SourceOpeningStatementFlow::Fallthrough);
+                    };
+                    if !static_value_truthy(&condition_value) {
+                        *values = loop_values;
+                        *points = loop_points;
+                        return Ok(SourceOpeningStatementFlow::Fallthrough);
+                    }
+                    for body_statement in loop_info.body_statements.iter() {
+                        let flow = collect_source_statement_opening_points(
+                            context,
+                            body_statement,
+                            &mut loop_values,
+                            &loop_alias_scope,
+                            body_cache,
+                            function_call_stack,
+                            &mut loop_points,
+                        )?;
+                        match flow {
+                            SourceOpeningStatementFlow::Fallthrough => {}
+                            SourceOpeningStatementFlow::Continue => break,
+                            SourceOpeningStatementFlow::Break => {
+                                *values = loop_values;
+                                *points = loop_points;
+                                return Ok(SourceOpeningStatementFlow::Fallthrough);
+                            }
+                        }
+                        collect_source_opening_point_expression_alias(
+                            body_statement,
+                            &mut loop_alias_scope.expressions,
+                        );
+                        collect_source_opening_point_expression_array_alias(
+                            body_statement,
+                            &mut loop_alias_scope.expression_arrays,
+                        );
+                    }
+                }
+                return Ok(SourceOpeningStatementFlow::Fallthrough);
+            }
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
+                return Ok(SourceOpeningStatementFlow::Fallthrough);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    if statement.kind == FunctionStatementKind::Do {
+        match source_static_do_while_loop_with_tokens(
+            context.program,
+            context.module,
+            context.tokens,
+            statement,
+            values,
+            body_cache,
+        ) {
+            Ok(Some(loop_info)) => {
+                let mut loop_values = values.clone();
+                let mut loop_alias_scope = alias_scope.clone();
+                let mut loop_points = points.clone();
+                for _ in 0..STATIC_WHILE_LOOP_LIMIT {
+                    for body_statement in loop_info.body_statements.iter() {
+                        let flow = collect_source_statement_opening_points(
+                            context,
+                            body_statement,
+                            &mut loop_values,
+                            &loop_alias_scope,
+                            body_cache,
+                            function_call_stack,
+                            &mut loop_points,
+                        )?;
+                        match flow {
+                            SourceOpeningStatementFlow::Fallthrough => {}
+                            SourceOpeningStatementFlow::Continue => break,
+                            SourceOpeningStatementFlow::Break => {
+                                *values = loop_values;
+                                *points = loop_points;
+                                return Ok(SourceOpeningStatementFlow::Fallthrough);
+                            }
+                        }
+                        collect_source_opening_point_expression_alias(
+                            body_statement,
+                            &mut loop_alias_scope.expressions,
+                        );
+                        collect_source_opening_point_expression_array_alias(
+                            body_statement,
+                            &mut loop_alias_scope.expression_arrays,
+                        );
+                    }
+                    let Some(condition_value) = evaluate_source_static_expression(
+                        context.program,
+                        &loop_info.condition,
+                        &loop_values,
+                    ) else {
+                        return Ok(SourceOpeningStatementFlow::Fallthrough);
+                    };
+                    if !static_value_truthy(&condition_value) {
+                        *values = loop_values;
+                        *points = loop_points;
+                        return Ok(SourceOpeningStatementFlow::Fallthrough);
+                    }
+                }
+                return Ok(SourceOpeningStatementFlow::Fallthrough);
+            }
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
+                return Ok(SourceOpeningStatementFlow::Fallthrough);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    if statement.kind == FunctionStatementKind::Switch {
+        match source_static_switch_body_statements(
+            context.program,
+            context.module,
+            context.tokens,
+            statement,
+            values,
+            body_cache,
+        ) {
+            Ok(Some(body_statements)) => {
+                let mut switch_alias_scope = alias_scope.clone();
+                for body_statement in body_statements.iter() {
+                    let flow = collect_source_statement_opening_points(
+                        context,
+                        body_statement,
+                        values,
+                        &switch_alias_scope,
+                        body_cache,
+                        function_call_stack,
+                        points,
+                    )?;
+                    match flow {
+                        SourceOpeningStatementFlow::Fallthrough => {}
+                        SourceOpeningStatementFlow::Break => {
+                            return Ok(SourceOpeningStatementFlow::Fallthrough)
+                        }
+                        SourceOpeningStatementFlow::Continue => {
+                            return Ok(SourceOpeningStatementFlow::Continue)
+                        }
+                    }
+                    collect_source_opening_point_expression_alias(
+                        body_statement,
+                        &mut switch_alias_scope.expressions,
+                    );
+                    collect_source_opening_point_expression_array_alias(
+                        body_statement,
+                        &mut switch_alias_scope.expression_arrays,
+                    );
+                }
+                return Ok(SourceOpeningStatementFlow::Fallthrough);
+            }
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
+                return Ok(SourceOpeningStatementFlow::Fallthrough);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    if statement.kind == FunctionStatementKind::Break {
+        return Ok(SourceOpeningStatementFlow::Break);
+    }
+    if statement.kind == FunctionStatementKind::Continue {
+        return Ok(SourceOpeningStatementFlow::Continue);
+    }
     if statement.kind != FunctionStatementKind::Expression {
-        return Ok(());
+        return Ok(SourceOpeningStatementFlow::Fallthrough);
     }
     if let Some(expression) = statement.value_expression.as_ref() {
         let mut resolving_aliases = BTreeSet::new();
@@ -412,7 +613,19 @@ fn collect_source_statement_opening_points(
         function_call_stack,
         points,
     )?;
-    Ok(())
+    if !apply_source_opening_static_expression_statement(
+        context.program,
+        statement.value_expression.as_ref(),
+        values,
+    ) {
+        apply_source_opening_static_postfix_update(context.module, statement, values).map_err(
+            |source| SourceKeyDirectoryMetadataError::Lex {
+                source_name: context.module.source_name.clone(),
+                source,
+            },
+        )?;
+    }
+    Ok(SourceOpeningStatementFlow::Fallthrough)
 }
 
 fn collect_source_declaration_initializer_opening_points(
@@ -558,7 +771,7 @@ fn collect_source_function_body_opening_points(
     let mut body_alias_scope = bindings.alias_scope;
     let result: Result<(), SourceKeyDirectoryMetadataError> = (|| {
         for body_statement in &function.statements {
-            collect_source_statement_opening_points(
+            let flow = collect_source_statement_opening_points(
                 context,
                 body_statement,
                 &mut bindings.values,
@@ -567,6 +780,9 @@ fn collect_source_function_body_opening_points(
                 call_state.function_call_stack,
                 call_state.points,
             )?;
+            if flow != SourceOpeningStatementFlow::Fallthrough {
+                break;
+            }
             collect_source_opening_point_expression_alias(
                 body_statement,
                 &mut body_alias_scope.expressions,
@@ -953,6 +1169,9 @@ fn collect_source_opening_points(
                 return result;
             }
             if let Some(alias) = alias_scope.expression_arrays.get(name) {
+                if source_expression_array_is_self_reference(name, alias) {
+                    return Ok(());
+                }
                 if !resolving_array_aliases.insert(name.clone()) {
                     return unsupported("source opening point expression array alias cycle");
                 }
@@ -1029,6 +1248,8 @@ fn source_opening_array_alias_path_element<'a>(
             alias_scope,
             resolving_array_aliases,
         ),
+        SourceExpressionArrayAlias::ScopedValues { .. } => None,
+        SourceExpressionArrayAlias::Call { .. } => None,
     }
 }
 
@@ -1108,6 +1329,9 @@ fn collect_source_opening_points_from_array_alias(
             let Some(next_alias) = alias_scope.expression_arrays.get(name) else {
                 return Ok(());
             };
+            if source_expression_array_is_self_reference(name, next_alias) {
+                return Ok(());
+            }
             if !resolving_array_aliases.insert(name.clone()) {
                 return unsupported("source opening point expression array alias cycle");
             }
@@ -1137,7 +1361,29 @@ fn collect_source_opening_points_from_array_alias(
             }
             Ok(())
         }
+        SourceExpressionArrayAlias::ScopedValues { expressions, .. } => {
+            for expression in expressions {
+                collect_source_opening_points(
+                    program,
+                    expression,
+                    constant_values,
+                    alias_scope,
+                    points,
+                    resolving_aliases,
+                    resolving_array_aliases,
+                )?;
+            }
+            Ok(())
+        }
+        SourceExpressionArrayAlias::Call { .. } => Ok(()),
     }
+}
+
+fn source_expression_array_is_self_reference(
+    name: &str,
+    alias: &SourceExpressionArrayAlias,
+) -> bool {
+    matches!(alias, SourceExpressionArrayAlias::Name(candidate) if candidate == name)
 }
 
 fn collect_source_opening_point_expression_alias(
@@ -1200,6 +1446,129 @@ fn apply_source_opening_static_declaration(
         }
         _ => false,
     }
+}
+
+fn apply_source_opening_static_expression_statement(
+    program: &SourceProgram,
+    expression: Option<&Expression>,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> bool {
+    let Some(expression) = expression else {
+        return false;
+    };
+    match &expression.kind {
+        ExpressionKind::Unary { op, expr } => {
+            let delta = match op {
+                UnaryOperator::Increment => 1,
+                UnaryOperator::Decrement => -1,
+                _ => return false,
+            };
+            let Some(name) = source_expression_name(expr) else {
+                return false;
+            };
+            apply_source_opening_static_delta(name, delta, values)
+        }
+        ExpressionKind::Binary { op, left, right } => {
+            let Some(name) = source_expression_name(left) else {
+                return false;
+            };
+            if !values.contains_key(name) {
+                return false;
+            }
+            let Some(right) = evaluate_source_static_expression(program, right, values) else {
+                return false;
+            };
+            let value = match op {
+                BinaryOperator::Assign => right,
+                BinaryOperator::PlusAssign => {
+                    let Some(current) = values.get(name).and_then(static_value_integer) else {
+                        return false;
+                    };
+                    let Some(right) = static_value_integer(&right) else {
+                        return false;
+                    };
+                    let Some(value) = current.checked_add(right) else {
+                        return false;
+                    };
+                    FixedFileTemplateValue::Integer(value)
+                }
+                BinaryOperator::MinusAssign => {
+                    let Some(current) = values.get(name).and_then(static_value_integer) else {
+                        return false;
+                    };
+                    let Some(right) = static_value_integer(&right) else {
+                        return false;
+                    };
+                    let Some(value) = current.checked_sub(right) else {
+                        return false;
+                    };
+                    FixedFileTemplateValue::Integer(value)
+                }
+                BinaryOperator::StarAssign => {
+                    let Some(current) = values.get(name).and_then(static_value_integer) else {
+                        return false;
+                    };
+                    let Some(right) = static_value_integer(&right) else {
+                        return false;
+                    };
+                    let Some(value) = current.checked_mul(right) else {
+                        return false;
+                    };
+                    FixedFileTemplateValue::Integer(value)
+                }
+                _ => return false,
+            };
+            values.insert(name.to_owned(), value);
+            true
+        }
+        _ => false,
+    }
+}
+
+fn apply_source_opening_static_postfix_update(
+    module: &SourceProgramModule,
+    statement: &FunctionStatement,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> Result<bool, lzvm_pil::LexError> {
+    let text = &module.source.contents[statement.start..statement.end];
+    let tokens = lex_source(text)?;
+    let tokens = tokens
+        .iter()
+        .filter(|token| token.kind != TokenKind::EndOfInput)
+        .collect::<Vec<_>>();
+    let (name, update) = match tokens.as_slice() {
+        [name, update] => (*name, *update),
+        [name, update, semicolon] if semicolon.kind == TokenKind::Semicolon => (*name, *update),
+        _ => return Ok(false),
+    };
+    if name.kind != TokenKind::Identifier {
+        return Ok(false);
+    }
+    let delta = match update.kind {
+        TokenKind::Increment => 1,
+        TokenKind::Decrement => -1,
+        _ => return Ok(false),
+    };
+    Ok(apply_source_opening_static_delta(
+        &name.lexeme,
+        delta,
+        values,
+    ))
+}
+
+fn apply_source_opening_static_delta(
+    name: &str,
+    delta: i128,
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+) -> bool {
+    let Some(current) = values.get(name).and_then(static_value_integer) else {
+        return false;
+    };
+    let Some(value) = current.checked_add(delta) else {
+        return false;
+    };
+    values.insert(name.to_owned(), FixedFileTemplateValue::Integer(value));
+    true
 }
 
 fn source_row_offset_value(

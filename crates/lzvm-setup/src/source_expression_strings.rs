@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use lzvm_pil::{
@@ -339,6 +341,8 @@ fn source_expression_array_alias_path_element<'a>(
             expression_array_aliases,
             resolving_array_aliases,
         ),
+        SourceExpressionArrayAlias::ScopedValues { .. } => None,
+        SourceExpressionArrayAlias::Call { .. } => None,
     }
 }
 

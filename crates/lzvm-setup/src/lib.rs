@@ -71,8 +71,11 @@ mod source_static_tokens;
 mod source_static_values;
 mod source_static_variable_values;
 mod source_template_context;
+mod source_template_do_while;
 mod source_template_for;
 mod source_template_if;
+mod source_template_switch;
+mod source_template_while;
 mod source_verifier_info;
 mod staging;
 

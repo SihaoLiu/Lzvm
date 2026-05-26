@@ -131,6 +131,64 @@ fn generate_key_lowers_top_level_annotation_objects_to_global_hints() {
 }
 
 #[test]
+fn generate_key_lowers_top_level_static_for_annotation_objects_to_global_hints() {
+    let dir = temp_dir("top-level-static-for-annotation-object");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "public inputs[4];\n\
+         int index = 0;\n\
+         airtemplate UnitA() { }\n\
+         for (index = 0; index < 3; ++index) {\n\
+             @record {left: inputs[index], literal: index}\n\
+         }\n\
+         @record {left: inputs[index], literal: index}\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_program_file(dir.join("pilout.globalConstraints.bin"))
+        .expect("source global program should parse");
+    assert_eq!(global.hints.hints.len(), 4);
+    for (index, hint) in global.hints.hints.iter().enumerate() {
+        assert_eq!(hint.name, "record");
+        assert_eq!(hint.fields[0].name, "left");
+        assert_eq!(
+            hint.fields[0].values[0].operand,
+            HintOperand::Public {
+                id: u32::try_from(index).expect("index should fit")
+            }
+        );
+        assert_eq!(hint.fields[1].name, "literal");
+        assert_eq!(
+            hint.fields[1].values[0].operand,
+            HintOperand::Number(u64::try_from(index).expect("index should fit"))
+        );
+    }
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_lowers_final_proof_annotation_objects_to_global_hints() {
     let dir = temp_dir("final-proof-annotation-object");
     let _ = fs::remove_dir_all(&dir);
@@ -175,6 +233,74 @@ fn generate_key_lowers_final_proof_annotation_objects_to_global_hints() {
     assert_eq!(global.hints.hints[0].fields[1].name, "literal");
     assert_eq!(
         global.hints.hints[0].fields[1].values[0].operand,
+        HintOperand::Number(10)
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_lowers_final_proof_static_do_while_global_hints() {
+    let dir = temp_dir("final-proof-static-do-while");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             on final proof emit_global_hints();\n\
+         }\n\
+         function emit_global_hints() {\n\
+             int index = 0;\n\
+             do {\n\
+                 @record {value: index, literal: 10}\n\
+                 ++index;\n\
+             } while (index < 2);\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_program_file(dir.join("pilout.globalConstraints.bin"))
+        .expect("source global program should parse");
+    assert_eq!(global.hints.hints.len(), 2);
+    assert_eq!(global.hints.hints[0].name, "record");
+    assert_eq!(global.hints.hints[0].fields[0].name, "value");
+    assert_eq!(
+        global.hints.hints[0].fields[0].values[0].operand,
+        HintOperand::Number(0)
+    );
+    assert_eq!(global.hints.hints[0].fields[1].name, "literal");
+    assert_eq!(
+        global.hints.hints[0].fields[1].values[0].operand,
+        HintOperand::Number(10)
+    );
+    assert_eq!(global.hints.hints[1].name, "record");
+    assert_eq!(global.hints.hints[1].fields[0].name, "value");
+    assert_eq!(
+        global.hints.hints[1].fields[0].values[0].operand,
+        HintOperand::Number(1)
+    );
+    assert_eq!(global.hints.hints[1].fields[1].name, "literal");
+    assert_eq!(
+        global.hints.hints[1].fields[1].values[0].operand,
         HintOperand::Number(10)
     );
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -651,6 +777,90 @@ fn generate_key_applies_airgroup_lookup_helper_postfix_static_updates() {
     assert_eq!(
         global.hints.hints[0].fields[2].values[0].operand,
         HintOperand::Number(9)
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_lowers_airgroup_lookup_helper_static_do_while_updates() {
+    let dir = temp_dir("helper-static-do-while-updates");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "public inputs[2];\n\
+         const int BASE_BUS = 8;\n\
+         function emit_update() {\n\
+             int index = 0;\n\
+             do {\n\
+                 direct_global_update_proves(BASE_BUS + index, [inputs[index]], surname: index);\n\
+                 ++index;\n\
+             } while (index < length(inputs));\n\
+         }\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA {\n\
+             UnitA();\n\
+             emit_update();\n\
+         }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let global = read_global_program_file(dir.join("pilout.globalConstraints.bin"))
+        .expect("source global program should parse");
+    assert_eq!(global.hints.hints.len(), 2);
+
+    assert_eq!(global.hints.hints[0].name, SOURCE_LOOKUP_PROVES_HINT);
+    assert_eq!(global.hints.hints[0].fields[0].name, "bus_id");
+    assert_eq!(
+        global.hints.hints[0].fields[0].values[0].operand,
+        HintOperand::Number(8)
+    );
+    assert_eq!(global.hints.hints[0].fields[1].name, "values");
+    assert_eq!(
+        global.hints.hints[0].fields[1].values[0].operand,
+        HintOperand::Public { id: 0 }
+    );
+    assert_eq!(global.hints.hints[0].fields[2].name, "surname");
+    assert_eq!(
+        global.hints.hints[0].fields[2].values[0].operand,
+        HintOperand::Number(0)
+    );
+
+    assert_eq!(global.hints.hints[1].name, SOURCE_LOOKUP_PROVES_HINT);
+    assert_eq!(global.hints.hints[1].fields[0].name, "bus_id");
+    assert_eq!(
+        global.hints.hints[1].fields[0].values[0].operand,
+        HintOperand::Number(9)
+    );
+    assert_eq!(global.hints.hints[1].fields[1].name, "values");
+    assert_eq!(
+        global.hints.hints[1].fields[1].values[0].operand,
+        HintOperand::Public { id: 1 }
+    );
+    assert_eq!(global.hints.hints[1].fields[2].name, "surname");
+    assert_eq!(
+        global.hints.hints[1].fields[2].values[0].operand,
+        HintOperand::Number(1)
     );
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");

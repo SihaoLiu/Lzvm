@@ -138,7 +138,7 @@ impl SourceLoader {
         let source_name = self.source_name(
             file_name,
             &candidate,
-            &file_dir,
+            search_paths,
             is_main,
             found_search_index,
             direct_search_index,
@@ -191,27 +191,48 @@ impl SourceLoader {
 
     fn search_roots(&self, parent_dir: &Path, search_paths: &[PathBuf]) -> (Vec<PathBuf>, usize) {
         let parent_dir = normalize_path(parent_dir);
-        let mut roots = search_paths.iter().map(normalize_path).collect::<Vec<_>>();
+        let mut roots = search_paths
+            .iter()
+            .map(|root| self.normalize_include_root(root))
+            .collect::<Vec<_>>();
 
         let direct_search_index;
         if self.config.include_path_first {
-            roots.extend(self.config.include_paths.iter().map(normalize_path));
+            roots.extend(
+                self.config
+                    .include_paths
+                    .iter()
+                    .map(|root| self.normalize_include_root(root)),
+            );
             direct_search_index = roots.len();
             roots.push(parent_dir);
         } else {
             direct_search_index = roots.len();
             roots.push(parent_dir);
-            roots.extend(self.config.include_paths.iter().map(normalize_path));
+            roots.extend(
+                self.config
+                    .include_paths
+                    .iter()
+                    .map(|root| self.normalize_include_root(root)),
+            );
         }
 
         (roots, direct_search_index)
+    }
+
+    fn normalize_include_root(&self, root: &Path) -> PathBuf {
+        if root.is_absolute() {
+            normalize_path(root)
+        } else {
+            normalize_path(self.config.working_dir.join(root))
+        }
     }
 
     fn source_name(
         &mut self,
         requested: &Path,
         full_path: &Path,
-        file_dir: &Path,
+        search_paths: &[PathBuf],
         is_main: bool,
         found_search_index: usize,
         direct_search_index: usize,
@@ -219,7 +240,11 @@ impl SourceLoader {
         let source_name = if found_search_index != direct_search_index {
             path_to_source_name(requested)
         } else if is_main {
-            self.base_path = Some(file_dir.to_path_buf());
+            let file_dir = full_path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| PathBuf::from("."));
+            self.base_path = Some(file_dir);
             full_path
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
@@ -227,14 +252,39 @@ impl SourceLoader {
         } else if let Some(base_path) = &self.base_path {
             if let Ok(relative) = full_path.strip_prefix(base_path) {
                 path_to_source_name(relative)
+            } else if let Some(relative) =
+                self.source_name_relative_to_search_root(full_path, search_paths)
+            {
+                relative
             } else {
                 path_to_source_name(full_path)
             }
+        } else if let Some(relative) =
+            self.source_name_relative_to_search_root(full_path, search_paths)
+        {
+            relative
         } else {
             path_to_source_name(full_path)
         };
 
         self.disambiguate_source_name(source_name, full_path)
+    }
+
+    fn source_name_relative_to_search_root(
+        &self,
+        full_path: &Path,
+        search_paths: &[PathBuf],
+    ) -> Option<String> {
+        for root in search_paths.iter().chain(&self.config.include_paths) {
+            let root = self.normalize_include_root(root);
+            let Ok(relative) = full_path.strip_prefix(&root) else {
+                continue;
+            };
+            if !relative.as_os_str().is_empty() {
+                return Some(path_to_source_name(relative));
+            }
+        }
+        None
     }
 
     fn disambiguate_source_name(&self, source_name: String, full_path: &Path) -> String {
@@ -319,6 +369,27 @@ mod tests {
             .expect("parent directory should be created");
         fs::write(&path, contents).expect("test file should be written");
         path
+    }
+
+    fn case_dir_inside_working_dir(name: &str) -> PathBuf {
+        let id = CASE_ID.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::current_dir()
+            .expect("current directory should be available")
+            .join("target")
+            .join(format!(
+                "lzvm-pil-source-{}-{id}-{name}",
+                std::process::id()
+            ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("case directory should be created");
+        dir
+    }
+
+    fn relative_to_working_dir(path: &Path) -> PathBuf {
+        let working_dir = std::env::current_dir().expect("current directory should be available");
+        path.strip_prefix(&working_dir)
+            .expect("path should be inside current directory")
+            .to_path_buf()
     }
 
     #[test]
@@ -503,5 +574,76 @@ mod tests {
         assert_eq!(include.full_path, library);
         assert_eq!(include.source_name, "shared.pil");
         assert_eq!(include.contents, "constant X = 2;\n");
+    }
+
+    #[test]
+    fn records_nested_include_path_sources_relative_to_include_root() {
+        let root = case_dir("nested-include-path-source-name");
+        let source_dir = root.join("source");
+        let lib = root.join("lib");
+        let main = write_file(&source_dir, "main.pil", "require \"entry.pil\";");
+        write_file(&lib, "entry.pil", "include \"nested/child.pil\";");
+        let child_path = write_file(&lib, "nested/child.pil", "constant CHILD = 1;");
+        let mut loader = SourceLoader::new(SourceLoaderConfig {
+            working_dir: root.clone(),
+            include_paths: vec![lib],
+            ..SourceLoaderConfig::default()
+        });
+        let main = loader.load_main(&main).expect("main should load");
+        let entry = loader
+            .load_require("entry.pil", main.file_dir())
+            .expect("entry should load")
+            .expect("entry should not be cached");
+
+        let child = loader
+            .load_include("nested/child.pil", entry.file_dir())
+            .expect("nested include should load");
+
+        assert_eq!(child.full_path, child_path);
+        assert_eq!(child.source_name, "nested/child.pil");
+        assert_eq!(
+            loader.full_path_for_source("nested/child.pil"),
+            Some(child.full_path())
+        );
+    }
+
+    #[test]
+    fn deduplicates_requires_loaded_through_relative_include_paths() {
+        let root = case_dir_inside_working_dir("relative-include-path-identity");
+        let source_dir = root.join("pil");
+        let lib = root.join("lib");
+        let main_path = write_file(&source_dir, "main.pil", "require \"ops.pil\";");
+        write_file(&source_dir, "ops.pil", "constant OPS = 1;");
+        write_file(&lib, "child.pil", "require \"ops.pil\";");
+        let mut loader = SourceLoader::new(SourceLoaderConfig {
+            working_dir: std::env::current_dir().expect("current directory should be available"),
+            include_paths: vec![
+                relative_to_working_dir(&source_dir),
+                relative_to_working_dir(&lib),
+            ],
+            ..SourceLoaderConfig::default()
+        });
+        let main = loader
+            .load_main(relative_to_working_dir(&main_path))
+            .expect("main should load");
+        let first_ops = loader
+            .load_require("ops.pil", main.file_dir())
+            .expect("first ops require should load");
+        let child = loader
+            .load_require("child.pil", main.file_dir())
+            .expect("child should load")
+            .expect("child should not be cached");
+
+        let second_ops = loader
+            .load_require("ops.pil", child.file_dir())
+            .expect("second ops require should resolve");
+
+        assert!(first_ops.is_some());
+        assert!(
+            second_ops.is_none(),
+            "relative include paths should resolve to the same source identity"
+        );
+
+        fs::remove_dir_all(&root).expect("case directory should be removed");
     }
 }

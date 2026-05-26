@@ -151,6 +151,35 @@ pub(crate) fn static_switch_label_colon(
     None
 }
 
+pub(crate) fn static_switch_case_value_ranges(
+    tokens: &[Token],
+    start: usize,
+    end: usize,
+) -> Option<Vec<(usize, usize)>> {
+    if start >= end {
+        return None;
+    }
+    let mut ranges = Vec::new();
+    let mut stack = Vec::new();
+    let mut segment_start = start;
+    for (index, token) in tokens.iter().enumerate().take(end).skip(start) {
+        if stack.is_empty() && token.kind == TokenKind::Comma {
+            if segment_start >= index {
+                return None;
+            }
+            ranges.push((segment_start, index));
+            segment_start = index + 1;
+        } else {
+            update_static_delimiter_stack(token.kind, &mut stack)?;
+        }
+    }
+    if !stack.is_empty() || segment_start >= end {
+        return None;
+    }
+    ranges.push((segment_start, end));
+    Some(ranges)
+}
+
 pub(crate) fn next_static_semicolon_limited(
     tokens: &[Token],
     index: usize,

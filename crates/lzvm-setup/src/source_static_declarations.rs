@@ -44,9 +44,18 @@ fn execute_static_constant_declaration(
         return Some(());
     }
     if !declaration.array_dims.is_empty() {
-        let elements = source_static_array_expression(
+        if declaration.initializer_expression.is_none()
+            && declaration.type_name.as_deref() != Some("int")
+        {
+            return None;
+        }
+        let elements = source_static_array_elements(
             program,
-            declaration.initializer_expression.as_ref()?,
+            module,
+            tokens,
+            declaration.initializer_expression.as_ref(),
+            &declaration.array_dim_expressions,
+            &declaration.array_dims,
             values,
         )?;
         insert_source_static_array(values, &declaration.name, elements)?;

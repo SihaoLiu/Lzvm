@@ -352,6 +352,22 @@ fn sample_public_values(setup_hash: [u8; 32]) -> PublicValues {
     }
 }
 
+fn eth_block_public_values_with_rom_root(
+    setup_hash: [u8; 32],
+    input: &EthBlockInput,
+    rom_root: [u64; 4],
+) -> PublicValues {
+    let mut public_values = public_values_from_eth_block_input(setup_hash, input);
+    public_values.values.insert(
+        0,
+        PublicValueEntry {
+            name: "rom_root".to_owned(),
+            elements: rom_root.to_vec(),
+        },
+    );
+    public_values
+}
+
 fn public_values_publics_map(public_values: &PublicValues) -> Vec<PublicValue> {
     public_values
         .values
@@ -1218,6 +1234,39 @@ fn write_bytes(path: &Path, value: impl AsRef<[u8]>) {
     fs::create_dir_all(path.parent().expect("path should have a parent"))
         .expect("fixture directory should be created");
     fs::write(path, value).expect("fixture file should be written");
+}
+
+fn write_sample_program_image_cache(
+    root: &Path,
+    guest_image: &Path,
+    setup_hash: [u8; 32],
+    tree_root: [u64; 4],
+) -> PathBuf {
+    let program_path = root.join("program.bin");
+    let constraint_digest_path = root.join("constraint.digest");
+    let root_path = root.join("root.bin");
+    let cache_path = root.join("program_image.cache");
+    write_bytes(&program_path, b"packed-program");
+    write_bytes(&constraint_digest_path, setup_hash);
+    write_bytes(
+        &root_path,
+        encode_verification_key_binary(&VerificationKeyRoot::FieldElements(tree_root.to_vec()))
+            .expect("root should encode"),
+    );
+    write_program_image_commitment_cache_file(ProgramImageCommitmentCacheFileRequest {
+        program_path: &program_path,
+        guest_image_path: guest_image,
+        constraint_digest_path: &constraint_digest_path,
+        root_path: &root_path,
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cuda,
+        output_path: &cache_path,
+    })
+    .expect("cache should write");
+    cache_path
 }
 
 fn write_unit_setup_metadata(path: &Path, setup: &UnitSetupInfo) {
@@ -3943,6 +3992,75 @@ fn prove_inputs_rejects_mismatched_eth_block_public_values() {
 }
 
 #[test]
+fn prove_inputs_rejects_mismatched_program_image_cache_public_values() {
+    let dir = temp_dir("prove-inputs-program-image-public-values-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_execution_ready_setup_directory_with_public_values(
+        &dir,
+        &eth_block_public_values_with_rom_root([0; 32], &block_input, [0, 0, 0, 0]),
+    );
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let output_dir = dir.join("proof-out");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let block_input_path = dir.join("block.input");
+    let public_values_path = dir.join("mismatched-public-values.bin");
+    write_bytes(&witness_library, sample_witness_library());
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(
+        &block_input_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&eth_block_public_values_with_rom_root(
+            setup_hash,
+            &block_input,
+            [99, 98, 97, 96],
+        ))
+        .expect("public values should encode"),
+    );
+    let cache_path =
+        write_sample_program_image_cache(&dir, &guest_image, setup_hash, [11, 12, 13, 14]);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove inputs failed: program image cache tree root does not match public value: rom_root\n"
+    );
+}
+
+#[test]
 fn prove_inputs_rejects_eth_block_public_values_with_wrong_setup_hash() {
     let dir = temp_dir("prove-inputs-eth-public-values-setup-mismatch");
     let _ = fs::remove_dir_all(&dir);
@@ -5114,6 +5232,374 @@ fn prove_witness_source_generated_key_directory_round_trips_eth_block_public_val
         String::from_utf8(verify_stdout).expect("verify stdout should be utf-8");
     assert!(verify_stdout_text.contains("source_fixed_file_manifest=present\n"));
     assert!(verify_stdout_text.contains("source_program_archive=present\n"));
+    assert!(verify_stdout_text.contains("eth_block_input_match=ok\n"));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn prove_witness_source_generated_all_units_preserves_bound_inputs() {
+    let dir = temp_dir("prove-witness-source-generated-all-units-bound-inputs");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_bytes(
+        &source_path,
+        "public eth_block_hash_u32_be[8];\n\
+         public eth_parent_hash_u32_be[8];\n\
+         public eth_beneficiary_u32_be[5];\n\
+         public eth_state_root_u32_be[8];\n\
+         public eth_receipts_root_u32_be[8];\n\
+         public eth_logs_bloom_u32_be[64];\n\
+         public eth_difficulty_u32_be[8];\n\
+         public eth_block_number_u32_le[2];\n\
+         public eth_block_timestamp_u32_le[2];\n\
+         public eth_extra_data_len;\n\
+         public eth_extra_data_u32_be[8];\n\
+         public eth_gas_limit_u32_le[2];\n\
+         public eth_gas_used_u32_le[2];\n\
+         public eth_base_fee_per_gas_present;\n\
+         public eth_base_fee_per_gas_u32_be[8];\n\
+         public eth_mix_hash_u32_be[8];\n\
+         public eth_nonce_u32_be[2];\n\
+         public eth_ommers_hash_u32_be[8];\n\
+         public eth_transactions_root_u32_be[8];\n\
+         public eth_withdrawals_root_present;\n\
+         public eth_withdrawals_root_u32_be[8];\n\
+         airtemplate UnitA() {\n\
+             col witness values[2];\n\
+         }\n\
+         airtemplate UnitB() {\n\
+             col witness values[2];\n\
+         }\n\
+         airgroup GroupA { UnitA(); UnitB(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut generate_stdout = Vec::new();
+    let mut generate_stderr = Vec::new();
+    let generate_code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut generate_stdout,
+        &mut generate_stderr,
+    );
+    assert_eq!(
+        generate_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&generate_stderr)
+    );
+    assert!(generate_stderr.is_empty());
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let unit_count = u32::try_from(catalog.units.len()).expect("unit count should fit");
+    assert!(unit_count > 1);
+    let stored_witnesses = unit_count.to_string();
+
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let bundle_path = dir.join("trace-bundle.bin");
+    let block_input_path = dir.join("block.input");
+    let program_path = dir.join("program.bin");
+    let constraint_digest_path = dir.join("constraint.digest");
+    let root_path = dir.join("root.bin");
+    let cache_path = dir.join("program_image.cache");
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let encoded_block_input =
+        encode_eth_block_input(&block_input).expect("block input should encode");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+    write_bytes(&bundle_path, sample_trace_bundle_bytes(unit_count, 29));
+    write_bytes(&block_input_path, &encoded_block_input);
+    write_bytes(&program_path, b"source-generated-program");
+    write_bytes(&constraint_digest_path, setup_hash);
+    write_bytes(
+        &root_path,
+        encode_verification_key_binary(&VerificationKeyRoot::FieldElements(vec![11, 12, 13, 14]))
+            .expect("root should encode"),
+    );
+    write_program_image_commitment_cache_file(ProgramImageCommitmentCacheFileRequest {
+        program_path: &program_path,
+        guest_image_path: &guest_image,
+        constraint_digest_path: &constraint_digest_path,
+        root_path: &root_path,
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cuda,
+        output_path: &cache_path,
+    })
+    .expect("cache should write");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--all-units",
+            "--stored-witnesses",
+            stored_witnesses.as_str(),
+            "--trace-bundle",
+            bundle_path.to_str().expect("bundle path should be utf-8"),
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let generated_public_values_path = output_dir.join("eth-block-public-values.bin");
+    let generated_bytes =
+        fs::read(&generated_public_values_path).expect("generated public values should read");
+    let generated_public_values =
+        parse_public_values(&generated_bytes).expect("generated public values should parse");
+    assert_eq!(
+        generated_public_values,
+        public_values_from_eth_block_input(setup_hash, &block_input)
+    );
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains(&format!("units={unit_count}\n")));
+    assert!(stdout_text.contains("source_fixed_file_manifest=present\n"));
+    assert!(stdout_text.contains("source_program_archive=present\n"));
+    assert!(stdout_text.contains("public_inputs_generated=eth_block_input\n"));
+    assert!(stdout_text.contains("program_image_cache_gpu_mode=cuda\n"));
+    assert!(stdout_text.contains("eth_block_input="));
+
+    let proof_path = output_dir.join("proof.bin");
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "proof",
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            generated_public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
+
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert!(verify_stderr.is_empty());
+    let verify_stdout_text =
+        String::from_utf8(verify_stdout).expect("verify stdout should be utf-8");
+    assert!(verify_stdout_text.contains("source_fixed_file_manifest=present\n"));
+    assert!(verify_stdout_text.contains("source_program_archive=present\n"));
+    assert!(verify_stdout_text.contains("program_image_cache_match=ok\n"));
+    assert!(verify_stdout_text.contains("eth_block_input_match=ok\n"));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn prove_witness_source_generated_all_units_packs_eth_block_public_outputs() {
+    let dir = temp_dir("prove-witness-source-generated-packed-eth-outputs");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_bytes(
+        &source_path,
+        "public rom_root[4];\n\
+         public inputs[64];\n\
+         airtemplate UnitA() {\n\
+             col witness values[2];\n\
+         }\n\
+         airtemplate UnitB() {\n\
+             col witness values[2];\n\
+         }\n\
+         airgroup GroupA { UnitA(); UnitB(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut generate_stdout = Vec::new();
+    let mut generate_stderr = Vec::new();
+    let generate_code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut generate_stdout,
+        &mut generate_stderr,
+    );
+    assert_eq!(
+        generate_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&generate_stderr)
+    );
+    assert!(generate_stderr.is_empty());
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let unit_count = u32::try_from(catalog.units.len()).expect("unit count should fit");
+    assert!(unit_count > 1);
+    let stored_witnesses = unit_count.to_string();
+
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let bundle_path = dir.join("trace-bundle.bin");
+    let block_input_path = dir.join("block.input");
+    let program_path = dir.join("program.bin");
+    let constraint_digest_path = dir.join("constraint.digest");
+    let root_path = dir.join("root.bin");
+    let cache_path = dir.join("program_image.cache");
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let encoded_block_input =
+        encode_eth_block_input(&block_input).expect("block input should encode");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+    write_bytes(&bundle_path, sample_trace_bundle_bytes(unit_count, 31));
+    write_bytes(&block_input_path, &encoded_block_input);
+    write_bytes(&program_path, b"source-generated-program");
+    write_bytes(&constraint_digest_path, setup_hash);
+    write_bytes(
+        &root_path,
+        encode_verification_key_binary(&VerificationKeyRoot::FieldElements(vec![11, 12, 13, 14]))
+            .expect("root should encode"),
+    );
+    write_program_image_commitment_cache_file(ProgramImageCommitmentCacheFileRequest {
+        program_path: &program_path,
+        guest_image_path: &guest_image,
+        constraint_digest_path: &constraint_digest_path,
+        root_path: &root_path,
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cuda,
+        output_path: &cache_path,
+    })
+    .expect("cache should write");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--all-units",
+            "--stored-witnesses",
+            stored_witnesses.as_str(),
+            "--trace-bundle",
+            bundle_path.to_str().expect("bundle path should be utf-8"),
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let generated_public_values_path = output_dir.join("eth-block-public-values.bin");
+    let generated_bytes =
+        fs::read(&generated_public_values_path).expect("generated public values should read");
+    let generated_public_values =
+        parse_public_values(&generated_bytes).expect("generated public values should parse");
+    assert_eq!(generated_public_values.setup_hash, setup_hash);
+    assert_eq!(generated_public_values.values.len(), 2);
+    assert_eq!(generated_public_values.values[0].name, "rom_root");
+    assert_eq!(
+        generated_public_values.values[0].elements,
+        vec![11, 12, 13, 14]
+    );
+    assert_eq!(generated_public_values.values[1].name, "inputs");
+    let mut expected_inputs = block_input
+        .block_hash
+        .chunks_exact(4)
+        .map(|chunk| {
+            u64::from(u32::from_le_bytes(
+                chunk.try_into().expect("chunk is 4 bytes"),
+            ))
+        })
+        .collect::<Vec<_>>();
+    expected_inputs.resize(64, 0);
+    assert_eq!(generated_public_values.values[1].elements, expected_inputs);
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains(&format!("units={unit_count}\n")));
+    assert!(stdout_text.contains("public_inputs_generated=eth_block_input\n"));
+    assert!(stdout_text.contains("public_input_values=2\n"));
+    assert!(stdout_text.contains("public_input_fields=68\n"));
+    assert!(stdout_text.contains("program_image_cache_gpu_mode=cuda\n"));
+    assert!(stdout_text.contains("eth_block_input="));
+
+    let proof_path = output_dir.join("proof.bin");
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "proof",
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            generated_public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
+
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert!(verify_stderr.is_empty());
+    let verify_stdout_text =
+        String::from_utf8(verify_stdout).expect("verify stdout should be utf-8");
+    assert!(verify_stdout_text.contains("program_image_cache_match=ok\n"));
     assert!(verify_stdout_text.contains("eth_block_input_match=ok\n"));
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -7318,6 +7804,75 @@ fn prove_witness_rejects_mismatched_eth_block_public_values_before_witness_loadi
 }
 
 #[test]
+fn prove_witness_rejects_mismatched_program_image_cache_public_values_before_witness_loading() {
+    let dir = temp_dir("prove-witness-program-image-public-values-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_execution_ready_setup_directory_with_public_values(
+        &dir,
+        &eth_block_public_values_with_rom_root([0; 32], &block_input, [0, 0, 0, 0]),
+    );
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let output_dir = dir.join("proof-out");
+    let witness_library = dir.join("missing-witness.so");
+    let guest_image = dir.join("guest.elf");
+    let block_input_path = dir.join("block.input");
+    let public_values_path = dir.join("mismatched-public-values.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(
+        &block_input_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&eth_block_public_values_with_rom_root(
+            setup_hash,
+            &block_input,
+            [99, 98, 97, 96],
+        ))
+        .expect("public values should encode"),
+    );
+    let cache_path =
+        write_sample_program_image_cache(&dir, &guest_image, setup_hash, [11, 12, 13, 14]);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--no-verify-outputs",
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove witness failed: program image cache tree root does not match public value: rom_root\n"
+    );
+}
+
+#[test]
 fn prove_witness_rejects_eth_block_public_values_with_wrong_setup_hash_before_witness_loading() {
     let dir = temp_dir("prove-witness-eth-public-values-setup-mismatch");
     let _ = fs::remove_dir_all(&dir);
@@ -7449,6 +8004,127 @@ fn writes_eth_block_public_values_from_setup_directory() {
 }
 
 #[test]
+fn writes_packed_eth_block_public_values_from_setup_directory_and_program_image_cache() {
+    let dir = temp_dir("eth-block-public-values-packed-setup-dir");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_bytes(
+        &source_path,
+        "public rom_root[4];\n\
+         public inputs[64];\n\
+         airtemplate UnitA() {\n\
+             col witness values[2];\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+    let mut generate_stdout = Vec::new();
+    let mut generate_stderr = Vec::new();
+    let generate_code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut generate_stdout,
+        &mut generate_stderr,
+    );
+    assert_eq!(
+        generate_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&generate_stderr)
+    );
+    assert!(generate_stderr.is_empty());
+
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let setup_hash_hex = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let block_input_bytes =
+        encode_eth_block_input(&block_input).expect("block input should encode");
+    let block_input_path = dir.join("block.input");
+    let public_values_path = dir.join("eth-public-values.bin");
+    let guest_image = dir.join("guest.elf");
+    let program_path = dir.join("program.bin");
+    let constraint_digest_path = dir.join("constraint.digest");
+    let root_path = dir.join("root.bin");
+    let cache_path = dir.join("program_image.cache");
+    write_bytes(&block_input_path, &block_input_bytes);
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&program_path, b"source-generated-program");
+    write_bytes(&constraint_digest_path, setup_hash);
+    write_bytes(
+        &root_path,
+        encode_verification_key_binary(&VerificationKeyRoot::FieldElements(vec![11, 12, 13, 14]))
+            .expect("root should encode"),
+    );
+    write_program_image_commitment_cache_file(ProgramImageCommitmentCacheFileRequest {
+        program_path: &program_path,
+        guest_image_path: &guest_image,
+        constraint_digest_path: &constraint_digest_path,
+        root_path: &root_path,
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cuda,
+        output_path: &cache_path,
+    })
+    .expect("cache should write");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-block-public-values",
+            "--setup-dir",
+            dir.to_str().expect("setup path should be utf-8"),
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let encoded = fs::read(&public_values_path).expect("public values should read");
+    let parsed = parse_public_values(&encoded).expect("public values should parse");
+    assert_eq!(parsed.setup_hash, setup_hash);
+    assert_eq!(parsed.values.len(), 2);
+    assert_eq!(parsed.values[0].name, "rom_root");
+    assert_eq!(parsed.values[0].elements, vec![11, 12, 13, 14]);
+    assert_eq!(parsed.values[1].name, "inputs");
+    let mut expected_inputs = block_input
+        .block_hash
+        .chunks_exact(4)
+        .map(|chunk| {
+            u64::from(u32::from_le_bytes(
+                chunk.try_into().expect("chunk is 4 bytes"),
+            ))
+        })
+        .collect::<Vec<_>>();
+    expected_inputs.resize(64, 0);
+    assert_eq!(parsed.values[1].elements, expected_inputs);
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains(&format!("setup_hash={setup_hash_hex}\n")));
+    assert!(stdout_text.contains("values=2\n"));
+    assert!(stdout_text.contains("public_value_fields=68\n"));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn rejects_eth_block_public_values_from_mismatched_setup_metadata() {
     let dir = temp_dir("eth-block-public-values-metadata-mismatch");
     let _ = fs::remove_dir_all(&dir);
@@ -7485,7 +8161,7 @@ fn rejects_eth_block_public_values_from_mismatched_setup_metadata() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "eth block public values failed: public-values entry count mismatch: expected 1, found 21\n"
+        "eth block public values failed: unsupported ETH block public metadata: block_number\n"
     );
 }
 
@@ -8005,6 +8681,197 @@ fn runs_prove_witness_contributions_with_compact_artifact() {
         .expect("verify stdout should be utf-8")
         .contains("status=ok\n"));
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn prove_witness_contribution_challenges_preserve_bound_program_image_and_eth_block_input() {
+    let dir = temp_dir("prove-witness-contribution-bound-inputs");
+    let _ = fs::remove_dir_all(&dir);
+    let block_input = build_eth_block_input(&sample_block_rlp_with_extra_fields())
+        .expect("block input should build");
+    write_execution_ready_setup_directory_with_public_values(
+        &dir,
+        &eth_block_public_values_with_rom_root([0; 32], &block_input, [11, 12, 13, 14]),
+    );
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let block_input_path = dir.join("block.input");
+    let public_values_path = dir.join("public_values.bin");
+    let challenge_segment_path = dir.join("challenge_values_segment.bin");
+    let block_input_bytes =
+        encode_eth_block_input(&block_input).expect("block input should encode");
+    let block_input_hash = eth_block_input_bytes_digest(&block_input_bytes);
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [17_u8]);
+    write_bytes(&block_input_path, &block_input_bytes);
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&eth_block_public_values_with_rom_root(
+            setup_hash,
+            &block_input,
+            [11, 12, 13, 14],
+        ))
+        .expect("public values should encode"),
+    );
+    let cache_path =
+        write_sample_program_image_cache(&dir, &guest_image, setup_hash, [11, 12, 13, 14]);
+    let cache = read_program_image_commitment_cache_file(&cache_path).expect("cache should read");
+    let cache_segment =
+        encode_program_image_cache_segment(&cache).expect("cache segment should encode");
+    let cache_segment_hash = program_image_cache_segment_digest(&cache_segment);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--contributions",
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("pass=contributions\n"));
+    assert!(stdout.contains("program_image_cache_gpu_mode=cuda\n"));
+    assert!(stdout.contains(&format!(
+        "eth_block_input_hash={}\n",
+        format_hash(&block_input_hash)
+    )));
+
+    let proof_path = output_dir.join("proof.bin");
+    let proof_bytes = fs::read(&proof_path).expect("proof output should read");
+    let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
+    let segment_ids = proof
+        .segments
+        .iter()
+        .map(|segment| segment.id)
+        .collect::<Vec<_>>();
+    assert!(segment_ids.contains(&CONTRIBUTION_SEGMENT_ID));
+    assert!(segment_ids.contains(&PROGRAM_IMAGE_CACHE_SEGMENT_ID));
+    assert!(segment_ids.contains(&ETH_BLOCK_INPUT_SEGMENT_ID));
+
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "contribution",
+            dir.to_str().expect("setup path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert!(verify_stderr.is_empty());
+    let verify_stdout = String::from_utf8(verify_stdout).expect("verify stdout should be utf-8");
+    assert!(verify_stdout.contains("program_image_caches=1\n"));
+    assert!(verify_stdout.contains(&format!(
+        "program_image_cache_segment_hash={}\n",
+        format_hash(&cache_segment_hash)
+    )));
+    assert!(verify_stdout.contains("eth_block_inputs=1\n"));
+    assert!(verify_stdout.contains(&format!(
+        "eth_block_input_hash={}\n",
+        format_hash(&block_input_hash)
+    )));
+    assert!(verify_stdout.contains("eth_extra_header_fields=1\neth_extra_body_fields=1\n"));
+
+    let mut writer_stdout = Vec::new();
+    let mut writer_stderr = Vec::new();
+    let writer_code = run_cli(
+        &[
+            "prove",
+            "write-contribution-challenges",
+            dir.to_str().expect("setup path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+            challenge_segment_path
+                .to_str()
+                .expect("challenge path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+        ],
+        &mut writer_stdout,
+        &mut writer_stderr,
+    );
+    assert_eq!(
+        writer_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&writer_stderr)
+    );
+    assert!(writer_stderr.is_empty());
+    let writer_stdout = String::from_utf8(writer_stdout).expect("writer stdout should be utf-8");
+    assert!(writer_stdout.contains("program_image_caches=1\n"));
+    assert!(writer_stdout.contains("eth_block_inputs=1\n"));
+    assert!(writer_stdout.contains("challenge_values=1\n"));
+
+    let mut challenge_stdout = Vec::new();
+    let mut challenge_stderr = Vec::new();
+    let challenge_code = run_cli(
+        &[
+            "verify",
+            "contribution-challenge",
+            dir.to_str().expect("setup path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+            challenge_segment_path
+                .to_str()
+                .expect("challenge path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+        ],
+        &mut challenge_stdout,
+        &mut challenge_stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        challenge_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&challenge_stderr)
+    );
+    assert!(challenge_stderr.is_empty());
+    let challenge_stdout =
+        String::from_utf8(challenge_stdout).expect("challenge stdout should be utf-8");
+    assert!(challenge_stdout.contains("program_image_caches=1\n"));
+    assert!(challenge_stdout.contains("eth_block_inputs=1\n"));
+    assert!(challenge_stdout.contains("challenge_values=1\n"));
 }
 
 fn run_prove_witness_with_aggregate_modifier(

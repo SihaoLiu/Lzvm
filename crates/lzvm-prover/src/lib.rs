@@ -4,6 +4,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::constraint_program::ConstraintProgram;
+use lzvm_artifacts::eth_block_public_values::{
+    validate_program_image_cache_public_values, EthBlockPublicValuesError,
+};
 use lzvm_artifacts::expression_program::ExpressionProgram;
 use lzvm_artifacts::global_info::GlobalInfo;
 use lzvm_artifacts::guest_image::{read_guest_image_file, GuestImageError, GuestImageInfo};
@@ -596,6 +599,10 @@ pub enum ProveExecutionPlanError {
     PublicInputsSetupHashMismatch {
         path: PathBuf,
     },
+    ProgramImageCachePublicInputs {
+        path: PathBuf,
+        source: EthBlockPublicValuesError,
+    },
     FixedColumnCountTooLarge {
         unit_index: usize,
         fixed_column_count: u32,
@@ -711,6 +718,11 @@ impl fmt::Display for ProveExecutionPlanError {
                 "prove execution plan public inputs setup hash mismatch: {}",
                 path.display()
             ),
+            Self::ProgramImageCachePublicInputs { path, source } => write!(
+                f,
+                "prove execution plan program image cache public inputs mismatch: {}: {source}",
+                path.display()
+            ),
             Self::FixedColumnCountTooLarge {
                 unit_index,
                 fixed_column_count,
@@ -739,6 +751,7 @@ impl std::error::Error for ProveExecutionPlanError {
             Self::InvalidPublicInputs { source, .. } => Some(source),
             Self::PublicInputsFieldConversion { source, .. } => Some(source),
             Self::PublicInputsMetadata { source, .. } => Some(source),
+            Self::ProgramImageCachePublicInputs { source, .. } => Some(source),
             Self::RunPlan(error) => Some(error),
             Self::MissingPcsMaterial { .. }
             | Self::MissingProgramImageCache { .. }
@@ -1002,7 +1015,7 @@ pub fn derive_prove_execution_plan_with_program_image_cache(
             source,
         }
     })?;
-    if let Some(public_inputs) = &inputs.public_inputs {
+    let public_values = if let Some(public_inputs) = &inputs.public_inputs {
         validate_regular_file(
             public_inputs,
             |path| ProveExecutionPlanError::MissingPublicInputs { path },
@@ -1031,7 +1044,10 @@ pub fn derive_prove_execution_plan_with_program_image_cache(
                 source,
             },
         )?;
-    }
+        Some((public_inputs.clone(), public_values))
+    } else {
+        None
+    };
     let program_image_cache = match program_image_cache {
         Some(path) => Some(load_program_image_cache(
             &path,
@@ -1040,6 +1056,20 @@ pub fn derive_prove_execution_plan_with_program_image_cache(
         )?),
         None => None,
     };
+    if let Some((path, public_values)) = &public_values {
+        validate_program_image_cache_public_values(
+            public_values,
+            program_image_cache
+                .as_ref()
+                .map(|program_image_cache| &program_image_cache.cache),
+        )
+        .map_err(
+            |source| ProveExecutionPlanError::ProgramImageCachePublicInputs {
+                path: path.clone(),
+                source,
+            },
+        )?;
+    }
 
     let units = derive_prove_execution_units(catalog)?;
 

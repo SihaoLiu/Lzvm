@@ -6,7 +6,10 @@ use lzvm_artifacts::eth_block_input::build_eth_block_input;
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
-use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
+use lzvm_artifacts::eth_block_public_values::{
+    public_values_from_eth_block_input, public_values_from_eth_block_input_for_metadata,
+};
+use lzvm_artifacts::global_info::{CurveKind, GlobalInfo, PublicValue};
 use lzvm_artifacts::program_image::{ProgramImageCommitmentCache, ProgramImageGpuMode};
 use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, program_image_cache_segment_digest,
@@ -316,6 +319,54 @@ fn reports_program_image_cache_segment_hashes() {
 }
 
 #[test]
+fn rejects_program_image_cache_public_values_without_bound_segment() {
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash: sample_hash(0x44),
+        values: vec![PublicValueEntry {
+            name: "rom_root".to_owned(),
+            elements: vec![10, 11, 12, 13],
+        }],
+    };
+    let proof = sample_proof(&public_values);
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("program image cache public values should require a bound segment");
+
+    assert_eq!(
+        error.to_string(),
+        "missing program image cache proof segment for public value: rom_root"
+    );
+}
+
+#[test]
+fn rejects_program_image_cache_tree_root_public_value_mismatches() {
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash: sample_hash(0x44),
+        values: vec![PublicValueEntry {
+            name: "rom_root".to_owned(),
+            elements: vec![1, 2, 3, 4],
+        }],
+    };
+    let mut proof = sample_proof(&public_values);
+    let segment_data =
+        encode_program_image_cache_segment(&sample_program_image_cache()).expect("cache encodes");
+    proof.segments.push(ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: segment_data,
+    });
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("program image cache tree root should match public values");
+
+    assert_eq!(
+        error.to_string(),
+        "program image cache tree root does not match public value: rom_root"
+    );
+}
+
+#[test]
 fn reports_challenge_values_segments() {
     let public_values = sample_public_values();
     let mut proof = sample_proof(&public_values);
@@ -476,6 +527,27 @@ fn rejects_eth_block_segments_without_matching_public_values() {
 }
 
 #[test]
+fn validates_eth_block_segments_against_metadata_selected_public_values() {
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let mut public_values = public_values_from_eth_block_input(sample_hash(0x44), &block_input);
+    public_values
+        .values
+        .retain(|entry| entry.name == "eth_block_hash_u32_be");
+    let mut proof = sample_proof(&public_values);
+    proof.segments.push(ProofSegment {
+        id: ETH_BLOCK_INPUT_SEGMENT_ID,
+        data: encode_eth_block_input_segment(&block_input).expect("segment should encode"),
+    });
+
+    let report = validate_proof_public_values(&proof, &public_values)
+        .expect("metadata-selected ETH block public values should validate");
+
+    assert_eq!(report.eth_block_input_count, 1);
+    assert_eq!(report.public_value_count, 1);
+    assert_eq!(report.public_value_field_count, 8);
+}
+
+#[test]
 fn rejects_eth_block_public_values_without_input_segment() {
     let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
     let public_values = public_values_from_eth_block_input(sample_hash(0x44), &block_input);
@@ -485,6 +557,122 @@ fn rejects_eth_block_public_values_without_input_segment() {
         .expect_err("ETH block public values should require an input segment");
 
     assert_eq!(error.to_string(), "missing ETH block input proof segment");
+}
+
+#[test]
+fn validates_packed_eth_block_public_values_with_input_segment() {
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let global_info = GlobalInfo {
+        name: "packed".to_owned(),
+        air_groups: Vec::new(),
+        airs: Vec::new(),
+        curve: CurveKind::None,
+        lattice_size: Some(1024),
+        aggregation_types: Vec::new(),
+        n_publics: 64,
+        num_challenges: Vec::new(),
+        num_proof_values: Vec::new(),
+        proof_values_map: Vec::new(),
+        publics_map: vec![PublicValue {
+            name: "inputs".to_owned(),
+            stage: 0,
+            lengths: vec![64],
+        }],
+        transcript_arity: 4,
+    };
+    let public_values = public_values_from_eth_block_input_for_metadata(
+        sample_hash(0x44),
+        &block_input,
+        &global_info,
+        None,
+    )
+    .expect("packed public values should derive");
+    let mut proof = sample_proof(&public_values);
+    proof.segments.push(ProofSegment {
+        id: ETH_BLOCK_INPUT_SEGMENT_ID,
+        data: encode_eth_block_input_segment(&block_input).expect("segment should encode"),
+    });
+
+    let report = validate_proof_public_values(&proof, &public_values)
+        .expect("packed ETH block public values should match the input segment");
+
+    assert_eq!(report.eth_block_input_count, 1);
+    assert_eq!(report.public_value_field_count, 64);
+}
+
+#[test]
+fn rejects_named_eth_block_public_value_mismatch_when_packed_inputs_are_present() {
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let global_info = GlobalInfo {
+        name: "packed-with-named-entry".to_owned(),
+        air_groups: Vec::new(),
+        airs: Vec::new(),
+        curve: CurveKind::None,
+        lattice_size: Some(1024),
+        aggregation_types: Vec::new(),
+        n_publics: 72,
+        num_challenges: Vec::new(),
+        num_proof_values: Vec::new(),
+        proof_values_map: Vec::new(),
+        publics_map: vec![
+            PublicValue {
+                name: "inputs".to_owned(),
+                stage: 0,
+                lengths: vec![64],
+            },
+            PublicValue {
+                name: "eth_block_hash_u32_be".to_owned(),
+                stage: 0,
+                lengths: vec![8],
+            },
+        ],
+        transcript_arity: 4,
+    };
+    let mut public_values = public_values_from_eth_block_input_for_metadata(
+        sample_hash(0x44),
+        &block_input,
+        &global_info,
+        None,
+    )
+    .expect("packed and named public values should derive");
+    public_values
+        .values
+        .iter_mut()
+        .find(|entry| entry.name == "eth_block_hash_u32_be")
+        .expect("named block hash entry should exist")
+        .elements[0] ^= 1;
+    let mut proof = sample_proof(&public_values);
+    proof.segments.push(ProofSegment {
+        id: ETH_BLOCK_INPUT_SEGMENT_ID,
+        data: encode_eth_block_input_segment(&block_input).expect("segment should encode"),
+    });
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("named ETH block public values should remain bound with packed inputs");
+
+    assert_eq!(
+        error.to_string(),
+        "ETH block public value mismatch: eth_block_hash_u32_be"
+    );
+}
+
+#[test]
+fn accepts_public_inputs_entry_with_packed_width_without_eth_segment() {
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash: sample_hash(0x44),
+        values: vec![PublicValueEntry {
+            name: "inputs".to_owned(),
+            elements: (0..64).collect(),
+        }],
+    };
+    let proof = sample_proof(&public_values);
+
+    let report = validate_proof_public_values(&proof, &public_values)
+        .expect("generic public inputs should not require an ETH block input segment");
+
+    assert_eq!(report.eth_block_input_count, 0);
+    assert_eq!(report.public_value_field_count, 64);
 }
 
 #[test]

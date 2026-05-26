@@ -9,7 +9,10 @@ use crate::{
     source_expression_info::SourceExpressionAliasScope,
     source_expression_strings::source_expression_string_call_value,
     source_static_tokens::{source_token_index_after_end, source_token_index_at_start},
-    source_static_values::{evaluate_source_static_expression, insert_source_static_array},
+    source_static_values::{
+        evaluate_source_static_expression, insert_source_static_array,
+        insert_source_static_array_length,
+    },
     source_template_context::SourceTemplateLoweringContext,
 };
 
@@ -21,11 +24,24 @@ pub(crate) fn apply_source_static_declaration(
     match statement.declaration.as_ref() {
         Some(FunctionStatementDeclaration::Constant(declaration)) => {
             if !declaration.array_dims.is_empty() {
-                let Some(expression) = declaration.initializer_expression.as_ref() else {
+                if let Some(expression) = declaration.initializer_expression.as_ref() {
+                    let Some(elements) =
+                        source_static_array_expression(program, expression, values)
+                    else {
+                        return false;
+                    };
+                    return insert_source_static_array(values, &declaration.name, elements)
+                        .is_some();
+                }
+                if declaration.type_name.as_deref() != Some("int") {
                     return false;
-                };
-                let Some(elements) = source_static_array_expression(program, expression, values)
-                else {
+                }
+                let Some(elements) = source_static_variable_array_elements(
+                    program,
+                    None,
+                    &declaration.array_dim_expressions,
+                    values,
+                ) else {
                     return false;
                 };
                 return insert_source_static_array(values, &declaration.name, elements).is_some();
@@ -62,6 +78,30 @@ pub(crate) fn apply_source_static_declaration(
             };
             values.insert(declaration.name.clone(), value);
             true
+        }
+        Some(FunctionStatementDeclaration::Column(declaration)) => {
+            let mut inserted = false;
+            for item in &declaration.items {
+                if item.array_dims.is_empty() {
+                    continue;
+                }
+                let Some(lengths) =
+                    source_static_array_dimensions(program, &item.array_dim_expressions, values)
+                else {
+                    continue;
+                };
+                if insert_source_static_column_array_lengths(values, &item.name, &lengths) {
+                    inserted = true;
+                }
+                if let Some(binding_name) = source_static_binding_name(&item.name) {
+                    if binding_name != item.name
+                        && insert_source_static_column_array_lengths(values, binding_name, &lengths)
+                    {
+                        inserted = true;
+                    }
+                }
+            }
+            inserted
         }
         _ => false,
     }
@@ -257,16 +297,57 @@ fn source_static_variable_array_elements(
     if let Some(expression) = initializer_expression {
         return source_static_array_expression(program, expression, values);
     }
+    let dimensions = source_static_array_dimensions(program, dim_expressions, values)?;
     let mut length = 1_usize;
-    for expression in dim_expressions {
-        let value = evaluate_source_static_expression(program, expression.as_ref()?, values)?;
-        let dimension = usize::try_from(source_static_integer_value(Some(&value))?).ok()?;
-        if dimension == 0 {
-            return None;
-        }
+    for dimension in dimensions {
         length = length.checked_mul(dimension)?;
     }
     Some(vec![FixedFileTemplateValue::Integer(0); length])
+}
+
+fn source_static_array_dimensions(
+    program: &SourceProgram,
+    dim_expressions: &[Option<Expression>],
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+) -> Option<Vec<usize>> {
+    dim_expressions
+        .iter()
+        .map(|expression| {
+            let value = evaluate_source_static_expression(program, expression.as_ref()?, values)?;
+            let dimension = usize::try_from(source_static_integer_value(Some(&value))?).ok()?;
+            (dimension != 0).then_some(dimension)
+        })
+        .collect()
+}
+
+fn source_static_binding_name(name: &str) -> Option<&str> {
+    name.rsplit_once('.')
+        .map(|(_, binding_name)| binding_name)
+        .filter(|binding_name| !binding_name.is_empty())
+}
+
+fn insert_source_static_column_array_lengths(
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    name: &str,
+    lengths: &[usize],
+) -> bool {
+    let Some((&length, rest)) = lengths.split_first() else {
+        return false;
+    };
+    let Some(length_value) = i128::try_from(length).ok() else {
+        return false;
+    };
+    let mut inserted = insert_source_static_array_length(values, name, length_value).is_some();
+    if rest.is_empty() {
+        return inserted;
+    }
+    for index in 0..length {
+        let slice_name = format!("{name}[{index}]");
+        if insert_source_static_column_array_lengths(values, &slice_name, rest) {
+            inserted = true;
+        }
+    }
+    inserted
 }
 
 fn source_static_array_expression(

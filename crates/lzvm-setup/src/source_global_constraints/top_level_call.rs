@@ -15,8 +15,10 @@ use crate::{
         evaluate_source_static_expression, insert_source_static_array,
         source_static_array_expression, source_static_array_length,
     },
+    source_template_do_while::source_static_do_while_loop_with_tokens,
     source_template_for::source_static_for_loop_with_tokens,
     source_template_if::source_static_if_body_statements_with_tokens,
+    source_template_while::{source_static_while_loop_with_tokens, STATIC_WHILE_LOOP_LIMIT},
 };
 
 use super::{
@@ -360,8 +362,135 @@ fn lower_function_body_statement(
                         );
                     }
                 }
-                restore_static_value(values, &variable_name, previous.as_ref());
+                if loop_info.final_variable_value.is_some() {
+                    loop_info.apply_final_variable_value(values);
+                } else {
+                    restore_static_value(values, &variable_name, previous.as_ref());
+                }
                 Ok(true)
+            }
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        };
+    }
+    if statement.kind == FunctionStatementKind::While {
+        if statement.body.is_none() {
+            return Ok(true);
+        }
+        return match source_static_while_loop_with_tokens(
+            context.program,
+            context.module,
+            context.tokens,
+            statement,
+            values,
+            body_cache,
+        ) {
+            Ok(Some(loop_info)) => {
+                let checkpoint = values.clone();
+                let mut loop_alias_scope = clone_alias_scope(alias_scope);
+                for _ in 0..STATIC_WHILE_LOOP_LIMIT {
+                    loop_alias_scope.static_values = values.clone();
+                    let Some(condition_truthy) = source_static_condition(
+                        context,
+                        &loop_info.condition,
+                        values,
+                        &loop_alias_scope,
+                    ) else {
+                        *values = checkpoint;
+                        return Ok(false);
+                    };
+                    if !condition_truthy {
+                        return Ok(true);
+                    }
+                    for body_statement in loop_info.body_statements.iter() {
+                        loop_alias_scope.static_values = values.clone();
+                        if !lower_function_body_statement(
+                            context,
+                            body_statement,
+                            values,
+                            &loop_alias_scope,
+                            body_cache,
+                            call_stack,
+                            constraints,
+                        )? {
+                            *values = checkpoint;
+                            return Ok(false);
+                        }
+                        loop_alias_scope.static_values = values.clone();
+                        collect_source_template_expression_alias(
+                            body_statement,
+                            &mut loop_alias_scope.expressions,
+                        );
+                        collect_source_global_expression_array_alias(
+                            body_statement,
+                            &mut loop_alias_scope.expression_arrays,
+                        );
+                    }
+                }
+                *values = checkpoint;
+                Ok(false)
+            }
+            Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        };
+    }
+    if statement.kind == FunctionStatementKind::Do {
+        return match source_static_do_while_loop_with_tokens(
+            context.program,
+            context.module,
+            context.tokens,
+            statement,
+            values,
+            body_cache,
+        ) {
+            Ok(Some(loop_info)) => {
+                let checkpoint = values.clone();
+                let mut loop_alias_scope = clone_alias_scope(alias_scope);
+                for _ in 0..STATIC_WHILE_LOOP_LIMIT {
+                    for body_statement in loop_info.body_statements.iter() {
+                        loop_alias_scope.static_values = values.clone();
+                        if !lower_function_body_statement(
+                            context,
+                            body_statement,
+                            values,
+                            &loop_alias_scope,
+                            body_cache,
+                            call_stack,
+                            constraints,
+                        )? {
+                            *values = checkpoint;
+                            return Ok(false);
+                        }
+                        loop_alias_scope.static_values = values.clone();
+                        collect_source_template_expression_alias(
+                            body_statement,
+                            &mut loop_alias_scope.expressions,
+                        );
+                        collect_source_global_expression_array_alias(
+                            body_statement,
+                            &mut loop_alias_scope.expression_arrays,
+                        );
+                    }
+                    loop_alias_scope.static_values = values.clone();
+                    let Some(condition_truthy) = source_static_condition(
+                        context,
+                        &loop_info.condition,
+                        values,
+                        &loop_alias_scope,
+                    ) else {
+                        *values = checkpoint;
+                        return Ok(false);
+                    };
+                    if !condition_truthy {
+                        return Ok(true);
+                    }
+                }
+                *values = checkpoint;
+                Ok(false)
             }
             Ok(None) | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {
                 Ok(false)

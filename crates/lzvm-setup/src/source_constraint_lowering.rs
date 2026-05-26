@@ -6,14 +6,35 @@ use lzvm_artifacts::expression_info::{
 use lzvm_field::{Felt, MODULUS};
 use lzvm_pil::{
     BinaryOperator, Expression, ExpressionKind, FixedFileTemplateValue, FunctionStatement,
-    SourceProgram, SourceProgramModule, UnaryOperator,
+    FunctionStatementKind, SourceProgram, SourceProgramModule, UnaryOperator,
 };
 
 use crate::{
+    source_control_body_cache::{
+        SourceConstraintFragment, SourceControlBodyCache, SourceReturnedConstraintElementKey,
+    },
+    source_expression_info::{
+        source_call_expression, source_function_call_bindings, SourceExpressionAliasScope,
+    },
+    source_expression_return_values::{
+        collect_source_expr_destructuring_aliases,
+        collect_source_template_expression_aliases_with_stack, source_function_returns_expr,
+        source_returned_array_call_cacheable, source_returned_array_call_key,
+        source_returned_expression_array_call_alias_cached,
+    },
+    source_expression_statements::{
+        apply_source_static_declaration, apply_source_static_expression_statement,
+    },
     source_key_directory::SourceKeyDirectoryMetadataError,
     source_scalar_slots::SourceScalarSlots,
     source_statement_hints::{SourceExpressionArrayAlias, SourceExpressionArrayAliases},
-    source_static_values::{evaluate_source_static_expression, static_value_integer},
+    source_static_values::{
+        evaluate_source_static_expression, static_value_integer, static_value_truthy,
+    },
+    source_template_context::SourceTemplateLoweringContext,
+    source_template_for::source_static_for_loop_with_tokens,
+    source_template_if::source_static_if_body_statements_with_aliases,
+    source_template_while::{source_static_while_loop_with_tokens, STATIC_WHILE_LOOP_LIMIT},
 };
 
 pub(crate) type SourceExpressionAliases = BTreeMap<String, Expression>;
@@ -24,8 +45,50 @@ pub(crate) fn lower_source_template_boolean_constraint(
     statement: &FunctionStatement,
     scalar_slots: &SourceScalarSlots,
     constant_values: &BTreeMap<String, FixedFileTemplateValue>,
-    expression_aliases: &SourceExpressionAliases,
-    expression_array_aliases: &SourceExpressionArrayAliases,
+    alias_scope: &SourceExpressionAliasScope,
+) -> Result<Option<ConstraintCode>, SourceKeyDirectoryMetadataError> {
+    lower_source_template_boolean_constraint_inner(
+        program,
+        module,
+        statement,
+        scalar_slots,
+        constant_values,
+        alias_scope,
+        None,
+    )
+}
+
+pub(crate) fn lower_source_template_boolean_constraint_with_returned_calls(
+    context: &SourceTemplateLoweringContext<'_>,
+    statement: &FunctionStatement,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceExpressionAliasScope,
+    body_cache: &mut SourceControlBodyCache,
+    call_stack: &mut BTreeSet<String>,
+) -> Result<Option<ConstraintCode>, SourceKeyDirectoryMetadataError> {
+    lower_source_template_boolean_constraint_inner(
+        context.program,
+        context.module,
+        statement,
+        context.scalar_slots,
+        constant_values,
+        alias_scope,
+        Some(SourceConstraintReturnedCallContext {
+            context,
+            body_cache,
+            call_stack,
+        }),
+    )
+}
+
+fn lower_source_template_boolean_constraint_inner(
+    program: &SourceProgram,
+    module: &SourceProgramModule,
+    statement: &FunctionStatement,
+    scalar_slots: &SourceScalarSlots,
+    constant_values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceExpressionAliasScope,
+    returned_call_context: Option<SourceConstraintReturnedCallContext<'_>>,
 ) -> Result<Option<ConstraintCode>, SourceKeyDirectoryMetadataError> {
     let Some(expression) = statement.value_expression.as_ref() else {
         return Ok(None);
@@ -34,13 +97,14 @@ pub(crate) fn lower_source_template_boolean_constraint(
         program,
         scalar_slots,
         constant_values,
-        expression_aliases,
-        expression_array_aliases,
+        alias_scope,
         operations: Vec::new(),
         next_temporary: 0,
         frame_offsets: SourceConstraintFrameOffsets::default(),
         resolving_aliases: BTreeSet::new(),
         resolving_array_aliases: BTreeSet::new(),
+        operand_cache: BTreeMap::new(),
+        returned_call_context,
     };
     let Some(result) = lower_source_constraint_residual(expression, &mut state)? else {
         return Ok(None);
@@ -70,13 +134,62 @@ struct SourceConstraintLoweringState<'a> {
     program: &'a SourceProgram,
     scalar_slots: &'a SourceScalarSlots,
     constant_values: &'a BTreeMap<String, FixedFileTemplateValue>,
-    expression_aliases: &'a SourceExpressionAliases,
-    expression_array_aliases: &'a SourceExpressionArrayAliases,
+    alias_scope: &'a SourceExpressionAliasScope,
     operations: Vec<CodeOperation>,
     next_temporary: u32,
     frame_offsets: SourceConstraintFrameOffsets,
     resolving_aliases: BTreeSet<String>,
-    resolving_array_aliases: BTreeSet<String>,
+    resolving_array_aliases: BTreeSet<SourceConstraintArrayResolutionKey>,
+    operand_cache: BTreeMap<SourceConstraintOperandCacheKey, CodeOperand>,
+    returned_call_context: Option<SourceConstraintReturnedCallContext<'a>>,
+}
+
+struct SourceConstraintReturnedCallContext<'a> {
+    context: &'a SourceTemplateLoweringContext<'a>,
+    body_cache: &'a mut SourceControlBodyCache,
+    call_stack: &'a mut BTreeSet<String>,
+}
+
+#[derive(Clone, Copy)]
+struct SourceConstraintAliasEnvironment<'a> {
+    expression_aliases: &'a SourceExpressionAliases,
+    expression_array_aliases: &'a SourceExpressionArrayAliases,
+    scope: Option<&'a SourceExpressionAliasScope>,
+}
+
+impl SourceConstraintAliasEnvironment<'_> {
+    fn expression_alias_id(self) -> usize {
+        self.expression_aliases as *const SourceExpressionAliases as usize
+    }
+
+    fn expression_array_alias_id(self) -> usize {
+        self.expression_array_aliases as *const SourceExpressionArrayAliases as usize
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+enum SourceConstraintOperandCacheKey {
+    ExpressionAlias {
+        name: String,
+        row_offset: i64,
+        expression_alias_id: usize,
+        expression_array_alias_id: usize,
+    },
+    ArrayAliasElement {
+        name: String,
+        indices: Vec<u32>,
+        row_offset: i64,
+        expression_alias_id: usize,
+        expression_array_alias_id: usize,
+    },
+}
+
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+struct SourceConstraintArrayResolutionKey {
+    name: String,
+    indices: Vec<u32>,
+    expression_alias_id: usize,
+    expression_array_alias_id: usize,
 }
 
 fn lower_source_constraint_residual(
@@ -142,18 +255,45 @@ fn lower_source_scalar_expression_at(
     state: &mut SourceConstraintLoweringState<'_>,
     row_offset: i64,
 ) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
+    let aliases = SourceConstraintAliasEnvironment {
+        expression_aliases: state.alias_scope.expressions.as_ref(),
+        expression_array_aliases: state.alias_scope.expression_arrays.as_ref(),
+        scope: Some(state.alias_scope),
+    };
+    lower_source_scalar_expression_in_env(expression, state, row_offset, aliases)
+}
+
+fn lower_source_scalar_expression_in_env(
+    expression: &Expression,
+    state: &mut SourceConstraintLoweringState<'_>,
+    row_offset: i64,
+    aliases: SourceConstraintAliasEnvironment<'_>,
+) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
     let expression = strip_group_expression(expression);
     if let Some(value) = static_scalar_integer(expression, state)? {
         return Ok(CodeOperand::number(canonical_field_value(value)?, 1));
     }
     match &expression.kind {
         ExpressionKind::Name(name) => {
-            if let Some(alias) = state.expression_aliases.get(name) {
+            if let Some(alias) = aliases.expression_aliases.get(name) {
+                let key = SourceConstraintOperandCacheKey::ExpressionAlias {
+                    name: name.clone(),
+                    row_offset,
+                    expression_alias_id: aliases.expression_alias_id(),
+                    expression_array_alias_id: aliases.expression_array_alias_id(),
+                };
+                if let Some(operand) = state.operand_cache.get(&key) {
+                    return Ok(operand.clone());
+                }
                 if !state.resolving_aliases.insert(name.clone()) {
                     return unsupported("source scalar constraint expression alias cycle");
                 }
-                let operand = lower_source_scalar_expression_at(alias, state, row_offset);
+                let operand =
+                    lower_source_scalar_expression_in_env(alias, state, row_offset, aliases);
                 state.resolving_aliases.remove(name);
+                if let Ok(operand) = operand.as_ref() {
+                    state.operand_cache.insert(key, operand.clone());
+                }
                 return operand;
             }
             if row_offset != 0 {
@@ -169,7 +309,7 @@ fn lower_source_scalar_expression_at(
                 .map_err(|error| unsupported_source_message(error.to_string()))
         }
         ExpressionKind::Unary { op, expr } => {
-            let value = lower_source_scalar_expression_at(expr, state, row_offset)?;
+            let value = lower_source_scalar_expression_in_env(expr, state, row_offset, aliases)?;
             match op {
                 UnaryOperator::Plus => Ok(value),
                 UnaryOperator::Minus => {
@@ -200,31 +340,74 @@ fn lower_source_scalar_expression_at(
             let combined_offset = row_offset
                 .checked_add(signed_offset)
                 .ok_or_else(|| unsupported_source_message("source row offset overflow"))?;
-            lower_source_scalar_expression_at(target, state, combined_offset)
+            lower_source_scalar_expression_in_env(target, state, combined_offset, aliases)
         }
         ExpressionKind::Index { .. } => {
-            let (name, index_expressions) =
-                source_constraint_index_chain(strip_group_expression(expression)).ok_or_else(
-                    || unsupported_source_message("unsupported source indexed constraint target"),
-                )?;
+            let Some((name, index_expressions)) =
+                source_constraint_index_chain(strip_group_expression(expression))
+            else {
+                if let Some(operand) = lower_source_returned_array_call_expression(
+                    expression, state, row_offset, aliases,
+                )? {
+                    return Ok(operand);
+                }
+                return Err(unsupported_source_message(
+                    "unsupported source indexed constraint target",
+                ));
+            };
             let indices = index_expressions
                 .iter()
                 .map(|index| source_scalar_index_value(index, state))
                 .collect::<Result<Vec<_>, _>>()?;
-            if let Some(alias) = state.expression_array_aliases.get(name) {
+            if let Some(alias) = aliases.expression_array_aliases.get(name) {
+                let key = SourceConstraintOperandCacheKey::ArrayAliasElement {
+                    name: name.to_owned(),
+                    indices: indices.clone(),
+                    row_offset,
+                    expression_alias_id: aliases.expression_alias_id(),
+                    expression_array_alias_id: aliases.expression_array_alias_id(),
+                };
+                if let Some(operand) = state.operand_cache.get(&key) {
+                    return Ok(operand.clone());
+                }
+                let resolution_key = SourceConstraintArrayResolutionKey {
+                    name: name.to_owned(),
+                    indices: indices.clone(),
+                    expression_alias_id: aliases.expression_alias_id(),
+                    expression_array_alias_id: aliases.expression_array_alias_id(),
+                };
+                if !state.resolving_array_aliases.insert(resolution_key.clone()) {
+                    return unsupported("source scalar constraint expression array alias cycle");
+                }
+                let mut resolving_array_alias_names = BTreeSet::new();
                 let element = source_constraint_array_alias_path_element(
                     alias,
                     &indices,
-                    state.expression_array_aliases,
-                    &mut state.resolving_array_aliases,
-                )
-                .ok_or_else(|| {
+                    aliases,
+                    &mut resolving_array_alias_names,
+                );
+                let element = element.ok_or_else(|| {
                     unsupported_source_message("unsupported source indexed constraint target")
-                })?;
-                return match element {
-                    SourceConstraintArrayAliasElement::Expression(expression) => {
-                        lower_source_scalar_expression_at(expression, state, row_offset)
-                    }
+                });
+                let result = match element? {
+                    SourceConstraintArrayAliasElement::Expression {
+                        expression,
+                        aliases,
+                    } => lower_source_scalar_expression_in_env(
+                        expression, state, row_offset, aliases,
+                    ),
+                    SourceConstraintArrayAliasElement::ReturnedCall {
+                        expression,
+                        aliases,
+                    } => lower_source_returned_array_call_expression(
+                        &expression,
+                        state,
+                        row_offset,
+                        aliases,
+                    )?
+                    .ok_or_else(|| {
+                        unsupported_source_message("unsupported source indexed constraint target")
+                    }),
                     SourceConstraintArrayAliasElement::NamedArray(name) => {
                         if row_offset != 0 {
                             state.frame_offsets.include(row_offset);
@@ -235,6 +418,11 @@ fn lower_source_scalar_expression_at(
                             .map_err(|error| unsupported_source_message(error.to_string()))
                     }
                 };
+                state.resolving_array_aliases.remove(&resolution_key);
+                if let Ok(operand) = result.as_ref() {
+                    state.operand_cache.insert(key, operand.clone());
+                }
+                return result;
             }
             if row_offset != 0 {
                 state.frame_offsets.include(row_offset);
@@ -246,10 +434,14 @@ fn lower_source_scalar_expression_at(
         }
         ExpressionKind::Binary { op, left, right } => {
             if matches!(op, BinaryOperator::Divide | BinaryOperator::Backslash) {
-                return lower_source_static_divisor_expression(left, right, state, row_offset);
+                return lower_source_static_divisor_expression(
+                    left, right, state, row_offset, aliases,
+                );
             }
             if *op == BinaryOperator::Power {
-                return lower_source_static_exponent_expression(left, right, state, row_offset);
+                return lower_source_static_exponent_expression(
+                    left, right, state, row_offset, aliases,
+                );
             }
             let op = match op {
                 BinaryOperator::Add => OperationKind::Add,
@@ -257,8 +449,8 @@ fn lower_source_scalar_expression_at(
                 BinaryOperator::Multiply => OperationKind::Mul,
                 _ => return unsupported("unsupported source scalar constraint expression"),
             };
-            let left = lower_source_scalar_expression_at(left, state, row_offset)?;
-            let right = lower_source_scalar_expression_at(right, state, row_offset)?;
+            let left = lower_source_scalar_expression_in_env(left, state, row_offset, aliases)?;
+            let right = lower_source_scalar_expression_in_env(right, state, row_offset, aliases)?;
             let dimension = source_binary_result_dimension(&left, &right)?;
             let id = state.next_temporary;
             state.next_temporary = state.next_temporary.checked_add(1).ok_or_else(|| {
@@ -271,34 +463,582 @@ fn lower_source_scalar_expression_at(
             });
             Ok(CodeOperand::temporary(id, dimension))
         }
+        ExpressionKind::Call { .. } => {
+            if let Some(operand) = lower_source_returned_scalar_call_expression(
+                expression, state, row_offset, aliases,
+            )? {
+                return Ok(operand);
+            }
+            unsupported("unsupported source scalar constraint expression")
+        }
         _ => unsupported("unsupported source scalar constraint expression"),
     }
 }
 
 enum SourceConstraintArrayAliasElement<'a> {
-    Expression(&'a Expression),
+    Expression {
+        expression: &'a Expression,
+        aliases: SourceConstraintAliasEnvironment<'a>,
+    },
+    ReturnedCall {
+        expression: Expression,
+        aliases: SourceConstraintAliasEnvironment<'a>,
+    },
     NamedArray(&'a str),
+}
+
+fn lower_source_returned_array_call_expression(
+    expression: &Expression,
+    state: &mut SourceConstraintLoweringState<'_>,
+    row_offset: i64,
+    aliases: SourceConstraintAliasEnvironment<'_>,
+) -> Result<Option<CodeOperand>, SourceKeyDirectoryMetadataError> {
+    let ExpressionKind::Index { target, index } = &strip_group_expression(expression).kind else {
+        return Ok(None);
+    };
+    let index = source_scalar_index_value(index, state)?;
+    let use_fragment_cache = aliases
+        .scope
+        .is_some_and(|scope| source_returned_array_call_cacheable(target, scope));
+    let key = SourceReturnedConstraintElementKey::new(
+        source_returned_array_call_key(target, state.constant_values),
+        vec![index],
+        row_offset,
+    );
+    if use_fragment_cache {
+        let Some(returned) = state.returned_call_context.as_ref() else {
+            return Ok(None);
+        };
+        if let Some(fragment) = returned.body_cache.returned_constraint_array_element(&key) {
+            return append_source_constraint_fragment(state, fragment.as_ref());
+        }
+    }
+
+    let start_operation = state.operations.len();
+    let start_temporary = state.next_temporary;
+    let result = lower_source_returned_array_call_expression_uncached(
+        expression, state, row_offset, aliases,
+    );
+    let fragment = match result.as_ref() {
+        Ok(Some(result)) => Some(source_constraint_fragment_from_operations(
+            &state.operations[start_operation..],
+            result,
+            start_temporary,
+            state.next_temporary,
+        )?),
+        Ok(None) => None,
+        Err(_) => None,
+    };
+    if use_fragment_cache {
+        let Some(returned) = state.returned_call_context.as_mut() else {
+            return result;
+        };
+        returned
+            .body_cache
+            .insert_returned_constraint_array_element(key, fragment);
+    }
+    result
+}
+
+fn lower_source_returned_array_call_expression_uncached(
+    expression: &Expression,
+    state: &mut SourceConstraintLoweringState<'_>,
+    row_offset: i64,
+    aliases: SourceConstraintAliasEnvironment<'_>,
+) -> Result<Option<CodeOperand>, SourceKeyDirectoryMetadataError> {
+    let Some(alias_scope) = aliases.scope else {
+        return Ok(None);
+    };
+    let ExpressionKind::Index { target, index } = &strip_group_expression(expression).kind else {
+        return Ok(None);
+    };
+    let index = source_scalar_index_value(index, state)?;
+    let Some(alias) = ({
+        let Some(returned) = state.returned_call_context.as_mut() else {
+            return Ok(None);
+        };
+        source_returned_expression_array_call_alias_cached(
+            returned.context,
+            target,
+            state.constant_values,
+            alias_scope,
+            returned.body_cache,
+            returned.call_stack,
+        )
+    }) else {
+        return Ok(None);
+    };
+    let indices = [index];
+    let mut resolving_array_alias_names = BTreeSet::new();
+    let Some(element) = source_constraint_array_alias_path_element(
+        &alias,
+        &indices,
+        aliases,
+        &mut resolving_array_alias_names,
+    ) else {
+        return Ok(None);
+    };
+    match element {
+        SourceConstraintArrayAliasElement::Expression {
+            expression,
+            aliases,
+        } => {
+            lower_source_scalar_expression_in_env(expression, state, row_offset, aliases).map(Some)
+        }
+        SourceConstraintArrayAliasElement::ReturnedCall {
+            expression,
+            aliases,
+        } => lower_source_returned_array_call_expression(&expression, state, row_offset, aliases),
+        SourceConstraintArrayAliasElement::NamedArray(name) => {
+            if row_offset != 0 {
+                state.frame_offsets.include(row_offset);
+            }
+            state
+                .scalar_slots
+                .operand_indices_at(name, &indices, row_offset)
+                .map(Some)
+                .map_err(|error| unsupported_source_message(error.to_string()))
+        }
+    }
+}
+
+fn append_source_constraint_fragment(
+    state: &mut SourceConstraintLoweringState<'_>,
+    fragment: Option<&SourceConstraintFragment>,
+) -> Result<Option<CodeOperand>, SourceKeyDirectoryMetadataError> {
+    let Some(fragment) = fragment else {
+        return Ok(None);
+    };
+    let temporary_base = state.next_temporary;
+    state.next_temporary = state
+        .next_temporary
+        .checked_add(fragment.temporary_count)
+        .ok_or_else(|| unsupported_source_message("source scalar constraint temporary overflow"))?;
+    state.frame_offsets.include(fragment.offset_min);
+    state.frame_offsets.include(fragment.offset_max);
+    state.operations.extend(
+        fragment
+            .operations
+            .iter()
+            .map(|operation| remap_source_constraint_operation(operation, temporary_base))
+            .collect::<Result<Vec<_>, _>>()?,
+    );
+    remap_source_constraint_operand(&fragment.result, temporary_base).map(Some)
+}
+
+fn source_constraint_fragment_from_operations(
+    operations: &[CodeOperation],
+    result: &CodeOperand,
+    start_temporary: u32,
+    next_temporary: u32,
+) -> Result<SourceConstraintFragment, SourceKeyDirectoryMetadataError> {
+    let temporary_count = next_temporary
+        .checked_sub(start_temporary)
+        .ok_or_else(|| unsupported_source_message("source scalar constraint temporary overflow"))?;
+    let operations = operations
+        .iter()
+        .map(|operation| normalize_source_constraint_operation(operation, start_temporary))
+        .collect::<Result<Vec<_>, _>>()?;
+    let result = normalize_source_constraint_operand(result, start_temporary)?;
+    let mut frame_offsets = SourceConstraintFrameOffsets::default();
+    for operation in &operations {
+        include_source_destination_offsets(&operation.destination, &mut frame_offsets);
+        for source in &operation.sources {
+            include_source_operand_offsets(source, &mut frame_offsets);
+        }
+    }
+    include_source_operand_offsets(&result, &mut frame_offsets);
+    Ok(SourceConstraintFragment {
+        operations,
+        result,
+        temporary_count,
+        offset_min: frame_offsets.min,
+        offset_max: frame_offsets.max,
+    })
+}
+
+fn normalize_source_constraint_operation(
+    operation: &CodeOperation,
+    temporary_base: u32,
+) -> Result<CodeOperation, SourceKeyDirectoryMetadataError> {
+    Ok(CodeOperation {
+        op: operation.op,
+        destination: normalize_source_constraint_destination(
+            &operation.destination,
+            temporary_base,
+        )?,
+        sources: operation
+            .sources
+            .iter()
+            .map(|source| normalize_source_constraint_operand(source, temporary_base))
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+fn remap_source_constraint_operation(
+    operation: &CodeOperation,
+    temporary_base: u32,
+) -> Result<CodeOperation, SourceKeyDirectoryMetadataError> {
+    Ok(CodeOperation {
+        op: operation.op,
+        destination: remap_source_constraint_destination(&operation.destination, temporary_base)?,
+        sources: operation
+            .sources
+            .iter()
+            .map(|source| remap_source_constraint_operand(source, temporary_base))
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+fn normalize_source_constraint_destination(
+    destination: &CodeDestination,
+    temporary_base: u32,
+) -> Result<CodeDestination, SourceKeyDirectoryMetadataError> {
+    match destination {
+        CodeDestination::Temporary { id, dimension } => Ok(CodeDestination::temporary(
+            id.checked_sub(temporary_base).ok_or_else(|| {
+                unsupported_source_message("source scalar constraint temporary overflow")
+            })?,
+            *dimension,
+        )),
+        _ => unsupported("unsupported source scalar constraint destination"),
+    }
+}
+
+fn remap_source_constraint_destination(
+    destination: &CodeDestination,
+    temporary_base: u32,
+) -> Result<CodeDestination, SourceKeyDirectoryMetadataError> {
+    match destination {
+        CodeDestination::Temporary { id, dimension } => Ok(CodeDestination::temporary(
+            id.checked_add(temporary_base).ok_or_else(|| {
+                unsupported_source_message("source scalar constraint temporary overflow")
+            })?,
+            *dimension,
+        )),
+        _ => unsupported("unsupported source scalar constraint destination"),
+    }
+}
+
+fn normalize_source_constraint_operand(
+    operand: &CodeOperand,
+    temporary_base: u32,
+) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
+    remap_source_constraint_operand_with(operand, |id| {
+        id.checked_sub(temporary_base).ok_or_else(|| {
+            unsupported_source_message("source scalar constraint temporary overflow")
+        })
+    })
+}
+
+fn remap_source_constraint_operand(
+    operand: &CodeOperand,
+    temporary_base: u32,
+) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
+    remap_source_constraint_operand_with(operand, |id| {
+        id.checked_add(temporary_base).ok_or_else(|| {
+            unsupported_source_message("source scalar constraint temporary overflow")
+        })
+    })
+}
+
+fn remap_source_constraint_operand_with(
+    operand: &CodeOperand,
+    remap_temporary: impl Fn(u32) -> Result<u32, SourceKeyDirectoryMetadataError>,
+) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
+    match operand {
+        CodeOperand::Temporary { id, dimension } => {
+            Ok(CodeOperand::temporary(remap_temporary(*id)?, *dimension))
+        }
+        _ => Ok(operand.clone()),
+    }
+}
+
+fn include_source_destination_offsets(
+    _destination: &CodeDestination,
+    _frame_offsets: &mut SourceConstraintFrameOffsets,
+) {
+}
+
+fn include_source_operand_offsets(
+    operand: &CodeOperand,
+    frame_offsets: &mut SourceConstraintFrameOffsets,
+) {
+    match operand {
+        CodeOperand::ConstantAt { prime, .. }
+        | CodeOperand::Commitment { prime, .. }
+        | CodeOperand::CommitmentElement { prime, .. }
+        | CodeOperand::CustomCommitment { prime, .. } => {
+            if let Some(offset) = prime {
+                frame_offsets.include(*offset);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn lower_source_returned_scalar_call_expression(
+    expression: &Expression,
+    state: &mut SourceConstraintLoweringState<'_>,
+    row_offset: i64,
+    aliases: SourceConstraintAliasEnvironment<'_>,
+) -> Result<Option<CodeOperand>, SourceKeyDirectoryMetadataError> {
+    let Some(alias_scope) = aliases.scope else {
+        return Ok(None);
+    };
+    let Some((name, arguments)) = source_call_expression(Some(expression)) else {
+        return Ok(None);
+    };
+    let Some(context) = state
+        .returned_call_context
+        .as_ref()
+        .map(|returned| returned.context)
+    else {
+        return Ok(None);
+    };
+    let Some(function) = context
+        .module
+        .functions
+        .iter()
+        .find(|function| function.name == name)
+    else {
+        return Ok(None);
+    };
+    if !source_function_returns_expr(context.module, function) {
+        return Ok(None);
+    }
+    let Some(mut bindings) = ({
+        let Some(returned) = state.returned_call_context.as_mut() else {
+            return Ok(None);
+        };
+        source_function_call_bindings(
+            context,
+            function,
+            arguments,
+            state.constant_values,
+            alias_scope,
+            returned.body_cache,
+            returned.call_stack,
+        )
+    }) else {
+        return Ok(None);
+    };
+    {
+        let Some(returned) = state.returned_call_context.as_mut() else {
+            return Ok(None);
+        };
+        if !returned.call_stack.insert(function.name.clone()) {
+            return Ok(None);
+        }
+    }
+    let mut body_alias_scope = bindings.alias_scope;
+    let result = lower_source_returned_scalar_body(
+        context,
+        &function.statements,
+        &mut bindings.values,
+        &mut body_alias_scope,
+        state,
+        row_offset,
+    );
+    if let Some(returned) = state.returned_call_context.as_mut() {
+        returned.call_stack.remove(&function.name);
+    }
+    result
+}
+
+fn lower_source_returned_scalar_body(
+    context: &SourceTemplateLoweringContext<'_>,
+    statements: &[FunctionStatement],
+    values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &mut SourceExpressionAliasScope,
+    state: &mut SourceConstraintLoweringState<'_>,
+    row_offset: i64,
+) -> Result<Option<CodeOperand>, SourceKeyDirectoryMetadataError> {
+    for statement in statements {
+        if statement.kind == FunctionStatementKind::Return {
+            let Some(expression) = statement.value_expression.as_ref() else {
+                return Ok(None);
+            };
+            let aliases = SourceConstraintAliasEnvironment {
+                expression_aliases: alias_scope.expressions.as_ref(),
+                expression_array_aliases: alias_scope.expression_arrays.as_ref(),
+                scope: Some(alias_scope),
+            };
+            return lower_source_scalar_expression_in_env(expression, state, row_offset, aliases)
+                .map(Some);
+        }
+        if statement.kind == FunctionStatementKind::If {
+            let body = {
+                let Some(returned) = state.returned_call_context.as_mut() else {
+                    return Ok(None);
+                };
+                source_static_if_body_statements_with_aliases(
+                    context.program,
+                    context.module,
+                    context.tokens,
+                    statement,
+                    values,
+                    &alias_scope.expressions,
+                    returned.body_cache,
+                )
+            };
+            match body {
+                Ok(Some(body)) => {
+                    if let Some(operand) = lower_source_returned_scalar_body(
+                        context,
+                        &body,
+                        values,
+                        alias_scope,
+                        state,
+                        row_offset,
+                    )? {
+                        return Ok(Some(operand));
+                    }
+                }
+                Ok(None)
+                | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
+                Err(error) => return Err(error),
+            }
+            continue;
+        }
+        if statement.kind == FunctionStatementKind::For {
+            let loop_info = {
+                let Some(returned) = state.returned_call_context.as_mut() else {
+                    return Ok(None);
+                };
+                source_static_for_loop_with_tokens(
+                    context.program,
+                    context.module,
+                    context.tokens,
+                    statement,
+                    values,
+                    returned.body_cache,
+                )
+            };
+            match loop_info {
+                Ok(Some(loop_info)) => {
+                    for iteration_value in &loop_info.iteration_values {
+                        values.insert(loop_info.variable_name.clone(), iteration_value.clone());
+                        if let Some(operand) = lower_source_returned_scalar_body(
+                            context,
+                            &loop_info.body_statements,
+                            values,
+                            alias_scope,
+                            state,
+                            row_offset,
+                        )? {
+                            return Ok(Some(operand));
+                        }
+                    }
+                    loop_info.apply_final_variable_value(values);
+                }
+                Ok(None)
+                | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
+                Err(error) => return Err(error),
+            }
+            continue;
+        }
+        if statement.kind == FunctionStatementKind::While {
+            let loop_info = {
+                let Some(returned) = state.returned_call_context.as_mut() else {
+                    return Ok(None);
+                };
+                source_static_while_loop_with_tokens(
+                    context.program,
+                    context.module,
+                    context.tokens,
+                    statement,
+                    values,
+                    returned.body_cache,
+                )
+            };
+            match loop_info {
+                Ok(Some(loop_info)) => {
+                    for _ in 0..STATIC_WHILE_LOOP_LIMIT {
+                        let Some(condition_value) = evaluate_source_static_expression(
+                            context.program,
+                            &loop_info.condition,
+                            values,
+                        ) else {
+                            return Ok(None);
+                        };
+                        if !static_value_truthy(&condition_value) {
+                            break;
+                        }
+                        if let Some(operand) = lower_source_returned_scalar_body(
+                            context,
+                            &loop_info.body_statements,
+                            values,
+                            alias_scope,
+                            state,
+                            row_offset,
+                        )? {
+                            return Ok(Some(operand));
+                        }
+                    }
+                }
+                Ok(None)
+                | Err(SourceKeyDirectoryMetadataError::UnsupportedSourceProgram { .. }) => {}
+                Err(error) => return Err(error),
+            }
+            continue;
+        }
+        apply_source_static_declaration(context.program, statement, values);
+        apply_source_static_expression_statement(
+            context.program,
+            statement.value_expression.as_ref(),
+            values,
+        );
+        let collected_destructuring = {
+            let Some(returned) = state.returned_call_context.as_mut() else {
+                return Ok(None);
+            };
+            collect_source_expr_destructuring_aliases(
+                context,
+                statement,
+                values,
+                returned.body_cache,
+                returned.call_stack,
+                alias_scope,
+            )
+        };
+        if collected_destructuring {
+            continue;
+        }
+        let Some(returned) = state.returned_call_context.as_mut() else {
+            return Ok(None);
+        };
+        collect_source_template_expression_aliases_with_stack(
+            context,
+            statement,
+            values,
+            returned.body_cache,
+            returned.call_stack,
+            alias_scope,
+        );
+    }
+    Ok(None)
 }
 
 fn source_constraint_array_alias_path_element<'a>(
     alias: &'a SourceExpressionArrayAlias,
     indices: &[u32],
-    expression_array_aliases: &'a SourceExpressionArrayAliases,
-    resolving_array_aliases: &mut BTreeSet<String>,
+    aliases: SourceConstraintAliasEnvironment<'a>,
+    resolving_array_alias_names: &mut BTreeSet<String>,
 ) -> Option<SourceConstraintArrayAliasElement<'a>> {
     match alias {
         SourceExpressionArrayAlias::Name(name) => {
-            if let Some(next_alias) = expression_array_aliases.get(name) {
-                if !resolving_array_aliases.insert(name.clone()) {
+            if let Some(next_alias) = aliases.expression_array_aliases.get(name) {
+                if !resolving_array_alias_names.insert(name.clone()) {
                     return None;
                 }
                 let element = source_constraint_array_alias_path_element(
                     next_alias,
                     indices,
-                    expression_array_aliases,
-                    resolving_array_aliases,
+                    aliases,
+                    resolving_array_alias_names,
                 );
-                resolving_array_aliases.remove(name);
+                resolving_array_alias_names.remove(name);
                 return element;
             }
             Some(SourceConstraintArrayAliasElement::NamedArray(name))
@@ -307,38 +1047,84 @@ fn source_constraint_array_alias_path_element<'a>(
             source_constraint_expression_array_element(
                 expressions,
                 indices,
-                expression_array_aliases,
-                resolving_array_aliases,
+                aliases,
+                resolving_array_alias_names,
             )
         }
+        SourceExpressionArrayAlias::ScopedValues { expressions, scope } => {
+            source_constraint_expression_array_element(
+                expressions,
+                indices,
+                SourceConstraintAliasEnvironment {
+                    expression_aliases: scope.expressions.as_ref(),
+                    expression_array_aliases: scope.expression_arrays.as_ref(),
+                    scope: Some(scope.as_ref()),
+                },
+                resolving_array_alias_names,
+            )
+        }
+        SourceExpressionArrayAlias::Call { expression, .. } => {
+            Some(SourceConstraintArrayAliasElement::ReturnedCall {
+                expression: source_constraint_indexed_expression(
+                    expression.as_ref().clone(),
+                    indices,
+                )?,
+                aliases,
+            })
+        }
     }
+}
+
+fn source_constraint_indexed_expression(target: Expression, indices: &[u32]) -> Option<Expression> {
+    let source_name = target.source_name.clone();
+    let start = target.start;
+    let end = target.end;
+    indices.iter().try_fold(target, |target, index| {
+        Some(Expression {
+            kind: ExpressionKind::Index {
+                target: Box::new(target),
+                index: Box::new(Expression {
+                    kind: ExpressionKind::Integer(index.to_string()),
+                    source_name: source_name.clone(),
+                    start,
+                    end,
+                }),
+            },
+            source_name: source_name.clone(),
+            start,
+            end,
+        })
+    })
 }
 
 fn source_constraint_expression_array_element<'a>(
     expressions: &'a [Expression],
     indices: &[u32],
-    expression_array_aliases: &'a SourceExpressionArrayAliases,
-    resolving_array_aliases: &mut BTreeSet<String>,
+    aliases: SourceConstraintAliasEnvironment<'a>,
+    resolving_array_alias_names: &mut BTreeSet<String>,
 ) -> Option<SourceConstraintArrayAliasElement<'a>> {
     let (index, rest) = indices.split_first()?;
     let expression = expressions.get(usize::try_from(*index).ok()?)?;
     if rest.is_empty() {
-        return Some(SourceConstraintArrayAliasElement::Expression(expression));
+        return Some(SourceConstraintArrayAliasElement::Expression {
+            expression,
+            aliases,
+        });
     }
     match &strip_group_expression(expression).kind {
         ExpressionKind::Array(expressions) => source_constraint_expression_array_element(
             expressions,
             rest,
-            expression_array_aliases,
-            resolving_array_aliases,
+            aliases,
+            resolving_array_alias_names,
         ),
         ExpressionKind::Name(name) => {
-            let alias = expression_array_aliases.get(name)?;
+            let alias = aliases.expression_array_aliases.get(name)?;
             source_constraint_array_alias_path_element(
                 alias,
                 rest,
-                expression_array_aliases,
-                resolving_array_aliases,
+                aliases,
+                resolving_array_alias_names,
             )
         }
         _ => None,
@@ -350,6 +1136,7 @@ fn lower_source_static_divisor_expression(
     right: &Expression,
     state: &mut SourceConstraintLoweringState<'_>,
     row_offset: i64,
+    aliases: SourceConstraintAliasEnvironment<'_>,
 ) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
     let Some(divisor) = static_scalar_integer(right, state)? else {
         return unsupported("unsupported source scalar constraint expression");
@@ -358,7 +1145,7 @@ fn lower_source_static_divisor_expression(
     let inverse = divisor
         .inverse()
         .ok_or_else(|| unsupported_source_message("source scalar constraint division by zero"))?;
-    let left = lower_source_scalar_expression_at(left, state, row_offset)?;
+    let left = lower_source_scalar_expression_in_env(left, state, row_offset, aliases)?;
     let dimension = source_operand_dimension(&left)?;
     let id = state.next_temporary;
     state.next_temporary = state
@@ -378,6 +1165,7 @@ fn lower_source_static_exponent_expression(
     right: &Expression,
     state: &mut SourceConstraintLoweringState<'_>,
     row_offset: i64,
+    aliases: SourceConstraintAliasEnvironment<'_>,
 ) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
     let Some(exponent) = static_scalar_integer(right, state)? else {
         return unsupported("unsupported source scalar constraint expression");
@@ -387,7 +1175,7 @@ fn lower_source_static_exponent_expression(
     if exponent == 0 {
         return Ok(CodeOperand::number(1, 1));
     }
-    let mut power = lower_source_scalar_expression_at(left, state, row_offset)?;
+    let mut power = lower_source_scalar_expression_in_env(left, state, row_offset, aliases)?;
     let mut result = None;
     while exponent > 0 {
         if exponent & 1 == 1 {

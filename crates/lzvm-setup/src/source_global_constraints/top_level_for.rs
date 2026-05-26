@@ -17,13 +17,18 @@ use super::{
     SourceGlobalConstraintBuilder, SourceTopLevelGlobalConstraintContext,
 };
 
-const STATIC_TOP_LEVEL_FOR_LOOP_LIMIT: usize = 10_000;
+pub(super) const STATIC_TOP_LEVEL_FOR_LOOP_LIMIT: usize = 10_000;
+
+pub(super) struct TopLevelForOutcome {
+    pub(super) next_index: usize,
+    pub(super) final_variable_value: Option<(String, FixedFileTemplateValue)>,
+}
 
 pub(super) fn lower_top_level_static_for_statement(
     context: &SourceTopLevelGlobalConstraintContext<'_, '_, '_>,
     index: usize,
     constraints: &mut SourceGlobalConstraintBuilder,
-) -> Result<Option<usize>, SourceKeyDirectoryMetadataError> {
+) -> Result<Option<TopLevelForOutcome>, SourceKeyDirectoryMetadataError> {
     let loop_info = parse_top_level_for_loop(
         context.program,
         context.module,
@@ -35,21 +40,19 @@ pub(super) fn lower_top_level_static_for_statement(
         return Ok(None);
     };
     let mut values = context.alias_scope.static_values.clone();
-    values.insert(
-        loop_info.variable_name.clone(),
-        FixedFileTemplateValue::Integer(loop_info.initial_value),
-    );
+    loop_info.apply_initial_value(&mut values);
     let checkpoint = constraints.checkpoint();
 
     for _ in 0..STATIC_TOP_LEVEL_FOR_LOOP_LIMIT {
-        let Some(condition_value) =
-            evaluate_source_static_expression(context.program, &loop_info.condition, &values)
-        else {
+        let Some(condition_truthy) = loop_info.condition_truthy(context.program, &values) else {
             constraints.rollback(checkpoint);
             return Ok(None);
         };
-        if !static_value_truthy(&condition_value) {
-            return Ok(Some(loop_info.next_index));
+        if !condition_truthy {
+            return Ok(Some(TopLevelForOutcome {
+                next_index: loop_info.next_index,
+                final_variable_value: loop_info.final_variable_value(&values),
+            }));
         }
         let iteration_alias_scope = SourceGlobalAliasScope {
             program: context.alias_scope.program,
@@ -67,20 +70,16 @@ pub(super) fn lower_top_level_static_for_statement(
             constraints.rollback(checkpoint);
             return Ok(None);
         }
-        apply_top_level_for_update(
-            context.program,
-            &loop_info.update,
-            &loop_info.variable_name,
-            &mut values,
-        )?;
+        loop_info.apply_update(context.program, &mut values)?;
     }
     constraints.rollback(checkpoint);
     Ok(None)
 }
 
-struct TopLevelForLoop {
+pub(super) struct TopLevelForLoop {
     variable_name: String,
     initial_value: i128,
+    updates_existing_variable: bool,
     condition: Expression,
     update: TopLevelForUpdate,
     body_start: usize,
@@ -88,12 +87,68 @@ struct TopLevelForLoop {
     next_index: usize,
 }
 
+impl TopLevelForLoop {
+    pub(super) fn apply_initial_value(
+        &self,
+        values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    ) {
+        values.insert(
+            self.variable_name.clone(),
+            FixedFileTemplateValue::Integer(self.initial_value),
+        );
+    }
+
+    pub(super) fn condition_truthy(
+        &self,
+        program: &SourceProgram,
+        values: &BTreeMap<String, FixedFileTemplateValue>,
+    ) -> Option<bool> {
+        evaluate_source_static_expression(program, &self.condition, values)
+            .map(|value| static_value_truthy(&value))
+    }
+
+    pub(super) fn apply_update(
+        &self,
+        program: &SourceProgram,
+        values: &mut BTreeMap<String, FixedFileTemplateValue>,
+    ) -> Result<(), SourceKeyDirectoryMetadataError> {
+        apply_top_level_for_update(program, &self.update, &self.variable_name, values)
+    }
+
+    pub(super) fn final_variable_value(
+        &self,
+        values: &BTreeMap<String, FixedFileTemplateValue>,
+    ) -> Option<(String, FixedFileTemplateValue)> {
+        self.updates_existing_variable.then(|| {
+            (
+                self.variable_name.clone(),
+                values
+                    .get(&self.variable_name)
+                    .cloned()
+                    .unwrap_or(FixedFileTemplateValue::Integer(self.initial_value)),
+            )
+        })
+    }
+
+    pub(super) fn body_start(&self) -> usize {
+        self.body_start
+    }
+
+    pub(super) fn body_end(&self) -> usize {
+        self.body_end
+    }
+
+    pub(super) fn next_index(&self) -> usize {
+        self.next_index
+    }
+}
+
 enum TopLevelForUpdate {
     Expression(Expression),
     Postfix { name: String, delta: i128 },
 }
 
-fn parse_top_level_for_loop(
+pub(super) fn parse_top_level_for_loop(
     program: &SourceProgram,
     module: &SourceProgramModule,
     tokens: &[Token],
@@ -123,7 +178,7 @@ fn parse_top_level_for_loop(
         ));
     }
     let body_close = matching_delimiter(tokens, body_open, TokenKind::RBrace)?;
-    let Some((variable_name, initial_value)) =
+    let Some(initializer) =
         parse_for_initializer(program, module, tokens, initializer_range, static_values)?
     else {
         return Ok(None);
@@ -133,14 +188,21 @@ fn parse_top_level_for_loop(
         return Ok(None);
     };
     Ok(Some(TopLevelForLoop {
-        variable_name,
-        initial_value,
+        variable_name: initializer.variable_name,
+        initial_value: initializer.initial_value,
+        updates_existing_variable: initializer.updates_existing_variable,
         condition,
         update,
         body_start: body_open + 1,
         body_end: body_close,
         next_index: body_close + 1,
     }))
+}
+
+struct TopLevelForInitializer {
+    variable_name: String,
+    initial_value: i128,
+    updates_existing_variable: bool,
 }
 
 fn split_for_header_ranges(
@@ -178,33 +240,64 @@ fn parse_for_initializer(
     tokens: &[Token],
     range: (usize, usize),
     static_values: &BTreeMap<String, FixedFileTemplateValue>,
-) -> Result<Option<(String, i128)>, SourceKeyDirectoryMetadataError> {
+) -> Result<Option<TopLevelForInitializer>, SourceKeyDirectoryMetadataError> {
     let mut cursor = range.0;
     if tokens.get(cursor).map(|token| token.kind) == Some(TokenKind::Const) {
         cursor += 1;
     }
-    if tokens.get(cursor).map(|token| token.kind) != Some(TokenKind::Int) {
-        return Ok(None);
+    if tokens.get(cursor).map(|token| token.kind) == Some(TokenKind::Int) {
+        let name_index = cursor + 1;
+        let assign_index = cursor + 2;
+        let Some(name) = tokens.get(name_index) else {
+            return Ok(None);
+        };
+        if name.kind != TokenKind::Identifier {
+            return Ok(None);
+        }
+        if tokens.get(assign_index).map(|token| token.kind) != Some(TokenKind::Assign) {
+            return Ok(None);
+        }
+        let expression = parse_expression_range(module, tokens, (assign_index + 1, range.1))?;
+        let Some(value) = evaluate_source_static_expression(program, &expression, static_values)
+        else {
+            return Ok(None);
+        };
+        let Some(value) = static_value_integer(&value) else {
+            return Ok(None);
+        };
+        return Ok(Some(TopLevelForInitializer {
+            variable_name: name.lexeme.clone(),
+            initial_value: value,
+            updates_existing_variable: false,
+        }));
     }
-    let name_index = cursor + 1;
-    let assign_index = cursor + 2;
-    let Some(name) = tokens.get(name_index) else {
+
+    let expression = parse_expression_range(module, tokens, range)?;
+    let ExpressionKind::Binary {
+        op: BinaryOperator::Assign,
+        left,
+        right,
+    } = &expression.kind
+    else {
         return Ok(None);
     };
-    if name.kind != TokenKind::Identifier {
+    let Some(variable_name) = expression_name(left) else {
+        return Ok(None);
+    };
+    if !static_values.contains_key(variable_name) {
         return Ok(None);
     }
-    if tokens.get(assign_index).map(|token| token.kind) != Some(TokenKind::Assign) {
-        return Ok(None);
-    }
-    let expression = parse_expression_range(module, tokens, (assign_index + 1, range.1))?;
-    let Some(value) = evaluate_source_static_expression(program, &expression, static_values) else {
+    let Some(value) = evaluate_source_static_expression(program, right, static_values) else {
         return Ok(None);
     };
     let Some(value) = static_value_integer(&value) else {
         return Ok(None);
     };
-    Ok(Some((name.lexeme.clone(), value)))
+    Ok(Some(TopLevelForInitializer {
+        variable_name: variable_name.to_owned(),
+        initial_value: value,
+        updates_existing_variable: true,
+    }))
 }
 
 fn parse_for_update(

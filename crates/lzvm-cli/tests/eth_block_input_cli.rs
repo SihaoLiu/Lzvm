@@ -5,9 +5,15 @@ use lzvm_artifacts::eth_block_input::{
     build_eth_block_input, build_eth_block_input_with_receipts, encode_eth_block_input,
     eth_block_input_bytes_digest, parse_eth_block_input,
 };
+use lzvm_artifacts::eth_block_input_segment::{
+    parse_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
+};
+use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
 use lzvm_artifacts::eth_trie::{
     receipt_trie_build, transaction_trie_build, withdrawals_trie_build,
 };
+use lzvm_artifacts::key_directory::{key_directory_catalog_digest, read_key_directory_catalog};
+use lzvm_artifacts::proof::parse_proof_artifact;
 use lzvm_artifacts::public_values::{parse_public_values, public_values_digest};
 use lzvm_artifacts::rlp::parse_rlp;
 use lzvm_cli::run_cli;
@@ -731,6 +737,245 @@ fn writes_block_public_values_from_receipt_block_input() {
     assert!(stdout_text.contains("typed_receipts=0\n"));
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn cli_block_input_feeds_source_generated_prove_and_verify() {
+    let dir = temp_dir("source-generated-prove-verify");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    let block_path = dir.join("block.rlp");
+    let block_input_path = dir.join("block.input");
+    let public_values_path = dir.join("public-values.bin");
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let trace_path = dir.join("trace.bin");
+    let block_rlp = sample_block_rlp();
+    write_bytes(&source_path, eth_public_values_source());
+    write_bytes(&block_path, &block_rlp);
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+    write_bytes(&trace_path, sample_trace_bytes(23));
+
+    let mut setup_stdout = Vec::new();
+    let mut setup_stderr = Vec::new();
+    let setup_code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("setup path should be utf-8"),
+        ],
+        &mut setup_stdout,
+        &mut setup_stderr,
+    );
+
+    let mut block_stdout = Vec::new();
+    let mut block_stderr = Vec::new();
+    let block_code = run_cli(
+        &[
+            "eth",
+            "write-block-input",
+            block_path.to_str().expect("block path should be utf-8"),
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+        ],
+        &mut block_stdout,
+        &mut block_stderr,
+    );
+
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let block_input_bytes = fs::read(&block_input_path).expect("block input should read");
+    let block_input = parse_eth_block_input(&block_input_bytes).expect("block input should parse");
+    let block_input_hash = eth_block_input_bytes_digest(&block_input_bytes);
+
+    let mut public_stdout = Vec::new();
+    let mut public_stderr = Vec::new();
+    let public_code = run_cli(
+        &[
+            "eth",
+            "write-block-public-values",
+            "--setup-dir",
+            dir.to_str().expect("setup path should be utf-8"),
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut public_stdout,
+        &mut public_stderr,
+    );
+
+    let mut prove_stdout = Vec::new();
+    let mut prove_stderr = Vec::new();
+    let prove_code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--trace-bytes",
+            trace_path.to_str().expect("trace path should be utf-8"),
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("setup path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut prove_stdout,
+        &mut prove_stderr,
+    );
+
+    let proof_path = output_dir.join("proof.bin");
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "proof",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            dir.to_str().expect("setup path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
+
+    let public_values_bytes = fs::read(&public_values_path).expect("public values should read");
+    let public_values =
+        parse_public_values(&public_values_bytes).expect("public values should parse");
+    let proof_bytes = fs::read(&proof_path).expect("proof should read");
+    let proof = parse_proof_artifact(&proof_bytes).expect("proof should parse");
+    let block_segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == ETH_BLOCK_INPUT_SEGMENT_ID)
+        .expect("ETH block input segment should exist");
+    let proof_block_input =
+        parse_eth_block_input_segment(&block_segment.data).expect("proof block input should parse");
+
+    assert_eq!(setup_code, 0, "{}", String::from_utf8_lossy(&setup_stderr));
+    assert!(setup_stderr.is_empty());
+    assert_eq!(block_code, 0, "{}", String::from_utf8_lossy(&block_stderr));
+    assert!(block_stderr.is_empty());
+    assert_eq!(
+        public_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&public_stderr)
+    );
+    assert!(public_stderr.is_empty());
+    assert_eq!(prove_code, 0, "{}", String::from_utf8_lossy(&prove_stderr));
+    assert!(prove_stderr.is_empty());
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert!(verify_stderr.is_empty());
+    assert_eq!(
+        public_values,
+        public_values_from_eth_block_input(setup_hash, &block_input)
+    );
+    assert_eq!(proof_block_input, block_input);
+    assert_eq!(
+        proof.public_values_hash,
+        public_values_digest(&public_values).expect("public values digest should compute")
+    );
+    let setup_stdout_text = String::from_utf8(setup_stdout).expect("setup stdout should be utf-8");
+    let block_stdout_text = String::from_utf8(block_stdout).expect("block stdout should be utf-8");
+    let public_stdout_text =
+        String::from_utf8(public_stdout).expect("public stdout should be utf-8");
+    let prove_stdout_text = String::from_utf8(prove_stdout).expect("prove stdout should be utf-8");
+    let verify_stdout_text =
+        String::from_utf8(verify_stdout).expect("verify stdout should be utf-8");
+    assert!(setup_stdout_text.contains("source_program_archive="));
+    assert!(setup_stdout_text.contains("source_fixed_file_manifest="));
+    assert!(
+        block_stdout_text.contains(&format!("block_input_hash={}\n", to_hex(&block_input_hash)))
+    );
+    assert!(
+        public_stdout_text.contains(&format!("block_input_hash={}\n", to_hex(&block_input_hash)))
+    );
+    assert!(prove_stdout_text.contains("eth_block_input="));
+    assert!(prove_stdout_text.contains(&format!(
+        "eth_block_input_hash={}\n",
+        to_hex(&block_input_hash)
+    )));
+    assert!(verify_stdout_text.contains("eth_block_inputs=1\n"));
+    assert!(verify_stdout_text.contains("eth_block_input_match=ok\n"));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+fn eth_public_values_source() -> &'static str {
+    "public eth_block_hash_u32_be[8];\n\
+     public eth_parent_hash_u32_be[8];\n\
+     public eth_beneficiary_u32_be[5];\n\
+     public eth_state_root_u32_be[8];\n\
+     public eth_receipts_root_u32_be[8];\n\
+     public eth_logs_bloom_u32_be[64];\n\
+     public eth_difficulty_u32_be[8];\n\
+     public eth_block_number_u32_le[2];\n\
+     public eth_block_timestamp_u32_le[2];\n\
+     public eth_extra_data_len;\n\
+     public eth_extra_data_u32_be[8];\n\
+     public eth_gas_limit_u32_le[2];\n\
+     public eth_gas_used_u32_le[2];\n\
+     public eth_base_fee_per_gas_present;\n\
+     public eth_base_fee_per_gas_u32_be[8];\n\
+     public eth_mix_hash_u32_be[8];\n\
+     public eth_nonce_u32_be[2];\n\
+     public eth_ommers_hash_u32_be[8];\n\
+     public eth_transactions_root_u32_be[8];\n\
+     public eth_withdrawals_root_present;\n\
+     public eth_withdrawals_root_u32_be[8];\n\
+     airtemplate UnitA() {\n\
+         col witness values[2];\n\
+     }\n\
+     airgroup GroupA { UnitA(); }\n\
+     col fixed main.left = [5, 1];"
+}
+
+fn sample_guest_image() -> Vec<u8> {
+    let mut bytes = vec![0_u8; 64];
+    bytes[0..4].copy_from_slice(b"\x7fELF");
+    bytes[4] = 2;
+    bytes[5] = 1;
+    bytes[6] = 1;
+    bytes[16..18].copy_from_slice(&2_u16.to_le_bytes());
+    bytes[18..20].copy_from_slice(&243_u16.to_le_bytes());
+    bytes[20..24].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[24..32].copy_from_slice(&0x8000_0000_u64.to_le_bytes());
+    bytes[32..40].copy_from_slice(&64_u64.to_le_bytes());
+    bytes[52..54].copy_from_slice(&64_u16.to_le_bytes());
+    bytes
+}
+
+fn sample_trace_bytes(seed: u64) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(4 * 8);
+    for value in seed + 1..=seed + 4 {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes
 }
 
 fn sample_block_rlp() -> Vec<u8> {

@@ -325,31 +325,29 @@ impl SourceScalarSlots {
     }
 
     pub(crate) fn source_dimension(&self, name: &str) -> Option<u32> {
-        if let Some(slot) = self.commitments.get(name) {
+        if let Some(slot) = source_slot_get(&self.commitments, name) {
             return Some(slot.dimension);
         }
-        if let Some(slot) = self.unit_values.get(name) {
+        if let Some(slot) = source_slot_get(&self.unit_values, name) {
             return Some(slot.source_dimension);
         }
-        if let Some(slot) = self.group_values.get(name) {
+        if let Some(slot) = source_slot_get(&self.group_values, name) {
             return Some(slot.source_dimension);
         }
-        if let Some(slot) = self.constants.get(name) {
+        if let Some(slot) = source_slot_get(&self.constants, name) {
             return Some(slot.dimension);
         }
-        if let Some(slot) = self.publics.get(name) {
+        if let Some(slot) = source_slot_get(&self.publics, name) {
             return Some(slot.dimension);
         }
-        if let Some(slot) = self.challenges.get(name) {
+        if let Some(slot) = source_slot_get(&self.challenges, name) {
             return Some(slot.dimension);
         }
-        self.proof_values
-            .get(name)
-            .map(|slot| slot.source_dimension)
+        source_slot_get(&self.proof_values, name).map(|slot| slot.source_dimension)
     }
 
     pub(crate) fn operand(&self, name: &str) -> Result<CodeOperand, SourceScalarSlotError> {
-        if let Some(slot) = self.commitments.get(name) {
+        if let Some(slot) = source_slot_get(&self.commitments, name) {
             if !slot.lengths.is_empty() {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -358,7 +356,7 @@ impl SourceScalarSlots {
             return Ok(CodeOperand::commitment(slot.id, slot.dimension));
         }
 
-        if let Some(slot) = self.unit_values.get(name) {
+        if let Some(slot) = source_slot_get(&self.unit_values, name) {
             if slot.source_dimension != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -372,7 +370,7 @@ impl SourceScalarSlots {
             ));
         }
 
-        if let Some(slot) = self.group_values.get(name) {
+        if let Some(slot) = source_slot_get(&self.group_values, name) {
             if slot.source_dimension != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -386,7 +384,7 @@ impl SourceScalarSlots {
             ));
         }
 
-        if let Some(slot) = self.constants.get(name) {
+        if let Some(slot) = source_slot_get(&self.constants, name) {
             if slot.stage != 0 || slot.dimension != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -395,7 +393,7 @@ impl SourceScalarSlots {
             return Ok(CodeOperand::constant(slot.id, 1));
         }
 
-        if let Some(slot) = self.publics.get(name) {
+        if let Some(slot) = source_slot_get(&self.publics, name) {
             if slot.stage != 1 || slot.dimension != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -404,7 +402,7 @@ impl SourceScalarSlots {
             return Ok(CodeOperand::public(slot.offset, 1));
         }
 
-        if let Some(slot) = self.challenges.get(name) {
+        if let Some(slot) = source_slot_get(&self.challenges, name) {
             if slot.dimension != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -418,7 +416,7 @@ impl SourceScalarSlots {
             ));
         }
 
-        if let Some(slot) = self.proof_values.get(name) {
+        if let Some(slot) = source_slot_get(&self.proof_values, name) {
             if slot.source_dimension != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -445,7 +443,7 @@ impl SourceScalarSlots {
             return self.operand(name);
         }
 
-        if let Some(slot) = self.commitments.get(name) {
+        if let Some(slot) = source_slot_get(&self.commitments, name) {
             if slot.stage != 1 || slot.dimension != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -454,7 +452,7 @@ impl SourceScalarSlots {
             return Ok(CodeOperand::commitment_at(slot.id, Some(row_offset), 1));
         }
 
-        if let Some(slot) = self.constants.get(name) {
+        if let Some(slot) = source_slot_get(&self.constants, name) {
             if slot.stage != 0 || slot.dimension != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -473,7 +471,7 @@ impl SourceScalarSlots {
         name: &str,
         row_offset: i64,
     ) -> Result<Vec<CodeOperand>, SourceScalarSlotError> {
-        if let Some(slot) = self.commitments.get(name) {
+        if let Some(slot) = source_slot_get(&self.commitments, name) {
             if slot.stage != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -484,7 +482,7 @@ impl SourceScalarSlots {
                 .collect();
         }
 
-        if let Some(slot) = self.publics.get(name) {
+        if let Some(slot) = source_slot_get(&self.publics, name) {
             if slot.stage != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -500,7 +498,7 @@ impl SourceScalarSlots {
                 .collect();
         }
 
-        if let Some(slot) = self.challenges.get(name) {
+        if let Some(slot) = source_slot_get(&self.challenges, name) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
                     name: name.to_owned(),
@@ -511,7 +509,7 @@ impl SourceScalarSlots {
                 .collect();
         }
 
-        if let Some(slot) = self.unit_values.get(name) {
+        if let Some(slot) = source_slot_get(&self.unit_values, name) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
                     name: name.to_owned(),
@@ -522,7 +520,7 @@ impl SourceScalarSlots {
                 .collect();
         }
 
-        if let Some(slot) = self.group_values.get(name) {
+        if let Some(slot) = source_slot_get(&self.group_values, name) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
                     name: name.to_owned(),
@@ -533,7 +531,7 @@ impl SourceScalarSlots {
                 .collect();
         }
 
-        if let Some(slot) = self.constants.get(name) {
+        if let Some(slot) = source_slot_get(&self.constants, name) {
             if slot.stage != 0 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -544,7 +542,7 @@ impl SourceScalarSlots {
                 .collect();
         }
 
-        if let Some(slot) = self.proof_values.get(name) {
+        if let Some(slot) = source_slot_get(&self.proof_values, name) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
                     name: name.to_owned(),
@@ -564,7 +562,7 @@ impl SourceScalarSlots {
         index: u32,
         row_offset: i64,
     ) -> Result<CodeOperand, SourceScalarSlotError> {
-        if let Some(slot) = self.commitments.get(name) {
+        if let Some(slot) = source_slot_get(&self.commitments, name) {
             if slot.stage != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -592,7 +590,7 @@ impl SourceScalarSlots {
             ));
         }
 
-        if let Some(slot) = self.publics.get(name) {
+        if let Some(slot) = source_slot_get(&self.publics, name) {
             if slot.stage != 1 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -619,7 +617,7 @@ impl SourceScalarSlots {
             return Ok(CodeOperand::public(offset, 1));
         }
 
-        if let Some(slot) = self.challenges.get(name) {
+        if let Some(slot) = source_slot_get(&self.challenges, name) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
                     name: name.to_owned(),
@@ -652,7 +650,7 @@ impl SourceScalarSlots {
             ));
         }
 
-        if let Some(slot) = self.unit_values.get(name) {
+        if let Some(slot) = source_slot_get(&self.unit_values, name) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
                     name: name.to_owned(),
@@ -679,7 +677,7 @@ impl SourceScalarSlots {
             ));
         }
 
-        if let Some(slot) = self.group_values.get(name) {
+        if let Some(slot) = source_slot_get(&self.group_values, name) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
                     name: name.to_owned(),
@@ -706,7 +704,7 @@ impl SourceScalarSlots {
             ));
         }
 
-        if let Some(slot) = self.constants.get(name) {
+        if let Some(slot) = source_slot_get(&self.constants, name) {
             if slot.stage != 0 {
                 return Err(SourceScalarSlotError::UnsupportedValueShape {
                     name: name.to_owned(),
@@ -731,7 +729,7 @@ impl SourceScalarSlots {
             return Ok(CodeOperand::constant_at(id, Some(row_offset), 1));
         }
 
-        if let Some(slot) = self.proof_values.get(name) {
+        if let Some(slot) = source_slot_get(&self.proof_values, name) {
             if row_offset != 0 {
                 return Err(SourceScalarSlotError::UnsupportedRowOffset {
                     name: name.to_owned(),
@@ -775,37 +773,37 @@ impl SourceScalarSlots {
             return self.operand_index_at(name, indices[0], row_offset);
         }
 
-        if let Some(slot) = self.commitments.get(name) {
+        if let Some(slot) = source_slot_get(&self.commitments, name) {
             let index = linear_source_index(name, indices, &slot.lengths)?;
             return self.operand_index_at(name, index, row_offset);
         }
 
-        if let Some(slot) = self.constants.get(name) {
+        if let Some(slot) = source_slot_get(&self.constants, name) {
             let index = linear_source_index(name, indices, &slot.lengths)?;
             return self.operand_index_at(name, index, row_offset);
         }
 
-        if let Some(slot) = self.publics.get(name) {
+        if let Some(slot) = source_slot_get(&self.publics, name) {
             let index = linear_source_index(name, indices, &slot.lengths)?;
             return self.operand_index_at(name, index, row_offset);
         }
 
-        if let Some(slot) = self.unit_values.get(name) {
+        if let Some(slot) = source_slot_get(&self.unit_values, name) {
             let index = linear_source_index(name, indices, &slot.lengths)?;
             return self.operand_index_at(name, index, row_offset);
         }
 
-        if let Some(slot) = self.group_values.get(name) {
+        if let Some(slot) = source_slot_get(&self.group_values, name) {
             let index = linear_source_index(name, indices, &slot.lengths)?;
             return self.operand_index_at(name, index, row_offset);
         }
 
-        if let Some(slot) = self.proof_values.get(name) {
+        if let Some(slot) = source_slot_get(&self.proof_values, name) {
             let index = linear_source_index(name, indices, &slot.lengths)?;
             return self.operand_index_at(name, index, row_offset);
         }
 
-        if let Some(slot) = self.challenges.get(name) {
+        if let Some(slot) = source_slot_get(&self.challenges, name) {
             let index = linear_source_index(name, indices, &slot.lengths)?;
             return self.operand_index_at(name, index, row_offset);
         }
@@ -875,6 +873,15 @@ fn insert_source_scalar_slot<T: Clone>(slots: &mut BTreeMap<String, T>, name: St
     if let Some(local_name) = local_name {
         slots.entry(local_name).or_insert(slot);
     }
+}
+
+fn source_slot_get<'a, T>(slots: &'a BTreeMap<String, T>, name: &str) -> Option<&'a T> {
+    slots.get(name).or_else(|| {
+        name.rsplit_once('.')
+            .map(|(_, local_name)| local_name)
+            .filter(|local_name| !local_name.is_empty())
+            .and_then(|local_name| slots.get(local_name))
+    })
 }
 
 fn public_value_dimension(lengths: &[u64]) -> Result<u32, SourceScalarSlotError> {

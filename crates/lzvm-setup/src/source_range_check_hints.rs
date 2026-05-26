@@ -9,7 +9,8 @@ use lzvm_pil::{
 };
 
 use crate::source_statement_hints::{
-    lower_structured_source_lookup_line, source_statement_line, SourceLookupInputs,
+    lower_structured_source_lookup_line, source_lookup_line_hint, source_statement_line,
+    SourceLookupInputs,
 };
 use crate::source_static_values::{evaluate_source_static_expression, static_value_integer};
 
@@ -88,47 +89,53 @@ pub(crate) fn lower_source_range_check_statement(
     inputs: &SourceLookupInputs<'_>,
     range_checks: &RefCell<SourceRangeCheckIds>,
     statement: &FunctionStatement,
-) -> Result<Option<HintInfo>, LexError> {
+) -> Result<Vec<HintInfo>, LexError> {
     let line = source_statement_line(inputs.module, statement);
     let tokens = lex_source(&line)?;
+    if source_range_dual_byte_call(&tokens) {
+        return lower_source_range_dual_byte_statement(inputs, &line, &tokens);
+    }
+    if source_multi_range_check_call(&tokens) {
+        return lower_source_multi_range_check_statement(inputs, range_checks, &line, &tokens);
+    }
     if !source_range_check_call(&tokens) {
-        return Ok(None);
+        return Ok(Vec::new());
     }
     let Some(open_index) = tokens
         .iter()
         .position(|token| token.kind == TokenKind::LParen)
     else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let Some(close_index) = tokens
         .iter()
         .rposition(|token| token.kind == TokenKind::RParen)
     else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let Some(arguments) = top_level_argument_ranges(&tokens, open_index, close_index) else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let Some(call) = source_range_check_arguments(&tokens, arguments) else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let Some(expression) = source_argument_text(&line, &tokens, call.expression) else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let selector = call
         .selector
         .and_then(|range| source_argument_text(&line, &tokens, range))
         .unwrap_or_else(|| "1".to_owned());
     let Some(min) = source_static_integer_argument(inputs, &line, &tokens, call.min) else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let Some(max) = source_static_integer_argument(inputs, &line, &tokens, call.max) else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let predefined = match call.predefined {
         Some(range) => {
             let Some(value) = source_static_integer_argument(inputs, &line, &tokens, range) else {
-                return Ok(None);
+                return Ok(Vec::new());
             };
             value != 0
         }
@@ -136,14 +143,137 @@ pub(crate) fn lower_source_range_check_statement(
     };
     if predefined && min >= 0 && max <= U16_MAX && !(min == 0 && (max == U8_MAX || max == U16_MAX))
     {
-        return Ok(None);
+        return Ok(Vec::new());
     }
     let Some(opid) = range_checks.borrow_mut().opid(min, max, predefined) else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
 
     let lookup_line = format!("lookup_assumes({opid}, [{expression}], sel: {selector})");
-    lower_structured_source_lookup_line(inputs, SOURCE_LOOKUP_ASSUMES_HINT, &lookup_line)
+    Ok(vec![lower_source_lookup_assumes_line(inputs, lookup_line)?])
+}
+
+fn lower_source_range_dual_byte_statement(
+    inputs: &SourceLookupInputs<'_>,
+    line: &str,
+    tokens: &[Token],
+) -> Result<Vec<HintInfo>, LexError> {
+    let Some(open_index) = tokens
+        .iter()
+        .position(|token| token.kind == TokenKind::LParen)
+    else {
+        return Ok(Vec::new());
+    };
+    let Some(close_index) = tokens
+        .iter()
+        .rposition(|token| token.kind == TokenKind::RParen)
+    else {
+        return Ok(Vec::new());
+    };
+    let Some(arguments) = top_level_argument_ranges(tokens, open_index, close_index) else {
+        return Ok(Vec::new());
+    };
+    let Some(call) = source_range_dual_byte_arguments(tokens, arguments) else {
+        return Ok(Vec::new());
+    };
+    let Some(byte_a) = source_argument_text(line, tokens, call.byte_a) else {
+        return Ok(Vec::new());
+    };
+    let Some(byte_b) = source_argument_text(line, tokens, call.byte_b) else {
+        return Ok(Vec::new());
+    };
+    let selector = call
+        .selector
+        .and_then(|range| source_argument_text(line, tokens, range))
+        .unwrap_or_else(|| "1".to_owned());
+    let lookup_line =
+        format!("lookup_assumes(DUAL_RANGE_BYTE_ID, [{byte_a}, {byte_b}], sel: {selector})");
+    Ok(vec![lower_source_lookup_assumes_line(inputs, lookup_line)?])
+}
+
+fn lower_source_multi_range_check_statement(
+    inputs: &SourceLookupInputs<'_>,
+    range_checks: &RefCell<SourceRangeCheckIds>,
+    line: &str,
+    tokens: &[Token],
+) -> Result<Vec<HintInfo>, LexError> {
+    let Some(open_index) = tokens
+        .iter()
+        .position(|token| token.kind == TokenKind::LParen)
+    else {
+        return Ok(Vec::new());
+    };
+    let Some(close_index) = tokens
+        .iter()
+        .rposition(|token| token.kind == TokenKind::RParen)
+    else {
+        return Ok(Vec::new());
+    };
+    let Some(arguments) = top_level_argument_ranges(tokens, open_index, close_index) else {
+        return Ok(Vec::new());
+    };
+    let Some(call) = source_multi_range_check_arguments(tokens, arguments) else {
+        return Ok(Vec::new());
+    };
+    let Some(expression) = source_argument_text(line, tokens, call.expression) else {
+        return Ok(Vec::new());
+    };
+    let range_selector = call
+        .range_selector
+        .and_then(|range| source_argument_text(line, tokens, range))
+        .unwrap_or_else(|| "1".to_owned());
+    let selector = call
+        .selector
+        .and_then(|range| source_argument_text(line, tokens, range))
+        .unwrap_or_else(|| "1".to_owned());
+    let predefined = match call.predefined {
+        Some(range) => {
+            let Some(value) = source_static_integer_argument(inputs, line, tokens, range) else {
+                return Ok(Vec::new());
+            };
+            value != 0
+        }
+        None => false,
+    };
+    let Some(min1) = source_static_integer_argument(inputs, line, tokens, call.min1) else {
+        return Ok(Vec::new());
+    };
+    let Some(max1) = source_static_integer_argument(inputs, line, tokens, call.max1) else {
+        return Ok(Vec::new());
+    };
+    let Some(min2) = source_static_integer_argument(inputs, line, tokens, call.min2) else {
+        return Ok(Vec::new());
+    };
+    let Some(max2) = source_static_integer_argument(inputs, line, tokens, call.max2) else {
+        return Ok(Vec::new());
+    };
+    if predefined || (min1 == min2 && max1 == max2) {
+        return Ok(Vec::new());
+    }
+    let Some(opid1) = range_checks.borrow_mut().opid(min1, max1, predefined) else {
+        return Ok(Vec::new());
+    };
+    let Some(opid2) = range_checks.borrow_mut().opid(min2, max2, predefined) else {
+        return Ok(Vec::new());
+    };
+    let first_selector = format!("({selector}) * ({range_selector})");
+    let second_selector = format!("({selector}) * (1 - ({range_selector}))");
+    let first_line = format!("lookup_assumes({opid1}, [{expression}], sel: {first_selector})");
+    let second_line = format!("lookup_assumes({opid2}, [{expression}], sel: {second_selector})");
+    Ok(vec![
+        lower_source_lookup_assumes_line(inputs, first_line)?,
+        lower_source_lookup_assumes_line(inputs, second_line)?,
+    ])
+}
+
+fn lower_source_lookup_assumes_line(
+    inputs: &SourceLookupInputs<'_>,
+    lookup_line: String,
+) -> Result<HintInfo, LexError> {
+    Ok(
+        lower_structured_source_lookup_line(inputs, SOURCE_LOOKUP_ASSUMES_HINT, &lookup_line)?
+            .unwrap_or_else(|| source_lookup_line_hint(SOURCE_LOOKUP_ASSUMES_HINT, lookup_line)),
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -176,6 +306,69 @@ impl PartialSourceRangeCheckArguments {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct SourceMultiRangeCheckArguments {
+    expression: (usize, usize),
+    min1: (usize, usize),
+    max1: (usize, usize),
+    min2: (usize, usize),
+    max2: (usize, usize),
+    range_selector: Option<(usize, usize)>,
+    selector: Option<(usize, usize)>,
+    predefined: Option<(usize, usize)>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct PartialSourceMultiRangeCheckArguments {
+    expression: Option<(usize, usize)>,
+    min1: Option<(usize, usize)>,
+    max1: Option<(usize, usize)>,
+    min2: Option<(usize, usize)>,
+    max2: Option<(usize, usize)>,
+    range_selector: Option<(usize, usize)>,
+    selector: Option<(usize, usize)>,
+    predefined: Option<(usize, usize)>,
+}
+
+impl PartialSourceMultiRangeCheckArguments {
+    fn finish(self) -> Option<SourceMultiRangeCheckArguments> {
+        Some(SourceMultiRangeCheckArguments {
+            expression: self.expression?,
+            min1: self.min1?,
+            max1: self.max1?,
+            min2: self.min2?,
+            max2: self.max2?,
+            range_selector: self.range_selector,
+            selector: self.selector,
+            predefined: self.predefined,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SourceRangeDualByteArguments {
+    byte_a: (usize, usize),
+    byte_b: (usize, usize),
+    selector: Option<(usize, usize)>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct PartialSourceRangeDualByteArguments {
+    byte_a: Option<(usize, usize)>,
+    byte_b: Option<(usize, usize)>,
+    selector: Option<(usize, usize)>,
+}
+
+impl PartialSourceRangeDualByteArguments {
+    fn finish(self) -> Option<SourceRangeDualByteArguments> {
+        Some(SourceRangeDualByteArguments {
+            byte_a: self.byte_a?,
+            byte_b: self.byte_b?,
+            selector: self.selector,
+        })
+    }
+}
+
 fn source_range_check_call(tokens: &[Token]) -> bool {
     let Some(name) = tokens.first() else {
         return false;
@@ -186,6 +379,86 @@ fn source_range_check_call(tokens: &[Token]) -> bool {
     name.kind == TokenKind::Identifier
         && name.lexeme == "range_check"
         && open.kind == TokenKind::LParen
+}
+
+fn source_multi_range_check_call(tokens: &[Token]) -> bool {
+    let Some(name) = tokens.first() else {
+        return false;
+    };
+    let Some(open) = tokens.get(1) else {
+        return false;
+    };
+    name.kind == TokenKind::Identifier
+        && name.lexeme == "multi_range_check"
+        && open.kind == TokenKind::LParen
+}
+
+fn source_range_dual_byte_call(tokens: &[Token]) -> bool {
+    let Some(name) = tokens.first() else {
+        return false;
+    };
+    let Some(open) = tokens.get(1) else {
+        return false;
+    };
+    name.kind == TokenKind::Identifier
+        && name.lexeme == "range_dual_byte"
+        && open.kind == TokenKind::LParen
+}
+
+fn source_multi_range_check_arguments(
+    tokens: &[Token],
+    arguments: Vec<(usize, usize)>,
+) -> Option<SourceMultiRangeCheckArguments> {
+    let mut out = PartialSourceMultiRangeCheckArguments::default();
+    for (index, range) in arguments.into_iter().enumerate() {
+        let argument = split_named_argument(tokens, range);
+        match argument.name.as_deref() {
+            Some("expression") => out.expression = Some(argument.value_range),
+            Some("min1") => out.min1 = Some(argument.value_range),
+            Some("max1") => out.max1 = Some(argument.value_range),
+            Some("min2") => out.min2 = Some(argument.value_range),
+            Some("max2") => out.max2 = Some(argument.value_range),
+            Some("range_sel") => out.range_selector = Some(argument.value_range),
+            Some("sel") => out.selector = Some(argument.value_range),
+            Some("predefined") => out.predefined = Some(argument.value_range),
+            Some(_) => return None,
+            None => match index {
+                0 => out.expression = Some(argument.value_range),
+                1 => out.min1 = Some(argument.value_range),
+                2 => out.max1 = Some(argument.value_range),
+                3 => out.min2 = Some(argument.value_range),
+                4 => out.max2 = Some(argument.value_range),
+                5 => out.range_selector = Some(argument.value_range),
+                6 => out.selector = Some(argument.value_range),
+                7 => out.predefined = Some(argument.value_range),
+                _ => return None,
+            },
+        }
+    }
+    out.finish()
+}
+
+fn source_range_dual_byte_arguments(
+    tokens: &[Token],
+    arguments: Vec<(usize, usize)>,
+) -> Option<SourceRangeDualByteArguments> {
+    let mut out = PartialSourceRangeDualByteArguments::default();
+    for (index, range) in arguments.into_iter().enumerate() {
+        let argument = split_named_argument(tokens, range);
+        match argument.name.as_deref() {
+            Some("byte_a") => out.byte_a = Some(argument.value_range),
+            Some("byte_b") => out.byte_b = Some(argument.value_range),
+            Some("sel") => out.selector = Some(argument.value_range),
+            Some(_) => return None,
+            None => match index {
+                0 => out.byte_a = Some(argument.value_range),
+                1 => out.byte_b = Some(argument.value_range),
+                2 => out.selector = Some(argument.value_range),
+                _ => return None,
+            },
+        }
+    }
+    out.finish()
 }
 
 fn source_range_check_arguments(
@@ -245,7 +518,12 @@ fn source_static_integer_argument(
 ) -> Option<i128> {
     let expression =
         parse_source_expression(inputs.module.source_name.clone(), line, tokens, range)?;
-    let value = evaluate_source_static_expression(inputs.program, &expression, inputs.values)?;
+    let value = evaluate_source_static_expression(inputs.program, &expression, inputs.values)
+        .or_else(|| {
+            let mut values = inputs.constant_values.clone();
+            values.extend(inputs.values.clone());
+            evaluate_source_static_expression(inputs.program, &expression, &values)
+        })?;
     static_value_integer(&value)
 }
 

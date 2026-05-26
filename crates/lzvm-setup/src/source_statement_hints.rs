@@ -1,15 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use lzvm_artifacts::expression_info::{
-    CodeOperand, HintFieldInfo, HintInfo, HintPayload, HintValueInfo,
-};
+use lzvm_artifacts::expression_info::{HintFieldInfo, HintInfo, HintPayload, HintValueInfo};
 use lzvm_artifacts::hint_program::{
     SOURCE_ASSIGNMENT_CHECK_HINT, SOURCE_LOOKUP_ASSUMES_HINT, SOURCE_LOOKUP_PROVES_HINT,
     SOURCE_UNSUPPORTED_ASSIGNMENT_HINT, SOURCE_UNSUPPORTED_CALL_HINT,
     SOURCE_UNSUPPORTED_CONSTRAINT_HINT, SOURCE_UNSUPPORTED_STATEMENT_HINT,
 };
-use lzvm_field::MODULUS;
 use lzvm_pil::{
     lex_source, parse_expression_tokens, BinaryOperator, Expression, ExpressionKind,
     FixedFileTemplateValue, FunctionStatement, LexError, SourceFile, SourceProgram,
@@ -18,18 +16,34 @@ use lzvm_pil::{
 
 use crate::{
     source_constraint_lowering::SourceExpressionAliases,
+    source_expression_info::SourceExpressionAliasScope,
     source_expression_strings::source_expression_string_call_value,
     source_scalar_slots::SourceScalarSlots,
     source_static_values::{
         evaluate_source_static_expression, source_static_array_element, source_static_array_values,
-        static_value_integer,
     },
 };
 
-#[derive(Clone)]
+mod operands;
+
+use operands::{
+    canonical_hint_number, hint_number_field, hint_payload_from_code_operand,
+    source_assignment_target_payload, source_lookup_index, source_lookup_scalar_operand,
+    source_lookup_scoped_context, strip_group_expression,
+};
+
+#[derive(Clone, Debug)]
 pub(crate) enum SourceExpressionArrayAlias {
     Name(String),
     Values(Vec<Expression>),
+    ScopedValues {
+        expressions: Vec<Expression>,
+        scope: Arc<SourceExpressionAliasScope>,
+    },
+    Call {
+        expression: Box<Expression>,
+        lengths: Vec<usize>,
+    },
 }
 
 pub(crate) type SourceExpressionArrayAliases = BTreeMap<String, SourceExpressionArrayAlias>;
@@ -102,6 +116,432 @@ pub(crate) fn lower_source_lookup_statement(
         return Ok(Some(hint));
     }
     Ok(Some(source_lookup_line_hint(name, line)))
+}
+
+pub(crate) fn lower_source_memory_helper_statement(
+    inputs: &SourceLookupInputs<'_>,
+    statement: &FunctionStatement,
+) -> Result<Option<HintInfo>, LexError> {
+    let line = source_statement_line(inputs.module, statement);
+    let tokens = lex_source(&line)?;
+    let Some(call_name) = source_memory_helper_call_name(&tokens) else {
+        return Ok(None);
+    };
+    let Some(open_index) = tokens
+        .iter()
+        .position(|token| token.kind == TokenKind::LParen)
+    else {
+        return Ok(None);
+    };
+    let Some(close_index) = tokens
+        .iter()
+        .rposition(|token| token.kind == TokenKind::RParen)
+    else {
+        return Ok(None);
+    };
+    let Some(arguments) = top_level_argument_ranges(&tokens, open_index, close_index) else {
+        return Ok(None);
+    };
+    let arguments = arguments
+        .into_iter()
+        .map(|range| split_named_argument(&tokens, range))
+        .collect::<Vec<_>>();
+    let Some(lookup_line) = source_memory_helper_lookup_line(&line, &tokens, call_name, &arguments)
+    else {
+        return Ok(None);
+    };
+    let hint_name = match call_name {
+        "mem_op"
+        | "global_init_mem"
+        | "precompiled_mem_load"
+        | "precompiled_mem_store"
+        | "precompiled_mem_op" => SOURCE_LOOKUP_ASSUMES_HINT,
+        "reg_pre_load" | "reg_pre_store" | "precompiled_mem_load_padding" => {
+            SOURCE_LOOKUP_PROVES_HINT
+        }
+        _ => return Ok(None),
+    };
+    Ok(
+        lower_structured_source_lookup_line(inputs, hint_name, &lookup_line)?
+            .or_else(|| Some(source_lookup_line_hint(hint_name, lookup_line))),
+    )
+}
+
+pub(crate) fn lower_source_operation_helper_statement(
+    inputs: &SourceLookupInputs<'_>,
+    statement: &FunctionStatement,
+) -> Result<Option<HintInfo>, LexError> {
+    let line = source_statement_line(inputs.module, statement);
+    let tokens = lex_source(&line)?;
+    let Some(call_name) = source_operation_helper_call_name(&tokens) else {
+        return Ok(None);
+    };
+    let Some(open_index) = tokens
+        .iter()
+        .position(|token| token.kind == TokenKind::LParen)
+    else {
+        return Ok(None);
+    };
+    let Some(close_index) = tokens
+        .iter()
+        .rposition(|token| token.kind == TokenKind::RParen)
+    else {
+        return Ok(None);
+    };
+    let Some(arguments) = top_level_argument_ranges(&tokens, open_index, close_index) else {
+        return Ok(None);
+    };
+    let arguments = arguments
+        .into_iter()
+        .map(|range| split_named_argument(&tokens, range))
+        .collect::<Vec<_>>();
+    let Some(lookup_line) =
+        source_operation_helper_lookup_line(&line, &tokens, call_name, &arguments)
+    else {
+        return Ok(None);
+    };
+    let hint_name = match call_name {
+        "proves_operation" => SOURCE_LOOKUP_PROVES_HINT,
+        "assumes_operation" | "assumes_padding_operation" => SOURCE_LOOKUP_ASSUMES_HINT,
+        _ => return Ok(None),
+    };
+    Ok(
+        lower_structured_source_lookup_line(inputs, hint_name, &lookup_line)?
+            .or_else(|| Some(source_lookup_line_hint(hint_name, lookup_line))),
+    )
+}
+
+pub(crate) fn lower_source_arith_helper_statement(
+    inputs: &SourceLookupInputs<'_>,
+    statement: &FunctionStatement,
+) -> Result<Option<HintInfo>, LexError> {
+    let line = source_statement_line(inputs.module, statement);
+    let tokens = lex_source(&line)?;
+    let Some(call_name) = source_arith_helper_call_name(&tokens) else {
+        return Ok(None);
+    };
+    let Some(open_index) = tokens
+        .iter()
+        .position(|token| token.kind == TokenKind::LParen)
+    else {
+        return Ok(None);
+    };
+    let Some(close_index) = tokens
+        .iter()
+        .rposition(|token| token.kind == TokenKind::RParen)
+    else {
+        return Ok(None);
+    };
+    let Some(arguments) = top_level_argument_ranges(&tokens, open_index, close_index) else {
+        return Ok(None);
+    };
+    let arguments = arguments
+        .into_iter()
+        .map(|range| split_named_argument(&tokens, range))
+        .collect::<Vec<_>>();
+    let Some(lookup_line) = source_arith_helper_lookup_line(&line, &tokens, call_name, &arguments)
+    else {
+        return Ok(None);
+    };
+    Ok(
+        lower_structured_source_lookup_line(inputs, SOURCE_LOOKUP_ASSUMES_HINT, &lookup_line)?
+            .or_else(|| {
+                Some(source_lookup_line_hint(
+                    SOURCE_LOOKUP_ASSUMES_HINT,
+                    lookup_line,
+                ))
+            }),
+    )
+}
+
+fn source_memory_helper_call_name(tokens: &[Token]) -> Option<&str> {
+    let token = tokens.first()?;
+    if token.kind != TokenKind::Identifier {
+        return None;
+    }
+    match token.lexeme.as_str() {
+        "mem_op"
+        | "reg_pre_load"
+        | "reg_pre_store"
+        | "global_init_mem"
+        | "precompiled_mem_load"
+        | "precompiled_mem_store"
+        | "precompiled_mem_op"
+        | "precompiled_mem_load_padding" => Some(token.lexeme.as_str()),
+        _ => None,
+    }
+}
+
+fn source_operation_helper_call_name(tokens: &[Token]) -> Option<&str> {
+    let token = tokens.first()?;
+    if token.kind != TokenKind::Identifier {
+        return None;
+    }
+    match token.lexeme.as_str() {
+        "assumes_operation" | "proves_operation" | "assumes_padding_operation" => {
+            Some(token.lexeme.as_str())
+        }
+        _ => None,
+    }
+}
+
+fn source_arith_helper_call_name(tokens: &[Token]) -> Option<&str> {
+    let token = tokens.first()?;
+    if token.kind != TokenKind::Identifier {
+        return None;
+    }
+    match token.lexeme.as_str() {
+        "arith_table_assumes" | "arith_range_table_assumes" => Some(token.lexeme.as_str()),
+        _ => None,
+    }
+}
+
+fn source_memory_helper_lookup_line(
+    line: &str,
+    tokens: &[Token],
+    call_name: &str,
+    arguments: &[SourceLookupArgument],
+) -> Option<String> {
+    let id = source_helper_argument(line, tokens, arguments, "id", 0, Some("MEMORY_ID"))?;
+    match call_name {
+        "mem_op" => {
+            let op = source_helper_argument(line, tokens, arguments, "op", 1, None)?;
+            let addr = source_helper_argument(line, tokens, arguments, "addr", 2, None)?;
+            let mem_step = source_helper_argument(line, tokens, arguments, "mem_step", 3, None)?;
+            let bytes = source_helper_argument(line, tokens, arguments, "bytes", 4, Some("8"))?;
+            let value = source_helper_argument(line, tokens, arguments, "value", 5, None)?;
+            let sel = source_helper_argument(line, tokens, arguments, "sel", 6, Some("1"))?;
+            let values = source_helper_value_list(&value);
+            Some(format!(
+                "permutation_assumes({id}, [{op}, {addr}, {mem_step}, {bytes}, {values}], sel: {sel})"
+            ))
+        }
+        "reg_pre_load" | "reg_pre_store" => {
+            let addr = source_helper_argument(line, tokens, arguments, "addr", 1, None)?;
+            let prev_mem_step =
+                source_helper_argument(line, tokens, arguments, "prev_mem_step", 2, None)?;
+            let value = source_helper_argument(line, tokens, arguments, "value", 3, None)?;
+            let sel = source_helper_argument(line, tokens, arguments, "sel", 4, Some("1"))?;
+            let values = source_helper_value_list(&value);
+            Some(format!(
+                "permutation_proves({id}, [MEMORY_REG_OP, {addr}, {prev_mem_step}, 8, {values}], sel: {sel})"
+            ))
+        }
+        "global_init_mem" => {
+            let addr = source_helper_argument(line, tokens, arguments, "addr", 1, None)?;
+            let value = source_helper_argument(line, tokens, arguments, "value", 2, None)?;
+            let sel = source_helper_argument(line, tokens, arguments, "sel", 3, Some("1"))?;
+            let values = source_helper_value_list(&value);
+            Some(format!(
+                "direct_global_update_assumes({id}, [MEMORY_REG_OP, {addr}, 0, 8, {values}], sel: {sel})"
+            ))
+        }
+        "precompiled_mem_load" => {
+            let addr = source_helper_argument(line, tokens, arguments, "addr", 1, None)?;
+            let main_step = source_helper_argument(line, tokens, arguments, "main_step", 2, None)?;
+            let value = source_helper_argument(line, tokens, arguments, "value", 3, None)?;
+            let sel = source_helper_argument(line, tokens, arguments, "sel", 4, Some("1"))?;
+            let mem_step = source_precompiled_mem_step(&main_step, "0");
+            let values = source_helper_value_list(&value);
+            Some(format!(
+                "permutation_assumes({id}, [MEMORY_LOAD_OP, {addr}, {mem_step}, 8, {values}], sel: {sel})"
+            ))
+        }
+        "precompiled_mem_store" => {
+            let addr = source_helper_argument(line, tokens, arguments, "addr", 1, None)?;
+            let main_step = source_helper_argument(line, tokens, arguments, "main_step", 2, None)?;
+            let value = source_helper_argument(line, tokens, arguments, "value", 3, None)?;
+            let sel = source_helper_argument(line, tokens, arguments, "sel", 4, Some("1"))?;
+            let mem_step = source_precompiled_mem_step(&main_step, "1");
+            let values = source_helper_value_list(&value);
+            Some(format!(
+                "permutation_assumes({id}, [MEMORY_STORE_OP, {addr}, {mem_step}, 8, {values}], sel: {sel})"
+            ))
+        }
+        "precompiled_mem_op" => {
+            let addr = source_helper_argument(line, tokens, arguments, "addr", 1, None)?;
+            let main_step = source_helper_argument(line, tokens, arguments, "main_step", 2, None)?;
+            let value = source_helper_argument(line, tokens, arguments, "value", 3, None)?;
+            let sel = source_helper_argument(line, tokens, arguments, "sel", 4, Some("1"))?;
+            let is_write =
+                source_helper_argument(line, tokens, arguments, "is_write", 6, Some("0"))?;
+            let op = format!("{is_write} * (MEMORY_STORE_OP - MEMORY_LOAD_OP) + MEMORY_LOAD_OP");
+            let mem_step = source_precompiled_mem_step(&main_step, &is_write);
+            let values = source_helper_value_list(&value);
+            Some(format!(
+                "permutation_assumes({id}, [{op}, {addr}, {mem_step}, 8, {values}], sel: {sel})"
+            ))
+        }
+        "precompiled_mem_load_padding" => {
+            let padding = source_helper_argument(line, tokens, arguments, "padding", 1, Some("0"))?;
+            let mem_step = source_precompiled_mem_step("0", "0");
+            Some(format!(
+                "permutation_proves({id}, [MEMORY_LOAD_OP, 0, {mem_step}, 8, 0, 0], sel: {padding})"
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn source_precompiled_mem_step(main_step: &str, is_write: &str) -> String {
+    format!("RESERVED_MEM_STEPS + MAX_MEM_STEPS_PER_MAIN_STEP * {main_step} + {is_write} + 2")
+}
+
+fn source_arith_helper_lookup_line(
+    line: &str,
+    tokens: &[Token],
+    call_name: &str,
+    arguments: &[SourceLookupArgument],
+) -> Option<String> {
+    match call_name {
+        "arith_table_assumes" => source_arith_table_lookup_line(line, tokens, arguments),
+        "arith_range_table_assumes" => {
+            let range_type =
+                source_helper_argument(line, tokens, arguments, "range_type", 0, None)?;
+            let value = source_helper_argument(line, tokens, arguments, "value", 1, None)?;
+            let sel = source_helper_argument(line, tokens, arguments, "sel", 2, Some("1"))?;
+            Some(format!(
+                "lookup_assumes(ARITH_RANGE_TABLE_ID, [{range_type}, {value}], sel: {sel})"
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn source_arith_table_lookup_line(
+    line: &str,
+    tokens: &[Token],
+    arguments: &[SourceLookupArgument],
+) -> Option<String> {
+    let op = source_helper_argument(line, tokens, arguments, "op", 0, None)?;
+    let flag_m32 = source_helper_argument(line, tokens, arguments, "flag_m32", 1, None)?;
+    let flag_div = source_helper_argument(line, tokens, arguments, "flag_div", 2, None)?;
+    let flag_na = source_helper_argument(line, tokens, arguments, "flag_na", 3, None)?;
+    let flag_nb = source_helper_argument(line, tokens, arguments, "flag_nb", 4, None)?;
+    let flag_np = source_helper_argument(line, tokens, arguments, "flag_np", 5, None)?;
+    let flag_nr = source_helper_argument(line, tokens, arguments, "flag_nr", 6, None)?;
+    let flag_sext = source_helper_argument(line, tokens, arguments, "flag_sext", 7, None)?;
+    let flag_div_by_zero =
+        source_helper_argument(line, tokens, arguments, "flag_div_by_zero", 8, None)?;
+    let flag_div_overflow =
+        source_helper_argument(line, tokens, arguments, "flag_div_overflow", 9, None)?;
+    let flag_main_mul = source_helper_argument(line, tokens, arguments, "flag_main_mul", 10, None)?;
+    let flag_main_div = source_helper_argument(line, tokens, arguments, "flag_main_div", 11, None)?;
+    let flag_signed = source_helper_argument(line, tokens, arguments, "flag_signed", 12, None)?;
+    let range_ab = source_helper_argument(line, tokens, arguments, "range_ab", 13, None)?;
+    let range_cd = source_helper_argument(line, tokens, arguments, "range_cd", 14, None)?;
+    let flags = format!(
+        "{flag_m32} + 2 * {flag_div} + 4 * {flag_na} + 8 * {flag_nb} + \
+         16 * {flag_np} + 32 * {flag_nr} + 64 * {flag_sext} + \
+         128 * {flag_div_by_zero} + 256 * {flag_div_overflow} + \
+         512 * {flag_main_mul} + 1024 * {flag_main_div} + 2048 * {flag_signed}"
+    );
+    Some(format!(
+        "lookup_assumes(ARITH_TABLE_ID, [{op}, {flags}, {range_ab}, {range_cd}])"
+    ))
+}
+
+fn source_operation_helper_lookup_line(
+    line: &str,
+    tokens: &[Token],
+    call_name: &str,
+    arguments: &[SourceLookupArgument],
+) -> Option<String> {
+    let op = source_helper_argument(line, tokens, arguments, "op", 0, None)?;
+    let a = source_helper_argument(line, tokens, arguments, "a", 1, Some("[0, 0]"))?;
+    let b = source_helper_argument(line, tokens, arguments, "b", 2, Some("[0, 0]"))?;
+    let c = source_helper_argument(line, tokens, arguments, "c", 3, Some("[0, 0]"))?;
+    let flag = source_helper_argument(line, tokens, arguments, "flag", 4, Some("0"))?;
+    let main_step = source_helper_argument(line, tokens, arguments, "main_step", 5, Some("0"))?;
+    let extended_arg =
+        source_helper_argument(line, tokens, arguments, "extended_arg", 6, Some("0"))?;
+
+    let values = format!(
+        "{op}, {}, {}, {}, {flag}, {main_step}, {extended_arg}, {}",
+        source_helper_value_list(&a),
+        source_helper_value_list(&b),
+        source_helper_value_list(&c),
+        source_helper_value_list(&source_helper_argument(
+            line,
+            tokens,
+            arguments,
+            "extra_args",
+            8,
+            Some("[0]")
+        )?),
+    );
+
+    match call_name {
+        "assumes_operation" => {
+            let sel = source_helper_argument(line, tokens, arguments, "sel", 7, Some("1"))?;
+            Some(format!(
+                "lookup_assumes(OPERATION_BUS_ID, [{values}], sel: {sel})"
+            ))
+        }
+        "proves_operation" => {
+            let mul = source_helper_argument(line, tokens, arguments, "mul", 7, Some("1"))?;
+            let table_id =
+                source_helper_argument(line, tokens, arguments, "table_id", 9, Some("-1"))?;
+            Some(format!(
+                "lookup_proves(OPERATION_BUS_ID, [{values}], table_id: {table_id}, mul: {mul})"
+            ))
+        }
+        "assumes_padding_operation" => {
+            let padding_size =
+                source_helper_argument(line, tokens, arguments, "padding_size", 8, Some("1"))?;
+            Some(format!(
+                "direct_update_assumes(OPERATION_BUS_ID, [{values}], sel: {padding_size})"
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn source_helper_argument(
+    line: &str,
+    tokens: &[Token],
+    arguments: &[SourceLookupArgument],
+    name: &str,
+    positional_index: usize,
+    default: Option<&str>,
+) -> Option<String> {
+    if let Some(argument) = arguments
+        .iter()
+        .find(|argument| argument.name.as_deref() == Some(name))
+    {
+        let range = source_lookup_argument_value_range(argument)?;
+        return source_helper_argument_text(line, tokens, range);
+    }
+    if let Some(argument) = arguments
+        .iter()
+        .filter(|argument| argument.name.is_none())
+        .nth(positional_index)
+    {
+        let range = source_lookup_argument_value_range(argument)?;
+        return source_helper_argument_text(line, tokens, range);
+    }
+    default.map(str::to_owned)
+}
+
+fn source_helper_argument_text(
+    line: &str,
+    tokens: &[Token],
+    range: (usize, usize),
+) -> Option<String> {
+    let start = tokens.get(range.0)?.start;
+    let end = tokens.get(range.1.checked_sub(1)?)?.end;
+    line.get(start..end).map(|value| value.trim().to_owned())
+}
+
+fn source_helper_value_list(value: &str) -> String {
+    let value = value.trim();
+    if let Some(inner) = value
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        return inner.trim().to_owned();
+    }
+    format!("...{value}")
 }
 
 pub(crate) fn lower_source_assignment_statement(
@@ -319,6 +759,7 @@ pub(crate) struct SourceLookupInputs<'a> {
     pub(crate) program: &'a SourceProgram,
     pub(crate) module: &'a SourceProgramModule,
     pub(crate) values: &'a BTreeMap<String, FixedFileTemplateValue>,
+    pub(crate) constant_values: &'a BTreeMap<String, FixedFileTemplateValue>,
     pub(crate) expression_aliases: &'a SourceExpressionAliases,
     pub(crate) expression_array_aliases: &'a SourceExpressionArrayAliases,
     pub(crate) scalar_slots: &'a SourceScalarSlots,
@@ -455,7 +896,7 @@ pub(crate) fn lower_structured_source_lookup_line(
     lower_structured_source_lookup_hint(inputs, name, line)
 }
 
-fn source_lookup_line_hint(name: &str, line: String) -> HintInfo {
+pub(crate) fn source_lookup_line_hint(name: &str, line: String) -> HintInfo {
     HintInfo {
         name: name.to_owned(),
         fields: vec![HintFieldInfo {
@@ -474,6 +915,7 @@ fn source_lookup_call_matches(hint_name: &str, call_name: &str) -> bool {
             call_name,
             "lookup_proves"
                 | "permutation_proves"
+                | "permutation"
                 | "direct_update_proves"
                 | "direct_global_update_proves"
         ),
@@ -743,6 +1185,7 @@ fn source_lookup_positional_extra_field(
         },
         "lookup_assumes" => source_lookup_positional_selector_field(positional_index, false),
         "permutation_proves"
+        | "permutation"
         | "permutation_assumes"
         | "direct_update_proves"
         | "direct_update_assumes"
@@ -942,6 +1385,18 @@ fn source_lookup_spread_alias_values(
             }
             Some(values)
         }
+        SourceExpressionArrayAlias::ScopedValues { expressions, scope } => {
+            let scoped_context = source_lookup_scoped_context(context, scope.as_ref());
+            let mut values = SourceLookupValues::default();
+            for expression in expressions {
+                values.push_component(source_assignment_expression_values(
+                    &scoped_context,
+                    expression,
+                )?)?;
+            }
+            Some(values)
+        }
+        SourceExpressionArrayAlias::Call { .. } => None,
     }
 }
 
@@ -1210,350 +1665,6 @@ fn parse_source_lookup_expression(
     (consumed == range.1).then_some(expression)
 }
 
-fn source_lookup_scalar_operand(
-    context: &SourceLookupLowering<'_>,
-    expression: &Expression,
-    row_offset: i64,
-) -> Option<CodeOperand> {
-    let mut resolving_aliases = BTreeSet::new();
-    let mut resolving_array_aliases = BTreeSet::new();
-    source_lookup_scalar_operand_inner(
-        context,
-        expression,
-        row_offset,
-        &mut resolving_aliases,
-        &mut resolving_array_aliases,
-    )
-}
-
-fn source_lookup_scalar_operand_inner(
-    context: &SourceLookupLowering<'_>,
-    expression: &Expression,
-    row_offset: i64,
-    resolving_aliases: &mut BTreeSet<String>,
-    resolving_array_aliases: &mut BTreeSet<String>,
-) -> Option<CodeOperand> {
-    if let Some(value) =
-        evaluate_source_static_expression(context.program, expression, context.values)
-    {
-        return Some(CodeOperand::number(
-            canonical_hint_number_from_value(value)?,
-            1,
-        ));
-    }
-    match &strip_group_expression(expression).kind {
-        ExpressionKind::Name(name) => {
-            if let Some(alias) = context.expression_aliases.get(name) {
-                if !resolving_aliases.insert(name.clone()) {
-                    return None;
-                }
-                let operand = source_lookup_scalar_operand_inner(
-                    context,
-                    alias,
-                    row_offset,
-                    resolving_aliases,
-                    resolving_array_aliases,
-                );
-                resolving_aliases.remove(name);
-                return operand;
-            }
-            if row_offset == 0 {
-                context.scalar_slots.operand(name).ok()
-            } else {
-                context.scalar_slots.operand_at(name, row_offset).ok()
-            }
-        }
-        ExpressionKind::Index { .. } => {
-            let (name, index_expressions) =
-                source_lookup_index_chain(strip_group_expression(expression))?;
-            let indices = index_expressions
-                .iter()
-                .map(|index| source_lookup_index(context.program, index, context.values))
-                .collect::<Option<Vec<_>>>()?;
-            if let Some(alias) = context.expression_array_aliases.get(name) {
-                let element = source_lookup_array_alias_path_element(
-                    alias,
-                    &indices,
-                    context.expression_array_aliases,
-                    resolving_array_aliases,
-                )?;
-                return match element {
-                    SourceLookupArrayAliasElement::Expression(expression) => {
-                        source_lookup_scalar_operand_inner(
-                            context,
-                            expression,
-                            row_offset,
-                            resolving_aliases,
-                            resolving_array_aliases,
-                        )
-                    }
-                    SourceLookupArrayAliasElement::NamedArray(name) => context
-                        .scalar_slots
-                        .operand_indices_at(name, &indices, row_offset)
-                        .ok(),
-                };
-            }
-            context
-                .scalar_slots
-                .operand_indices_at(name, &indices, row_offset)
-                .ok()
-        }
-        ExpressionKind::RowOffset {
-            target,
-            offset,
-            prior,
-        } => {
-            let signed_offset =
-                source_lookup_row_offset_value(context.program, offset, *prior, context.values)?;
-            let combined_offset = row_offset.checked_add(signed_offset)?;
-            source_lookup_scalar_operand_inner(
-                context,
-                target,
-                combined_offset,
-                resolving_aliases,
-                resolving_array_aliases,
-            )
-        }
-        _ => None,
-    }
-}
-
-enum SourceLookupArrayAliasElement<'a> {
-    Expression(&'a Expression),
-    NamedArray(&'a str),
-}
-
-fn source_lookup_array_alias_path_element<'a>(
-    alias: &'a SourceExpressionArrayAlias,
-    indices: &[u32],
-    expression_array_aliases: &'a SourceExpressionArrayAliases,
-    resolving_array_aliases: &mut BTreeSet<String>,
-) -> Option<SourceLookupArrayAliasElement<'a>> {
-    match alias {
-        SourceExpressionArrayAlias::Name(name) => {
-            if let Some(next_alias) = expression_array_aliases.get(name) {
-                if !resolving_array_aliases.insert(name.clone()) {
-                    return None;
-                }
-                let element = source_lookup_array_alias_path_element(
-                    next_alias,
-                    indices,
-                    expression_array_aliases,
-                    resolving_array_aliases,
-                );
-                resolving_array_aliases.remove(name);
-                return element;
-            }
-            Some(SourceLookupArrayAliasElement::NamedArray(name))
-        }
-        SourceExpressionArrayAlias::Values(expressions) => source_lookup_expression_array_element(
-            expressions,
-            indices,
-            expression_array_aliases,
-            resolving_array_aliases,
-        ),
-    }
-}
-
-fn source_lookup_expression_array_element<'a>(
-    expressions: &'a [Expression],
-    indices: &[u32],
-    expression_array_aliases: &'a SourceExpressionArrayAliases,
-    resolving_array_aliases: &mut BTreeSet<String>,
-) -> Option<SourceLookupArrayAliasElement<'a>> {
-    let (index, rest) = indices.split_first()?;
-    let expression = expressions.get(usize::try_from(*index).ok()?)?;
-    if rest.is_empty() {
-        return Some(SourceLookupArrayAliasElement::Expression(expression));
-    }
-    match &strip_group_expression(expression).kind {
-        ExpressionKind::Array(expressions) => source_lookup_expression_array_element(
-            expressions,
-            rest,
-            expression_array_aliases,
-            resolving_array_aliases,
-        ),
-        ExpressionKind::Name(name) => {
-            let alias = expression_array_aliases.get(name)?;
-            source_lookup_array_alias_path_element(
-                alias,
-                rest,
-                expression_array_aliases,
-                resolving_array_aliases,
-            )
-        }
-        _ => None,
-    }
-}
-
-fn strip_group_expression(expression: &Expression) -> &Expression {
-    match &expression.kind {
-        ExpressionKind::Group(inner) => strip_group_expression(inner),
-        _ => expression,
-    }
-}
-
-fn source_lookup_index_chain(expression: &Expression) -> Option<(&str, Vec<&Expression>)> {
-    match &strip_group_expression(expression).kind {
-        ExpressionKind::Name(name) => Some((name, Vec::new())),
-        ExpressionKind::Index { target, index } => {
-            let (name, mut indices) = source_lookup_index_chain(target)?;
-            indices.push(index);
-            Some((name, indices))
-        }
-        _ => None,
-    }
-}
-
-fn source_lookup_index(
-    program: &SourceProgram,
-    expression: &Expression,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<u32> {
-    let value = evaluate_source_static_expression(program, expression, values)?;
-    u32::try_from(static_value_integer(&value)?).ok()
-}
-
-fn source_lookup_row_offset_value(
-    program: &SourceProgram,
-    expression: &Expression,
-    prior: bool,
-    values: &BTreeMap<String, FixedFileTemplateValue>,
-) -> Option<i64> {
-    let value = evaluate_source_static_expression(program, expression, values)?;
-    let offset = static_value_integer(&value)?;
-    let signed = if prior { offset.checked_neg()? } else { offset };
-    i64::try_from(signed).ok()
-}
-
-fn canonical_hint_number(value: i128) -> Option<u64> {
-    let modulus = i128::from(MODULUS);
-    u64::try_from(value.rem_euclid(modulus)).ok()
-}
-
-fn hint_payload_from_code_operand(
-    operand: CodeOperand,
-    opening_points: &[i64],
-) -> Option<HintPayload> {
-    match operand {
-        CodeOperand::Number { value, .. } => Some(HintPayload::number(value)),
-        CodeOperand::Commitment {
-            id,
-            prime,
-            dimension,
-        } => {
-            let row_offset = prime.unwrap_or(0);
-            Some(HintPayload::Commitment {
-                id,
-                row_offset_index: Some(opening_point_index(opening_points, row_offset)?),
-                row_offset: Some(row_offset),
-                stage: None,
-                stage_id: None,
-                dimension: Some(dimension),
-                air_group_id: None,
-                air_id: None,
-            })
-        }
-        CodeOperand::CommitmentElement {
-            id,
-            element,
-            prime,
-            dimension,
-        } => {
-            let row_offset = prime.unwrap_or(0);
-            Some(HintPayload::commitment_element(
-                id,
-                element,
-                Some(opening_point_index(opening_points, row_offset)?),
-                Some(row_offset),
-                Some(dimension),
-            ))
-        }
-        CodeOperand::Constant { id, dimension } => Some(HintPayload::constant(
-            id,
-            Some(opening_point_index(opening_points, 0)?),
-            Some(0),
-            Some(dimension),
-            None,
-            None,
-        )),
-        CodeOperand::ConstantAt {
-            id,
-            prime,
-            dimension,
-        } => {
-            let row_offset = prime.unwrap_or(0);
-            Some(HintPayload::constant(
-                id,
-                Some(opening_point_index(opening_points, row_offset)?),
-                Some(row_offset),
-                Some(dimension),
-                None,
-                None,
-            ))
-        }
-        CodeOperand::AirValue {
-            id,
-            stage,
-            dimension,
-            ..
-        } => Some(HintPayload::air_value(id, stage, Some(dimension))),
-        CodeOperand::AirGroupValue {
-            id,
-            stage,
-            air_group_id,
-            dimension,
-        } => Some(HintPayload::air_group_value(
-            id,
-            air_group_id,
-            stage,
-            Some(dimension),
-        )),
-        CodeOperand::Public { id, .. } => Some(HintPayload::public(id, None)),
-        CodeOperand::Challenge {
-            id,
-            stage,
-            stage_id,
-            ..
-        } => Some(HintPayload::challenge(id, stage, stage_id)),
-        CodeOperand::ProofValue {
-            id,
-            stage,
-            dimension,
-        } => Some(HintPayload::proof_value(id, stage, Some(dimension))),
-        _ => None,
-    }
-}
-
-fn source_assignment_target_payload(
-    operand: CodeOperand,
-    opening_points: &[i64],
-) -> Option<HintPayload> {
-    match operand {
-        CodeOperand::Commitment { .. } | CodeOperand::CommitmentElement { .. } => {
-            hint_payload_from_code_operand(operand, opening_points)
-        }
-        _ => None,
-    }
-}
-
-fn opening_point_index(opening_points: &[i64], row_offset: i64) -> Option<u32> {
-    opening_points
-        .iter()
-        .position(|point| *point == row_offset)
-        .and_then(|index| u32::try_from(index).ok())
-}
-
-fn hint_number_field(name: &str, value: u64) -> HintFieldInfo {
-    HintFieldInfo {
-        name: name.to_owned(),
-        values: vec![HintValueInfo {
-            positions: Vec::new(),
-            payload: HintPayload::number(value),
-        }],
-    }
-}
-
 pub(crate) fn lower_unsupported_source_call_statement(
     module: &SourceProgramModule,
     statement: &FunctionStatement,
@@ -1639,6 +1750,7 @@ fn source_lookup_hint_name(
     };
     match name.as_str() {
         "lookup_proves"
+        | "permutation"
         | "permutation_proves"
         | "direct_update_proves"
         | "direct_global_update_proves" => Ok(Some(SOURCE_LOOKUP_PROVES_HINT)),
