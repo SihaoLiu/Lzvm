@@ -14,7 +14,8 @@ use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
 use lzvm_artifacts::eth_trie::{receipt_trie_build, withdrawals_trie_build};
 use lzvm_artifacts::program_image::{ProgramImageCommitmentCache, ProgramImageGpuMode};
 use lzvm_artifacts::program_image_segment::{
-    encode_program_image_cache_segment, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+    encode_program_image_cache_segment, program_image_cache_segment_digest,
+    PROGRAM_IMAGE_CACHE_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{
@@ -99,7 +100,7 @@ fn sample_program_image_cache() -> ProgramImageCommitmentCache {
     ProgramImageCommitmentCache {
         program_digest: [0x11; 32],
         source_image_digest: [0x22; 32],
-        constraint_system_digest: [0x33; 32],
+        constraint_system_digest: [0x44; 32],
         tree_root: [1, 2, 3, 4],
         trace_row_count: 1024,
         trace_column_count: 17,
@@ -455,10 +456,13 @@ fn verifies_preflight_reports_program_image_cache_segments() {
     let values = sample_public_values();
     let public_values_hash = public_values_digest(&values).expect("digest should compute");
     let mut proof = sample_proof(&values);
+    let cache = sample_program_image_cache();
+    let segment_data = encode_program_image_cache_segment(&cache)
+        .expect("program image cache segment should encode");
+    let segment_hash = program_image_cache_segment_digest(&segment_data);
     proof.segments.push(ProofSegment {
         id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
-        data: encode_program_image_cache_segment(&sample_program_image_cache())
-            .expect("program image cache segment should encode"),
+        data: segment_data,
     });
     let (dir, proof_path, public_path) = write_fixture_pair("program-image-cache", &proof, &values);
 
@@ -487,7 +491,7 @@ fn verifies_preflight_reports_program_image_cache_segments() {
                 "public_values_hash={}\n",
                 "public_value_fields=5\n",
                 "program_image_caches=1\n",
-                "program_image_cache_segment_hash=fe67425635287707deccb4174bdf1e9296a954b9cbf378c98c6b339124a82230\n",
+                "program_image_cache_segment_hash={}\n",
                 "program_image_cache_program_digest={}\n",
                 "program_image_cache_source_image_digest={}\n",
                 "program_image_cache_constraint_system_digest={}\n",
@@ -499,12 +503,49 @@ fn verifies_preflight_reports_program_image_cache_segments() {
                 "program_image_cache_gpu_mode=cuda\n",
             ),
             to_hex(&public_values_hash),
+            to_hex(&segment_hash),
             to_hex(&sample_hash(0x11)),
             to_hex(&sample_hash(0x22)),
-            to_hex(&sample_hash(0x33))
+            to_hex(&sample_hash(0x44))
         )
     );
     assert!(stderr.is_empty());
+}
+
+#[test]
+fn rejects_preflight_program_image_cache_setup_hash_mismatches() {
+    let values = sample_public_values();
+    let mut proof = sample_proof(&values);
+    let mut cache = sample_program_image_cache();
+    cache.constraint_system_digest = sample_hash(0x99);
+    proof.segments.push(ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: encode_program_image_cache_segment(&cache)
+            .expect("program image cache segment should encode"),
+    });
+    let (dir, proof_path, public_path) =
+        write_fixture_pair("program-image-cache-setup-hash-mismatch", &proof, &values);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "preflight",
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_path.to_str().expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify preflight failed: program image cache setup hash mismatch\n"
+    );
 }
 
 #[test]

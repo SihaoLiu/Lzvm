@@ -55,7 +55,7 @@ fn sample_program_image_cache() -> ProgramImageCommitmentCache {
     ProgramImageCommitmentCache {
         program_digest: [0x11; 32],
         source_image_digest: [0x22; 32],
-        constraint_system_digest: [0x33; 32],
+        constraint_system_digest: [0x44; 32],
         tree_root: [10, 11, 12, 13],
         trace_row_count: 1024,
         trace_column_count: 17,
@@ -297,6 +297,23 @@ fn rejects_non_canonical_program_image_cache_tree_roots() {
         error.to_string(),
         "invalid program image cache segment payload: program-image commitment cache tree root word 0 is non-canonical: non-canonical field element: 18446744069414584321"
     );
+}
+
+#[test]
+fn rejects_program_image_cache_setup_hash_mismatches() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    let mut cache = sample_program_image_cache();
+    cache.constraint_system_digest = sample_hash(0x99);
+    proof.segments.push(ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: encode_program_image_cache_segment(&cache).expect("cache encodes"),
+    });
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("program image cache should match proof setup hash");
+
+    assert_eq!(error.to_string(), "program image cache setup hash mismatch");
 }
 
 #[test]

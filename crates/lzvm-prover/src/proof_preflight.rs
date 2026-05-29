@@ -82,6 +82,7 @@ pub enum ProofPreflightError {
     PublicValuesHashMismatch,
     PublicValuesField(PublicValueFieldError),
     ProgramImageCache(ProgramImageCacheSegmentError),
+    ProgramImageCacheSetupHashMismatch,
     ProgramImageCacheTreeRootNonCanonical {
         word_index: usize,
         source: FieldError,
@@ -124,6 +125,9 @@ impl fmt::Display for ProofPreflightError {
             Self::PublicValuesHashMismatch => write!(f, "public-values hash mismatch"),
             Self::PublicValuesField(error) => write!(f, "{error}"),
             Self::ProgramImageCache(error) => write!(f, "{error}"),
+            Self::ProgramImageCacheSetupHashMismatch => {
+                write!(f, "program image cache setup hash mismatch")
+            }
             Self::ProgramImageCacheTreeRootNonCanonical { word_index, source } => write!(
                 f,
                 "program image cache tree root word {word_index} is non-canonical: {source}"
@@ -189,6 +193,7 @@ impl std::error::Error for ProofPreflightError {
             Self::ProofArtifact(error) => Some(error),
             Self::SetupHashMismatch
             | Self::PublicValuesHashMismatch
+            | Self::ProgramImageCacheSetupHashMismatch
             | Self::MissingProgramImageCachePublicValue { .. }
             | Self::ProgramImageCachePublicValueMismatch { .. }
             | Self::MissingEthBlockInput => None,
@@ -259,6 +264,9 @@ pub fn validate_proof_public_values(
         let cache = parse_program_image_cache_segment(&segment.data)
             .map_err(ProofPreflightError::ProgramImageCache)?;
         validate_program_image_cache_tree_root_canonical(&cache)?;
+        if cache.constraint_system_digest != proof.setup_hash {
+            return Err(ProofPreflightError::ProgramImageCacheSetupHashMismatch);
+        }
         program_image_cache_hashes.push(program_image_cache_segment_digest(&segment.data));
         program_image_caches.push(cache);
     }
