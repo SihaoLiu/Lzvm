@@ -7,12 +7,29 @@ use crate::public_values::{PublicValueEntry, PublicValues};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EthBlockPublicValuesError {
-    MissingEntry { name: String },
-    ValueMismatch { name: String },
-    MissingProgramImageCache { name: String },
-    ProgramImageCacheMismatch { name: String },
-    UnsupportedPublicMetadata { name: String },
-    PublicMetadataCountOverflow { name: String },
+    MissingEntry {
+        name: String,
+    },
+    ValueMismatch {
+        name: String,
+    },
+    MissingProgramImageCache {
+        name: String,
+    },
+    ProgramImageCachePublicValueElementCountMismatch {
+        name: String,
+        expected: usize,
+        found: usize,
+    },
+    ProgramImageCacheMismatch {
+        name: String,
+    },
+    UnsupportedPublicMetadata {
+        name: String,
+    },
+    PublicMetadataCountOverflow {
+        name: String,
+    },
 }
 
 impl fmt::Display for EthBlockPublicValuesError {
@@ -26,6 +43,16 @@ impl fmt::Display for EthBlockPublicValuesError {
                 write!(
                     f,
                     "program image cache is required for public value: {name}"
+                )
+            }
+            Self::ProgramImageCachePublicValueElementCountMismatch {
+                name,
+                expected,
+                found,
+            } => {
+                write!(
+                    f,
+                    "program image cache public value {name} element count mismatch: expected {expected}, found {found}"
                 )
             }
             Self::ProgramImageCacheMismatch { name } => {
@@ -287,7 +314,16 @@ pub fn validate_program_image_cache_public_values(
     program_image_cache: Option<&ProgramImageCommitmentCache>,
 ) -> Result<(), EthBlockPublicValuesError> {
     for entry in &public_values.values {
-        if entry.name == "rom_root" && entry.elements.len() == 4 {
+        if entry.name == "rom_root" {
+            if entry.elements.len() != 4 {
+                return Err(
+                    EthBlockPublicValuesError::ProgramImageCachePublicValueElementCountMismatch {
+                        name: entry.name.clone(),
+                        expected: 4,
+                        found: entry.elements.len(),
+                    },
+                );
+            }
             let cache = program_image_cache.ok_or_else(|| {
                 EthBlockPublicValuesError::MissingProgramImageCache {
                     name: entry.name.clone(),
