@@ -357,6 +357,27 @@ fn rejects_program_image_cache_public_values_without_bound_segment() {
 }
 
 #[test]
+fn rejects_program_image_cache_public_values_with_wrong_element_count() {
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash: sample_hash(0x44),
+        values: vec![PublicValueEntry {
+            name: "rom_root".to_owned(),
+            elements: vec![10, 11, 12],
+        }],
+    };
+    let proof = sample_proof(&public_values);
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("program image cache public value shape should be checked");
+
+    assert_eq!(
+        error.to_string(),
+        "program image cache public value rom_root element count mismatch: expected 4, found 3"
+    );
+}
+
+#[test]
 fn rejects_program_image_cache_tree_root_public_value_mismatches() {
     let public_values = PublicValues {
         schema_version: 1,

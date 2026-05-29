@@ -90,6 +90,11 @@ pub enum ProofPreflightError {
     MissingProgramImageCachePublicValue {
         name: String,
     },
+    ProgramImageCachePublicValueElementCountMismatch {
+        name: String,
+        expected: usize,
+        found: usize,
+    },
     ProgramImageCachePublicValueMismatch {
         name: String,
     },
@@ -136,6 +141,16 @@ impl fmt::Display for ProofPreflightError {
                 write!(
                     f,
                     "missing program image cache proof segment for public value: {name}"
+                )
+            }
+            Self::ProgramImageCachePublicValueElementCountMismatch {
+                name,
+                expected,
+                found,
+            } => {
+                write!(
+                    f,
+                    "program image cache public value {name} element count mismatch: expected {expected}, found {found}"
                 )
             }
             Self::ProgramImageCachePublicValueMismatch { name } => {
@@ -195,6 +210,7 @@ impl std::error::Error for ProofPreflightError {
             | Self::PublicValuesHashMismatch
             | Self::ProgramImageCacheSetupHashMismatch
             | Self::MissingProgramImageCachePublicValue { .. }
+            | Self::ProgramImageCachePublicValueElementCountMismatch { .. }
             | Self::ProgramImageCachePublicValueMismatch { .. }
             | Self::MissingEthBlockInput => None,
         }
@@ -481,7 +497,16 @@ fn validate_program_image_cache_public_values(
     public_values: &PublicValues,
 ) -> Result<(), ProofPreflightError> {
     for entry in &public_values.values {
-        if entry.name == "rom_root" && entry.elements.len() == 4 {
+        if entry.name == "rom_root" {
+            if entry.elements.len() != 4 {
+                return Err(
+                    ProofPreflightError::ProgramImageCachePublicValueElementCountMismatch {
+                        name: entry.name.clone(),
+                        expected: 4,
+                        found: entry.elements.len(),
+                    },
+                );
+            }
             let Some(cache) = caches.first() else {
                 return Err(ProofPreflightError::MissingProgramImageCachePublicValue {
                     name: entry.name.clone(),

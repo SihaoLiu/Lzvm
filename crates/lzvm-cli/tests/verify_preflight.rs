@@ -549,6 +549,42 @@ fn rejects_preflight_program_image_cache_setup_hash_mismatches() {
 }
 
 #[test]
+fn rejects_preflight_program_image_cache_public_value_shape_mismatches() {
+    let values = PublicValues {
+        schema_version: 1,
+        setup_hash: sample_hash(0x44),
+        values: vec![PublicValueEntry {
+            name: "rom_root".to_owned(),
+            elements: vec![1, 2, 3],
+        }],
+    };
+    let proof = sample_proof(&values);
+    let (dir, proof_path, public_path) =
+        write_fixture_pair("program-image-cache-public-value-shape", &proof, &values);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "preflight",
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_path.to_str().expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify preflight failed: program image cache public value rom_root element count mismatch: expected 4, found 3\n"
+    );
+}
+
+#[test]
 fn verifies_preflight_reports_challenge_values_segments() {
     let values = sample_public_values();
     let public_values_hash = public_values_digest(&values).expect("digest should compute");
