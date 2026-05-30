@@ -169,6 +169,61 @@ fn rejects_selected_extra_data_public_value_overflow() {
 }
 
 #[test]
+fn validates_packed_inputs_with_generic_public_value() {
+    let mut input = sample_block_input();
+    input.block_hash = [0x2a; 32];
+    let mut packed_inputs = vec![0_u64; 64];
+    packed_inputs[..8].fill(0x2a2a_2a2a);
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash: [0x44; 32],
+        values: vec![
+            PublicValueEntry {
+                name: "inputs".to_owned(),
+                elements: packed_inputs,
+            },
+            PublicValueEntry {
+                name: "application_value".to_owned(),
+                elements: vec![9, 10, 11],
+            },
+        ],
+    };
+
+    validate_eth_block_public_values(&input, &public_values)
+        .expect("packed inputs should allow generic public values");
+}
+
+#[test]
+fn rejects_named_eth_public_value_mismatch_with_packed_inputs() {
+    let mut input = sample_block_input();
+    input.block_hash = [0x2a; 32];
+    let mut packed_inputs = vec![0_u64; 64];
+    packed_inputs[..8].fill(0x2a2a_2a2a);
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash: [0x44; 32],
+        values: vec![
+            PublicValueEntry {
+                name: "inputs".to_owned(),
+                elements: packed_inputs,
+            },
+            PublicValueEntry {
+                name: "eth_block_timestamp_u32_le".to_owned(),
+                elements: vec![1, 0],
+            },
+        ],
+    };
+
+    let error = validate_eth_block_public_values(&input, &public_values)
+        .expect_err("named ETH public value should stay bound with packed inputs");
+
+    assert_eq!(
+        error.to_string(),
+        "ETH block public value mismatch: eth_block_timestamp_u32_le"
+    );
+}
+
+#[test]
 fn fallible_full_public_value_generation_matches_infallible_api_for_valid_input() {
     let input = sample_block_input();
 
