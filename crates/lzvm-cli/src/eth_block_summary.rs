@@ -7,17 +7,20 @@ use lzvm_artifacts::eth_block::{
 };
 use lzvm_artifacts::eth_trie::{transaction_trie_build, withdrawals_trie_build};
 
+use crate::eth_rpc_block::block_rlp_from_rpc_json;
+
 pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
-        [path] => summarize_block(path, false, stdout, stderr),
-        ["--hex", path] => summarize_block(path, true, stdout, stderr),
+        [path] => summarize_block(path, BlockInputMode::Rlp, stdout, stderr),
+        ["--hex", path] => summarize_block(path, BlockInputMode::Hex, stdout, stderr),
+        ["--rpc-json", path] => summarize_block(path, BlockInputMode::RpcJson, stdout, stderr),
         _ => write_usage(stderr),
     }
 }
 
 fn summarize_block(
     path: &str,
-    hex_input: bool,
+    input_mode: BlockInputMode,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
@@ -32,16 +35,22 @@ fn summarize_block(
         }
     };
 
-    let bytes = if hex_input {
-        match decode_hex_bytes(&raw_bytes) {
+    let bytes = match input_mode {
+        BlockInputMode::Rlp => raw_bytes,
+        BlockInputMode::Hex => match decode_hex_bytes(&raw_bytes) {
             Ok(bytes) => bytes,
             Err(error) => {
                 let _ = writeln!(stderr, "eth block summary failed: {error}");
                 return 1;
             }
-        }
-    } else {
-        raw_bytes
+        },
+        BlockInputMode::RpcJson => match block_rlp_from_rpc_json(&raw_bytes) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let _ = writeln!(stderr, "eth block summary failed: {error}");
+                return 1;
+            }
+        },
     };
 
     let block = match parse_eth_block_rlp(&bytes) {
@@ -187,6 +196,13 @@ fn summarize_block(
     0
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BlockInputMode {
+    Rlp,
+    Hex,
+    RpcJson,
+}
+
 fn decode_hex_bytes(input: &[u8]) -> Result<Vec<u8>, HexDecodeError> {
     let mut start = input
         .iter()
@@ -269,6 +285,9 @@ impl fmt::Display for HexDecodeError {
 }
 
 fn write_usage(stderr: &mut dyn Write) -> i32 {
-    let _ = writeln!(stderr, "usage: lzvm eth block-summary [--hex] <block-rlp>");
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm eth block-summary [--hex|--rpc-json] <block-rlp>"
+    );
     2
 }

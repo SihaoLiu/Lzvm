@@ -9,19 +9,47 @@ use lzvm_artifacts::eth_block_input::{
     eth_block_input_withdrawal_count, parse_eth_block_input, EthBlockInput,
 };
 
+use crate::eth_rpc_block::block_rlp_from_rpc_json;
+
 pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
-        [block_path, output_path] => {
-            write_block_input(block_path, None, output_path, false, stdout, stderr)
-        }
-        ["--hex", block_path, output_path] => {
-            write_block_input(block_path, None, output_path, true, stdout, stderr)
-        }
+        [block_path, output_path] => write_block_input(
+            block_path,
+            None,
+            output_path,
+            BlockInputMode::Rlp,
+            stdout,
+            stderr,
+        ),
+        ["--hex", block_path, output_path] => write_block_input(
+            block_path,
+            None,
+            output_path,
+            BlockInputMode::Hex,
+            stdout,
+            stderr,
+        ),
+        ["--rpc-json", block_path, output_path] => write_block_input(
+            block_path,
+            None,
+            output_path,
+            BlockInputMode::RpcJson,
+            stdout,
+            stderr,
+        ),
+        ["--rpc-json", "--receipts", receipts_path, block_path, output_path] => write_block_input(
+            block_path,
+            Some(receipts_path),
+            output_path,
+            BlockInputMode::RpcJson,
+            stdout,
+            stderr,
+        ),
         ["--receipts", receipts_path, block_path, output_path] => write_block_input(
             block_path,
             Some(receipts_path),
             output_path,
-            false,
+            BlockInputMode::Rlp,
             stdout,
             stderr,
         ),
@@ -29,11 +57,24 @@ pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write)
             block_path,
             Some(receipts_path),
             output_path,
-            true,
+            BlockInputMode::Hex,
             stdout,
             stderr,
         ),
         _ => write_usage(stderr),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BlockInputMode {
+    Rlp,
+    Hex,
+    RpcJson,
+}
+
+impl BlockInputMode {
+    fn receipts_are_hex(self) -> bool {
+        matches!(self, Self::Hex)
     }
 }
 
@@ -48,7 +89,7 @@ fn write_block_input(
     block_path: &str,
     receipts_path: Option<&str>,
     output_path: &str,
-    hex_input: bool,
+    input_mode: BlockInputMode,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
@@ -63,20 +104,26 @@ fn write_block_input(
         }
     };
 
-    let block_rlp = if hex_input {
-        match decode_hex_bytes(&raw_bytes) {
+    let block_rlp = match input_mode {
+        BlockInputMode::Rlp => raw_bytes,
+        BlockInputMode::Hex => match decode_hex_bytes(&raw_bytes) {
             Ok(bytes) => bytes,
             Err(error) => {
                 let _ = writeln!(stderr, "eth block input failed: {error}");
                 return 1;
             }
-        }
-    } else {
-        raw_bytes
+        },
+        BlockInputMode::RpcJson => match block_rlp_from_rpc_json(&raw_bytes) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let _ = writeln!(stderr, "eth block input failed: {error}");
+                return 1;
+            }
+        },
     };
 
     let receipts_rlp = match receipts_path {
-        Some(path) => match read_input_bytes(path, hex_input) {
+        Some(path) => match read_input_bytes(path, input_mode.receipts_are_hex()) {
             Ok(bytes) => Some(bytes),
             Err(InputReadError::Read(error)) => {
                 let _ = writeln!(
@@ -402,7 +449,7 @@ impl fmt::Display for HexDecodeError {
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm eth write-block-input [--hex] [--receipts <receipts-rlp>] <block-rlp> <out-input>"
+        "usage: lzvm eth write-block-input [--hex|--rpc-json] [--receipts <receipts-rlp>] <block-rlp> <out-input>"
     );
     2
 }

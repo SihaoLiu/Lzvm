@@ -124,6 +124,70 @@ fn writes_hex_block_input_artifact() {
 }
 
 #[test]
+fn writes_rpc_json_block_input_artifact() {
+    let dir = temp_dir("rpc-json");
+    let _ = fs::remove_dir_all(&dir);
+    let block_path = dir.join("block.json");
+    let output_path = dir.join("block.input");
+    write_bytes(
+        &block_path,
+        format!(
+            r#"{{
+  "result": {{
+    "parentHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "sha3Uncles": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+    "miner": "0x3333333333333333333333333333333333333333",
+    "stateRoot": "0x4444444444444444444444444444444444444444444444444444444444444444",
+    "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+    "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+    "logsBloom": "0x{logs_bloom}",
+    "difficulty": "0x1",
+    "number": "0x2",
+    "gasLimit": "0xf4240",
+    "gasUsed": "0x0",
+    "timestamp": "0x65",
+    "extraData": "0x6c7a766d",
+    "mixHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "nonce": "0xbbbbbbbbbbbbbbbb",
+    "transactions": [],
+    "uncles": []
+  }}
+}}"#,
+            logs_bloom = "00".repeat(256),
+        ),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-block-input",
+            "--rpc-json",
+            block_path.to_str().expect("block path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let encoded = fs::read(&output_path).expect("block input should be written");
+    let parsed = parse_eth_block_input(&encoded).expect("block input should parse");
+    assert_eq!(parsed.block_number, 2);
+    assert_eq!(parsed.timestamp, 101);
+    assert_eq!(parsed.transactions.hash_preimages.len(), 1);
+    assert_eq!(parsed.withdrawals, None);
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.starts_with("status=ok\n"));
+    assert!(stdout_text.contains("transaction_count=0\n"));
+    assert!(stdout_text.contains("withdrawals=absent\n"));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
 fn writes_hex_block_input_artifact_with_hex_receipts() {
     let dir = temp_dir("hex-receipts");
     let _ = fs::remove_dir_all(&dir);

@@ -19,6 +19,7 @@ mod eth_block_public_values;
 mod eth_block_summary;
 mod eth_framed_input;
 mod eth_public_input;
+mod eth_rpc_block;
 mod pil_archive;
 mod pil_archive_summary;
 mod pil_fixed_file_manifest;
