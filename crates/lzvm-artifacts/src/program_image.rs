@@ -281,7 +281,7 @@ pub(crate) fn validate_program_image_commitment_cache(
             value: value.blowup_factor,
         });
     }
-    if value.merkle_tree_arity < 2 || !value.merkle_tree_arity.is_power_of_two() {
+    if !matches!(value.merkle_tree_arity, 2 | 4) {
         return Err(ProgramImageCommitmentCacheError::InvalidMerkleTreeArity {
             value: value.merkle_tree_arity,
         });

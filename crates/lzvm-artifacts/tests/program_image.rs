@@ -211,6 +211,13 @@ fn rejects_invalid_program_image_geometry() {
         encode_program_image_commitment_cache(&cache),
         Err(ProgramImageCommitmentCacheError::InvalidMerkleTreeArity { value: 3 })
     ));
+
+    let mut cache = sample_cache();
+    cache.merkle_tree_arity = 8;
+    assert!(matches!(
+        encode_program_image_commitment_cache(&cache),
+        Err(ProgramImageCommitmentCacheError::InvalidMerkleTreeArity { value: 8 })
+    ));
 }
 
 #[test]
