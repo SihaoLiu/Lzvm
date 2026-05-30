@@ -15,7 +15,7 @@ use lzvm_artifacts::program_image::ProgramImageCommitmentCache;
 use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
 };
-use lzvm_artifacts::proof::{ProofArtifact, ProofSegment};
+use lzvm_artifacts::proof::{validate_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, PublicValues};
 use lzvm_artifacts::witness_segment::WITNESS_COMMITMENT_SEGMENT_BASE_ID;
 use lzvm_field::{Ext3, Felt};
@@ -169,6 +169,8 @@ pub fn build_witness_proof_artifact_with_bindings(
         proof.segments.push(segment);
     }
     append_binding_segments(&mut proof.segments, inputs.binding_segments.to_vec());
+    validate_proof_artifact(&proof)
+        .map_err(|error| format!("build proof artifact failed: {error}"))?;
     Ok(proof)
 }
 
