@@ -30,7 +30,8 @@ use lzvm_prover::{
 };
 
 use crate::eth_block_prove_input::{
-    validate_eth_block_input, write_eth_block_input_summary, EthBlockInputSummary,
+    validate_eth_block_input, write_eth_block_input_from_public_input,
+    write_eth_block_input_summary, EthBlockInputSummary,
 };
 use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{
@@ -66,21 +67,24 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
 
-    let eth_block_input = match validate_eth_block_input(&parsed.eth_block_input) {
+    let prepared_eth_block_input = match prepare_eth_block_input(&parsed) {
         Ok(value) => value,
         Err(message) => {
             let _ = writeln!(stderr, "prove witness failed: {message}");
             return 1;
         }
     };
-    let prepared_public_inputs =
-        match prepare_eth_block_public_inputs(&parsed, &catalog, eth_block_input.as_ref()) {
-            Ok(value) => value,
-            Err(message) => {
-                let _ = writeln!(stderr, "prove witness failed: {message}");
-                return 1;
-            }
-        };
+    let prepared_public_inputs = match prepare_eth_block_public_inputs(
+        &parsed,
+        &catalog,
+        prepared_eth_block_input.summary.as_ref(),
+    ) {
+        Ok(value) => value,
+        Err(message) => {
+            let _ = writeln!(stderr, "prove witness failed: {message}");
+            return 1;
+        }
+    };
     let generated_public_inputs = prepared_public_inputs.generated;
     let plan = match derive_prove_execution_plan_with_program_image_cache(
         &catalog,
@@ -191,8 +195,11 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                     auxiliary_inputs: &auxiliary_inputs,
                     outputs: &outputs,
                     eth_block_input: FinishEthBlockInput {
-                        summary: eth_block_input.as_ref(),
+                        summary: prepared_eth_block_input.summary.as_ref(),
                         generated_public_inputs,
+                        generated_from_public_input: prepared_eth_block_input
+                            .generated_from_public_input,
+                        public_input: parsed.eth_public_input.as_deref(),
                     },
                     challenge_values_segment: challenge_values_segment.as_ref(),
                 },
@@ -265,8 +272,11 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                 auxiliary_inputs: &auxiliary_inputs,
                 outputs: &outputs,
                 eth_block_input: FinishEthBlockInput {
-                    summary: eth_block_input.as_ref(),
+                    summary: prepared_eth_block_input.summary.as_ref(),
                     generated_public_inputs,
+                    generated_from_public_input: prepared_eth_block_input
+                        .generated_from_public_input,
+                    public_input: parsed.eth_public_input.as_deref(),
                 },
                 challenge_values_segment: challenge_values_segment.as_ref(),
             },
@@ -313,7 +323,10 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             .program_image_cache
             .as_ref()
             .map(|summary| &summary.cache),
-        eth_block_input: eth_block_input.as_ref().map(|summary| &summary.input),
+        eth_block_input: prepared_eth_block_input
+            .summary
+            .as_ref()
+            .map(|summary| &summary.input),
         challenge_values_segment: challenge_values_segment.as_ref(),
         output: &output,
         contribution_only,
@@ -366,10 +379,16 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     if generated_public_inputs {
         let _ = writeln!(stdout, "public_inputs_generated=eth_block_input");
     }
+    if let Some(path) = &parsed.eth_public_input {
+        let _ = writeln!(stdout, "eth_public_input={}", path.display());
+    }
+    if prepared_eth_block_input.generated_from_public_input {
+        let _ = writeln!(stdout, "eth_block_input_generated=eth_public_input");
+    }
     if let Some(summary) = &plan.program_image_cache {
         write_program_image_cache_summary(stdout, summary);
     }
-    if let Some(summary) = &eth_block_input {
+    if let Some(summary) = &prepared_eth_block_input.summary {
         write_eth_block_input_summary(stdout, summary);
     }
     write_witness_output_summary(stdout, commitments);
@@ -392,11 +411,17 @@ struct ParsedWitnessArgs {
     evaluation_values: Option<std::path::PathBuf>,
     evaluation_values_segment: Option<std::path::PathBuf>,
     eth_block_input: Option<std::path::PathBuf>,
+    eth_public_input: Option<std::path::PathBuf>,
 }
 
 struct PreparedPublicInputs {
     inputs: ProveExecutionInputArtifacts,
     generated: bool,
+}
+
+struct PreparedEthBlockInput {
+    summary: Option<EthBlockInputSummary>,
+    generated_from_public_input: bool,
 }
 
 struct PublicInputSummary {
@@ -448,6 +473,7 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
     let mut evaluation_values = None;
     let mut evaluation_values_segment = None;
     let mut eth_block_input = None;
+    let mut eth_public_input = None;
     let mut filtered = Vec::with_capacity(args.len());
     let mut index = 0;
     while index < args.len() {
@@ -570,6 +596,15 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
                     ));
                 }
             }
+            "--eth-public-input" => {
+                index += 1;
+                let value = required_option_value(args.get(index), "--eth-public-input")?;
+                if eth_public_input.replace(value.into()).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --eth-public-input option".to_owned(),
+                    ));
+                }
+            }
             "--program-image-cache" => {
                 index += 1;
                 let value = required_option_value(args.get(index), "--program-image-cache")?;
@@ -610,6 +645,11 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             "cannot combine --trace-bytes and --trace-bundle".to_owned(),
         ));
     }
+    if eth_block_input.is_some() && eth_public_input.is_some() {
+        return Err(ParseError::Invalid(
+            "cannot combine --eth-block-input and --eth-public-input".to_owned(),
+        ));
+    }
     let trace_mode = trace_bytes.is_some() || trace_bundle.is_some();
     let min_positionals = if trace_mode { 3 } else { 4 };
     let max_positionals = if trace_mode { 4 } else { 5 };
@@ -640,6 +680,28 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
         evaluation_values,
         evaluation_values_segment,
         eth_block_input,
+        eth_public_input,
+    })
+}
+
+fn prepare_eth_block_input(parsed: &ParsedWitnessArgs) -> Result<PreparedEthBlockInput, String> {
+    if let Some(path) = &parsed.eth_block_input {
+        return Ok(PreparedEthBlockInput {
+            summary: validate_eth_block_input(&Some(path.clone()))?,
+            generated_from_public_input: false,
+        });
+    }
+    let Some(path) = &parsed.eth_public_input else {
+        return Ok(PreparedEthBlockInput {
+            summary: None,
+            generated_from_public_input: false,
+        });
+    };
+
+    let output_path = parsed.run_args.positionals[1].join("eth-block.input");
+    Ok(PreparedEthBlockInput {
+        summary: Some(write_eth_block_input_from_public_input(path, &output_path)?),
+        generated_from_public_input: true,
     })
 }
 
@@ -755,6 +817,8 @@ fn read_optional_program_image_cache(
 struct FinishEthBlockInput<'a> {
     summary: Option<&'a EthBlockInputSummary>,
     generated_public_inputs: bool,
+    generated_from_public_input: bool,
+    public_input: Option<&'a Path>,
 }
 
 struct FinishAllUnitsWitnessRunRequest<'a> {
@@ -1029,6 +1093,12 @@ fn finish_all_units_witness_run(
     if eth_block_input.generated_public_inputs {
         let _ = writeln!(stdout, "public_inputs_generated=eth_block_input");
     }
+    if let Some(path) = eth_block_input.public_input {
+        let _ = writeln!(stdout, "eth_public_input={}", path.display());
+    }
+    if eth_block_input.generated_from_public_input {
+        let _ = writeln!(stdout, "eth_block_input_generated=eth_public_input");
+    }
     if let Some(summary) = &plan.program_image_cache {
         write_program_image_cache_summary(stdout, summary);
     }
@@ -1160,81 +1230,10 @@ fn write_output_file(path: &Path, value: &[u8]) -> Result<(), String> {
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --eth-block-input <block-input>\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>"
+        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --eth-block-input <block-input>\n  --eth-public-input <public-input>\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>"
     );
     2
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rejects_trace_bytes_with_all_units_during_parse() {
-        let result = parse_witness_args(&[
-            "--trace-bytes",
-            "trace.bin",
-            "--all-units",
-            "setup-dir",
-            "out-dir",
-            "guest.elf",
-        ]);
-
-        assert!(matches!(
-            result,
-            Err(ParseError::Invalid(message))
-                if message == "--trace-bytes requires a single-unit witness run"
-        ));
-    }
-
-    #[test]
-    fn rejects_trace_bytes_with_aggregate_during_parse() {
-        let result = parse_witness_args(&[
-            "--trace-bytes",
-            "trace.bin",
-            "--aggregate",
-            "setup-dir",
-            "out-dir",
-            "guest.elf",
-        ]);
-
-        assert!(matches!(
-            result,
-            Err(ParseError::Invalid(message))
-                if message == "--trace-bytes requires a single-unit witness run"
-        ));
-    }
-
-    #[test]
-    fn rejects_evaluation_values_segment_without_all_units_during_parse() {
-        let result = parse_witness_args(&[
-            "--evaluation-values-segment",
-            "evaluations.bin",
-            "setup-dir",
-            "out-dir",
-            "witness.so",
-            "guest.elf",
-        ]);
-
-        assert!(matches!(
-            result,
-            Err(ParseError::Invalid(message))
-                if message == "--evaluation-values-segment requires all-units mode"
-        ));
-    }
-
-    #[test]
-    fn parses_eth_block_input_option_for_witness_args() {
-        let result = parse_witness_args(&[
-            "--eth-block-input",
-            "block.input",
-            "setup-dir",
-            "out-dir",
-            "witness.so",
-            "guest.elf",
-        ])
-        .expect("witness args should parse");
-
-        assert_eq!(result.eth_block_input, Some("block.input".into()));
-    }
-}
+mod tests;
