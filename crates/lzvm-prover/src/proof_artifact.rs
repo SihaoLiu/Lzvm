@@ -168,7 +168,7 @@ pub fn build_witness_proof_artifact_with_bindings(
     if let Some(segment) = unit_values_segment {
         proof.segments.push(segment);
     }
-    append_binding_segments(&mut proof.segments, inputs.binding_segments.to_vec());
+    append_binding_segments(&mut proof.segments, inputs.binding_segments);
     validate_proof_artifact(&proof)
         .map_err(|error| format!("build proof artifact failed: {error}"))?;
     Ok(proof)
@@ -385,7 +385,7 @@ pub fn build_witness_proof_artifact_for_unit(
     } else {
         false
     };
-    append_binding_segments(&mut segments, binding_segments);
+    append_binding_segments(&mut segments, &binding_segments);
     let proof = ProofArtifact {
         setup_hash: request.schedule.setup_hash,
         public_values_hash,
@@ -456,7 +456,7 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
         segments.push(proof_values_segment);
     }
     segments.push(contribution_segment);
-    append_binding_segments(&mut segments, binding_segments);
+    append_binding_segments(&mut segments, &binding_segments);
     let proof = ProofArtifact {
         setup_hash: request.schedule.setup_hash,
         public_values_hash,
@@ -543,7 +543,7 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
         segments.push(proof_values_segment);
     }
     segments.push(contribution_segment);
-    append_binding_segments(&mut segments, binding_segments);
+    append_binding_segments(&mut segments, &binding_segments);
     let proof = ProofArtifact {
         setup_hash: request.schedule.setup_hash,
         public_values_hash,
@@ -664,7 +664,7 @@ pub fn build_witness_proof_artifact_for_all_units(
         false
     };
     if needs_transcript {
-        append_binding_segments(&mut proof.segments, binding_segments);
+        append_binding_segments(&mut proof.segments, &binding_segments);
     }
     if has_contribution_segment {
         if request.challenge_values_segment.is_none() {
@@ -837,8 +837,8 @@ fn build_proof_binding_segments(
     Ok(segments)
 }
 
-fn append_binding_segments(segments: &mut Vec<ProofSegment>, binding_segments: Vec<ProofSegment>) {
-    segments.extend(binding_segments);
+fn append_binding_segments(segments: &mut Vec<ProofSegment>, binding_segments: &[ProofSegment]) {
+    segments.extend(binding_segments.iter().cloned());
 }
 
 struct WitnessContributionSource<'a> {

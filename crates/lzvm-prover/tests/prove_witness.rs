@@ -2346,6 +2346,13 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
         run_prove_witness_commitments_with_trace(&plan, 1, output_auxiliary_inputs.clone())
             .expect("second unit should run"),
     ];
+    let challenge_segment = ProofSegment {
+        id: CHALLENGE_VALUES_SEGMENT_ID,
+        data: encode_challenge_values_segment(&ChallengeValuesSegment {
+            values: vec![[7, 8, 9]],
+        })
+        .expect("challenge values segment should encode"),
+    };
 
     let proof = lzvm_prover::build_witness_proof_artifact_for_all_units(
         &lzvm_prover::WitnessAllUnitsProofRequest {
@@ -2361,7 +2368,7 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
             verify_outputs: false,
             program_image_cache: None,
             eth_block_input: None,
-            challenge_values_segment: None,
+            challenge_values_segment: Some(&challenge_segment),
             include_contribution_segment: false,
         },
     )
@@ -2416,6 +2423,11 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
     .expect("proof should parse");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
+    assert!(proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == CHALLENGE_VALUES_SEGMENT_ID
+            && segment.data == challenge_segment.data));
     for proof in [&proof, &proof_from_segment] {
         let evaluation_segment = proof
             .segments
