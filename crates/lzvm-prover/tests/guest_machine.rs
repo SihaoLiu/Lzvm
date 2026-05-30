@@ -1703,7 +1703,10 @@ fn advances_counter_csr_reads_with_deterministic_ticks() {
         (0x0c00, RiscvCsr::Cycle, 10, 0),
         (0x0c01, RiscvCsr::Time, 11, 1),
         (0x0c02, RiscvCsr::Instret, 12, 2),
-        (0x0c00, RiscvCsr::Cycle, 13, 3),
+        (0x0c80, RiscvCsr::Cycleh, 13, 0),
+        (0x0c81, RiscvCsr::Timeh, 14, 0),
+        (0x0c82, RiscvCsr::Instreth, 15, 0),
+        (0x0c00, RiscvCsr::Cycle, 16, 6),
     ];
     let words: Vec<u32> = cases
         .iter()

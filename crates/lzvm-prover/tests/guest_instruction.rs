@@ -78,11 +78,14 @@ fn csrrci(rd: u8, csr: u16, immediate: u8) -> u32 {
     csr_imm(rd, csr, 7, immediate)
 }
 
-fn read_only_csrs() -> [(u16, RiscvCsr); 8] {
+fn read_only_csrs() -> [(u16, RiscvCsr); 11] {
     [
         (0x0c00, RiscvCsr::Cycle),
         (0x0c01, RiscvCsr::Time),
         (0x0c02, RiscvCsr::Instret),
+        (0x0c80, RiscvCsr::Cycleh),
+        (0x0c81, RiscvCsr::Timeh),
+        (0x0c82, RiscvCsr::Instreth),
         (0x0301, RiscvCsr::Misa),
         (0x0f11, RiscvCsr::Mvendorid),
         (0x0f12, RiscvCsr::Marchid),
