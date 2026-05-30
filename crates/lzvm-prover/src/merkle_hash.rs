@@ -579,11 +579,11 @@ fn cuda_linear_hashes_with_row_major_device_rounds(
         .checked_mul(width)
         .and_then(|words| words.checked_mul(8))
         .ok_or(MerkleHashError::LengthOverflow)?;
+    let mut next_states =
+        CudaDeviceBuffer::new(state_byte_count).map_err(|_| MerkleHashError::LengthOverflow)?;
     let mut offset = 0;
     while offset < value_count {
         let chunk_len = (value_count - offset).min(rate);
-        let mut next_states =
-            CudaDeviceBuffer::new(state_byte_count).map_err(|_| MerkleHashError::LengthOverflow)?;
         operation(
             &current_states,
             row_values,
@@ -593,7 +593,7 @@ fn cuda_linear_hashes_with_row_major_device_rounds(
             chunk_len,
         )
         .map_err(|_| MerkleHashError::LengthOverflow)?;
-        current_states = next_states;
+        std::mem::swap(&mut current_states, &mut next_states);
         offset += chunk_len;
     }
 

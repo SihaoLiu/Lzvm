@@ -1,43 +1,54 @@
-__global__ void pack_poseidon2_width8_linear_round_row_major_inputs_kernel(
+__global__ void poseidon2_width8_linear_round_row_major_kernel(
     const uint64_t* current_states,
     const uint64_t* row_values,
-    uint64_t* packed,
+    uint64_t* out,
     size_t row_count,
     size_t column_count,
     size_t offset,
     size_t chunk_len) {
     const size_t row_index = blockIdx.x * blockDim.x + threadIdx.x;
     if (row_index < row_count) {
+        uint64_t state[kPoseidon2Width8] = {0, 0, 0, 0, 0, 0, 0, 0};
         const size_t state_offset = row_index * kPoseidon2Width8;
         const size_t row_offset = row_index * column_count + offset;
         for (size_t word = 0; word < chunk_len; ++word) {
-            packed[state_offset + word] = row_values[row_offset + word];
+            state[word] = row_values[row_offset + word];
         }
         for (size_t word = 0; word < kPoseidon2HalfRounds; ++word) {
-            packed[state_offset + kPoseidon2HalfRounds + word] =
-                current_states[state_offset + word];
+            state[kPoseidon2HalfRounds + word] = current_states[state_offset + word];
+        }
+        poseidon2_hash_width8(state);
+        for (size_t word = 0; word < kPoseidon2Width8; ++word) {
+            out[state_offset + word] = state[word];
         }
     }
 }
 
-__global__ void pack_poseidon2_width16_linear_round_row_major_inputs_kernel(
+__global__ void poseidon2_width16_linear_round_row_major_kernel(
     const uint64_t* current_states,
     const uint64_t* row_values,
-    uint64_t* packed,
+    uint64_t* out,
     size_t row_count,
     size_t column_count,
     size_t offset,
     size_t chunk_len) {
     const size_t row_index = blockIdx.x * blockDim.x + threadIdx.x;
     if (row_index < row_count) {
+        uint64_t state[kPoseidon2Width16] = {
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        };
         const size_t state_offset = row_index * kPoseidon2Width16;
         const size_t row_offset = row_index * column_count + offset;
         for (size_t word = 0; word < chunk_len; ++word) {
-            packed[state_offset + word] = row_values[row_offset + word];
+            state[word] = row_values[row_offset + word];
         }
         for (size_t word = 0; word < kPoseidon2HalfRounds; ++word) {
-            packed[state_offset + kPoseidon2Width16 - kPoseidon2HalfRounds + word] =
+            state[kPoseidon2Width16 - kPoseidon2HalfRounds + word] =
                 current_states[state_offset + word];
+        }
+        poseidon2_hash_width16(state);
+        for (size_t word = 0; word < kPoseidon2Width16; ++word) {
+            out[state_offset + word] = state[word];
         }
     }
 }
@@ -61,18 +72,12 @@ int run_poseidon2_width8_linear_round_row_major_on_device(
         return -2;
     }
 
-    const size_t state_bytes = row_count * kPoseidon2Width8 * sizeof(uint64_t);
-    DeviceBuffer<uint64_t> device_packed;
-
-    LZVM_CUDA_RETURN_ON_ERROR(device_packed.reset(row_count * kPoseidon2Width8));
-    LZVM_CUDA_RETURN_ON_ERROR(cudaMemset(device_packed.data(), 0, state_bytes));
-
     const size_t blocks = (row_count + kThreads - 1) / kThreads;
-    pack_poseidon2_width8_linear_round_row_major_inputs_kernel<<<blocks, kThreads>>>(
-        current_states, row_values, device_packed.data(), row_count, column_count, offset,
-        chunk_len);
+    poseidon2_width8_linear_round_row_major_kernel<<<blocks, kThreads>>>(
+        current_states, row_values, device_out, row_count, column_count, offset, chunk_len);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
-    return run_poseidon2_width8_on_device(device_packed.data(), device_out, row_count);
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
+    return 0;
 }
 
 int run_poseidon2_width16_linear_round_row_major_on_device(
@@ -94,16 +99,10 @@ int run_poseidon2_width16_linear_round_row_major_on_device(
         return -2;
     }
 
-    const size_t state_bytes = row_count * kPoseidon2Width16 * sizeof(uint64_t);
-    DeviceBuffer<uint64_t> device_packed;
-
-    LZVM_CUDA_RETURN_ON_ERROR(device_packed.reset(row_count * kPoseidon2Width16));
-    LZVM_CUDA_RETURN_ON_ERROR(cudaMemset(device_packed.data(), 0, state_bytes));
-
     const size_t blocks = (row_count + kThreads - 1) / kThreads;
-    pack_poseidon2_width16_linear_round_row_major_inputs_kernel<<<blocks, kThreads>>>(
-        current_states, row_values, device_packed.data(), row_count, column_count, offset,
-        chunk_len);
+    poseidon2_width16_linear_round_row_major_kernel<<<blocks, kThreads>>>(
+        current_states, row_values, device_out, row_count, column_count, offset, chunk_len);
     LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
-    return run_poseidon2_width16_on_device(device_packed.data(), device_out, row_count);
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
+    return 0;
 }

@@ -17,6 +17,23 @@ fn native_sources_stay_under_size_guideline() {
     );
 }
 
+#[test]
+fn row_major_poseidon_helpers_do_not_allocate_packed_states() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("native/cuda_poseidon2_row_major.cuh");
+    let source =
+        std::fs::read_to_string(&source_path).expect("row-major native source should read");
+
+    assert!(
+        !source.contains("DeviceBuffer<uint64_t>"),
+        "row-major Poseidon helpers should not allocate a packed device buffer"
+    );
+    assert!(
+        !source.contains("cudaMemset"),
+        "row-major Poseidon helpers should not clear packed state buffers"
+    );
+}
+
 fn collect_oversized_sources(root: &Path, path: &Path, oversized: &mut Vec<String>) {
     let entries = std::fs::read_dir(path).expect("native source directory should read");
     for entry in entries {
