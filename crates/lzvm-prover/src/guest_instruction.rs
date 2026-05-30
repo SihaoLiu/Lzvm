@@ -299,6 +299,9 @@ pub enum RiscvAmoWidth {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RiscvCsr {
+    Mvendorid,
+    Marchid,
+    Mimpid,
     Mhartid,
 }
 
@@ -1055,6 +1058,9 @@ fn decode_system(word: u32) -> RiscvInstruction {
         return RiscvInstruction::Ebreak;
     }
     let Some(csr) = (match ((word >> 20) & 0x0fff) as u16 {
+        0x0f11 => Some(RiscvCsr::Mvendorid),
+        0x0f12 => Some(RiscvCsr::Marchid),
+        0x0f13 => Some(RiscvCsr::Mimpid),
         0x0f14 => Some(RiscvCsr::Mhartid),
         _ => None,
     }) else {

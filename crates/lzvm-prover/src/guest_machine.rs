@@ -783,7 +783,7 @@ fn branch_is_taken(kind: RiscvBranchKind, lhs: u64, rhs: u64) -> bool {
 
 fn read_csr(csr: RiscvCsr) -> u64 {
     match csr {
-        RiscvCsr::Mhartid => 0,
+        RiscvCsr::Mvendorid | RiscvCsr::Marchid | RiscvCsr::Mimpid | RiscvCsr::Mhartid => 0,
     }
 }
 

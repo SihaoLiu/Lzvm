@@ -33,6 +33,13 @@ fn sample_guest_image_with_program_headers(program_headers: &[[u8; 56]]) -> Vec<
     bytes
 }
 
+fn csrrs(rd: u8, csr: u16, rs1: u8) -> u32 {
+    assert!(rd < 32);
+    assert!(csr < 4096);
+    assert!(rs1 < 32);
+    (u32::from(csr) << 20) | (u32::from(rs1) << 15) | (2 << 12) | (u32::from(rd) << 7) | 0x73
+}
+
 #[derive(Debug, Clone, Copy)]
 struct ProgramHeaderFixture {
     kind: u32,
@@ -351,12 +358,29 @@ fn decodes_common_riscv_instruction_formats() {
         RiscvInstruction::Ebreak
     );
     assert_eq!(
-        decode_riscv_instruction(0xf140_2573),
+        decode_riscv_instruction(csrrs(10, 0x0f14, 0)),
         RiscvInstruction::CsrRead {
             csr: RiscvCsr::Mhartid,
             rd: 10,
         }
     );
+}
+
+#[test]
+fn decodes_machine_identity_csr_reads() {
+    let cases = [
+        (0x0f11, RiscvCsr::Mvendorid),
+        (0x0f12, RiscvCsr::Marchid),
+        (0x0f13, RiscvCsr::Mimpid),
+        (0x0f14, RiscvCsr::Mhartid),
+    ];
+
+    for (csr_number, csr) in cases {
+        assert_eq!(
+            decode_riscv_instruction(csrrs(10, csr_number, 0)),
+            RiscvInstruction::CsrRead { csr, rd: 10 }
+        );
+    }
 }
 
 #[test]
@@ -1560,6 +1584,17 @@ fn keeps_unknown_riscv_words_visible() {
         }
     );
     for word in [0xf141_2573, 0xc000_2573, 0xf140_1573, 0xf140_6073] {
+        assert_eq!(
+            decode_riscv_instruction(word),
+            RiscvInstruction::Unknown { word, opcode: 0x73 }
+        );
+    }
+    for word in [
+        csrrs(10, 0x0f11, 1),
+        csrrs(10, 0x0f12, 1),
+        csrrs(10, 0x0f13, 1),
+        csrrs(10, 0x0f14, 1),
+    ] {
         assert_eq!(
             decode_riscv_instruction(word),
             RiscvInstruction::Unknown { word, opcode: 0x73 }

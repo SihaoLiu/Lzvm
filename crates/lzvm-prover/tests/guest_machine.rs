@@ -1661,24 +1661,37 @@ fn advances_fence_instructions_as_noops() {
 }
 
 #[test]
-fn advances_supported_csr_reads() {
-    let mut memory = guest_machine_memory_with_words(&[csrrs(10, 0x0f14, 0)]);
+fn advances_machine_identity_csr_reads() {
+    let cases = [
+        (0x0f11, RiscvCsr::Mvendorid, 10),
+        (0x0f12, RiscvCsr::Marchid, 11),
+        (0x0f13, RiscvCsr::Mimpid, 12),
+        (0x0f14, RiscvCsr::Mhartid, 13),
+    ];
+    let words: Vec<u32> = cases
+        .iter()
+        .map(|(csr_number, _, rd)| csrrs(*rd, *csr_number, 0))
+        .collect();
+    let mut memory = guest_machine_memory_with_words(&words);
     let mut state = GuestMachineState::new(memory.entry_address());
-    state
-        .set_register(10, u64::MAX)
-        .expect("register write should be valid");
 
-    let report = advance_guest_machine(&mut memory, &mut state).expect("csr read should execute");
+    for (_, _, rd) in cases {
+        state
+            .set_register(usize::from(rd), u64::MAX)
+            .expect("register write should be valid");
+    }
 
-    assert_eq!(
-        report.instruction,
-        RiscvInstruction::CsrRead {
-            csr: RiscvCsr::Mhartid,
-            rd: 10,
-        }
-    );
-    assert_eq!(state.register(10), Some(0));
-    assert_eq!(state.pc(), ENTRY + 4);
+    for (index, (_, csr, rd)) in cases.into_iter().enumerate() {
+        let report =
+            advance_guest_machine(&mut memory, &mut state).expect("csr read should execute");
+        let address = ENTRY + (index as u64) * 4;
+
+        assert_eq!(report.address, address);
+        assert_eq!(report.next_pc, address + 4);
+        assert_eq!(report.instruction, RiscvInstruction::CsrRead { csr, rd });
+        assert_eq!(state.register(usize::from(rd)), Some(0));
+        assert_eq!(state.pc(), address + 4);
+    }
 }
 
 #[test]
