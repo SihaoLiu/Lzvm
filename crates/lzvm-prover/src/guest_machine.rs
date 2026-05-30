@@ -3,8 +3,8 @@ use std::fmt;
 
 use crate::guest_instruction::{
     decode_guest_instruction, fetch_guest_instruction, GuestInstructionError, RiscvBranchKind,
-    RiscvEncodedInstruction, RiscvInstruction, RiscvLoadKind, RiscvOpImmKind, RiscvOpKind,
-    RiscvStoreKind,
+    RiscvEncodedInstruction, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind,
+    RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use crate::guest_memory::{
     GuestMemoryError, GuestMemoryImage, GuestMemoryReader, GuestMemorySegment,
@@ -353,11 +353,24 @@ fn execute_guest_instruction(
                 kind,
                 state.read_decoded_register(rs1),
                 state.read_decoded_register(rs2),
-            )
-            .ok_or(GuestMachineError::UnsupportedInstruction {
-                address,
-                instruction,
-            })?;
+            );
+            state.write_decoded_register(rd, value);
+        }
+        RiscvInstruction::OpImm32 {
+            kind,
+            rd,
+            rs1,
+            immediate,
+        } => {
+            let value = execute_op_imm_32(kind, state.read_decoded_register(rs1), immediate);
+            state.write_decoded_register(rd, value);
+        }
+        RiscvInstruction::Op32 { kind, rd, rs1, rs2 } => {
+            let value = execute_op_32(
+                kind,
+                state.read_decoded_register(rs1),
+                state.read_decoded_register(rs2),
+            );
             state.write_decoded_register(rd, value);
         }
         RiscvInstruction::Load {
@@ -382,8 +395,6 @@ fn execute_guest_instruction(
         RiscvInstruction::CompressedUnknown { .. }
         | RiscvInstruction::IllegalCompressed { .. }
         | RiscvInstruction::UnsupportedLong { .. }
-        | RiscvInstruction::OpImm32 { .. }
-        | RiscvInstruction::Op32 { .. }
         | RiscvInstruction::Fence { .. }
         | RiscvInstruction::Ecall
         | RiscvInstruction::Ebreak
@@ -485,25 +496,127 @@ fn execute_op_imm(kind: RiscvOpImmKind, rs1: u64, immediate: i64) -> Option<u64>
     Some(value)
 }
 
-fn execute_op(kind: RiscvOpKind, rs1: u64, rs2: u64) -> Option<u64> {
+fn execute_op_imm_32(kind: RiscvOpImm32Kind, rs1: u64, immediate: i64) -> u64 {
     match kind {
-        RiscvOpKind::Add => Some(rs1.wrapping_add(rs2)),
-        RiscvOpKind::Sub => Some(rs1.wrapping_sub(rs2)),
-        RiscvOpKind::Sll => Some(rs1.wrapping_shl((rs2 as u32) & 0x3f)),
-        RiscvOpKind::Slt => Some(u64::from((rs1 as i64) < (rs2 as i64))),
-        RiscvOpKind::Sltu => Some(u64::from(rs1 < rs2)),
-        RiscvOpKind::Xor => Some(rs1 ^ rs2),
-        RiscvOpKind::Srl => Some(rs1.wrapping_shr((rs2 as u32) & 0x3f)),
-        RiscvOpKind::Sra => Some(((rs1 as i64) >> ((rs2 as u32) & 0x3f)) as u64),
-        RiscvOpKind::Or => Some(rs1 | rs2),
-        RiscvOpKind::And => Some(rs1 & rs2),
-        RiscvOpKind::Mul
-        | RiscvOpKind::Mulh
-        | RiscvOpKind::Mulhsu
-        | RiscvOpKind::Mulhu
-        | RiscvOpKind::Div
-        | RiscvOpKind::Divu
-        | RiscvOpKind::Rem
-        | RiscvOpKind::Remu => None,
+        RiscvOpImm32Kind::Addiw => sign_extend_word(rs1.wrapping_add_signed(immediate) as u32),
+        RiscvOpImm32Kind::Slliw => {
+            sign_extend_word((rs1 as u32).wrapping_shl((immediate as u32) & 0x1f))
+        }
+        RiscvOpImm32Kind::Srliw => {
+            sign_extend_word((rs1 as u32).wrapping_shr((immediate as u32) & 0x1f))
+        }
+        RiscvOpImm32Kind::Sraiw => {
+            sign_extend_word(((rs1 as u32 as i32) >> ((immediate as u32) & 0x1f)) as u32)
+        }
     }
+}
+
+fn execute_op(kind: RiscvOpKind, rs1: u64, rs2: u64) -> u64 {
+    match kind {
+        RiscvOpKind::Add => rs1.wrapping_add(rs2),
+        RiscvOpKind::Sub => rs1.wrapping_sub(rs2),
+        RiscvOpKind::Sll => rs1.wrapping_shl((rs2 as u32) & 0x3f),
+        RiscvOpKind::Slt => u64::from((rs1 as i64) < (rs2 as i64)),
+        RiscvOpKind::Sltu => u64::from(rs1 < rs2),
+        RiscvOpKind::Xor => rs1 ^ rs2,
+        RiscvOpKind::Srl => rs1.wrapping_shr((rs2 as u32) & 0x3f),
+        RiscvOpKind::Sra => ((rs1 as i64) >> ((rs2 as u32) & 0x3f)) as u64,
+        RiscvOpKind::Or => rs1 | rs2,
+        RiscvOpKind::And => rs1 & rs2,
+        RiscvOpKind::Mul => rs1.wrapping_mul(rs2),
+        RiscvOpKind::Mulh => (((rs1 as i64 as i128) * (rs2 as i64 as i128)) >> 64) as u64,
+        RiscvOpKind::Mulhsu => (((rs1 as i64 as i128) * (rs2 as i128)) >> 64) as u64,
+        RiscvOpKind::Mulhu => (((rs1 as u128) * (rs2 as u128)) >> 64) as u64,
+        RiscvOpKind::Div => signed_divide(rs1 as i64, rs2 as i64) as u64,
+        RiscvOpKind::Divu => {
+            if rs2 == 0 {
+                u64::MAX
+            } else {
+                rs1 / rs2
+            }
+        }
+        RiscvOpKind::Rem => signed_remainder(rs1 as i64, rs2 as i64) as u64,
+        RiscvOpKind::Remu => {
+            if rs2 == 0 {
+                rs1
+            } else {
+                rs1 % rs2
+            }
+        }
+    }
+}
+
+fn execute_op_32(kind: RiscvOp32Kind, rs1: u64, rs2: u64) -> u64 {
+    match kind {
+        RiscvOp32Kind::Addw => sign_extend_word((rs1 as u32).wrapping_add(rs2 as u32)),
+        RiscvOp32Kind::Subw => sign_extend_word((rs1 as u32).wrapping_sub(rs2 as u32)),
+        RiscvOp32Kind::Sllw => sign_extend_word((rs1 as u32).wrapping_shl((rs2 as u32) & 0x1f)),
+        RiscvOp32Kind::Srlw => sign_extend_word((rs1 as u32).wrapping_shr((rs2 as u32) & 0x1f)),
+        RiscvOp32Kind::Sraw => {
+            sign_extend_word(((rs1 as u32 as i32) >> ((rs2 as u32) & 0x1f)) as u32)
+        }
+        RiscvOp32Kind::Mulw => sign_extend_word((rs1 as u32).wrapping_mul(rs2 as u32)),
+        RiscvOp32Kind::Divw => signed_divide_word(rs1 as u32 as i32, rs2 as u32 as i32),
+        RiscvOp32Kind::Divuw => {
+            if rs2 as u32 == 0 {
+                u64::MAX
+            } else {
+                sign_extend_word((rs1 as u32) / (rs2 as u32))
+            }
+        }
+        RiscvOp32Kind::Remw => signed_remainder_word(rs1 as u32 as i32, rs2 as u32 as i32),
+        RiscvOp32Kind::Remuw => {
+            if rs2 as u32 == 0 {
+                sign_extend_word(rs1 as u32)
+            } else {
+                sign_extend_word((rs1 as u32) % (rs2 as u32))
+            }
+        }
+    }
+}
+
+fn sign_extend_word(value: u32) -> u64 {
+    i64::from(value as i32) as u64
+}
+
+fn signed_divide(dividend: i64, divisor: i64) -> i64 {
+    if divisor == 0 {
+        -1
+    } else if dividend == i64::MIN && divisor == -1 {
+        i64::MIN
+    } else {
+        dividend / divisor
+    }
+}
+
+fn signed_remainder(dividend: i64, divisor: i64) -> i64 {
+    if divisor == 0 {
+        dividend
+    } else if dividend == i64::MIN && divisor == -1 {
+        0
+    } else {
+        dividend % divisor
+    }
+}
+
+fn signed_divide_word(dividend: i32, divisor: i32) -> u64 {
+    let quotient = if divisor == 0 {
+        -1
+    } else if dividend == i32::MIN && divisor == -1 {
+        i32::MIN
+    } else {
+        dividend / divisor
+    };
+    sign_extend_word(quotient as u32)
+}
+
+fn signed_remainder_word(dividend: i32, divisor: i32) -> u64 {
+    let remainder = if divisor == 0 {
+        dividend
+    } else if dividend == i32::MIN && divisor == -1 {
+        0
+    } else {
+        dividend % divisor
+    };
+    sign_extend_word(remainder as u32)
 }

@@ -1,6 +1,7 @@
 use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_prover::guest_instruction::{
-    RiscvBranchKind, RiscvInstruction, RiscvLoadKind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    RiscvBranchKind, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind,
+    RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use lzvm_prover::guest_machine::{
     advance_guest_machine, GuestMachineError, GuestMachineMemory, GuestMachineState,
@@ -138,17 +139,22 @@ fn encode_i(immediate: i16, rs1: u8, funct3: u8, rd: u8, opcode: u8) -> u32 {
 }
 
 fn encode_r(funct7: u8, rs2: u8, rs1: u8, funct3: u8, rd: u8) -> u32 {
+    encode_r_with_opcode(funct7, rs2, rs1, funct3, rd, 0x33)
+}
+
+fn encode_r_with_opcode(funct7: u8, rs2: u8, rs1: u8, funct3: u8, rd: u8, opcode: u8) -> u32 {
     assert!(funct7 < 128);
     assert_register(rs2);
     assert_register(rs1);
     assert_funct3(funct3);
     assert_register(rd);
+    assert_opcode(opcode);
     (u32::from(funct7) << 25)
         | (u32::from(rs2) << 20)
         | (u32::from(rs1) << 15)
         | (u32::from(funct3) << 12)
         | (u32::from(rd) << 7)
-        | 0x33
+        | u32::from(opcode)
 }
 
 fn assert_register(register: u8) {
@@ -200,6 +206,37 @@ fn srli(rd: u8, rs1: u8, shamt: u8) -> u32 {
 fn srai(rd: u8, rs1: u8, shamt: u8) -> u32 {
     assert!(shamt < 64);
     encode_i(0x400 | i16::from(shamt), rs1, 5, rd, 0x13)
+}
+
+fn addiw(rd: u8, rs1: u8, immediate: i16) -> u32 {
+    encode_i(immediate, rs1, 0, rd, 0x1b)
+}
+
+fn slliw(rd: u8, rs1: u8, shamt: u8) -> u32 {
+    assert!(shamt < 32);
+    encode_i(i16::from(shamt), rs1, 1, rd, 0x1b)
+}
+
+fn srliw(rd: u8, rs1: u8, shamt: u8) -> u32 {
+    assert!(shamt < 32);
+    encode_i(i16::from(shamt), rs1, 5, rd, 0x1b)
+}
+
+fn sraiw(rd: u8, rs1: u8, shamt: u8) -> u32 {
+    assert!(shamt < 32);
+    encode_i(0x400 | i16::from(shamt), rs1, 5, rd, 0x1b)
+}
+
+fn reserved_slliw_with_imm5(rd: u8, rs1: u8) -> u32 {
+    encode_i(0x020, rs1, 1, rd, 0x1b)
+}
+
+fn reserved_srliw_with_imm5(rd: u8, rs1: u8) -> u32 {
+    encode_i(0x020, rs1, 5, rd, 0x1b)
+}
+
+fn reserved_sraiw_with_imm5(rd: u8, rs1: u8) -> u32 {
+    encode_i(0x420, rs1, 5, rd, 0x1b)
 }
 
 fn jalr(rd: u8, rs1: u8, offset: i16) -> u32 {
@@ -322,6 +359,74 @@ fn and(rd: u8, rs1: u8, rs2: u8) -> u32 {
 
 fn mul(rd: u8, rs1: u8, rs2: u8) -> u32 {
     encode_r(0x01, rs2, rs1, 0, rd)
+}
+
+fn mulh(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r(0x01, rs2, rs1, 1, rd)
+}
+
+fn mulhsu(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r(0x01, rs2, rs1, 2, rd)
+}
+
+fn mulhu(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r(0x01, rs2, rs1, 3, rd)
+}
+
+fn div(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r(0x01, rs2, rs1, 4, rd)
+}
+
+fn divu(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r(0x01, rs2, rs1, 5, rd)
+}
+
+fn rem(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r(0x01, rs2, rs1, 6, rd)
+}
+
+fn remu(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r(0x01, rs2, rs1, 7, rd)
+}
+
+fn addw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_with_opcode(0x00, rs2, rs1, 0, rd, 0x3b)
+}
+
+fn subw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_with_opcode(0x20, rs2, rs1, 0, rd, 0x3b)
+}
+
+fn sllw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_with_opcode(0x00, rs2, rs1, 1, rd, 0x3b)
+}
+
+fn srlw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_with_opcode(0x00, rs2, rs1, 5, rd, 0x3b)
+}
+
+fn sraw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_with_opcode(0x20, rs2, rs1, 5, rd, 0x3b)
+}
+
+fn mulw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_with_opcode(0x01, rs2, rs1, 0, rd, 0x3b)
+}
+
+fn divw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_with_opcode(0x01, rs2, rs1, 4, rd, 0x3b)
+}
+
+fn divuw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_with_opcode(0x01, rs2, rs1, 5, rd, 0x3b)
+}
+
+fn remw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_with_opcode(0x01, rs2, rs1, 6, rd, 0x3b)
+}
+
+fn remuw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_with_opcode(0x01, rs2, rs1, 7, rd, 0x3b)
 }
 
 fn branch(funct3: u8, rs1: u8, rs2: u8, offset: i16) -> u32 {
@@ -745,6 +850,293 @@ fn advances_register_shift_compare_and_bitwise_instructions() {
 }
 
 #[test]
+fn advances_rv64_word_immediate_instructions() {
+    let cases = [
+        (
+            addiw(3, 1, 1),
+            0x0000_0001_ffff_ffff,
+            RiscvInstruction::OpImm32 {
+                kind: RiscvOpImm32Kind::Addiw,
+                rd: 3,
+                rs1: 1,
+                immediate: 1,
+            },
+            0,
+        ),
+        (
+            addiw(3, 1, 0),
+            0x0000_0000_8000_0000,
+            RiscvInstruction::OpImm32 {
+                kind: RiscvOpImm32Kind::Addiw,
+                rd: 3,
+                rs1: 1,
+                immediate: 0,
+            },
+            0xffff_ffff_8000_0000,
+        ),
+        (
+            slliw(3, 1, 31),
+            1,
+            RiscvInstruction::OpImm32 {
+                kind: RiscvOpImm32Kind::Slliw,
+                rd: 3,
+                rs1: 1,
+                immediate: 31,
+            },
+            0xffff_ffff_8000_0000,
+        ),
+        (
+            srliw(3, 1, 31),
+            0x0000_0000_8000_0000,
+            RiscvInstruction::OpImm32 {
+                kind: RiscvOpImm32Kind::Srliw,
+                rd: 3,
+                rs1: 1,
+                immediate: 31,
+            },
+            1,
+        ),
+        (
+            sraiw(3, 1, 31),
+            0x0000_0000_8000_0000,
+            RiscvInstruction::OpImm32 {
+                kind: RiscvOpImm32Kind::Sraiw,
+                rd: 3,
+                rs1: 1,
+                immediate: 31,
+            },
+            u64::MAX,
+        ),
+    ];
+
+    for (word, first, expected_instruction, expected_value) in cases {
+        let mut memory = guest_machine_memory_with_words(&[word]);
+        let mut state = GuestMachineState::new(memory.entry_address());
+        state
+            .set_register(FIRST_REGISTER, first)
+            .expect("register write should be valid");
+
+        let report =
+            advance_guest_machine(&mut memory, &mut state).expect("instruction should execute");
+
+        assert_eq!(report.instruction, expected_instruction);
+        assert_eq!(state.register(3), Some(expected_value));
+        assert_eq!(state.pc(), ENTRY + 4);
+    }
+}
+
+#[test]
+fn advances_rv64_word_register_instructions() {
+    let cases = [
+        (
+            addw(3, 1, 2),
+            0x7fff_ffff,
+            1,
+            RiscvOp32Kind::Addw,
+            0xffff_ffff_8000_0000,
+        ),
+        (subw(3, 1, 2), 0, 1, RiscvOp32Kind::Subw, u64::MAX),
+        (
+            sllw(3, 1, 2),
+            1,
+            31,
+            RiscvOp32Kind::Sllw,
+            0xffff_ffff_8000_0000,
+        ),
+        (srlw(3, 1, 2), 0x8000_0000, 31, RiscvOp32Kind::Srlw, 1),
+        (
+            sraw(3, 1, 2),
+            0x8000_0000,
+            31,
+            RiscvOp32Kind::Sraw,
+            u64::MAX,
+        ),
+        (
+            mulw(3, 1, 2),
+            0x7fff_ffff,
+            2,
+            RiscvOp32Kind::Mulw,
+            u64::MAX - 1,
+        ),
+        (
+            divw(3, 1, 2),
+            (-7_i64) as u64,
+            3,
+            RiscvOp32Kind::Divw,
+            (-2_i64) as u64,
+        ),
+        (divuw(3, 1, 2), 7, 3, RiscvOp32Kind::Divuw, 2),
+        (
+            remw(3, 1, 2),
+            (-7_i64) as u64,
+            3,
+            RiscvOp32Kind::Remw,
+            u64::MAX,
+        ),
+        (remuw(3, 1, 2), 7, 3, RiscvOp32Kind::Remuw, 1),
+    ];
+
+    for (word, first, second, kind, expected_value) in cases {
+        let mut memory = guest_machine_memory_with_words(&[word]);
+        let mut state = GuestMachineState::new(memory.entry_address());
+        state
+            .set_register(FIRST_REGISTER, first)
+            .expect("register write should be valid");
+        state
+            .set_register(2, second)
+            .expect("register write should be valid");
+
+        let report =
+            advance_guest_machine(&mut memory, &mut state).expect("instruction should execute");
+
+        assert_eq!(
+            report.instruction,
+            RiscvInstruction::Op32 {
+                kind,
+                rd: 3,
+                rs1: 1,
+                rs2: 2,
+            }
+        );
+        assert_eq!(state.register(3), Some(expected_value));
+        assert_eq!(state.pc(), ENTRY + 4);
+    }
+}
+
+#[test]
+fn advances_rv64_multiply_and_divide_instructions() {
+    let cases = [
+        (
+            mul(3, 1, 2),
+            (-1_i64) as u64,
+            3,
+            RiscvOpKind::Mul,
+            (-3_i64) as u64,
+        ),
+        (
+            mulh(3, 1, 2),
+            (-2_i64) as u64,
+            3,
+            RiscvOpKind::Mulh,
+            u64::MAX,
+        ),
+        (
+            mulhsu(3, 1, 2),
+            (-2_i64) as u64,
+            1_u64 << 63,
+            RiscvOpKind::Mulhsu,
+            u64::MAX,
+        ),
+        (mulhu(3, 1, 2), u64::MAX, 2, RiscvOpKind::Mulhu, 1),
+        (
+            div(3, 1, 2),
+            (-7_i64) as u64,
+            3,
+            RiscvOpKind::Div,
+            (-2_i64) as u64,
+        ),
+        (divu(3, 1, 2), 7, 3, RiscvOpKind::Divu, 2),
+        (rem(3, 1, 2), (-7_i64) as u64, 3, RiscvOpKind::Rem, u64::MAX),
+        (remu(3, 1, 2), 7, 3, RiscvOpKind::Remu, 1),
+        (div(3, 1, 2), 7, 0, RiscvOpKind::Div, u64::MAX),
+        (divu(3, 1, 2), 7, 0, RiscvOpKind::Divu, u64::MAX),
+        (rem(3, 1, 2), 7, 0, RiscvOpKind::Rem, 7),
+        (remu(3, 1, 2), 7, 0, RiscvOpKind::Remu, 7),
+        (
+            div(3, 1, 2),
+            i64::MIN as u64,
+            u64::MAX,
+            RiscvOpKind::Div,
+            i64::MIN as u64,
+        ),
+        (rem(3, 1, 2), i64::MIN as u64, u64::MAX, RiscvOpKind::Rem, 0),
+    ];
+
+    for (word, first, second, kind, expected_value) in cases {
+        let mut memory = guest_machine_memory_with_words(&[word]);
+        let mut state = GuestMachineState::new(memory.entry_address());
+        state
+            .set_register(FIRST_REGISTER, first)
+            .expect("register write should be valid");
+        state
+            .set_register(2, second)
+            .expect("register write should be valid");
+
+        let report =
+            advance_guest_machine(&mut memory, &mut state).expect("instruction should execute");
+
+        assert_eq!(
+            report.instruction,
+            RiscvInstruction::Op {
+                kind,
+                rd: 3,
+                rs1: 1,
+                rs2: 2,
+            }
+        );
+        assert_eq!(state.register(3), Some(expected_value));
+        assert_eq!(state.pc(), ENTRY + 4);
+    }
+}
+
+#[test]
+fn advances_rv64_word_divide_edge_cases() {
+    let cases = [
+        (divw(3, 1, 2), 7, 0, RiscvOp32Kind::Divw, u64::MAX),
+        (divuw(3, 1, 2), 7, 0, RiscvOp32Kind::Divuw, u64::MAX),
+        (remw(3, 1, 2), 7, 0, RiscvOp32Kind::Remw, 7),
+        (remuw(3, 1, 2), 7, 0, RiscvOp32Kind::Remuw, 7),
+        (
+            divw(3, 1, 2),
+            0x0000_0000_8000_0000,
+            u64::MAX,
+            RiscvOp32Kind::Divw,
+            0xffff_ffff_8000_0000,
+        ),
+        (
+            remw(3, 1, 2),
+            0x0000_0000_8000_0000,
+            u64::MAX,
+            RiscvOp32Kind::Remw,
+            0,
+        ),
+        (
+            divuw(3, 1, 2),
+            0xffff_ffff,
+            1,
+            RiscvOp32Kind::Divuw,
+            u64::MAX,
+        ),
+    ];
+
+    for (word, first, second, kind, expected_value) in cases {
+        let mut memory = guest_machine_memory_with_words(&[word]);
+        let mut state = GuestMachineState::new(memory.entry_address());
+        state
+            .set_register(FIRST_REGISTER, first)
+            .expect("register write should be valid");
+        state
+            .set_register(2, second)
+            .expect("register write should be valid");
+
+        let report =
+            advance_guest_machine(&mut memory, &mut state).expect("instruction should execute");
+
+        assert_eq!(
+            report.instruction,
+            RiscvInstruction::Op32 {
+                kind,
+                rd: 3,
+                rs1: 1,
+                rs2: 2,
+            }
+        );
+        assert_eq!(state.register(3), Some(expected_value));
+        assert_eq!(state.pc(), ENTRY + 4);
+    }
+}
+
+#[test]
 fn advances_signed_unsigned_branch_variants_and_negative_offsets() {
     let cases = [
         (beq(1, 2, -4), 3, 3, ENTRY - 4),
@@ -793,7 +1185,7 @@ fn rejects_unsupported_guest_instructions_without_mutating_state() {
     ));
     assert_eq!(state, before);
 
-    let mut memory = guest_machine_memory_with_words(&[mul(3, 1, 2)]);
+    let mut memory = guest_machine_memory_with_words(&[0x0010_0073]);
     let mut state = GuestMachineState::new(memory.entry_address());
     state
         .set_register(1, 9)
@@ -803,12 +1195,7 @@ fn rejects_unsupported_guest_instructions_without_mutating_state() {
         advance_guest_machine(&mut memory, &mut state),
         Err(GuestMachineError::UnsupportedInstruction {
             address: ENTRY,
-            instruction: RiscvInstruction::Op {
-                kind: RiscvOpKind::Mul,
-                rd: 3,
-                rs1: 1,
-                rs2: 2,
-            },
+            instruction: RiscvInstruction::Ebreak,
         })
     ));
     assert_eq!(state, before);
@@ -830,6 +1217,27 @@ fn rejects_unsupported_guest_instructions_without_mutating_state() {
         })
     ));
     assert_eq!(state, before);
+
+    for word in [
+        reserved_slliw_with_imm5(3, 1),
+        reserved_srliw_with_imm5(3, 1),
+        reserved_sraiw_with_imm5(3, 1),
+    ] {
+        let mut memory = guest_machine_memory_with_words(&[word]);
+        let mut state = GuestMachineState::new(memory.entry_address());
+        state
+            .set_register(1, 9)
+            .expect("register write should be valid");
+        let before = state.clone();
+        assert!(matches!(
+            advance_guest_machine(&mut memory, &mut state),
+            Err(GuestMachineError::UnsupportedInstruction {
+                address: ENTRY,
+                instruction: RiscvInstruction::Unknown { word: actual, opcode: 0x1b },
+            }) if actual == word
+        ));
+        assert_eq!(state, before);
+    }
 
     let mut memory = guest_machine_memory_with_bytes(&0x0001_u16.to_le_bytes());
     let mut state = GuestMachineState::new(memory.entry_address());
