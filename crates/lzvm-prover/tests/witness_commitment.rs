@@ -93,6 +93,29 @@ fn decode_words(bytes: &[u8]) -> Vec<u64> {
         .collect()
 }
 
+#[cfg(feature = "cuda")]
+fn expected_extended_row_major_values(
+    values: &[u64],
+    row_count: usize,
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+) -> Vec<Felt> {
+    let extended_columns = (0..column_count)
+        .map(|column| {
+            let source = (0..row_count)
+                .map(|row| Felt::from_u64(values[row * column_count + column]))
+                .collect::<Vec<_>>();
+            coset_extend_evaluations(&source, source_bits, target_bits)
+                .expect("column should extend")
+        })
+        .collect::<Vec<_>>();
+    let extended_rows = extended_columns.first().map_or(0, Vec::len);
+    (0..extended_rows)
+        .flat_map(|row| extended_columns.iter().map(move |column| column[row]))
+        .collect()
+}
+
 fn encode_digest_words(out: &mut Vec<u64>, digest: [Felt; 4]) {
     out.extend(digest.into_iter().map(|value| value.to_u64()));
 }
@@ -386,6 +409,34 @@ fn opens_and_verifies_witness_stage_commitments() {
 }
 
 #[test]
+fn opens_wide_arity2_witness_stage_commitments() {
+    let unit = sample_unit(2, vec![6]);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let trace = parse_witness_trace(&encode_values(&(1_u64..=12).collect::<Vec<_>>()), 2, 6)
+        .expect("trace should parse");
+    let stage = layout.stage_trace(&trace, 1).expect("stage should extract");
+    let leaves =
+        extend_witness_stage_leaves(&stage, 1, 2).expect("witness stage leaves should extend");
+    let commitment = commit_witness_stage_leaves(&leaves, 2).expect("witness stage should commit");
+
+    assert_witness_opening_round_trip(&leaves, &commitment, 3);
+}
+
+#[test]
+fn opens_wide_arity4_witness_stage_commitments() {
+    let unit = sample_unit(2, vec![13]);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let trace = parse_witness_trace(&encode_values(&(1_u64..=26).collect::<Vec<_>>()), 2, 13)
+        .expect("trace should parse");
+    let stage = layout.stage_trace(&trace, 1).expect("stage should extract");
+    let leaves =
+        extend_witness_stage_leaves(&stage, 1, 2).expect("witness stage leaves should extend");
+    let commitment = commit_witness_stage_leaves(&leaves, 4).expect("witness stage should commit");
+
+    assert_witness_opening_round_trip(&leaves, &commitment, 1);
+}
+
+#[test]
 fn rejects_witness_stage_openings_outside_the_domain() {
     let unit = sample_unit(2, vec![2]);
     let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
@@ -403,6 +454,33 @@ fn rejects_witness_stage_openings_outside_the_domain() {
             row_count: 4
         })
     ));
+}
+
+fn assert_witness_opening_round_trip(
+    leaves: &lzvm_prover::witness_commitment::WitnessStageLeaves,
+    commitment: &lzvm_prover::witness_commitment::WitnessStageCommitment,
+    row_index: u64,
+) {
+    let opening = open_witness_stage_commitment(
+        commitment,
+        row_index,
+        u64::try_from(leaves.extended_row_count()).expect("row count should fit"),
+        leaves.column_count(),
+    )
+    .expect("witness stage opening should build");
+    let row = usize::try_from(row_index).expect("row index should fit");
+    let row_start = row * leaves.column_count();
+    let expected_values = decode_words(leaves.bytes())
+        [row_start..row_start + leaves.column_count()]
+        .iter()
+        .map(|value| Felt::from_canonical(*value).expect("canonical"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(opening.values(), expected_values);
+    assert!(
+        verify_witness_stage_opening_root(commitment.root(), commitment.arity(), &opening)
+            .expect("opening should verify")
+    );
 }
 
 #[test]
@@ -467,6 +545,23 @@ fn cuda_coset_extension_matches_cpu_for_witness_stage_leaves() {
     let expected = (0..4)
         .flat_map(|row| [column_0[row], column_1[row]])
         .collect::<Vec<_>>();
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_coset_extension_matches_cpu_for_wide_witness_stage_leaves() {
+    let input = (1_u64..=26).collect::<Vec<_>>();
+    let unit = sample_unit(2, vec![13]);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let trace = parse_witness_trace(&encode_values(&input), 2, 13).expect("trace should parse");
+    let stage = layout.stage_trace(&trace, 1).expect("stage should extract");
+
+    let cuda = extend_witness_stage_leaves_with_cuda(&stage, 1, 2)
+        .expect("cuda stage leaves should extend");
+    let actual = decode_witness_stage_leaf_values(&cuda).expect("leaves should decode");
+    let expected = expected_extended_row_major_values(&input, 2, 13, 1, 2);
 
     assert_eq!(actual, expected);
 }

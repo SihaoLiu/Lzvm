@@ -41,7 +41,32 @@ fn cuda_witness_leaf_extension_serializes_device_words_without_extended_felt_vec
         "fn extend_witness_stage_row_major_bytes",
         "#[cfg(not(feature = \"cuda\"))]",
     );
+    let validation_index = cuda_body
+        .find("validate_cuda_extension_domain")
+        .expect("CUDA witness leaf extension should validate domain shape");
+    let setup_index = cuda_body
+        .find("prepare_gpu_setup")
+        .expect("CUDA witness leaf extension should initialize CUDA setup");
+    let allocation_index = cuda_body
+        .find("CudaDeviceBuffer::new")
+        .expect("CUDA witness leaf extension should allocate device buffers");
 
+    assert!(
+        validation_index < setup_index,
+        "CUDA witness leaf extension should validate domain shape before CUDA setup"
+    );
+    assert!(
+        validation_index < allocation_index,
+        "CUDA witness leaf extension should validate domain shape before device allocation"
+    );
+    assert!(
+        cuda_body.contains("cuda_goldilocks_coset_extend_row_major_columns_device"),
+        "CUDA witness leaf extension should write extended rows through device buffers"
+    );
+    assert!(
+        !cuda_body.contains("cuda_goldilocks_coset_extend_row_major_columns("),
+        "CUDA witness leaf extension should avoid the host-returning extension API"
+    );
     assert!(
         !cuda_body.contains("Result<Vec<Felt>"),
         "CUDA witness leaf extension should not materialize extended Felt values"
