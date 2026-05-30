@@ -593,6 +593,16 @@ fn sample_pcs_proof_values_segment(values: Vec<[u64; 3]>) -> ProofSegment {
     }
 }
 
+fn sample_challenge_values_segment(values: [u64; 3]) -> ProofSegment {
+    ProofSegment {
+        id: CHALLENGE_VALUES_SEGMENT_ID,
+        data: encode_challenge_values_segment(&ChallengeValuesSegment {
+            values: vec![values],
+        })
+        .expect("challenge values segment should encode"),
+    }
+}
+
 fn sample_group_values_segment(values: Vec<[u64; 3]>) -> ProofSegment {
     let segment = GroupValuesSegment { values };
     ProofSegment {
@@ -1234,6 +1244,65 @@ fn write_bytes(path: &Path, value: impl AsRef<[u8]>) {
     fs::create_dir_all(path.parent().expect("path should have a parent"))
         .expect("fixture directory should be created");
     fs::write(path, value).expect("fixture file should be written");
+}
+
+fn assert_external_contribution_challenge_verifies(
+    setup_dir: &Path,
+    public_values_path: &Path,
+    proof_path: &Path,
+    challenge_values_path: &Path,
+) {
+    let mut writer_stdout = Vec::new();
+    let mut writer_stderr = Vec::new();
+    let writer_code = run_cli(
+        &[
+            "prove",
+            "write-contribution-challenges",
+            setup_dir.to_str().expect("setup path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+            challenge_values_path
+                .to_str()
+                .expect("challenge values path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+        ],
+        &mut writer_stdout,
+        &mut writer_stderr,
+    );
+    assert_eq!(
+        writer_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&writer_stderr)
+    );
+    assert!(writer_stderr.is_empty());
+
+    let mut challenge_stdout = Vec::new();
+    let mut challenge_stderr = Vec::new();
+    let challenge_code = run_cli(
+        &[
+            "verify",
+            "contribution-challenge",
+            setup_dir.to_str().expect("setup path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+            challenge_values_path
+                .to_str()
+                .expect("challenge values path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+        ],
+        &mut challenge_stdout,
+        &mut challenge_stderr,
+    );
+    assert_eq!(
+        challenge_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&challenge_stderr)
+    );
+    assert!(challenge_stderr.is_empty());
 }
 
 fn write_sample_program_image_cache(
@@ -8585,6 +8654,7 @@ fn runs_prove_witness_contributions_with_compact_artifact() {
     let proof_values_path = dir.join("proof_values.bin");
     let group_values_path = dir.join("group_values.bin");
     let public_values_path = dir.join("public_values.bin");
+    let challenge_values_path = output_dir.join("challenge_values_segment.bin");
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(&input_data, [17_u8]);
     write_field_words(&unit_values_path, &[101, 201, 202, 203]);
@@ -8655,31 +8725,12 @@ fn runs_prove_witness_contributions_with_compact_artifact() {
             && *segment_id < WITNESS_COMMITMENT_SEGMENT_BASE_ID + 16
     }));
 
-    let mut verify_stdout = Vec::new();
-    let mut verify_stderr = Vec::new();
-    let verify_code = run_cli(
-        &[
-            "verify",
-            "contribution",
-            dir.to_str().expect("setup path should be utf-8"),
-            proof_path.to_str().expect("proof path should be utf-8"),
-            public_values_path
-                .to_str()
-                .expect("public path should be utf-8"),
-        ],
-        &mut verify_stdout,
-        &mut verify_stderr,
+    assert_external_contribution_challenge_verifies(
+        &dir,
+        &public_values_path,
+        &proof_path,
+        &challenge_values_path,
     );
-    assert_eq!(
-        verify_code,
-        0,
-        "{}",
-        String::from_utf8_lossy(&verify_stderr)
-    );
-    assert!(verify_stderr.is_empty());
-    assert!(String::from_utf8(verify_stdout)
-        .expect("verify stdout should be utf-8")
-        .contains("status=ok\n"));
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
@@ -8775,41 +8826,6 @@ fn prove_witness_contribution_challenges_preserve_bound_program_image_and_eth_bl
     assert!(segment_ids.contains(&PROGRAM_IMAGE_CACHE_SEGMENT_ID));
     assert!(segment_ids.contains(&ETH_BLOCK_INPUT_SEGMENT_ID));
 
-    let mut verify_stdout = Vec::new();
-    let mut verify_stderr = Vec::new();
-    let verify_code = run_cli(
-        &[
-            "verify",
-            "contribution",
-            dir.to_str().expect("setup path should be utf-8"),
-            proof_path.to_str().expect("proof path should be utf-8"),
-            public_values_path
-                .to_str()
-                .expect("public path should be utf-8"),
-        ],
-        &mut verify_stdout,
-        &mut verify_stderr,
-    );
-    assert_eq!(
-        verify_code,
-        0,
-        "{}",
-        String::from_utf8_lossy(&verify_stderr)
-    );
-    assert!(verify_stderr.is_empty());
-    let verify_stdout = String::from_utf8(verify_stdout).expect("verify stdout should be utf-8");
-    assert!(verify_stdout.contains("program_image_caches=1\n"));
-    assert!(verify_stdout.contains(&format!(
-        "program_image_cache_segment_hash={}\n",
-        format_hash(&cache_segment_hash)
-    )));
-    assert!(verify_stdout.contains("eth_block_inputs=1\n"));
-    assert!(verify_stdout.contains(&format!(
-        "eth_block_input_hash={}\n",
-        format_hash(&block_input_hash)
-    )));
-    assert!(verify_stdout.contains("eth_extra_header_fields=1\neth_extra_body_fields=1\n"));
-
     let mut writer_stdout = Vec::new();
     let mut writer_stderr = Vec::new();
     let writer_code = run_cli(
@@ -8837,7 +8853,15 @@ fn prove_witness_contribution_challenges_preserve_bound_program_image_and_eth_bl
     assert!(writer_stderr.is_empty());
     let writer_stdout = String::from_utf8(writer_stdout).expect("writer stdout should be utf-8");
     assert!(writer_stdout.contains("program_image_caches=1\n"));
+    assert!(writer_stdout.contains(&format!(
+        "program_image_cache_segment_hash={}\n",
+        format_hash(&cache_segment_hash)
+    )));
     assert!(writer_stdout.contains("eth_block_inputs=1\n"));
+    assert!(writer_stdout.contains(&format!(
+        "eth_block_input_hash={}\n",
+        format_hash(&block_input_hash)
+    )));
     assert!(writer_stdout.contains("challenge_values=1\n"));
 
     let mut challenge_stdout = Vec::new();
@@ -8870,7 +8894,15 @@ fn prove_witness_contribution_challenges_preserve_bound_program_image_and_eth_bl
     let challenge_stdout =
         String::from_utf8(challenge_stdout).expect("challenge stdout should be utf-8");
     assert!(challenge_stdout.contains("program_image_caches=1\n"));
+    assert!(challenge_stdout.contains(&format!(
+        "program_image_cache_segment_hash={}\n",
+        format_hash(&cache_segment_hash)
+    )));
     assert!(challenge_stdout.contains("eth_block_inputs=1\n"));
+    assert!(challenge_stdout.contains(&format!(
+        "eth_block_input_hash={}\n",
+        format_hash(&block_input_hash)
+    )));
     assert!(challenge_stdout.contains("challenge_values=1\n"));
 }
 
@@ -8898,6 +8930,7 @@ fn run_prove_witness_with_aggregate_modifiers(
     let proof_values_path = dir.join("proof_values.bin");
     let group_values_path = dir.join("group_values.bin");
     let public_values_path = dir.join("public_values.bin");
+    let challenge_values_path = output_dir.join("challenge_values_segment.bin");
     let public_values = sample_public_values(setup_hash);
     write_bytes(&guest_image, sample_guest_image());
     write_bytes(&input_data, [17_u8]);
@@ -8960,28 +8993,12 @@ fn run_prove_witness_with_aggregate_modifiers(
                     && *segment_id < WITNESS_COMMITMENT_SEGMENT_BASE_ID + 16
             }));
 
-            let mut verify_stdout = Vec::new();
-            let mut verify_stderr = Vec::new();
-            let verify_code = run_cli(
-                &[
-                    "verify",
-                    "contribution",
-                    dir.to_str().expect("setup path should be utf-8"),
-                    proof_path.to_str().expect("proof path should be utf-8"),
-                    public_values_path
-                        .to_str()
-                        .expect("public values path should be utf-8"),
-                ],
-                &mut verify_stdout,
-                &mut verify_stderr,
+            assert_external_contribution_challenge_verifies(
+                &dir,
+                &public_values_path,
+                &proof_path,
+                &challenge_values_path,
             );
-            assert_eq!(
-                verify_code,
-                0,
-                "{}",
-                String::from_utf8_lossy(&verify_stderr)
-            );
-            assert!(verify_stderr.is_empty());
         } else {
             let witness_ids = proof
                 .segments
@@ -12860,13 +12877,7 @@ fn verifies_contribution_challenge_from_proof_artifact() {
         public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
         segments: vec![
             contribution_segment,
-            ProofSegment {
-                id: CHALLENGE_VALUES_SEGMENT_ID,
-                data: encode_challenge_values_segment(&ChallengeValuesSegment {
-                    values: vec![expected_challenge.to_u64s()],
-                })
-                .expect("challenge values segment should encode"),
-            },
+            sample_challenge_values_segment(expected_challenge.to_u64s()),
         ],
     };
     let proof_path = dir.join("proof.bin");
@@ -12914,6 +12925,65 @@ fn verifies_contribution_challenge_from_proof_artifact() {
 }
 
 #[test]
+fn rejects_verify_contribution_without_embedded_challenge_values() {
+    let dir = temp_dir("verify-contribution-missing-challenge");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should parse");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = sample_public_values(setup_hash);
+
+    let entries = sample_contribution_entries(
+        catalog
+            .layout
+            .global_info
+            .lattice_size
+            .expect("lattice size should exist") as usize,
+    );
+    let proof = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![build_contribution_segment(&entries)
+            .expect("contribution segment should build")
+            .expect("contribution segment should exist")],
+    };
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "contribution",
+            dir.to_str().expect("setup path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify contribution failed: missing contribution challenge values\n"
+    );
+}
+
+#[test]
 fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
     let dir = temp_dir("verify-contribution-bound-inputs");
     let _ = fs::remove_dir_all(&dir);
@@ -12947,7 +13017,7 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
     let block_segment_data =
         encode_eth_block_input_segment(&block_input).expect("block segment should encode");
     let block_segment_hash = eth_block_input_bytes_digest(&block_segment_data);
-    let proof = ProofArtifact {
+    let mut proof = ProofArtifact {
         setup_hash,
         public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
         segments: vec![
@@ -12973,6 +13043,9 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
         &proof.segments,
     )
     .expect("challenge should derive");
+    proof.segments.push(sample_challenge_values_segment(
+        expected_challenge.to_u64s(),
+    ));
     let proof_path = dir.join("proof.bin");
     let public_values_path = dir.join("public_values.bin");
     let challenge_values_path = dir.join("challenge_values.bin");
@@ -13173,13 +13246,7 @@ fn rejects_verify_contribution_with_mismatched_embedded_challenge() {
         public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
         segments: vec![
             contribution_segment,
-            ProofSegment {
-                id: CHALLENGE_VALUES_SEGMENT_ID,
-                data: encode_challenge_values_segment(&ChallengeValuesSegment {
-                    values: vec![[1, 2, 3]],
-                })
-                .expect("challenge values segment should encode"),
-            },
+            sample_challenge_values_segment([1, 2, 3]),
         ],
     };
     let proof_path = dir.join("proof.bin");
@@ -13305,21 +13372,11 @@ fn verifies_contribution_reports_packed_proof_value_fields() {
         .expect("contribution segment should build")
         .expect("contribution segment should exist");
     let proof_values_segment = sample_pcs_proof_values_segment(vec![[51, 52, 53]]);
-    let proof = ProofArtifact {
+    let mut proof = ProofArtifact {
         setup_hash,
         public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
         segments: vec![contribution_segment, proof_values_segment],
     };
-    let proof_path = dir.join("proof.bin");
-    let public_values_path = dir.join("public_values.bin");
-    write_bytes(
-        &proof_path,
-        encode_proof_artifact(&proof).expect("proof should encode"),
-    );
-    write_bytes(
-        &public_values_path,
-        encode_public_values(&public_values).expect("public values should encode"),
-    );
 
     let public_fields =
         public_values_as_fields(&public_values).expect("public values should flatten");
@@ -13330,6 +13387,19 @@ fn verifies_contribution_reports_packed_proof_value_fields() {
         &proof.segments,
     )
     .expect("challenge should derive");
+    proof.segments.push(sample_challenge_values_segment(
+        expected_challenge.to_u64s(),
+    ));
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();

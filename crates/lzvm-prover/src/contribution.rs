@@ -162,6 +162,7 @@ pub enum ContributionChallengeFileError {
     BindingSegmentMismatch { proof_index: usize, id: u32 },
     ChallengeValues(ChallengeValuesSegmentError),
     DuplicateChallengeValuesSegment,
+    MissingChallengeValuesSegment,
     ContributionChallengeValuesMismatch,
     Contribution(ContributionChallengeError),
 }
@@ -346,6 +347,9 @@ impl fmt::Display for ContributionChallengeFileError {
             Self::DuplicateChallengeValuesSegment => {
                 write!(f, "duplicate challenge values segment")
             }
+            Self::MissingChallengeValuesSegment => {
+                write!(f, "missing contribution challenge values")
+            }
             Self::ContributionChallengeValuesMismatch => {
                 write!(f, "contribution challenge values mismatch")
             }
@@ -372,6 +376,7 @@ impl std::error::Error for ContributionChallengeFileError {
             | Self::ProofValueMismatch { .. }
             | Self::BindingSegmentMismatch { .. }
             | Self::DuplicateChallengeValuesSegment
+            | Self::MissingChallengeValuesSegment
             | Self::ContributionChallengeValuesMismatch => None,
         }
     }
@@ -714,7 +719,7 @@ pub fn derive_global_challenge_from_files(
         &bound_segments,
         &entries,
     )?;
-    validate_optional_contribution_challenge_values(&proof.segments, challenge)?;
+    validate_required_contribution_challenge_values(&proof.segments, challenge)?;
     let eth_block_inputs = contribution_eth_block_input_reports(&public_report);
 
     Ok(ContributionChallengeReport {
@@ -916,13 +921,12 @@ fn load_optional_contribution_challenge_values(
     Ok(Some(*value))
 }
 
-fn validate_optional_contribution_challenge_values(
+fn validate_required_contribution_challenge_values(
     segments: &[ProofSegment],
     expected: Ext3,
 ) -> Result<(), ContributionChallengeFileError> {
-    let Some(values) = load_optional_contribution_challenge_values(segments)? else {
-        return Ok(());
-    };
+    let values = load_optional_contribution_challenge_values(segments)?
+        .ok_or(ContributionChallengeFileError::MissingChallengeValuesSegment)?;
     if values != expected.to_u64s() {
         return Err(ContributionChallengeFileError::ContributionChallengeValuesMismatch);
     }
