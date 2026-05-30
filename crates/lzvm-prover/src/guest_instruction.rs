@@ -309,6 +309,22 @@ pub enum RiscvCsr {
     Mhartid,
 }
 
+impl RiscvCsr {
+    fn from_number(number: u16) -> Option<Self> {
+        match number {
+            0x0c00 => Some(Self::Cycle),
+            0x0c01 => Some(Self::Time),
+            0x0c02 => Some(Self::Instret),
+            0x0301 => Some(Self::Misa),
+            0x0f11 => Some(Self::Mvendorid),
+            0x0f12 => Some(Self::Marchid),
+            0x0f13 => Some(Self::Mimpid),
+            0x0f14 => Some(Self::Mhartid),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RiscvFenceKind {
@@ -1061,17 +1077,7 @@ fn decode_system(word: u32) -> RiscvInstruction {
     if word == 0x0010_0073 {
         return RiscvInstruction::Ebreak;
     }
-    let Some(csr) = (match ((word >> 20) & 0x0fff) as u16 {
-        0x0c00 => Some(RiscvCsr::Cycle),
-        0x0c01 => Some(RiscvCsr::Time),
-        0x0c02 => Some(RiscvCsr::Instret),
-        0x0301 => Some(RiscvCsr::Misa),
-        0x0f11 => Some(RiscvCsr::Mvendorid),
-        0x0f12 => Some(RiscvCsr::Marchid),
-        0x0f13 => Some(RiscvCsr::Mimpid),
-        0x0f14 => Some(RiscvCsr::Mhartid),
-        _ => None,
-    }) else {
+    let Some(csr) = RiscvCsr::from_number(((word >> 20) & 0x0fff) as u16) else {
         return unknown(word);
     };
     match funct3(word) {

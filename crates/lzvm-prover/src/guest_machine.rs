@@ -581,7 +581,7 @@ fn execute_guest_instruction(
             state.clear_reservation();
         }
         RiscvInstruction::CsrRead { csr, rd } => {
-            state.write_decoded_register(rd, read_csr(csr, state));
+            state.write_decoded_register(rd, read_csr(csr, state.retired_instructions()));
         }
         RiscvInstruction::Fence { .. } => {}
         RiscvInstruction::CompressedUnknown { .. }
@@ -793,9 +793,9 @@ fn branch_is_taken(kind: RiscvBranchKind, lhs: u64, rhs: u64) -> bool {
     }
 }
 
-fn read_csr(csr: RiscvCsr, state: &GuestMachineState) -> u64 {
+fn read_csr(csr: RiscvCsr, retired_instructions: u64) -> u64 {
     match csr {
-        RiscvCsr::Cycle | RiscvCsr::Time | RiscvCsr::Instret => state.retired_instructions(),
+        RiscvCsr::Cycle | RiscvCsr::Time | RiscvCsr::Instret => retired_instructions,
         RiscvCsr::Misa => RV64IMAC_MISA,
         RiscvCsr::Mvendorid | RiscvCsr::Marchid | RiscvCsr::Mimpid | RiscvCsr::Mhartid => 0,
     }
