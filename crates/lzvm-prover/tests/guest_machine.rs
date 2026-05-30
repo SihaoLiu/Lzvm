@@ -1,7 +1,7 @@
 use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_prover::guest_instruction::{
-    RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvFenceKind, RiscvInstruction, RiscvLoadKind,
-    RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvCsr, RiscvFenceKind, RiscvInstruction,
+    RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use lzvm_prover::guest_machine::{
     advance_guest_machine, GuestMachineError, GuestMachineMemory, GuestMachineState,
@@ -451,6 +451,13 @@ fn remw(rd: u8, rs1: u8, rs2: u8) -> u32 {
 
 fn remuw(rd: u8, rs1: u8, rs2: u8) -> u32 {
     encode_r_with_opcode(0x01, rs2, rs1, 7, rd, 0x3b)
+}
+
+fn csrrs(rd: u8, csr: u16, rs1: u8) -> u32 {
+    assert!(csr < 4096);
+    assert_register(rs1);
+    assert_register(rd);
+    (u32::from(csr) << 20) | (u32::from(rs1) << 15) | (2 << 12) | (u32::from(rd) << 7) | 0x73
 }
 
 fn amoadd_w(rd: u8, rs1: u8, rs2: u8) -> u32 {
@@ -1625,6 +1632,27 @@ fn advances_fence_instructions_as_noops() {
         assert_eq!(state.register(1), Some(0xfeed_face_cafe_beef));
         assert_eq!(memory, before_memory);
     }
+}
+
+#[test]
+fn advances_supported_csr_reads() {
+    let mut memory = guest_machine_memory_with_words(&[csrrs(10, 0x0f14, 0)]);
+    let mut state = GuestMachineState::new(memory.entry_address());
+    state
+        .set_register(10, u64::MAX)
+        .expect("register write should be valid");
+
+    let report = advance_guest_machine(&mut memory, &mut state).expect("csr read should execute");
+
+    assert_eq!(
+        report.instruction,
+        RiscvInstruction::CsrRead {
+            csr: RiscvCsr::Mhartid,
+            rd: 10,
+        }
+    );
+    assert_eq!(state.register(10), Some(0));
+    assert_eq!(state.pc(), ENTRY + 4);
 }
 
 #[test]

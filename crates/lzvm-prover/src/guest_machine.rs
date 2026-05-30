@@ -3,8 +3,8 @@ use std::fmt;
 
 use crate::guest_instruction::{
     decode_guest_instruction, fetch_guest_instruction, GuestInstructionError, RiscvAmoKind,
-    RiscvAmoWidth, RiscvBranchKind, RiscvEncodedInstruction, RiscvInstruction, RiscvLoadKind,
-    RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    RiscvAmoWidth, RiscvBranchKind, RiscvCsr, RiscvEncodedInstruction, RiscvInstruction,
+    RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use crate::guest_memory::{
     GuestMemoryError, GuestMemoryImage, GuestMemoryReader, GuestMemorySegment,
@@ -568,6 +568,9 @@ fn execute_guest_instruction(
             }
             state.clear_reservation();
         }
+        RiscvInstruction::CsrRead { csr, rd } => {
+            state.write_decoded_register(rd, read_csr(csr));
+        }
         RiscvInstruction::Fence { .. } => {}
         RiscvInstruction::CompressedUnknown { .. }
         | RiscvInstruction::IllegalCompressed { .. }
@@ -756,6 +759,12 @@ fn branch_is_taken(kind: RiscvBranchKind, lhs: u64, rhs: u64) -> bool {
         RiscvBranchKind::Bge => (lhs as i64) >= (rhs as i64),
         RiscvBranchKind::Bltu => lhs < rhs,
         RiscvBranchKind::Bgeu => lhs >= rhs,
+    }
+}
+
+fn read_csr(csr: RiscvCsr) -> u64 {
+    match csr {
+        RiscvCsr::Mhartid => 0,
     }
 }
 

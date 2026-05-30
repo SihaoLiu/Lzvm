@@ -2,8 +2,8 @@ use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_prover::guest_instruction::{
     decode_guest_instruction, decode_riscv_instruction, fetch_guest_instruction,
     FetchedGuestInstruction, GuestInstructionError, RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind,
-    RiscvEncodedInstruction, RiscvFenceKind, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind,
-    RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    RiscvCsr, RiscvEncodedInstruction, RiscvFenceKind, RiscvInstruction, RiscvLoadKind,
+    RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use lzvm_prover::guest_memory::load_guest_memory_image;
 
@@ -349,6 +349,13 @@ fn decodes_common_riscv_instruction_formats() {
     assert_eq!(
         decode_riscv_instruction(0x0010_0073),
         RiscvInstruction::Ebreak
+    );
+    assert_eq!(
+        decode_riscv_instruction(0xf140_2573),
+        RiscvInstruction::CsrRead {
+            csr: RiscvCsr::Mhartid,
+            rd: 10,
+        }
     );
 }
 
@@ -1552,6 +1559,12 @@ fn keeps_unknown_riscv_words_visible() {
             opcode: 0x0f,
         }
     );
+    for word in [0xf141_2573, 0xc000_2573, 0xf140_1573, 0xf140_6073] {
+        assert_eq!(
+            decode_riscv_instruction(word),
+            RiscvInstruction::Unknown { word, opcode: 0x73 }
+        );
+    }
     for word in [
         encode_atomic(0x02, false, false, 1, 12, 2, 10),
         encode_atomic(0x05, false, false, 11, 12, 2, 10),

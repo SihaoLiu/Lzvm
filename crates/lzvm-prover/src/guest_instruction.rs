@@ -164,6 +164,10 @@ pub enum RiscvInstruction {
         acquire: bool,
         release: bool,
     },
+    CsrRead {
+        csr: RiscvCsr,
+        rd: u8,
+    },
     Fence {
         kind: RiscvFenceKind,
         mode: u8,
@@ -294,6 +298,12 @@ pub enum RiscvAmoWidth {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
+pub enum RiscvCsr {
+    Mhartid,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RiscvFenceKind {
     Fence,
     FenceTso,
@@ -364,8 +374,7 @@ pub fn decode_riscv_instruction(word: u32) -> RiscvInstruction {
             rd: rd(word),
             offset: j_immediate(word),
         },
-        0x73 if word == 0x0000_0073 => RiscvInstruction::Ecall,
-        0x73 if word == 0x0010_0073 => RiscvInstruction::Ebreak,
+        0x73 => decode_system(word),
         _ => RiscvInstruction::Unknown { word, opcode },
     }
 }
@@ -1035,6 +1044,25 @@ fn decode_amo(word: u32) -> RiscvInstruction {
         rs2: rs2(word),
         acquire,
         release,
+    }
+}
+
+fn decode_system(word: u32) -> RiscvInstruction {
+    if word == 0x0000_0073 {
+        return RiscvInstruction::Ecall;
+    }
+    if word == 0x0010_0073 {
+        return RiscvInstruction::Ebreak;
+    }
+    let Some(csr) = (match ((word >> 20) & 0x0fff) as u16 {
+        0x0f14 => Some(RiscvCsr::Mhartid),
+        _ => None,
+    }) else {
+        return unknown(word);
+    };
+    match funct3(word) {
+        2 if rs1(word) == 0 => RiscvInstruction::CsrRead { csr, rd: rd(word) },
+        _ => unknown(word),
     }
 }
 
