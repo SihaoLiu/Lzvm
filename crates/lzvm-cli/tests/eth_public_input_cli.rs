@@ -3,13 +3,15 @@ use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::eth_block::parse_eth_block_rlp;
 use lzvm_artifacts::eth_block_input::{
-    build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
-    parse_eth_block_input,
+    build_eth_block_input, build_eth_block_input_with_receipts, encode_eth_block_input,
+    eth_block_input_bytes_digest, parse_eth_block_input,
 };
 use lzvm_artifacts::eth_public_input::{
     eth_public_header_hash, parse_eth_public_block_prefix, parse_eth_public_header_prefix,
     parse_eth_public_transactions_prefix,
 };
+use lzvm_artifacts::eth_trie::receipt_trie_build;
+use lzvm_artifacts::rlp::parse_rlp;
 use lzvm_cli::run_cli;
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -252,12 +254,12 @@ fn writes_public_block_input() {
         &mut stdout,
         &mut stderr,
     );
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
     let written = fs::read(&output_path).expect("block input should be written");
     let parsed = parse_eth_block_input(&written).expect("block input should parse");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
-    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
-    assert!(stderr.is_empty());
     assert_eq!(written, expected_encoded);
     assert_eq!(parsed.block_rlp, expected_block_rlp);
     assert_eq!(parsed.transactions.hash_preimages.len(), 1);
@@ -277,6 +279,91 @@ fn writes_public_block_input() {
             expected_encoded.len(),
             to_hex(&expected_hash),
             to_hex(&expected_input.block_hash)
+        )
+    );
+}
+
+#[test]
+fn writes_public_block_input_with_rpc_json_receipts() {
+    let dir = temp_dir("write-block-input-rpc-receipts");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("public.bin");
+    let receipts_path = dir.join("receipts.json");
+    let output_path = dir.join("block.input");
+    let receipt_item = legacy_receipt_item();
+    let receipt = parse_rlp(&receipt_item).expect("receipt should parse");
+    let receipt_root = receipt_trie_build(&[receipt]).root;
+    let input = sample_public_block_bytes_with_matching_roots_and_receipts(receipt_root, [0; 256]);
+    let receipts_rlp = rlp_list(&[receipt_item]);
+    write_bytes(&input_path, &input);
+    write_bytes(
+        &receipts_path,
+        format!(
+            r#"{{
+  "result": [
+    {{
+      "status": "0x1",
+      "cumulativeGasUsed": "0x5a",
+      "logsBloom": "0x{}",
+      "logs": []
+    }}
+  ]
+}}"#,
+            "00".repeat(256),
+        ),
+    );
+    let parsed_public = parse_eth_public_block_prefix(&input).expect("block should parse");
+    let expected_block_rlp = parsed_public.block_rlp();
+    let expected_input = build_eth_block_input_with_receipts(&expected_block_rlp, &receipts_rlp)
+        .expect("block input should build");
+    let expected_encoded =
+        encode_eth_block_input(&expected_input).expect("block input should encode");
+    let expected_hash = eth_block_input_bytes_digest(&expected_encoded);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-public-block-input",
+            "--receipts-rpc-json",
+            receipts_path
+                .to_str()
+                .expect("receipts path should be utf-8"),
+            input_path.to_str().expect("input path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let written = fs::read(&output_path).expect("block input should be written");
+    let parsed = parse_eth_block_input(&written).expect("block input should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(written, expected_encoded);
+    assert_eq!(
+        parsed.receipts_rlp.as_deref(),
+        Some(receipts_rlp.as_slice())
+    );
+    assert_eq!(
+        parsed
+            .receipts
+            .as_ref()
+            .map(|receipts| receipts.hash_preimages.len()),
+        Some(1)
+    );
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npublic_input={}\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\ntransaction_count=1\nreceipts=present\nreceipts_rlp_bytes={}\nreceipt_trie_preimages=1\nreceipt_count=1\nlegacy_receipts=1\ntyped_receipts=0\nwithdrawal_count=1\n",
+            input_path.display(),
+            output_path.display(),
+            expected_encoded.len(),
+            to_hex(&expected_hash),
+            to_hex(&expected_input.block_hash),
+            receipts_rlp.len(),
         )
     );
 }
@@ -353,6 +440,13 @@ fn refuses_public_block_input_with_root_mismatch() {
 }
 
 fn sample_public_block_bytes_with_matching_roots() -> Vec<u8> {
+    sample_public_block_bytes_with_matching_roots_and_receipts([6; 32], [8; 256])
+}
+
+fn sample_public_block_bytes_with_matching_roots_and_receipts(
+    receipts_root: [u8; 32],
+    logs_bloom: [u8; 256],
+) -> Vec<u8> {
     let mut input = sample_public_header_bytes();
     input.extend_from_slice(&1_u64.to_le_bytes());
     input.extend_from_slice(&eip1559_transaction_bytes());
@@ -369,7 +463,9 @@ fn sample_public_block_bytes_with_matching_roots() -> Vec<u8> {
         .expect("withdrawals root should be present");
     input[48..80].copy_from_slice(&ommers_hash);
     input[156..188].copy_from_slice(&transaction_root);
+    input[196..228].copy_from_slice(&receipts_root);
     input[237..269].copy_from_slice(&withdrawal_root);
+    input[277..533].copy_from_slice(&logs_bloom);
     input
 }
 
@@ -455,6 +551,50 @@ fn withdrawal_bytes() -> Vec<u8> {
     push_bytes(&mut bytes, &[6; 20]);
     push_uint_u64(&mut bytes, 9);
     bytes
+}
+
+fn legacy_receipt_item() -> Vec<u8> {
+    rlp_list(&[
+        rlp_bytes(&[1]),
+        rlp_bytes(&[0x5a]),
+        rlp_bytes(&[0; 256]),
+        rlp_list(&[]),
+    ])
+}
+
+fn rlp_list(items: &[Vec<u8>]) -> Vec<u8> {
+    let payload_len: usize = items.iter().map(Vec::len).sum();
+    let mut out = Vec::new();
+    push_rlp_header(&mut out, 0xc0, payload_len);
+    for item in items {
+        out.extend_from_slice(item);
+    }
+    out
+}
+
+fn rlp_bytes(payload: &[u8]) -> Vec<u8> {
+    if payload.len() == 1 && payload[0] <= 0x7f {
+        return vec![payload[0]];
+    }
+    let mut out = Vec::new();
+    push_rlp_header(&mut out, 0x80, payload.len());
+    out.extend_from_slice(payload);
+    out
+}
+
+fn push_rlp_header(out: &mut Vec<u8>, offset: u8, len: usize) {
+    if len <= 55 {
+        out.push(offset + len as u8);
+        return;
+    }
+    let bytes = len.to_be_bytes();
+    let first = bytes
+        .iter()
+        .position(|byte| *byte != 0)
+        .unwrap_or(bytes.len() - 1);
+    let len_bytes = &bytes[first..];
+    out.push(offset + 55 + len_bytes.len() as u8);
+    out.extend_from_slice(len_bytes);
 }
 
 fn push_u256(out: &mut Vec<u8>, value: u8) {

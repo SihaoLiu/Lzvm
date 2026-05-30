@@ -2,13 +2,16 @@ use std::io::Write;
 use std::path::Path;
 
 use lzvm_artifacts::eth_block_input::{
-    build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
+    build_eth_block_input, build_eth_block_input_with_receipts, encode_eth_block_input,
+    eth_block_input_bytes_digest, eth_block_input_receipt_kind_counts,
 };
 use lzvm_artifacts::eth_public_input::{
     eth_public_header_hash, parse_eth_public_block, parse_eth_public_block_prefix,
     parse_eth_public_header_prefix, parse_eth_public_transactions_prefix, EthPublicBlockPrefix,
     EthPublicHeader, EthPublicTransactionsPrefix,
 };
+
+use crate::eth_rpc_block::receipts_rlp_from_rpc_json;
 
 pub(crate) fn run_summary(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
@@ -34,7 +37,12 @@ pub(crate) fn run_write_block_input(
     stderr: &mut dyn Write,
 ) -> i32 {
     match args {
-        [input_path, output_path] => write_block_input(input_path, output_path, stdout, stderr),
+        [input_path, output_path] => {
+            write_block_input(input_path, None, output_path, stdout, stderr)
+        }
+        ["--receipts-rpc-json", receipts_path, input_path, output_path] => {
+            write_block_input(input_path, Some(receipts_path), output_path, stdout, stderr)
+        }
         _ => write_block_input_usage(stderr),
     }
 }
@@ -87,6 +95,7 @@ fn summarize_public_input(input_path: &str, stdout: &mut dyn Write, stderr: &mut
 
 fn write_block_input(
     input_path: &str,
+    receipts_path: Option<&str>,
     output_path: &str,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
@@ -111,7 +120,20 @@ fn write_block_input(
     let transaction_count = block.transactions.len();
     let withdrawal_count = block.withdrawals.as_ref().map(Vec::len);
     let block_rlp = block.block_rlp();
-    let input = match build_eth_block_input(&block_rlp) {
+    let receipts_rlp = match receipts_path {
+        Some(path) => match read_rpc_receipts(path) {
+            Ok(receipts) => Some(receipts),
+            Err(message) => {
+                let _ = writeln!(stderr, "eth public block input failed: {message}");
+                return 1;
+            }
+        },
+        None => None,
+    };
+    let input = match receipts_rlp.as_deref().map_or_else(
+        || build_eth_block_input(&block_rlp),
+        |receipts| build_eth_block_input_with_receipts(&block_rlp, receipts),
+    ) {
         Ok(input) => input,
         Err(error) => {
             let _ = writeln!(stderr, "eth public block input failed: {error}");
@@ -156,6 +178,30 @@ fn write_block_input(
     let _ = writeln!(stdout, "block_input_hash={}", format_hash(&digest));
     let _ = writeln!(stdout, "block_hash={}", format_hash(&input.block_hash));
     let _ = writeln!(stdout, "transaction_count={transaction_count}");
+    if let (Some(receipts), Some(receipts_rlp)) = (&input.receipts, &input.receipts_rlp) {
+        let receipt_kind_counts = match eth_block_input_receipt_kind_counts(&input) {
+            Ok(Some(counts)) => counts,
+            Ok(None) => (0, 0),
+            Err(error) => {
+                let _ = writeln!(stderr, "eth public block input failed: {error}");
+                return 1;
+            }
+        };
+        let _ = writeln!(stdout, "receipts=present");
+        let _ = writeln!(stdout, "receipts_rlp_bytes={}", receipts_rlp.len());
+        let _ = writeln!(
+            stdout,
+            "receipt_trie_preimages={}",
+            receipts.hash_preimages.len()
+        );
+        let _ = writeln!(
+            stdout,
+            "receipt_count={}",
+            receipt_kind_counts.0 + receipt_kind_counts.1
+        );
+        let _ = writeln!(stdout, "legacy_receipts={}", receipt_kind_counts.0);
+        let _ = writeln!(stdout, "typed_receipts={}", receipt_kind_counts.1);
+    }
     let _ = writeln!(
         stdout,
         "withdrawal_count={}",
@@ -219,6 +265,12 @@ fn write_block_rlp(
     let _ = writeln!(stdout, "bytes={}", block_rlp.len());
     let _ = writeln!(stdout, "output={}", output.display());
     0
+}
+
+fn read_rpc_receipts(path: &str) -> Result<Vec<u8>, String> {
+    let bytes =
+        std::fs::read(path).map_err(|error| format!("read receipts failed: {path}: {error}"))?;
+    receipts_rlp_from_rpc_json(&bytes).map_err(|error| error.to_string())
 }
 
 fn validate_public_block_roots(block: &EthPublicBlockPrefix) -> Result<(), &'static str> {
@@ -358,7 +410,7 @@ fn write_block_rlp_usage(stderr: &mut dyn Write) -> i32 {
 fn write_block_input_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm eth write-public-block-input <input> <out>"
+        "usage: lzvm eth write-public-block-input [--receipts-rpc-json <receipts-json>] <input> <out>"
     );
     2
 }
