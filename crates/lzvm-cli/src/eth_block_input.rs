@@ -9,7 +9,9 @@ use lzvm_artifacts::eth_block_input::{
     eth_block_input_withdrawal_count, parse_eth_block_input, EthBlockInput,
 };
 
-use crate::eth_rpc_block::block_rlp_from_rpc_json;
+use crate::eth_rpc_block::{
+    block_rlp_from_rpc_json, receipts_rlp_from_rpc_json, RpcBlockJsonError,
+};
 
 pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match args {
@@ -18,6 +20,7 @@ pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write)
             None,
             output_path,
             BlockInputMode::Rlp,
+            ReceiptInputMode::Rlp,
             stdout,
             stderr,
         ),
@@ -26,6 +29,7 @@ pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write)
             None,
             output_path,
             BlockInputMode::Hex,
+            ReceiptInputMode::Rlp,
             stdout,
             stderr,
         ),
@@ -34,6 +38,7 @@ pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write)
             None,
             output_path,
             BlockInputMode::RpcJson,
+            ReceiptInputMode::Rlp,
             stdout,
             stderr,
         ),
@@ -42,14 +47,47 @@ pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write)
             Some(receipts_path),
             output_path,
             BlockInputMode::RpcJson,
+            ReceiptInputMode::Rlp,
             stdout,
             stderr,
         ),
+        ["--rpc-json", "--receipts-rpc-json", receipts_path, block_path, output_path] => {
+            write_block_input(
+                block_path,
+                Some(receipts_path),
+                output_path,
+                BlockInputMode::RpcJson,
+                ReceiptInputMode::RpcJson,
+                stdout,
+                stderr,
+            )
+        }
+        ["--receipts-rpc-json", receipts_path, block_path, output_path] => write_block_input(
+            block_path,
+            Some(receipts_path),
+            output_path,
+            BlockInputMode::Rlp,
+            ReceiptInputMode::RpcJson,
+            stdout,
+            stderr,
+        ),
+        ["--hex", "--receipts-rpc-json", receipts_path, block_path, output_path] => {
+            write_block_input(
+                block_path,
+                Some(receipts_path),
+                output_path,
+                BlockInputMode::Hex,
+                ReceiptInputMode::RpcJson,
+                stdout,
+                stderr,
+            )
+        }
         ["--receipts", receipts_path, block_path, output_path] => write_block_input(
             block_path,
             Some(receipts_path),
             output_path,
             BlockInputMode::Rlp,
+            ReceiptInputMode::Rlp,
             stdout,
             stderr,
         ),
@@ -58,6 +96,7 @@ pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write)
             Some(receipts_path),
             output_path,
             BlockInputMode::Hex,
+            ReceiptInputMode::Hex,
             stdout,
             stderr,
         ),
@@ -72,10 +111,11 @@ enum BlockInputMode {
     RpcJson,
 }
 
-impl BlockInputMode {
-    fn receipts_are_hex(self) -> bool {
-        matches!(self, Self::Hex)
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReceiptInputMode {
+    Rlp,
+    Hex,
+    RpcJson,
 }
 
 pub(crate) fn run_summary(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -90,6 +130,7 @@ fn write_block_input(
     receipts_path: Option<&str>,
     output_path: &str,
     input_mode: BlockInputMode,
+    receipt_input_mode: ReceiptInputMode,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
@@ -123,7 +164,7 @@ fn write_block_input(
     };
 
     let receipts_rlp = match receipts_path {
-        Some(path) => match read_input_bytes(path, input_mode.receipts_are_hex()) {
+        Some(path) => match read_receipts_bytes(path, receipt_input_mode) {
             Ok(bytes) => Some(bytes),
             Err(InputReadError::Read(error)) => {
                 let _ = writeln!(
@@ -133,6 +174,10 @@ fn write_block_input(
                 return 1;
             }
             Err(InputReadError::Hex(error)) => {
+                let _ = writeln!(stderr, "eth block input failed: {error}");
+                return 1;
+            }
+            Err(InputReadError::Json(error)) => {
                 let _ = writeln!(stderr, "eth block input failed: {error}");
                 return 1;
             }
@@ -186,12 +231,17 @@ fn write_block_input(
     0
 }
 
-fn read_input_bytes(path: &str, hex_input: bool) -> Result<Vec<u8>, InputReadError> {
+fn read_receipts_bytes(
+    path: &str,
+    input_mode: ReceiptInputMode,
+) -> Result<Vec<u8>, InputReadError> {
     let bytes = std::fs::read(path).map_err(InputReadError::Read)?;
-    if hex_input {
-        decode_hex_bytes(&bytes).map_err(InputReadError::Hex)
-    } else {
-        Ok(bytes)
+    match input_mode {
+        ReceiptInputMode::Rlp => Ok(bytes),
+        ReceiptInputMode::Hex => decode_hex_bytes(&bytes).map_err(InputReadError::Hex),
+        ReceiptInputMode::RpcJson => {
+            receipts_rlp_from_rpc_json(&bytes).map_err(InputReadError::Json)
+        }
     }
 }
 
@@ -428,6 +478,7 @@ enum HexDecodeError {
 enum InputReadError {
     Read(std::io::Error),
     Hex(HexDecodeError),
+    Json(RpcBlockJsonError),
 }
 
 impl fmt::Display for HexDecodeError {
@@ -449,7 +500,7 @@ impl fmt::Display for HexDecodeError {
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm eth write-block-input [--hex|--rpc-json] [--receipts <receipts-rlp>] <block-rlp> <out-input>"
+        "usage: lzvm eth write-block-input [--hex|--rpc-json] [--receipts <receipts-rlp>|--receipts-rpc-json <receipts-json>] <block-rlp> <out-input>"
     );
     2
 }

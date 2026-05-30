@@ -28,6 +28,16 @@ pub(crate) fn block_rlp_from_rpc_json(input: &[u8]) -> Result<Vec<u8>, RpcBlockJ
     Ok(encode_rlp(&RlpItem::List(body)))
 }
 
+pub(crate) fn receipts_rlp_from_rpc_json(input: &[u8]) -> Result<Vec<u8>, RpcBlockJsonError> {
+    let root = JsonParser::new(input).parse()?;
+    let receipts = rpc_receipts_array(&root)?;
+    let items = receipts
+        .iter()
+        .map(receipt_item)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(encode_rlp(&RlpItem::List(items)))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RpcBlockJsonError {
     Json(JsonParseError),
@@ -128,21 +138,37 @@ fn transaction_items(block: &[(String, JsonValue)]) -> Result<Vec<RlpItem>, RpcB
     transactions.iter().map(transaction_item).collect()
 }
 
+fn rpc_receipts_array(root: &JsonValue) -> Result<&[JsonValue], RpcBlockJsonError> {
+    match root {
+        JsonValue::Array(items) => Ok(items),
+        JsonValue::Object(entries) => {
+            let result = required_field(entries, "result")?;
+            if matches!(result, JsonValue::Null) {
+                return Err(invalid("RPC receipts result is null"));
+            }
+            as_array(result, "RPC receipts result")
+        }
+        _ => Err(invalid(
+            "expected RPC receipts root to be an array or result object",
+        )),
+    }
+}
+
 fn transaction_item(transaction: &JsonValue) -> Result<RlpItem, RpcBlockJsonError> {
     let object = as_object(transaction, "RPC transaction")?;
     let transaction_type = optional_transaction_type(object)?;
     match transaction_type {
         0 => legacy_transaction_item(object),
-        1 => Ok(typed_transaction_item(
+        1 => Ok(typed_envelope_item(
             1,
             access_list_transaction_fields(object)?,
         )),
-        2 => Ok(typed_transaction_item(
+        2 => Ok(typed_envelope_item(
             2,
             dynamic_fee_transaction_fields(object)?,
         )),
-        3 => Ok(typed_transaction_item(3, blob_transaction_fields(object)?)),
-        4 => Ok(typed_transaction_item(
+        3 => Ok(typed_envelope_item(3, blob_transaction_fields(object)?)),
+        4 => Ok(typed_envelope_item(
             4,
             authorized_transaction_fields(object)?,
         )),
@@ -238,22 +264,33 @@ fn authorized_transaction_fields(
     Ok(fields)
 }
 
-fn typed_transaction_item(transaction_type: u8, fields: Vec<RlpItem>) -> RlpItem {
+fn typed_envelope_item(item_type: u8, fields: Vec<RlpItem>) -> RlpItem {
     let payload = encode_rlp(&RlpItem::List(fields));
     let mut envelope = Vec::with_capacity(1 + payload.len());
-    envelope.push(transaction_type);
+    envelope.push(item_type);
     envelope.extend_from_slice(&payload);
     RlpItem::Bytes(envelope)
 }
 
 fn optional_transaction_type(transaction: &[(String, JsonValue)]) -> Result<u8, RpcBlockJsonError> {
-    let Some(value) = optional_field(transaction, "type") else {
+    optional_type(transaction, "RPC transaction field type")
+}
+
+fn optional_receipt_type(receipt: &[(String, JsonValue)]) -> Result<u8, RpcBlockJsonError> {
+    optional_type(receipt, "RPC receipt field type")
+}
+
+fn optional_type(
+    object: &[(String, JsonValue)],
+    context: &'static str,
+) -> Result<u8, RpcBlockJsonError> {
+    let Some(value) = optional_field(object, "type") else {
         return Ok(0);
     };
-    let string = as_string(value, "RPC transaction field type")?;
-    let bytes = hex_quantity(string, "RPC transaction field type")?;
+    let string = as_string(value, context)?;
+    let bytes = hex_quantity(string, context)?;
     if bytes.len() > 1 {
-        return Err(invalid("RPC transaction type exceeds one byte"));
+        return Err(invalid(format!("{context} exceeds one byte")));
     }
     Ok(bytes.first().copied().unwrap_or(0))
 }
@@ -269,6 +306,81 @@ fn ommer_items(block: &[(String, JsonValue)]) -> Result<Vec<RlpItem>, RpcBlockJs
         ));
     }
     Ok(Vec::new())
+}
+
+fn receipt_item(receipt: &JsonValue) -> Result<RlpItem, RpcBlockJsonError> {
+    let object = as_object(receipt, "RPC receipt")?;
+    let receipt_type = optional_receipt_type(object)?;
+    let body = receipt_body_items(object, receipt_type)?;
+    match receipt_type {
+        0 => Ok(RlpItem::List(body)),
+        1..=4 => Ok(typed_envelope_item(receipt_type, body)),
+        value => Err(invalid(format!(
+            "unsupported RPC receipt type: 0x{value:x}"
+        ))),
+    }
+}
+
+fn receipt_body_items(
+    receipt: &[(String, JsonValue)],
+    receipt_type: u8,
+) -> Result<Vec<RlpItem>, RpcBlockJsonError> {
+    Ok(vec![
+        receipt_status_or_root_item(receipt, receipt_type)?,
+        required_quantity_item(receipt, "cumulativeGasUsed")?,
+        required_fixed_item::<256>(receipt, "logsBloom")?,
+        receipt_logs_item(receipt)?,
+    ])
+}
+
+fn receipt_status_or_root_item(
+    receipt: &[(String, JsonValue)],
+    receipt_type: u8,
+) -> Result<RlpItem, RpcBlockJsonError> {
+    match (
+        optional_field(receipt, "status"),
+        optional_field(receipt, "root"),
+    ) {
+        (Some(_), Some(_)) => Err(invalid("RPC receipt cannot contain both status and root")),
+        (Some(value), None) => receipt_status_item(value),
+        (None, Some(value)) => {
+            if receipt_type != 0 {
+                return Err(invalid("RPC typed receipt requires status"));
+            }
+            Ok(RlpItem::Bytes(fixed_hex_string::<32>(value, "root")?))
+        }
+        (None, None) => Err(invalid("missing RPC receipt field: status or root")),
+    }
+}
+
+fn receipt_status_item(value: &JsonValue) -> Result<RlpItem, RpcBlockJsonError> {
+    let status = hex_quantity(as_string(value, "status")?, "status")?;
+    if status.is_empty() || status == [1] {
+        return Ok(RlpItem::Bytes(status));
+    }
+    Err(invalid(format!(
+        "invalid RPC receipt status: {}",
+        format_hex_quantity(&status)
+    )))
+}
+
+fn receipt_logs_item(receipt: &[(String, JsonValue)]) -> Result<RlpItem, RpcBlockJsonError> {
+    let logs = required_array(receipt, "logs")?
+        .iter()
+        .map(|log| {
+            let log = as_object(log, "RPC receipt log")?;
+            let topics = required_array(log, "topics")?
+                .iter()
+                .map(|topic| Ok(RlpItem::Bytes(fixed_hex_string::<32>(topic, "topic")?)))
+                .collect::<Result<Vec<_>, RpcBlockJsonError>>()?;
+            Ok(RlpItem::List(vec![
+                required_fixed_item::<20>(log, "address")?,
+                RlpItem::List(topics),
+                required_data_item(log, "data")?,
+            ]))
+        })
+        .collect::<Result<Vec<_>, RpcBlockJsonError>>()?;
+    Ok(RlpItem::List(logs))
 }
 
 fn withdrawal_items(value: &JsonValue) -> Result<Vec<RlpItem>, RpcBlockJsonError> {
@@ -645,6 +757,29 @@ fn printable_byte(byte: u8) -> String {
         char::from(byte).to_string()
     } else {
         format!("0x{byte:02x}")
+    }
+}
+
+fn format_hex_quantity(bytes: &[u8]) -> String {
+    if bytes.is_empty() {
+        return "0x0".to_owned();
+    }
+    let mut output = String::with_capacity(2 + bytes.len() * 2);
+    output.push_str("0x");
+    for (index, byte) in bytes.iter().enumerate() {
+        if index > 0 || *byte >= 16 {
+            output.push(hex_char(byte >> 4));
+        }
+        output.push(hex_char(byte & 0x0f));
+    }
+    output
+}
+
+fn hex_char(value: u8) -> char {
+    match value {
+        0..=9 => char::from(b'0' + value),
+        10..=15 => char::from(b'a' + value - 10),
+        _ => unreachable!("hex nybble should be in range"),
     }
 }
 

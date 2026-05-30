@@ -188,6 +188,177 @@ fn writes_rpc_json_block_input_artifact() {
 }
 
 #[test]
+fn writes_rpc_json_block_input_artifact_with_rpc_json_receipts() {
+    let dir = temp_dir("rpc-json-receipts");
+    let _ = fs::remove_dir_all(&dir);
+    let block_path = dir.join("block.json");
+    let receipts_path = dir.join("receipts.json");
+    let output_path = dir.join("block.input");
+    let transaction_item = full_type2_transaction_item();
+    let transactions = vec![parse_rlp(&transaction_item).expect("transaction should parse")];
+    let transaction_build =
+        transaction_trie_build(&transactions).expect("transaction trie should build");
+    let receipt_item = typed_receipt_item(2);
+    let receipts = vec![parse_rlp(&receipt_item).expect("receipt should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    let receipts_rlp = rlp_list(&[receipt_item]);
+    write_bytes(
+        &block_path,
+        format!(
+            r#"{{
+  "result": {{
+    "parentHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "sha3Uncles": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+    "miner": "0x3333333333333333333333333333333333333333",
+    "stateRoot": "0x4444444444444444444444444444444444444444444444444444444444444444",
+    "transactionsRoot": "0x{transactions_root}",
+    "receiptsRoot": "0x{receipts_root}",
+    "logsBloom": "0x{logs_bloom}",
+    "difficulty": "0x1",
+    "number": "0x2",
+    "gasLimit": "0xf4240",
+    "gasUsed": "0x5208",
+    "timestamp": "0x65",
+    "extraData": "0x6c7a766d",
+    "mixHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "nonce": "0xbbbbbbbbbbbbbbbb",
+    "transactions": [
+      {{
+        "type": "0x2",
+        "chainId": "0x1",
+        "nonce": "0x0",
+        "maxPriorityFeePerGas": "0x2",
+        "maxFeePerGas": "0x3",
+        "gas": "0x5208",
+        "to": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "value": "0x0",
+        "input": "0x",
+        "accessList": [],
+        "yParity": "0x0",
+        "r": "0x1",
+        "s": "0x2"
+      }}
+    ],
+    "uncles": []
+  }}
+}}"#,
+            transactions_root = to_hex(&transaction_build.root),
+            receipts_root = to_hex(&receipt_build.root),
+            logs_bloom = "00".repeat(256),
+        ),
+    );
+    write_bytes(
+        &receipts_path,
+        format!(
+            r#"{{
+  "result": [
+    {{
+      "type": "0x2",
+      "status": "0x1",
+      "cumulativeGasUsed": "0x5208",
+      "logsBloom": "0x{logs_bloom}",
+      "logs": []
+    }}
+  ]
+}}"#,
+            logs_bloom = "00".repeat(256),
+        ),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-block-input",
+            "--rpc-json",
+            "--receipts-rpc-json",
+            receipts_path
+                .to_str()
+                .expect("receipts path should be utf-8"),
+            block_path.to_str().expect("block path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let encoded = fs::read(&output_path).expect("block input should be written");
+    let parsed = parse_eth_block_input(&encoded).expect("block input should parse");
+    let parsed_receipts = parsed.receipts.as_ref().expect("receipts should exist");
+    assert_eq!(parsed.receipts_root, receipt_build.root);
+    assert_eq!(
+        parsed.receipts_rlp.as_deref(),
+        Some(receipts_rlp.as_slice())
+    );
+    assert_eq!(parsed_receipts.hash_preimages, receipt_build.hash_preimages);
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("transaction_count=1\n"));
+    assert!(stdout_text.contains("legacy_transactions=0\n"));
+    assert!(stdout_text.contains("typed_transactions=1\n"));
+    assert!(stdout_text.contains("receipts=present\n"));
+    assert!(stdout_text.contains(&format!("receipts_rlp_bytes={}\n", receipts_rlp.len())));
+    assert!(stdout_text.contains("legacy_receipts=0\n"));
+    assert!(stdout_text.contains("typed_receipts=1\n"));
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_rpc_json_receipt_status_outside_success_or_failure() {
+    let receipt_item = typed_receipt_item_with_status(2, &[2]);
+    let receipts_json = format!(
+        r#"{{
+  "result": [
+    {{
+      "type": "0x2",
+      "status": "0x2",
+      "cumulativeGasUsed": "0x5208",
+      "logsBloom": "0x{logs_bloom}",
+      "logs": []
+    }}
+  ]
+}}"#,
+        logs_bloom = "00".repeat(256),
+    );
+    assert_rpc_json_receipts_rejected(
+        "rpc-json-invalid-receipt-status",
+        &receipt_item,
+        &receipts_json,
+        "eth block input failed: invalid RPC receipt status: 0x2\n",
+    );
+}
+
+#[test]
+fn rejects_rpc_json_typed_receipt_with_root() {
+    let root = [0x44_u8; 32];
+    let receipt_item = typed_receipt_item_with_root(2, root);
+    let receipts_json = format!(
+        r#"{{
+  "result": [
+    {{
+      "type": "0x2",
+      "root": "0x{root}",
+      "cumulativeGasUsed": "0x5208",
+      "logsBloom": "0x{logs_bloom}",
+      "logs": []
+    }}
+  ]
+}}"#,
+        root = to_hex(&root),
+        logs_bloom = "00".repeat(256),
+    );
+    assert_rpc_json_receipts_rejected(
+        "rpc-json-typed-receipt-root",
+        &receipt_item,
+        &receipts_json,
+        "eth block input failed: RPC typed receipt requires status\n",
+    );
+}
+
+#[test]
 fn writes_hex_block_input_artifact_with_hex_receipts() {
     let dir = temp_dir("hex-receipts");
     let _ = fs::remove_dir_all(&dir);
@@ -1019,6 +1190,104 @@ fn eth_public_values_source() -> &'static str {
      col fixed main.left = [5, 1];"
 }
 
+fn assert_rpc_json_receipts_rejected(
+    name: &str,
+    receipt_item: &[u8],
+    receipts_json: &str,
+    expected: &str,
+) {
+    let dir = temp_dir(name);
+    let _ = fs::remove_dir_all(&dir);
+    let block_path = dir.join("block.json");
+    let receipts_path = dir.join("receipts.json");
+    let output_path = dir.join("block.input");
+    let transaction_item = full_type2_transaction_item();
+    let transactions = vec![parse_rlp(&transaction_item).expect("transaction should parse")];
+    let transaction_build =
+        transaction_trie_build(&transactions).expect("transaction trie should build");
+    let receipts = vec![parse_rlp(receipt_item).expect("receipt should parse")];
+    let receipt_build = receipt_trie_build(&receipts);
+    write_bytes(
+        &block_path,
+        rpc_json_block_with_type2_transaction(transaction_build.root, receipt_build.root),
+    );
+    write_bytes(&receipts_path, receipts_json);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-block-input",
+            "--rpc-json",
+            "--receipts-rpc-json",
+            receipts_path
+                .to_str()
+                .expect("receipts path should be utf-8"),
+            block_path.to_str().expect("block path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        expected
+    );
+}
+
+fn rpc_json_block_with_type2_transaction(
+    transactions_root: [u8; 32],
+    receipts_root: [u8; 32],
+) -> String {
+    format!(
+        r#"{{
+  "result": {{
+    "parentHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "sha3Uncles": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+    "miner": "0x3333333333333333333333333333333333333333",
+    "stateRoot": "0x4444444444444444444444444444444444444444444444444444444444444444",
+    "transactionsRoot": "0x{transactions_root}",
+    "receiptsRoot": "0x{receipts_root}",
+    "logsBloom": "0x{logs_bloom}",
+    "difficulty": "0x1",
+    "number": "0x2",
+    "gasLimit": "0xf4240",
+    "gasUsed": "0x5208",
+    "timestamp": "0x65",
+    "extraData": "0x6c7a766d",
+    "mixHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "nonce": "0xbbbbbbbbbbbbbbbb",
+    "transactions": [
+      {{
+        "type": "0x2",
+        "chainId": "0x1",
+        "nonce": "0x0",
+        "maxPriorityFeePerGas": "0x2",
+        "maxFeePerGas": "0x3",
+        "gas": "0x5208",
+        "to": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "value": "0x0",
+        "input": "0x",
+        "accessList": [],
+        "yParity": "0x0",
+        "r": "0x1",
+        "s": "0x2"
+      }}
+    ],
+    "uncles": []
+  }}
+}}"#,
+        transactions_root = to_hex(&transactions_root),
+        receipts_root = to_hex(&receipts_root),
+        logs_bloom = "00".repeat(256),
+    )
+}
+
 fn sample_guest_image() -> Vec<u8> {
     let mut bytes = vec![0_u8; 64];
     bytes[0..4].copy_from_slice(b"\x7fELF");
@@ -1171,9 +1440,28 @@ fn sample_receipt_item() -> Vec<u8> {
 }
 
 fn typed_receipt_item(receipt_type: u8) -> Vec<u8> {
+    typed_receipt_item_with_status(receipt_type, &[1])
+}
+
+fn typed_receipt_item_with_status(receipt_type: u8, status: &[u8]) -> Vec<u8> {
     let mut bytes = vec![receipt_type];
-    bytes.extend_from_slice(&sample_receipt_item());
+    bytes.extend_from_slice(&receipt_body_item(rlp_bytes(status)));
     rlp_bytes(&bytes)
+}
+
+fn typed_receipt_item_with_root(receipt_type: u8, root: [u8; 32]) -> Vec<u8> {
+    let mut bytes = vec![receipt_type];
+    bytes.extend_from_slice(&receipt_body_item(rlp_bytes(&root)));
+    rlp_bytes(&bytes)
+}
+
+fn receipt_body_item(status_or_root: Vec<u8>) -> Vec<u8> {
+    rlp_list(&[
+        status_or_root,
+        rlp_bytes(&[0x52, 0x08]),
+        rlp_bytes(&[0; 256]),
+        rlp_list(&[]),
+    ])
 }
 
 fn sample_withdrawal_item() -> Vec<u8> {
@@ -1187,6 +1475,26 @@ fn sample_withdrawal_item() -> Vec<u8> {
 
 fn typed_transaction_item() -> Vec<u8> {
     rlp_bytes(&[2, 0xc0])
+}
+
+fn full_type2_transaction_item() -> Vec<u8> {
+    let payload = rlp_list(&[
+        rlp_bytes(&[1]),
+        rlp_bytes(&[]),
+        rlp_bytes(&[2]),
+        rlp_bytes(&[3]),
+        rlp_bytes(&[0x52, 0x08]),
+        rlp_bytes(&[0xaa; 20]),
+        rlp_bytes(&[]),
+        rlp_bytes(&[]),
+        rlp_list(&[]),
+        rlp_bytes(&[]),
+        rlp_bytes(&[1]),
+        rlp_bytes(&[2]),
+    ]);
+    let mut envelope = vec![2];
+    envelope.extend_from_slice(&payload);
+    rlp_bytes(&envelope)
 }
 
 fn rlp_bytes(payload: &[u8]) -> Vec<u8> {
