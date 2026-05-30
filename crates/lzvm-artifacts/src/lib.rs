@@ -11,6 +11,7 @@ pub mod eth_trie;
 pub mod expression_info;
 pub mod expression_program;
 pub mod fixed;
+pub mod framed_stdin;
 pub mod global_info;
 pub mod global_program;
 pub mod group_values_segment;

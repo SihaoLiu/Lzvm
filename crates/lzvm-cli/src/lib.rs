@@ -17,6 +17,7 @@ mod eth_block_output;
 mod eth_block_prove_input;
 mod eth_block_public_values;
 mod eth_block_summary;
+mod eth_framed_input;
 mod pil_archive;
 mod pil_archive_summary;
 mod pil_fixed_file_manifest;
@@ -39,6 +40,9 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
         ["eth", "block-summary", rest @ ..] => eth_block_summary::run(rest, stdout, stderr),
         ["eth", "block-input-summary", rest @ ..] => {
             eth_block_input::run_summary(rest, stdout, stderr)
+        }
+        ["eth", "framed-input-summary", rest @ ..] => {
+            eth_framed_input::run_summary(rest, stdout, stderr)
         }
         ["eth", "write-block-input", rest @ ..] => eth_block_input::run(rest, stdout, stderr),
         ["eth", "write-block-public-values", rest @ ..] => {
