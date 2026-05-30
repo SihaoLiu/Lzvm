@@ -1,6 +1,8 @@
 use lzvm_field::Felt;
 
-use crate::merkle_hash::{linear_hash, linear_hashes, parent_hash, parent_hashes};
+use crate::merkle_hash::{
+    linear_hash, linear_hashes_from_row_major_bytes, parent_hash, parent_hashes,
+};
 
 use super::{
     WitnessStageCommitment, WitnessStageCommitmentError, WitnessStageLeaves, WitnessStageOpening,
@@ -12,15 +14,30 @@ pub fn commit_witness_stage_leaves(
     arity: usize,
 ) -> Result<WitnessStageCommitment, WitnessStageCommitmentError> {
     validate_witness_commitment_arity(arity)?;
-    let rows = read_witness_stage_leaf_rows(leaves)?;
-    if rows.is_empty() {
+    if leaves.extended_row_count() == 0 {
         return Err(WitnessStageCommitmentError::EmptyStage);
+    }
+    let expected_leaf_bytes = leaves
+        .extended_row_count()
+        .checked_mul(leaves.column_count())
+        .and_then(|words| words.checked_mul(WORD_BYTES))
+        .ok_or(WitnessStageCommitmentError::LengthOverflow)?;
+    if leaves.bytes().len() != expected_leaf_bytes {
+        return Err(WitnessStageCommitmentError::InvalidLeafByteLength {
+            expected: expected_leaf_bytes,
+            found: leaves.bytes().len(),
+        });
     }
 
     let mut out = Vec::with_capacity(leaves.bytes().len());
     out.extend_from_slice(leaves.bytes());
 
-    let mut level = linear_hashes(&rows, arity)?;
+    let mut level = linear_hashes_from_row_major_bytes(
+        leaves.bytes(),
+        leaves.extended_row_count(),
+        leaves.column_count(),
+        arity,
+    )?;
     for digest in &level {
         append_digest(&mut out, *digest);
     }
@@ -318,5 +335,24 @@ fn read_digest_at(
 fn append_digest(out: &mut Vec<u8>, digest: [Felt; HASH_WORDS]) {
     for value in digest {
         out.extend_from_slice(&value.to_le_bytes());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        commit_witness_stage_leaves, WitnessStageCommitmentError, WitnessStageLeaves, WORD_BYTES,
+    };
+
+    #[test]
+    fn rejects_malformed_witness_stage_leaf_byte_lengths() {
+        let expected = 2 * 3 * WORD_BYTES;
+        let leaves = WitnessStageLeaves::new(1, 2, 2, 3, vec![0_u8; expected - 1]);
+
+        assert!(matches!(
+            commit_witness_stage_leaves(&leaves, 2),
+            Err(WitnessStageCommitmentError::InvalidLeafByteLength { expected, found })
+                if expected == 2 * 3 * WORD_BYTES && found == expected - 1
+        ));
     }
 }

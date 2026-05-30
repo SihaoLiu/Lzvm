@@ -114,6 +114,7 @@ impl From<MerkleHashError> for ConstantTreeOpeningError {
             MerkleHashError::InvalidChildCount { expected, found } => {
                 Self::InvalidSiblingWidth { expected, found }
             }
+            MerkleHashError::Field(error) => Self::Field(error),
             MerkleHashError::LengthOverflow => Self::LengthOverflow,
         }
     }

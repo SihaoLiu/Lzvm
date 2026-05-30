@@ -8,7 +8,7 @@ use lzvm_accel::{
     cuda_poseidon2_width8_linear_round_device, cuda_poseidon2_width8_merkle_parent_device,
     CudaDeviceBuffer,
 };
-use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt};
+use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt, FieldError};
 
 pub(crate) const HASH_WORDS: usize = 4;
 
@@ -16,6 +16,7 @@ pub(crate) const HASH_WORDS: usize = 4;
 pub(crate) enum MerkleHashError {
     UnsupportedArity { arity: usize },
     InvalidChildCount { expected: usize, found: usize },
+    Field(FieldError),
     LengthOverflow,
 }
 
@@ -29,6 +30,7 @@ impl fmt::Display for MerkleHashError {
                 f,
                 "invalid Merkle hash child count: expected {expected}, found {found}"
             ),
+            Self::Field(error) => write!(f, "Merkle hash field error: {error}"),
             Self::LengthOverflow => write!(f, "Merkle hash length overflow"),
         }
     }
@@ -64,6 +66,35 @@ pub(crate) fn linear_hashes(
     }
 
     rows.iter().map(|row| linear_hash(row, arity)).collect()
+}
+
+pub(crate) fn linear_hashes_from_row_major_bytes(
+    bytes: &[u8],
+    row_count: usize,
+    column_count: usize,
+    arity: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    validate_arity(arity)?;
+    let expected = row_major_byte_count(row_count, column_count)?;
+    if bytes.len() != expected {
+        return Err(MerkleHashError::LengthOverflow);
+    }
+    if row_count == 0 {
+        return Ok(Vec::new());
+    }
+    if column_count <= HASH_WORDS {
+        return padded_digests_from_row_major_bytes(bytes, row_count, column_count);
+    }
+
+    #[cfg(feature = "cuda")]
+    {
+        return cuda_linear_hashes_from_row_major_bytes(bytes, row_count, column_count, arity);
+    }
+
+    #[cfg(not(feature = "cuda"))]
+    {
+        cpu_linear_hashes_from_row_major_bytes(bytes, row_count, column_count, arity)
+    }
 }
 
 pub(crate) fn parent_hash(
@@ -225,6 +256,68 @@ fn validate_arity(arity: usize) -> Result<(), MerkleHashError> {
     }
 }
 
+fn row_major_byte_count(row_count: usize, column_count: usize) -> Result<usize, MerkleHashError> {
+    row_count
+        .checked_mul(column_count)
+        .and_then(|words| words.checked_mul(8))
+        .ok_or(MerkleHashError::LengthOverflow)
+}
+
+fn padded_digests_from_row_major_bytes(
+    bytes: &[u8],
+    row_count: usize,
+    column_count: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    let mut out = Vec::with_capacity(row_count);
+    for row in 0..row_count {
+        let mut digest = [Felt::ZERO; HASH_WORDS];
+        for (column, slot) in digest.iter_mut().enumerate().take(column_count) {
+            *slot = read_row_major_felt(bytes, column_count, row, column)?;
+        }
+        out.push(digest);
+    }
+    Ok(out)
+}
+
+#[cfg(not(feature = "cuda"))]
+fn cpu_linear_hashes_from_row_major_bytes(
+    bytes: &[u8],
+    row_count: usize,
+    column_count: usize,
+    arity: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    let mut out = Vec::with_capacity(row_count);
+    for row in 0..row_count {
+        let mut values = Vec::with_capacity(column_count);
+        for column in 0..column_count {
+            values.push(read_row_major_felt(bytes, column_count, row, column)?);
+        }
+        out.push(linear_hash(&values, arity)?);
+    }
+    Ok(out)
+}
+
+fn read_row_major_felt(
+    bytes: &[u8],
+    column_count: usize,
+    row: usize,
+    column: usize,
+) -> Result<Felt, MerkleHashError> {
+    let word_index = row
+        .checked_mul(column_count)
+        .and_then(|offset| offset.checked_add(column))
+        .ok_or(MerkleHashError::LengthOverflow)?;
+    let byte_index = word_index
+        .checked_mul(8)
+        .ok_or(MerkleHashError::LengthOverflow)?;
+    let word = u64::from_le_bytes(
+        bytes[byte_index..byte_index + 8]
+            .try_into()
+            .expect("row-major byte length checked"),
+    );
+    Felt::from_canonical(word).map_err(MerkleHashError::Field)
+}
+
 fn linear_hash_arity2(values: &[Felt]) -> [Felt; HASH_WORDS] {
     if values.len() <= HASH_WORDS {
         return padded_digest(values);
@@ -298,35 +391,14 @@ fn cuda_linear_hashes_arity2(
         return Ok(rows.iter().map(|row| padded_digest(row)).collect());
     }
 
-    let mut current_states = zero_state_buffer(rows.len(), WIDTH)?;
-    let mut offset = 0;
-    while offset < value_count {
-        let chunk_len = (value_count - offset).min(HASH_WORDS);
-        let row_values = pack_linear_round_values(rows, offset, chunk_len)?;
-        let row_values_buffer = CudaDeviceBuffer::from_u64_words(&row_values)
-            .map_err(|_| MerkleHashError::LengthOverflow)?;
-        let mut next_states = CudaDeviceBuffer::new(
-            rows.len()
-                .checked_mul(WIDTH)
-                .and_then(|words| words.checked_mul(8))
-                .ok_or(MerkleHashError::LengthOverflow)?,
-        )
-        .map_err(|_| MerkleHashError::LengthOverflow)?;
-        cuda_poseidon2_width8_linear_round_device(
-            &current_states,
-            &row_values_buffer,
-            &mut next_states,
-            chunk_len,
-        )
-        .map_err(|_| MerkleHashError::LengthOverflow)?;
-        current_states = next_states;
-        offset += chunk_len;
-    }
-
-    let output = current_states
-        .to_u64_words()
-        .map_err(|_| MerkleHashError::LengthOverflow)?;
-    digests_from_hashed_states(&output, WIDTH)
+    cuda_linear_hashes_with_packed_rounds(
+        rows.len(),
+        value_count,
+        HASH_WORDS,
+        WIDTH,
+        cuda_poseidon2_width8_linear_round_device,
+        |offset, chunk_len| pack_linear_round_values(rows, offset, chunk_len),
+    )
 }
 
 #[cfg(feature = "cuda")]
@@ -341,21 +413,103 @@ fn cuda_linear_hashes_arity4(
         return Ok(rows.iter().map(|row| padded_digest(row)).collect());
     }
 
-    let mut current_states = zero_state_buffer(rows.len(), WIDTH)?;
+    cuda_linear_hashes_with_packed_rounds(
+        rows.len(),
+        value_count,
+        RATE,
+        WIDTH,
+        cuda_poseidon2_width16_linear_round_device,
+        |offset, chunk_len| pack_linear_round_values(rows, offset, chunk_len),
+    )
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_linear_hashes_from_row_major_bytes(
+    bytes: &[u8],
+    row_count: usize,
+    column_count: usize,
+    arity: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    match arity {
+        2 => cuda_linear_hashes_row_major_arity2(bytes, row_count, column_count),
+        4 => cuda_linear_hashes_row_major_arity4(bytes, row_count, column_count),
+        _ => Err(MerkleHashError::UnsupportedArity { arity }),
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_linear_hashes_row_major_arity2(
+    bytes: &[u8],
+    row_count: usize,
+    column_count: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    const WIDTH: usize = 8;
+
+    cuda_linear_hashes_with_packed_rounds(
+        row_count,
+        column_count,
+        HASH_WORDS,
+        WIDTH,
+        cuda_poseidon2_width8_linear_round_device,
+        |offset, chunk_len| {
+            pack_linear_round_values_from_bytes(bytes, row_count, column_count, offset, chunk_len)
+        },
+    )
+}
+
+#[cfg(feature = "cuda")]
+fn cuda_linear_hashes_row_major_arity4(
+    bytes: &[u8],
+    row_count: usize,
+    column_count: usize,
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    const RATE: usize = 12;
+    const WIDTH: usize = 16;
+
+    cuda_linear_hashes_with_packed_rounds(
+        row_count,
+        column_count,
+        RATE,
+        WIDTH,
+        cuda_poseidon2_width16_linear_round_device,
+        |offset, chunk_len| {
+            pack_linear_round_values_from_bytes(bytes, row_count, column_count, offset, chunk_len)
+        },
+    )
+}
+
+#[cfg(feature = "cuda")]
+type CudaPoseidon2LinearRoundOp = fn(
+    &CudaDeviceBuffer,
+    &CudaDeviceBuffer,
+    &mut CudaDeviceBuffer,
+    usize,
+) -> Result<(), lzvm_accel::AccelError>;
+
+#[cfg(feature = "cuda")]
+fn cuda_linear_hashes_with_packed_rounds(
+    row_count: usize,
+    value_count: usize,
+    rate: usize,
+    width: usize,
+    operation: CudaPoseidon2LinearRoundOp,
+    mut pack_round: impl FnMut(usize, usize) -> Result<Vec<u64>, MerkleHashError>,
+) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
+    let mut current_states = zero_state_buffer(row_count, width)?;
     let mut offset = 0;
     while offset < value_count {
-        let chunk_len = (value_count - offset).min(RATE);
-        let row_values = pack_linear_round_values(rows, offset, chunk_len)?;
+        let chunk_len = (value_count - offset).min(rate);
+        let row_values = pack_round(offset, chunk_len)?;
         let row_values_buffer = CudaDeviceBuffer::from_u64_words(&row_values)
             .map_err(|_| MerkleHashError::LengthOverflow)?;
         let mut next_states = CudaDeviceBuffer::new(
-            rows.len()
-                .checked_mul(WIDTH)
+            row_count
+                .checked_mul(width)
                 .and_then(|words| words.checked_mul(8))
                 .ok_or(MerkleHashError::LengthOverflow)?,
         )
         .map_err(|_| MerkleHashError::LengthOverflow)?;
-        cuda_poseidon2_width16_linear_round_device(
+        operation(
             &current_states,
             &row_values_buffer,
             &mut next_states,
@@ -369,7 +523,7 @@ fn cuda_linear_hashes_arity4(
     let output = current_states
         .to_u64_words()
         .map_err(|_| MerkleHashError::LengthOverflow)?;
-    digests_from_hashed_states(&output, WIDTH)
+    digests_from_hashed_states(&output, width)
 }
 
 #[cfg(feature = "cuda")]
@@ -390,6 +544,27 @@ fn pack_linear_round_values(
     );
     for row in rows {
         push_felt_words(&mut input, &row[offset..offset + chunk_len]);
+    }
+    Ok(input)
+}
+
+#[cfg(feature = "cuda")]
+fn pack_linear_round_values_from_bytes(
+    bytes: &[u8],
+    row_count: usize,
+    column_count: usize,
+    offset: usize,
+    chunk_len: usize,
+) -> Result<Vec<u64>, MerkleHashError> {
+    let mut input = Vec::with_capacity(
+        row_count
+            .checked_mul(chunk_len)
+            .ok_or(MerkleHashError::LengthOverflow)?,
+    );
+    for row in 0..row_count {
+        for column in offset..offset + chunk_len {
+            input.push(read_row_major_felt(bytes, column_count, row, column)?.to_u64());
+        }
     }
     Ok(input)
 }
@@ -541,7 +716,8 @@ fn digests_from_hashed_states(
 mod tests {
     use super::{
         cuda_poseidon2_width16_device_words, cuda_poseidon2_width8_device_words, linear_hash,
-        linear_hashes, parent_hash, parent_hashes, root_from_digest_level_on_cuda,
+        linear_hashes, linear_hashes_from_row_major_bytes, parent_hash, parent_hashes,
+        root_from_digest_level_on_cuda,
     };
     use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt};
 
@@ -564,6 +740,27 @@ mod tests {
         let width16_actual = cuda_poseidon2_width16_device_words(&width16_input)
             .expect("width-16 device hash should run");
         assert_eq!(width16_actual, width16_expected);
+    }
+
+    #[test]
+    fn linear_hashes_row_major_bytes_match_row_vectors() {
+        let rows = vec![
+            (1_u64..=13).map(Felt::from_u64).collect::<Vec<_>>(),
+            (21_u64..=33).map(Felt::from_u64).collect::<Vec<_>>(),
+            (41_u64..=53).map(Felt::from_u64).collect::<Vec<_>>(),
+        ];
+        let mut bytes = Vec::new();
+        for row in &rows {
+            for value in row {
+                bytes.extend_from_slice(&value.to_u64().to_le_bytes());
+            }
+        }
+
+        let direct = linear_hashes_from_row_major_bytes(&bytes, rows.len(), rows[0].len(), 4)
+            .expect("row-major hashes should compute");
+        let expected = linear_hashes(&rows, 4).expect("row hashes should compute");
+
+        assert_eq!(direct, expected);
     }
 
     #[test]

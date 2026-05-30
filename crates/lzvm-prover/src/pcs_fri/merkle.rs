@@ -1,7 +1,7 @@
 use std::fmt;
 
 use lzvm_artifacts::pcs_fri_segment::PcsFriOpeningLevelSegment;
-use lzvm_field::{Ext3, Felt};
+use lzvm_field::{Ext3, Felt, FieldError};
 
 use crate::merkle_hash::{
     linear_hash, linear_hashes, parent_hash, parent_hashes, root_from_digest_level,
@@ -17,6 +17,7 @@ pub enum PcsFriMerkleError {
     EmptyLastLevel,
     InvalidSiblingCount { expected: usize, found: usize },
     LastLevelIndexOutOfRange { index: u64, node_count: usize },
+    Field(FieldError),
     LengthOverflow,
 }
 
@@ -36,12 +37,25 @@ impl fmt::Display for PcsFriMerkleError {
                 f,
                 "PCS FRI Merkle last-level index {index} is outside node count {node_count}"
             ),
+            Self::Field(error) => write!(f, "PCS FRI Merkle field error: {error}"),
             Self::LengthOverflow => write!(f, "PCS FRI Merkle length overflow"),
         }
     }
 }
 
-impl std::error::Error for PcsFriMerkleError {}
+impl std::error::Error for PcsFriMerkleError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Field(error) => Some(error),
+            Self::UnsupportedArity { .. }
+            | Self::EmptyValues
+            | Self::EmptyLastLevel
+            | Self::InvalidSiblingCount { .. }
+            | Self::LastLevelIndexOutOfRange { .. }
+            | Self::LengthOverflow => None,
+        }
+    }
+}
 
 impl From<MerkleHashError> for PcsFriMerkleError {
     fn from(error: MerkleHashError) -> Self {
@@ -50,6 +64,7 @@ impl From<MerkleHashError> for PcsFriMerkleError {
             MerkleHashError::InvalidChildCount { expected, found } => {
                 Self::InvalidSiblingCount { expected, found }
             }
+            MerkleHashError::Field(error) => Self::Field(error),
             MerkleHashError::LengthOverflow => Self::LengthOverflow,
         }
     }

@@ -209,6 +209,7 @@ impl From<MerkleHashError> for WitnessStageCommitmentError {
         match error {
             MerkleHashError::UnsupportedArity { arity } => Self::UnsupportedArity { arity },
             MerkleHashError::InvalidChildCount { .. } => Self::LengthOverflow,
+            MerkleHashError::Field(error) => Self::Field(error),
             MerkleHashError::LengthOverflow => Self::LengthOverflow,
         }
     }
@@ -229,6 +230,7 @@ impl From<MerkleHashError> for WitnessStageOpeningError {
             MerkleHashError::InvalidChildCount { expected, found } => {
                 Self::InvalidSiblingCount { expected, found }
             }
+            MerkleHashError::Field(error) => Self::Field(error),
             MerkleHashError::LengthOverflow => Self::LengthOverflow,
         }
     }
