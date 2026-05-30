@@ -13,6 +13,7 @@ const PROGRAM_IMAGE_VERSION: u32 = 1;
 const PROGRAM_IMAGE_SECTION_ID: u32 = 1;
 const DIGEST_BYTES: usize = 32;
 const ROOT_WORDS: usize = 4;
+const FIELD_ELEMENT_BYTES: u64 = 8;
 const MAX_TRACE_DOMAIN_BITS: u32 = 32;
 pub(crate) const PROGRAM_IMAGE_CACHE_PAYLOAD_BYTES: usize =
     DIGEST_BYTES * 3 + ROOT_WORDS * 8 + 8 + 4 * 4;
@@ -97,6 +98,10 @@ pub enum ProgramImageCommitmentCacheError {
         trace_row_count: u64,
         blowup_factor: u32,
     },
+    TraceByteCountOverflow {
+        trace_row_count: u64,
+        trace_column_count: u32,
+    },
     UnsupportedTraceDomainBits {
         bits: u32,
         max_bits: u32,
@@ -169,6 +174,13 @@ impl fmt::Display for ProgramImageCommitmentCacheError {
                 f,
                 "program-image commitment cache trace row expansion overflows: rows {trace_row_count}, blowup factor {blowup_factor}"
             ),
+            Self::TraceByteCountOverflow {
+                trace_row_count,
+                trace_column_count,
+            } => write!(
+                f,
+                "program-image commitment cache trace byte count overflows: rows {trace_row_count}, columns {trace_column_count}"
+            ),
             Self::UnsupportedTraceDomainBits { bits, max_bits } => write!(
                 f,
                 "unsupported program-image commitment cache trace domain bits {bits}, max {max_bits}"
@@ -208,6 +220,7 @@ impl std::error::Error for ProgramImageCommitmentCacheError {
             | Self::EmptyTraceColumns
             | Self::InvalidBlowupFactor { .. }
             | Self::TraceRowExpansionOverflow { .. }
+            | Self::TraceByteCountOverflow { .. }
             | Self::UnsupportedTraceDomainBits { .. }
             | Self::InvalidMerkleTreeArity { .. }
             | Self::UnsupportedGpuMode { .. }
@@ -336,6 +349,17 @@ pub(crate) fn validate_program_image_commitment_cache(
                 max_bits: MAX_TRACE_DOMAIN_BITS,
             },
         );
+    }
+    if value
+        .trace_row_count
+        .checked_mul(u64::from(value.trace_column_count))
+        .and_then(|element_count| element_count.checked_mul(FIELD_ELEMENT_BYTES))
+        .is_none()
+    {
+        return Err(ProgramImageCommitmentCacheError::TraceByteCountOverflow {
+            trace_row_count: value.trace_row_count,
+            trace_column_count: value.trace_column_count,
+        });
     }
     if !matches!(value.merkle_tree_arity, 2 | 4) {
         return Err(ProgramImageCommitmentCacheError::InvalidMerkleTreeArity {

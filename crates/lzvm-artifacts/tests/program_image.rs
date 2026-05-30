@@ -13,6 +13,7 @@ const NON_CANONICAL_FIELD: u64 = 0xffff_ffff_0000_0001;
 const FILE_PAYLOAD_OFFSET: usize = 24;
 const TREE_ROOT_OFFSET: usize = FILE_PAYLOAD_OFFSET + 32 * 3;
 const TRACE_ROW_COUNT_OFFSET: usize = TREE_ROOT_OFFSET + 8 * 4;
+const TRACE_COLUMN_COUNT_OFFSET: usize = TRACE_ROW_COUNT_OFFSET + 8;
 const BLOWUP_FACTOR_OFFSET: usize = TRACE_ROW_COUNT_OFFSET + 8 + 4;
 const MERKLE_TREE_ARITY_OFFSET: usize = BLOWUP_FACTOR_OFFSET + 4;
 
@@ -239,6 +240,18 @@ fn rejects_invalid_program_image_geometry() {
     ));
 
     let mut cache = sample_cache();
+    cache.trace_row_count = 1_u64 << 32;
+    cache.trace_column_count = u32::MAX;
+    cache.blowup_factor = 1;
+    assert!(matches!(
+        encode_program_image_commitment_cache(&cache),
+        Err(ProgramImageCommitmentCacheError::TraceByteCountOverflow {
+            trace_row_count: 0x1_0000_0000,
+            trace_column_count: u32::MAX
+        })
+    ));
+
+    let mut cache = sample_cache();
     cache.merkle_tree_arity = 3;
     assert!(matches!(
         encode_program_image_commitment_cache(&cache),
@@ -289,6 +302,20 @@ fn rejects_invalid_program_image_geometry_when_parsing() {
                 max_bits: 32
             }
         )
+    ));
+
+    let mut encoded = encoded_sample_cache();
+    encoded[TRACE_ROW_COUNT_OFFSET..TRACE_ROW_COUNT_OFFSET + 8]
+        .copy_from_slice(&(1_u64 << 32).to_le_bytes());
+    encoded[TRACE_COLUMN_COUNT_OFFSET..TRACE_COLUMN_COUNT_OFFSET + 4]
+        .copy_from_slice(&u32::MAX.to_le_bytes());
+    encoded[BLOWUP_FACTOR_OFFSET..BLOWUP_FACTOR_OFFSET + 4].copy_from_slice(&1_u32.to_le_bytes());
+    assert!(matches!(
+        parse_program_image_commitment_cache(&encoded),
+        Err(ProgramImageCommitmentCacheError::TraceByteCountOverflow {
+            trace_row_count: 0x1_0000_0000,
+            trace_column_count: u32::MAX
+        })
     ));
 
     let mut encoded = encoded_sample_cache();
