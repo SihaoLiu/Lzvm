@@ -2,7 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::eth_public_input::{
-    eth_public_header_hash, parse_eth_public_header_prefix, parse_eth_public_transactions_prefix,
+    eth_public_header_hash, parse_eth_public_block_prefix, parse_eth_public_header_prefix,
+    parse_eth_public_transactions_prefix,
 };
 use lzvm_cli::run_cli;
 
@@ -28,11 +29,14 @@ fn summarizes_public_input_header() {
     let mut input = sample_public_header_bytes();
     input.extend_from_slice(&1_u64.to_le_bytes());
     input.extend_from_slice(&eip1559_transaction_bytes());
+    input.extend_from_slice(&0_u64.to_le_bytes());
+    input.push(0);
     input.extend_from_slice(b"tail");
     write_bytes(&input_path, &input);
     let parsed = parse_eth_public_header_prefix(&input).expect("header should parse");
     let transactions =
         parse_eth_public_transactions_prefix(&input).expect("transactions should parse");
+    let block = parse_eth_public_block_prefix(&input).expect("block should parse");
     let block_hash = eth_public_header_hash(&parsed.header);
 
     let mut stdout = Vec::new();
@@ -53,14 +57,17 @@ fn summarizes_public_input_header() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npublic_input={}\nbytes={}\nheader_bytes={}\ntransaction_prefix_bytes={}\nremaining_bytes=4\nblock_hash={}\nblock_number=42\ntimestamp=77\ngas_limit=100\ngas_used=90\ntransactions_root={}\ncomputed_transactions_root={}\ntransactions_root_matches=false\ntransaction_count=1\nlegacy_transactions=0\ntyped_transactions=1\nreceipts_root={}\nwithdrawals_root=present:{}\nbase_fee_per_gas=123\nblob_gas_used=456\nexcess_blob_gas=789\nparent_beacon_block_root=present:{}\nrequests_hash=present:{}\nextra_data=616263\n",
+            "status=ok\npublic_input={}\nbytes={}\nheader_bytes={}\ntransaction_prefix_bytes={}\nblock_prefix_bytes={}\nremaining_bytes=4\nblock_hash={}\nblock_number=42\ntimestamp=77\ngas_limit=100\ngas_used=90\nommers_hash={}\ncomputed_ommers_hash={}\nommers_hash_matches=false\nommer_count=0\ntransactions_root={}\ncomputed_transactions_root={}\ntransactions_root_matches=false\ntransaction_count=1\nlegacy_transactions=0\ntyped_transactions=1\nreceipts_root={}\nwithdrawals_root=present:{}\ncomputed_withdrawals_root=absent\nwithdrawals_root_matches=false\nwithdrawal_count=absent\nbase_fee_per_gas=123\nblob_gas_used=456\nexcess_blob_gas=789\nparent_beacon_block_root=present:{}\nrequests_hash=present:{}\nextra_data=616263\n",
             input_path.display(),
             input.len(),
             parsed.consumed,
             transactions.consumed,
+            block.consumed,
             to_hex(&block_hash),
+            to_hex(&[2; 32]),
+            to_hex(&block.ommers_hash()),
             to_hex(&[5; 32]),
-            to_hex(&transactions.transactions_root()),
+            to_hex(&block.transactions_root()),
             to_hex(&[6; 32]),
             to_hex(&[7; 32]),
             to_hex(&[12; 32]),

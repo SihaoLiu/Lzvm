@@ -2,8 +2,9 @@ use std::io::Write;
 use std::path::Path;
 
 use lzvm_artifacts::eth_public_input::{
-    eth_public_header_hash, parse_eth_public_header_prefix, parse_eth_public_transactions_prefix,
-    EthPublicHeader, EthPublicTransactionsPrefix,
+    eth_public_header_hash, parse_eth_public_block_prefix, parse_eth_public_header_prefix,
+    parse_eth_public_transactions_prefix, EthPublicBlockPrefix, EthPublicHeader,
+    EthPublicTransactionsPrefix,
 };
 
 pub(crate) fn run_summary(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -38,6 +39,13 @@ fn summarize_public_input(input_path: &str, stdout: &mut dyn Write, stderr: &mut
             return 1;
         }
     };
+    let block = match parse_eth_public_block_prefix(&bytes) {
+        Ok(block) => block,
+        Err(error) => {
+            let _ = writeln!(stderr, "eth public input summary failed: {error}");
+            return 1;
+        }
+    };
     let block_hash = eth_public_header_hash(&parsed.header);
 
     let _ = writeln!(stdout, "status=ok");
@@ -45,13 +53,10 @@ fn summarize_public_input(input_path: &str, stdout: &mut dyn Write, stderr: &mut
     let _ = writeln!(stdout, "bytes={}", bytes.len());
     let _ = writeln!(stdout, "header_bytes={}", parsed.consumed);
     let _ = writeln!(stdout, "transaction_prefix_bytes={}", transactions.consumed);
-    let _ = writeln!(
-        stdout,
-        "remaining_bytes={}",
-        bytes.len() - transactions.consumed
-    );
+    let _ = writeln!(stdout, "block_prefix_bytes={}", block.consumed);
+    let _ = writeln!(stdout, "remaining_bytes={}", bytes.len() - block.consumed);
     let _ = writeln!(stdout, "block_hash={}", format_hash(&block_hash));
-    write_header_summary(stdout, &parsed.header, &transactions);
+    write_header_summary(stdout, &parsed.header, &transactions, &block);
     0
 }
 
@@ -59,11 +64,25 @@ fn write_header_summary(
     stdout: &mut dyn Write,
     header: &EthPublicHeader,
     transactions: &EthPublicTransactionsPrefix,
+    block: &EthPublicBlockPrefix,
 ) {
     let _ = writeln!(stdout, "block_number={}", header.block_number);
     let _ = writeln!(stdout, "timestamp={}", header.timestamp);
     let _ = writeln!(stdout, "gas_limit={}", header.gas_limit);
     let _ = writeln!(stdout, "gas_used={}", header.gas_used);
+    let _ = writeln!(stdout, "ommers_hash={}", format_hash(&header.ommers_hash));
+    let computed_ommers_hash = block.ommers_hash();
+    let _ = writeln!(
+        stdout,
+        "computed_ommers_hash={}",
+        format_hash(&computed_ommers_hash)
+    );
+    let _ = writeln!(
+        stdout,
+        "ommers_hash_matches={}",
+        block.ommers_hash_matches()
+    );
+    let _ = writeln!(stdout, "ommer_count={}", block.ommers.len());
     let _ = writeln!(
         stdout,
         "transactions_root={}",
@@ -104,6 +123,22 @@ fn write_header_summary(
         stdout,
         "withdrawals_root={}",
         format_optional_hash(header.withdrawals_root.as_ref())
+    );
+    let computed_withdrawals_root = block.withdrawals_root();
+    let _ = writeln!(
+        stdout,
+        "computed_withdrawals_root={}",
+        format_optional_plain_hash(computed_withdrawals_root.as_ref())
+    );
+    let _ = writeln!(
+        stdout,
+        "withdrawals_root_matches={}",
+        block.withdrawals_root_matches()
+    );
+    let _ = writeln!(
+        stdout,
+        "withdrawal_count={}",
+        format_optional_usize(block.withdrawals.as_ref().map(Vec::len))
     );
     let _ = writeln!(
         stdout,
@@ -147,6 +182,18 @@ fn format_optional_u64(value: Option<u64>) -> String {
 fn format_optional_hash(value: Option<&[u8; 32]>) -> String {
     value
         .map(|value| format!("present:{}", format_hash(value)))
+        .unwrap_or_else(|| "absent".to_owned())
+}
+
+fn format_optional_plain_hash(value: Option<&[u8; 32]>) -> String {
+    value
+        .map(format_hash)
+        .unwrap_or_else(|| "absent".to_owned())
+}
+
+fn format_optional_usize(value: Option<usize>) -> String {
+    value
+        .map(|value| value.to_string())
         .unwrap_or_else(|| "absent".to_owned())
 }
 

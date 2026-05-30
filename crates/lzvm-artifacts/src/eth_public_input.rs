@@ -1,7 +1,7 @@
 use std::fmt;
 
-use crate::eth_block::eth_header_hash;
-use crate::eth_trie::transaction_trie_root;
+use crate::eth_block::{eth_header_hash, eth_ommers_hash};
+use crate::eth_trie::{transaction_trie_root, withdrawals_trie_root};
 use crate::rlp::{encode_rlp, RlpItem};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,6 +17,50 @@ pub struct EthPublicTransactionsPrefix {
     pub consumed: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EthPublicBlockPrefix {
+    pub header: EthPublicHeader,
+    pub transactions: Vec<RlpItem>,
+    pub ommers: Vec<RlpItem>,
+    pub withdrawals: Option<Vec<RlpItem>>,
+    pub consumed: usize,
+}
+
+impl EthPublicBlockPrefix {
+    pub fn transactions_root(&self) -> [u8; 32] {
+        transaction_trie_root(&self.transactions)
+            .expect("ETH public input transactions should encode as valid transaction RLP")
+    }
+
+    pub fn transactions_root_matches(&self) -> bool {
+        self.transactions_root() == self.header.transactions_root
+    }
+
+    pub fn legacy_transaction_count(&self) -> usize {
+        legacy_transaction_count(&self.transactions)
+    }
+
+    pub fn typed_transaction_count(&self) -> usize {
+        typed_transaction_count(&self.transactions)
+    }
+
+    pub fn ommers_hash(&self) -> [u8; 32] {
+        eth_ommers_hash(&self.ommers)
+    }
+
+    pub fn ommers_hash_matches(&self) -> bool {
+        self.ommers_hash() == self.header.ommers_hash
+    }
+
+    pub fn withdrawals_root(&self) -> Option<[u8; 32]> {
+        self.withdrawals.as_deref().map(withdrawals_trie_root)
+    }
+
+    pub fn withdrawals_root_matches(&self) -> bool {
+        self.withdrawals_root() == self.header.withdrawals_root
+    }
+}
+
 impl EthPublicTransactionsPrefix {
     pub fn transactions_root(&self) -> [u8; 32] {
         transaction_trie_root(&self.transactions)
@@ -28,14 +72,11 @@ impl EthPublicTransactionsPrefix {
     }
 
     pub fn legacy_transaction_count(&self) -> usize {
-        self.transactions
-            .iter()
-            .filter(|transaction| matches!(transaction, RlpItem::List(_)))
-            .count()
+        legacy_transaction_count(&self.transactions)
     }
 
     pub fn typed_transaction_count(&self) -> usize {
-        self.transactions.len() - self.legacy_transaction_count()
+        typed_transaction_count(&self.transactions)
     }
 }
 
@@ -154,14 +195,27 @@ pub fn parse_eth_public_transactions_prefix(
 ) -> Result<EthPublicTransactionsPrefix, EthPublicInputError> {
     let mut reader = PublicInputReader::new(bytes);
     let header = read_eth_public_header(&mut reader)?;
-    let transaction_count = reader.read_len("transactions")?;
-    let mut transactions = Vec::with_capacity(transaction_count);
-    for index in 0..transaction_count {
-        transactions.push(reader.read_signed_transaction(index)?);
-    }
+    let transactions = reader.read_transactions()?;
     Ok(EthPublicTransactionsPrefix {
         header,
         transactions,
+        consumed: reader.offset(),
+    })
+}
+
+pub fn parse_eth_public_block_prefix(
+    bytes: &[u8],
+) -> Result<EthPublicBlockPrefix, EthPublicInputError> {
+    let mut reader = PublicInputReader::new(bytes);
+    let header = read_eth_public_header(&mut reader)?;
+    let transactions = reader.read_transactions()?;
+    let ommers = reader.read_ommers()?;
+    let withdrawals = reader.read_withdrawals()?;
+    Ok(EthPublicBlockPrefix {
+        header,
+        transactions,
+        ommers,
+        withdrawals,
         consumed: reader.offset(),
     })
 }
@@ -360,6 +414,52 @@ impl<'a> PublicInputReader<'a> {
             3 => self.read_eip4844_transaction(&signature),
             4 => self.read_eip7702_transaction(&signature),
             found => Err(EthPublicInputError::InvalidTransactionVariant { index, found }),
+        }
+    }
+
+    fn read_transactions(&mut self) -> Result<Vec<RlpItem>, EthPublicInputError> {
+        let transaction_count = self.read_len("transactions")?;
+        let mut transactions = Vec::with_capacity(transaction_count);
+        for index in 0..transaction_count {
+            transactions.push(self.read_signed_transaction(index)?);
+        }
+        Ok(transactions)
+    }
+
+    fn read_ommers(&mut self) -> Result<Vec<RlpItem>, EthPublicInputError> {
+        let ommer_count = self.read_len("ommers")?;
+        let mut ommers = Vec::with_capacity(ommer_count);
+        for _ in 0..ommer_count {
+            let header = read_eth_public_header(self)?;
+            ommers.push(RlpItem::List(eth_public_header_rlp_items(&header)));
+        }
+        Ok(ommers)
+    }
+
+    fn read_withdrawals(&mut self) -> Result<Option<Vec<RlpItem>>, EthPublicInputError> {
+        match self.read_u8()? {
+            0 => Ok(None),
+            1 => {
+                let withdrawal_count = self.read_len("withdrawals")?;
+                let mut withdrawals = Vec::with_capacity(withdrawal_count);
+                for _ in 0..withdrawal_count {
+                    let index = self.read_quantity_u64("withdrawal_index")?;
+                    let validator_index = self.read_quantity_u64("withdrawal_validator_index")?;
+                    let address = self.read_address("withdrawal_address")?.to_vec();
+                    let amount = self.read_quantity_u64("withdrawal_amount")?;
+                    withdrawals.push(RlpItem::List(vec![
+                        RlpItem::Bytes(u64_quantity_bytes(index)),
+                        RlpItem::Bytes(u64_quantity_bytes(validator_index)),
+                        RlpItem::Bytes(address),
+                        RlpItem::Bytes(u64_quantity_bytes(amount)),
+                    ]));
+                }
+                Ok(Some(withdrawals))
+            }
+            found => Err(EthPublicInputError::InvalidOptionTag {
+                field: "withdrawals",
+                found,
+            }),
         }
     }
 
@@ -673,6 +773,17 @@ impl<'a> PublicInputReader<'a> {
         self.offset = end;
         Ok(bytes)
     }
+}
+
+fn legacy_transaction_count(transactions: &[RlpItem]) -> usize {
+    transactions
+        .iter()
+        .filter(|transaction| matches!(transaction, RlpItem::List(_)))
+        .count()
+}
+
+fn typed_transaction_count(transactions: &[RlpItem]) -> usize {
+    transactions.len() - legacy_transaction_count(transactions)
 }
 
 fn typed_transaction(

@@ -1,9 +1,9 @@
-use lzvm_artifacts::eth_block::{decode_eth_header_rlp, eth_header_hash};
+use lzvm_artifacts::eth_block::{decode_eth_header_rlp, eth_header_hash, eth_ommers_hash};
 use lzvm_artifacts::eth_public_input::{
-    eth_public_header_hash, eth_public_header_rlp_items, parse_eth_public_header_prefix,
-    parse_eth_public_transactions_prefix,
+    eth_public_header_hash, eth_public_header_rlp_items, parse_eth_public_block_prefix,
+    parse_eth_public_header_prefix, parse_eth_public_transactions_prefix,
 };
-use lzvm_artifacts::eth_trie::transaction_trie_root;
+use lzvm_artifacts::eth_trie::{transaction_trie_root, withdrawals_trie_root};
 use lzvm_artifacts::rlp::RlpItem;
 
 #[test]
@@ -110,6 +110,48 @@ fn parses_eip7702_authorization_zero_parity_as_empty_quantity() {
     assert!(parsed.transactions_root_matches());
 }
 
+#[test]
+fn parses_public_block_prefix_and_roots() {
+    let expected_transaction = expected_eip1559_transaction();
+    let expected_ommer = RlpItem::List(expected_header_rlp_items());
+    let expected_withdrawal = expected_withdrawal();
+    let transaction_root = transaction_trie_root(std::slice::from_ref(&expected_transaction))
+        .expect("transaction root should build");
+    let ommers_hash = eth_ommers_hash(std::slice::from_ref(&expected_ommer));
+    let withdrawal_root = withdrawals_trie_root(std::slice::from_ref(&expected_withdrawal));
+    let header_bytes =
+        sample_public_header_bytes_with_roots(transaction_root, ommers_hash, withdrawal_root);
+    let transaction = eip1559_transaction_bytes();
+    let ommer = sample_public_header_bytes();
+    let withdrawal = withdrawal_bytes();
+    let mut input = header_bytes.clone();
+    input.extend_from_slice(&1_u64.to_le_bytes());
+    input.extend_from_slice(&transaction);
+    input.extend_from_slice(&1_u64.to_le_bytes());
+    input.extend_from_slice(&ommer);
+    input.push(1);
+    input.extend_from_slice(&1_u64.to_le_bytes());
+    input.extend_from_slice(&withdrawal);
+    input.extend_from_slice(b"tail");
+
+    let parsed = parse_eth_public_block_prefix(&input).expect("public block should parse");
+
+    assert_eq!(parsed.header.block_number, 42);
+    assert_eq!(parsed.transactions, vec![expected_transaction]);
+    assert_eq!(parsed.ommers, vec![expected_ommer]);
+    assert_eq!(parsed.withdrawals, Some(vec![expected_withdrawal]));
+    assert_eq!(
+        parsed.consumed,
+        header_bytes.len() + 8 + transaction.len() + 8 + ommer.len() + 1 + 8 + withdrawal.len()
+    );
+    assert_eq!(parsed.transactions_root(), transaction_root);
+    assert_eq!(parsed.ommers_hash(), ommers_hash);
+    assert_eq!(parsed.withdrawals_root(), Some(withdrawal_root));
+    assert!(parsed.transactions_root_matches());
+    assert!(parsed.ommers_hash_matches());
+    assert!(parsed.withdrawals_root_matches());
+}
+
 fn expected_header_rlp_items() -> Vec<RlpItem> {
     vec![
         bytes([1; 32]),
@@ -185,6 +227,15 @@ fn expected_eip1559_transaction() -> RlpItem {
     RlpItem::Bytes(encoded)
 }
 
+fn expected_withdrawal() -> RlpItem {
+    RlpItem::List(vec![
+        rlp_quantity_u64(7),
+        rlp_quantity_u64(8),
+        RlpItem::Bytes([6; 20].to_vec()),
+        rlp_quantity_u64(9),
+    ])
+}
+
 fn eip7702_transaction_bytes() -> Vec<u8> {
     let mut bytes = Vec::new();
     push_u256(&mut bytes, 0x11);
@@ -228,6 +279,15 @@ fn eip1559_transaction_bytes() -> Vec<u8> {
     bytes
 }
 
+fn withdrawal_bytes() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    push_uint_u64(&mut bytes, 7);
+    push_uint_u64(&mut bytes, 8);
+    push_bytes(&mut bytes, &[6; 20]);
+    push_uint_u64(&mut bytes, 9);
+    bytes
+}
+
 pub fn sample_public_header_bytes() -> Vec<u8> {
     let mut input = Vec::new();
     push_bytes(&mut input, &[1; 32]);
@@ -258,6 +318,18 @@ fn sample_public_header_bytes_with_transactions_root(root: [u8; 32]) -> Vec<u8> 
     let mut input = sample_public_header_bytes();
     let offset = 40 + 40 + 28 + 40 + 8;
     input[offset..offset + 32].copy_from_slice(&root);
+    input
+}
+
+fn sample_public_header_bytes_with_roots(
+    transaction_root: [u8; 32],
+    ommers_hash: [u8; 32],
+    withdrawal_root: [u8; 32],
+) -> Vec<u8> {
+    let mut input = sample_public_header_bytes();
+    input[48..80].copy_from_slice(&ommers_hash);
+    input[156..188].copy_from_slice(&transaction_root);
+    input[237..269].copy_from_slice(&withdrawal_root);
     input
 }
 
