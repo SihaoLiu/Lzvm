@@ -329,9 +329,13 @@ fn decode_compressed_instruction(halfword: u16) -> RiscvInstruction {
         return RiscvInstruction::IllegalCompressed { halfword };
     }
     match (((halfword >> 13) & 0b111) as u8, (halfword & 0b11) as u8) {
+        (3, 0) => decode_compressed_ld(halfword),
+        (7, 0) => decode_compressed_sd(halfword),
         (0, 1) => decode_compressed_addi(halfword),
         (2, 1) => decode_compressed_li(halfword),
         (3, 1) => decode_compressed_lui_or_addi16sp(halfword),
+        (3, 2) => decode_compressed_ldsp(halfword),
+        (7, 2) => decode_compressed_sdsp(halfword),
         _ => compressed_unknown(halfword),
     }
 }
@@ -341,6 +345,24 @@ fn compressed_unknown(halfword: u16) -> RiscvInstruction {
         halfword,
         quadrant: (halfword & 0b11) as u8,
         funct3: ((halfword >> 13) & 0b111) as u8,
+    }
+}
+
+fn decode_compressed_ld(halfword: u16) -> RiscvInstruction {
+    RiscvInstruction::Load {
+        kind: RiscvLoadKind::Ld,
+        rd: compressed_register(halfword >> 2),
+        rs1: compressed_register(halfword >> 7),
+        offset: compressed_ld_sd_offset(halfword),
+    }
+}
+
+fn decode_compressed_sd(halfword: u16) -> RiscvInstruction {
+    RiscvInstruction::Store {
+        kind: RiscvStoreKind::Sd,
+        rs1: compressed_register(halfword >> 7),
+        rs2: compressed_register(halfword >> 2),
+        offset: compressed_ld_sd_offset(halfword),
     }
 }
 
@@ -385,6 +407,28 @@ fn decode_compressed_lui_or_addi16sp(halfword: u16) -> RiscvInstruction {
     }
 }
 
+fn decode_compressed_ldsp(halfword: u16) -> RiscvInstruction {
+    let rd = ((halfword >> 7) & 0x1f) as u8;
+    if rd == 0 {
+        return compressed_unknown(halfword);
+    }
+    RiscvInstruction::Load {
+        kind: RiscvLoadKind::Ld,
+        rd,
+        rs1: 2,
+        offset: compressed_ldsp_offset(halfword),
+    }
+}
+
+fn decode_compressed_sdsp(halfword: u16) -> RiscvInstruction {
+    RiscvInstruction::Store {
+        kind: RiscvStoreKind::Sd,
+        rs1: 2,
+        rs2: ((halfword >> 2) & 0x1f) as u8,
+        offset: compressed_sdsp_offset(halfword),
+    }
+}
+
 fn compressed_addi_immediate(halfword: u16) -> i64 {
     sign_extend(u64::from(compressed_ci_immediate_payload(halfword)), 6)
 }
@@ -405,6 +449,29 @@ fn compressed_addi16sp_immediate(halfword: u16) -> i64 {
     let bit_9 = (halfword >> 12) & 1;
     let value = (bit_4 << 4) | (bit_5 << 5) | (bit_6 << 6) | (bits_8_7 << 7) | (bit_9 << 9);
     sign_extend(u64::from(value), 10)
+}
+
+fn compressed_register(encoded: u16) -> u8 {
+    ((encoded & 0x7) as u8) + 8
+}
+
+fn compressed_ld_sd_offset(halfword: u16) -> i64 {
+    let bits_5_3 = (halfword >> 10) & 0x7;
+    let bits_7_6 = (halfword >> 5) & 0x3;
+    i64::from((bits_5_3 << 3) | (bits_7_6 << 6))
+}
+
+fn compressed_ldsp_offset(halfword: u16) -> i64 {
+    let bits_4_3 = (halfword >> 5) & 0x3;
+    let bit_5 = (halfword >> 12) & 1;
+    let bits_8_6 = (halfword >> 2) & 0x7;
+    i64::from((bits_4_3 << 3) | (bit_5 << 5) | (bits_8_6 << 6))
+}
+
+fn compressed_sdsp_offset(halfword: u16) -> i64 {
+    let bits_5_3 = (halfword >> 10) & 0x7;
+    let bits_8_6 = (halfword >> 7) & 0x7;
+    i64::from((bits_5_3 << 3) | (bits_8_6 << 6))
 }
 
 fn decode_fence(word: u32) -> RiscvInstruction {

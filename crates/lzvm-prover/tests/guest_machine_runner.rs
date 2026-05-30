@@ -134,6 +134,53 @@ fn compressed_addi16sp(immediate: i16) -> u16 {
         | (((immediate >> 5) & 1) << 2)
 }
 
+fn compressed_ld(rd: u8, rs1: u8, offset: u16) -> u16 {
+    assert!((8..=15).contains(&rd));
+    assert!((8..=15).contains(&rs1));
+    assert!(offset <= 248);
+    assert_eq!(offset & 0x7, 0);
+    (0b011 << 13)
+        | (((offset >> 3) & 0x7) << 10)
+        | (u16::from(rs1 - 8) << 7)
+        | (((offset >> 6) & 0x3) << 5)
+        | (u16::from(rd - 8) << 2)
+}
+
+fn compressed_sd(rs2: u8, rs1: u8, offset: u16) -> u16 {
+    assert!((8..=15).contains(&rs2));
+    assert!((8..=15).contains(&rs1));
+    assert!(offset <= 248);
+    assert_eq!(offset & 0x7, 0);
+    (0b111 << 13)
+        | (((offset >> 3) & 0x7) << 10)
+        | (u16::from(rs1 - 8) << 7)
+        | (((offset >> 6) & 0x3) << 5)
+        | (u16::from(rs2 - 8) << 2)
+}
+
+fn compressed_ldsp(rd: u8, offset: u16) -> u16 {
+    assert!((1..32).contains(&rd));
+    assert!(offset <= 504);
+    assert_eq!(offset & 0x7, 0);
+    (0b011 << 13)
+        | 0b10
+        | (((offset >> 5) & 1) << 12)
+        | (u16::from(rd) << 7)
+        | (((offset >> 3) & 0x3) << 5)
+        | (((offset >> 6) & 0x7) << 2)
+}
+
+fn compressed_sdsp(rs2: u8, offset: u16) -> u16 {
+    assert!(rs2 < 32);
+    assert!(offset <= 504);
+    assert_eq!(offset & 0x7, 0);
+    (0b111 << 13)
+        | 0b10
+        | (((offset >> 3) & 0x7) << 10)
+        | (((offset >> 6) & 0x7) << 7)
+        | (u16::from(rs2) << 2)
+}
+
 fn push_halfword(code: &mut Vec<u8>, halfword: u16) {
     code.extend_from_slice(&halfword.to_le_bytes());
 }
@@ -216,6 +263,39 @@ fn runs_compressed_lui_and_addi16sp_instructions_until_ecall() {
     assert_eq!(state.register(2), Some(0));
     assert_eq!(state.register(3), Some(4096));
     assert_eq!(state.register(4), Some(u64::MAX << 12));
+}
+
+#[test]
+fn runs_compressed_load_store_instructions_until_ecall() {
+    let mut code = Vec::new();
+    push_halfword(&mut code, compressed_sd(8, 9, 8));
+    push_halfword(&mut code, compressed_ld(15, 9, 8));
+    push_halfword(&mut code, compressed_sdsp(31, 16));
+    push_halfword(&mut code, compressed_ldsp(3, 16));
+    push_word(&mut code, 0x0000_0073);
+    code.resize(128, 0);
+    let mut memory = guest_machine_memory_with_bytes(&code);
+    let mut state = GuestMachineState::new(memory.entry_address());
+    state
+        .set_register(8, 0x1122_3344_5566_7788)
+        .expect("register should set");
+    state
+        .set_register(9, ENTRY + 64)
+        .expect("register should set");
+    state
+        .set_register(31, 0x8877_6655_4433_2211)
+        .expect("register should set");
+    state
+        .set_register(2, ENTRY + 96)
+        .expect("register should set");
+
+    let report = run_guest_machine(&mut memory, &mut state, 8).expect("guest should halt");
+
+    assert_eq!(report.executed_instructions, 4);
+    assert_eq!(report.halt, GuestMachineHalt::Ecall { address: ENTRY + 8 });
+    assert_eq!(state.pc(), ENTRY + 8);
+    assert_eq!(state.register(15), Some(0x1122_3344_5566_7788));
+    assert_eq!(state.register(3), Some(0x8877_6655_4433_2211));
 }
 
 #[test]
