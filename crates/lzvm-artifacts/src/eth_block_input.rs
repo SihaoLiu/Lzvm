@@ -83,6 +83,9 @@ pub enum EthBlockInputError {
     DuplicateSection {
         id: u32,
     },
+    InvalidSectionId {
+        found: u32,
+    },
     InvalidMetadataLength {
         expected_min: usize,
         found: usize,
@@ -174,6 +177,9 @@ impl fmt::Display for EthBlockInputError {
             Self::MissingReceiptsRlp => write!(f, "missing ETH block input receipts RLP"),
             Self::ExpectedReceiptsList => write!(f, "expected ETH receipts list"),
             Self::DuplicateSection { id } => write!(f, "duplicate ETH block input section: {id}"),
+            Self::InvalidSectionId { found } => {
+                write!(f, "invalid ETH block input section id {found}")
+            }
             Self::InvalidMetadataLength {
                 expected_min,
                 found,
@@ -550,7 +556,7 @@ pub fn parse_eth_block_input(bytes: &[u8]) -> Result<EthBlockInput, EthBlockInpu
             WITHDRAWAL_PREIMAGES_SECTION_ID => &mut withdrawal_preimages,
             RECEIPT_PREIMAGES_SECTION_ID => &mut receipt_preimages,
             RECEIPTS_RLP_SECTION_ID => &mut receipts_rlp,
-            _ => continue,
+            found => return Err(EthBlockInputError::InvalidSectionId { found }),
         };
         if target.replace(section.data).is_some() {
             return Err(EthBlockInputError::DuplicateSection { id: section.id });
