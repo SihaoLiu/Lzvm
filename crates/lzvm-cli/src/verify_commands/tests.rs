@@ -1,6 +1,6 @@
 use super::*;
 use lzvm_artifacts::eth_block_input::{
-    build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
+    build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest, EthBlockInput,
 };
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
@@ -106,9 +106,7 @@ fn verifies_eth_public_input_against_embedded_block_input_segment() {
     let public_values_path = dir.join("public-values.bin");
     let public_input = sample_public_block_bytes_with_matching_roots();
     std::fs::write(&public_input_path, &public_input).expect("public input should write");
-    let public_block = parse_eth_public_block_prefix(&public_input).expect("block should parse");
-    let block_rlp = public_block.block_rlp();
-    let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let block_input = block_input_from_public_bytes(&public_input);
     let block_input_bytes = encode_eth_block_input(&block_input).expect("input should encode");
     let setup_hash = [7; 32];
     let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
@@ -162,9 +160,7 @@ fn reports_embedded_block_input_segment_hash_for_reordered_input_file() {
     let proof_path = dir.join("proof.bin");
     let public_values_path = dir.join("public-values.bin");
     let public_input = sample_public_block_bytes_with_matching_roots();
-    let public_block = parse_eth_public_block_prefix(&public_input).expect("block should parse");
-    let block_rlp = public_block.block_rlp();
-    let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let block_input = block_input_from_public_bytes(&public_input);
     let canonical_input_bytes = encode_eth_block_input(&block_input).expect("input should encode");
     let reordered_input_bytes = reordered_eth_block_input_file(&canonical_input_bytes);
     assert_ne!(reordered_input_bytes, canonical_input_bytes);
@@ -219,9 +215,7 @@ fn rejects_block_input_binding_when_proof_public_values_hash_differs() {
     let proof_path = dir.join("proof.bin");
     let public_values_path = dir.join("public-values.bin");
     let public_input = sample_public_block_bytes_with_matching_roots();
-    let public_block = parse_eth_public_block_prefix(&public_input).expect("block should parse");
-    let block_rlp = public_block.block_rlp();
-    let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let block_input = block_input_from_public_bytes(&public_input);
     let block_input_bytes = encode_eth_block_input(&block_input).expect("input should encode");
     std::fs::write(&input_path, &block_input_bytes).expect("block input should write");
     let setup_hash = [7; 32];
@@ -273,9 +267,7 @@ fn rejects_public_input_binding_when_proof_public_values_hash_differs() {
     let public_values_path = dir.join("public-values.bin");
     let public_input = sample_public_block_bytes_with_matching_roots();
     std::fs::write(&public_input_path, &public_input).expect("public input should write");
-    let public_block = parse_eth_public_block_prefix(&public_input).expect("block should parse");
-    let block_rlp = public_block.block_rlp();
-    let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let block_input = block_input_from_public_bytes(&public_input);
     let block_input_bytes = encode_eth_block_input(&block_input).expect("input should encode");
     let setup_hash = [7; 32];
     let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
@@ -328,9 +320,7 @@ fn rejects_eth_public_input_with_trailing_bytes_for_verify_binding() {
     let proof_path = dir.join("proof.bin");
     let public_values_path = dir.join("public-values.bin");
     let public_input = sample_public_block_bytes_with_matching_roots();
-    let public_block = parse_eth_public_block_prefix(&public_input).expect("block should parse");
-    let block_rlp = public_block.block_rlp();
-    let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let block_input = block_input_from_public_bytes(&public_input);
     let setup_hash = [7; 32];
     let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
     let mut public_input_with_tail = public_input;
@@ -390,9 +380,7 @@ fn verifies_allowed_trailing_eth_public_input_against_embedded_block_input_segme
     let proof_path = dir.join("proof.bin");
     let public_values_path = dir.join("public-values.bin");
     let public_input = sample_public_block_bytes_with_matching_roots();
-    let public_block = parse_eth_public_block_prefix(&public_input).expect("block should parse");
-    let block_rlp = public_block.block_rlp();
-    let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let block_input = block_input_from_public_bytes(&public_input);
     let block_input_bytes = encode_eth_block_input(&block_input).expect("input should encode");
     let setup_hash = [7; 32];
     let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
@@ -435,6 +423,12 @@ fn verifies_allowed_trailing_eth_public_input_against_embedded_block_input_segme
     assert_eq!(binding.block_hash, block_input.block_hash);
     assert_eq!(binding.transaction_preimage_count, 1);
     assert_eq!(binding.withdrawal_count, Some(1));
+}
+
+fn block_input_from_public_bytes(bytes: &[u8]) -> EthBlockInput {
+    let public_block = parse_eth_public_block_prefix(bytes).expect("block should parse");
+    let block_rlp = public_block.block_rlp();
+    build_eth_block_input(&block_rlp).expect("block input should build")
 }
 
 fn reordered_eth_block_input_file(bytes: &[u8]) -> Vec<u8> {
