@@ -17,7 +17,7 @@ fn write_bytes(path: &Path, bytes: impl AsRef<[u8]>) {
     fs::write(path, bytes).expect("fixture bytes should be written");
 }
 
-fn framed_section(data: &[u8]) -> Vec<u8> {
+fn framed_chunk(data: &[u8]) -> Vec<u8> {
     let mut encoded = Vec::new();
     encoded.extend_from_slice(&(data.len() as u64).to_le_bytes());
     encoded.extend_from_slice(data);
@@ -31,8 +31,8 @@ fn summarizes_framed_input_chunks() {
     let dir = temp_dir("summary");
     let _ = fs::remove_dir_all(&dir);
     let input_path = dir.join("input.bin");
-    let mut input = framed_section(b"public");
-    input.extend_from_slice(&framed_section(b"witness-data"));
+    let mut input = framed_chunk(b"public");
+    input.extend_from_slice(&framed_chunk(b"witness-data"));
     write_bytes(&input_path, &input);
 
     let mut stdout = Vec::new();
@@ -84,5 +84,106 @@ fn reports_truncated_framed_input_chunks() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "eth framed input summary failed: truncated chunk 0: expected 16 bytes, found 9\n"
+    );
+}
+
+#[test]
+fn writes_framed_input_chunk_payload() {
+    let dir = temp_dir("write-chunk");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("input.bin");
+    let output_path = dir.join("chunks").join("witness.bin");
+    let mut input = framed_chunk(b"public");
+    input.extend_from_slice(&framed_chunk(b"witness-data"));
+    write_bytes(&input_path, &input);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-framed-input-chunk",
+            input_path.to_str().expect("input path should be utf-8"),
+            "1",
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let written = fs::read(&output_path).expect("chunk payload should be written");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    assert_eq!(written, b"witness-data");
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\ninput={}\nchunk=1\nchunk_offset=16\nchunk_payload_offset=24\nbytes=12\noutput={}\n",
+            input_path.display(),
+            output_path.display()
+        )
+    );
+}
+
+#[test]
+fn reports_missing_framed_input_chunk() {
+    let dir = temp_dir("missing-chunk");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("input.bin");
+    let output_path = dir.join("chunk.bin");
+    write_bytes(&input_path, framed_chunk(b"public"));
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-framed-input-chunk",
+            input_path.to_str().expect("input path should be utf-8"),
+            "1",
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "eth framed input chunk write failed: chunk index 1 out of range: chunks=1\n"
+    );
+}
+
+#[test]
+fn reports_invalid_framed_input_chunk_index() {
+    let dir = temp_dir("invalid-index");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("input.bin");
+    let output_path = dir.join("chunk.bin");
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-framed-input-chunk",
+            input_path.to_str().expect("input path should be utf-8"),
+            "not-a-number",
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert!(!output_path.exists());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "eth framed input chunk write failed: invalid chunk index: not-a-number\n"
     );
 }

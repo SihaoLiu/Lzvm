@@ -1,6 +1,6 @@
 use lzvm_artifacts::framed_stdin::{parse_framed_stdin_chunks, FramedStdinChunk, FramedStdinError};
 
-fn framed_section(data: &[u8]) -> Vec<u8> {
+fn framed_chunk(data: &[u8]) -> Vec<u8> {
     let mut encoded = Vec::new();
     encoded.extend_from_slice(&(data.len() as u64).to_le_bytes());
     encoded.extend_from_slice(data);
@@ -11,8 +11,8 @@ fn framed_section(data: &[u8]) -> Vec<u8> {
 
 #[test]
 fn parses_aligned_chunks() {
-    let mut encoded = framed_section(b"abc");
-    encoded.extend_from_slice(&framed_section(b"12345678"));
+    let mut encoded = framed_chunk(b"abc");
+    encoded.extend_from_slice(&framed_chunk(b"12345678"));
 
     let chunks = parse_framed_stdin_chunks(&encoded).expect("chunks should parse");
 
@@ -53,7 +53,7 @@ fn rejects_truncated_payloads() {
 
 #[test]
 fn rejects_nonzero_padding() {
-    let mut encoded = framed_section(b"abc");
+    let mut encoded = framed_chunk(b"abc");
     *encoded.last_mut().expect("padding byte should exist") = 1;
 
     assert_eq!(

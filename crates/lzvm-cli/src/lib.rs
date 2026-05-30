@@ -44,6 +44,9 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
         ["eth", "framed-input-summary", rest @ ..] => {
             eth_framed_input::run_summary(rest, stdout, stderr)
         }
+        ["eth", "write-framed-input-chunk", rest @ ..] => {
+            eth_framed_input::run_write_chunk(rest, stdout, stderr)
+        }
         ["eth", "write-block-input", rest @ ..] => eth_block_input::run(rest, stdout, stderr),
         ["eth", "write-block-public-values", rest @ ..] => {
             eth_block_public_values::run(rest, stdout, stderr)
