@@ -24,6 +24,7 @@ use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, parse_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
+use lzvm_artifacts::eth_public_input::parse_eth_public_block_prefix;
 use lzvm_artifacts::eth_trie::{receipt_trie_build, withdrawals_trie_build};
 use lzvm_artifacts::expression_info::{encode_expression_info, ExpressionInfo};
 use lzvm_artifacts::expression_program::{
@@ -1064,6 +1065,122 @@ fn sample_block_rlp() -> Vec<u8> {
 
 fn sample_block_rlp_variant() -> Vec<u8> {
     sample_block_rlp_with_extra(b"lzvm-alt")
+}
+
+fn sample_public_block_bytes_with_matching_roots() -> Vec<u8> {
+    let mut input = sample_public_header_bytes();
+    input.extend_from_slice(&1_u64.to_le_bytes());
+    input.extend_from_slice(&eip1559_transaction_bytes());
+    input.extend_from_slice(&0_u64.to_le_bytes());
+    input.push(1);
+    input.extend_from_slice(&1_u64.to_le_bytes());
+    input.extend_from_slice(&public_withdrawal_bytes());
+
+    let parsed = parse_eth_public_block_prefix(&input).expect("block should parse");
+    let transaction_root = parsed.transactions_root();
+    let ommers_hash = parsed.ommers_hash();
+    let withdrawal_root = parsed
+        .withdrawals_root()
+        .expect("withdrawals root should be present");
+    input[48..80].copy_from_slice(&ommers_hash);
+    input[156..188].copy_from_slice(&transaction_root);
+    input[237..269].copy_from_slice(&withdrawal_root);
+    input
+}
+
+fn sample_public_header_bytes() -> Vec<u8> {
+    let mut input = Vec::new();
+    push_public_bytes(&mut input, &[1; 32]);
+    push_public_bytes(&mut input, &[2; 32]);
+    push_public_bytes(&mut input, &[3; 20]);
+    push_public_bytes(&mut input, &[4; 32]);
+    push_public_bytes(&mut input, &[5; 32]);
+    push_public_bytes(&mut input, &[6; 32]);
+    push_public_option_bytes(&mut input, Some(&[7; 32]));
+    push_public_bytes(&mut input, &[8; 256]);
+    push_public_bytes(&mut input, &u256_bytes(9));
+    input.extend_from_slice(&42_u64.to_le_bytes());
+    input.extend_from_slice(&100_u64.to_le_bytes());
+    input.extend_from_slice(&90_u64.to_le_bytes());
+    input.extend_from_slice(&77_u64.to_le_bytes());
+    push_public_bytes(&mut input, &[10; 32]);
+    push_public_bytes(&mut input, &[11; 8]);
+    push_public_option_u64(&mut input, Some(123));
+    push_public_option_u64(&mut input, Some(456));
+    push_public_option_u64(&mut input, Some(789));
+    push_public_option_bytes(&mut input, Some(&[12; 32]));
+    push_public_option_bytes(&mut input, Some(&[13; 32]));
+    push_public_bytes(&mut input, b"abc");
+    input
+}
+
+fn eip1559_transaction_bytes() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    push_public_u256(&mut bytes, 0x11);
+    push_public_u256(&mut bytes, 0x22);
+    push_public_uint_u64(&mut bytes, 1);
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    bytes.extend_from_slice(&1_u64.to_le_bytes());
+    bytes.extend_from_slice(&7_u64.to_le_bytes());
+    bytes.extend_from_slice(&21_000_u64.to_le_bytes());
+    bytes.extend_from_slice(&300_u128.to_le_bytes());
+    bytes.extend_from_slice(&20_u128.to_le_bytes());
+    push_public_option_bytes(&mut bytes, Some(&[9; 20]));
+    push_public_u256(&mut bytes, 123);
+    bytes.extend_from_slice(&0_u64.to_le_bytes());
+    push_public_bytes(&mut bytes, b"call-data");
+    bytes
+}
+
+fn public_withdrawal_bytes() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    push_public_uint_u64(&mut bytes, 7);
+    push_public_uint_u64(&mut bytes, 8);
+    push_public_bytes(&mut bytes, &[6; 20]);
+    push_public_uint_u64(&mut bytes, 9);
+    bytes
+}
+
+fn push_public_bytes(out: &mut Vec<u8>, bytes: &[u8]) {
+    out.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
+    out.extend_from_slice(bytes);
+}
+
+fn push_public_option_bytes(out: &mut Vec<u8>, bytes: Option<&[u8]>) {
+    match bytes {
+        Some(bytes) => {
+            out.push(1);
+            push_public_bytes(out, bytes);
+        }
+        None => out.push(0),
+    }
+}
+
+fn push_public_option_u64(out: &mut Vec<u8>, value: Option<u64>) {
+    match value {
+        Some(value) => {
+            out.push(1);
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+        None => out.push(0),
+    }
+}
+
+fn push_public_u256(out: &mut Vec<u8>, value: u8) {
+    let mut bytes = [0; 32];
+    bytes[31] = value;
+    push_public_bytes(out, &bytes);
+}
+
+fn push_public_uint_u64(out: &mut Vec<u8>, value: u64) {
+    out.extend_from_slice(&8_u64.to_le_bytes());
+    out.extend_from_slice(&value.to_be_bytes());
+}
+
+fn u256_bytes(value: u8) -> [u8; 32] {
+    let mut bytes = [0; 32];
+    bytes[31] = value;
+    bytes
 }
 
 fn sample_block_rlp_with_receipts_root(receipts_root: [u8; 32]) -> Vec<u8> {
@@ -7289,6 +7406,108 @@ fn prove_witness_generates_eth_block_public_values_when_missing() {
             block_input_path
                 .to_str()
                 .expect("block input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            generated_public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert!(verify_stderr.is_empty());
+    assert!(String::from_utf8(verify_stdout)
+        .expect("verify stdout should be utf-8")
+        .contains("eth_block_input_match=ok\n"));
+}
+
+#[test]
+fn proves_and_verifies_eth_public_input_directly() {
+    let dir = temp_dir("prove-verify-eth-public-input");
+    let _ = fs::remove_dir_all(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let public_input_path = dir.join("public.bin");
+    let generated_block_input_path = output_dir.join("eth-block.input");
+    let generated_public_values_path = output_dir.join("eth-block-public-values.bin");
+    let proof_path = output_dir.join("proof.bin");
+    let public_input = sample_public_block_bytes_with_matching_roots();
+    let public_block = parse_eth_public_block_prefix(&public_input).expect("block should parse");
+    let block_input = build_eth_block_input(&public_block.block_rlp()).expect("input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
+    let encoded_block_input =
+        encode_eth_block_input(&block_input).expect("block input should encode");
+    let block_input_hash = eth_block_input_bytes_digest(&encoded_block_input);
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+    write_bytes(&public_input_path, &public_input);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--eth-public-input",
+            public_input_path
+                .to_str()
+                .expect("public input path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let generated_block_input_bytes =
+        fs::read(&generated_block_input_path).expect("generated block input should read");
+    let generated_block_input =
+        parse_eth_block_input(&generated_block_input_bytes).expect("block input should parse");
+    assert_eq!(generated_block_input, block_input);
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains(&format!(
+        "eth_public_input={}\n",
+        public_input_path.display()
+    )));
+    assert!(stdout_text.contains("eth_block_input_generated=eth_public_input\n"));
+    assert!(stdout_text.contains("public_inputs_generated=eth_block_input\n"));
+    assert!(stdout_text.contains(&format!(
+        "eth_block_input={}\n",
+        generated_block_input_path.display()
+    )));
+    assert!(stdout_text.contains(&format!(
+        "eth_block_input_hash={}\n",
+        format_hash(&block_input_hash)
+    )));
+
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "proof",
+            "--eth-public-input",
+            public_input_path
+                .to_str()
+                .expect("public input path should be utf-8"),
             dir.to_str().expect("path should be utf-8"),
             proof_path.to_str().expect("proof path should be utf-8"),
             generated_public_values_path
