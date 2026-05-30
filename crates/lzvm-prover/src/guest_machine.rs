@@ -11,6 +11,7 @@ use crate::guest_memory::{
 };
 
 const GUEST_REGISTER_COUNT: usize = 32;
+const RV64IMAC_MISA: u64 = (2_u64 << 62) | 1_u64 | (1_u64 << 2) | (1_u64 << 8) | (1_u64 << 12);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestMachineMemory {
@@ -783,6 +784,7 @@ fn branch_is_taken(kind: RiscvBranchKind, lhs: u64, rhs: u64) -> bool {
 
 fn read_csr(csr: RiscvCsr) -> u64 {
     match csr {
+        RiscvCsr::Misa => RV64IMAC_MISA,
         RiscvCsr::Mvendorid | RiscvCsr::Marchid | RiscvCsr::Mimpid | RiscvCsr::Mhartid => 0,
     }
 }

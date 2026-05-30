@@ -1661,27 +1661,30 @@ fn advances_fence_instructions_as_noops() {
 }
 
 #[test]
-fn advances_machine_identity_csr_reads() {
+fn advances_machine_csr_reads() {
+    const RV64IMAC_MISA: u64 = 0x8000_0000_0000_1105;
+
     let cases = [
-        (0x0f11, RiscvCsr::Mvendorid, 10),
-        (0x0f12, RiscvCsr::Marchid, 11),
-        (0x0f13, RiscvCsr::Mimpid, 12),
-        (0x0f14, RiscvCsr::Mhartid, 13),
+        (0x0301, RiscvCsr::Misa, 10, RV64IMAC_MISA),
+        (0x0f11, RiscvCsr::Mvendorid, 11, 0),
+        (0x0f12, RiscvCsr::Marchid, 12, 0),
+        (0x0f13, RiscvCsr::Mimpid, 13, 0),
+        (0x0f14, RiscvCsr::Mhartid, 14, 0),
     ];
     let words: Vec<u32> = cases
         .iter()
-        .map(|(csr_number, _, rd)| csrrs(*rd, *csr_number, 0))
+        .map(|(csr_number, _, rd, _)| csrrs(*rd, *csr_number, 0))
         .collect();
     let mut memory = guest_machine_memory_with_words(&words);
     let mut state = GuestMachineState::new(memory.entry_address());
 
-    for (_, _, rd) in cases {
+    for (_, _, rd, _) in cases {
         state
             .set_register(usize::from(rd), u64::MAX)
             .expect("register write should be valid");
     }
 
-    for (index, (_, csr, rd)) in cases.into_iter().enumerate() {
+    for (index, (_, csr, rd, value)) in cases.into_iter().enumerate() {
         let report =
             advance_guest_machine(&mut memory, &mut state).expect("csr read should execute");
         let address = ENTRY + (index as u64) * 4;
@@ -1689,7 +1692,7 @@ fn advances_machine_identity_csr_reads() {
         assert_eq!(report.address, address);
         assert_eq!(report.next_pc, address + 4);
         assert_eq!(report.instruction, RiscvInstruction::CsrRead { csr, rd });
-        assert_eq!(state.register(usize::from(rd)), Some(0));
+        assert_eq!(state.register(usize::from(rd)), Some(value));
         assert_eq!(state.pc(), address + 4);
     }
 }

@@ -367,8 +367,9 @@ fn decodes_common_riscv_instruction_formats() {
 }
 
 #[test]
-fn decodes_machine_identity_csr_reads() {
+fn decodes_machine_csr_reads() {
     let cases = [
+        (0x0301, RiscvCsr::Misa),
         (0x0f11, RiscvCsr::Mvendorid),
         (0x0f12, RiscvCsr::Marchid),
         (0x0f13, RiscvCsr::Mimpid),
@@ -1594,6 +1595,7 @@ fn keeps_unknown_riscv_words_visible() {
         csrrs(10, 0x0f12, 1),
         csrrs(10, 0x0f13, 1),
         csrrs(10, 0x0f14, 1),
+        csrrs(10, 0x0301, 1),
     ] {
         assert_eq!(
             decode_riscv_instruction(word),
