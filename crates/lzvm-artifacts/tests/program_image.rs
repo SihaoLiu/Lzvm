@@ -213,6 +213,19 @@ fn rejects_invalid_program_image_geometry() {
     ));
 
     let mut cache = sample_cache();
+    cache.trace_row_count = 1_u64 << 63;
+    cache.blowup_factor = 4;
+    assert!(matches!(
+        encode_program_image_commitment_cache(&cache),
+        Err(
+            ProgramImageCommitmentCacheError::TraceRowExpansionOverflow {
+                trace_row_count: 0x8000_0000_0000_0000,
+                blowup_factor: 4
+            }
+        )
+    ));
+
+    let mut cache = sample_cache();
     cache.merkle_tree_arity = 3;
     assert!(matches!(
         encode_program_image_commitment_cache(&cache),

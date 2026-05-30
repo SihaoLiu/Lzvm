@@ -92,6 +92,10 @@ pub enum ProgramImageCommitmentCacheError {
     InvalidBlowupFactor {
         value: u32,
     },
+    TraceRowExpansionOverflow {
+        trace_row_count: u64,
+        blowup_factor: u32,
+    },
     InvalidMerkleTreeArity {
         value: u32,
     },
@@ -153,6 +157,13 @@ impl fmt::Display for ProgramImageCommitmentCacheError {
                 f,
                 "invalid program-image commitment cache blowup factor {value}"
             ),
+            Self::TraceRowExpansionOverflow {
+                trace_row_count,
+                blowup_factor,
+            } => write!(
+                f,
+                "program-image commitment cache trace row expansion overflows: rows {trace_row_count}, blowup factor {blowup_factor}"
+            ),
             Self::InvalidMerkleTreeArity { value } => write!(
                 f,
                 "invalid program-image commitment cache Merkle tree arity {value}"
@@ -187,6 +198,7 @@ impl std::error::Error for ProgramImageCommitmentCacheError {
             | Self::InvalidTraceRows { .. }
             | Self::EmptyTraceColumns
             | Self::InvalidBlowupFactor { .. }
+            | Self::TraceRowExpansionOverflow { .. }
             | Self::InvalidMerkleTreeArity { .. }
             | Self::UnsupportedGpuMode { .. }
             | Self::Io { .. } => None,
@@ -292,6 +304,18 @@ pub(crate) fn validate_program_image_commitment_cache(
         return Err(ProgramImageCommitmentCacheError::InvalidBlowupFactor {
             value: value.blowup_factor,
         });
+    }
+    if value
+        .trace_row_count
+        .checked_mul(u64::from(value.blowup_factor))
+        .is_none()
+    {
+        return Err(
+            ProgramImageCommitmentCacheError::TraceRowExpansionOverflow {
+                trace_row_count: value.trace_row_count,
+                blowup_factor: value.blowup_factor,
+            },
+        );
     }
     if !matches!(value.merkle_tree_arity, 2 | 4) {
         return Err(ProgramImageCommitmentCacheError::InvalidMerkleTreeArity {
