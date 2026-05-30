@@ -795,7 +795,11 @@ fn branch_is_taken(kind: RiscvBranchKind, lhs: u64, rhs: u64) -> bool {
 
 fn read_csr(csr: RiscvCsr, retired_instructions: u64) -> u64 {
     match csr {
-        RiscvCsr::Cycle | RiscvCsr::Time | RiscvCsr::Instret => retired_instructions,
+        RiscvCsr::Mcycle
+        | RiscvCsr::Minstret
+        | RiscvCsr::Cycle
+        | RiscvCsr::Time
+        | RiscvCsr::Instret => retired_instructions,
         RiscvCsr::Cycleh | RiscvCsr::Timeh | RiscvCsr::Instreth => retired_instructions >> 32,
         RiscvCsr::Misa => RV64IMAC_MISA,
         RiscvCsr::Mvendorid | RiscvCsr::Marchid | RiscvCsr::Mimpid | RiscvCsr::Mhartid => 0,

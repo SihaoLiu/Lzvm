@@ -299,6 +299,8 @@ pub enum RiscvAmoWidth {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RiscvCsr {
+    Mcycle,
+    Minstret,
     Cycle,
     Time,
     Instret,
@@ -315,6 +317,8 @@ pub enum RiscvCsr {
 impl RiscvCsr {
     fn from_number(number: u16) -> Option<Self> {
         match number {
+            0x0b00 => Some(Self::Mcycle),
+            0x0b02 => Some(Self::Minstret),
             0x0c00 => Some(Self::Cycle),
             0x0c01 => Some(Self::Time),
             0x0c02 => Some(Self::Instret),
