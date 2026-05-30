@@ -613,6 +613,14 @@ fn execute_amo(kind: RiscvAmoKind, width: RiscvAmoWidth, loaded: u64, operand: u
             u64::from((loaded as u32).wrapping_add(operand as u32))
         }
         (RiscvAmoKind::Add, RiscvAmoWidth::Doubleword) => loaded.wrapping_add(operand),
+        (RiscvAmoKind::Swap, RiscvAmoWidth::Word) => u64::from(operand as u32),
+        (RiscvAmoKind::Swap, RiscvAmoWidth::Doubleword) => operand,
+        (RiscvAmoKind::Xor, RiscvAmoWidth::Word) => u64::from((loaded as u32) ^ (operand as u32)),
+        (RiscvAmoKind::Xor, RiscvAmoWidth::Doubleword) => loaded ^ operand,
+        (RiscvAmoKind::Or, RiscvAmoWidth::Word) => u64::from((loaded as u32) | (operand as u32)),
+        (RiscvAmoKind::Or, RiscvAmoWidth::Doubleword) => loaded | operand,
+        (RiscvAmoKind::And, RiscvAmoWidth::Word) => u64::from((loaded as u32) & (operand as u32)),
+        (RiscvAmoKind::And, RiscvAmoWidth::Doubleword) => loaded & operand,
     }
 }
 

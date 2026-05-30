@@ -461,6 +461,22 @@ fn amoadd_d_aqrl(rd: u8, rs1: u8, rs2: u8) -> u32 {
     encode_amo(0x00, true, true, rs2, rs1, 3, rd)
 }
 
+fn amoswap_d(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_amo(0x01, false, false, rs2, rs1, 3, rd)
+}
+
+fn amoxor_w(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_amo(0x04, false, false, rs2, rs1, 2, rd)
+}
+
+fn amoor_d_rl(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_amo(0x08, false, true, rs2, rs1, 3, rd)
+}
+
+fn amoand_w_aq(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_amo(0x0c, true, false, rs2, rs1, 2, rd)
+}
+
 fn branch(funct3: u8, rs1: u8, rs2: u8, offset: i16) -> u32 {
     assert_funct3(funct3);
     assert_register(rs1);
@@ -819,6 +835,74 @@ fn advances_atomic_add_instructions() {
     assert_eq!(state.register(3), Some(0x7fff_ffff));
     assert_eq!(state.register(4), Some(0x0123_4567_89ab_cdef));
     assert_eq!(state.pc(), ENTRY + 8);
+}
+
+#[test]
+fn advances_atomic_swap_and_logical_instructions() {
+    let data_offset = 64;
+    let data_address = ENTRY + data_offset as u64;
+    let mut memory = guest_machine_memory_with_words_and_data(
+        &[
+            amoswap_d(3, 1, 2),
+            amoxor_w(4, 1, 5),
+            amoor_d_rl(6, 1, 7),
+            amoand_w_aq(8, 1, 9),
+        ],
+        data_offset,
+        &[
+            0xef, 0xcd, 0xab, 0x89, 0x67, 0x45, 0x23, 0x01, 0x00, 0x00, 0xff, 0xff, 0xaa, 0xbb,
+            0xcc, 0xdd, 0x00, 0xff, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x0f, 0x0f, 0xf0, 0xf0,
+            0xaa, 0xbb, 0xcc, 0xdd,
+        ],
+    );
+    let mut state = GuestMachineState::new(memory.entry_address());
+    state
+        .set_register(1, data_address)
+        .expect("register write should be valid");
+    state
+        .set_register(2, 0xaabb_ccdd_eeff_0011)
+        .expect("register write should be valid");
+    state
+        .set_register(5, 0x00ff_00ff)
+        .expect("register write should be valid");
+    state
+        .set_register(7, 0xff00_0000_ff00_0000)
+        .expect("register write should be valid");
+    state
+        .set_register(9, 0x0ff0_ffff)
+        .expect("register write should be valid");
+
+    advance_guest_machine(&mut memory, &mut state).expect("swap should execute");
+    state
+        .set_register(1, data_address + 8)
+        .expect("register write should be valid");
+    advance_guest_machine(&mut memory, &mut state).expect("xor should execute");
+    state
+        .set_register(1, data_address + 16)
+        .expect("register write should be valid");
+    advance_guest_machine(&mut memory, &mut state).expect("or should execute");
+    state
+        .set_register(1, data_address + 24)
+        .expect("register write should be valid");
+    advance_guest_machine(&mut memory, &mut state).expect("and should execute");
+
+    let mut stored = [0_u8; 32];
+    memory
+        .read_range_into(data_address, &mut stored)
+        .expect("stored bytes should read");
+    assert_eq!(
+        stored,
+        [
+            0x11, 0x00, 0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0xff, 0x00, 0x00, 0xff, 0xaa, 0xbb,
+            0xcc, 0xdd, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x0f, 0x0f, 0xf0, 0x00,
+            0xaa, 0xbb, 0xcc, 0xdd,
+        ]
+    );
+    assert_eq!(state.register(3), Some(0x0123_4567_89ab_cdef));
+    assert_eq!(state.register(4), Some(0xffff_ffff_ffff_0000));
+    assert_eq!(state.register(6), Some(0x0000_ff00_0000_ff00));
+    assert_eq!(state.register(8), Some(0xffff_ffff_f0f0_0f0f));
+    assert_eq!(state.pc(), ENTRY + 16);
 }
 
 #[test]

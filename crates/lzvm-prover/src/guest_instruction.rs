@@ -260,6 +260,10 @@ pub enum RiscvOp32Kind {
 #[non_exhaustive]
 pub enum RiscvAmoKind {
     Add,
+    Swap,
+    Xor,
+    Or,
+    And,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -967,6 +971,10 @@ fn decode_amo(word: u32) -> RiscvInstruction {
     };
     let Some(kind) = (match (word >> 27) & 0x1f {
         0 => Some(RiscvAmoKind::Add),
+        1 => Some(RiscvAmoKind::Swap),
+        4 => Some(RiscvAmoKind::Xor),
+        8 => Some(RiscvAmoKind::Or),
+        12 => Some(RiscvAmoKind::And),
         _ => None,
     }) else {
         return unknown(word);

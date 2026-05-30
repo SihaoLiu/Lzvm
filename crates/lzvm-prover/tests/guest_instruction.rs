@@ -457,6 +457,58 @@ fn decodes_atomic_add_instructions() {
 }
 
 #[test]
+fn decodes_atomic_swap_and_logical_instructions() {
+    assert_eq!(
+        decode_riscv_instruction(0x08e7_b52f),
+        RiscvInstruction::Amo {
+            kind: RiscvAmoKind::Swap,
+            width: RiscvAmoWidth::Doubleword,
+            rd: 10,
+            rs1: 15,
+            rs2: 14,
+            acquire: false,
+            release: false,
+        }
+    );
+    assert_eq!(
+        decode_riscv_instruction(0x20c6_a5af),
+        RiscvInstruction::Amo {
+            kind: RiscvAmoKind::Xor,
+            width: RiscvAmoWidth::Word,
+            rd: 11,
+            rs1: 13,
+            rs2: 12,
+            acquire: false,
+            release: false,
+        }
+    );
+    assert_eq!(
+        decode_riscv_instruction(0x4314_382f),
+        RiscvInstruction::Amo {
+            kind: RiscvAmoKind::Or,
+            width: RiscvAmoWidth::Doubleword,
+            rd: 16,
+            rs1: 8,
+            rs2: 17,
+            acquire: false,
+            release: true,
+        }
+    );
+    assert_eq!(
+        decode_riscv_instruction(0x6529_a4af),
+        RiscvInstruction::Amo {
+            kind: RiscvAmoKind::And,
+            width: RiscvAmoWidth::Word,
+            rd: 9,
+            rs1: 19,
+            rs2: 18,
+            acquire: true,
+            release: false,
+        }
+    );
+}
+
+#[test]
 fn decodes_compressed_addi_instructions() {
     assert_eq!(
         decode_guest_instruction(FetchedGuestInstruction {
