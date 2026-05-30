@@ -524,11 +524,11 @@ fn rejects_optional_pcs_fri_opening_transcript_inputs_without_opening() {
 }
 
 #[test]
-fn validates_optional_pcs_fri_opening_from_seeded_inputs() {
+fn rejects_optional_pcs_fri_opening_from_seeded_inputs() {
     let (unit, segments) = valid_pcs_fri_opening_segments();
     let schedule = sample_prove_schedule(unit);
 
-    validate_optional_pcs_fri_opening_proof_segments(
+    let error = validate_optional_pcs_fri_opening_proof_segments(
         ValidateOptionalPcsFriOpeningProofSegmentsRequest {
             schedule: &schedule,
             verifier_codes: &[],
@@ -537,7 +537,12 @@ fn validates_optional_pcs_fri_opening_from_seeded_inputs() {
             segments: &segments,
         },
     )
-    .expect("seeded FRI opening should validate structurally");
+    .expect_err("seeded FRI opening should reject");
+
+    assert_eq!(
+        error,
+        ValidateOptionalPcsFriOpeningProofSegmentsError::UnboundOpeningSegment
+    );
 }
 
 #[test]

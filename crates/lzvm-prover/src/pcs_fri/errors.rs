@@ -68,6 +68,7 @@ pub enum ValidateOptionalPcsFriOpeningProofSegmentsError {
     Opening(ValidatePcsFriOpeningSegmentsError),
     QueryPlan(LoadPcsQueryPlanSegmentError),
     OpeningSegment(LoadPcsFriOpeningSegmentError),
+    UnboundOpeningSegment,
     Transcript(PcsTranscriptProofSegmentsError),
     Fold(ValidatePcsFriOpeningFoldUnitsError),
     VerifierQuery(VerifierFriQueryOutputSegmentsError),
@@ -220,6 +221,12 @@ impl fmt::Display for ValidateOptionalPcsFriOpeningProofSegmentsError {
             Self::Opening(error) => write!(f, "{error}"),
             Self::QueryPlan(error) => write!(f, "{error}"),
             Self::OpeningSegment(error) => write!(f, "{error}"),
+            Self::UnboundOpeningSegment => {
+                write!(
+                    f,
+                    "PCS FRI opening segment requires transcript query inputs"
+                )
+            }
             Self::Transcript(error) => write!(f, "{error}"),
             Self::Fold(error) => write!(f, "{error}"),
             Self::VerifierQuery(error) => write!(f, "{error}"),
@@ -233,6 +240,7 @@ impl std::error::Error for ValidateOptionalPcsFriOpeningProofSegmentsError {
             Self::Opening(error) => Some(error),
             Self::QueryPlan(error) => Some(error),
             Self::OpeningSegment(error) => Some(error),
+            Self::UnboundOpeningSegment => None,
             Self::Transcript(error) => Some(error),
             Self::Fold(error) => Some(error),
             Self::VerifierQuery(error) => Some(error),

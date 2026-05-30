@@ -211,11 +211,12 @@ pub fn validate_optional_pcs_fri_opening_proof_segments(
         return Ok(());
     }
 
+    if !uses_transcript_pcs_query_plan_inputs(request.segments) {
+        return Err(ValidateOptionalPcsFriOpeningProofSegmentsError::UnboundOpeningSegment);
+    }
+
     validate_pcs_fri_opening_segments(&request.schedule.units, request.segments)
         .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::Opening)?;
-    if !uses_transcript_pcs_query_plan_inputs(request.segments) {
-        return Ok(());
-    }
 
     let query_plan = load_pcs_query_plan_from_segments(request.segments)
         .map_err(ValidateOptionalPcsFriOpeningProofSegmentsError::QueryPlan)?;

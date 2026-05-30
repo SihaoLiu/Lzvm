@@ -11181,8 +11181,8 @@ fn runs_setup_aware_verify_preflight_with_source_generated_key_directory() {
 }
 
 #[test]
-fn validates_setup_aware_verify_preflight_with_pcs_fri_opening() {
-    let dir = temp_dir("verify-setup-preflight-fri-opening");
+fn rejects_setup_aware_verify_preflight_with_unbound_pcs_fri_opening() {
+    let dir = temp_dir("verify-setup-preflight-unbound-fri-opening");
     let _ = fs::remove_dir_all(&dir);
     write_execution_ready_setup_directory(&dir);
     let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
@@ -11219,12 +11219,12 @@ fn validates_setup_aware_verify_preflight_with_pcs_fri_opening() {
         &mut stderr,
     );
 
-    assert_eq!(code, 0);
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
     assert_eq!(
-        String::from_utf8(stdout).expect("stdout should be utf-8"),
-        expected_setup_verify_stdout(6, &public_values_path)
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: PCS FRI opening segment requires transcript query inputs\n"
     );
-    assert!(stderr.is_empty());
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
@@ -12669,7 +12669,7 @@ fn rejects_setup_aware_verify_preflight_with_mismatched_constant_opening() {
 }
 
 #[test]
-fn rejects_setup_aware_verify_preflight_with_mismatched_pcs_fri_opening() {
+fn rejects_setup_aware_verify_preflight_with_unbound_bad_pcs_fri_opening() {
     let dir = temp_dir("verify-setup-preflight-bad-fri-opening");
     let _ = fs::remove_dir_all(&dir);
     write_execution_ready_setup_directory(&dir);
@@ -12716,7 +12716,7 @@ fn rejects_setup_aware_verify_preflight_with_mismatched_pcs_fri_opening() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "verify setup-preflight failed: PCS FRI opening segment mismatch for unit 0\n"
+        "verify setup-preflight failed: PCS FRI opening segment requires transcript query inputs\n"
     );
 }
 
