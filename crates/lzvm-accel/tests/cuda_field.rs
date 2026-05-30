@@ -7,9 +7,11 @@ use lzvm_accel::{
     cuda_goldilocks_coset_extend_row_major_columns_device, cuda_goldilocks_intt,
     cuda_goldilocks_ntt, cuda_keccak256_fixed, cuda_poseidon2_width16,
     cuda_poseidon2_width16_device, cuda_poseidon2_width16_linear_round_device,
+    cuda_poseidon2_width16_linear_round_row_major_device,
     cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width4,
     cuda_poseidon2_width4_device, cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8,
     cuda_poseidon2_width8_device, cuda_poseidon2_width8_linear_round_device,
+    cuda_poseidon2_width8_linear_round_row_major_device,
     cuda_poseidon2_width8_merkle_parent_device, cuda_setup_init, CudaDeviceBuffer,
 };
 #[cfg(feature = "cuda")]
@@ -565,6 +567,90 @@ fn cuda_linear_round_poseidon2_width_8_states_from_device_memory() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_linear_round_poseidon2_width_8_gathers_row_major_device_memory() {
+    let current_states = CudaDeviceBuffer::from_u64_words(&[
+        101, 102, 103, 104, 0, 0, 0, 0, 201, 202, 203, 204, 0, 0, 0, 0, 301, 302, 303, 304, 0, 0,
+        0, 0,
+    ])
+    .expect("current state buffer should allocate");
+    let row_values = CudaDeviceBuffer::from_u64_words(&[
+        1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 16, 21, 22, 23, 24, 25, 26,
+    ])
+    .expect("row-major value buffer should allocate");
+    let mut output_states =
+        CudaDeviceBuffer::new(24 * 8).expect("output state buffer should allocate");
+
+    cuda_poseidon2_width8_linear_round_row_major_device(
+        &current_states,
+        &row_values,
+        &mut output_states,
+        6,
+        2,
+        3,
+    )
+    .expect("cuda row-major linear round should run");
+
+    let expected = [
+        poseidon2_hash_8(std::array::from_fn(|index| {
+            Felt::from_u64([3, 4, 5, 0, 101, 102, 103, 104][index])
+        }))
+        .map(Felt::to_u64),
+        poseidon2_hash_8(std::array::from_fn(|index| {
+            Felt::from_u64([13, 14, 15, 0, 201, 202, 203, 204][index])
+        }))
+        .map(Felt::to_u64),
+        poseidon2_hash_8(std::array::from_fn(|index| {
+            Felt::from_u64([23, 24, 25, 0, 301, 302, 303, 304][index])
+        }))
+        .map(Felt::to_u64),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    let actual = output_states
+        .to_u64_words()
+        .expect("device words should copy back to host");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_linear_round_row_major_device_rejects_invalid_shapes() {
+    let current_states =
+        CudaDeviceBuffer::zeroed(16 * 8).expect("current state buffer should allocate");
+    let row_values = CudaDeviceBuffer::from_u64_words(&(1_u64..=12).collect::<Vec<_>>())
+        .expect("row-major value buffer should allocate");
+    let short_row_values = CudaDeviceBuffer::from_u64_words(&[1, 2, 3, 4, 5])
+        .expect("short row-major value buffer should allocate");
+    let mut output_states =
+        CudaDeviceBuffer::new(16 * 8).expect("output state buffer should allocate");
+
+    let error = cuda_poseidon2_width8_linear_round_row_major_device(
+        &current_states,
+        &row_values,
+        &mut output_states,
+        6,
+        5,
+        2,
+    )
+    .expect_err("window outside row should be rejected");
+    assert!(error.to_string().contains("invalid field domain"));
+
+    let error = cuda_poseidon2_width8_linear_round_row_major_device(
+        &current_states,
+        &short_row_values,
+        &mut output_states,
+        6,
+        1,
+        3,
+    )
+    .expect_err("row-major byte count should be checked");
+    assert!(error.to_string().contains("length mismatch"));
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_hashes_poseidon2_width_8_parent_states_from_device_memory() {
     let input = vec![
         1, 2, 3, 4, 101, 102, 103, 104, 5, 6, 7, 8, 201, 202, 203, 204, 9, 10, 11, 12, 301, 302,
@@ -642,6 +728,52 @@ fn cuda_linear_round_poseidon2_width_16_states_from_device_memory() {
         .map(Felt::to_u64),
         poseidon2_hash_16(std::array::from_fn(|index| {
             Felt::from_u64([25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 0, 0, 0, 0][index])
+        }))
+        .map(Felt::to_u64),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    let actual = output_states
+        .to_u64_words()
+        .expect("device words should copy back to host");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_linear_round_poseidon2_width_16_gathers_row_major_device_memory() {
+    let current_states = CudaDeviceBuffer::from_u64_words(&[
+        101, 102, 103, 104, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 201, 202, 203, 204, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0,
+    ])
+    .expect("current state buffer should allocate");
+    let row_values = CudaDeviceBuffer::from_u64_words(&[
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1011, 1012, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+        31, 32, 2011, 2012,
+    ])
+    .expect("row-major value buffer should allocate");
+    let mut output_states =
+        CudaDeviceBuffer::new(32 * 8).expect("output state buffer should allocate");
+
+    cuda_poseidon2_width16_linear_round_row_major_device(
+        &current_states,
+        &row_values,
+        &mut output_states,
+        14,
+        7,
+        5,
+    )
+    .expect("cuda row-major linear round should run");
+
+    let expected = [
+        poseidon2_hash_16(std::array::from_fn(|index| {
+            Felt::from_u64([8, 9, 10, 11, 12, 0, 0, 0, 0, 0, 0, 0, 101, 102, 103, 104][index])
+        }))
+        .map(Felt::to_u64),
+        poseidon2_hash_16(std::array::from_fn(|index| {
+            Felt::from_u64([28, 29, 30, 31, 32, 0, 0, 0, 0, 0, 0, 0, 201, 202, 203, 204][index])
         }))
         .map(Felt::to_u64),
     ]

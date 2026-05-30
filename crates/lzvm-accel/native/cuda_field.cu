@@ -755,6 +755,8 @@ int run_poseidon2_width16_linear_round_on_device(
     return run_poseidon2_width16_on_device(device_packed.data(), device_out, row_count);
 }
 
+#include "cuda_poseidon2_row_major.cuh"
+
 }  // namespace
 
 extern "C" int lzvm_cuda_setup_init(
@@ -1256,6 +1258,8 @@ extern "C" int lzvm_cuda_poseidon2_width16_linear_round_device(
     return run_poseidon2_width16_linear_round_on_device(
         current_states, row_values, out, row_count, chunk_len);
 }
+
+#include "cuda_poseidon2_row_major_exports.cuh"
 
 extern "C" int lzvm_cuda_keccak256_fixed(
     const uint8_t* input,
