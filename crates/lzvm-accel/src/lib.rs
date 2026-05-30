@@ -88,6 +88,19 @@ unsafe extern "C" {
         target_root: u64,
         shift: u64,
     ) -> i32;
+    #[link_name = "lzvm_cuda_goldilocks_coset_extend_row_major_columns_device"]
+    fn lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_raw(
+        values: *const u64,
+        out: *mut u64,
+        source_len: usize,
+        source_bits: usize,
+        target_len: usize,
+        target_bits: usize,
+        column_count: usize,
+        source_root_inverse: u64,
+        target_root: u64,
+        shift: u64,
+    ) -> i32;
     #[link_name = "lzvm_cuda_goldilocks_coset_extend_device"]
     fn lzvm_cuda_goldilocks_coset_extend_device_raw(
         values: *const u64,
@@ -682,6 +695,89 @@ pub fn cuda_goldilocks_coset_extend_row_major_columns(
     } else {
         Err(AccelError::Cuda { code })
     }
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_goldilocks_coset_extend_row_major_columns_device(
+    values: &CudaDeviceBuffer,
+    out: &mut CudaDeviceBuffer,
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+) -> Result<(), AccelError> {
+    if column_count == 0 {
+        if values.is_empty() && out.is_empty() {
+            return Ok(());
+        }
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: values.len(),
+        });
+    }
+    if !values.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: values.len(),
+            rhs: values.len() / 8 * 8,
+        });
+    }
+    if !out.len().is_multiple_of(8) {
+        return Err(AccelError::LengthMismatch {
+            lhs: out.len(),
+            rhs: out.len() / 8 * 8,
+        });
+    }
+
+    let source_words = values.len() / 8;
+    if !source_words.is_multiple_of(column_count) {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: source_words,
+        });
+    }
+    let source_rows = source_words / column_count;
+    let (source_len, target_len, source_root, target_root) =
+        coset_extend_domain(source_rows, source_bits, target_bits)?;
+    if source_rows != source_len {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: source_words,
+        });
+    }
+    let target_words = target_len
+        .checked_mul(column_count)
+        .ok_or(AccelError::InvalidDomain {
+            bits: target_bits,
+            len: source_words,
+        })?;
+    let target_bytes = target_words
+        .checked_mul(8)
+        .ok_or(AccelError::InvalidDomain {
+            bits: target_bits,
+            len: target_words,
+        })?;
+    if out.len() != target_bytes {
+        return Err(AccelError::LengthMismatch {
+            lhs: target_bytes,
+            rhs: out.len(),
+        });
+    }
+    ensure_cuda_setup(target_bits)?;
+
+    let code = unsafe {
+        lzvm_cuda_goldilocks_coset_extend_row_major_columns_device_raw(
+            values.as_raw_ptr() as *const u64,
+            out.as_raw_ptr() as *mut u64,
+            source_len,
+            source_bits,
+            target_len,
+            target_bits,
+            column_count,
+            pow_mod(source_root, 0xffff_ffff_0000_0001 - 2),
+            target_root,
+            SHIFT,
+        )
+    };
+    cuda_status(code)
 }
 
 #[cfg(feature = "cuda")]

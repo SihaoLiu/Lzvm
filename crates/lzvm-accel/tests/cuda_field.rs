@@ -3,11 +3,13 @@ use lzvm_accel::{cuda_goldilocks_add, cuda_goldilocks_mul};
 #[cfg(feature = "cuda")]
 use lzvm_accel::{
     cuda_goldilocks_butterfly, cuda_goldilocks_coset_extend, cuda_goldilocks_coset_extend_device,
-    cuda_goldilocks_coset_extend_row_major_columns, cuda_goldilocks_intt, cuda_goldilocks_ntt,
-    cuda_keccak256_fixed, cuda_poseidon2_width16, cuda_poseidon2_width16_device,
-    cuda_poseidon2_width16_linear_round_device, cuda_poseidon2_width16_merkle_parent_device,
-    cuda_poseidon2_width4, cuda_poseidon2_width4_device, cuda_poseidon2_width4_find_nonce,
-    cuda_poseidon2_width8, cuda_poseidon2_width8_device, cuda_poseidon2_width8_linear_round_device,
+    cuda_goldilocks_coset_extend_row_major_columns,
+    cuda_goldilocks_coset_extend_row_major_columns_device, cuda_goldilocks_intt,
+    cuda_goldilocks_ntt, cuda_keccak256_fixed, cuda_poseidon2_width16,
+    cuda_poseidon2_width16_device, cuda_poseidon2_width16_linear_round_device,
+    cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width4,
+    cuda_poseidon2_width4_device, cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8,
+    cuda_poseidon2_width8_device, cuda_poseidon2_width8_linear_round_device,
     cuda_poseidon2_width8_merkle_parent_device, cuda_setup_init, CudaDeviceBuffer,
 };
 #[cfg(feature = "cuda")]
@@ -328,6 +330,65 @@ fn cuda_extends_row_major_columns_over_shifted_cosets() {
     .expect("cuda row-major column extension should run");
 
     assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_extends_row_major_columns_from_device_memory() {
+    let input = vec![5, 9, 2, 1, 9, 4, 3, 7, 6, 8, 11, 10];
+    let source_bits = 2;
+    let target_bits = 4;
+    let column_count = 3;
+    let expected = cuda_goldilocks_coset_extend_row_major_columns(
+        &input,
+        column_count,
+        source_bits,
+        target_bits,
+    )
+    .expect("host row-major extension should run");
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&input).expect("input device buffer should allocate");
+    let mut output_buffer =
+        CudaDeviceBuffer::new(expected.len() * 8).expect("output device buffer should allocate");
+
+    cuda_goldilocks_coset_extend_row_major_columns_device(
+        &input_buffer,
+        &mut output_buffer,
+        column_count,
+        source_bits,
+        target_bits,
+    )
+    .expect("device row-major extension should run");
+    let actual = output_buffer
+        .to_u64_words()
+        .expect("device output should copy back");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_rejects_row_major_device_output_length_mismatch() {
+    let input = vec![5, 9, 2, 1, 9, 4, 3, 7, 6, 8, 11, 10];
+    let source_bits = 2;
+    let target_bits = 4;
+    let column_count = 3;
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&input).expect("input device buffer should allocate");
+    let mut output_buffer =
+        CudaDeviceBuffer::new(((1_usize << target_bits) * column_count - 1) * 8)
+            .expect("output device buffer should allocate");
+
+    let error = cuda_goldilocks_coset_extend_row_major_columns_device(
+        &input_buffer,
+        &mut output_buffer,
+        column_count,
+        source_bits,
+        target_bits,
+    )
+    .expect_err("short output should be rejected");
+
+    assert!(error.to_string().contains("length mismatch"));
 }
 
 #[test]

@@ -995,20 +995,41 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend(
     return 0;
 }
 
-extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns(
-    const uint64_t* values,
-    uint64_t* out,
-    size_t source_len,
-    size_t source_bits,
-    size_t target_len,
-    size_t target_bits,
-    size_t column_count,
-    uint64_t source_root_inverse,
-    uint64_t target_root,
-    uint64_t shift) {
-    if (values == nullptr || out == nullptr) {
-        return -1;
+extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns_device(
+    const uint64_t* values, uint64_t* out, size_t source_len, size_t source_bits,
+    size_t target_len, size_t target_bits, size_t column_count, uint64_t source_root_inverse,
+    uint64_t target_root, uint64_t shift) {
+    if (values == nullptr || out == nullptr) { return -1; }
+    if (source_len == 0 || target_len == 0 || source_len > target_len || column_count == 0) {
+        return -2;
     }
+
+    const size_t source_words = source_len * column_count;
+    const size_t target_words = target_len * column_count;
+    DeviceBuffer<uint64_t> device_columns;
+
+    LZVM_CUDA_RETURN_ON_ERROR(device_columns.reset(target_words));
+    const size_t source_blocks = (source_words + kThreads - 1) / kThreads;
+    pack_row_major_columns_kernel<<<source_blocks, kThreads>>>(
+        values, device_columns.data(), source_len, target_len, column_count);
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+    for (size_t column = 0; column < column_count; ++column) {
+        LZVM_CUDA_RETURN_ON_ERROR(run_coset_extend_on_device_unsynced(
+            device_columns.data() + column * target_len, source_len, source_bits, target_len,
+            target_bits, source_root_inverse, target_root, shift));
+    }
+    const size_t target_blocks = (target_words + kThreads - 1) / kThreads;
+    unpack_row_major_columns_kernel<<<target_blocks, kThreads>>>(
+        device_columns.data(), out, target_len, column_count);
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
+    return lzvm_cuda_synchronize();
+}
+
+extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns(
+    const uint64_t* values, uint64_t* out, size_t source_len, size_t source_bits,
+    size_t target_len, size_t target_bits, size_t column_count, uint64_t source_root_inverse,
+    uint64_t target_root, uint64_t shift) {
+    if (values == nullptr || out == nullptr) { return -1; }
     if (source_len == 0 || target_len == 0 || source_len > target_len || column_count == 0) {
         return -2;
     }
@@ -1018,30 +1039,14 @@ extern "C" int lzvm_cuda_goldilocks_coset_extend_row_major_columns(
     const size_t source_bytes = source_words * sizeof(uint64_t);
     const size_t target_bytes = target_words * sizeof(uint64_t);
     DeviceBuffer<uint64_t> device_values;
-    DeviceBuffer<uint64_t> device_columns;
     DeviceBuffer<uint64_t> device_out;
 
     LZVM_CUDA_RETURN_ON_ERROR(device_values.reset(source_words));
-    LZVM_CUDA_RETURN_ON_ERROR(device_columns.reset(target_words));
     LZVM_CUDA_RETURN_ON_ERROR(device_out.reset(target_words));
     LZVM_CUDA_RETURN_ON_ERROR(device_values.copy_from_bytes(values, source_bytes));
-
-    const size_t source_blocks = (source_words + kThreads - 1) / kThreads;
-    pack_row_major_columns_kernel<<<source_blocks, kThreads>>>(
-        device_values.data(), device_columns.data(), source_len, target_len, column_count);
-    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
-
-    for (size_t column = 0; column < column_count; ++column) {
-        LZVM_CUDA_RETURN_ON_ERROR(run_coset_extend_on_device_unsynced(
-            device_columns.data() + column * target_len, source_len, source_bits, target_len,
-            target_bits, source_root_inverse, target_root, shift));
-    }
-
-    const size_t target_blocks = (target_words + kThreads - 1) / kThreads;
-    unpack_row_major_columns_kernel<<<target_blocks, kThreads>>>(
-        device_columns.data(), device_out.data(), target_len, column_count);
-    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_check_launch());
-    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_synchronize());
+    LZVM_CUDA_RETURN_ON_ERROR(lzvm_cuda_goldilocks_coset_extend_row_major_columns_device(
+        device_values.data(), device_out.data(), source_len, source_bits, target_len, target_bits,
+        column_count, source_root_inverse, target_root, shift));
     LZVM_CUDA_RETURN_ON_ERROR(device_out.copy_to_bytes(out, target_bytes));
     return 0;
 }
