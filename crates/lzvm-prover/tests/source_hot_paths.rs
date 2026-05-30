@@ -29,6 +29,29 @@ fn cuda_row_major_hashing_copies_validated_bytes_without_host_word_repacking() {
     }
 }
 
+#[test]
+fn cuda_witness_leaf_extension_serializes_device_words_without_extended_felt_vector() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/witness_commitment/extend.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("witness extension source should read");
+
+    let cuda_body = function_body(
+        &source,
+        "fn extend_witness_stage_row_major_bytes",
+        "#[cfg(not(feature = \"cuda\"))]",
+    );
+
+    assert!(
+        !cuda_body.contains("Result<Vec<Felt>"),
+        "CUDA witness leaf extension should not materialize extended Felt values"
+    );
+    assert!(
+        !cuda_body.contains(".collect::<Result<Vec<_>, _>>()"),
+        "CUDA witness leaf extension should serialize validated words directly"
+    );
+}
+
 fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
     let body = source
         .split_once(start)

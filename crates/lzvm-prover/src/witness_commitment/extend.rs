@@ -20,24 +20,18 @@ pub fn extend_witness_stage_leaves(
 
     let columns = stage.column_count();
     let rows = stage.row_count();
-    let extended_values =
-        extend_witness_stage_row_major_values(stage.values(), columns, source_bits, target_bits)?;
+    let bytes =
+        extend_witness_stage_row_major_bytes(stage.values(), columns, source_bits, target_bits)?;
     let extended_rows = if columns == 0 {
         0
     } else {
-        extended_values
+        bytes
             .len()
+            .checked_div(WORD_BYTES)
+            .ok_or(WitnessStageLeafError::LengthOverflow)?
             .checked_div(columns)
             .ok_or(WitnessStageLeafError::LengthOverflow)?
     };
-    let byte_count = extended_rows
-        .checked_mul(columns)
-        .and_then(|count| count.checked_mul(WORD_BYTES))
-        .ok_or(WitnessStageLeafError::LengthOverflow)?;
-    let mut bytes = Vec::with_capacity(byte_count);
-    for value in extended_values {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
 
     Ok(WitnessStageLeaves::new(
         stage.stage_index(),
@@ -58,27 +52,54 @@ pub fn extend_witness_stage_leaves_with_cuda(
 }
 
 #[cfg(feature = "cuda")]
-fn extend_witness_stage_row_major_values(
+fn extend_witness_stage_row_major_bytes(
     values: &[Felt],
     column_count: usize,
     source_bits: usize,
     target_bits: usize,
-) -> Result<Vec<Felt>, WitnessStageLeafError> {
+) -> Result<Vec<u8>, WitnessStageLeafError> {
     let source_words = values
         .iter()
         .map(|value| value.to_u64())
         .collect::<Vec<_>>();
-
-    cuda_goldilocks_coset_extend_row_major_columns(
+    let extended_words = cuda_goldilocks_coset_extend_row_major_columns(
         &source_words,
         column_count,
         source_bits,
         target_bits,
-    )?
-    .into_iter()
-    .map(Felt::from_canonical)
-    .collect::<Result<Vec<_>, _>>()
-    .map_err(WitnessStageLeafError::from)
+    )?;
+
+    let mut bytes = Vec::with_capacity(
+        extended_words
+            .len()
+            .checked_mul(WORD_BYTES)
+            .ok_or(WitnessStageLeafError::LengthOverflow)?,
+    );
+    for word in extended_words {
+        Felt::from_canonical(word)?;
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    Ok(bytes)
+}
+
+#[cfg(not(feature = "cuda"))]
+fn extend_witness_stage_row_major_bytes(
+    values: &[Felt],
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+) -> Result<Vec<u8>, WitnessStageLeafError> {
+    let extended_values =
+        extend_witness_stage_row_major_values(values, column_count, source_bits, target_bits)?;
+    let byte_count = extended_values
+        .len()
+        .checked_mul(WORD_BYTES)
+        .ok_or(WitnessStageLeafError::LengthOverflow)?;
+    let mut bytes = Vec::with_capacity(byte_count);
+    for value in extended_values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    Ok(bytes)
 }
 
 #[cfg(not(feature = "cuda"))]
