@@ -148,6 +148,10 @@ pub enum EthPublicInputError {
     NumericOverflow {
         field: &'static str,
     },
+    TrailingBytes {
+        consumed: usize,
+        total: usize,
+    },
 }
 
 impl fmt::Display for EthPublicInputError {
@@ -184,6 +188,13 @@ impl fmt::Display for EthPublicInputError {
             }
             Self::NumericOverflow { field } => {
                 write!(f, "ETH public input {field} numeric overflow")
+            }
+            Self::TrailingBytes { consumed, total } => {
+                write!(
+                    f,
+                    "unexpected trailing bytes in ETH public input: {}",
+                    total - consumed
+                )
             }
         }
     }
@@ -230,6 +241,17 @@ pub fn parse_eth_public_block_prefix(
         withdrawals,
         consumed: reader.offset(),
     })
+}
+
+pub fn parse_eth_public_block(bytes: &[u8]) -> Result<EthPublicBlockPrefix, EthPublicInputError> {
+    let block = parse_eth_public_block_prefix(bytes)?;
+    if block.consumed != bytes.len() {
+        return Err(EthPublicInputError::TrailingBytes {
+            consumed: block.consumed,
+            total: bytes.len(),
+        });
+    }
+    Ok(block)
 }
 
 fn read_eth_public_header(

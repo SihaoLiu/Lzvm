@@ -8,7 +8,7 @@ use lzvm_artifacts::eth_block_input::{
     eth_block_input_transaction_kind_counts, eth_block_input_withdrawal_count,
     parse_eth_block_input, EthBlockInput,
 };
-use lzvm_artifacts::eth_public_input::parse_eth_public_block_prefix;
+use lzvm_artifacts::eth_public_input::parse_eth_public_block;
 
 use crate::prove_plan::format_hash;
 
@@ -127,7 +127,7 @@ pub(crate) fn write_eth_block_input_from_public_input(
             public_input_path.display()
         )
     })?;
-    let public_block = parse_eth_public_block_prefix(&bytes).map_err(|error| {
+    let public_block = parse_eth_public_block(&bytes).map_err(|error| {
         format!(
             "ETH public input failed: {}: {error}",
             public_input_path.display()

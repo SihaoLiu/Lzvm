@@ -114,6 +114,67 @@ fn verifies_eth_public_input_against_embedded_block_input_segment() {
     std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 }
 
+#[test]
+fn rejects_eth_public_input_with_trailing_bytes_for_verify_binding() {
+    let dir = std::env::temp_dir().join(format!(
+        "lzvm-verify-proof-eth-public-trailing-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let public_input_path = dir.join("public.bin");
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public-values.bin");
+    let public_input = sample_public_block_bytes_with_matching_roots();
+    let public_block = parse_eth_public_block_prefix(&public_input).expect("block should parse");
+    let block_rlp = public_block.block_rlp();
+    let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let setup_hash = [7; 32];
+    let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
+    let mut public_input_with_tail = public_input;
+    public_input_with_tail.extend_from_slice(b"tail");
+    std::fs::write(&public_input_path, public_input_with_tail).expect("public input should write");
+    std::fs::write(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    )
+    .expect("public values should write");
+    let proof = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![ProofSegment {
+            id: ETH_BLOCK_INPUT_SEGMENT_ID,
+            data: encode_eth_block_input_segment(&block_input).expect("segment should encode"),
+        }],
+    };
+    std::fs::write(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    )
+    .expect("proof should write");
+
+    let result = eth_block_input::verify_eth_public_input_binding(
+        proof_path.to_str().expect("proof path should be utf-8"),
+        public_values_path
+            .to_str()
+            .expect("public values path should be utf-8"),
+        public_input_path
+            .to_str()
+            .expect("public input path should be utf-8"),
+    );
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        result,
+        Err(message)
+            if message
+                == format!(
+                    "ETH public input failed: {}: unexpected trailing bytes in ETH public input: 4",
+                    public_input_path.display()
+                )
+    ));
+}
+
 fn sample_public_block_bytes_with_matching_roots() -> Vec<u8> {
     let mut input = sample_public_header_bytes();
     input.extend_from_slice(&1_u64.to_le_bytes());

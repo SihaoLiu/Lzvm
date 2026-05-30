@@ -115,8 +115,7 @@ fn writes_public_block_rlp() {
     let _ = fs::remove_dir_all(&dir);
     let input_path = dir.join("public.bin");
     let output_path = dir.join("block.rlp");
-    let mut input = sample_public_block_bytes_with_matching_roots();
-    input.extend_from_slice(b"tail");
+    let input = sample_public_block_bytes_with_matching_roots();
     write_bytes(&input_path, &input);
     let parsed = parse_eth_public_block_prefix(&input).expect("block should parse");
     let expected_block_rlp = parsed.block_rlp();
@@ -151,6 +150,40 @@ fn writes_public_block_rlp() {
             expected_block_rlp.len(),
             output_path.display()
         )
+    );
+}
+
+#[test]
+fn refuses_public_block_rlp_with_trailing_bytes() {
+    let dir = temp_dir("write-block-rlp-trailing");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("public.bin");
+    let output_path = dir.join("block.rlp");
+    let mut input = sample_public_block_bytes_with_matching_roots();
+    input.extend_from_slice(b"tail");
+    write_bytes(&input_path, &input);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-public-block-rlp",
+            input_path.to_str().expect("input path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    let output_exists = output_path.exists();
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert!(!output_exists);
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "eth public block rlp write failed: unexpected trailing bytes in ETH public input: 4\n"
     );
 }
 
@@ -197,8 +230,7 @@ fn writes_public_block_input() {
     let _ = fs::remove_dir_all(&dir);
     let input_path = dir.join("public.bin");
     let output_path = dir.join("block.input");
-    let mut input = sample_public_block_bytes_with_matching_roots();
-    input.extend_from_slice(b"tail");
+    let input = sample_public_block_bytes_with_matching_roots();
     write_bytes(&input_path, &input);
     let parsed_public = parse_eth_public_block_prefix(&input).expect("block should parse");
     let expected_block_rlp = parsed_public.block_rlp();
@@ -246,6 +278,40 @@ fn writes_public_block_input() {
             to_hex(&expected_hash),
             to_hex(&expected_input.block_hash)
         )
+    );
+}
+
+#[test]
+fn refuses_public_block_input_with_trailing_bytes() {
+    let dir = temp_dir("write-block-input-trailing");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("public.bin");
+    let output_path = dir.join("block.input");
+    let mut input = sample_public_block_bytes_with_matching_roots();
+    input.extend_from_slice(b"tail");
+    write_bytes(&input_path, &input);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-public-block-input",
+            input_path.to_str().expect("input path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    let output_exists = output_path.exists();
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert!(!output_exists);
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "eth public block input failed: unexpected trailing bytes in ETH public input: 4\n"
     );
 }
 

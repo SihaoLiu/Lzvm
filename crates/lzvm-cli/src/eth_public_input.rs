@@ -5,9 +5,9 @@ use lzvm_artifacts::eth_block_input::{
     build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
 };
 use lzvm_artifacts::eth_public_input::{
-    eth_public_header_hash, parse_eth_public_block_prefix, parse_eth_public_header_prefix,
-    parse_eth_public_transactions_prefix, EthPublicBlockPrefix, EthPublicHeader,
-    EthPublicTransactionsPrefix,
+    eth_public_header_hash, parse_eth_public_block, parse_eth_public_block_prefix,
+    parse_eth_public_header_prefix, parse_eth_public_transactions_prefix, EthPublicBlockPrefix,
+    EthPublicHeader, EthPublicTransactionsPrefix,
 };
 
 pub(crate) fn run_summary(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -101,7 +101,7 @@ fn write_block_input(
             return 1;
         }
     };
-    let block = match parse_eth_public_block_prefix(&bytes) {
+    let block = match parse_eth_public_block(&bytes) {
         Ok(block) => block,
         Err(error) => {
             let _ = writeln!(stderr, "eth public block input failed: {error}");
@@ -180,7 +180,7 @@ fn write_block_rlp(
             return 1;
         }
     };
-    let block = match parse_eth_public_block_prefix(&bytes) {
+    let block = match parse_eth_public_block(&bytes) {
         Ok(block) => block,
         Err(error) => {
             let _ = writeln!(stderr, "eth public block rlp write failed: {error}");
