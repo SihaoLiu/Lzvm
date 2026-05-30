@@ -5,7 +5,9 @@ use lzvm_artifacts::eth_block_input::EthBlockInput;
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
-use lzvm_artifacts::eth_block_public_values::validate_eth_block_public_values;
+use lzvm_artifacts::eth_block_public_values::{
+    validate_eth_block_public_values, validate_program_image_cache_public_values,
+};
 use lzvm_artifacts::key_directory::KeyDirectoryCatalog;
 use lzvm_artifacts::pcs_evaluation_segment::parse_pcs_evaluation_segment;
 use lzvm_artifacts::pcs_nonce_segment::parse_pcs_query_nonce_segment;
@@ -201,7 +203,11 @@ pub fn build_witness_proof_artifact_for_unit(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
-    validate_eth_block_binding(public_values, request.eth_block_input)?;
+    validate_proof_bindings(
+        public_values,
+        request.program_image_cache,
+        request.eth_block_input,
+    )?;
     let binding_segments = build_proof_binding_segments(
         request.program_image_cache,
         request.eth_block_input,
@@ -394,7 +400,11 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
-    validate_eth_block_binding(public_values, request.eth_block_input)?;
+    validate_proof_bindings(
+        public_values,
+        request.program_image_cache,
+        request.eth_block_input,
+    )?;
     let binding_segments = build_proof_binding_segments(
         request.program_image_cache,
         request.eth_block_input,
@@ -467,7 +477,11 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
-    validate_eth_block_binding(public_values, request.eth_block_input)?;
+    validate_proof_bindings(
+        public_values,
+        request.program_image_cache,
+        request.eth_block_input,
+    )?;
     let binding_segments = build_proof_binding_segments(
         request.program_image_cache,
         request.eth_block_input,
@@ -533,7 +547,11 @@ pub fn build_witness_proof_artifact_for_all_units(
     }
     let public_values_hash = public_values_digest(public_values)
         .map_err(|error| format!("hash public inputs failed: {error}"))?;
-    validate_eth_block_binding(public_values, request.eth_block_input)?;
+    validate_proof_bindings(
+        public_values,
+        request.program_image_cache,
+        request.eth_block_input,
+    )?;
     let binding_segments = build_proof_binding_segments(
         request.program_image_cache,
         request.eth_block_input,
@@ -667,6 +685,23 @@ fn build_eth_block_input_proof_segment(
         id: ETH_BLOCK_INPUT_SEGMENT_ID,
         data,
     }))
+}
+
+fn validate_proof_bindings(
+    public_values: &PublicValues,
+    program_image_cache: Option<&ProgramImageCommitmentCache>,
+    eth_block_input: Option<&EthBlockInput>,
+) -> Result<(), String> {
+    validate_program_image_cache_binding(public_values, program_image_cache)?;
+    validate_eth_block_binding(public_values, eth_block_input)
+}
+
+fn validate_program_image_cache_binding(
+    public_values: &PublicValues,
+    cache: Option<&ProgramImageCommitmentCache>,
+) -> Result<(), String> {
+    validate_program_image_cache_public_values(public_values, cache)
+        .map_err(|error| error.to_string())
 }
 
 fn validate_eth_block_binding(

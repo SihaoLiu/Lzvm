@@ -1190,6 +1190,70 @@ fn rejects_mismatched_eth_block_public_values_in_prover_unit_request() {
 }
 
 #[test]
+fn rejects_unbound_program_image_cache_public_values_in_prover_unit_request() {
+    let dir = temp_dir("proof-artifact-unit-program-image-cache-missing");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [5_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
+        .expect("constant tree should be written");
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.lattice_size = Some(32);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let output =
+        run_prove_witness_commitments_with_trace(&plan, 0, ProveWitnessAuxiliaryInputs::default())
+            .expect("witness commitments should run");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash: plan.run_plan.schedule.setup_hash,
+        values: vec![PublicValueEntry {
+            name: "rom_root".to_owned(),
+            elements: vec![1, 2, 3, 4],
+        }],
+    };
+
+    let error =
+        lzvm_prover::build_witness_proof_artifact_for_unit(&lzvm_prover::WitnessProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            execution_unit: &plan.units[0],
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            unit_values: None,
+            output: &output,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+            challenge_values_segment: None,
+        })
+        .expect_err("program image cache public values should require a bound cache");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        error,
+        "program image cache is required for public value: rom_root"
+    );
+}
+
+#[test]
 fn builds_witness_proof_artifact_for_all_units_in_prover() {
     let dir = temp_dir("proof-artifact-all-units");
     let _ = fs::remove_dir_all(&dir);
