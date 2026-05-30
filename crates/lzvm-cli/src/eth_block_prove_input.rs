@@ -1,12 +1,14 @@
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::eth_block_input::{
-    eth_block_input_bytes_digest, eth_block_input_extra_field_counts,
-    eth_block_input_receipt_kind_counts, eth_block_input_transaction_kind_counts,
-    eth_block_input_withdrawal_count, parse_eth_block_input, EthBlockInput,
+    build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
+    eth_block_input_extra_field_counts, eth_block_input_receipt_kind_counts,
+    eth_block_input_transaction_kind_counts, eth_block_input_withdrawal_count,
+    parse_eth_block_input, EthBlockInput,
 };
+use lzvm_artifacts::eth_public_input::parse_eth_public_block_prefix;
 
 use crate::prove_plan::format_hash;
 
@@ -113,6 +115,47 @@ pub(crate) fn validate_eth_block_input(
             .as_ref()
             .map(|withdrawals| withdrawals.hash_preimages.len()),
     }))
+}
+
+pub(crate) fn write_eth_block_input_from_public_input(
+    public_input_path: &Path,
+    output_path: &Path,
+) -> Result<EthBlockInputSummary, String> {
+    let bytes = fs::read(public_input_path).map_err(|error| {
+        format!(
+            "ETH public input read failed: {}: {error}",
+            public_input_path.display()
+        )
+    })?;
+    let public_block = parse_eth_public_block_prefix(&bytes).map_err(|error| {
+        format!(
+            "ETH public input failed: {}: {error}",
+            public_input_path.display()
+        )
+    })?;
+    let block_rlp = public_block.block_rlp();
+    let input = build_eth_block_input(&block_rlp)
+        .map_err(|error| format!("ETH public input block failed: {error}"))?;
+    let encoded = encode_eth_block_input(&input)
+        .map_err(|error| format!("ETH public input block failed: {error}"))?;
+    if let Some(parent) = output_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|error| {
+                format!(
+                    "ETH block input output directory create failed: {}: {error}",
+                    parent.display()
+                )
+            })?;
+        }
+    }
+    fs::write(output_path, encoded).map_err(|error| {
+        format!(
+            "ETH block input write failed: {}: {error}",
+            output_path.display()
+        )
+    })?;
+    validate_eth_block_input(&Some(output_path.to_path_buf()))?
+        .ok_or_else(|| "generated ETH block input is missing".to_owned())
 }
 
 pub(crate) fn write_eth_block_input_summary(
