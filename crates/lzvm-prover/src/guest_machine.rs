@@ -800,7 +800,11 @@ fn read_csr(csr: RiscvCsr, retired_instructions: u64) -> u64 {
         | RiscvCsr::Cycle
         | RiscvCsr::Time
         | RiscvCsr::Instret => retired_instructions,
-        RiscvCsr::Cycleh | RiscvCsr::Timeh | RiscvCsr::Instreth => retired_instructions >> 32,
+        RiscvCsr::Mcycleh
+        | RiscvCsr::Minstreth
+        | RiscvCsr::Cycleh
+        | RiscvCsr::Timeh
+        | RiscvCsr::Instreth => retired_instructions >> 32,
         RiscvCsr::Misa => RV64IMAC_MISA,
         RiscvCsr::Mvendorid | RiscvCsr::Marchid | RiscvCsr::Mimpid | RiscvCsr::Mhartid => 0,
     }

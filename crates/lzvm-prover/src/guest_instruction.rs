@@ -301,6 +301,8 @@ pub enum RiscvAmoWidth {
 pub enum RiscvCsr {
     Mcycle,
     Minstret,
+    Mcycleh,
+    Minstreth,
     Cycle,
     Time,
     Instret,
@@ -319,6 +321,8 @@ impl RiscvCsr {
         match number {
             0x0b00 => Some(Self::Mcycle),
             0x0b02 => Some(Self::Minstret),
+            0x0b80 => Some(Self::Mcycleh),
+            0x0b82 => Some(Self::Minstreth),
             0x0c00 => Some(Self::Cycle),
             0x0c01 => Some(Self::Time),
             0x0c02 => Some(Self::Instret),
