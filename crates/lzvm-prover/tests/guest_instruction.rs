@@ -134,10 +134,11 @@ fn fetches_compressed_and_halfword_aligned_standard_instructions() {
             fetch_guest_instruction(&memory, 0x8000_0000)
                 .expect("compressed instruction should fetch")
         ),
-        RiscvInstruction::CompressedUnknown {
-            halfword: 0x0001,
-            quadrant: 1,
-            funct3: 0,
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 0,
+            rs1: 0,
+            immediate: 0,
         }
     );
     assert_eq!(
@@ -423,6 +424,46 @@ fn decodes_rv64_word_and_fence_instructions() {
             mode: 0,
             predecessor: 0,
             successor: 0,
+        }
+    );
+}
+
+#[test]
+fn decodes_compressed_addi_instructions() {
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x0001),
+        }),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 0,
+            rs1: 0,
+            immediate: 0,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x009d),
+        }),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 1,
+            rs1: 1,
+            immediate: 7,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x10fd),
+        }),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 1,
+            rs1: 1,
+            immediate: -1,
         }
     );
 }

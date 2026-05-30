@@ -328,11 +328,29 @@ fn decode_compressed_instruction(halfword: u16) -> RiscvInstruction {
     if halfword == 0 {
         return RiscvInstruction::IllegalCompressed { halfword };
     }
-    RiscvInstruction::CompressedUnknown {
-        halfword,
-        quadrant: (halfword & 0b11) as u8,
-        funct3: ((halfword >> 13) & 0b111) as u8,
+    match (((halfword >> 13) & 0b111) as u8, (halfword & 0b11) as u8) {
+        (0, 1) => decode_compressed_addi(halfword),
+        _ => RiscvInstruction::CompressedUnknown {
+            halfword,
+            quadrant: (halfword & 0b11) as u8,
+            funct3: ((halfword >> 13) & 0b111) as u8,
+        },
     }
+}
+
+fn decode_compressed_addi(halfword: u16) -> RiscvInstruction {
+    let rd = ((halfword >> 7) & 0x1f) as u8;
+    RiscvInstruction::OpImm {
+        kind: RiscvOpImmKind::Addi,
+        rd,
+        rs1: rd,
+        immediate: compressed_addi_immediate(halfword),
+    }
+}
+
+fn compressed_addi_immediate(halfword: u16) -> i64 {
+    let immediate = u64::from(((halfword >> 2) & 0x1f) | (((halfword >> 12) & 1) << 5));
+    sign_extend(immediate, 6)
 }
 
 fn decode_fence(word: u32) -> RiscvInstruction {

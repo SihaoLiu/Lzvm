@@ -1272,16 +1272,16 @@ fn rejects_unsupported_guest_instructions_without_mutating_state() {
         assert_eq!(state, before);
     }
 
-    let mut memory = guest_machine_memory_with_bytes(&0x0001_u16.to_le_bytes());
+    let mut memory = guest_machine_memory_with_bytes(&0x6001_u16.to_le_bytes());
     let mut state = GuestMachineState::new(memory.entry_address());
     assert!(matches!(
         advance_guest_machine(&mut memory, &mut state),
         Err(GuestMachineError::UnsupportedInstruction {
             address: ENTRY,
             instruction: RiscvInstruction::CompressedUnknown {
-                halfword: 0x0001,
+                halfword: 0x6001,
                 quadrant: 1,
-                funct3: 0,
+                funct3: 3,
             },
         })
     ));
