@@ -633,6 +633,45 @@ mod tests {
     }
 
     #[test]
+    fn rejects_eth_public_input_with_trailing_bytes() {
+        let dir = std::env::temp_dir().join(format!(
+            "lzvm-prove-inputs-eth-public-trailing-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let input_path = dir.join("public.bin");
+        let output_dir = dir.join("proof-out");
+        let mut public_input = sample_public_block_bytes_with_matching_roots();
+        public_input.extend_from_slice(b"tail");
+        fs::write(&input_path, public_input).expect("public input should be written");
+        let parsed = parse_inputs_args(&[
+            "--eth-public-input",
+            input_path.to_str().expect("input path should be utf-8"),
+            "setup-dir",
+            output_dir.to_str().expect("output path should be utf-8"),
+            "witness.so",
+            "guest.elf",
+        ])
+        .expect("input args should parse");
+
+        let result = prepare_eth_block_input(&parsed);
+        let output_exists = output_dir.join("eth-block.input").exists();
+        fs::remove_dir_all(&dir).expect("temp dir should be removed");
+
+        assert!(matches!(
+            result,
+            Err(message)
+                if message
+                    == format!(
+                        "ETH public input failed: {}: unexpected trailing bytes in ETH public input: 4",
+                        input_path.display()
+                    )
+        ));
+        assert!(!output_exists);
+    }
+
+    #[test]
     fn validates_eth_block_input_artifacts() {
         let dir = std::env::temp_dir().join(format!(
             "lzvm-prove-inputs-eth-block-{}",
