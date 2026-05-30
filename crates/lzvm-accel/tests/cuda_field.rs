@@ -3,11 +3,11 @@ use lzvm_accel::{cuda_goldilocks_add, cuda_goldilocks_mul};
 #[cfg(feature = "cuda")]
 use lzvm_accel::{
     cuda_goldilocks_butterfly, cuda_goldilocks_coset_extend, cuda_goldilocks_coset_extend_device,
-    cuda_goldilocks_intt, cuda_goldilocks_ntt, cuda_keccak256_fixed, cuda_poseidon2_width16,
-    cuda_poseidon2_width16_device, cuda_poseidon2_width16_linear_round_device,
-    cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width4,
-    cuda_poseidon2_width4_device, cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8,
-    cuda_poseidon2_width8_device, cuda_poseidon2_width8_linear_round_device,
+    cuda_goldilocks_coset_extend_row_major_columns, cuda_goldilocks_intt, cuda_goldilocks_ntt,
+    cuda_keccak256_fixed, cuda_poseidon2_width16, cuda_poseidon2_width16_device,
+    cuda_poseidon2_width16_linear_round_device, cuda_poseidon2_width16_merkle_parent_device,
+    cuda_poseidon2_width4, cuda_poseidon2_width4_device, cuda_poseidon2_width4_find_nonce,
+    cuda_poseidon2_width8, cuda_poseidon2_width8_device, cuda_poseidon2_width8_linear_round_device,
     cuda_poseidon2_width8_merkle_parent_device, cuda_setup_init, CudaDeviceBuffer,
 };
 #[cfg(feature = "cuda")]
@@ -288,6 +288,44 @@ fn cuda_extends_evaluations_from_device_memory() {
     let actual = output_buffer
         .to_u64_words()
         .expect("device words should copy back to host");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_extends_row_major_columns_over_shifted_cosets() {
+    let input = vec![5, 9, 2, 1, 9, 4, 3, 7, 6, 8, 11, 10];
+    let source_bits = 2;
+    let target_bits = 4;
+    let column_count = 3;
+    let source_rows = 1_usize << source_bits;
+    let target_rows = 1_usize << target_bits;
+
+    let extended_columns = (0..column_count)
+        .map(|column| {
+            let source = (0..source_rows)
+                .map(|row| Felt::from_u64(input[row * column_count + column]))
+                .collect::<Vec<_>>();
+            coset_extend_evaluations(&source, source_bits, target_bits)
+                .expect("cpu coset extension should run")
+        })
+        .collect::<Vec<_>>();
+    let expected = (0..target_rows)
+        .flat_map(|row| {
+            extended_columns
+                .iter()
+                .map(move |column| column[row].to_u64())
+        })
+        .collect::<Vec<_>>();
+
+    let actual = cuda_goldilocks_coset_extend_row_major_columns(
+        &input,
+        column_count,
+        source_bits,
+        target_bits,
+    )
+    .expect("cuda row-major column extension should run");
 
     assert_eq!(actual, expected);
 }

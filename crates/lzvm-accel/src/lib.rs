@@ -76,6 +76,18 @@ unsafe extern "C" {
         target_root: u64,
         shift: u64,
     ) -> i32;
+    fn lzvm_cuda_goldilocks_coset_extend_row_major_columns(
+        values: *const u64,
+        out: *mut u64,
+        source_len: usize,
+        source_bits: usize,
+        target_len: usize,
+        target_bits: usize,
+        column_count: usize,
+        source_root_inverse: u64,
+        target_root: u64,
+        shift: u64,
+    ) -> i32;
     #[link_name = "lzvm_cuda_goldilocks_coset_extend_device"]
     fn lzvm_cuda_goldilocks_coset_extend_device_raw(
         values: *const u64,
@@ -598,6 +610,68 @@ pub fn cuda_goldilocks_coset_extend(
             source_bits,
             target_len,
             target_bits,
+            pow_mod(source_root, 0xffff_ffff_0000_0001 - 2),
+            target_root,
+            SHIFT,
+        )
+    };
+    if code == 0 {
+        Ok(out)
+    } else {
+        Err(AccelError::Cuda { code })
+    }
+}
+
+#[cfg(feature = "cuda")]
+pub fn cuda_goldilocks_coset_extend_row_major_columns(
+    values: &[u64],
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+) -> Result<Vec<u64>, AccelError> {
+    if column_count == 0 {
+        if values.is_empty() {
+            return Ok(Vec::new());
+        }
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: values.len(),
+        });
+    }
+    if !values.len().is_multiple_of(column_count) {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: values.len(),
+        });
+    }
+
+    let source_rows = values.len() / column_count;
+    let (source_len, target_len, source_root, target_root) =
+        coset_extend_domain(source_rows, source_bits, target_bits)?;
+    if source_rows != source_len {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: values.len(),
+        });
+    }
+    ensure_cuda_setup(target_bits)?;
+
+    let out_len = target_len
+        .checked_mul(column_count)
+        .ok_or(AccelError::InvalidDomain {
+            bits: target_bits,
+            len: values.len(),
+        })?;
+    let mut out = vec![0_u64; out_len];
+    let code = unsafe {
+        lzvm_cuda_goldilocks_coset_extend_row_major_columns(
+            values.as_ptr(),
+            out.as_mut_ptr(),
+            source_len,
+            source_bits,
+            target_len,
+            target_bits,
+            column_count,
             pow_mod(source_root, 0xffff_ffff_0000_0001 - 2),
             target_root,
             SHIFT,

@@ -457,11 +457,18 @@ fn cuda_coset_extension_matches_cpu_for_witness_stage_leaves() {
         parse_witness_trace(&encode_values(&[5, 9, 1, 9]), 2, 2).expect("trace should parse");
     let stage = layout.stage_trace(&trace, 1).expect("stage should extract");
 
-    let cpu = extend_witness_stage_leaves(&stage, 1, 2).expect("cpu stage leaves should extend");
     let cuda = extend_witness_stage_leaves_with_cuda(&stage, 1, 2)
         .expect("cuda stage leaves should extend");
+    let actual = decode_witness_stage_leaf_values(&cuda).expect("leaves should decode");
+    let column_0 = coset_extend_evaluations(&[Felt::from_u64(5), Felt::from_u64(1)], 1, 2)
+        .expect("first column should extend");
+    let column_1 = coset_extend_evaluations(&[Felt::from_u64(9), Felt::from_u64(9)], 1, 2)
+        .expect("second column should extend");
+    let expected = (0..4)
+        .flat_map(|row| [column_0[row], column_1[row]])
+        .collect::<Vec<_>>();
 
-    assert_eq!(cuda, cpu);
+    assert_eq!(actual, expected);
 }
 
 #[test]

@@ -2,7 +2,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 #[cfg(feature = "cuda")]
-use lzvm_accel::{cuda_goldilocks_coset_extend_device, CudaDeviceBuffer};
+use lzvm_accel::cuda_goldilocks_coset_extend_row_major_columns;
 use lzvm_artifacts::fixed::FixedColumns;
 #[cfg(not(feature = "cuda"))]
 use lzvm_field::coset_extend_evaluations;
@@ -405,86 +405,57 @@ fn extend_row_major_columns(
         return Err(ProvePcsFriPolynomialError::LengthOverflow { unit_index });
     }
 
-    let mut extended_columns = Vec::with_capacity(column_count);
-    for column in 0..column_count {
-        let mut source = Vec::with_capacity(source_rows);
-        for row in 0..source_rows {
-            source.push(values[row * column_count + column]);
-        }
-        extended_columns.push(extend_row_major_column_values(
-            &source,
+    #[cfg(feature = "cuda")]
+    {
+        let source_words = values
+            .iter()
+            .map(|value| value.to_u64())
+            .collect::<Vec<_>>();
+        let extended_words = cuda_goldilocks_coset_extend_row_major_columns(
+            &source_words,
+            column_count,
             source_bits,
             target_bits,
-            unit_index,
-        )?);
-    }
-
-    let extended_rows = extended_columns.first().map_or(0, Vec::len);
-    let mut out = Vec::with_capacity(
-        extended_rows
-            .checked_mul(column_count)
-            .ok_or(ProvePcsFriPolynomialError::LengthOverflow { unit_index })?,
-    );
-    for row in 0..extended_rows {
-        for column_values in &extended_columns {
-            out.push(column_values[row]);
-        }
-    }
-    Ok(out)
-}
-
-#[cfg(feature = "cuda")]
-fn extend_row_major_column_values(
-    source: &[Felt],
-    source_bits: usize,
-    target_bits: usize,
-    unit_index: usize,
-) -> Result<Vec<Felt>, ProvePcsFriPolynomialError> {
-    let source_words = source
-        .iter()
-        .map(|value| value.to_u64())
-        .collect::<Vec<_>>();
-    let target_words = 1_usize
-        .checked_shl(
-            u32::try_from(target_bits)
-                .map_err(|_| ProvePcsFriPolynomialError::LengthOverflow { unit_index })?,
         )
-        .ok_or(ProvePcsFriPolynomialError::LengthOverflow { unit_index })?;
-    let target_byte_count = target_words
-        .checked_mul(8)
-        .ok_or(ProvePcsFriPolynomialError::LengthOverflow { unit_index })?;
-
-    let source_buffer = CudaDeviceBuffer::from_u64_words(&source_words)
         .map_err(|source| ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source })?;
-    let mut target_buffer = CudaDeviceBuffer::new(target_byte_count)
-        .map_err(|source| ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source })?;
-    cuda_goldilocks_coset_extend_device(
-        &source_buffer,
-        &mut target_buffer,
-        source_bits,
-        target_bits,
-    )
-    .map_err(|source| ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source })?;
+        return extended_words
+            .into_iter()
+            .map(Felt::from_canonical)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|source| ProvePcsFriPolynomialError::FixedExtensionValue {
+                unit_index,
+                source,
+            });
+    }
 
-    let extended_words = target_buffer
-        .to_u64_words()
-        .map_err(|source| ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source })?;
-    extended_words
-        .into_iter()
-        .map(Felt::from_canonical)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|source| ProvePcsFriPolynomialError::FixedExtensionValue { unit_index, source })
-}
+    #[cfg(not(feature = "cuda"))]
+    {
+        let mut extended_columns = Vec::with_capacity(column_count);
+        for column in 0..column_count {
+            let mut source = Vec::with_capacity(source_rows);
+            for row in 0..source_rows {
+                source.push(values[row * column_count + column]);
+            }
+            extended_columns.push(
+                coset_extend_evaluations(&source, source_bits, target_bits).map_err(|source| {
+                    ProvePcsFriPolynomialError::FixedExtension { unit_index, source }
+                })?,
+            );
+        }
 
-#[cfg(not(feature = "cuda"))]
-fn extend_row_major_column_values(
-    source: &[Felt],
-    source_bits: usize,
-    target_bits: usize,
-    unit_index: usize,
-) -> Result<Vec<Felt>, ProvePcsFriPolynomialError> {
-    coset_extend_evaluations(source, source_bits, target_bits)
-        .map_err(|source| ProvePcsFriPolynomialError::FixedExtension { unit_index, source })
+        let extended_rows = extended_columns.first().map_or(0, Vec::len);
+        let mut out = Vec::with_capacity(
+            extended_rows
+                .checked_mul(column_count)
+                .ok_or(ProvePcsFriPolynomialError::LengthOverflow { unit_index })?,
+        );
+        for row in 0..extended_rows {
+            for column_values in &extended_columns {
+                out.push(column_values[row]);
+            }
+        }
+        Ok(out)
+    }
 }
 
 fn fri_error(unit_index: usize, source: FriPolynomialError) -> ProvePcsFriPolynomialError {
