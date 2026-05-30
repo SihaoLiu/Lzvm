@@ -2,7 +2,8 @@ use std::io::Write;
 use std::path::Path;
 
 use lzvm_artifacts::eth_public_input::{
-    eth_public_header_hash, parse_eth_public_header_prefix, EthPublicHeader,
+    eth_public_header_hash, parse_eth_public_header_prefix, parse_eth_public_transactions_prefix,
+    EthPublicHeader, EthPublicTransactionsPrefix,
 };
 
 pub(crate) fn run_summary(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -30,19 +31,35 @@ fn summarize_public_input(input_path: &str, stdout: &mut dyn Write, stderr: &mut
             return 1;
         }
     };
+    let transactions = match parse_eth_public_transactions_prefix(&bytes) {
+        Ok(transactions) => transactions,
+        Err(error) => {
+            let _ = writeln!(stderr, "eth public input summary failed: {error}");
+            return 1;
+        }
+    };
     let block_hash = eth_public_header_hash(&parsed.header);
 
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "public_input={}", Path::new(input_path).display());
     let _ = writeln!(stdout, "bytes={}", bytes.len());
     let _ = writeln!(stdout, "header_bytes={}", parsed.consumed);
-    let _ = writeln!(stdout, "remaining_bytes={}", bytes.len() - parsed.consumed);
+    let _ = writeln!(stdout, "transaction_prefix_bytes={}", transactions.consumed);
+    let _ = writeln!(
+        stdout,
+        "remaining_bytes={}",
+        bytes.len() - transactions.consumed
+    );
     let _ = writeln!(stdout, "block_hash={}", format_hash(&block_hash));
-    write_header_summary(stdout, &parsed.header);
+    write_header_summary(stdout, &parsed.header, &transactions);
     0
 }
 
-fn write_header_summary(stdout: &mut dyn Write, header: &EthPublicHeader) {
+fn write_header_summary(
+    stdout: &mut dyn Write,
+    header: &EthPublicHeader,
+    transactions: &EthPublicTransactionsPrefix,
+) {
     let _ = writeln!(stdout, "block_number={}", header.block_number);
     let _ = writeln!(stdout, "timestamp={}", header.timestamp);
     let _ = writeln!(stdout, "gas_limit={}", header.gas_limit);
@@ -51,6 +68,32 @@ fn write_header_summary(stdout: &mut dyn Write, header: &EthPublicHeader) {
         stdout,
         "transactions_root={}",
         format_hash(&header.transactions_root)
+    );
+    let transaction_root = transactions.transactions_root();
+    let _ = writeln!(
+        stdout,
+        "computed_transactions_root={}",
+        format_hash(&transaction_root)
+    );
+    let _ = writeln!(
+        stdout,
+        "transactions_root_matches={}",
+        transactions.transactions_root_matches()
+    );
+    let _ = writeln!(
+        stdout,
+        "transaction_count={}",
+        transactions.transactions.len()
+    );
+    let _ = writeln!(
+        stdout,
+        "legacy_transactions={}",
+        transactions.legacy_transaction_count()
+    );
+    let _ = writeln!(
+        stdout,
+        "typed_transactions={}",
+        transactions.typed_transaction_count()
     );
     let _ = writeln!(
         stdout,

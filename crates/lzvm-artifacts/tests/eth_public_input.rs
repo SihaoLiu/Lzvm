@@ -1,7 +1,9 @@
 use lzvm_artifacts::eth_block::{decode_eth_header_rlp, eth_header_hash};
 use lzvm_artifacts::eth_public_input::{
     eth_public_header_hash, eth_public_header_rlp_items, parse_eth_public_header_prefix,
+    parse_eth_public_transactions_prefix,
 };
+use lzvm_artifacts::eth_trie::transaction_trie_root;
 use lzvm_artifacts::rlp::RlpItem;
 
 #[test]
@@ -66,6 +68,48 @@ fn rejects_public_header_fixed_bytes_with_unexpected_length() {
     );
 }
 
+#[test]
+fn parses_public_transaction_prefix_and_root() {
+    let expected_transaction = expected_eip1559_transaction();
+    let expected_root = transaction_trie_root(std::slice::from_ref(&expected_transaction))
+        .expect("transaction root should build");
+    let header_bytes = sample_public_header_bytes_with_transactions_root(expected_root);
+    let transaction = eip1559_transaction_bytes();
+    let mut input = header_bytes.clone();
+    input.extend_from_slice(&1_u64.to_le_bytes());
+    input.extend_from_slice(&transaction);
+    input.extend_from_slice(b"tail");
+
+    let parsed =
+        parse_eth_public_transactions_prefix(&input).expect("public transactions should parse");
+
+    assert_eq!(parsed.header.block_number, 42);
+    assert_eq!(parsed.transactions, vec![expected_transaction.clone()]);
+    assert_eq!(parsed.consumed, header_bytes.len() + 8 + transaction.len());
+    assert_eq!(parsed.transactions_root(), expected_root);
+    assert!(parsed.transactions_root_matches());
+}
+
+#[test]
+fn parses_eip7702_authorization_zero_parity_as_empty_quantity() {
+    let expected_transaction = expected_eip7702_transaction();
+    let expected_root = transaction_trie_root(std::slice::from_ref(&expected_transaction))
+        .expect("transaction root should build");
+    let header_bytes = sample_public_header_bytes_with_transactions_root(expected_root);
+    let transaction = eip7702_transaction_bytes();
+    let mut input = header_bytes.clone();
+    input.extend_from_slice(&1_u64.to_le_bytes());
+    input.extend_from_slice(&transaction);
+
+    let parsed =
+        parse_eth_public_transactions_prefix(&input).expect("public transactions should parse");
+
+    assert_eq!(parsed.transactions, vec![expected_transaction]);
+    assert_eq!(parsed.consumed, header_bytes.len() + 8 + transaction.len());
+    assert_eq!(parsed.transactions_root(), expected_root);
+    assert!(parsed.transactions_root_matches());
+}
+
 fn expected_header_rlp_items() -> Vec<RlpItem> {
     vec![
         bytes([1; 32]),
@@ -92,6 +136,98 @@ fn expected_header_rlp_items() -> Vec<RlpItem> {
     ]
 }
 
+fn expected_eip7702_transaction() -> RlpItem {
+    let authorization = RlpItem::List(vec![
+        rlp_quantity_u256(1),
+        RlpItem::Bytes([4; 20].to_vec()),
+        RlpItem::Bytes(Vec::new()),
+        RlpItem::Bytes(Vec::new()),
+        rlp_quantity_u256(0x33),
+        rlp_quantity_u256(0x44),
+    ]);
+    let payload = vec![
+        rlp_quantity_u64(1),
+        rlp_quantity_u64(9),
+        rlp_quantity_u128(20),
+        rlp_quantity_u128(300),
+        rlp_quantity_u64(30_000),
+        RlpItem::Bytes([8; 20].to_vec()),
+        rlp_quantity_u256(123),
+        RlpItem::Bytes(b"auth-call".to_vec()),
+        RlpItem::List(Vec::new()),
+        RlpItem::List(vec![authorization]),
+        RlpItem::Bytes(Vec::new()),
+        rlp_quantity_u256(0x11),
+        rlp_quantity_u256(0x22),
+    ];
+    let mut encoded = vec![4];
+    encoded.extend_from_slice(&lzvm_artifacts::rlp::encode_rlp(&RlpItem::List(payload)));
+    RlpItem::Bytes(encoded)
+}
+
+fn expected_eip1559_transaction() -> RlpItem {
+    let payload = vec![
+        rlp_quantity_u64(1),
+        rlp_quantity_u64(7),
+        rlp_quantity_u128(20),
+        rlp_quantity_u128(300),
+        rlp_quantity_u64(21_000),
+        RlpItem::Bytes([9; 20].to_vec()),
+        rlp_quantity_u256(123),
+        RlpItem::Bytes(b"call-data".to_vec()),
+        RlpItem::List(Vec::new()),
+        rlp_quantity_u64(1),
+        rlp_quantity_u256(0x11),
+        rlp_quantity_u256(0x22),
+    ];
+    let mut encoded = vec![2];
+    encoded.extend_from_slice(&lzvm_artifacts::rlp::encode_rlp(&RlpItem::List(payload)));
+    RlpItem::Bytes(encoded)
+}
+
+fn eip7702_transaction_bytes() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    push_u256(&mut bytes, 0x11);
+    push_u256(&mut bytes, 0x22);
+    push_uint_u64(&mut bytes, 0);
+    bytes.extend_from_slice(&4_u32.to_le_bytes());
+    bytes.extend_from_slice(&1_u64.to_le_bytes());
+    bytes.extend_from_slice(&9_u64.to_le_bytes());
+    bytes.extend_from_slice(&30_000_u64.to_le_bytes());
+    bytes.extend_from_slice(&300_u128.to_le_bytes());
+    bytes.extend_from_slice(&20_u128.to_le_bytes());
+    push_bytes(&mut bytes, &[8; 20]);
+    push_u256(&mut bytes, 123);
+    bytes.extend_from_slice(&0_u64.to_le_bytes());
+    bytes.extend_from_slice(&1_u64.to_le_bytes());
+    push_u256(&mut bytes, 1);
+    push_bytes(&mut bytes, &[4; 20]);
+    push_uint_u64(&mut bytes, 0);
+    push_uint_u8(&mut bytes, 0);
+    push_u256(&mut bytes, 0x33);
+    push_u256(&mut bytes, 0x44);
+    push_bytes(&mut bytes, b"auth-call");
+    bytes
+}
+
+fn eip1559_transaction_bytes() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    push_u256(&mut bytes, 0x11);
+    push_u256(&mut bytes, 0x22);
+    push_uint_u64(&mut bytes, 1);
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    bytes.extend_from_slice(&1_u64.to_le_bytes());
+    bytes.extend_from_slice(&7_u64.to_le_bytes());
+    bytes.extend_from_slice(&21_000_u64.to_le_bytes());
+    bytes.extend_from_slice(&300_u128.to_le_bytes());
+    bytes.extend_from_slice(&20_u128.to_le_bytes());
+    push_option_bytes(&mut bytes, Some(&[9; 20]));
+    push_u256(&mut bytes, 123);
+    bytes.extend_from_slice(&0_u64.to_le_bytes());
+    push_bytes(&mut bytes, b"call-data");
+    bytes
+}
+
 pub fn sample_public_header_bytes() -> Vec<u8> {
     let mut input = Vec::new();
     push_bytes(&mut input, &[1; 32]);
@@ -115,6 +251,13 @@ pub fn sample_public_header_bytes() -> Vec<u8> {
     push_option_bytes(&mut input, Some(&[12; 32]));
     push_option_bytes(&mut input, Some(&[13; 32]));
     push_bytes(&mut input, b"abc");
+    input
+}
+
+fn sample_public_header_bytes_with_transactions_root(root: [u8; 32]) -> Vec<u8> {
+    let mut input = sample_public_header_bytes();
+    let offset = 40 + 40 + 28 + 40 + 8;
+    input[offset..offset + 32].copy_from_slice(&root);
     input
 }
 
@@ -151,4 +294,42 @@ fn push_option_u64(out: &mut Vec<u8>, value: Option<u64>) {
         }
         None => out.push(0),
     }
+}
+
+fn push_u256(out: &mut Vec<u8>, value: u8) {
+    let mut bytes = [0; 32];
+    bytes[31] = value;
+    push_bytes(out, &bytes);
+}
+
+fn push_uint_u64(out: &mut Vec<u8>, value: u64) {
+    out.extend_from_slice(&8_u64.to_le_bytes());
+    out.extend_from_slice(&value.to_be_bytes());
+}
+
+fn push_uint_u8(out: &mut Vec<u8>, value: u8) {
+    out.extend_from_slice(&1_u64.to_le_bytes());
+    out.push(value);
+}
+
+fn rlp_quantity_u64(value: u64) -> RlpItem {
+    RlpItem::Bytes(rlp_quantity(&value.to_be_bytes()))
+}
+
+fn rlp_quantity_u128(value: u128) -> RlpItem {
+    RlpItem::Bytes(rlp_quantity(&value.to_be_bytes()))
+}
+
+fn rlp_quantity_u256(value: u8) -> RlpItem {
+    let mut bytes = [0; 32];
+    bytes[31] = value;
+    RlpItem::Bytes(rlp_quantity(&bytes))
+}
+
+fn rlp_quantity(bytes: &[u8]) -> Vec<u8> {
+    let offset = bytes
+        .iter()
+        .position(|byte| *byte != 0)
+        .unwrap_or(bytes.len());
+    bytes[offset..].to_vec()
 }
