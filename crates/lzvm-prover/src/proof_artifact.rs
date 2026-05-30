@@ -700,6 +700,11 @@ fn validate_program_image_cache_binding(
     public_values: &PublicValues,
     cache: Option<&ProgramImageCommitmentCache>,
 ) -> Result<(), String> {
+    if let Some(cache) = cache {
+        if cache.constraint_system_digest != public_values.setup_hash {
+            return Err("program image cache setup hash mismatch".to_owned());
+        }
+    }
     validate_program_image_cache_public_values(public_values, cache)
         .map_err(|error| error.to_string())
 }
@@ -1251,6 +1256,7 @@ mod tests {
     use lzvm_artifacts::eth_block_input::build_eth_block_input;
     use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
     use lzvm_artifacts::program_image::ProgramImageGpuMode;
+    use lzvm_artifacts::public_values::PublicValueEntry;
     use lzvm_field::MODULUS;
 
     #[test]
@@ -1263,6 +1269,34 @@ mod tests {
             .expect_err("ETH block public values should require a bound input");
 
         assert_eq!(error, "missing ETH block input proof segment");
+    }
+
+    #[test]
+    fn rejects_program_image_cache_setup_hash_mismatches_for_binding() {
+        let public_values = PublicValues {
+            schema_version: 1,
+            setup_hash: [0x44; 32],
+            values: vec![PublicValueEntry {
+                name: "sample_public".to_owned(),
+                elements: vec![19],
+            }],
+        };
+        let cache = ProgramImageCommitmentCache {
+            program_digest: [0x11; 32],
+            source_image_digest: [0x22; 32],
+            constraint_system_digest: [0x99; 32],
+            tree_root: [1, 2, 3, 4],
+            trace_row_count: 1024,
+            trace_column_count: 17,
+            blowup_factor: 8,
+            merkle_tree_arity: 4,
+            gpu_mode: ProgramImageGpuMode::Cuda,
+        };
+
+        let error = validate_program_image_cache_binding(&public_values, Some(&cache))
+            .expect_err("program image cache should match public input setup hash");
+
+        assert_eq!(error, "program image cache setup hash mismatch");
     }
 
     #[test]
