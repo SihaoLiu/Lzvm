@@ -367,8 +367,11 @@ fn decodes_common_riscv_instruction_formats() {
 }
 
 #[test]
-fn decodes_machine_csr_reads() {
+fn decodes_read_only_csr_reads() {
     let cases = [
+        (0x0c00, RiscvCsr::Cycle),
+        (0x0c01, RiscvCsr::Time),
+        (0x0c02, RiscvCsr::Instret),
         (0x0301, RiscvCsr::Misa),
         (0x0f11, RiscvCsr::Mvendorid),
         (0x0f12, RiscvCsr::Marchid),
@@ -1584,7 +1587,7 @@ fn keeps_unknown_riscv_words_visible() {
             opcode: 0x0f,
         }
     );
-    for word in [0xf141_2573, 0xc000_2573, 0xf140_1573, 0xf140_6073] {
+    for word in [0xf141_2573, 0xf140_1573, 0xf140_6073] {
         assert_eq!(
             decode_riscv_instruction(word),
             RiscvInstruction::Unknown { word, opcode: 0x73 }
@@ -1596,6 +1599,9 @@ fn keeps_unknown_riscv_words_visible() {
         csrrs(10, 0x0f13, 1),
         csrrs(10, 0x0f14, 1),
         csrrs(10, 0x0301, 1),
+        csrrs(10, 0x0c00, 1),
+        csrrs(10, 0x0c01, 1),
+        csrrs(10, 0x0c02, 1),
     ] {
         assert_eq!(
             decode_riscv_instruction(word),

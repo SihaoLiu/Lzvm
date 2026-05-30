@@ -138,6 +138,7 @@ pub struct GuestMachineState {
     pc: u64,
     registers: [u64; GUEST_REGISTER_COUNT],
     reservation: Option<GuestMemoryReservation>,
+    retired_instructions: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,6 +153,7 @@ impl GuestMachineState {
             pc: entry_address,
             registers: [0; GUEST_REGISTER_COUNT],
             reservation: None,
+            retired_instructions: 0,
         }
     }
 
@@ -204,6 +206,14 @@ impl GuestMachineState {
         if self.reservation_overlaps(address, byte_len) {
             self.clear_reservation();
         }
+    }
+
+    fn retired_instructions(&self) -> u64 {
+        self.retired_instructions
+    }
+
+    fn retire_instruction(&mut self) {
+        self.retired_instructions = self.retired_instructions.wrapping_add(1);
     }
 
     fn reservation_matches(&self, address: u64, width: RiscvAmoWidth) -> bool {
@@ -399,6 +409,7 @@ pub fn advance_guest_machine(
     next_state.set_pc(sequential_pc);
 
     execute_guest_instruction(memory, address, sequential_pc, instruction, &mut next_state)?;
+    next_state.retire_instruction();
     let next_pc = next_state.pc();
     *state = next_state;
 
@@ -570,7 +581,7 @@ fn execute_guest_instruction(
             state.clear_reservation();
         }
         RiscvInstruction::CsrRead { csr, rd } => {
-            state.write_decoded_register(rd, read_csr(csr));
+            state.write_decoded_register(rd, read_csr(csr, state));
         }
         RiscvInstruction::Fence { .. } => {}
         RiscvInstruction::CompressedUnknown { .. }
@@ -782,8 +793,9 @@ fn branch_is_taken(kind: RiscvBranchKind, lhs: u64, rhs: u64) -> bool {
     }
 }
 
-fn read_csr(csr: RiscvCsr) -> u64 {
+fn read_csr(csr: RiscvCsr, state: &GuestMachineState) -> u64 {
     match csr {
+        RiscvCsr::Cycle | RiscvCsr::Time | RiscvCsr::Instret => state.retired_instructions(),
         RiscvCsr::Misa => RV64IMAC_MISA,
         RiscvCsr::Mvendorid | RiscvCsr::Marchid | RiscvCsr::Mimpid | RiscvCsr::Mhartid => 0,
     }
