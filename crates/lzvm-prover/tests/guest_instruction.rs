@@ -47,6 +47,26 @@ fn csrrc(rd: u8, csr: u16, rs1: u8) -> u32 {
     (u32::from(csr) << 20) | (u32::from(rs1) << 15) | (3 << 12) | (u32::from(rd) << 7) | 0x73
 }
 
+fn csr_imm(rd: u8, csr: u16, funct3: u8, immediate: u8) -> u32 {
+    assert!(rd < 32);
+    assert!(csr < 4096);
+    assert!(funct3 < 8);
+    assert!(immediate < 32);
+    (u32::from(csr) << 20)
+        | (u32::from(immediate) << 15)
+        | (u32::from(funct3) << 12)
+        | (u32::from(rd) << 7)
+        | 0x73
+}
+
+fn csrrsi(rd: u8, csr: u16, immediate: u8) -> u32 {
+    csr_imm(rd, csr, 6, immediate)
+}
+
+fn csrrci(rd: u8, csr: u16, immediate: u8) -> u32 {
+    csr_imm(rd, csr, 7, immediate)
+}
+
 #[derive(Debug, Clone, Copy)]
 struct ProgramHeaderFixture {
     kind: u32,
@@ -412,6 +432,29 @@ fn decodes_register_clear_csr_reads_without_write_source() {
             decode_riscv_instruction(csrrc(10, csr_number, 0)),
             RiscvInstruction::CsrRead { csr, rd: 10 }
         );
+    }
+}
+
+#[test]
+fn decodes_immediate_csr_reads_without_write_mask() {
+    let cases = [
+        (0x0c00, RiscvCsr::Cycle),
+        (0x0c01, RiscvCsr::Time),
+        (0x0c02, RiscvCsr::Instret),
+        (0x0301, RiscvCsr::Misa),
+        (0x0f11, RiscvCsr::Mvendorid),
+        (0x0f12, RiscvCsr::Marchid),
+        (0x0f13, RiscvCsr::Mimpid),
+        (0x0f14, RiscvCsr::Mhartid),
+    ];
+
+    for (csr_number, csr) in cases {
+        for word in [csrrsi(10, csr_number, 0), csrrci(10, csr_number, 0)] {
+            assert_eq!(
+                decode_riscv_instruction(word),
+                RiscvInstruction::CsrRead { csr, rd: 10 }
+            );
+        }
     }
 }
 
@@ -1615,7 +1658,7 @@ fn keeps_unknown_riscv_words_visible() {
             opcode: 0x0f,
         }
     );
-    for word in [0xf141_2573, 0xf140_1573, 0xf140_6073] {
+    for word in [0xf141_2573, 0xf140_1573] {
         assert_eq!(
             decode_riscv_instruction(word),
             RiscvInstruction::Unknown { word, opcode: 0x73 }
@@ -1630,6 +1673,8 @@ fn keeps_unknown_riscv_words_visible() {
         csrrs(10, 0x0c00, 1),
         csrrs(10, 0x0c01, 1),
         csrrs(10, 0x0c02, 1),
+        csrrsi(10, 0x0f14, 1),
+        csrrci(10, 0x0f14, 1),
     ] {
         assert_eq!(
             decode_riscv_instruction(word),
