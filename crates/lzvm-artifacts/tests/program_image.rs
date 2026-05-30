@@ -71,6 +71,21 @@ fn encodes_and_parses_program_image_commitment_cache() {
 }
 
 #[test]
+fn accepts_program_image_cache_at_maximum_trace_domain_bits() {
+    let mut cache = sample_cache();
+    cache.trace_row_count = 1_u64 << 32;
+    cache.trace_column_count = 1;
+    cache.blowup_factor = 1;
+
+    let encoded =
+        encode_program_image_commitment_cache(&cache).expect("maximum domain should encode");
+    let parsed =
+        parse_program_image_commitment_cache(&encoded).expect("maximum domain should parse");
+
+    assert_eq!(parsed, cache);
+}
+
+#[test]
 fn rejects_non_canonical_program_image_commitment_cache_tree_roots() {
     let mut cache = sample_cache();
     cache.tree_root[1] = NON_CANONICAL_FIELD;
@@ -229,6 +244,19 @@ fn rejects_invalid_program_image_geometry() {
     let mut cache = sample_cache();
     cache.trace_row_count = 1_u64 << 31;
     cache.blowup_factor = 4;
+    assert!(matches!(
+        encode_program_image_commitment_cache(&cache),
+        Err(
+            ProgramImageCommitmentCacheError::UnsupportedTraceDomainBits {
+                bits: 33,
+                max_bits: 32
+            }
+        )
+    ));
+
+    let mut cache = sample_cache();
+    cache.trace_row_count = 1_u64 << 30;
+    cache.blowup_factor = 8;
     assert!(matches!(
         encode_program_image_commitment_cache(&cache),
         Err(
