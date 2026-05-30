@@ -621,6 +621,7 @@ pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
     auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
     bundle: &TraceBundle,
 ) -> Result<Vec<ProveWitnessTraceCommitments>, String> {
+    validate_trace_bundle_unit_set(plan.units.len(), bundle)?;
     let mut outputs = Vec::with_capacity(plan.units.len());
     let mut source_lookup_balance = SourceLookupBalance::default();
     for unit_index in 0..plan.units.len() {
@@ -648,6 +649,23 @@ pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
         .validate_all_units()
         .map_err(|error| error.to_string())?;
     Ok(outputs)
+}
+
+fn validate_trace_bundle_unit_set(
+    plan_unit_count: usize,
+    bundle: &TraceBundle,
+) -> Result<(), String> {
+    for unit in &bundle.units {
+        let unit_index = usize::try_from(unit.unit_index)
+            .map_err(|_| format!("trace bundle unit index is too large: {}", unit.unit_index))?;
+        if unit_index >= plan_unit_count {
+            return Err(format!(
+                "trace bundle has unexpected unit {}",
+                unit.unit_index
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn load_public_inputs(plan: &ProveExecutionPlan) -> Result<Vec<Felt>, ProveWitnessCommitmentError> {
@@ -1059,6 +1077,28 @@ mod tests {
     };
     use lzvm_artifacts::key_directory::KeyUnitKind;
     use lzvm_artifacts::setup_info::{CommitmentColumn, FriStep, StarkStruct, UnitSetupInfo};
+    use lzvm_artifacts::trace_bundle::TraceBundleUnit;
+
+    #[test]
+    fn rejects_trace_bundles_with_unexpected_units() {
+        let bundle = TraceBundle {
+            units: vec![
+                TraceBundleUnit {
+                    unit_index: 0,
+                    trace_bytes: vec![1],
+                },
+                TraceBundleUnit {
+                    unit_index: 2,
+                    trace_bytes: vec![2],
+                },
+            ],
+        };
+
+        let error = validate_trace_bundle_unit_set(2, &bundle)
+            .expect_err("trace bundle should not carry units outside the plan");
+
+        assert_eq!(error, "trace bundle has unexpected unit 2");
+    }
 
     #[test]
     fn accepts_source_lookup_regular_hints_at_unsupported_gate() {
