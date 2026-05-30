@@ -192,6 +192,17 @@ pub struct GuestMachineReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GuestMachineRunReport {
+    pub executed_instructions: u64,
+    pub halt: GuestMachineHalt,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GuestMachineHalt {
+    Ecall { address: u64 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GuestMachineError {
     Fetch(GuestInstructionError),
     Memory(GuestMemoryError),
@@ -210,6 +221,12 @@ pub enum GuestMachineError {
         address: u64,
         instruction: RiscvInstruction,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GuestMachineRunError {
+    Instruction(GuestMachineError),
+    InstructionLimitExceeded { instruction_limit: u64, pc: u64 },
 }
 
 impl fmt::Display for GuestMachineError {
@@ -239,6 +256,21 @@ impl fmt::Display for GuestMachineError {
     }
 }
 
+impl fmt::Display for GuestMachineRunError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Instruction(error) => write!(f, "guest machine run instruction failed: {error}"),
+            Self::InstructionLimitExceeded {
+                instruction_limit,
+                pc,
+            } => write!(
+                f,
+                "guest machine run exceeded instruction limit {instruction_limit} at pc {pc}"
+            ),
+        }
+    }
+}
+
 impl std::error::Error for GuestMachineError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -248,6 +280,15 @@ impl std::error::Error for GuestMachineError {
             | Self::ProgramCounterOverflow { .. }
             | Self::UnsupportedInstructionLength { .. }
             | Self::UnsupportedInstruction { .. } => None,
+        }
+    }
+}
+
+impl std::error::Error for GuestMachineRunError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Instruction(error) => Some(error),
+            Self::InstructionLimitExceeded { .. } => None,
         }
     }
 }
@@ -264,25 +305,48 @@ impl From<GuestInstructionError> for GuestMachineError {
     }
 }
 
+impl From<GuestMachineError> for GuestMachineRunError {
+    fn from(error: GuestMachineError) -> Self {
+        Self::Instruction(error)
+    }
+}
+
+pub fn run_guest_machine(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    instruction_limit: u64,
+) -> Result<GuestMachineRunReport, GuestMachineRunError> {
+    let mut executed_instructions = 0_u64;
+    loop {
+        let current = decode_current_guest_instruction(memory, state.pc())?;
+        if current == RiscvInstruction::Ecall {
+            return Ok(GuestMachineRunReport {
+                executed_instructions,
+                halt: GuestMachineHalt::Ecall {
+                    address: state.pc(),
+                },
+            });
+        }
+        if executed_instructions == instruction_limit {
+            return Err(GuestMachineRunError::InstructionLimitExceeded {
+                instruction_limit,
+                pc: state.pc(),
+            });
+        }
+        advance_guest_machine(memory, state)?;
+        executed_instructions += 1;
+    }
+}
+
 pub fn advance_guest_machine(
     memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
 ) -> Result<GuestMachineReport, GuestMachineError> {
     let address = state.pc();
-    let fetched = fetch_guest_instruction(memory, address)?;
-    let byte_len = match fetched.byte_len() {
-        Some(byte_len) => byte_len,
-        None => {
-            let RiscvEncodedInstruction::UnsupportedLong(halfword) = fetched.encoded else {
-                unreachable!("instruction encoding without byte length must be explicit")
-            };
-            return Err(GuestMachineError::UnsupportedInstructionLength { address, halfword });
-        }
-    };
+    let (byte_len, instruction) = fetch_decode_guest_instruction(memory, address)?;
     let sequential_pc = address
         .checked_add(byte_len as u64)
         .ok_or(GuestMachineError::ProgramCounterOverflow { address, byte_len })?;
-    let instruction = decode_guest_instruction(fetched);
     let mut next_state = state.clone();
     next_state.set_pc(sequential_pc);
 
@@ -295,6 +359,32 @@ pub fn advance_guest_machine(
         instruction,
         next_pc,
     })
+}
+
+fn decode_current_guest_instruction(
+    memory: &GuestMachineMemory,
+    address: u64,
+) -> Result<RiscvInstruction, GuestMachineError> {
+    let (_, instruction) = fetch_decode_guest_instruction(memory, address)?;
+    Ok(instruction)
+}
+
+fn fetch_decode_guest_instruction(
+    memory: &GuestMachineMemory,
+    address: u64,
+) -> Result<(usize, RiscvInstruction), GuestMachineError> {
+    let fetched = fetch_guest_instruction(memory, address)?;
+    let byte_len = match fetched.byte_len() {
+        Some(byte_len) => byte_len,
+        None => {
+            let RiscvEncodedInstruction::UnsupportedLong(halfword) = fetched.encoded else {
+                unreachable!("instruction encoding without byte length must be explicit")
+            };
+            return Err(GuestMachineError::UnsupportedInstructionLength { address, halfword });
+        }
+    };
+    let instruction = decode_guest_instruction(fetched);
+    Ok((byte_len, instruction))
 }
 
 fn execute_guest_instruction(
