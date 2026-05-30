@@ -1,9 +1,9 @@
 use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_prover::guest_instruction::{
     decode_guest_instruction, decode_riscv_instruction, fetch_guest_instruction,
-    FetchedGuestInstruction, GuestInstructionError, RiscvBranchKind, RiscvEncodedInstruction,
-    RiscvFenceKind, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind,
-    RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    FetchedGuestInstruction, GuestInstructionError, RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind,
+    RiscvEncodedInstruction, RiscvFenceKind, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind,
+    RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use lzvm_prover::guest_memory::load_guest_memory_image;
 
@@ -424,6 +424,34 @@ fn decodes_rv64_word_and_fence_instructions() {
             mode: 0,
             predecessor: 0,
             successor: 0,
+        }
+    );
+}
+
+#[test]
+fn decodes_atomic_add_instructions() {
+    assert_eq!(
+        decode_riscv_instruction(0x00c6_a5af),
+        RiscvInstruction::Amo {
+            kind: RiscvAmoKind::Add,
+            width: RiscvAmoWidth::Word,
+            rd: 11,
+            rs1: 13,
+            rs2: 12,
+            acquire: false,
+            release: false,
+        }
+    );
+    assert_eq!(
+        decode_riscv_instruction(0x06e7_b52f),
+        RiscvInstruction::Amo {
+            kind: RiscvAmoKind::Add,
+            width: RiscvAmoWidth::Doubleword,
+            rd: 10,
+            rs1: 15,
+            rs2: 14,
+            acquire: true,
+            release: true,
         }
     );
 }

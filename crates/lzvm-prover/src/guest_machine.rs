@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::guest_instruction::{
-    decode_guest_instruction, fetch_guest_instruction, GuestInstructionError, RiscvBranchKind,
-    RiscvEncodedInstruction, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind,
-    RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    decode_guest_instruction, fetch_guest_instruction, GuestInstructionError, RiscvAmoKind,
+    RiscvAmoWidth, RiscvBranchKind, RiscvEncodedInstruction, RiscvInstruction, RiscvLoadKind,
+    RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use crate::guest_memory::{
     GuestMemoryError, GuestMemoryImage, GuestMemoryReader, GuestMemorySegment,
@@ -482,6 +482,20 @@ fn execute_guest_instruction(
             let address = state.read_decoded_register(rs1).wrapping_add_signed(offset);
             write_guest_store(memory, kind, address, state.read_decoded_register(rs2))?;
         }
+        RiscvInstruction::Amo {
+            kind,
+            width,
+            rd,
+            rs1,
+            rs2,
+            ..
+        } => {
+            let address = state.read_decoded_register(rs1);
+            let loaded = read_guest_amo(memory, width, address)?;
+            let stored = execute_amo(kind, width, loaded, state.read_decoded_register(rs2));
+            write_guest_amo(memory, width, address, stored)?;
+            state.write_decoded_register(rd, amo_result(width, loaded));
+        }
         RiscvInstruction::Fence { .. } => {}
         RiscvInstruction::CompressedUnknown { .. }
         | RiscvInstruction::IllegalCompressed { .. }
@@ -558,6 +572,55 @@ fn write_guest_store(
         RiscvStoreKind::Sd => memory.write_range(address, &bytes)?,
     }
     Ok(())
+}
+
+fn read_guest_amo(
+    memory: &GuestMachineMemory,
+    width: RiscvAmoWidth,
+    address: u64,
+) -> Result<u64, GuestMachineError> {
+    let value = match width {
+        RiscvAmoWidth::Word => {
+            let mut bytes = [0_u8; 4];
+            memory.read_range_into(address, &mut bytes)?;
+            u64::from(u32::from_le_bytes(bytes))
+        }
+        RiscvAmoWidth::Doubleword => {
+            let mut bytes = [0_u8; 8];
+            memory.read_range_into(address, &mut bytes)?;
+            u64::from_le_bytes(bytes)
+        }
+    };
+    Ok(value)
+}
+
+fn write_guest_amo(
+    memory: &mut GuestMachineMemory,
+    width: RiscvAmoWidth,
+    address: u64,
+    value: u64,
+) -> Result<(), GuestMachineError> {
+    match width {
+        RiscvAmoWidth::Word => memory.write_range(address, &(value as u32).to_le_bytes())?,
+        RiscvAmoWidth::Doubleword => memory.write_range(address, &value.to_le_bytes())?,
+    }
+    Ok(())
+}
+
+fn execute_amo(kind: RiscvAmoKind, width: RiscvAmoWidth, loaded: u64, operand: u64) -> u64 {
+    match (kind, width) {
+        (RiscvAmoKind::Add, RiscvAmoWidth::Word) => {
+            u64::from((loaded as u32).wrapping_add(operand as u32))
+        }
+        (RiscvAmoKind::Add, RiscvAmoWidth::Doubleword) => loaded.wrapping_add(operand),
+    }
+}
+
+fn amo_result(width: RiscvAmoWidth, loaded: u64) -> u64 {
+    match width {
+        RiscvAmoWidth::Word => sign_extend_word(loaded as u32),
+        RiscvAmoWidth::Doubleword => loaded,
+    }
 }
 
 fn branch_is_taken(kind: RiscvBranchKind, lhs: u64, rhs: u64) -> bool {

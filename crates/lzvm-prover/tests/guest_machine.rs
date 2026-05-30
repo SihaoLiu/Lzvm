@@ -1,7 +1,7 @@
 use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_prover::guest_instruction::{
-    RiscvBranchKind, RiscvFenceKind, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind,
-    RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvFenceKind, RiscvInstruction, RiscvLoadKind,
+    RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use lzvm_prover::guest_machine::{
     advance_guest_machine, GuestMachineError, GuestMachineMemory, GuestMachineState,
@@ -155,6 +155,30 @@ fn encode_r_with_opcode(funct7: u8, rs2: u8, rs1: u8, funct3: u8, rd: u8, opcode
         | (u32::from(funct3) << 12)
         | (u32::from(rd) << 7)
         | u32::from(opcode)
+}
+
+fn encode_amo(
+    funct5: u8,
+    acquire: bool,
+    release: bool,
+    rs2: u8,
+    rs1: u8,
+    funct3: u8,
+    rd: u8,
+) -> u32 {
+    assert!(funct5 < 32);
+    assert_register(rs2);
+    assert_register(rs1);
+    assert_funct3(funct3);
+    assert_register(rd);
+    (u32::from(funct5) << 27)
+        | (u32::from(acquire) << 26)
+        | (u32::from(release) << 25)
+        | (u32::from(rs2) << 20)
+        | (u32::from(rs1) << 15)
+        | (u32::from(funct3) << 12)
+        | (u32::from(rd) << 7)
+        | 0x2f
 }
 
 fn assert_register(register: u8) {
@@ -427,6 +451,14 @@ fn remw(rd: u8, rs1: u8, rs2: u8) -> u32 {
 
 fn remuw(rd: u8, rs1: u8, rs2: u8) -> u32 {
     encode_r_with_opcode(0x01, rs2, rs1, 7, rd, 0x3b)
+}
+
+fn amoadd_w(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_amo(0x00, false, false, rs2, rs1, 2, rd)
+}
+
+fn amoadd_d_aqrl(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_amo(0x00, true, true, rs2, rs1, 3, rd)
 }
 
 fn branch(funct3: u8, rs1: u8, rs2: u8, offset: i16) -> u32 {
@@ -720,6 +752,73 @@ fn advances_guest_memory_store_instructions() {
     );
     assert_eq!(state.register(2), Some(0x0123_4567_89ab_cdef));
     assert_eq!(state.pc(), ENTRY + 16);
+}
+
+#[test]
+fn advances_atomic_add_instructions() {
+    let data_offset = 64;
+    let data_address = ENTRY + data_offset as u64;
+    let mut memory = guest_machine_memory_with_words_and_data(
+        &[amoadd_w(3, 1, 2), amoadd_d_aqrl(4, 1, 5)],
+        data_offset,
+        &[
+            0xff, 0xff, 0xff, 0x7f, 0, 0, 0, 0, 0xef, 0xcd, 0xab, 0x89, 0x67, 0x45, 0x23, 0x01,
+        ],
+    );
+    let mut state = GuestMachineState::new(memory.entry_address());
+    state
+        .set_register(1, data_address)
+        .expect("register write should be valid");
+    state
+        .set_register(2, 2)
+        .expect("register write should be valid");
+    state
+        .set_register(5, 1)
+        .expect("register write should be valid");
+
+    let first =
+        advance_guest_machine(&mut memory, &mut state).expect("word atomic add should execute");
+    assert_eq!(
+        first.instruction,
+        RiscvInstruction::Amo {
+            kind: RiscvAmoKind::Add,
+            width: RiscvAmoWidth::Word,
+            rd: 3,
+            rs1: 1,
+            rs2: 2,
+            acquire: false,
+            release: false,
+        }
+    );
+    state
+        .set_register(1, data_address + 8)
+        .expect("register write should be valid");
+    let second = advance_guest_machine(&mut memory, &mut state)
+        .expect("doubleword atomic add should execute");
+    assert_eq!(
+        second.instruction,
+        RiscvInstruction::Amo {
+            kind: RiscvAmoKind::Add,
+            width: RiscvAmoWidth::Doubleword,
+            rd: 4,
+            rs1: 1,
+            rs2: 5,
+            acquire: true,
+            release: true,
+        }
+    );
+
+    let mut stored = [0_u8; 16];
+    memory
+        .read_range_into(data_address, &mut stored)
+        .expect("stored bytes should read");
+    assert_eq!(
+        stored,
+        [0x01, 0x00, 0x00, 0x80, 0, 0, 0, 0, 0xf0, 0xcd, 0xab, 0x89, 0x67, 0x45, 0x23, 0x01,]
+    );
+    assert_eq!(state.register(3), Some(0x7fff_ffff));
+    assert_eq!(state.register(4), Some(0x0123_4567_89ab_cdef));
+    assert_eq!(state.pc(), ENTRY + 8);
 }
 
 #[test]

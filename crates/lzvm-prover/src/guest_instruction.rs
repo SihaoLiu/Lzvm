@@ -140,6 +140,15 @@ pub enum RiscvInstruction {
         rs1: u8,
         rs2: u8,
     },
+    Amo {
+        kind: RiscvAmoKind,
+        width: RiscvAmoWidth,
+        rd: u8,
+        rs1: u8,
+        rs2: u8,
+        acquire: bool,
+        release: bool,
+    },
     Fence {
         kind: RiscvFenceKind,
         mode: u8,
@@ -249,6 +258,19 @@ pub enum RiscvOp32Kind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
+pub enum RiscvAmoKind {
+    Add,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RiscvAmoWidth {
+    Word,
+    Doubleword,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RiscvFenceKind {
     Fence,
     FenceTso,
@@ -305,6 +327,7 @@ pub fn decode_riscv_instruction(word: u32) -> RiscvInstruction {
             immediate: u_immediate(word),
         },
         0x1b => decode_op_imm_32(word),
+        0x2f => decode_amo(word),
         0x23 => decode_store(word),
         0x33 => decode_op(word),
         0x37 => RiscvInstruction::Lui {
@@ -931,6 +954,31 @@ fn decode_op_32(word: u32) -> RiscvInstruction {
         rd: rd(word),
         rs1: rs1(word),
         rs2: rs2(word),
+    }
+}
+
+fn decode_amo(word: u32) -> RiscvInstruction {
+    let Some(width) = (match funct3(word) {
+        2 => Some(RiscvAmoWidth::Word),
+        3 => Some(RiscvAmoWidth::Doubleword),
+        _ => None,
+    }) else {
+        return unknown(word);
+    };
+    let Some(kind) = (match (word >> 27) & 0x1f {
+        0 => Some(RiscvAmoKind::Add),
+        _ => None,
+    }) else {
+        return unknown(word);
+    };
+    RiscvInstruction::Amo {
+        kind,
+        width,
+        rd: rd(word),
+        rs1: rs1(word),
+        rs2: rs2(word),
+        acquire: ((word >> 26) & 1) != 0,
+        release: ((word >> 25) & 1) != 0,
     }
 }
 
