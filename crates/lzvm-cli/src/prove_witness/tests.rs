@@ -203,6 +203,67 @@ fn rejects_eth_public_input_with_trailing_bytes() {
     assert!(!output_exists);
 }
 
+#[test]
+fn writes_eth_public_input_with_allowed_trailing_bytes_as_block_input_artifact() {
+    let dir = std::env::temp_dir().join(format!(
+        "lzvm-prove-witness-eth-public-allow-trailing-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("temp dir should be created");
+    let input_path = dir.join("public.bin");
+    let output_dir = dir.join("proof-out");
+    let mut public_input = sample_public_block_bytes_with_matching_roots();
+    public_input.extend_from_slice(b"tail");
+    fs::write(&input_path, public_input).expect("public input should be written");
+    let parsed = parse_witness_args(&[
+        "--eth-public-input",
+        input_path.to_str().expect("input path should be utf-8"),
+        "--eth-public-input-allow-trailing",
+        "setup-dir",
+        output_dir.to_str().expect("output path should be utf-8"),
+        "witness.so",
+        "guest.elf",
+    ])
+    .expect("witness args should parse");
+
+    let prepared =
+        prepare_eth_block_input(&parsed).expect("public input should prepare block input");
+    let summary = prepared
+        .summary
+        .expect("block input summary should be present");
+    let output_path = output_dir.join("eth-block.input");
+    let encoded = fs::read(&output_path).expect("block input should be written");
+    let parsed_input = parse_eth_block_input(&encoded).expect("block input should parse");
+
+    assert!(prepared.generated_from_public_input);
+    assert_eq!(summary.path, output_path);
+    assert_eq!(summary.byte_len, encoded.len() as u64);
+    assert_eq!(summary.input, parsed_input);
+    assert_eq!(summary.block_number, 42);
+    assert_eq!(summary.transaction_preimage_count, 1);
+    assert_eq!(summary.withdrawal_count, Some(1));
+    fs::remove_dir_all(&dir).expect("temp dir should be removed");
+}
+
+#[test]
+fn rejects_eth_public_input_allow_trailing_without_eth_public_input() {
+    let result = parse_witness_args(&[
+        "--eth-public-input-allow-trailing",
+        "--trace-bytes",
+        "trace.bin",
+        "setup-dir",
+        "out-dir",
+        "guest.elf",
+    ]);
+
+    assert!(matches!(
+        result,
+        Err(ParseError::Invalid(message))
+            if message == "cannot use --eth-public-input-allow-trailing without --eth-public-input"
+    ));
+}
+
 fn sample_public_block_bytes_with_matching_roots() -> Vec<u8> {
     let mut input = sample_public_header_bytes();
     input.extend_from_slice(&1_u64.to_le_bytes());

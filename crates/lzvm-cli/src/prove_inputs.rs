@@ -19,7 +19,7 @@ use lzvm_prover::{
 
 use crate::eth_block_prove_input::{
     validate_eth_block_input, write_eth_block_input_from_public_input,
-    write_eth_block_input_summary, EthBlockInputSummary,
+    write_eth_block_input_summary, EthBlockInputSummary, EthPublicInputMode,
 };
 use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{
@@ -228,6 +228,7 @@ struct ParsedInputsArgs {
     trace_bundle: Option<PathBuf>,
     eth_block_input: Option<PathBuf>,
     eth_public_input: Option<PathBuf>,
+    eth_public_input_allow_trailing: bool,
 }
 
 struct PreparedPublicInputs {
@@ -274,6 +275,7 @@ fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
     let mut trace_bundle = None;
     let mut eth_block_input = None;
     let mut eth_public_input = None;
+    let mut eth_public_input_allow_trailing = false;
     let mut filtered = Vec::with_capacity(args.len());
     let mut index = 0;
     while index < args.len() {
@@ -314,6 +316,14 @@ fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
                     ));
                 }
             }
+            "--eth-public-input-allow-trailing" => {
+                if eth_public_input_allow_trailing {
+                    return Err(ParseError::Invalid(
+                        "duplicate --eth-public-input-allow-trailing option".to_owned(),
+                    ));
+                }
+                eth_public_input_allow_trailing = true;
+            }
             "--program-image-cache" => {
                 index += 1;
                 let value = required_option_value(args.get(index), "--program-image-cache")?;
@@ -335,6 +345,11 @@ fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
             "cannot combine --eth-block-input and --eth-public-input".to_owned(),
         ));
     }
+    if eth_public_input_allow_trailing && eth_public_input.is_none() {
+        return Err(ParseError::Invalid(
+            "cannot use --eth-public-input-allow-trailing without --eth-public-input".to_owned(),
+        ));
+    }
     let trace_mode = trace_bytes.is_some() || trace_bundle.is_some();
     let min_positionals = if trace_mode { 3 } else { 4 };
     let max_positionals = if trace_mode { 4 } else { 5 };
@@ -350,6 +365,7 @@ fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
         trace_bundle,
         eth_block_input,
         eth_public_input,
+        eth_public_input_allow_trailing,
     })
 }
 
@@ -368,8 +384,17 @@ fn prepare_eth_block_input(parsed: &ParsedInputsArgs) -> Result<PreparedEthBlock
     };
 
     let output_path = parsed.run_args.positionals[1].join("eth-block.input");
+    let mode = if parsed.eth_public_input_allow_trailing {
+        EthPublicInputMode::AllowTrailing
+    } else {
+        EthPublicInputMode::Strict
+    };
     Ok(PreparedEthBlockInput {
-        summary: Some(write_eth_block_input_from_public_input(path, &output_path)?),
+        summary: Some(write_eth_block_input_from_public_input(
+            path,
+            &output_path,
+            mode,
+        )?),
         generated_from_public_input: true,
     })
 }
@@ -598,7 +623,7 @@ fn expected_trace_unit_byte_len(
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --eth-block-input <block-input>\n  --eth-public-input <public-input>\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>"
+        "usage: lzvm prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --eth-block-input <block-input>\n  --eth-public-input <public-input>\n  --eth-public-input-allow-trailing\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>"
     );
     2
 }
@@ -774,6 +799,68 @@ mod tests {
                     )
         ));
         assert!(!output_exists);
+    }
+
+    #[test]
+    fn writes_eth_public_input_with_allowed_trailing_bytes_as_block_input_artifact() {
+        let dir = std::env::temp_dir().join(format!(
+            "lzvm-prove-inputs-eth-public-allow-trailing-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let input_path = dir.join("public.bin");
+        let output_dir = dir.join("proof-out");
+        let mut public_input = sample_public_block_bytes_with_matching_roots();
+        public_input.extend_from_slice(b"tail");
+        fs::write(&input_path, public_input).expect("public input should be written");
+        let parsed = parse_inputs_args(&[
+            "--eth-public-input",
+            input_path.to_str().expect("input path should be utf-8"),
+            "--eth-public-input-allow-trailing",
+            "setup-dir",
+            output_dir.to_str().expect("output path should be utf-8"),
+            "witness.so",
+            "guest.elf",
+        ])
+        .expect("input args should parse");
+
+        let prepared =
+            prepare_eth_block_input(&parsed).expect("public input should prepare block input");
+        let summary = prepared
+            .summary
+            .expect("block input summary should be present");
+        let output_path = output_dir.join("eth-block.input");
+        let encoded = fs::read(&output_path).expect("block input should be written");
+        let parsed_input = parse_eth_block_input(&encoded).expect("block input should parse");
+
+        assert!(prepared.generated_from_public_input);
+        assert_eq!(summary.path, output_path);
+        assert_eq!(summary.byte_len, encoded.len() as u64);
+        assert_eq!(summary.input, parsed_input);
+        assert_eq!(summary.block_number, 42);
+        assert_eq!(summary.transaction_preimage_count, 1);
+        assert_eq!(summary.withdrawal_count, Some(1));
+        fs::remove_dir_all(&dir).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn rejects_eth_public_input_allow_trailing_without_eth_public_input() {
+        let result = parse_inputs_args(&[
+            "--eth-public-input-allow-trailing",
+            "--trace-bytes",
+            "trace.bin",
+            "setup-dir",
+            "out-dir",
+            "guest.elf",
+        ]);
+
+        assert!(matches!(
+            result,
+            Err(ParseError::Invalid(message))
+                if message
+                    == "cannot use --eth-public-input-allow-trailing without --eth-public-input"
+        ));
     }
 
     #[test]

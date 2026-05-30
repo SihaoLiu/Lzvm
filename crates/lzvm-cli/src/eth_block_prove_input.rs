@@ -8,7 +8,10 @@ use lzvm_artifacts::eth_block_input::{
     eth_block_input_transaction_kind_counts, eth_block_input_withdrawal_count,
     parse_eth_block_input, EthBlockInput,
 };
-use lzvm_artifacts::eth_public_input::parse_eth_public_block;
+use lzvm_artifacts::eth_public_input::{
+    parse_eth_public_block, parse_eth_public_block_prefix, EthPublicBlockPrefix,
+    EthPublicInputError,
+};
 
 use crate::prove_plan::format_hash;
 
@@ -48,6 +51,12 @@ pub(crate) struct EthBlockInputSummary {
     pub(crate) withdrawal_root: Option<[u8; 32]>,
     pub(crate) withdrawal_count: Option<usize>,
     pub(crate) withdrawal_preimage_count: Option<usize>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EthPublicInputMode {
+    Strict,
+    AllowTrailing,
 }
 
 pub(crate) fn validate_eth_block_input(
@@ -120,6 +129,7 @@ pub(crate) fn validate_eth_block_input(
 pub(crate) fn write_eth_block_input_from_public_input(
     public_input_path: &Path,
     output_path: &Path,
+    mode: EthPublicInputMode,
 ) -> Result<EthBlockInputSummary, String> {
     let bytes = fs::read(public_input_path).map_err(|error| {
         format!(
@@ -127,7 +137,7 @@ pub(crate) fn write_eth_block_input_from_public_input(
             public_input_path.display()
         )
     })?;
-    let public_block = parse_eth_public_block(&bytes).map_err(|error| {
+    let public_block = parse_eth_public_block_for_mode(&bytes, mode).map_err(|error| {
         format!(
             "ETH public input failed: {}: {error}",
             public_input_path.display()
@@ -156,6 +166,16 @@ pub(crate) fn write_eth_block_input_from_public_input(
     })?;
     validate_eth_block_input(&Some(output_path.to_path_buf()))?
         .ok_or_else(|| "generated ETH block input is missing".to_owned())
+}
+
+pub(crate) fn parse_eth_public_block_for_mode(
+    bytes: &[u8],
+    mode: EthPublicInputMode,
+) -> Result<EthPublicBlockPrefix, EthPublicInputError> {
+    match mode {
+        EthPublicInputMode::Strict => parse_eth_public_block(bytes),
+        EthPublicInputMode::AllowTrailing => parse_eth_public_block_prefix(bytes),
+    }
 }
 
 pub(crate) fn write_eth_block_input_summary(

@@ -31,7 +31,7 @@ use lzvm_prover::{
 
 use crate::eth_block_prove_input::{
     validate_eth_block_input, write_eth_block_input_from_public_input,
-    write_eth_block_input_summary, EthBlockInputSummary,
+    write_eth_block_input_summary, EthBlockInputSummary, EthPublicInputMode,
 };
 use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{
@@ -415,6 +415,7 @@ struct ParsedWitnessArgs {
     evaluation_values_segment: Option<std::path::PathBuf>,
     eth_block_input: Option<std::path::PathBuf>,
     eth_public_input: Option<std::path::PathBuf>,
+    eth_public_input_allow_trailing: bool,
 }
 
 struct PreparedPublicInputs {
@@ -477,6 +478,7 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
     let mut evaluation_values_segment = None;
     let mut eth_block_input = None;
     let mut eth_public_input = None;
+    let mut eth_public_input_allow_trailing = false;
     let mut filtered = Vec::with_capacity(args.len());
     let mut index = 0;
     while index < args.len() {
@@ -608,6 +610,14 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
                     ));
                 }
             }
+            "--eth-public-input-allow-trailing" => {
+                if eth_public_input_allow_trailing {
+                    return Err(ParseError::Invalid(
+                        "duplicate --eth-public-input-allow-trailing option".to_owned(),
+                    ));
+                }
+                eth_public_input_allow_trailing = true;
+            }
             "--program-image-cache" => {
                 index += 1;
                 let value = required_option_value(args.get(index), "--program-image-cache")?;
@@ -653,6 +663,11 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
             "cannot combine --eth-block-input and --eth-public-input".to_owned(),
         ));
     }
+    if eth_public_input_allow_trailing && eth_public_input.is_none() {
+        return Err(ParseError::Invalid(
+            "cannot use --eth-public-input-allow-trailing without --eth-public-input".to_owned(),
+        ));
+    }
     let trace_mode = trace_bytes.is_some() || trace_bundle.is_some();
     let min_positionals = if trace_mode { 3 } else { 4 };
     let max_positionals = if trace_mode { 4 } else { 5 };
@@ -684,6 +699,7 @@ fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
         evaluation_values_segment,
         eth_block_input,
         eth_public_input,
+        eth_public_input_allow_trailing,
     })
 }
 
@@ -702,8 +718,17 @@ fn prepare_eth_block_input(parsed: &ParsedWitnessArgs) -> Result<PreparedEthBloc
     };
 
     let output_path = parsed.run_args.positionals[1].join("eth-block.input");
+    let mode = if parsed.eth_public_input_allow_trailing {
+        EthPublicInputMode::AllowTrailing
+    } else {
+        EthPublicInputMode::Strict
+    };
     Ok(PreparedEthBlockInput {
-        summary: Some(write_eth_block_input_from_public_input(path, &output_path)?),
+        summary: Some(write_eth_block_input_from_public_input(
+            path,
+            &output_path,
+            mode,
+        )?),
         generated_from_public_input: true,
     })
 }
@@ -1233,7 +1258,7 @@ fn write_output_file(path: &Path, value: &[u8]) -> Result<(), String> {
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --eth-block-input <block-input>\n  --eth-public-input <public-input>\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>"
+        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --eth-block-input <block-input>\n  --eth-public-input <public-input>\n  --eth-public-input-allow-trailing\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>"
     );
     2
 }

@@ -8,9 +8,10 @@ use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::eth_block_public_values::validate_eth_block_public_values;
-use lzvm_artifacts::eth_public_input::parse_eth_public_block;
 use lzvm_artifacts::proof::read_proof_artifact_file;
 use lzvm_artifacts::public_values::read_public_values_file;
+
+use crate::eth_block_prove_input::{parse_eth_public_block_for_mode, EthPublicInputMode};
 
 pub(super) struct EthBlockInputBinding {
     pub(super) hash: [u8; 32],
@@ -59,14 +60,15 @@ pub(super) fn verify_eth_block_input_binding(
     verify_eth_block_input_binding_from_input(proof_bin, public_values_path, input, input_bytes)
 }
 
-pub(super) fn verify_eth_public_input_binding(
+pub(super) fn verify_eth_public_input_binding_with_mode(
     proof_bin: &str,
     public_values_path: &str,
     input_path: &str,
+    mode: EthPublicInputMode,
 ) -> Result<EthBlockInputBinding, String> {
     let public_bytes = std::fs::read(input_path)
         .map_err(|error| format!("read ETH public input failed: {input_path}: {error}"))?;
-    let public_block = parse_eth_public_block(&public_bytes)
+    let public_block = parse_eth_public_block_for_mode(&public_bytes, mode)
         .map_err(|error| format!("ETH public input failed: {input_path}: {error}"))?;
     let block_rlp = public_block.block_rlp();
     let input = build_eth_block_input(&block_rlp)

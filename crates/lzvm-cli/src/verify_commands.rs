@@ -13,10 +13,12 @@ use lzvm_prover::contribution::{
 use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
 use lzvm_prover::setup_preflight::validate_setup_preflight_from_files;
 
-use crate::{eth_block_output, program_image_cache, prove_plan};
+use crate::{
+    eth_block_output, eth_block_prove_input::EthPublicInputMode, program_image_cache, prove_plan,
+};
 
 mod eth_block_input;
-use eth_block_input::{verify_eth_block_input_binding, verify_eth_public_input_binding};
+use eth_block_input::{verify_eth_block_input_binding, verify_eth_public_input_binding_with_mode};
 
 pub(super) fn verify_preflight(
     proof_bin: &str,
@@ -267,6 +269,7 @@ pub(super) fn verify_setup_preflight(
             public_values_path,
             eth_block_input: None,
             eth_public_input: None,
+            eth_public_input_allow_trailing: false,
             program_image_cache: None,
         },
         stdout,
@@ -280,6 +283,7 @@ struct ParsedVerifyProofArgs<'a> {
     public_values_path: &'a str,
     eth_block_input: Option<&'a str>,
     eth_public_input: Option<&'a str>,
+    eth_public_input_allow_trailing: bool,
     program_image_cache: Option<&'a str>,
 }
 
@@ -288,6 +292,7 @@ fn parse_verify_proof_args<'a>(
 ) -> Result<ParsedVerifyProofArgs<'a>, VerifyProofArgError> {
     let mut eth_block_input = None;
     let mut eth_public_input = None;
+    let mut eth_public_input_allow_trailing = false;
     let mut program_image_cache = None;
     let mut positionals = Vec::with_capacity(args.len());
     let mut index = 0;
@@ -341,6 +346,14 @@ fn parse_verify_proof_args<'a>(
                     ));
                 }
             }
+            "--eth-public-input-allow-trailing" => {
+                if eth_public_input_allow_trailing {
+                    return Err(VerifyProofArgError::Invalid(
+                        "duplicate --eth-public-input-allow-trailing option".to_owned(),
+                    ));
+                }
+                eth_public_input_allow_trailing = true;
+            }
             value if value.starts_with("--") => {
                 return Err(VerifyProofArgError::Invalid(format!(
                     "unknown option {value}"
@@ -358,12 +371,18 @@ fn parse_verify_proof_args<'a>(
             "cannot combine --eth-block-input and --eth-public-input".to_owned(),
         ));
     }
+    if eth_public_input_allow_trailing && eth_public_input.is_none() {
+        return Err(VerifyProofArgError::Invalid(
+            "cannot use --eth-public-input-allow-trailing without --eth-public-input".to_owned(),
+        ));
+    }
     Ok(ParsedVerifyProofArgs {
         setup_dir: positionals[0],
         proof_bin: positionals[1],
         public_values_path: positionals[2],
         eth_block_input,
         eth_public_input,
+        eth_public_input_allow_trailing,
         program_image_cache,
     })
 }
@@ -391,6 +410,7 @@ pub(super) fn verify_proof(args: &[&str], stdout: &mut dyn Write, stderr: &mut d
             public_values_path: parsed.public_values_path,
             eth_block_input: parsed.eth_block_input,
             eth_public_input: parsed.eth_public_input,
+            eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
             program_image_cache: parsed.program_image_cache,
         },
         stdout,
@@ -494,6 +514,7 @@ struct VerifySetupValidationCommand<'a> {
     public_values_path: &'a str,
     eth_block_input: Option<&'a str>,
     eth_public_input: Option<&'a str>,
+    eth_public_input_allow_trailing: bool,
     program_image_cache: Option<&'a str>,
 }
 
@@ -514,10 +535,15 @@ fn verify_setup_validation(
                 return 1;
             }
         },
-        (None, Some(path)) => match verify_eth_public_input_binding(
+        (None, Some(path)) => match verify_eth_public_input_binding_with_mode(
             command.proof_bin,
             command.public_values_path,
             path,
+            if command.eth_public_input_allow_trailing {
+                EthPublicInputMode::AllowTrailing
+            } else {
+                EthPublicInputMode::Strict
+            },
         ) {
             Ok(binding) => Some(binding),
             Err(message) => {
@@ -1148,7 +1174,7 @@ pub(super) fn write_verify_setup_preflight_usage(stderr: &mut dyn Write) -> i32 
 fn write_verify_proof_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm verify proof [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--program-image-cache <cache-bin>] <setup-dir> <proof-bin> <public-values>"
+        "usage: lzvm verify proof [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] <setup-dir> <proof-bin> <public-values>"
     );
     2
 }
