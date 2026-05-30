@@ -1,7 +1,7 @@
 use std::fmt;
 use std::path::Path;
 
-use lzvm_field::{Felt, FieldError};
+use lzvm_field::{Felt, FieldError, MAX_ROOT_OF_UNITY_BITS};
 use sha2::{Digest, Sha256};
 
 use crate::sectioned::{
@@ -14,7 +14,6 @@ const PROGRAM_IMAGE_SECTION_ID: u32 = 1;
 const DIGEST_BYTES: usize = 32;
 const ROOT_WORDS: usize = 4;
 const FIELD_ELEMENT_BYTES: u64 = 8;
-const MAX_TRACE_DOMAIN_BITS: u32 = 32;
 pub(crate) const PROGRAM_IMAGE_CACHE_PAYLOAD_BYTES: usize =
     DIGEST_BYTES * 3 + ROOT_WORDS * 8 + 8 + 4 * 4;
 
@@ -342,11 +341,12 @@ pub(crate) fn validate_program_image_commitment_cache(
     }
     let trace_domain_bits =
         value.trace_row_count.trailing_zeros() + value.blowup_factor.trailing_zeros();
-    if trace_domain_bits > MAX_TRACE_DOMAIN_BITS {
+    let max_trace_domain_bits = u32::try_from(MAX_ROOT_OF_UNITY_BITS).unwrap_or(u32::MAX);
+    if trace_domain_bits > max_trace_domain_bits {
         return Err(
             ProgramImageCommitmentCacheError::UnsupportedTraceDomainBits {
                 bits: trace_domain_bits,
-                max_bits: MAX_TRACE_DOMAIN_BITS,
+                max_bits: max_trace_domain_bits,
             },
         );
     }
