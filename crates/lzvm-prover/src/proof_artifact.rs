@@ -795,6 +795,8 @@ fn build_proof_binding_segments(
                 segment.id
             ));
         }
+        parse_challenge_values_segment(&segment.data)
+            .map_err(|error| format!("invalid challenge values proof segment: {error}"))?;
         segments.push(segment.clone());
     }
     Ok(segments)
@@ -1297,6 +1299,22 @@ mod tests {
             .expect_err("program image cache should match public input setup hash");
 
         assert_eq!(error, "program image cache setup hash mismatch");
+    }
+
+    #[test]
+    fn rejects_invalid_challenge_values_binding_segments() {
+        let segment = ProofSegment {
+            id: CHALLENGE_VALUES_SEGMENT_ID,
+            data: vec![1],
+        };
+
+        let error = build_proof_binding_segments(None, None, Some(&segment))
+            .expect_err("challenge values binding segment should parse");
+
+        assert_eq!(
+            error,
+            "invalid challenge values proof segment: truncated challenge values segment: needed 4, available 1"
+        );
     }
 
     #[test]
