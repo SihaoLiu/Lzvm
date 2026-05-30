@@ -13,6 +13,7 @@ const PROGRAM_IMAGE_VERSION: u32 = 1;
 const PROGRAM_IMAGE_SECTION_ID: u32 = 1;
 const DIGEST_BYTES: usize = 32;
 const ROOT_WORDS: usize = 4;
+const MAX_TRACE_DOMAIN_BITS: u32 = 32;
 pub(crate) const PROGRAM_IMAGE_CACHE_PAYLOAD_BYTES: usize =
     DIGEST_BYTES * 3 + ROOT_WORDS * 8 + 8 + 4 * 4;
 
@@ -96,6 +97,10 @@ pub enum ProgramImageCommitmentCacheError {
         trace_row_count: u64,
         blowup_factor: u32,
     },
+    UnsupportedTraceDomainBits {
+        bits: u32,
+        max_bits: u32,
+    },
     InvalidMerkleTreeArity {
         value: u32,
     },
@@ -164,6 +169,10 @@ impl fmt::Display for ProgramImageCommitmentCacheError {
                 f,
                 "program-image commitment cache trace row expansion overflows: rows {trace_row_count}, blowup factor {blowup_factor}"
             ),
+            Self::UnsupportedTraceDomainBits { bits, max_bits } => write!(
+                f,
+                "unsupported program-image commitment cache trace domain bits {bits}, max {max_bits}"
+            ),
             Self::InvalidMerkleTreeArity { value } => write!(
                 f,
                 "invalid program-image commitment cache Merkle tree arity {value}"
@@ -199,6 +208,7 @@ impl std::error::Error for ProgramImageCommitmentCacheError {
             | Self::EmptyTraceColumns
             | Self::InvalidBlowupFactor { .. }
             | Self::TraceRowExpansionOverflow { .. }
+            | Self::UnsupportedTraceDomainBits { .. }
             | Self::InvalidMerkleTreeArity { .. }
             | Self::UnsupportedGpuMode { .. }
             | Self::Io { .. } => None,
@@ -314,6 +324,16 @@ pub(crate) fn validate_program_image_commitment_cache(
             ProgramImageCommitmentCacheError::TraceRowExpansionOverflow {
                 trace_row_count: value.trace_row_count,
                 blowup_factor: value.blowup_factor,
+            },
+        );
+    }
+    let trace_domain_bits =
+        value.trace_row_count.trailing_zeros() + value.blowup_factor.trailing_zeros();
+    if trace_domain_bits > MAX_TRACE_DOMAIN_BITS {
+        return Err(
+            ProgramImageCommitmentCacheError::UnsupportedTraceDomainBits {
+                bits: trace_domain_bits,
+                max_bits: MAX_TRACE_DOMAIN_BITS,
             },
         );
     }

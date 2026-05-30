@@ -226,6 +226,19 @@ fn rejects_invalid_program_image_geometry() {
     ));
 
     let mut cache = sample_cache();
+    cache.trace_row_count = 1_u64 << 31;
+    cache.blowup_factor = 4;
+    assert!(matches!(
+        encode_program_image_commitment_cache(&cache),
+        Err(
+            ProgramImageCommitmentCacheError::UnsupportedTraceDomainBits {
+                bits: 33,
+                max_bits: 32
+            }
+        )
+    ));
+
+    let mut cache = sample_cache();
     cache.merkle_tree_arity = 3;
     assert!(matches!(
         encode_program_image_commitment_cache(&cache),
