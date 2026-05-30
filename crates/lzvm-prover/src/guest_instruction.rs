@@ -264,6 +264,10 @@ pub enum RiscvAmoKind {
     Xor,
     Or,
     And,
+    Min,
+    Max,
+    Minu,
+    Maxu,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -975,6 +979,10 @@ fn decode_amo(word: u32) -> RiscvInstruction {
         4 => Some(RiscvAmoKind::Xor),
         8 => Some(RiscvAmoKind::Or),
         12 => Some(RiscvAmoKind::And),
+        16 => Some(RiscvAmoKind::Min),
+        20 => Some(RiscvAmoKind::Max),
+        24 => Some(RiscvAmoKind::Minu),
+        28 => Some(RiscvAmoKind::Maxu),
         _ => None,
     }) else {
         return unknown(word);

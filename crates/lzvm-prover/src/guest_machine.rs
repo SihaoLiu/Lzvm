@@ -621,6 +621,22 @@ fn execute_amo(kind: RiscvAmoKind, width: RiscvAmoWidth, loaded: u64, operand: u
         (RiscvAmoKind::Or, RiscvAmoWidth::Doubleword) => loaded | operand,
         (RiscvAmoKind::And, RiscvAmoWidth::Word) => u64::from((loaded as u32) & (operand as u32)),
         (RiscvAmoKind::And, RiscvAmoWidth::Doubleword) => loaded & operand,
+        (RiscvAmoKind::Min, RiscvAmoWidth::Word) => {
+            u64::from((loaded as u32 as i32).min(operand as u32 as i32) as u32)
+        }
+        (RiscvAmoKind::Min, RiscvAmoWidth::Doubleword) => {
+            (loaded as i64).min(operand as i64) as u64
+        }
+        (RiscvAmoKind::Max, RiscvAmoWidth::Word) => {
+            u64::from((loaded as u32 as i32).max(operand as u32 as i32) as u32)
+        }
+        (RiscvAmoKind::Max, RiscvAmoWidth::Doubleword) => {
+            (loaded as i64).max(operand as i64) as u64
+        }
+        (RiscvAmoKind::Minu, RiscvAmoWidth::Word) => u64::from((loaded as u32).min(operand as u32)),
+        (RiscvAmoKind::Minu, RiscvAmoWidth::Doubleword) => loaded.min(operand),
+        (RiscvAmoKind::Maxu, RiscvAmoWidth::Word) => u64::from((loaded as u32).max(operand as u32)),
+        (RiscvAmoKind::Maxu, RiscvAmoWidth::Doubleword) => loaded.max(operand),
     }
 }
 
