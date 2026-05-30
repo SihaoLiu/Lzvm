@@ -621,6 +621,24 @@ fn sample_unit_values_segment(unit_index: u32, values: Vec<u64>) -> ProofSegment
     }
 }
 
+fn write_preflight_artifacts(
+    root: &Path,
+    proof: &ProofArtifact,
+    public_values: &PublicValues,
+) -> (PathBuf, PathBuf) {
+    let proof_path = root.join("proof.bin");
+    let public_values_path = root.join("public_values.bin");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(public_values).expect("public values should encode"),
+    );
+    (proof_path, public_values_path)
+}
+
 fn sample_pcs_fri_opening_segment(
     schedule: &lzvm_prover::ProveSchedule,
     query_segment: &ProofSegment,
@@ -11749,6 +11767,81 @@ fn rejects_setup_aware_verify_preflight_with_unexpected_unit_values_segment() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "verify setup-preflight failed: unexpected unit values segment for unit 0\n"
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_setup_aware_verify_preflight_with_missing_declared_proof_values() {
+    let dir = temp_dir("verify-setup-preflight-missing-declared-proof-values");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_proof_value(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let proof = sample_proof_with_material(&public_values, &catalog);
+    let (proof_path, public_values_path) = write_preflight_artifacts(&dir, &proof, &public_values);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: missing PCS proof values segment\n"
+    );
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn rejects_setup_aware_verify_preflight_with_missing_declared_group_values() {
+    let dir = temp_dir("verify-setup-preflight-missing-declared-group-values");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory_with_group_value(&dir);
+    run_generate_key_command(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values = sample_public_values(setup_hash);
+    let proof = sample_proof_with_material(&public_values, &catalog);
+    let (proof_path, public_values_path) = write_preflight_artifacts(&dir, &proof, &public_values);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: missing group values segment\n"
     );
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");

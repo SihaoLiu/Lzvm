@@ -612,7 +612,7 @@ pub fn validate_setup_preflight(
     validate_optional_contribution_segment(catalog, proof)?;
     validate_optional_challenge_values_segment(proof)?;
     validate_optional_contribution_challenge_values(catalog, proof, public_values)?;
-    validate_optional_global_value_segments(catalog, proof)?;
+    validate_global_value_segments(catalog, proof)?;
     let uses_transcript_inputs = uses_transcript_pcs_query_plan_inputs(&proof.segments);
     let needs_public_fields = uses_transcript_inputs
         || !catalog.global_constraints.entries.is_empty()
@@ -772,29 +772,16 @@ fn validate_optional_unit_value_segments(
     Ok(())
 }
 
-fn validate_optional_global_value_segments(
+fn validate_global_value_segments(
     catalog: &KeyDirectoryCatalog,
     proof: &ProofArtifact,
 ) -> Result<(), SetupPreflightError> {
-    if proof
-        .segments
-        .iter()
-        .any(|segment| segment.id == PCS_PROOF_VALUES_SEGMENT_ID)
-    {
-        load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
-            .map(|_| ())
-            .map_err(SetupPreflightError::ProofValues)?;
-    }
-
-    if proof
-        .segments
-        .iter()
-        .any(|segment| segment.id == GROUP_VALUES_SEGMENT_ID)
-    {
-        load_group_values_from_segments(&catalog.layout.global_info, &proof.segments)
-            .map(|_| ())
-            .map_err(SetupPreflightError::GroupValues)?;
-    }
+    load_pcs_proof_values_from_segments(&catalog.layout.global_info, &proof.segments)
+        .map(|_| ())
+        .map_err(SetupPreflightError::ProofValues)?;
+    load_group_values_from_segments(&catalog.layout.global_info, &proof.segments)
+        .map(|_| ())
+        .map_err(SetupPreflightError::GroupValues)?;
 
     Ok(())
 }
