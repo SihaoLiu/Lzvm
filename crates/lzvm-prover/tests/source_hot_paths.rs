@@ -77,6 +77,45 @@ fn cuda_witness_leaf_extension_serializes_device_words_without_extended_felt_vec
     );
 }
 
+#[test]
+fn cuda_fri_fixed_extension_uses_device_output_without_extended_word_vector() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/prove_fri_polynomial.rs");
+    let source = std::fs::read_to_string(&source_path).expect("FRI polynomial source should read");
+
+    let cuda_body = function_body(&source, "fn extend_row_major_columns", "fn fri_error");
+    let validation_index = cuda_body
+        .find("validate_cuda_extension_domain")
+        .expect("CUDA FRI fixed extension should validate domain shape");
+    let setup_index = cuda_body
+        .find("prepare_gpu_setup")
+        .expect("CUDA FRI fixed extension should initialize CUDA setup");
+    let allocation_index = cuda_body
+        .find("CudaDeviceBuffer::new")
+        .expect("CUDA FRI fixed extension should allocate device buffers");
+
+    assert!(
+        validation_index < setup_index,
+        "CUDA FRI fixed extension should validate domain shape before CUDA setup"
+    );
+    assert!(
+        validation_index < allocation_index,
+        "CUDA FRI fixed extension should validate domain shape before device allocation"
+    );
+    assert!(
+        cuda_body.contains("cuda_goldilocks_coset_extend_row_major_columns_device"),
+        "CUDA FRI fixed extension should write extended rows through device buffers"
+    );
+    assert!(
+        !cuda_body.contains("cuda_goldilocks_coset_extend_row_major_columns("),
+        "CUDA FRI fixed extension should avoid the host-returning extension API"
+    );
+    assert!(
+        !cuda_body.contains("collect::<Result<Vec<_>, _>>()"),
+        "CUDA FRI fixed extension should avoid a separate extended word vector"
+    );
+}
+
 fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
     let body = source
         .split_once(start)
