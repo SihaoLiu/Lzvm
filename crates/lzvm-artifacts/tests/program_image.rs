@@ -278,6 +278,20 @@ fn rejects_invalid_program_image_geometry_when_parsing() {
     ));
 
     let mut encoded = encoded_sample_cache();
+    encoded[TRACE_ROW_COUNT_OFFSET..TRACE_ROW_COUNT_OFFSET + 8]
+        .copy_from_slice(&(1_u64 << 31).to_le_bytes());
+    encoded[BLOWUP_FACTOR_OFFSET..BLOWUP_FACTOR_OFFSET + 4].copy_from_slice(&4_u32.to_le_bytes());
+    assert!(matches!(
+        parse_program_image_commitment_cache(&encoded),
+        Err(
+            ProgramImageCommitmentCacheError::UnsupportedTraceDomainBits {
+                bits: 33,
+                max_bits: 32
+            }
+        )
+    ));
+
+    let mut encoded = encoded_sample_cache();
     encoded[MERKLE_TREE_ARITY_OFFSET..MERKLE_TREE_ARITY_OFFSET + 4]
         .copy_from_slice(&8_u32.to_le_bytes());
     assert!(matches!(
