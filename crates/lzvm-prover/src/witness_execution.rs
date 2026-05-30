@@ -1574,6 +1574,7 @@ mod tests {
                 endian: ElfEndian::Little,
                 machine: 0,
                 entry: 0,
+                load_segments: Vec::new(),
             },
             program_image_cache: None,
             units: vec![source_lookup_plan_unit(HintProgram { hints: Vec::new() })],
