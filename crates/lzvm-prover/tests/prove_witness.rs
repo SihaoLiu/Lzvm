@@ -13,6 +13,9 @@ use lzvm_artifacts::constraint_program::{
 };
 use lzvm_artifacts::contribution_segment::CONTRIBUTION_SEGMENT_ID;
 use lzvm_artifacts::eth_block_input::build_eth_block_input;
+use lzvm_artifacts::eth_block_input_segment::{
+    encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
+};
 use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
 use lzvm_artifacts::expression_info::ExpressionInfo;
 use lzvm_artifacts::expression_program::{ExpressionEntry, ExpressionProgram};
@@ -1293,6 +1296,72 @@ fn rejects_mismatched_eth_block_public_values_in_prover_unit_request() {
         error,
         "ETH block public value mismatch: eth_block_hash_u32_be"
     );
+}
+
+#[test]
+fn preserves_binding_segments_in_public_proof_artifact_builder() {
+    let dir = temp_dir("proof-artifact-public-builder-bindings");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [5_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
+        .expect("constant tree should be written");
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.lattice_size = Some(32);
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let output =
+        run_prove_witness_commitments_with_trace(&plan, 0, ProveWitnessAuxiliaryInputs::default())
+            .expect("witness commitments should run");
+    let block_input = build_eth_block_input(&sample_block_rlp_with_parent([0x11; 32]))
+        .expect("block input should build");
+    let public_values =
+        public_values_from_eth_block_input(plan.run_plan.schedule.setup_hash, &block_input);
+    let binding_segment = ProofSegment {
+        id: ETH_BLOCK_INPUT_SEGMENT_ID,
+        data: encode_eth_block_input_segment(&block_input).expect("segment should encode"),
+    };
+    let witness_outputs = vec![output.commitments()];
+
+    let proof = lzvm_prover::build_witness_proof_artifact_with_bindings(
+        &catalog,
+        &plan.run_plan.schedule,
+        public_values_digest(&public_values).expect("digest should compute"),
+        &witness_outputs,
+        lzvm_prover::ProofArtifactInputs {
+            proof_values: &[],
+            group_values: &[],
+            unit_values: &[],
+            binding_segments: std::slice::from_ref(&binding_segment),
+        },
+    )
+    .expect("proof artifact should build");
+    let proof = parse_proof_artifact(&encode_proof_artifact(&proof).expect("proof should encode"))
+        .expect("proof should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(proof
+        .segments
+        .iter()
+        .any(|segment| segment.id == ETH_BLOCK_INPUT_SEGMENT_ID
+            && segment.data == binding_segment.data));
 }
 
 #[test]

@@ -168,6 +168,7 @@ pub fn build_witness_proof_artifact_with_bindings(
     if let Some(segment) = unit_values_segment {
         proof.segments.push(segment);
     }
+    append_binding_segments(&mut proof.segments, inputs.binding_segments.to_vec());
     Ok(proof)
 }
 
@@ -587,12 +588,13 @@ pub fn build_witness_proof_artifact_for_all_units(
         .iter()
         .map(|output| output.commitments())
         .collect::<Vec<_>>();
-    let proof = if all_units_transcript_required(
+    let needs_transcript = all_units_transcript_required(
         request.execution_units,
         request.outputs,
         &evaluation_values,
         request.evaluation_values_segment.is_some(),
-    )? {
+    )?;
+    let mut proof = if needs_transcript {
         build_witness_transcript_proof_artifact_for_all_units(
             request,
             public_values_hash,
@@ -629,7 +631,6 @@ pub fn build_witness_proof_artifact_for_all_units(
             },
         )?
     };
-    let mut proof = proof;
     let has_contribution_segment = if request.include_contribution_segment {
         let contribution_sources = request
             .outputs
@@ -660,7 +661,9 @@ pub fn build_witness_proof_artifact_for_all_units(
     } else {
         false
     };
-    append_binding_segments(&mut proof.segments, binding_segments);
+    if needs_transcript {
+        append_binding_segments(&mut proof.segments, binding_segments);
+    }
     if has_contribution_segment {
         if request.challenge_values_segment.is_none() {
             return Err(
