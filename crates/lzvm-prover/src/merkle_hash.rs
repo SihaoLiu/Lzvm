@@ -321,28 +321,35 @@ fn read_row_major_felt(
 }
 
 #[cfg(feature = "cuda")]
-fn row_major_words_from_bytes(
+fn validate_row_major_bytes(
     bytes: &[u8],
     row_count: usize,
     column_count: usize,
-) -> Result<Vec<u64>, MerkleHashError> {
+) -> Result<(), MerkleHashError> {
     let expected = row_major_byte_count(row_count, column_count)?;
     if bytes.len() != expected {
         return Err(MerkleHashError::LengthOverflow);
     }
-    let word_count = row_count
-        .checked_mul(column_count)
-        .ok_or(MerkleHashError::LengthOverflow)?;
-    let mut out = Vec::with_capacity(word_count);
     for chunk in bytes.chunks_exact(8) {
         let word = u64::from_le_bytes(chunk.try_into().expect("chunks have one word"));
-        out.push(
-            Felt::from_canonical(word)
-                .map_err(MerkleHashError::Field)?
-                .to_u64(),
-        );
+        Felt::from_canonical(word).map_err(MerkleHashError::Field)?;
     }
-    Ok(out)
+    Ok(())
+}
+
+#[cfg(feature = "cuda")]
+fn copy_row_major_bytes_to_device(
+    bytes: &[u8],
+    row_count: usize,
+    column_count: usize,
+) -> Result<CudaDeviceBuffer, MerkleHashError> {
+    validate_row_major_bytes(bytes, row_count, column_count)?;
+    let mut buffer =
+        CudaDeviceBuffer::new(bytes.len()).map_err(|_| MerkleHashError::LengthOverflow)?;
+    buffer
+        .copy_from(bytes)
+        .map_err(|_| MerkleHashError::LengthOverflow)?;
+    Ok(buffer)
 }
 
 fn linear_hash_arity2(values: &[Felt]) -> [Felt; HASH_WORDS] {
@@ -472,9 +479,7 @@ fn cuda_linear_hashes_row_major_arity2(
 ) -> Result<Vec<[Felt; HASH_WORDS]>, MerkleHashError> {
     const WIDTH: usize = 8;
 
-    let row_values = row_major_words_from_bytes(bytes, row_count, column_count)?;
-    let row_values_buffer = CudaDeviceBuffer::from_u64_words(&row_values)
-        .map_err(|_| MerkleHashError::LengthOverflow)?;
+    let row_values_buffer = copy_row_major_bytes_to_device(bytes, row_count, column_count)?;
     cuda_linear_hashes_with_row_major_device_rounds(
         row_count,
         column_count,
@@ -494,9 +499,7 @@ fn cuda_linear_hashes_row_major_arity4(
     const RATE: usize = 12;
     const WIDTH: usize = 16;
 
-    let row_values = row_major_words_from_bytes(bytes, row_count, column_count)?;
-    let row_values_buffer = CudaDeviceBuffer::from_u64_words(&row_values)
-        .map_err(|_| MerkleHashError::LengthOverflow)?;
+    let row_values_buffer = copy_row_major_bytes_to_device(bytes, row_count, column_count)?;
     cuda_linear_hashes_with_row_major_device_rounds(
         row_count,
         column_count,
@@ -839,6 +842,19 @@ mod tests {
         let expected = linear_hashes(&rows, 4).expect("row hashes should compute");
 
         assert_eq!(direct, expected);
+    }
+
+    #[test]
+    fn linear_hashes_row_major_bytes_reject_non_canonical_words() {
+        let mut bytes = Vec::new();
+        for value in [1_u64, 2, 3, 4, 5, 0xffff_ffff_0000_0001] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+
+        let error = linear_hashes_from_row_major_bytes(&bytes, 1, 6, 2)
+            .expect_err("non-canonical row-major word should be rejected");
+
+        assert!(error.to_string().contains("non-canonical field element"));
     }
 
     #[test]
