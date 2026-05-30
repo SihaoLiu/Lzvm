@@ -106,6 +106,34 @@ fn compressed_li(rd: u8, immediate: i8) -> u16 {
         | ((immediate & 0x1f) << 2)
 }
 
+fn compressed_lui(rd: u8, immediate: i8) -> u16 {
+    assert!(rd < 32);
+    assert_ne!(rd, 2);
+    assert!((-32..=31).contains(&immediate));
+    assert_ne!(immediate, 0);
+    let immediate = immediate as i16 as u16;
+    (0b011 << 13)
+        | 0b01
+        | (((immediate >> 5) & 1) << 12)
+        | (u16::from(rd) << 7)
+        | ((immediate & 0x1f) << 2)
+}
+
+fn compressed_addi16sp(immediate: i16) -> u16 {
+    assert!((-512..=496).contains(&immediate));
+    assert_ne!(immediate, 0);
+    assert_eq!(immediate & 0x0f, 0);
+    let immediate = immediate as u16;
+    (0b011 << 13)
+        | 0b01
+        | (((immediate >> 9) & 1) << 12)
+        | (2 << 7)
+        | (((immediate >> 4) & 1) << 6)
+        | (((immediate >> 6) & 1) << 5)
+        | (((immediate >> 7) & 0x3) << 3)
+        | (((immediate >> 5) & 1) << 2)
+}
+
 fn push_halfword(code: &mut Vec<u8>, halfword: u16) {
     code.extend_from_slice(&halfword.to_le_bytes());
 }
@@ -167,6 +195,27 @@ fn runs_compressed_li_instructions_until_ecall() {
     assert_eq!(report.halt, GuestMachineHalt::Ecall { address: ENTRY + 4 });
     assert_eq!(state.pc(), ENTRY + 4);
     assert_eq!(state.register(3), Some(u64::MAX));
+}
+
+#[test]
+fn runs_compressed_lui_and_addi16sp_instructions_until_ecall() {
+    let mut code = Vec::new();
+    push_halfword(&mut code, compressed_lui(3, 1));
+    push_halfword(&mut code, compressed_lui(4, -1));
+    push_halfword(&mut code, compressed_addi16sp(16));
+    push_halfword(&mut code, compressed_addi16sp(-16));
+    push_word(&mut code, 0x0000_0073);
+    let mut memory = guest_machine_memory_with_bytes(&code);
+    let mut state = GuestMachineState::new(memory.entry_address());
+
+    let report = run_guest_machine(&mut memory, &mut state, 8).expect("guest should halt");
+
+    assert_eq!(report.executed_instructions, 4);
+    assert_eq!(report.halt, GuestMachineHalt::Ecall { address: ENTRY + 8 });
+    assert_eq!(state.pc(), ENTRY + 8);
+    assert_eq!(state.register(2), Some(0));
+    assert_eq!(state.register(3), Some(4096));
+    assert_eq!(state.register(4), Some(u64::MAX << 12));
 }
 
 #[test]

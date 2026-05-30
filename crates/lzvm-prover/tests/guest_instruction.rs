@@ -497,6 +497,111 @@ fn decodes_compressed_li_instructions() {
 }
 
 #[test]
+fn decodes_compressed_lui_and_addi16sp_instructions() {
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x6185),
+        }),
+        RiscvInstruction::Lui {
+            rd: 3,
+            immediate: 4096,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x71fd),
+        }),
+        RiscvInstruction::Lui {
+            rd: 3,
+            immediate: -4096,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x6141),
+        }),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 2,
+            rs1: 2,
+            immediate: 16,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x717d),
+        }),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 2,
+            rs1: 2,
+            immediate: -16,
+        }
+    );
+    for (halfword, immediate) in [
+        (0x6105, 32),
+        (0x6121, 64),
+        (0x6109, 128),
+        (0x6111, 256),
+        (0x7101, -512),
+    ] {
+        assert_eq!(
+            decode_guest_instruction(FetchedGuestInstruction {
+                address: 0x8000_0000,
+                encoded: RiscvEncodedInstruction::Compressed(halfword),
+            }),
+            RiscvInstruction::OpImm {
+                kind: RiscvOpImmKind::Addi,
+                rd: 2,
+                rs1: 2,
+                immediate,
+            }
+        );
+    }
+}
+
+#[test]
+fn keeps_reserved_compressed_lui_forms_visible() {
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x6001),
+        }),
+        RiscvInstruction::CompressedUnknown {
+            halfword: 0x6001,
+            quadrant: 1,
+            funct3: 3,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x6101),
+        }),
+        RiscvInstruction::CompressedUnknown {
+            halfword: 0x6101,
+            quadrant: 1,
+            funct3: 3,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x6005),
+        }),
+        RiscvInstruction::CompressedUnknown {
+            halfword: 0x6005,
+            quadrant: 1,
+            funct3: 3,
+        }
+    );
+}
+
+#[test]
 fn keeps_unknown_riscv_words_visible() {
     assert_eq!(
         decode_riscv_instruction(0xffff_ffff),

@@ -331,11 +331,16 @@ fn decode_compressed_instruction(halfword: u16) -> RiscvInstruction {
     match (((halfword >> 13) & 0b111) as u8, (halfword & 0b11) as u8) {
         (0, 1) => decode_compressed_addi(halfword),
         (2, 1) => decode_compressed_li(halfword),
-        _ => RiscvInstruction::CompressedUnknown {
-            halfword,
-            quadrant: (halfword & 0b11) as u8,
-            funct3: ((halfword >> 13) & 0b111) as u8,
-        },
+        (3, 1) => decode_compressed_lui_or_addi16sp(halfword),
+        _ => compressed_unknown(halfword),
+    }
+}
+
+fn compressed_unknown(halfword: u16) -> RiscvInstruction {
+    RiscvInstruction::CompressedUnknown {
+        halfword,
+        quadrant: (halfword & 0b11) as u8,
+        funct3: ((halfword >> 13) & 0b111) as u8,
     }
 }
 
@@ -358,9 +363,48 @@ fn decode_compressed_li(halfword: u16) -> RiscvInstruction {
     }
 }
 
+fn decode_compressed_lui_or_addi16sp(halfword: u16) -> RiscvInstruction {
+    if compressed_ci_immediate_payload(halfword) == 0 {
+        return compressed_unknown(halfword);
+    }
+    let rd = ((halfword >> 7) & 0x1f) as u8;
+    if rd == 2 {
+        return RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd,
+            rs1: rd,
+            immediate: compressed_addi16sp_immediate(halfword),
+        };
+    }
+    if rd == 0 {
+        return compressed_unknown(halfword);
+    }
+    RiscvInstruction::Lui {
+        rd,
+        immediate: compressed_lui_immediate(halfword),
+    }
+}
+
 fn compressed_addi_immediate(halfword: u16) -> i64 {
-    let immediate = u64::from(((halfword >> 2) & 0x1f) | (((halfword >> 12) & 1) << 5));
-    sign_extend(immediate, 6)
+    sign_extend(u64::from(compressed_ci_immediate_payload(halfword)), 6)
+}
+
+fn compressed_lui_immediate(halfword: u16) -> i64 {
+    sign_extend(u64::from(compressed_ci_immediate_payload(halfword)), 6) << 12
+}
+
+fn compressed_ci_immediate_payload(halfword: u16) -> u16 {
+    ((halfword >> 2) & 0x1f) | (((halfword >> 12) & 1) << 5)
+}
+
+fn compressed_addi16sp_immediate(halfword: u16) -> i64 {
+    let bit_4 = (halfword >> 6) & 1;
+    let bit_5 = (halfword >> 2) & 1;
+    let bit_6 = (halfword >> 5) & 1;
+    let bits_8_7 = (halfword >> 3) & 0x3;
+    let bit_9 = (halfword >> 12) & 1;
+    let value = (bit_4 << 4) | (bit_5 << 5) | (bit_6 << 6) | (bits_8_7 << 7) | (bit_9 << 9);
+    sign_extend(u64::from(value), 10)
 }
 
 fn decode_fence(word: u32) -> RiscvInstruction {
