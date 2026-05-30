@@ -42,7 +42,7 @@ fn cuda_witness_leaf_extension_serializes_device_words_without_extended_felt_vec
         "#[cfg(not(feature = \"cuda\"))]",
     );
     let validation_index = cuda_body
-        .find("validate_cuda_extension_domain")
+        .find("cuda_goldilocks_coset_extend_row_major_columns_output_bytes")
         .expect("CUDA witness leaf extension should validate domain shape");
     let setup_index = cuda_body
         .find("prepare_gpu_setup")
@@ -85,7 +85,7 @@ fn cuda_fri_fixed_extension_uses_device_output_without_extended_word_vector() {
 
     let cuda_body = function_body(&source, "fn extend_row_major_columns", "fn fri_error");
     let validation_index = cuda_body
-        .find("validate_cuda_extension_domain")
+        .find("cuda_goldilocks_coset_extend_row_major_columns_output_bytes")
         .expect("CUDA FRI fixed extension should validate domain shape");
     let setup_index = cuda_body
         .find("prepare_gpu_setup")

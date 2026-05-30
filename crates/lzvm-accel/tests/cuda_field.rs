@@ -4,7 +4,8 @@ use lzvm_accel::{cuda_goldilocks_add, cuda_goldilocks_mul};
 use lzvm_accel::{
     cuda_goldilocks_butterfly, cuda_goldilocks_coset_extend, cuda_goldilocks_coset_extend_device,
     cuda_goldilocks_coset_extend_row_major_columns,
-    cuda_goldilocks_coset_extend_row_major_columns_device, cuda_goldilocks_intt,
+    cuda_goldilocks_coset_extend_row_major_columns_device,
+    cuda_goldilocks_coset_extend_row_major_columns_output_bytes, cuda_goldilocks_intt,
     cuda_goldilocks_ntt, cuda_keccak256_fixed, cuda_poseidon2_width16,
     cuda_poseidon2_width16_device, cuda_poseidon2_width16_linear_round_device,
     cuda_poseidon2_width16_linear_round_row_major_device,
@@ -385,6 +386,23 @@ fn cuda_extends_row_major_columns_from_device_memory() {
         .expect("device output should copy back");
 
     assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_reports_row_major_extension_output_bytes_before_allocation() {
+    let bytes = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(12, 3, 2, 4)
+        .expect("output byte count should compute");
+
+    assert_eq!(bytes, (1_usize << 4) * 3 * 8);
+
+    let error = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(2, 1, 2, 3)
+        .expect_err("source row mismatch should be rejected");
+
+    assert_eq!(
+        error,
+        lzvm_accel::AccelError::InvalidDomain { bits: 2, len: 2 }
+    );
 }
 
 #[test]

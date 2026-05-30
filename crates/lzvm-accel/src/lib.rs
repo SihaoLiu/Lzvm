@@ -728,6 +728,52 @@ pub fn cuda_goldilocks_coset_extend_row_major_columns(
 }
 
 #[cfg(feature = "cuda")]
+pub fn cuda_goldilocks_coset_extend_row_major_columns_output_bytes(
+    value_count: usize,
+    column_count: usize,
+    source_bits: usize,
+    target_bits: usize,
+) -> Result<usize, AccelError> {
+    if column_count == 0 {
+        if value_count == 0 {
+            return Ok(0);
+        }
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: value_count,
+        });
+    }
+    if !value_count.is_multiple_of(column_count) {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: value_count,
+        });
+    }
+
+    let source_rows = value_count / column_count;
+    let (source_len, target_len, _, _) =
+        coset_extend_domain(source_rows, source_bits, target_bits)?;
+    if source_rows != source_len {
+        return Err(AccelError::InvalidDomain {
+            bits: source_bits,
+            len: value_count,
+        });
+    }
+    let target_words = target_len
+        .checked_mul(column_count)
+        .ok_or(AccelError::InvalidDomain {
+            bits: target_bits,
+            len: value_count,
+        })?;
+    target_words
+        .checked_mul(8)
+        .ok_or(AccelError::InvalidDomain {
+            bits: target_bits,
+            len: target_words,
+        })
+}
+
+#[cfg(feature = "cuda")]
 pub fn cuda_goldilocks_coset_extend_row_major_columns_device(
     values: &CudaDeviceBuffer,
     out: &mut CudaDeviceBuffer,

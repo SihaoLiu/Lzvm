@@ -3,15 +3,14 @@ use std::path::{Path, PathBuf};
 
 #[cfg(feature = "cuda")]
 use lzvm_accel::{
-    cuda_goldilocks_coset_extend_row_major_columns_device, AccelError, CudaDeviceBuffer,
+    cuda_goldilocks_coset_extend_row_major_columns_device,
+    cuda_goldilocks_coset_extend_row_major_columns_output_bytes, CudaDeviceBuffer,
 };
 use lzvm_artifacts::fixed::FixedColumns;
 #[cfg(not(feature = "cuda"))]
 use lzvm_field::coset_extend_evaluations;
 #[cfg(feature = "cuda")]
 use lzvm_field::FieldError;
-#[cfg(feature = "cuda")]
-use lzvm_field::MAX_ROOT_OF_UNITY_BITS;
 use lzvm_field::{DomainError, Ext3, Felt};
 
 use crate::fixed_material::{load_fixed_columns_material, FixedColumnsMaterialError};
@@ -406,14 +405,13 @@ fn extend_row_major_columns(
 
     #[cfg(feature = "cuda")]
     {
-        let out_byte_count = validate_cuda_extension_domain(
+        let out_byte_count = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(
             values.len(),
             column_count,
-            source_rows,
             source_bits,
             target_bits,
-            unit_index,
-        )?;
+        )
+        .map_err(|source| ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source })?;
         prepare_gpu_setup(target_bits).map_err(|source| {
             ProvePcsFriPolynomialError::FixedExtensionGpuSetup { unit_index, source }
         })?;
@@ -470,54 +468,6 @@ fn extend_row_major_columns(
             }
         }
         Ok(out)
-    }
-}
-
-#[cfg(feature = "cuda")]
-fn validate_cuda_extension_domain(
-    value_count: usize,
-    column_count: usize,
-    source_rows: usize,
-    source_bits: usize,
-    target_bits: usize,
-    unit_index: usize,
-) -> Result<usize, ProvePcsFriPolynomialError> {
-    if target_bits < source_bits {
-        return Err(cuda_invalid_domain(target_bits, source_rows, unit_index));
-    }
-    let source_len = cuda_domain_len(source_bits, source_rows, unit_index)?;
-    if source_rows != source_len {
-        return Err(cuda_invalid_domain(source_bits, value_count, unit_index));
-    }
-    let target_rows = cuda_domain_len(target_bits, source_rows, unit_index)?;
-    let target_words = target_rows
-        .checked_mul(column_count)
-        .ok_or_else(|| cuda_invalid_domain(target_bits, value_count, unit_index))?;
-    target_words
-        .checked_mul(8)
-        .ok_or_else(|| cuda_invalid_domain(target_bits, target_words, unit_index))
-}
-
-#[cfg(feature = "cuda")]
-fn cuda_domain_len(
-    bits: usize,
-    len: usize,
-    unit_index: usize,
-) -> Result<usize, ProvePcsFriPolynomialError> {
-    if bits > MAX_ROOT_OF_UNITY_BITS {
-        return Err(cuda_invalid_domain(bits, len, unit_index));
-    }
-    let shift = u32::try_from(bits).map_err(|_| cuda_invalid_domain(bits, len, unit_index))?;
-    1_usize
-        .checked_shl(shift)
-        .ok_or_else(|| cuda_invalid_domain(bits, len, unit_index))
-}
-
-#[cfg(feature = "cuda")]
-fn cuda_invalid_domain(bits: usize, len: usize, unit_index: usize) -> ProvePcsFriPolynomialError {
-    ProvePcsFriPolynomialError::FixedExtensionCuda {
-        unit_index,
-        source: AccelError::InvalidDomain { bits, len },
     }
 }
 
@@ -598,5 +548,21 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(cuda, expected);
+    }
+
+    #[test]
+    fn cuda_row_major_extension_rejects_source_domain_mismatch_before_allocation() {
+        let values = vec![Felt::from_u64(5), Felt::from_u64(9)];
+
+        let error = extend_row_major_columns_with_cuda(&values, 1, 2, 3, 7)
+            .expect_err("source row mismatch should be rejected");
+
+        assert!(matches!(
+            error,
+            ProvePcsFriPolynomialError::FixedExtensionCuda {
+                unit_index: 7,
+                source: lzvm_accel::AccelError::InvalidDomain { bits: 2, len: 2 }
+            }
+        ));
     }
 }

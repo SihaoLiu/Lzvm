@@ -1,12 +1,11 @@
 #[cfg(feature = "cuda")]
 use lzvm_accel::{
-    cuda_goldilocks_coset_extend_row_major_columns_device, AccelError, CudaDeviceBuffer,
+    cuda_goldilocks_coset_extend_row_major_columns_device,
+    cuda_goldilocks_coset_extend_row_major_columns_output_bytes, CudaDeviceBuffer,
 };
 #[cfg(not(feature = "cuda"))]
 use lzvm_field::coset_extend_evaluations;
 use lzvm_field::Felt;
-#[cfg(feature = "cuda")]
-use lzvm_field::MAX_ROOT_OF_UNITY_BITS;
 
 #[cfg(feature = "cuda")]
 use crate::gpu_setup::prepare_gpu_setup;
@@ -59,8 +58,12 @@ fn extend_witness_stage_row_major_bytes(
     source_bits: usize,
     target_bits: usize,
 ) -> Result<Vec<u8>, WitnessStageLeafError> {
-    let out_byte_count =
-        validate_cuda_extension_domain(values.len(), column_count, source_bits, target_bits)?;
+    let out_byte_count = cuda_goldilocks_coset_extend_row_major_columns_output_bytes(
+        values.len(),
+        column_count,
+        source_bits,
+        target_bits,
+    )?;
     prepare_gpu_setup(target_bits)?;
 
     let source_bytes = row_major_felt_bytes(values)?;
@@ -78,67 +81,6 @@ fn extend_witness_stage_row_major_bytes(
     let bytes = output_buffer.to_vec()?;
     validate_row_major_word_bytes(&bytes)?;
     Ok(bytes)
-}
-
-#[cfg(feature = "cuda")]
-fn validate_cuda_extension_domain(
-    value_count: usize,
-    column_count: usize,
-    source_bits: usize,
-    target_bits: usize,
-) -> Result<usize, WitnessStageLeafError> {
-    let source_rows = validate_cuda_source_shape(value_count, column_count, source_bits)?;
-    if column_count == 0 {
-        return Ok(0);
-    }
-    if target_bits < source_bits {
-        return Err(cuda_invalid_domain(target_bits, source_rows));
-    }
-    let source_len = cuda_domain_len(source_bits, source_rows)?;
-    if source_rows != source_len {
-        return Err(cuda_invalid_domain(source_bits, value_count));
-    }
-    let target_rows = cuda_domain_len(target_bits, source_rows)?;
-    let target_words = target_rows
-        .checked_mul(column_count)
-        .ok_or_else(|| cuda_invalid_domain(target_bits, value_count))?;
-    target_words
-        .checked_mul(WORD_BYTES)
-        .ok_or_else(|| cuda_invalid_domain(target_bits, target_words))
-}
-
-#[cfg(feature = "cuda")]
-fn validate_cuda_source_shape(
-    value_count: usize,
-    column_count: usize,
-    source_bits: usize,
-) -> Result<usize, WitnessStageLeafError> {
-    if column_count == 0 {
-        if value_count == 0 {
-            return Ok(0);
-        }
-        return Err(cuda_invalid_domain(source_bits, value_count));
-    }
-    if !value_count.is_multiple_of(column_count) {
-        return Err(cuda_invalid_domain(source_bits, value_count));
-    }
-    Ok(value_count / column_count)
-}
-
-#[cfg(feature = "cuda")]
-fn cuda_domain_len(bits: usize, len: usize) -> Result<usize, WitnessStageLeafError> {
-    if bits > MAX_ROOT_OF_UNITY_BITS {
-        return Err(cuda_invalid_domain(bits, len));
-    }
-    let shift = u32::try_from(bits).map_err(|_| cuda_invalid_domain(bits, len))?;
-    1_usize
-        .checked_shl(shift)
-        .ok_or_else(|| cuda_invalid_domain(bits, len))
-}
-
-#[cfg(feature = "cuda")]
-fn cuda_invalid_domain(bits: usize, len: usize) -> WitnessStageLeafError {
-    AccelError::InvalidDomain { bits, len }.into()
 }
 
 #[cfg(feature = "cuda")]
