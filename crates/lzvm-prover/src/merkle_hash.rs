@@ -88,7 +88,7 @@ pub(crate) fn linear_hashes_from_row_major_bytes(
 
     #[cfg(feature = "cuda")]
     {
-        return cuda_linear_hashes_from_row_major_bytes(bytes, row_count, column_count, arity);
+        cuda_linear_hashes_from_row_major_bytes(bytes, row_count, column_count, arity)
     }
 
     #[cfg(not(feature = "cuda"))]
@@ -577,8 +577,12 @@ fn zero_state_buffer(row_count: usize, width: usize) -> Result<CudaDeviceBuffer,
     if words == 0 {
         return CudaDeviceBuffer::new(0).map_err(|_| MerkleHashError::LengthOverflow);
     }
-    let zeros = vec![0_u64; words];
-    CudaDeviceBuffer::from_u64_words(&zeros).map_err(|_| MerkleHashError::LengthOverflow)
+    CudaDeviceBuffer::zeroed(
+        words
+            .checked_mul(8)
+            .ok_or(MerkleHashError::LengthOverflow)?,
+    )
+    .map_err(|_| MerkleHashError::LengthOverflow)
 }
 
 fn parent_hash_arity2(left: [Felt; HASH_WORDS], right: [Felt; HASH_WORDS]) -> [Felt; HASH_WORDS] {

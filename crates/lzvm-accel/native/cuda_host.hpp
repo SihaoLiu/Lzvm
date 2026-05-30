@@ -6,6 +6,7 @@ extern "C" int lzvm_cuda_alloc_bytes(void** out, std::size_t bytes);
 extern "C" void lzvm_cuda_free_bytes(void* ptr);
 extern "C" int lzvm_cuda_copy_h2d_bytes(void* dst, const void* src, std::size_t bytes);
 extern "C" int lzvm_cuda_copy_d2h_bytes(void* dst, const void* src, std::size_t bytes);
+extern "C" int lzvm_cuda_memset_zero_bytes(void* dst, std::size_t bytes);
 extern "C" int lzvm_cuda_check_launch(void);
 extern "C" int lzvm_cuda_synchronize(void);
 

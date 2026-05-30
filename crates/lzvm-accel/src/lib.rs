@@ -38,6 +38,7 @@ unsafe extern "C" {
     fn lzvm_cuda_free_bytes(ptr: *mut c_void);
     fn lzvm_cuda_copy_h2d_bytes(dst: *mut c_void, src: *const c_void, bytes: usize) -> i32;
     fn lzvm_cuda_copy_d2h_bytes(dst: *mut c_void, src: *const c_void, bytes: usize) -> i32;
+    fn lzvm_cuda_memset_zero_bytes(dst: *mut c_void, bytes: usize) -> i32;
     fn lzvm_cuda_setup_init(roots: *const u64, root_count: usize, max_bits_ext: usize) -> i32;
     fn lzvm_cuda_goldilocks_add(lhs: *const u64, rhs: *const u64, out: *mut u64, len: usize)
         -> i32;
@@ -366,6 +367,15 @@ impl CudaDeviceBuffer {
         let code = unsafe { lzvm_cuda_alloc_bytes(&mut ptr, len) };
         cuda_status(code)?;
         Ok(Self { ptr, len })
+    }
+
+    pub fn zeroed(len: usize) -> Result<Self, AccelError> {
+        let buffer = Self::new(len)?;
+        if len > 0 {
+            let code = unsafe { lzvm_cuda_memset_zero_bytes(buffer.ptr, len) };
+            cuda_status(code)?;
+        }
+        Ok(buffer)
     }
 
     pub fn len(&self) -> usize {

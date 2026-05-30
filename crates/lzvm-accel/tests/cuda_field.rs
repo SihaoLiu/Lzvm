@@ -182,6 +182,25 @@ fn cuda_device_buffer_round_trips_bytes() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_device_buffer_zeroed_initializes_bytes() {
+    let buffer = CudaDeviceBuffer::zeroed(96).expect("device buffer should allocate");
+
+    assert_eq!(buffer.len(), 96);
+    assert_eq!(
+        buffer.to_vec().expect("device bytes should copy to host"),
+        vec![0_u8; 96]
+    );
+
+    let empty = CudaDeviceBuffer::zeroed(0).expect("empty device buffer should allocate");
+    assert!(empty.is_empty());
+    assert_eq!(
+        empty.to_vec().expect("empty bytes should copy to host"),
+        Vec::<u8>::new()
+    );
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_device_buffer_round_trips_u64_words() {
     let input = vec![0, 1, MODULUS - 1, 0xffff_ffff, MODULUS / 2, 123_456_789];
     let buffer = CudaDeviceBuffer::from_u64_words(&input).expect("word buffer should allocate");

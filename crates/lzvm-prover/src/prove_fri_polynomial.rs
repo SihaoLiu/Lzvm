@@ -418,14 +418,14 @@ fn extend_row_major_columns(
             target_bits,
         )
         .map_err(|source| ProvePcsFriPolynomialError::FixedExtensionCuda { unit_index, source })?;
-        return extended_words
+        extended_words
             .into_iter()
             .map(Felt::from_canonical)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|source| ProvePcsFriPolynomialError::FixedExtensionValue {
                 unit_index,
                 source,
-            });
+            })
     }
 
     #[cfg(not(feature = "cuda"))]
