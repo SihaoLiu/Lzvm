@@ -21,6 +21,7 @@ pub enum EthBlockPublicValuesError {
         expected: usize,
         found: usize,
     },
+    ProgramImageCacheSetupHashMismatch,
     ProgramImageCacheMismatch {
         name: String,
     },
@@ -54,6 +55,9 @@ impl fmt::Display for EthBlockPublicValuesError {
                     f,
                     "program image cache public value {name} element count mismatch: expected {expected}, found {found}"
                 )
+            }
+            Self::ProgramImageCacheSetupHashMismatch => {
+                write!(f, "program image cache setup hash mismatch")
             }
             Self::ProgramImageCacheMismatch { name } => {
                 write!(
@@ -92,7 +96,8 @@ pub fn public_values_from_eth_block_input_for_metadata(
 ) -> Result<PublicValues, EthBlockPublicValuesError> {
     let mut values = Vec::with_capacity(global_info.publics_map.len());
     for metadata in &global_info.publics_map {
-        let elements = metadata_eth_block_elements(metadata, input, program_image_cache)?;
+        let elements =
+            metadata_eth_block_elements(setup_hash, metadata, input, program_image_cache)?;
         values.push(PublicValueEntry {
             name: metadata.name.clone(),
             elements,
@@ -228,6 +233,7 @@ fn eth_block_public_value_entries(input: &EthBlockInput) -> Vec<PublicValueEntry
 }
 
 fn metadata_eth_block_elements(
+    setup_hash: [u8; 32],
     metadata: &PublicValue,
     input: &EthBlockInput,
     program_image_cache: Option<&ProgramImageCommitmentCache>,
@@ -239,6 +245,9 @@ fn metadata_eth_block_elements(
                 name: metadata.name.clone(),
             }
         })?;
+        if cache.constraint_system_digest != setup_hash {
+            return Err(EthBlockPublicValuesError::ProgramImageCacheSetupHashMismatch);
+        }
         return Ok(cache.tree_root.to_vec());
     }
     if metadata.name == "inputs" && count == 64 {
@@ -329,6 +338,9 @@ pub fn validate_program_image_cache_public_values(
                     name: entry.name.clone(),
                 }
             })?;
+            if cache.constraint_system_digest != public_values.setup_hash {
+                return Err(EthBlockPublicValuesError::ProgramImageCacheSetupHashMismatch);
+            }
             if entry.elements.as_slice() != cache.tree_root.as_slice() {
                 return Err(EthBlockPublicValuesError::ProgramImageCacheMismatch {
                     name: entry.name.clone(),
