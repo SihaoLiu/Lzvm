@@ -13,7 +13,8 @@ use lzvm_artifacts::public_values::{
 };
 use lzvm_artifacts::trace_bundle::{read_trace_bundle_file, TraceBundle};
 use lzvm_prover::{
-    derive_prove_execution_plan_with_program_image_cache, ProveExecutionInputArtifacts,
+    derive_prove_execution_plan_with_program_image_cache, derive_prove_run_plan,
+    witness_layout::derive_witness_trace_layout, ProveExecutionInputArtifacts, ProveSchedule,
 };
 
 use crate::eth_block_prove_input::{
@@ -66,6 +67,19 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
+    let preflight_run_plan = match derive_prove_run_plan(&catalog, parsed.run_args.request.clone())
+    {
+        Ok(plan) => plan,
+        Err(error) => {
+            let _ = writeln!(stderr, "prove inputs failed: {error}");
+            return 1;
+        }
+    };
+    if let Err(message) = validate_trace_input_shapes(trace_bytes_len, &preflight_run_plan.schedule)
+    {
+        let _ = writeln!(stderr, "prove inputs failed: {message}");
+        return 1;
+    }
     let prepared_eth_block_input = match prepare_eth_block_input(&parsed) {
         Ok(value) => value,
         Err(message) => {
@@ -488,6 +502,51 @@ fn validate_trace_bundle(
     let bundle = read_trace_bundle_file(path)
         .map_err(|error| format!("trace bundle failed: {}: {error}", path.display()))?;
     Ok(Some((path.clone(), bundle, metadata.len())))
+}
+
+fn validate_trace_input_shapes(
+    trace_bytes_len: Option<u64>,
+    schedule: &ProveSchedule,
+) -> Result<(), String> {
+    if let Some(byte_len) = trace_bytes_len {
+        validate_trace_unit_byte_len("trace bytes", 0, byte_len, schedule)?;
+    }
+    Ok(())
+}
+
+fn validate_trace_unit_byte_len(
+    role: &str,
+    unit_index: usize,
+    byte_len: u64,
+    schedule: &ProveSchedule,
+) -> Result<(), String> {
+    let expected = expected_trace_unit_byte_len(unit_index, schedule)?;
+    if byte_len != expected {
+        return Err(format!(
+            "{role} unit {unit_index} byte length mismatch: expected {expected}, found {byte_len}"
+        ));
+    }
+    Ok(())
+}
+
+fn expected_trace_unit_byte_len(
+    unit_index: usize,
+    schedule: &ProveSchedule,
+) -> Result<u64, String> {
+    let unit = schedule
+        .units
+        .get(unit_index)
+        .ok_or_else(|| format!("trace bundle has unexpected unit {unit_index}"))?;
+    let layout = derive_witness_trace_layout(unit)
+        .map_err(|error| format!("trace unit {unit_index} layout failed: {error}"))?;
+    let elements = layout
+        .row_count()
+        .checked_mul(layout.column_count())
+        .ok_or_else(|| format!("trace unit {unit_index} byte length overflow"))?;
+    let bytes = elements
+        .checked_mul(8)
+        .ok_or_else(|| format!("trace unit {unit_index} byte length overflow"))?;
+    u64::try_from(bytes).map_err(|_| format!("trace unit {unit_index} byte length overflow"))
 }
 
 fn write_usage(stderr: &mut dyn Write) -> i32 {

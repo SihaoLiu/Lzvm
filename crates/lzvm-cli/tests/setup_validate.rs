@@ -4390,8 +4390,9 @@ fn prints_prove_inputs_from_trace_bytes() {
     let trace_path = dir.join("trace.bin");
     let guest_image_bytes = sample_guest_image();
     let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let trace_bytes = sample_trace_bytes(17);
     write_bytes(&guest_image, &guest_image_bytes);
-    write_bytes(&trace_path, [1_u8, 2, 3, 4]);
+    write_bytes(&trace_path, &trace_bytes);
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -4414,9 +4415,10 @@ fn prints_prove_inputs_from_trace_bytes() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library=none\ntrace_bytes={}\ntrace_bytes_file_bytes=4\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs=none\n",
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library=none\ntrace_bytes={}\ntrace_bytes_file_bytes={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs=none\n",
             output_dir.display(),
             trace_path.display(),
+            trace_bytes.len(),
             guest_image.display(),
             format_hash(&guest_image_info.digest),
         )
@@ -4438,7 +4440,7 @@ fn prove_inputs_rejects_gpu_preallocate_without_cuda() {
     let guest_image = dir.join("guest.elf");
     let trace_path = dir.join("trace.bin");
     write_bytes(&guest_image, sample_guest_image());
-    write_bytes(&trace_path, [1_u8, 2, 3, 4]);
+    write_bytes(&trace_path, sample_trace_bytes(17));
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -4856,6 +4858,42 @@ fn rejects_missing_trace_bytes_for_prove_inputs() {
             "prove inputs failed: trace bytes are missing: {}: No such file or directory (os error 2)\n",
             trace_path.display()
         )
+    );
+}
+
+#[test]
+fn rejects_wrong_length_trace_bytes_for_prove_inputs() {
+    let dir = temp_dir("prove-inputs-wrong-length-trace-bytes");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let trace_path = dir.join("trace.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&trace_path, [1_u8, 2, 3, 4]);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            "--trace-bytes",
+            trace_path.to_str().expect("trace path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove inputs failed: trace bytes unit 0 byte length mismatch: expected 32, found 4\n"
     );
 }
 
