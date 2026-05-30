@@ -50,6 +50,16 @@ impl GuestMemoryImage {
     }
 }
 
+pub trait GuestMemoryReader {
+    fn read_range_into(&self, address: u64, bytes: &mut [u8]) -> Result<(), GuestMemoryError>;
+}
+
+impl GuestMemoryReader for GuestMemoryImage {
+    fn read_range_into(&self, address: u64, bytes: &mut [u8]) -> Result<(), GuestMemoryError> {
+        GuestMemoryImage::read_range_into(self, address, bytes)
+    }
+}
+
 impl GuestMemorySegment {
     pub fn program_header_index(&self) -> u16 {
         self.program_header_index

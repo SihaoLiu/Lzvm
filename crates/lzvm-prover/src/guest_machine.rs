@@ -1,12 +1,136 @@
+use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::guest_instruction::{
     decode_guest_instruction, fetch_guest_instruction, GuestInstructionError, RiscvBranchKind,
-    RiscvEncodedInstruction, RiscvInstruction, RiscvOpImmKind, RiscvOpKind,
+    RiscvEncodedInstruction, RiscvInstruction, RiscvLoadKind, RiscvOpImmKind, RiscvOpKind,
+    RiscvStoreKind,
 };
-use crate::guest_memory::GuestMemoryImage;
+use crate::guest_memory::{
+    GuestMemoryError, GuestMemoryImage, GuestMemoryReader, GuestMemorySegment,
+};
 
 const GUEST_REGISTER_COUNT: usize = 32;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GuestMachineMemory {
+    entry_address: u64,
+    segments: Vec<GuestMachineMemorySegment>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GuestMachineMemorySegment {
+    program_header_index: u16,
+    virtual_address: u64,
+    memory_size: u64,
+    initialized_bytes: Vec<u8>,
+    written_bytes: BTreeMap<u64, u8>,
+}
+
+impl GuestMachineMemory {
+    pub fn from_image(image: &GuestMemoryImage) -> Self {
+        Self {
+            entry_address: image.entry_address(),
+            segments: image
+                .segments()
+                .iter()
+                .map(GuestMachineMemorySegment::from_image_segment)
+                .collect(),
+        }
+    }
+
+    pub fn entry_address(&self) -> u64 {
+        self.entry_address
+    }
+
+    pub fn read_range_into(&self, address: u64, bytes: &mut [u8]) -> Result<(), GuestMemoryError> {
+        let byte_len = bytes.len();
+        let end_address = checked_address_end(address, byte_len)?;
+        for segment in &self.segments {
+            let segment_end = segment.end_address()?;
+            if address >= segment.virtual_address && end_address <= segment_end {
+                segment.read_range_into(address, bytes);
+                return Ok(());
+            }
+        }
+        Err(GuestMemoryError::AddressNotMapped { address, byte_len })
+    }
+
+    pub fn write_range(&mut self, address: u64, bytes: &[u8]) -> Result<(), GuestMemoryError> {
+        let byte_len = bytes.len();
+        let end_address = checked_address_end(address, byte_len)?;
+        for segment in &mut self.segments {
+            let segment_end = segment.end_address()?;
+            if address >= segment.virtual_address && end_address <= segment_end {
+                segment.write_range(address, bytes);
+                return Ok(());
+            }
+        }
+        Err(GuestMemoryError::AddressNotMapped { address, byte_len })
+    }
+}
+
+impl GuestMemoryReader for GuestMachineMemory {
+    fn read_range_into(&self, address: u64, bytes: &mut [u8]) -> Result<(), GuestMemoryError> {
+        GuestMachineMemory::read_range_into(self, address, bytes)
+    }
+}
+
+impl GuestMachineMemorySegment {
+    fn from_image_segment(segment: &GuestMemorySegment) -> Self {
+        Self {
+            program_header_index: segment.program_header_index(),
+            virtual_address: segment.virtual_address(),
+            memory_size: segment.memory_size(),
+            initialized_bytes: segment.initialized_bytes().to_vec(),
+            written_bytes: BTreeMap::new(),
+        }
+    }
+
+    fn read_range_into(&self, address: u64, bytes: &mut [u8]) {
+        let start = address - self.virtual_address;
+        let initialized_len = self.initialized_bytes.len() as u64;
+        for (index, byte) in bytes.iter_mut().enumerate() {
+            let offset = start + index as u64;
+            *byte = self
+                .written_bytes
+                .get(&offset)
+                .copied()
+                .or_else(|| {
+                    (offset < initialized_len).then(|| {
+                        self.initialized_bytes
+                            [usize::try_from(offset).expect("initialized offset fits usize")]
+                    })
+                })
+                .unwrap_or(0);
+        }
+    }
+
+    fn write_range(&mut self, address: u64, bytes: &[u8]) {
+        let start = address - self.virtual_address;
+        for (index, byte) in bytes.iter().copied().enumerate() {
+            self.written_bytes.insert(start + index as u64, byte);
+        }
+    }
+
+    fn end_address(&self) -> Result<u64, GuestMemoryError> {
+        self.virtual_address.checked_add(self.memory_size).ok_or(
+            GuestMemoryError::SegmentMemoryRangeOverflow {
+                program_header_index: self.program_header_index,
+                virtual_address: self.virtual_address,
+                memory_size: self.memory_size,
+            },
+        )
+    }
+}
+
+fn checked_address_end(address: u64, byte_len: usize) -> Result<u64, GuestMemoryError> {
+    let byte_len_u64 = u64::try_from(byte_len)
+        .map_err(|_| GuestMemoryError::AddressRangeOverflow { address, byte_len })?;
+    address
+        .checked_add(byte_len_u64)
+        .ok_or(GuestMemoryError::AddressRangeOverflow { address, byte_len })
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestMachineState {
@@ -70,6 +194,7 @@ pub struct GuestMachineReport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GuestMachineError {
     Fetch(GuestInstructionError),
+    Memory(GuestMemoryError),
     InvalidRegisterIndex {
         index: usize,
     },
@@ -91,6 +216,7 @@ impl fmt::Display for GuestMachineError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Fetch(error) => write!(f, "guest machine instruction fetch failed: {error}"),
+            Self::Memory(error) => write!(f, "guest machine memory access failed: {error}"),
             Self::InvalidRegisterIndex { index } => {
                 write!(f, "guest machine register index is invalid: {index}")
             }
@@ -117,11 +243,18 @@ impl std::error::Error for GuestMachineError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Fetch(error) => Some(error),
+            Self::Memory(error) => Some(error),
             Self::InvalidRegisterIndex { .. }
             | Self::ProgramCounterOverflow { .. }
             | Self::UnsupportedInstructionLength { .. }
             | Self::UnsupportedInstruction { .. } => None,
         }
+    }
+}
+
+impl From<GuestMemoryError> for GuestMachineError {
+    fn from(error: GuestMemoryError) -> Self {
+        Self::Memory(error)
     }
 }
 
@@ -132,7 +265,7 @@ impl From<GuestInstructionError> for GuestMachineError {
 }
 
 pub fn advance_guest_machine(
-    memory: &GuestMemoryImage,
+    memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
 ) -> Result<GuestMachineReport, GuestMachineError> {
     let address = state.pc();
@@ -153,7 +286,7 @@ pub fn advance_guest_machine(
     let mut next_state = state.clone();
     next_state.set_pc(sequential_pc);
 
-    execute_guest_instruction(address, sequential_pc, instruction, &mut next_state)?;
+    execute_guest_instruction(memory, address, sequential_pc, instruction, &mut next_state)?;
     let next_pc = next_state.pc();
     *state = next_state;
 
@@ -165,6 +298,7 @@ pub fn advance_guest_machine(
 }
 
 fn execute_guest_instruction(
+    memory: &mut GuestMachineMemory,
     address: u64,
     sequential_pc: u64,
     instruction: RiscvInstruction,
@@ -226,11 +360,28 @@ fn execute_guest_instruction(
             })?;
             state.write_decoded_register(rd, value);
         }
+        RiscvInstruction::Load {
+            kind,
+            rd,
+            rs1,
+            offset,
+        } => {
+            let address = state.read_decoded_register(rs1).wrapping_add_signed(offset);
+            let value = read_guest_load(memory, kind, address)?;
+            state.write_decoded_register(rd, value);
+        }
+        RiscvInstruction::Store {
+            kind,
+            rs1,
+            rs2,
+            offset,
+        } => {
+            let address = state.read_decoded_register(rs1).wrapping_add_signed(offset);
+            write_guest_store(memory, kind, address, state.read_decoded_register(rs2))?;
+        }
         RiscvInstruction::CompressedUnknown { .. }
         | RiscvInstruction::IllegalCompressed { .. }
         | RiscvInstruction::UnsupportedLong { .. }
-        | RiscvInstruction::Load { .. }
-        | RiscvInstruction::Store { .. }
         | RiscvInstruction::OpImm32 { .. }
         | RiscvInstruction::Op32 { .. }
         | RiscvInstruction::Fence { .. }
@@ -244,6 +395,67 @@ fn execute_guest_instruction(
         }
     }
 
+    Ok(())
+}
+
+fn read_guest_load(
+    memory: &GuestMachineMemory,
+    kind: RiscvLoadKind,
+    address: u64,
+) -> Result<u64, GuestMachineError> {
+    let value = match kind {
+        RiscvLoadKind::Lb => {
+            let mut bytes = [0_u8; 1];
+            memory.read_range_into(address, &mut bytes)?;
+            i64::from(bytes[0] as i8) as u64
+        }
+        RiscvLoadKind::Lh => {
+            let mut bytes = [0_u8; 2];
+            memory.read_range_into(address, &mut bytes)?;
+            i64::from(i16::from_le_bytes(bytes)) as u64
+        }
+        RiscvLoadKind::Lw => {
+            let mut bytes = [0_u8; 4];
+            memory.read_range_into(address, &mut bytes)?;
+            i64::from(i32::from_le_bytes(bytes)) as u64
+        }
+        RiscvLoadKind::Ld => {
+            let mut bytes = [0_u8; 8];
+            memory.read_range_into(address, &mut bytes)?;
+            u64::from_le_bytes(bytes)
+        }
+        RiscvLoadKind::Lbu => {
+            let mut bytes = [0_u8; 1];
+            memory.read_range_into(address, &mut bytes)?;
+            u64::from(bytes[0])
+        }
+        RiscvLoadKind::Lhu => {
+            let mut bytes = [0_u8; 2];
+            memory.read_range_into(address, &mut bytes)?;
+            u64::from(u16::from_le_bytes(bytes))
+        }
+        RiscvLoadKind::Lwu => {
+            let mut bytes = [0_u8; 4];
+            memory.read_range_into(address, &mut bytes)?;
+            u64::from(u32::from_le_bytes(bytes))
+        }
+    };
+    Ok(value)
+}
+
+fn write_guest_store(
+    memory: &mut GuestMachineMemory,
+    kind: RiscvStoreKind,
+    address: u64,
+    value: u64,
+) -> Result<(), GuestMachineError> {
+    let bytes = value.to_le_bytes();
+    match kind {
+        RiscvStoreKind::Sb => memory.write_range(address, &bytes[..1])?,
+        RiscvStoreKind::Sh => memory.write_range(address, &bytes[..2])?,
+        RiscvStoreKind::Sw => memory.write_range(address, &bytes[..4])?,
+        RiscvStoreKind::Sd => memory.write_range(address, &bytes)?,
+    }
     Ok(())
 }
 

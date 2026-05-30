@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::guest_memory::{GuestMemoryError, GuestMemoryImage};
+use crate::guest_memory::{GuestMemoryError, GuestMemoryReader};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GuestInstructionError {
@@ -256,7 +256,7 @@ pub enum RiscvFenceKind {
 }
 
 pub fn fetch_guest_instruction(
-    memory: &GuestMemoryImage,
+    memory: &(impl GuestMemoryReader + ?Sized),
     address: u64,
 ) -> Result<FetchedGuestInstruction, GuestInstructionError> {
     if !address.is_multiple_of(2) {
