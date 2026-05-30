@@ -34,6 +34,36 @@ fn row_major_poseidon_helpers_do_not_allocate_packed_states() {
     );
 }
 
+#[test]
+fn merkle_parent_poseidon_helpers_do_not_allocate_packed_states() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source =
+        std::fs::read_to_string(crate_root.join("native/cuda_poseidon2_merkle_parent.cuh"))
+            .expect("Merkle parent native source should read");
+
+    for body in [
+        function_body(
+            &source,
+            "int run_poseidon2_width8_merkle_parent_on_device",
+            "int run_poseidon2_width16_merkle_parent_on_device",
+        ),
+        function_body(
+            &source,
+            "int run_poseidon2_width16_merkle_parent_on_device",
+            "*** end of Merkle parent source ***",
+        ),
+    ] {
+        assert!(
+            !body.contains("DeviceBuffer<uint64_t>"),
+            "Merkle parent helpers should not allocate a packed device buffer"
+        );
+        assert!(
+            !body.contains("cudaMemset"),
+            "Merkle parent helpers should not clear packed state buffers"
+        );
+    }
+}
+
 fn collect_oversized_sources(root: &Path, path: &Path, oversized: &mut Vec<String>) {
     let entries = std::fs::read_dir(path).expect("native source directory should read");
     for entry in entries {
@@ -62,4 +92,12 @@ fn collect_oversized_sources(root: &Path, path: &Path, oversized: &mut Vec<Strin
             oversized.push(format!("{} has {line_count} lines", relative.display()));
         }
     }
+}
+
+fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+    let body = source
+        .split_once(start)
+        .unwrap_or_else(|| panic!("missing function start: {start}"))
+        .1;
+    body.split_once(end).map_or(body, |(body, _)| body)
 }
