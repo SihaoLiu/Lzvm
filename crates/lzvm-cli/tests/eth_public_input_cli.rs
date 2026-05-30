@@ -2,6 +2,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::eth_block::parse_eth_block_rlp;
+use lzvm_artifacts::eth_block_input::{
+    build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
+    parse_eth_block_input,
+};
 use lzvm_artifacts::eth_public_input::{
     eth_public_header_hash, parse_eth_public_block_prefix, parse_eth_public_header_prefix,
     parse_eth_public_transactions_prefix,
@@ -184,6 +188,101 @@ fn refuses_public_block_rlp_with_root_mismatch() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "eth public block rlp write failed: transactions_root mismatch\n"
+    );
+}
+
+#[test]
+fn writes_public_block_input() {
+    let dir = temp_dir("write-block-input");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("public.bin");
+    let output_path = dir.join("block.input");
+    let mut input = sample_public_block_bytes_with_matching_roots();
+    input.extend_from_slice(b"tail");
+    write_bytes(&input_path, &input);
+    let parsed_public = parse_eth_public_block_prefix(&input).expect("block should parse");
+    let expected_block_rlp = parsed_public.block_rlp();
+    let expected_input =
+        build_eth_block_input(&expected_block_rlp).expect("block input should build");
+    let expected_encoded =
+        encode_eth_block_input(&expected_input).expect("block input should encode");
+    let expected_hash = eth_block_input_bytes_digest(&expected_encoded);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-public-block-input",
+            input_path.to_str().expect("input path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    let written = fs::read(&output_path).expect("block input should be written");
+    let parsed = parse_eth_block_input(&written).expect("block input should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    assert_eq!(written, expected_encoded);
+    assert_eq!(parsed.block_rlp, expected_block_rlp);
+    assert_eq!(parsed.transactions.hash_preimages.len(), 1);
+    assert_eq!(
+        parsed
+            .withdrawals
+            .as_ref()
+            .map(|withdrawals| withdrawals.hash_preimages.len()),
+        Some(1)
+    );
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npublic_input={}\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\ntransaction_count=1\nwithdrawal_count=1\n",
+            input_path.display(),
+            output_path.display(),
+            expected_encoded.len(),
+            to_hex(&expected_hash),
+            to_hex(&expected_input.block_hash)
+        )
+    );
+}
+
+#[test]
+fn refuses_public_block_input_with_root_mismatch() {
+    let dir = temp_dir("write-block-input-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("public.bin");
+    let output_path = dir.join("block.input");
+    let mut input = sample_public_header_bytes();
+    input.extend_from_slice(&1_u64.to_le_bytes());
+    input.extend_from_slice(&eip1559_transaction_bytes());
+    input.extend_from_slice(&0_u64.to_le_bytes());
+    input.push(0);
+    write_bytes(&input_path, &input);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-public-block-input",
+            input_path.to_str().expect("input path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    let output_exists = output_path.exists();
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert!(!output_exists);
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "eth public block input failed: ETH block transactions root mismatch\n"
     );
 }
 

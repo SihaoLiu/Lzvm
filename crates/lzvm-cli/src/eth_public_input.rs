@@ -1,6 +1,9 @@
 use std::io::Write;
 use std::path::Path;
 
+use lzvm_artifacts::eth_block_input::{
+    build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
+};
 use lzvm_artifacts::eth_public_input::{
     eth_public_header_hash, parse_eth_public_block_prefix, parse_eth_public_header_prefix,
     parse_eth_public_transactions_prefix, EthPublicBlockPrefix, EthPublicHeader,
@@ -22,6 +25,17 @@ pub(crate) fn run_write_block_rlp(
     match args {
         [input_path, output_path] => write_block_rlp(input_path, output_path, stdout, stderr),
         _ => write_block_rlp_usage(stderr),
+    }
+}
+
+pub(crate) fn run_write_block_input(
+    args: &[&str],
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    match args {
+        [input_path, output_path] => write_block_input(input_path, output_path, stdout, stderr),
+        _ => write_block_input_usage(stderr),
     }
 }
 
@@ -68,6 +82,85 @@ fn summarize_public_input(input_path: &str, stdout: &mut dyn Write, stderr: &mut
     let _ = writeln!(stdout, "remaining_bytes={}", bytes.len() - block.consumed);
     let _ = writeln!(stdout, "block_hash={}", format_hash(&block_hash));
     write_header_summary(stdout, &parsed.header, &transactions, &block);
+    0
+}
+
+fn write_block_input(
+    input_path: &str,
+    output_path: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let bytes = match std::fs::read(input_path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = writeln!(
+                stderr,
+                "eth public block input failed: read input failed: {input_path}: {error}"
+            );
+            return 1;
+        }
+    };
+    let block = match parse_eth_public_block_prefix(&bytes) {
+        Ok(block) => block,
+        Err(error) => {
+            let _ = writeln!(stderr, "eth public block input failed: {error}");
+            return 1;
+        }
+    };
+    let transaction_count = block.transactions.len();
+    let withdrawal_count = block.withdrawals.as_ref().map(Vec::len);
+    let block_rlp = block.block_rlp();
+    let input = match build_eth_block_input(&block_rlp) {
+        Ok(input) => input,
+        Err(error) => {
+            let _ = writeln!(stderr, "eth public block input failed: {error}");
+            return 1;
+        }
+    };
+    let encoded = match encode_eth_block_input(&input) {
+        Ok(encoded) => encoded,
+        Err(error) => {
+            let _ = writeln!(stderr, "eth public block input failed: {error}");
+            return 1;
+        }
+    };
+
+    let output = Path::new(output_path);
+    if let Some(parent) = output.parent() {
+        if !parent.as_os_str().is_empty() {
+            if let Err(error) = std::fs::create_dir_all(parent) {
+                let _ = writeln!(
+                    stderr,
+                    "eth public block input failed: create output directory failed: {}: {error}",
+                    parent.display()
+                );
+                return 1;
+            }
+        }
+    }
+    if let Err(error) = std::fs::write(output, &encoded) {
+        let _ = writeln!(
+            stderr,
+            "eth public block input failed: write output failed: {}: {error}",
+            output.display()
+        );
+        return 1;
+    }
+
+    let digest = eth_block_input_bytes_digest(&encoded);
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "public_input={}", Path::new(input_path).display());
+    let _ = writeln!(stdout, "block_input={}", output.display());
+    let _ = writeln!(stdout, "bytes={}", encoded.len());
+    let _ = writeln!(stdout, "block_input_hash={}", format_hash(&digest));
+    let _ = writeln!(stdout, "block_hash={}", format_hash(&input.block_hash));
+    let _ = writeln!(stdout, "transaction_count={transaction_count}");
+    let _ = writeln!(
+        stdout,
+        "withdrawal_count={}",
+        format_optional_usize(withdrawal_count)
+    );
     0
 }
 
@@ -258,6 +351,14 @@ fn write_block_rlp_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
         "usage: lzvm eth write-public-block-rlp <input> <out>"
+    );
+    2
+}
+
+fn write_block_input_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm eth write-public-block-input <input> <out>"
     );
     2
 }
