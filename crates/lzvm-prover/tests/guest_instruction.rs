@@ -469,6 +469,49 @@ fn decodes_compressed_addi_instructions() {
 }
 
 #[test]
+fn decodes_compressed_addi4spn_instructions() {
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x0040),
+        }),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 8,
+            rs1: 2,
+            immediate: 4,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x1ffc),
+        }),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 15,
+            rs1: 2,
+            immediate: 1020,
+        }
+    );
+}
+
+#[test]
+fn keeps_reserved_compressed_addi4spn_forms_visible() {
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x0004),
+        }),
+        RiscvInstruction::CompressedUnknown {
+            halfword: 0x0004,
+            quadrant: 0,
+            funct3: 0,
+        }
+    );
+}
+
+#[test]
 fn decodes_compressed_addiw_and_slli_instructions() {
     assert_eq!(
         decode_guest_instruction(FetchedGuestInstruction {

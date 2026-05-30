@@ -329,6 +329,7 @@ fn decode_compressed_instruction(halfword: u16) -> RiscvInstruction {
         return RiscvInstruction::IllegalCompressed { halfword };
     }
     match (((halfword >> 13) & 0b111) as u8, (halfword & 0b11) as u8) {
+        (0, 0) => decode_compressed_addi4spn(halfword),
         (2, 0) => decode_compressed_lw(halfword),
         (3, 0) => decode_compressed_ld(halfword),
         (6, 0) => decode_compressed_sw(halfword),
@@ -356,6 +357,19 @@ fn compressed_unknown(halfword: u16) -> RiscvInstruction {
         halfword,
         quadrant: (halfword & 0b11) as u8,
         funct3: ((halfword >> 13) & 0b111) as u8,
+    }
+}
+
+fn decode_compressed_addi4spn(halfword: u16) -> RiscvInstruction {
+    let immediate = compressed_addi4spn_immediate(halfword);
+    if immediate == 0 {
+        return compressed_unknown(halfword);
+    }
+    RiscvInstruction::OpImm {
+        kind: RiscvOpImmKind::Addi,
+        rd: compressed_register(halfword >> 2),
+        rs1: 2,
+        immediate,
     }
 }
 
@@ -653,6 +667,14 @@ fn compressed_addi16sp_immediate(halfword: u16) -> i64 {
 
 fn compressed_register(encoded: u16) -> u8 {
     ((encoded & 0x7) as u8) + 8
+}
+
+fn compressed_addi4spn_immediate(halfword: u16) -> i64 {
+    let bits_5_4 = (halfword >> 11) & 0x3;
+    let bits_9_6 = (halfword >> 7) & 0xf;
+    let bit_2 = (halfword >> 6) & 1;
+    let bit_3 = (halfword >> 5) & 1;
+    i64::from((bit_2 << 2) | (bit_3 << 3) | (bits_5_4 << 4) | (bits_9_6 << 6))
 }
 
 fn compressed_lw_sw_offset(halfword: u16) -> i64 {

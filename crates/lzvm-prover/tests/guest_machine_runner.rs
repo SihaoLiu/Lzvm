@@ -145,6 +145,17 @@ fn compressed_addi16sp(immediate: i16) -> u16 {
         | (((immediate >> 5) & 1) << 2)
 }
 
+fn compressed_addi4spn(rd: u8, immediate: u16) -> u16 {
+    assert!((8..=15).contains(&rd));
+    assert!((4..=1020).contains(&immediate));
+    assert_eq!(immediate & 0x3, 0);
+    (((immediate >> 4) & 0x3) << 11)
+        | (((immediate >> 6) & 0xf) << 7)
+        | (((immediate >> 2) & 1) << 6)
+        | (((immediate >> 3) & 1) << 5)
+        | (u16::from(rd - 8) << 2)
+}
+
 fn compressed_slli(rd: u8, shamt: u8) -> u16 {
     assert!((1..32).contains(&rd));
     assert!((1..64).contains(&shamt));
@@ -439,6 +450,25 @@ fn runs_compressed_addi_instructions_until_ecall() {
     assert_eq!(report.halt, GuestMachineHalt::Ecall { address: ENTRY + 6 });
     assert_eq!(state.pc(), ENTRY + 6);
     assert_eq!(state.register(1), Some(6));
+}
+
+#[test]
+fn runs_compressed_addi4spn_instructions_until_ecall() {
+    let mut code = Vec::new();
+    push_halfword(&mut code, compressed_addi4spn(8, 4));
+    push_halfword(&mut code, compressed_addi4spn(15, 1020));
+    push_word(&mut code, 0x0000_0073);
+    let mut memory = guest_machine_memory_with_bytes(&code);
+    let mut state = GuestMachineState::new(memory.entry_address());
+    state.set_register(2, 0x1000).expect("register should set");
+
+    let report = run_guest_machine(&mut memory, &mut state, 8).expect("guest should halt");
+
+    assert_eq!(report.executed_instructions, 2);
+    assert_eq!(report.halt, GuestMachineHalt::Ecall { address: ENTRY + 4 });
+    assert_eq!(state.pc(), ENTRY + 4);
+    assert_eq!(state.register(8), Some(0x1004));
+    assert_eq!(state.register(15), Some(0x13fc));
 }
 
 #[test]
