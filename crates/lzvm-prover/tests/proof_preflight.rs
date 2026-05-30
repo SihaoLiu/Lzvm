@@ -17,13 +17,19 @@ use lzvm_artifacts::program_image_segment::{
 };
 use lzvm_artifacts::proof::{ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, PublicValueEntry, PublicValues};
-use lzvm_field::{Felt, FieldError, MODULUS};
+use lzvm_field::{Felt, FieldError, MAX_ROOT_OF_UNITY_BITS, MODULUS};
 use lzvm_prover::proof_preflight::{
     public_values_as_fields, validate_proof_public_values, ProofPreflightError,
     ProofPreflightReport, PublicValueFieldError,
 };
 
 const FIRST_CHALLENGE_VALUE_OFFSET: usize = 12;
+const PROGRAM_IMAGE_SEGMENT_PAYLOAD_OFFSET: usize = 8;
+const PROGRAM_IMAGE_SEGMENT_TREE_ROOT_OFFSET: usize = PROGRAM_IMAGE_SEGMENT_PAYLOAD_OFFSET + 32 * 3;
+const PROGRAM_IMAGE_SEGMENT_TRACE_ROW_COUNT_OFFSET: usize =
+    PROGRAM_IMAGE_SEGMENT_TREE_ROOT_OFFSET + 8 * 4;
+const PROGRAM_IMAGE_SEGMENT_BLOWUP_FACTOR_OFFSET: usize =
+    PROGRAM_IMAGE_SEGMENT_TRACE_ROW_COUNT_OFFSET + 8 + 4;
 
 fn sample_hash(byte: u8) -> [u8; 32] {
     [byte; 32]
@@ -283,8 +289,9 @@ fn rejects_non_canonical_program_image_cache_tree_roots() {
     let mut proof = sample_proof(&public_values);
     let mut segment_data =
         encode_program_image_cache_segment(&sample_program_image_cache()).expect("cache encodes");
-    let root_word_offset = 8 + 32 * 3;
-    segment_data[root_word_offset..root_word_offset + 8].copy_from_slice(&MODULUS.to_le_bytes());
+    segment_data
+        [PROGRAM_IMAGE_SEGMENT_TREE_ROOT_OFFSET..PROGRAM_IMAGE_SEGMENT_TREE_ROOT_OFFSET + 8]
+        .copy_from_slice(&MODULUS.to_le_bytes());
     proof.segments.push(ProofSegment {
         id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
         data: segment_data,
@@ -296,6 +303,37 @@ fn rejects_non_canonical_program_image_cache_tree_roots() {
     assert_eq!(
         error.to_string(),
         "invalid program image cache segment payload: program-image commitment cache tree root word 0 is non-canonical: non-canonical field element: 18446744069414584321"
+    );
+}
+
+#[test]
+fn rejects_program_image_cache_segments_with_unsupported_domain_bits() {
+    let public_values = sample_public_values();
+    let mut proof = sample_proof(&public_values);
+    let mut segment_data =
+        encode_program_image_cache_segment(&sample_program_image_cache()).expect("cache encodes");
+    let row_bits = u32::try_from(MAX_ROOT_OF_UNITY_BITS - 1).expect("limit should fit u32");
+    segment_data[PROGRAM_IMAGE_SEGMENT_TRACE_ROW_COUNT_OFFSET
+        ..PROGRAM_IMAGE_SEGMENT_TRACE_ROW_COUNT_OFFSET + 8]
+        .copy_from_slice(&(1_u64 << row_bits).to_le_bytes());
+    segment_data[PROGRAM_IMAGE_SEGMENT_BLOWUP_FACTOR_OFFSET
+        ..PROGRAM_IMAGE_SEGMENT_BLOWUP_FACTOR_OFFSET + 4]
+        .copy_from_slice(&4_u32.to_le_bytes());
+    proof.segments.push(ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: segment_data,
+    });
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("cache segment domain bits should stay inside the field root table");
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "invalid program image cache segment payload: unsupported program-image commitment cache trace domain bits {}, max {}",
+            MAX_ROOT_OF_UNITY_BITS + 1,
+            MAX_ROOT_OF_UNITY_BITS
+        )
     );
 }
 
