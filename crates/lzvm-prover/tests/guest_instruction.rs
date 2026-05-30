@@ -59,6 +59,17 @@ fn csr_imm(rd: u8, csr: u16, funct3: u8, immediate: u8) -> u32 {
         | 0x73
 }
 
+fn csrrw(rd: u8, csr: u16, rs1: u8) -> u32 {
+    assert!(rd < 32);
+    assert!(csr < 4096);
+    assert!(rs1 < 32);
+    (u32::from(csr) << 20) | (u32::from(rs1) << 15) | (1 << 12) | (u32::from(rd) << 7) | 0x73
+}
+
+fn csrrwi(rd: u8, csr: u16, immediate: u8) -> u32 {
+    csr_imm(rd, csr, 5, immediate)
+}
+
 fn csrrsi(rd: u8, csr: u16, immediate: u8) -> u32 {
     csr_imm(rd, csr, 6, immediate)
 }
@@ -455,6 +466,29 @@ fn decodes_immediate_csr_reads_without_write_mask() {
                 RiscvInstruction::CsrRead { csr, rd: 10 }
             );
         }
+    }
+}
+
+#[test]
+fn keeps_csr_write_encodings_visible() {
+    let cases = [
+        csrrw(0, 0x0f14, 0),
+        csrrw(10, 0x0f14, 0),
+        csrrw(10, 0x0f14, 1),
+        csrrs(10, 0x0f14, 1),
+        csrrc(10, 0x0f14, 1),
+        csrrwi(0, 0x0f14, 0),
+        csrrwi(10, 0x0f14, 0),
+        csrrwi(10, 0x0f14, 1),
+        csrrsi(10, 0x0f14, 1),
+        csrrci(10, 0x0f14, 1),
+    ];
+
+    for word in cases {
+        assert_eq!(
+            decode_riscv_instruction(word),
+            RiscvInstruction::Unknown { word, opcode: 0x73 }
+        );
     }
 }
 
