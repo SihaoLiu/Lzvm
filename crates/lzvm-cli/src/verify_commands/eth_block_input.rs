@@ -1,15 +1,14 @@
 use lzvm_artifacts::eth_block_input::{
-    build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
-    eth_block_input_extra_field_counts, eth_block_input_receipt_kind_counts,
-    eth_block_input_transaction_kind_counts, eth_block_input_withdrawal_count,
-    parse_eth_block_input, EthBlockInput,
+    build_eth_block_input, eth_block_input_bytes_digest, eth_block_input_extra_field_counts,
+    eth_block_input_receipt_kind_counts, eth_block_input_transaction_kind_counts,
+    eth_block_input_withdrawal_count, parse_eth_block_input, EthBlockInput,
 };
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::eth_block_public_values::validate_eth_block_public_values;
 use lzvm_artifacts::proof::read_proof_artifact_file;
-use lzvm_artifacts::public_values::read_public_values_file;
+use lzvm_artifacts::public_values::{public_values_digest, read_public_values_file};
 
 use crate::eth_block_prove_input::{parse_eth_public_block_for_mode, EthPublicInputMode};
 
@@ -57,7 +56,7 @@ pub(super) fn verify_eth_block_input_binding(
         .map_err(|error| format!("read ETH block input failed: {input_path}: {error}"))?;
     let input = parse_eth_block_input(&input_bytes)
         .map_err(|error| format!("ETH block input failed: {input_path}: {error}"))?;
-    verify_eth_block_input_binding_from_input(proof_bin, public_values_path, input, input_bytes)
+    verify_eth_block_input_binding_from_input(proof_bin, public_values_path, input)
 }
 
 pub(super) fn verify_eth_public_input_binding_with_mode(
@@ -73,20 +72,16 @@ pub(super) fn verify_eth_public_input_binding_with_mode(
     let block_rlp = public_block.block_rlp();
     let input = build_eth_block_input(&block_rlp)
         .map_err(|error| format!("ETH public input block failed: {error}"))?;
-    let input_bytes = encode_eth_block_input(&input)
-        .map_err(|error| format!("ETH public input block failed: {error}"))?;
-    verify_eth_block_input_binding_from_input(proof_bin, public_values_path, input, input_bytes)
+    verify_eth_block_input_binding_from_input(proof_bin, public_values_path, input)
 }
 
 fn verify_eth_block_input_binding_from_input(
     proof_bin: &str,
     public_values_path: &str,
     input: EthBlockInput,
-    input_bytes: Vec<u8>,
 ) -> Result<EthBlockInputBinding, String> {
     let proof = read_proof_artifact_file(proof_bin)
         .map_err(|error| format!("read proof artifact failed: {proof_bin}: {error}"))?;
-    let input_hash = eth_block_input_bytes_digest(&input_bytes);
     let transaction_preimage_count = input.transactions.hash_preimages.len();
     let (legacy_transaction_count, typed_transaction_count) =
         eth_block_input_transaction_kind_counts(&input)
@@ -121,12 +116,18 @@ fn verify_eth_block_input_binding_from_input(
     if segment.data != expected {
         return Err("ETH block input proof segment mismatch".to_owned());
     }
+    let input_hash = eth_block_input_bytes_digest(&segment.data);
     let public_values = read_public_values_file(public_values_path)
         .map_err(|error| format!("read public-values failed: {public_values_path}: {error}"))?;
+    let public_values_hash = public_values_digest(&public_values)
+        .map_err(|error| format!("digest public-values failed: {public_values_path}: {error}"))?;
+    if proof.public_values_hash != public_values_hash {
+        return Err("public-values hash mismatch".to_owned());
+    }
     validate_eth_block_public_values(&input, &public_values).map_err(|error| error.to_string())?;
     Ok(EthBlockInputBinding {
         hash: input_hash,
-        bytes: input_bytes.len(),
+        bytes: segment.data.len(),
         block_rlp_bytes: input.block_rlp.len(),
         extra_header_field_count,
         extra_body_field_count,

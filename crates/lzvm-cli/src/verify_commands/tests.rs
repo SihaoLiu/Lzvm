@@ -1,5 +1,7 @@
 use super::*;
-use lzvm_artifacts::eth_block_input::{build_eth_block_input, encode_eth_block_input};
+use lzvm_artifacts::eth_block_input::{
+    build_eth_block_input, encode_eth_block_input, eth_block_input_bytes_digest,
+};
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
@@ -7,6 +9,7 @@ use lzvm_artifacts::eth_block_public_values::public_values_from_eth_block_input;
 use lzvm_artifacts::eth_public_input::parse_eth_public_block_prefix;
 use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{encode_public_values, public_values_digest};
+use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
 
 #[test]
 fn parses_eth_public_input_option_for_verify_proof_args() {
@@ -148,6 +151,116 @@ fn verifies_eth_public_input_against_embedded_block_input_segment() {
 }
 
 #[test]
+fn reports_embedded_block_input_segment_hash_for_reordered_input_file() {
+    let dir = std::env::temp_dir().join(format!(
+        "lzvm-verify-proof-eth-block-reordered-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let input_path = dir.join("block.input");
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public-values.bin");
+    let public_input = sample_public_block_bytes_with_matching_roots();
+    let public_block = parse_eth_public_block_prefix(&public_input).expect("block should parse");
+    let block_rlp = public_block.block_rlp();
+    let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let canonical_input_bytes = encode_eth_block_input(&block_input).expect("input should encode");
+    let reordered_input_bytes = reordered_eth_block_input_file(&canonical_input_bytes);
+    assert_ne!(reordered_input_bytes, canonical_input_bytes);
+    std::fs::write(&input_path, reordered_input_bytes).expect("block input should write");
+    let setup_hash = [7; 32];
+    let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
+    std::fs::write(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    )
+    .expect("public values should write");
+    let proof = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![ProofSegment {
+            id: ETH_BLOCK_INPUT_SEGMENT_ID,
+            data: canonical_input_bytes.clone(),
+        }],
+    };
+    std::fs::write(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    )
+    .expect("proof should write");
+
+    let binding = eth_block_input::verify_eth_block_input_binding(
+        proof_path.to_str().expect("proof path should be utf-8"),
+        public_values_path
+            .to_str()
+            .expect("public values path should be utf-8"),
+        input_path.to_str().expect("input path should be utf-8"),
+    )
+    .expect("reordered input file should match proof semantically");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        binding.hash,
+        eth_block_input_bytes_digest(&canonical_input_bytes)
+    );
+    assert_eq!(binding.bytes, canonical_input_bytes.len());
+}
+
+#[test]
+fn rejects_block_input_binding_when_proof_public_values_hash_differs() {
+    let dir = std::env::temp_dir().join(format!(
+        "lzvm-verify-proof-eth-block-public-hash-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let input_path = dir.join("block.input");
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public-values.bin");
+    let public_input = sample_public_block_bytes_with_matching_roots();
+    let public_block = parse_eth_public_block_prefix(&public_input).expect("block should parse");
+    let block_rlp = public_block.block_rlp();
+    let block_input = build_eth_block_input(&block_rlp).expect("block input should build");
+    let block_input_bytes = encode_eth_block_input(&block_input).expect("input should encode");
+    std::fs::write(&input_path, &block_input_bytes).expect("block input should write");
+    let setup_hash = [7; 32];
+    let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
+    std::fs::write(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    )
+    .expect("public values should write");
+    let proof = ProofArtifact {
+        setup_hash,
+        public_values_hash: [0x55; 32],
+        segments: vec![ProofSegment {
+            id: ETH_BLOCK_INPUT_SEGMENT_ID,
+            data: block_input_bytes,
+        }],
+    };
+    std::fs::write(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    )
+    .expect("proof should write");
+
+    let result = eth_block_input::verify_eth_block_input_binding(
+        proof_path.to_str().expect("proof path should be utf-8"),
+        public_values_path
+            .to_str()
+            .expect("public values path should be utf-8"),
+        input_path.to_str().expect("input path should be utf-8"),
+    );
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        result,
+        Err(message) if message == "public-values hash mismatch"
+    ));
+}
+
+#[test]
 fn rejects_eth_public_input_with_trailing_bytes_for_verify_binding() {
     let dir = std::env::temp_dir().join(format!(
         "lzvm-verify-proof-eth-public-trailing-{}",
@@ -266,6 +379,14 @@ fn verifies_allowed_trailing_eth_public_input_against_embedded_block_input_segme
     assert_eq!(binding.block_hash, block_input.block_hash);
     assert_eq!(binding.transaction_preimage_count, 1);
     assert_eq!(binding.withdrawal_count, Some(1));
+}
+
+fn reordered_eth_block_input_file(bytes: &[u8]) -> Vec<u8> {
+    let mut file =
+        parse_sectioned_file(bytes, *b"ethi", 1).expect("ETH block input should parse as sections");
+    let first = file.sections.remove(0);
+    file.sections.push(first);
+    encode_sectioned_file(&file).expect("reordered ETH block input should encode")
 }
 
 fn sample_public_block_bytes_with_matching_roots() -> Vec<u8> {

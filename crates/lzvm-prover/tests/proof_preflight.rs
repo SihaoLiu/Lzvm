@@ -17,6 +17,7 @@ use lzvm_artifacts::program_image_segment::{
 };
 use lzvm_artifacts::proof::{ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{public_values_digest, PublicValueEntry, PublicValues};
+use lzvm_artifacts::sectioned::{encode_sectioned_file, parse_sectioned_file};
 use lzvm_field::{Felt, FieldError, MAX_ROOT_OF_UNITY_BITS, MODULUS};
 use lzvm_prover::proof_preflight::{
     public_values_as_fields, validate_proof_public_values, ProofPreflightError,
@@ -584,6 +585,29 @@ fn counts_eth_block_input_segments() {
 }
 
 #[test]
+fn rejects_noncanonical_eth_block_input_segments() {
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let public_values = public_values_from_eth_block_input(sample_hash(0x44), &block_input);
+    let mut proof = sample_proof(&public_values);
+    let canonical_segment =
+        encode_eth_block_input_segment(&block_input).expect("segment should encode");
+    let reordered_segment = reordered_eth_block_input_file(&canonical_segment);
+    assert_ne!(reordered_segment, canonical_segment);
+    proof.segments.push(ProofSegment {
+        id: ETH_BLOCK_INPUT_SEGMENT_ID,
+        data: reordered_segment,
+    });
+
+    let error = validate_proof_public_values(&proof, &public_values)
+        .expect_err("ETH block input proof segment should use canonical bytes");
+
+    assert_eq!(
+        error.to_string(),
+        "ETH block input proof segment is not canonical"
+    );
+}
+
+#[test]
 fn rejects_eth_block_segments_without_matching_public_values() {
     let public_values = sample_public_values();
     let mut proof = sample_proof(&public_values);
@@ -600,6 +624,14 @@ fn rejects_eth_block_segments_without_matching_public_values() {
         error.to_string(),
         "missing ETH block public value: eth_block_hash_u32_be"
     );
+}
+
+fn reordered_eth_block_input_file(bytes: &[u8]) -> Vec<u8> {
+    let mut file =
+        parse_sectioned_file(bytes, *b"ethi", 1).expect("ETH block input should parse as sections");
+    let first = file.sections.remove(0);
+    file.sections.push(first);
+    encode_sectioned_file(&file).expect("reordered ETH block input should encode")
 }
 
 #[test]
