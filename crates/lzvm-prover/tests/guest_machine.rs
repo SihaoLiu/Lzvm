@@ -559,6 +559,20 @@ fn execute_single_word_with_registers(word: u32, registers: &[(usize, u64)]) -> 
     state
 }
 
+fn advance_at_data_offset(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    data_address: u64,
+    offset: u64,
+) -> RiscvInstruction {
+    state
+        .set_register(1, data_address + offset)
+        .expect("address register should set");
+    advance_guest_machine(memory, state)
+        .expect("instruction should execute")
+        .instruction
+}
+
 #[test]
 fn advances_integer_instructions_and_preserves_zero_register() {
     let mut memory = guest_machine_memory_with_words(&[
@@ -799,19 +813,15 @@ fn advances_atomic_add_instructions() {
     );
     let mut state = GuestMachineState::new(memory.entry_address());
     state
-        .set_register(1, data_address)
-        .expect("register write should be valid");
-    state
         .set_register(2, 2)
         .expect("register write should be valid");
     state
         .set_register(5, 1)
         .expect("register write should be valid");
 
-    let first =
-        advance_guest_machine(&mut memory, &mut state).expect("word atomic add should execute");
+    let first = advance_at_data_offset(&mut memory, &mut state, data_address, 0);
     assert_eq!(
-        first.instruction,
+        first,
         RiscvInstruction::Amo {
             kind: RiscvAmoKind::Add,
             width: RiscvAmoWidth::Word,
@@ -822,13 +832,9 @@ fn advances_atomic_add_instructions() {
             release: false,
         }
     );
-    state
-        .set_register(1, data_address + 8)
-        .expect("register write should be valid");
-    let second = advance_guest_machine(&mut memory, &mut state)
-        .expect("doubleword atomic add should execute");
+    let second = advance_at_data_offset(&mut memory, &mut state, data_address, 8);
     assert_eq!(
-        second.instruction,
+        second,
         RiscvInstruction::Amo {
             kind: RiscvAmoKind::Add,
             width: RiscvAmoWidth::Doubleword,
@@ -873,9 +879,6 @@ fn advances_atomic_swap_and_logical_instructions() {
     );
     let mut state = GuestMachineState::new(memory.entry_address());
     state
-        .set_register(1, data_address)
-        .expect("register write should be valid");
-    state
         .set_register(2, 0xaabb_ccdd_eeff_0011)
         .expect("register write should be valid");
     state
@@ -888,19 +891,10 @@ fn advances_atomic_swap_and_logical_instructions() {
         .set_register(9, 0x0ff0_ffff)
         .expect("register write should be valid");
 
-    advance_guest_machine(&mut memory, &mut state).expect("swap should execute");
-    state
-        .set_register(1, data_address + 8)
-        .expect("register write should be valid");
-    advance_guest_machine(&mut memory, &mut state).expect("xor should execute");
-    state
-        .set_register(1, data_address + 16)
-        .expect("register write should be valid");
-    advance_guest_machine(&mut memory, &mut state).expect("or should execute");
-    state
-        .set_register(1, data_address + 24)
-        .expect("register write should be valid");
-    advance_guest_machine(&mut memory, &mut state).expect("and should execute");
+    advance_at_data_offset(&mut memory, &mut state, data_address, 0);
+    advance_at_data_offset(&mut memory, &mut state, data_address, 8);
+    advance_at_data_offset(&mut memory, &mut state, data_address, 16);
+    advance_at_data_offset(&mut memory, &mut state, data_address, 24);
 
     let mut stored = [0_u8; 32];
     memory
@@ -941,9 +935,6 @@ fn advances_atomic_min_max_instructions() {
     );
     let mut state = GuestMachineState::new(memory.entry_address());
     state
-        .set_register(1, data_address)
-        .expect("register write should be valid");
-    state
         .set_register(2, (-7_i64) as u64)
         .expect("register write should be valid");
     state
@@ -956,19 +947,10 @@ fn advances_atomic_min_max_instructions() {
         .set_register(9, u64::MAX - 1)
         .expect("register write should be valid");
 
-    advance_guest_machine(&mut memory, &mut state).expect("signed word min should execute");
-    state
-        .set_register(1, data_address + 8)
-        .expect("register write should be valid");
-    advance_guest_machine(&mut memory, &mut state).expect("signed doubleword max should execute");
-    state
-        .set_register(1, data_address + 16)
-        .expect("register write should be valid");
-    advance_guest_machine(&mut memory, &mut state).expect("unsigned word min should execute");
-    state
-        .set_register(1, data_address + 24)
-        .expect("register write should be valid");
-    advance_guest_machine(&mut memory, &mut state).expect("unsigned doubleword max should execute");
+    advance_at_data_offset(&mut memory, &mut state, data_address, 0);
+    advance_at_data_offset(&mut memory, &mut state, data_address, 8);
+    advance_at_data_offset(&mut memory, &mut state, data_address, 16);
+    advance_at_data_offset(&mut memory, &mut state, data_address, 24);
 
     let mut stored = [0_u8; 32];
     memory

@@ -428,136 +428,174 @@ fn decodes_rv64_word_and_fence_instructions() {
     );
 }
 
+fn expected_amo(
+    kind: RiscvAmoKind,
+    width: RiscvAmoWidth,
+    rd: u8,
+    rs1: u8,
+    rs2: u8,
+    acquire: bool,
+    release: bool,
+) -> RiscvInstruction {
+    RiscvInstruction::Amo {
+        kind,
+        width,
+        rd,
+        rs1,
+        rs2,
+        acquire,
+        release,
+    }
+}
+
 #[test]
 fn decodes_atomic_add_instructions() {
-    assert_eq!(
-        decode_riscv_instruction(0x00c6_a5af),
-        RiscvInstruction::Amo {
-            kind: RiscvAmoKind::Add,
-            width: RiscvAmoWidth::Word,
-            rd: 11,
-            rs1: 13,
-            rs2: 12,
-            acquire: false,
-            release: false,
-        }
-    );
-    assert_eq!(
-        decode_riscv_instruction(0x06e7_b52f),
-        RiscvInstruction::Amo {
-            kind: RiscvAmoKind::Add,
-            width: RiscvAmoWidth::Doubleword,
-            rd: 10,
-            rs1: 15,
-            rs2: 14,
-            acquire: true,
-            release: true,
-        }
-    );
+    let cases = [
+        (
+            0x00c6_a5af,
+            expected_amo(
+                RiscvAmoKind::Add,
+                RiscvAmoWidth::Word,
+                11,
+                13,
+                12,
+                false,
+                false,
+            ),
+        ),
+        (
+            0x06e7_b52f,
+            expected_amo(
+                RiscvAmoKind::Add,
+                RiscvAmoWidth::Doubleword,
+                10,
+                15,
+                14,
+                true,
+                true,
+            ),
+        ),
+    ];
+
+    for (word, expected) in cases {
+        assert_eq!(decode_riscv_instruction(word), expected);
+    }
 }
 
 #[test]
 fn decodes_atomic_swap_and_logical_instructions() {
-    assert_eq!(
-        decode_riscv_instruction(0x08e7_b52f),
-        RiscvInstruction::Amo {
-            kind: RiscvAmoKind::Swap,
-            width: RiscvAmoWidth::Doubleword,
-            rd: 10,
-            rs1: 15,
-            rs2: 14,
-            acquire: false,
-            release: false,
-        }
-    );
-    assert_eq!(
-        decode_riscv_instruction(0x20c6_a5af),
-        RiscvInstruction::Amo {
-            kind: RiscvAmoKind::Xor,
-            width: RiscvAmoWidth::Word,
-            rd: 11,
-            rs1: 13,
-            rs2: 12,
-            acquire: false,
-            release: false,
-        }
-    );
-    assert_eq!(
-        decode_riscv_instruction(0x4314_382f),
-        RiscvInstruction::Amo {
-            kind: RiscvAmoKind::Or,
-            width: RiscvAmoWidth::Doubleword,
-            rd: 16,
-            rs1: 8,
-            rs2: 17,
-            acquire: false,
-            release: true,
-        }
-    );
-    assert_eq!(
-        decode_riscv_instruction(0x6529_a4af),
-        RiscvInstruction::Amo {
-            kind: RiscvAmoKind::And,
-            width: RiscvAmoWidth::Word,
-            rd: 9,
-            rs1: 19,
-            rs2: 18,
-            acquire: true,
-            release: false,
-        }
-    );
+    let cases = [
+        (
+            0x08e7_b52f,
+            expected_amo(
+                RiscvAmoKind::Swap,
+                RiscvAmoWidth::Doubleword,
+                10,
+                15,
+                14,
+                false,
+                false,
+            ),
+        ),
+        (
+            0x20c6_a5af,
+            expected_amo(
+                RiscvAmoKind::Xor,
+                RiscvAmoWidth::Word,
+                11,
+                13,
+                12,
+                false,
+                false,
+            ),
+        ),
+        (
+            0x4314_382f,
+            expected_amo(
+                RiscvAmoKind::Or,
+                RiscvAmoWidth::Doubleword,
+                16,
+                8,
+                17,
+                false,
+                true,
+            ),
+        ),
+        (
+            0x6529_a4af,
+            expected_amo(
+                RiscvAmoKind::And,
+                RiscvAmoWidth::Word,
+                9,
+                19,
+                18,
+                true,
+                false,
+            ),
+        ),
+    ];
+
+    for (word, expected) in cases {
+        assert_eq!(decode_riscv_instruction(word), expected);
+    }
 }
 
 #[test]
 fn decodes_atomic_min_max_instructions() {
-    assert_eq!(
-        decode_riscv_instruction(0x80b6_252f),
-        RiscvInstruction::Amo {
-            kind: RiscvAmoKind::Min,
-            width: RiscvAmoWidth::Word,
-            rd: 10,
-            rs1: 12,
-            rs2: 11,
-            acquire: false,
-            release: false,
-        }
-    );
-    assert_eq!(
-        decode_riscv_instruction(0xa0e7_b6af),
-        RiscvInstruction::Amo {
-            kind: RiscvAmoKind::Max,
-            width: RiscvAmoWidth::Doubleword,
-            rd: 13,
-            rs1: 15,
-            rs2: 14,
-            acquire: false,
-            release: false,
-        }
-    );
-    assert_eq!(
-        decode_riscv_instruction(0xc314_282f),
-        RiscvInstruction::Amo {
-            kind: RiscvAmoKind::Minu,
-            width: RiscvAmoWidth::Word,
-            rd: 16,
-            rs1: 8,
-            rs2: 17,
-            acquire: false,
-            release: true,
-        }
-    );
-    assert_eq!(
-        decode_riscv_instruction(0xe529_b4af),
-        RiscvInstruction::Amo {
-            kind: RiscvAmoKind::Maxu,
-            width: RiscvAmoWidth::Doubleword,
-            rd: 9,
-            rs1: 19,
-            rs2: 18,
-            acquire: true,
-            release: false,
-        }
-    );
+    let cases = [
+        (
+            0x80b6_252f,
+            expected_amo(
+                RiscvAmoKind::Min,
+                RiscvAmoWidth::Word,
+                10,
+                12,
+                11,
+                false,
+                false,
+            ),
+        ),
+        (
+            0xa0e7_b6af,
+            expected_amo(
+                RiscvAmoKind::Max,
+                RiscvAmoWidth::Doubleword,
+                13,
+                15,
+                14,
+                false,
+                false,
+            ),
+        ),
+        (
+            0xc314_282f,
+            expected_amo(
+                RiscvAmoKind::Minu,
+                RiscvAmoWidth::Word,
+                16,
+                8,
+                17,
+                false,
+                true,
+            ),
+        ),
+        (
+            0xe529_b4af,
+            expected_amo(
+                RiscvAmoKind::Maxu,
+                RiscvAmoWidth::Doubleword,
+                9,
+                19,
+                18,
+                true,
+                false,
+            ),
+        ),
+    ];
+
+    for (word, expected) in cases {
+        assert_eq!(decode_riscv_instruction(word), expected);
+    }
 }
 
 #[test]
@@ -1430,6 +1468,12 @@ fn keeps_unknown_riscv_words_visible() {
             opcode: 0x0f,
         }
     );
+    for word in [0x1005_a52f, 0x18c5_a52f, 0x10b6_252f, 0x00b6_152f] {
+        assert_eq!(
+            decode_riscv_instruction(word),
+            RiscvInstruction::Unknown { word, opcode: 0x2f }
+        );
+    }
     assert_eq!(
         decode_guest_instruction(FetchedGuestInstruction {
             address: 0x8000_0000,
