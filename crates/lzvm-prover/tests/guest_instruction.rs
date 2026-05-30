@@ -40,6 +40,13 @@ fn csrrs(rd: u8, csr: u16, rs1: u8) -> u32 {
     (u32::from(csr) << 20) | (u32::from(rs1) << 15) | (2 << 12) | (u32::from(rd) << 7) | 0x73
 }
 
+fn csrrc(rd: u8, csr: u16, rs1: u8) -> u32 {
+    assert!(rd < 32);
+    assert!(csr < 4096);
+    assert!(rs1 < 32);
+    (u32::from(csr) << 20) | (u32::from(rs1) << 15) | (3 << 12) | (u32::from(rd) << 7) | 0x73
+}
+
 #[derive(Debug, Clone, Copy)]
 struct ProgramHeaderFixture {
     kind: u32,
@@ -382,6 +389,27 @@ fn decodes_read_only_csr_reads() {
     for (csr_number, csr) in cases {
         assert_eq!(
             decode_riscv_instruction(csrrs(10, csr_number, 0)),
+            RiscvInstruction::CsrRead { csr, rd: 10 }
+        );
+    }
+}
+
+#[test]
+fn decodes_register_clear_csr_reads_without_write_source() {
+    let cases = [
+        (0x0c00, RiscvCsr::Cycle),
+        (0x0c01, RiscvCsr::Time),
+        (0x0c02, RiscvCsr::Instret),
+        (0x0301, RiscvCsr::Misa),
+        (0x0f11, RiscvCsr::Mvendorid),
+        (0x0f12, RiscvCsr::Marchid),
+        (0x0f13, RiscvCsr::Mimpid),
+        (0x0f14, RiscvCsr::Mhartid),
+    ];
+
+    for (csr_number, csr) in cases {
+        assert_eq!(
+            decode_riscv_instruction(csrrc(10, csr_number, 0)),
             RiscvInstruction::CsrRead { csr, rd: 10 }
         );
     }

@@ -1081,7 +1081,7 @@ fn decode_system(word: u32) -> RiscvInstruction {
         return unknown(word);
     };
     match funct3(word) {
-        2 if rs1(word) == 0 => RiscvInstruction::CsrRead { csr, rd: rd(word) },
+        2 | 3 if rs1(word) == 0 => RiscvInstruction::CsrRead { csr, rd: rd(word) },
         _ => unknown(word),
     }
 }
