@@ -42,6 +42,7 @@ pub mod global_constraints;
 pub mod gpu_setup;
 pub mod group_values;
 pub mod guest_instruction;
+pub mod guest_machine;
 pub mod guest_memory;
 pub mod hint_eval;
 mod merkle_hash;
