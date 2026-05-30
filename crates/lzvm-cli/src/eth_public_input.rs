@@ -8,7 +8,7 @@ use lzvm_artifacts::eth_block_input::{
 use lzvm_artifacts::eth_public_input::{
     eth_public_header_hash, parse_eth_public_block, parse_eth_public_block_prefix,
     parse_eth_public_header_prefix, parse_eth_public_transactions_prefix, EthPublicBlockPrefix,
-    EthPublicHeader, EthPublicTransactionsPrefix,
+    EthPublicHeader, EthPublicInputError, EthPublicTransactionsPrefix,
 };
 
 use crate::eth_rpc_block::receipts_rlp_from_rpc_json;
@@ -26,7 +26,20 @@ pub(crate) fn run_write_block_rlp(
     stderr: &mut dyn Write,
 ) -> i32 {
     match args {
-        [input_path, output_path] => write_block_rlp(input_path, output_path, stdout, stderr),
+        [input_path, output_path] => write_block_rlp(
+            input_path,
+            output_path,
+            TrailingBytes::Reject,
+            stdout,
+            stderr,
+        ),
+        ["--allow-trailing", input_path, output_path] => write_block_rlp(
+            input_path,
+            output_path,
+            TrailingBytes::Allow,
+            stdout,
+            stderr,
+        ),
         _ => write_block_rlp_usage(stderr),
     }
 }
@@ -36,14 +49,79 @@ pub(crate) fn run_write_block_input(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    match args {
-        [input_path, output_path] => {
-            write_block_input(input_path, None, output_path, stdout, stderr)
+    if let Some(args) = parse_write_block_input_args(args) {
+        write_block_input(
+            args.input_path,
+            args.receipts_path,
+            args.output_path,
+            args.trailing_bytes,
+            stdout,
+            stderr,
+        )
+    } else {
+        write_block_input_usage(stderr)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TrailingBytes {
+    Reject,
+    Allow,
+}
+
+struct WriteBlockInputArgs<'a> {
+    input_path: &'a str,
+    receipts_path: Option<&'a str>,
+    output_path: &'a str,
+    trailing_bytes: TrailingBytes,
+}
+
+struct ParsedPublicBlock {
+    block: EthPublicBlockPrefix,
+    remaining_bytes: usize,
+}
+
+fn parse_write_block_input_args<'a>(args: &[&'a str]) -> Option<WriteBlockInputArgs<'a>> {
+    let mut trailing_bytes = TrailingBytes::Reject;
+    let mut receipts_path = None;
+    let mut positional = Vec::new();
+    let mut index = 0;
+
+    while index < args.len() {
+        match args[index] {
+            "--allow-trailing" => {
+                if trailing_bytes == TrailingBytes::Allow {
+                    return None;
+                }
+                trailing_bytes = TrailingBytes::Allow;
+                index += 1;
+            }
+            "--receipts-rpc-json" => {
+                if receipts_path.is_some()
+                    || index + 1 >= args.len()
+                    || args[index + 1].starts_with("--")
+                {
+                    return None;
+                }
+                receipts_path = Some(args[index + 1]);
+                index += 2;
+            }
+            value if value.starts_with("--") => return None,
+            value => {
+                positional.push(value);
+                index += 1;
+            }
         }
-        ["--receipts-rpc-json", receipts_path, input_path, output_path] => {
-            write_block_input(input_path, Some(receipts_path), output_path, stdout, stderr)
-        }
-        _ => write_block_input_usage(stderr),
+    }
+
+    match positional.as_slice() {
+        [input_path, output_path] => Some(WriteBlockInputArgs {
+            input_path,
+            receipts_path,
+            output_path,
+            trailing_bytes,
+        }),
+        _ => None,
     }
 }
 
@@ -97,6 +175,7 @@ fn write_block_input(
     input_path: &str,
     receipts_path: Option<&str>,
     output_path: &str,
+    trailing_bytes: TrailingBytes,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
@@ -110,13 +189,14 @@ fn write_block_input(
             return 1;
         }
     };
-    let block = match parse_eth_public_block(&bytes) {
-        Ok(block) => block,
+    let parsed_block = match parse_public_block(&bytes, trailing_bytes) {
+        Ok(parsed_block) => parsed_block,
         Err(error) => {
             let _ = writeln!(stderr, "eth public block input failed: {error}");
             return 1;
         }
     };
+    let block = parsed_block.block;
     let transaction_count = block.transactions.len();
     let withdrawal_count = block.withdrawals.as_ref().map(Vec::len);
     let block_rlp = block.block_rlp();
@@ -173,6 +253,9 @@ fn write_block_input(
     let digest = eth_block_input_bytes_digest(&encoded);
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "public_input={}", Path::new(input_path).display());
+    if trailing_bytes == TrailingBytes::Allow {
+        let _ = writeln!(stdout, "remaining_bytes={}", parsed_block.remaining_bytes);
+    }
     let _ = writeln!(stdout, "block_input={}", output.display());
     let _ = writeln!(stdout, "bytes={}", encoded.len());
     let _ = writeln!(stdout, "block_input_hash={}", format_hash(&digest));
@@ -213,6 +296,7 @@ fn write_block_input(
 fn write_block_rlp(
     input_path: &str,
     output_path: &str,
+    trailing_bytes: TrailingBytes,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
@@ -226,13 +310,14 @@ fn write_block_rlp(
             return 1;
         }
     };
-    let block = match parse_eth_public_block(&bytes) {
-        Ok(block) => block,
+    let parsed_block = match parse_public_block(&bytes, trailing_bytes) {
+        Ok(parsed_block) => parsed_block,
         Err(error) => {
             let _ = writeln!(stderr, "eth public block rlp write failed: {error}");
             return 1;
         }
     };
+    let block = parsed_block.block;
     if let Err(message) = validate_public_block_roots(&block) {
         let _ = writeln!(stderr, "eth public block rlp write failed: {message}");
         return 1;
@@ -262,9 +347,27 @@ fn write_block_rlp(
 
     let _ = writeln!(stdout, "status=ok");
     let _ = writeln!(stdout, "public_input={}", Path::new(input_path).display());
+    if trailing_bytes == TrailingBytes::Allow {
+        let _ = writeln!(stdout, "remaining_bytes={}", parsed_block.remaining_bytes);
+    }
     let _ = writeln!(stdout, "bytes={}", block_rlp.len());
     let _ = writeln!(stdout, "output={}", output.display());
     0
+}
+
+fn parse_public_block(
+    bytes: &[u8],
+    trailing_bytes: TrailingBytes,
+) -> Result<ParsedPublicBlock, EthPublicInputError> {
+    let block = match trailing_bytes {
+        TrailingBytes::Reject => parse_eth_public_block(bytes)?,
+        TrailingBytes::Allow => parse_eth_public_block_prefix(bytes)?,
+    };
+    let remaining_bytes = bytes.len() - block.consumed;
+    Ok(ParsedPublicBlock {
+        block,
+        remaining_bytes,
+    })
 }
 
 fn read_rpc_receipts(path: &str) -> Result<Vec<u8>, String> {
@@ -402,7 +505,7 @@ fn write_usage(stderr: &mut dyn Write) -> i32 {
 fn write_block_rlp_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm eth write-public-block-rlp <input> <out>"
+        "usage: lzvm eth write-public-block-rlp [--allow-trailing] <input> <out>"
     );
     2
 }
@@ -410,7 +513,7 @@ fn write_block_rlp_usage(stderr: &mut dyn Write) -> i32 {
 fn write_block_input_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm eth write-public-block-input [--receipts-rpc-json <receipts-json>] <input> <out>"
+        "usage: lzvm eth write-public-block-input [--allow-trailing] [--receipts-rpc-json <receipts-json>] <input> <out>"
     );
     2
 }

@@ -134,12 +134,12 @@ fn writes_public_block_rlp() {
         &mut stdout,
         &mut stderr,
     );
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
     let written = fs::read(&output_path).expect("block RLP should be written");
     let block = parse_eth_block_rlp(&written).expect("block RLP should parse");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
-    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
-    assert!(stderr.is_empty());
     assert_eq!(written, expected_block_rlp);
     assert_eq!(block.transactions.len(), 1);
     assert_eq!(block.ommers.len(), 0);
@@ -186,6 +186,51 @@ fn refuses_public_block_rlp_with_trailing_bytes() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "eth public block rlp write failed: unexpected trailing bytes in ETH public input: 4\n"
+    );
+}
+
+#[test]
+fn writes_public_block_rlp_with_allowed_trailing_bytes() {
+    let dir = temp_dir("write-block-rlp-allow-trailing");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("public.bin");
+    let output_path = dir.join("block.rlp");
+    let mut input = sample_public_block_bytes_with_matching_roots();
+    input.extend_from_slice(b"tail");
+    write_bytes(&input_path, &input);
+    let parsed = parse_eth_public_block_prefix(&input).expect("block should parse");
+    let expected_block_rlp = parsed.block_rlp();
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-public-block-rlp",
+            "--allow-trailing",
+            input_path.to_str().expect("input path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let written = fs::read(&output_path).expect("block RLP should be written");
+    let block = parse_eth_block_rlp(&written).expect("block RLP should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(written, expected_block_rlp);
+    assert_eq!(block.transactions.len(), 1);
+    assert_eq!(block.withdrawals.as_ref().map(Vec::len), Some(1));
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npublic_input={}\nremaining_bytes=4\nbytes={}\noutput={}\n",
+            input_path.display(),
+            expected_block_rlp.len(),
+            output_path.display()
+        )
     );
 }
 
@@ -369,6 +414,121 @@ fn writes_public_block_input_with_rpc_json_receipts() {
 }
 
 #[test]
+fn writes_public_block_input_with_allowed_trailing_bytes_and_rpc_json_receipts() {
+    let dir = temp_dir("write-block-input-allow-trailing-rpc-receipts");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("public.bin");
+    let receipts_path = dir.join("receipts.json");
+    let output_path = dir.join("block.input");
+    let receipt_item = legacy_receipt_item();
+    let receipt = parse_rlp(&receipt_item).expect("receipt should parse");
+    let receipt_root = receipt_trie_build(&[receipt]).root;
+    let mut input =
+        sample_public_block_bytes_with_matching_roots_and_receipts(receipt_root, [0; 256]);
+    input.extend_from_slice(b"tail");
+    let receipts_rlp = rlp_list(&[receipt_item]);
+    write_bytes(&input_path, &input);
+    write_bytes(
+        &receipts_path,
+        format!(
+            r#"{{
+  "result": [
+    {{
+      "status": "0x1",
+      "cumulativeGasUsed": "0x5a",
+      "logsBloom": "0x{}",
+      "logs": []
+    }}
+  ]
+}}"#,
+            "00".repeat(256),
+        ),
+    );
+    let parsed_public = parse_eth_public_block_prefix(&input).expect("block should parse");
+    let expected_block_rlp = parsed_public.block_rlp();
+    let expected_input = build_eth_block_input_with_receipts(&expected_block_rlp, &receipts_rlp)
+        .expect("block input should build");
+    let expected_encoded =
+        encode_eth_block_input(&expected_input).expect("block input should encode");
+    let expected_hash = eth_block_input_bytes_digest(&expected_encoded);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-public-block-input",
+            "--allow-trailing",
+            "--receipts-rpc-json",
+            receipts_path
+                .to_str()
+                .expect("receipts path should be utf-8"),
+            input_path.to_str().expect("input path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let written = fs::read(&output_path).expect("block input should be written");
+    let parsed = parse_eth_block_input(&written).expect("block input should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(written, expected_encoded);
+    assert_eq!(
+        parsed.receipts_rlp.as_deref(),
+        Some(receipts_rlp.as_slice())
+    );
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npublic_input={}\nremaining_bytes=4\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\ntransaction_count=1\nreceipts=present\nreceipts_rlp_bytes={}\nreceipt_trie_preimages=1\nreceipt_count=1\nlegacy_receipts=1\ntyped_receipts=0\nwithdrawal_count=1\n",
+            input_path.display(),
+            output_path.display(),
+            expected_encoded.len(),
+            to_hex(&expected_hash),
+            to_hex(&expected_input.block_hash),
+            receipts_rlp.len(),
+        )
+    );
+}
+
+#[test]
+fn reports_usage_when_receipts_rpc_json_path_is_missing_before_allow_trailing() {
+    let dir = temp_dir("write-block-input-missing-rpc-receipts-path");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("public.bin");
+    let output_path = dir.join("block.input");
+    write_bytes(&input_path, sample_public_block_bytes_with_matching_roots());
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-public-block-input",
+            "--receipts-rpc-json",
+            "--allow-trailing",
+            input_path.to_str().expect("input path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    let output_exists = output_path.exists();
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert!(!output_exists);
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "usage: lzvm eth write-public-block-input [--allow-trailing] [--receipts-rpc-json <receipts-json>] <input> <out>\n"
+    );
+}
+
+#[test]
 fn refuses_public_block_input_with_trailing_bytes() {
     let dir = temp_dir("write-block-input-trailing");
     let _ = fs::remove_dir_all(&dir);
@@ -399,6 +559,65 @@ fn refuses_public_block_input_with_trailing_bytes() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "eth public block input failed: unexpected trailing bytes in ETH public input: 4\n"
+    );
+}
+
+#[test]
+fn writes_public_block_input_with_allowed_trailing_bytes() {
+    let dir = temp_dir("write-block-input-allow-trailing");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("public.bin");
+    let output_path = dir.join("block.input");
+    let mut input = sample_public_block_bytes_with_matching_roots();
+    input.extend_from_slice(b"tail");
+    write_bytes(&input_path, &input);
+    let parsed_public = parse_eth_public_block_prefix(&input).expect("block should parse");
+    let expected_block_rlp = parsed_public.block_rlp();
+    let expected_input =
+        build_eth_block_input(&expected_block_rlp).expect("block input should build");
+    let expected_encoded =
+        encode_eth_block_input(&expected_input).expect("block input should encode");
+    let expected_hash = eth_block_input_bytes_digest(&expected_encoded);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-public-block-input",
+            "--allow-trailing",
+            input_path.to_str().expect("input path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let written = fs::read(&output_path).expect("block input should be written");
+    let parsed = parse_eth_block_input(&written).expect("block input should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(written, expected_encoded);
+    assert_eq!(parsed.block_rlp, expected_block_rlp);
+    assert_eq!(parsed.transactions.hash_preimages.len(), 1);
+    assert_eq!(
+        parsed
+            .withdrawals
+            .as_ref()
+            .map(|withdrawals| withdrawals.hash_preimages.len()),
+        Some(1)
+    );
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npublic_input={}\nremaining_bytes=4\nblock_input={}\nbytes={}\nblock_input_hash={}\nblock_hash={}\ntransaction_count=1\nwithdrawal_count=1\n",
+            input_path.display(),
+            output_path.display(),
+            expected_encoded.len(),
+            to_hex(&expected_hash),
+            to_hex(&expected_input.block_hash)
+        )
     );
 }
 
