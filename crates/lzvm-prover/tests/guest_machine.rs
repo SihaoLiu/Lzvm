@@ -493,6 +493,22 @@ fn amomaxu_d_aq(rd: u8, rs1: u8, rs2: u8) -> u32 {
     encode_amo(0x1c, true, false, rs2, rs1, 3, rd)
 }
 
+fn lr_w(rd: u8, rs1: u8) -> u32 {
+    encode_amo(0x02, false, false, 0, rs1, 2, rd)
+}
+
+fn lr_d_aqrl(rd: u8, rs1: u8) -> u32 {
+    encode_amo(0x02, true, true, 0, rs1, 3, rd)
+}
+
+fn sc_w(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_amo(0x03, false, false, rs2, rs1, 2, rd)
+}
+
+fn sc_d_aqrl(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_amo(0x03, true, true, rs2, rs1, 3, rd)
+}
+
 fn branch(funct3: u8, rs1: u8, rs2: u8, offset: i16) -> u32 {
     assert_funct3(funct3);
     assert_register(rs1);
@@ -798,6 +814,147 @@ fn advances_guest_memory_store_instructions() {
     );
     assert_eq!(state.register(2), Some(0x0123_4567_89ab_cdef));
     assert_eq!(state.pc(), ENTRY + 16);
+}
+
+#[test]
+fn advances_atomic_load_reserved_store_conditional_instructions() {
+    let data_offset = 64;
+    let data_address = ENTRY + data_offset as u64;
+    let mut memory = guest_machine_memory_with_words_and_data(
+        &[
+            lr_w(3, 1),
+            sc_w(4, 1, 2),
+            lr_d_aqrl(5, 1),
+            sc_d_aqrl(6, 1, 7),
+            sc_w(8, 1, 9),
+        ],
+        data_offset,
+        &[
+            0x01, 0x00, 0x00, 0x80, 0xaa, 0xbb, 0xcc, 0xdd, 0xef, 0xcd, 0xab, 0x89, 0x67, 0x45,
+            0x23, 0x01,
+        ],
+    );
+    let mut state = GuestMachineState::new(memory.entry_address());
+    state
+        .set_register(2, 0x1122_3344_5566_7788)
+        .expect("register write should be valid");
+    state
+        .set_register(7, 0x8877_6655_4433_2211)
+        .expect("register write should be valid");
+    state
+        .set_register(9, 0x99aa_bbcc_ddee_ff00)
+        .expect("register write should be valid");
+
+    let first = advance_at_data_offset(&mut memory, &mut state, data_address, 0);
+    assert_eq!(
+        first,
+        RiscvInstruction::LoadReserved {
+            width: RiscvAmoWidth::Word,
+            rd: 3,
+            rs1: 1,
+            acquire: false,
+            release: false,
+        }
+    );
+    let second = advance_at_data_offset(&mut memory, &mut state, data_address, 0);
+    assert_eq!(
+        second,
+        RiscvInstruction::StoreConditional {
+            width: RiscvAmoWidth::Word,
+            rd: 4,
+            rs1: 1,
+            rs2: 2,
+            acquire: false,
+            release: false,
+        }
+    );
+    let third = advance_at_data_offset(&mut memory, &mut state, data_address, 8);
+    assert_eq!(
+        third,
+        RiscvInstruction::LoadReserved {
+            width: RiscvAmoWidth::Doubleword,
+            rd: 5,
+            rs1: 1,
+            acquire: true,
+            release: true,
+        }
+    );
+    let fourth = advance_at_data_offset(&mut memory, &mut state, data_address, 8);
+    assert_eq!(
+        fourth,
+        RiscvInstruction::StoreConditional {
+            width: RiscvAmoWidth::Doubleword,
+            rd: 6,
+            rs1: 1,
+            rs2: 7,
+            acquire: true,
+            release: true,
+        }
+    );
+    let fifth = advance_at_data_offset(&mut memory, &mut state, data_address, 0);
+    assert_eq!(
+        fifth,
+        RiscvInstruction::StoreConditional {
+            width: RiscvAmoWidth::Word,
+            rd: 8,
+            rs1: 1,
+            rs2: 9,
+            acquire: false,
+            release: false,
+        }
+    );
+
+    let mut stored = [0_u8; 16];
+    memory
+        .read_range_into(data_address, &mut stored)
+        .expect("stored bytes should read");
+    assert_eq!(
+        stored,
+        [
+            0x88, 0x77, 0x66, 0x55, 0xaa, 0xbb, 0xcc, 0xdd, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+            0x77, 0x88,
+        ]
+    );
+    assert_eq!(state.register(3), Some(0xffff_ffff_8000_0001));
+    assert_eq!(state.register(4), Some(0));
+    assert_eq!(state.register(5), Some(0x0123_4567_89ab_cdef));
+    assert_eq!(state.register(6), Some(0));
+    assert_eq!(state.register(8), Some(1));
+    assert_eq!(state.pc(), ENTRY + 20);
+}
+
+#[test]
+fn clears_load_reserved_on_overlapping_guest_store() {
+    let data_offset = 64;
+    let data_address = ENTRY + data_offset as u64;
+    let mut memory = guest_machine_memory_with_words_and_data(
+        &[lr_w(3, 1), sw(1, 2, 0), sc_w(4, 1, 5)],
+        data_offset,
+        &[0x01, 0x00, 0x00, 0x80],
+    );
+    let mut state = GuestMachineState::new(memory.entry_address());
+    state
+        .set_register(1, data_address)
+        .expect("register write should be valid");
+    state
+        .set_register(2, 0xaabb_ccdd)
+        .expect("register write should be valid");
+    state
+        .set_register(5, 0x1122_3344)
+        .expect("register write should be valid");
+
+    advance_guest_machine(&mut memory, &mut state).expect("load reserved should execute");
+    advance_guest_machine(&mut memory, &mut state).expect("store should execute");
+    advance_guest_machine(&mut memory, &mut state).expect("store conditional should execute");
+
+    let mut stored = [0_u8; 4];
+    memory
+        .read_range_into(data_address, &mut stored)
+        .expect("stored bytes should read");
+    assert_eq!(stored, [0xdd, 0xcc, 0xbb, 0xaa]);
+    assert_eq!(state.register(3), Some(0xffff_ffff_8000_0001));
+    assert_eq!(state.register(4), Some(1));
+    assert_eq!(state.pc(), ENTRY + 12);
 }
 
 #[test]

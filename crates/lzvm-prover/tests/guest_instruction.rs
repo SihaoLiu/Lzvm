@@ -448,6 +448,64 @@ fn expected_amo(
     }
 }
 
+fn expected_load_reserved(
+    width: RiscvAmoWidth,
+    rd: u8,
+    rs1: u8,
+    acquire: bool,
+    release: bool,
+) -> RiscvInstruction {
+    RiscvInstruction::LoadReserved {
+        width,
+        rd,
+        rs1,
+        acquire,
+        release,
+    }
+}
+
+fn expected_store_conditional(
+    width: RiscvAmoWidth,
+    rd: u8,
+    rs1: u8,
+    rs2: u8,
+    acquire: bool,
+    release: bool,
+) -> RiscvInstruction {
+    RiscvInstruction::StoreConditional {
+        width,
+        rd,
+        rs1,
+        rs2,
+        acquire,
+        release,
+    }
+}
+
+fn encode_atomic(
+    funct5: u8,
+    acquire: bool,
+    release: bool,
+    rs2: u8,
+    rs1: u8,
+    funct3: u8,
+    rd: u8,
+) -> u32 {
+    assert!(funct5 < 32);
+    assert!(rs2 < 32);
+    assert!(rs1 < 32);
+    assert!(funct3 < 8);
+    assert!(rd < 32);
+    (u32::from(funct5) << 27)
+        | (u32::from(acquire) << 26)
+        | (u32::from(release) << 25)
+        | (u32::from(rs2) << 20)
+        | (u32::from(rs1) << 15)
+        | (u32::from(funct3) << 12)
+        | (u32::from(rd) << 7)
+        | 0x2f
+}
+
 #[test]
 fn decodes_atomic_add_instructions() {
     let cases = [
@@ -474,6 +532,32 @@ fn decodes_atomic_add_instructions() {
                 true,
                 true,
             ),
+        ),
+    ];
+
+    for (word, expected) in cases {
+        assert_eq!(decode_riscv_instruction(word), expected);
+    }
+}
+
+#[test]
+fn decodes_atomic_load_reserved_and_store_conditional_instructions() {
+    let cases = [
+        (
+            encode_atomic(0x02, false, false, 0, 13, 2, 11),
+            expected_load_reserved(RiscvAmoWidth::Word, 11, 13, false, false),
+        ),
+        (
+            encode_atomic(0x02, true, true, 0, 15, 3, 10),
+            expected_load_reserved(RiscvAmoWidth::Doubleword, 10, 15, true, true),
+        ),
+        (
+            encode_atomic(0x03, false, false, 14, 15, 3, 10),
+            expected_store_conditional(RiscvAmoWidth::Doubleword, 10, 15, 14, false, false),
+        ),
+        (
+            encode_atomic(0x03, true, false, 12, 13, 2, 11),
+            expected_store_conditional(RiscvAmoWidth::Word, 11, 13, 12, true, false),
         ),
     ];
 
@@ -1468,7 +1552,11 @@ fn keeps_unknown_riscv_words_visible() {
             opcode: 0x0f,
         }
     );
-    for word in [0x1005_a52f, 0x18c5_a52f, 0x10b6_252f, 0x00b6_152f] {
+    for word in [
+        encode_atomic(0x02, false, false, 1, 12, 2, 10),
+        encode_atomic(0x05, false, false, 11, 12, 2, 10),
+        encode_atomic(0x00, false, false, 11, 12, 1, 10),
+    ] {
         assert_eq!(
             decode_riscv_instruction(word),
             RiscvInstruction::Unknown { word, opcode: 0x2f }

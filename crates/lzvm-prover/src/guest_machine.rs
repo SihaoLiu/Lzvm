@@ -136,6 +136,13 @@ fn checked_address_end(address: u64, byte_len: usize) -> Result<u64, GuestMemory
 pub struct GuestMachineState {
     pc: u64,
     registers: [u64; GUEST_REGISTER_COUNT],
+    reservation: Option<GuestMemoryReservation>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GuestMemoryReservation {
+    address: u64,
+    width: RiscvAmoWidth,
 }
 
 impl GuestMachineState {
@@ -143,6 +150,7 @@ impl GuestMachineState {
         Self {
             pc: entry_address,
             registers: [0; GUEST_REGISTER_COUNT],
+            reservation: None,
         }
     }
 
@@ -181,6 +189,36 @@ impl GuestMachineState {
 
     fn read_decoded_register(&self, index: u8) -> u64 {
         self.registers[usize::from(index)]
+    }
+
+    fn set_reservation(&mut self, address: u64, width: RiscvAmoWidth) {
+        self.reservation = Some(GuestMemoryReservation { address, width });
+    }
+
+    fn clear_reservation(&mut self) {
+        self.reservation = None;
+    }
+
+    fn clear_reservation_if_overlaps(&mut self, address: u64, byte_len: usize) {
+        if self.reservation_overlaps(address, byte_len) {
+            self.clear_reservation();
+        }
+    }
+
+    fn reservation_matches(&self, address: u64, width: RiscvAmoWidth) -> bool {
+        self.reservation
+            .is_some_and(|reservation| reservation.address == address && reservation.width == width)
+    }
+
+    fn reservation_overlaps(&self, address: u64, byte_len: usize) -> bool {
+        let Some(reservation) = self.reservation else {
+            return false;
+        };
+        let byte_len = byte_len as u64;
+        let reservation_len = amo_width_byte_len(reservation.width) as u64;
+        let end = address.saturating_add(byte_len);
+        let reservation_end = reservation.address.saturating_add(reservation_len);
+        address < reservation_end && reservation.address < end
     }
 }
 
@@ -481,6 +519,7 @@ fn execute_guest_instruction(
         } => {
             let address = state.read_decoded_register(rs1).wrapping_add_signed(offset);
             write_guest_store(memory, kind, address, state.read_decoded_register(rs2))?;
+            state.clear_reservation_if_overlaps(address, store_byte_len(kind));
         }
         RiscvInstruction::Amo {
             kind,
@@ -494,7 +533,30 @@ fn execute_guest_instruction(
             let loaded = read_guest_amo(memory, width, address)?;
             let stored = execute_amo(kind, width, loaded, state.read_decoded_register(rs2));
             write_guest_amo(memory, width, address, stored)?;
+            state.clear_reservation_if_overlaps(address, amo_width_byte_len(width));
             state.write_decoded_register(rd, amo_result(width, loaded));
+        }
+        RiscvInstruction::LoadReserved { width, rd, rs1, .. } => {
+            let address = state.read_decoded_register(rs1);
+            let loaded = read_guest_amo(memory, width, address)?;
+            state.write_decoded_register(rd, amo_result(width, loaded));
+            state.set_reservation(address, width);
+        }
+        RiscvInstruction::StoreConditional {
+            width,
+            rd,
+            rs1,
+            rs2,
+            ..
+        } => {
+            let address = state.read_decoded_register(rs1);
+            if state.reservation_matches(address, width) {
+                write_guest_amo(memory, width, address, state.read_decoded_register(rs2))?;
+                state.write_decoded_register(rd, 0);
+            } else {
+                state.write_decoded_register(rd, 1);
+            }
+            state.clear_reservation();
         }
         RiscvInstruction::Fence { .. } => {}
         RiscvInstruction::CompressedUnknown { .. }
@@ -572,6 +634,22 @@ fn write_guest_store(
         RiscvStoreKind::Sd => memory.write_range(address, &bytes)?,
     }
     Ok(())
+}
+
+fn store_byte_len(kind: RiscvStoreKind) -> usize {
+    match kind {
+        RiscvStoreKind::Sb => 1,
+        RiscvStoreKind::Sh => 2,
+        RiscvStoreKind::Sw => 4,
+        RiscvStoreKind::Sd => 8,
+    }
+}
+
+fn amo_width_byte_len(width: RiscvAmoWidth) -> usize {
+    match width {
+        RiscvAmoWidth::Word => 4,
+        RiscvAmoWidth::Doubleword => 8,
+    }
 }
 
 fn read_guest_amo(

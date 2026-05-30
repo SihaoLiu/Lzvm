@@ -149,6 +149,21 @@ pub enum RiscvInstruction {
         acquire: bool,
         release: bool,
     },
+    LoadReserved {
+        width: RiscvAmoWidth,
+        rd: u8,
+        rs1: u8,
+        acquire: bool,
+        release: bool,
+    },
+    StoreConditional {
+        width: RiscvAmoWidth,
+        rd: u8,
+        rs1: u8,
+        rs2: u8,
+        acquire: bool,
+        release: bool,
+    },
     Fence {
         kind: RiscvFenceKind,
         mode: u8,
@@ -973,7 +988,32 @@ fn decode_amo(word: u32) -> RiscvInstruction {
     }) else {
         return unknown(word);
     };
-    let Some(kind) = (match (word >> 27) & 0x1f {
+    let funct5 = ((word >> 27) & 0x1f) as u8;
+    let acquire = ((word >> 26) & 1) != 0;
+    let release = ((word >> 25) & 1) != 0;
+    if funct5 == 0x02 {
+        if rs2(word) != 0 {
+            return unknown(word);
+        }
+        return RiscvInstruction::LoadReserved {
+            width,
+            rd: rd(word),
+            rs1: rs1(word),
+            acquire,
+            release,
+        };
+    }
+    if funct5 == 0x03 {
+        return RiscvInstruction::StoreConditional {
+            width,
+            rd: rd(word),
+            rs1: rs1(word),
+            rs2: rs2(word),
+            acquire,
+            release,
+        };
+    }
+    let Some(kind) = (match funct5 {
         0 => Some(RiscvAmoKind::Add),
         1 => Some(RiscvAmoKind::Swap),
         4 => Some(RiscvAmoKind::Xor),
@@ -993,8 +1033,8 @@ fn decode_amo(word: u32) -> RiscvInstruction {
         rd: rd(word),
         rs1: rs1(word),
         rs2: rs2(word),
-        acquire: ((word >> 26) & 1) != 0,
-        release: ((word >> 25) & 1) != 0,
+        acquire,
+        release,
     }
 }
 
