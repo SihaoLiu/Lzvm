@@ -958,6 +958,39 @@ fn clears_load_reserved_on_overlapping_guest_store() {
 }
 
 #[test]
+fn rejects_misaligned_atomic_accesses_without_mutating_state() {
+    for (word, offset, width) in [
+        (amoadd_w(3, 1, 2), 2, RiscvAmoWidth::Word),
+        (lr_d_aqrl(4, 1), 4, RiscvAmoWidth::Doubleword),
+        (sc_w(5, 1, 2), 2, RiscvAmoWidth::Word),
+    ] {
+        let data_offset = 64;
+        let data_address = ENTRY + data_offset as u64;
+        let mut memory =
+            guest_machine_memory_with_words_and_data(&[word], data_offset, &[0xaa; 16]);
+        let original_memory = memory.clone();
+        let mut state = GuestMachineState::new(memory.entry_address());
+        state
+            .set_register(1, data_address + offset)
+            .expect("register write should be valid");
+        state
+            .set_register(2, 0x1122_3344_5566_7788)
+            .expect("register write should be valid");
+        let original_state = state.clone();
+
+        assert_eq!(
+            advance_guest_machine(&mut memory, &mut state),
+            Err(GuestMachineError::MisalignedAtomicAccess {
+                address: data_address + offset,
+                width,
+            })
+        );
+        assert_eq!(state, original_state);
+        assert_eq!(memory, original_memory);
+    }
+}
+
+#[test]
 fn advances_atomic_add_instructions() {
     let data_offset = 64;
     let data_address = ENTRY + data_offset as u64;

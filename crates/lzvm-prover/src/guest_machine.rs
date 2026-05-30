@@ -251,6 +251,10 @@ pub enum GuestMachineError {
         address: u64,
         byte_len: usize,
     },
+    MisalignedAtomicAccess {
+        address: u64,
+        width: RiscvAmoWidth,
+    },
     UnsupportedInstructionLength {
         address: u64,
         halfword: u16,
@@ -278,6 +282,10 @@ impl fmt::Display for GuestMachineError {
             Self::ProgramCounterOverflow { address, byte_len } => write!(
                 f,
                 "guest machine program counter overflows: address {address}, byte length {byte_len}"
+            ),
+            Self::MisalignedAtomicAccess { address, width } => write!(
+                f,
+                "guest machine atomic memory access is misaligned: address {address}, width {width:?}"
             ),
             Self::UnsupportedInstructionLength { address, halfword } => write!(
                 f,
@@ -316,6 +324,7 @@ impl std::error::Error for GuestMachineError {
             Self::Memory(error) => Some(error),
             Self::InvalidRegisterIndex { .. }
             | Self::ProgramCounterOverflow { .. }
+            | Self::MisalignedAtomicAccess { .. }
             | Self::UnsupportedInstructionLength { .. }
             | Self::UnsupportedInstruction { .. } => None,
         }
@@ -550,6 +559,7 @@ fn execute_guest_instruction(
             ..
         } => {
             let address = state.read_decoded_register(rs1);
+            ensure_atomic_aligned(width, address)?;
             if state.reservation_matches(address, width) {
                 write_guest_amo(memory, width, address, state.read_decoded_register(rs2))?;
                 state.write_decoded_register(rd, 0);
@@ -652,11 +662,21 @@ fn amo_width_byte_len(width: RiscvAmoWidth) -> usize {
     }
 }
 
+fn ensure_atomic_aligned(width: RiscvAmoWidth, address: u64) -> Result<(), GuestMachineError> {
+    let byte_len = amo_width_byte_len(width) as u64;
+    if address.is_multiple_of(byte_len) {
+        Ok(())
+    } else {
+        Err(GuestMachineError::MisalignedAtomicAccess { address, width })
+    }
+}
+
 fn read_guest_amo(
     memory: &GuestMachineMemory,
     width: RiscvAmoWidth,
     address: u64,
 ) -> Result<u64, GuestMachineError> {
+    ensure_atomic_aligned(width, address)?;
     let value = match width {
         RiscvAmoWidth::Word => {
             let mut bytes = [0_u8; 4];
@@ -678,6 +698,7 @@ fn write_guest_amo(
     address: u64,
     value: u64,
 ) -> Result<(), GuestMachineError> {
+    ensure_atomic_aligned(width, address)?;
     match width {
         RiscvAmoWidth::Word => memory.write_range(address, &(value as u32).to_le_bytes())?,
         RiscvAmoWidth::Doubleword => memory.write_range(address, &value.to_le_bytes())?,
