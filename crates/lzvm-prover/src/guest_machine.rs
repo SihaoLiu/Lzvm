@@ -949,3 +949,23 @@ fn signed_remainder_word(dividend: i32, divisor: i32) -> u64 {
     };
     sign_extend_word(remainder as u32)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_high_counter_csr_halves() {
+        let retired_instructions = (3_u64 << 32) | 17;
+
+        for csr in [
+            RiscvCsr::Mcycleh,
+            RiscvCsr::Minstreth,
+            RiscvCsr::Cycleh,
+            RiscvCsr::Timeh,
+            RiscvCsr::Instreth,
+        ] {
+            assert_eq!(read_csr(csr, retired_instructions), 3);
+        }
+    }
+}

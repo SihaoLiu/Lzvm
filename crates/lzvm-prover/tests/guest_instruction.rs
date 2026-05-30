@@ -78,7 +78,7 @@ fn csrrci(rd: u8, csr: u16, immediate: u8) -> u32 {
     csr_imm(rd, csr, 7, immediate)
 }
 
-fn read_only_csrs() -> [(u16, RiscvCsr); 15] {
+fn supported_pure_read_csrs() -> [(u16, RiscvCsr); 15] {
     [
         (0x0b00, RiscvCsr::Mcycle),
         (0x0b02, RiscvCsr::Minstret),
@@ -425,8 +425,8 @@ fn decodes_common_riscv_instruction_formats() {
 }
 
 #[test]
-fn decodes_read_only_csr_reads() {
-    for (csr_number, csr) in read_only_csrs() {
+fn decodes_supported_pure_csr_reads() {
+    for (csr_number, csr) in supported_pure_read_csrs() {
         assert_eq!(
             decode_riscv_instruction(csrrs(10, csr_number, 0)),
             RiscvInstruction::CsrRead { csr, rd: 10 }
@@ -436,7 +436,7 @@ fn decodes_read_only_csr_reads() {
 
 #[test]
 fn decodes_register_clear_csr_reads_without_write_source() {
-    for (csr_number, csr) in read_only_csrs() {
+    for (csr_number, csr) in supported_pure_read_csrs() {
         assert_eq!(
             decode_riscv_instruction(csrrc(10, csr_number, 0)),
             RiscvInstruction::CsrRead { csr, rd: 10 }
@@ -446,7 +446,7 @@ fn decodes_register_clear_csr_reads_without_write_source() {
 
 #[test]
 fn decodes_immediate_csr_reads_without_write_mask() {
-    for (csr_number, csr) in read_only_csrs() {
+    for (csr_number, csr) in supported_pure_read_csrs() {
         for word in [
             csrrsi(10, csr_number, 0),
             csrrci(10, csr_number, 0),
@@ -464,24 +464,26 @@ fn decodes_immediate_csr_reads_without_write_mask() {
 
 #[test]
 fn keeps_csr_write_encodings_visible() {
-    let cases = [
-        csrrw(0, 0x0f14, 0),
-        csrrw(10, 0x0f14, 0),
-        csrrw(10, 0x0f14, 1),
-        csrrs(10, 0x0f14, 1),
-        csrrc(10, 0x0f14, 1),
-        csrrwi(0, 0x0f14, 0),
-        csrrwi(10, 0x0f14, 0),
-        csrrwi(10, 0x0f14, 1),
-        csrrsi(10, 0x0f14, 1),
-        csrrci(10, 0x0f14, 1),
-    ];
+    for (csr_number, _) in supported_pure_read_csrs() {
+        let cases = [
+            csrrw(0, csr_number, 0),
+            csrrw(10, csr_number, 0),
+            csrrw(10, csr_number, 1),
+            csrrs(10, csr_number, 1),
+            csrrc(10, csr_number, 1),
+            csrrwi(0, csr_number, 0),
+            csrrwi(10, csr_number, 0),
+            csrrwi(10, csr_number, 1),
+            csrrsi(10, csr_number, 1),
+            csrrci(10, csr_number, 1),
+        ];
 
-    for word in cases {
-        assert_eq!(
-            decode_riscv_instruction(word),
-            RiscvInstruction::Unknown { word, opcode: 0x73 }
-        );
+        for word in cases {
+            assert_eq!(
+                decode_riscv_instruction(word),
+                RiscvInstruction::Unknown { word, opcode: 0x73 }
+            );
+        }
     }
 }
 
