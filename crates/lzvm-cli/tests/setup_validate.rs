@@ -3941,7 +3941,8 @@ fn prove_inputs_generates_eth_block_public_values_when_missing() {
     assert_eq!(
         String::from_utf8(stdout).expect("stdout should be utf-8"),
         format!(
-            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nwitness_library_bytes=64\nwitness_library_machine=62\nwitness_library_digest={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs={}\npublic_inputs_hash={}\npublic_input_values=21\npublic_input_fields=170\npublic_inputs_generated=eth_block_input\neth_block_input={}\neth_block_input_bytes={}\neth_block_input_hash={}\neth_block_rlp_bytes={}\neth_block_hash={}\neth_parent_hash={}\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty=01\neth_block_number=2\neth_block_timestamp=101\neth_extra_data=6c7a766d\neth_gas_limit=1000000\neth_gas_used=900000\neth_base_fee_per_gas=absent\neth_mix_hash={}\neth_nonce={}\neth_transactions_root={}\neth_transaction_trie_preimages=1\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=absent\neth_withdrawals=absent\n",
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data={}\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={expected}\nwitness_library={}\nwitness_library_bytes=64\nwitness_library_machine=62\nwitness_library_digest={}\nguest_image={}\nguest_image_bytes=64\nguest_image_machine=243\nguest_image_entry=2147483648\nguest_image_digest={}\npublic_inputs={}\npublic_inputs_hash={}\npublic_input_values=21\npublic_input_fields=170\npublic_inputs_generated=eth_block_input\neth_block_input={}\neth_block_input_bytes={}\neth_block_input_hash={}\neth_block_rlp_bytes={}\neth_block_hash={}\neth_parent_hash={}\neth_ommers_hash={}\neth_beneficiary={}\neth_state_root={}\neth_receipts_root={}\neth_logs_bloom={}\neth_difficulty=01\neth_block_number=2\neth_block_timestamp=101\neth_extra_data=6c7a766d\neth_gas_limit=1000000\neth_gas_used=900000\neth_base_fee_per_gas=absent\neth_mix_hash={}\neth_nonce={}\neth_transactions_root={}\neth_transaction_trie_preimages=1\neth_transaction_count=1\neth_legacy_transactions=1\neth_typed_transactions=0\neth_receipts=absent\neth_withdrawals=absent\n",
+            block_input_path.display(),
             output_dir.display(),
             witness_library.display(),
             format_hash(&witness_library_info.digest),
@@ -3967,6 +3968,56 @@ fn prove_inputs_generates_eth_block_public_values_when_missing() {
     );
 
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+}
+
+#[test]
+fn prove_inputs_preserves_explicit_input_data_with_eth_block_input() {
+    let dir = temp_dir("prove-inputs-eth-explicit-input");
+    let _ = fs::remove_dir_all(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = dir.join("libwitness.so");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let block_input_path = dir.join("block.input");
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
+    write_bytes(&witness_library, sample_witness_library());
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+    write_bytes(
+        &block_input_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "inputs",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains(&format!("input_data={}\n", input_data.display())));
 }
 
 #[test]
@@ -7572,6 +7623,50 @@ fn embeds_eth_block_input_segment_in_prove_witness_proof_output() {
 }
 
 #[test]
+fn prove_witness_uses_eth_block_input_as_default_witness_input() {
+    let dir = temp_dir("prove-witness-eth-default-input");
+    let _ = fs::remove_dir_all(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let block_input_path = dir.join("block.input");
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
+    let encoded_block_input =
+        encode_eth_block_input(&block_input).expect("block input should encode");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&block_input_path, &encoded_block_input);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains(&format!("input_data={}\n", block_input_path.display())));
+    assert!(stdout_text.contains(&format!("input_bytes={}\n", encoded_block_input.len())));
+}
+
+#[test]
 fn prove_witness_generates_eth_block_public_values_when_missing() {
     let dir = temp_dir("prove-witness-eth-public-values");
     let _ = fs::remove_dir_all(&dir);
@@ -7682,6 +7777,57 @@ fn prove_witness_generates_eth_block_public_values_when_missing() {
     assert!(String::from_utf8(verify_stdout)
         .expect("verify stdout should be utf-8")
         .contains("eth_block_input_match=ok\n"));
+}
+
+#[test]
+fn prove_witness_uses_eth_public_input_as_default_witness_input() {
+    let dir = temp_dir("prove-witness-eth-public-default-input");
+    let _ = fs::remove_dir_all(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let public_input_path = dir.join("public.bin");
+    let generated_block_input_path = output_dir.join("eth-block.input");
+    let public_input = sample_public_block_bytes_with_matching_roots();
+    let public_block = parse_eth_public_block_prefix(&public_input).expect("block should parse");
+    let block_input = build_eth_block_input(&public_block.block_rlp()).expect("input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
+    let encoded_block_input =
+        encode_eth_block_input(&block_input).expect("block input should encode");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&public_input_path, &public_input);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--eth-public-input",
+            public_input_path
+                .to_str()
+                .expect("public input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains(&format!(
+        "input_data={}\n",
+        generated_block_input_path.display()
+    )));
+    assert!(stdout_text.contains(&format!("input_bytes={}\n", encoded_block_input.len())));
+    assert!(stdout_text.contains("eth_block_input_generated=eth_public_input\n"));
 }
 
 #[test]

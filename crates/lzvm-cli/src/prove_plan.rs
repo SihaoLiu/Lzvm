@@ -480,6 +480,17 @@ pub(crate) fn format_hash(hash: &[u8; 32]) -> String {
     out
 }
 
+pub(crate) fn set_default_input_data(request: &mut ProveRunRequest, path: &Path) {
+    match &mut request.pass {
+        ProvePassRequest::Contributions(partitions) | ProvePassRequest::Full(partitions) => {
+            if partitions.input_data.is_none() {
+                partitions.input_data = Some(path.to_path_buf());
+            }
+        }
+        ProvePassRequest::Internal { .. } => {}
+    }
+}
+
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
@@ -586,6 +597,67 @@ mod tests {
         assert!(matches!(
             result,
             Err(ParseError::Invalid(message)) if message == "duplicate --input-data option"
+        ));
+    }
+
+    #[test]
+    fn default_input_data_fills_missing_partition_input() {
+        let mut request = ProveRunRequest {
+            pass: ProvePassRequest::Full(ProvePartitionPlan::single()),
+            options: ProveRunOptions::default_for_output(PathBuf::from("out-dir")),
+            gpu: GpuRunOptions::default(),
+        };
+
+        set_default_input_data(&mut request, Path::new("block.input"));
+
+        match request.pass {
+            ProvePassRequest::Full(partitions) => {
+                assert_eq!(partitions.input_data, Some(PathBuf::from("block.input")));
+            }
+            _ => panic!("expected full pass"),
+        }
+    }
+
+    #[test]
+    fn default_input_data_preserves_explicit_partition_input() {
+        let mut request = ProveRunRequest {
+            pass: ProvePassRequest::Contributions(ProvePartitionPlan {
+                input_data: Some(PathBuf::from("explicit.bin")),
+                partition_count: 1,
+                partition_ids: vec![0],
+                worker_index: 0,
+            }),
+            options: ProveRunOptions::default_for_output(PathBuf::from("out-dir")),
+            gpu: GpuRunOptions::default(),
+        };
+
+        set_default_input_data(&mut request, Path::new("block.input"));
+
+        match request.pass {
+            ProvePassRequest::Contributions(partitions) => {
+                assert_eq!(partitions.input_data, Some(PathBuf::from("explicit.bin")));
+            }
+            _ => panic!("expected contributions pass"),
+        }
+    }
+
+    #[test]
+    fn default_input_data_ignores_internal_pass() {
+        let mut request = ProveRunRequest {
+            pass: ProvePassRequest::Internal {
+                contribution_count: 2,
+            },
+            options: ProveRunOptions::default_for_output(PathBuf::from("out-dir")),
+            gpu: GpuRunOptions::default(),
+        };
+
+        set_default_input_data(&mut request, Path::new("block.input"));
+
+        assert!(matches!(
+            request.pass,
+            ProvePassRequest::Internal {
+                contribution_count: 2
+            }
         ));
     }
 
