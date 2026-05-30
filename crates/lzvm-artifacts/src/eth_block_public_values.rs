@@ -91,11 +91,19 @@ pub fn public_values_from_eth_block_input(
     setup_hash: [u8; 32],
     input: &EthBlockInput,
 ) -> PublicValues {
-    PublicValues {
+    try_public_values_from_eth_block_input(setup_hash, input)
+        .expect("ETH block input dynamic public value fields are checked")
+}
+
+pub fn try_public_values_from_eth_block_input(
+    setup_hash: [u8; 32],
+    input: &EthBlockInput,
+) -> Result<PublicValues, EthBlockPublicValuesError> {
+    Ok(PublicValues {
         schema_version: 1,
         setup_hash,
-        values: eth_block_public_value_entries(input),
-    }
+        values: eth_block_public_value_entries(input)?,
+    })
 }
 
 pub fn public_values_from_eth_block_input_for_metadata(
@@ -175,14 +183,18 @@ pub fn validate_eth_block_public_values_with_program_image_cache(
     validate_program_image_cache_public_values(public_values, program_image_cache)
 }
 
-fn eth_block_public_value_entries(input: &EthBlockInput) -> Vec<PublicValueEntry> {
+fn eth_block_public_value_entries(
+    input: &EthBlockInput,
+) -> Result<Vec<PublicValueEntry>, EthBlockPublicValuesError> {
     ETH_BLOCK_PUBLIC_VALUE_NAMES
         .iter()
-        .map(|name| PublicValueEntry {
-            name: (*name).to_owned(),
-            elements: eth_block_public_value_elements(input, name)
-                .expect("ETH block input dynamic public value fields are checked")
-                .expect("ETH block public value name is known"),
+        .map(|name| {
+            let elements = eth_block_public_value_elements(input, name)?
+                .expect("ETH block public value name is known");
+            Ok(PublicValueEntry {
+                name: (*name).to_owned(),
+                elements,
+            })
         })
         .collect()
 }

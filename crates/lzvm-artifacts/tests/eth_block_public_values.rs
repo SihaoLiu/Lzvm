@@ -1,6 +1,7 @@
 use lzvm_artifacts::eth_block_input::EthBlockInput;
 use lzvm_artifacts::eth_block_public_values::{
-    public_values_from_eth_block_input_for_metadata, validate_eth_block_public_values,
+    public_values_from_eth_block_input, public_values_from_eth_block_input_for_metadata,
+    try_public_values_from_eth_block_input, validate_eth_block_public_values,
     validate_program_image_cache_public_values,
 };
 use lzvm_artifacts::eth_trie::IndexedTrieBuild;
@@ -160,6 +161,33 @@ fn rejects_selected_extra_data_public_value_overflow() {
 
     let error = validate_eth_block_public_values(&input, &public_values)
         .expect_err("selected extra data public value should validate its payload length");
+
+    assert_eq!(
+        error.to_string(),
+        "ETH block public value extra data exceeds 32 bytes, found 33"
+    );
+}
+
+#[test]
+fn fallible_full_public_value_generation_matches_infallible_api_for_valid_input() {
+    let input = sample_block_input();
+
+    let public_values = try_public_values_from_eth_block_input([0x44; 32], &input)
+        .expect("valid block input public values should derive");
+
+    assert_eq!(
+        public_values,
+        public_values_from_eth_block_input([0x44; 32], &input)
+    );
+}
+
+#[test]
+fn rejects_full_public_value_generation_extra_data_overflow() {
+    let mut input = sample_block_input();
+    input.extra_data = vec![0x99; 33];
+
+    let error = try_public_values_from_eth_block_input([0x44; 32], &input)
+        .expect_err("full public value generation should validate extra data length");
 
     assert_eq!(
         error.to_string(),
