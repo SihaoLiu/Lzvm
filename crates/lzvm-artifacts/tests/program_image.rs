@@ -192,6 +192,13 @@ fn rejects_invalid_program_image_geometry() {
     ));
 
     let mut cache = sample_cache();
+    cache.trace_row_count = 1000;
+    assert!(matches!(
+        encode_program_image_commitment_cache(&cache),
+        Err(ProgramImageCommitmentCacheError::InvalidTraceRows { value: 1000 })
+    ));
+
+    let mut cache = sample_cache();
     cache.trace_column_count = 0;
     assert!(matches!(
         encode_program_image_commitment_cache(&cache),

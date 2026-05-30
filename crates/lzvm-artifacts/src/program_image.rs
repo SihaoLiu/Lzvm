@@ -85,6 +85,9 @@ pub enum ProgramImageCommitmentCacheError {
     EmptyProgram,
     EmptySourceImage,
     EmptyTraceRows,
+    InvalidTraceRows {
+        value: u64,
+    },
     EmptyTraceColumns,
     InvalidBlowupFactor {
         value: u32,
@@ -140,6 +143,9 @@ impl fmt::Display for ProgramImageCommitmentCacheError {
             Self::EmptyTraceRows => {
                 write!(f, "program-image commitment cache trace rows are empty")
             }
+            Self::InvalidTraceRows { value } => {
+                write!(f, "invalid program-image commitment cache trace rows {value}")
+            }
             Self::EmptyTraceColumns => {
                 write!(f, "program-image commitment cache trace columns are empty")
             }
@@ -178,6 +184,7 @@ impl std::error::Error for ProgramImageCommitmentCacheError {
             | Self::EmptyProgram
             | Self::EmptySourceImage
             | Self::EmptyTraceRows
+            | Self::InvalidTraceRows { .. }
             | Self::EmptyTraceColumns
             | Self::InvalidBlowupFactor { .. }
             | Self::InvalidMerkleTreeArity { .. }
@@ -272,6 +279,11 @@ pub(crate) fn validate_program_image_commitment_cache(
 ) -> Result<(), ProgramImageCommitmentCacheError> {
     if value.trace_row_count == 0 {
         return Err(ProgramImageCommitmentCacheError::EmptyTraceRows);
+    }
+    if !value.trace_row_count.is_power_of_two() {
+        return Err(ProgramImageCommitmentCacheError::InvalidTraceRows {
+            value: value.trace_row_count,
+        });
     }
     if value.trace_column_count == 0 {
         return Err(ProgramImageCommitmentCacheError::EmptyTraceColumns);
