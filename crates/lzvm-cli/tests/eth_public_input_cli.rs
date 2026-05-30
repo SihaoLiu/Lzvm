@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use lzvm_artifacts::eth_block::parse_eth_block_rlp;
 use lzvm_artifacts::eth_public_input::{
     eth_public_header_hash, parse_eth_public_block_prefix, parse_eth_public_header_prefix,
     parse_eth_public_transactions_prefix,
@@ -104,6 +105,109 @@ fn reports_invalid_public_input_header() {
     );
 }
 
+#[test]
+fn writes_public_block_rlp() {
+    let dir = temp_dir("write-block-rlp");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("public.bin");
+    let output_path = dir.join("block.rlp");
+    let mut input = sample_public_block_bytes_with_matching_roots();
+    input.extend_from_slice(b"tail");
+    write_bytes(&input_path, &input);
+    let parsed = parse_eth_public_block_prefix(&input).expect("block should parse");
+    let expected_block_rlp = parsed.block_rlp();
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-public-block-rlp",
+            input_path.to_str().expect("input path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    let written = fs::read(&output_path).expect("block RLP should be written");
+    let block = parse_eth_block_rlp(&written).expect("block RLP should parse");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    assert_eq!(written, expected_block_rlp);
+    assert_eq!(block.transactions.len(), 1);
+    assert_eq!(block.ommers.len(), 0);
+    assert_eq!(block.withdrawals.as_ref().map(Vec::len), Some(1));
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npublic_input={}\nbytes={}\noutput={}\n",
+            input_path.display(),
+            expected_block_rlp.len(),
+            output_path.display()
+        )
+    );
+}
+
+#[test]
+fn refuses_public_block_rlp_with_root_mismatch() {
+    let dir = temp_dir("write-block-rlp-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    let input_path = dir.join("public.bin");
+    let output_path = dir.join("block.rlp");
+    let mut input = sample_public_header_bytes();
+    input.extend_from_slice(&1_u64.to_le_bytes());
+    input.extend_from_slice(&eip1559_transaction_bytes());
+    input.extend_from_slice(&0_u64.to_le_bytes());
+    input.push(0);
+    write_bytes(&input_path, &input);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "eth",
+            "write-public-block-rlp",
+            input_path.to_str().expect("input path should be utf-8"),
+            output_path.to_str().expect("output path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    let output_exists = output_path.exists();
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert!(!output_exists);
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "eth public block rlp write failed: transactions_root mismatch\n"
+    );
+}
+
+fn sample_public_block_bytes_with_matching_roots() -> Vec<u8> {
+    let mut input = sample_public_header_bytes();
+    input.extend_from_slice(&1_u64.to_le_bytes());
+    input.extend_from_slice(&eip1559_transaction_bytes());
+    input.extend_from_slice(&0_u64.to_le_bytes());
+    input.push(1);
+    input.extend_from_slice(&1_u64.to_le_bytes());
+    input.extend_from_slice(&withdrawal_bytes());
+
+    let parsed = parse_eth_public_block_prefix(&input).expect("block should parse");
+    let transaction_root = parsed.transactions_root();
+    let ommers_hash = parsed.ommers_hash();
+    let withdrawal_root = parsed
+        .withdrawals_root()
+        .expect("withdrawals root should be present");
+    input[48..80].copy_from_slice(&ommers_hash);
+    input[156..188].copy_from_slice(&transaction_root);
+    input[237..269].copy_from_slice(&withdrawal_root);
+    input
+}
+
 fn sample_public_header_bytes() -> Vec<u8> {
     let mut input = Vec::new();
     push_bytes(&mut input, &[1; 32]);
@@ -176,6 +280,15 @@ fn eip1559_transaction_bytes() -> Vec<u8> {
     push_u256(&mut bytes, 123);
     bytes.extend_from_slice(&0_u64.to_le_bytes());
     push_bytes(&mut bytes, b"call-data");
+    bytes
+}
+
+fn withdrawal_bytes() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    push_uint_u64(&mut bytes, 7);
+    push_uint_u64(&mut bytes, 8);
+    push_bytes(&mut bytes, &[6; 20]);
+    push_uint_u64(&mut bytes, 9);
     bytes
 }
 

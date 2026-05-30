@@ -27,6 +27,18 @@ pub struct EthPublicBlockPrefix {
 }
 
 impl EthPublicBlockPrefix {
+    pub fn block_rlp(&self) -> Vec<u8> {
+        let mut fields = vec![
+            RlpItem::List(eth_public_header_rlp_items(&self.header)),
+            RlpItem::List(self.transactions.clone()),
+            RlpItem::List(self.ommers.clone()),
+        ];
+        if let Some(withdrawals) = &self.withdrawals {
+            fields.push(RlpItem::List(withdrawals.clone()));
+        }
+        encode_rlp(&RlpItem::List(fields))
+    }
+
     pub fn transactions_root(&self) -> [u8; 32] {
         transaction_trie_root(&self.transactions)
             .expect("ETH public input transactions should encode as valid transaction RLP")

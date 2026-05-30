@@ -1,4 +1,6 @@
-use lzvm_artifacts::eth_block::{decode_eth_header_rlp, eth_header_hash, eth_ommers_hash};
+use lzvm_artifacts::eth_block::{
+    decode_eth_header_rlp, eth_header_hash, eth_ommers_hash, parse_eth_block_rlp,
+};
 use lzvm_artifacts::eth_public_input::{
     eth_public_header_hash, eth_public_header_rlp_items, parse_eth_public_block_prefix,
     parse_eth_public_header_prefix, parse_eth_public_transactions_prefix,
@@ -150,6 +152,44 @@ fn parses_public_block_prefix_and_roots() {
     assert!(parsed.transactions_root_matches());
     assert!(parsed.ommers_hash_matches());
     assert!(parsed.withdrawals_root_matches());
+}
+
+#[test]
+fn public_block_prefix_writes_canonical_block_rlp() {
+    let expected_transaction = expected_eip1559_transaction();
+    let expected_ommer = RlpItem::List(expected_header_rlp_items());
+    let expected_withdrawal = expected_withdrawal();
+    let transaction_root = transaction_trie_root(std::slice::from_ref(&expected_transaction))
+        .expect("transaction root should build");
+    let ommers_hash = eth_ommers_hash(std::slice::from_ref(&expected_ommer));
+    let withdrawal_root = withdrawals_trie_root(std::slice::from_ref(&expected_withdrawal));
+    let header_bytes =
+        sample_public_header_bytes_with_roots(transaction_root, ommers_hash, withdrawal_root);
+    let mut input = header_bytes;
+    input.extend_from_slice(&1_u64.to_le_bytes());
+    input.extend_from_slice(&eip1559_transaction_bytes());
+    input.extend_from_slice(&1_u64.to_le_bytes());
+    input.extend_from_slice(&sample_public_header_bytes());
+    input.push(1);
+    input.extend_from_slice(&1_u64.to_le_bytes());
+    input.extend_from_slice(&withdrawal_bytes());
+
+    let parsed = parse_eth_public_block_prefix(&input).expect("public block should parse");
+    let block_rlp = parsed.block_rlp();
+    let block = parse_eth_block_rlp(&block_rlp).expect("block RLP should parse");
+
+    assert_eq!(block.header, eth_public_header_rlp_items(&parsed.header));
+    assert_eq!(block.transactions, vec![expected_transaction]);
+    assert_eq!(block.ommers, vec![expected_ommer]);
+    assert_eq!(block.withdrawals, Some(vec![expected_withdrawal]));
+    assert!(block.extra_body_fields.is_empty());
+    assert_eq!(
+        eth_header_hash(&block.header),
+        eth_public_header_hash(&parsed.header)
+    );
+    let decoded = decode_eth_header_rlp(&block.header).expect("RLP header should decode");
+    assert_eq!(decoded.number, 42);
+    assert_eq!(decoded.gas_used, 90);
 }
 
 fn expected_header_rlp_items() -> Vec<RlpItem> {

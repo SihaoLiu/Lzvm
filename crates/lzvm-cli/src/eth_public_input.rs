@@ -14,6 +14,17 @@ pub(crate) fn run_summary(args: &[&str], stdout: &mut dyn Write, stderr: &mut dy
     }
 }
 
+pub(crate) fn run_write_block_rlp(
+    args: &[&str],
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    match args {
+        [input_path, output_path] => write_block_rlp(input_path, output_path, stdout, stderr),
+        _ => write_block_rlp_usage(stderr),
+    }
+}
+
 fn summarize_public_input(input_path: &str, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     let bytes = match std::fs::read(input_path) {
         Ok(bytes) => bytes,
@@ -58,6 +69,76 @@ fn summarize_public_input(input_path: &str, stdout: &mut dyn Write, stderr: &mut
     let _ = writeln!(stdout, "block_hash={}", format_hash(&block_hash));
     write_header_summary(stdout, &parsed.header, &transactions, &block);
     0
+}
+
+fn write_block_rlp(
+    input_path: &str,
+    output_path: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let bytes = match std::fs::read(input_path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = writeln!(
+                stderr,
+                "eth public block rlp write failed: read input failed: {input_path}: {error}"
+            );
+            return 1;
+        }
+    };
+    let block = match parse_eth_public_block_prefix(&bytes) {
+        Ok(block) => block,
+        Err(error) => {
+            let _ = writeln!(stderr, "eth public block rlp write failed: {error}");
+            return 1;
+        }
+    };
+    if let Err(message) = validate_public_block_roots(&block) {
+        let _ = writeln!(stderr, "eth public block rlp write failed: {message}");
+        return 1;
+    }
+    let block_rlp = block.block_rlp();
+    let output = Path::new(output_path);
+    if let Some(parent) = output.parent() {
+        if !parent.as_os_str().is_empty() {
+            if let Err(error) = std::fs::create_dir_all(parent) {
+                let _ = writeln!(
+                    stderr,
+                    "eth public block rlp write failed: create output directory failed: {}: {error}",
+                    parent.display()
+                );
+                return 1;
+            }
+        }
+    }
+    if let Err(error) = std::fs::write(output, &block_rlp) {
+        let _ = writeln!(
+            stderr,
+            "eth public block rlp write failed: write output failed: {}: {error}",
+            output.display()
+        );
+        return 1;
+    }
+
+    let _ = writeln!(stdout, "status=ok");
+    let _ = writeln!(stdout, "public_input={}", Path::new(input_path).display());
+    let _ = writeln!(stdout, "bytes={}", block_rlp.len());
+    let _ = writeln!(stdout, "output={}", output.display());
+    0
+}
+
+fn validate_public_block_roots(block: &EthPublicBlockPrefix) -> Result<(), &'static str> {
+    if !block.transactions_root_matches() {
+        return Err("transactions_root mismatch");
+    }
+    if !block.ommers_hash_matches() {
+        return Err("ommers_hash mismatch");
+    }
+    if !block.withdrawals_root_matches() {
+        return Err("withdrawals_root mismatch");
+    }
+    Ok(())
 }
 
 fn write_header_summary(
@@ -170,6 +251,14 @@ fn write_header_summary(
 
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(stderr, "usage: lzvm eth public-input-summary <input>");
+    2
+}
+
+fn write_block_rlp_usage(stderr: &mut dyn Write) -> i32 {
+    let _ = writeln!(
+        stderr,
+        "usage: lzvm eth write-public-block-rlp <input> <out>"
+    );
     2
 }
 
