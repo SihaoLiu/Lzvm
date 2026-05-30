@@ -7,6 +7,7 @@ pub mod eth_block;
 pub mod eth_block_input;
 pub mod eth_block_input_segment;
 pub mod eth_block_public_values;
+pub mod eth_public_input;
 pub mod eth_trie;
 pub mod expression_info;
 pub mod expression_program;
