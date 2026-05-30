@@ -444,7 +444,7 @@ pub fn build_witness_contribution_proof_artifact_for_unit(
         public_values_hash,
         segments,
     };
-    if request.verify_outputs {
+    if request.verify_outputs || request.challenge_values_segment.is_some() {
         validate_contribution_proof_output(request.catalog, &proof, public_values)?;
     }
     Ok(Some(proof))
@@ -530,7 +530,7 @@ pub fn build_witness_contribution_proof_artifact_for_all_units(
         public_values_hash,
         segments,
     };
-    if request.verify_outputs {
+    if request.verify_outputs || request.challenge_values_segment.is_some() {
         validate_contribution_proof_output(request.catalog, &proof, public_values)?;
     }
     Ok(Some(proof))
