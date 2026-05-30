@@ -813,6 +813,72 @@ fn keeps_reserved_compressed_register_control_forms_visible() {
 }
 
 #[test]
+fn decodes_compressed_jump_and_branch_instructions() {
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0xa011),
+        }),
+        RiscvInstruction::Jal { rd: 0, offset: 4 }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0xbffd),
+        }),
+        RiscvInstruction::Jal { rd: 0, offset: -2 }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0xc011),
+        }),
+        RiscvInstruction::Branch {
+            kind: RiscvBranchKind::Beq,
+            rs1: 8,
+            rs2: 0,
+            offset: 4,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0xdc7d),
+        }),
+        RiscvInstruction::Branch {
+            kind: RiscvBranchKind::Beq,
+            rs1: 8,
+            rs2: 0,
+            offset: -2,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0xe391),
+        }),
+        RiscvInstruction::Branch {
+            kind: RiscvBranchKind::Bne,
+            rs1: 15,
+            rs2: 0,
+            offset: 4,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0xfffd),
+        }),
+        RiscvInstruction::Branch {
+            kind: RiscvBranchKind::Bne,
+            rs1: 15,
+            rs2: 0,
+            offset: -2,
+        }
+    );
+}
+
+#[test]
 fn keeps_unknown_riscv_words_visible() {
     assert_eq!(
         decode_riscv_instruction(0xffff_ffff),

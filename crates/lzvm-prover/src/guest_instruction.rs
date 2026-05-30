@@ -334,6 +334,9 @@ fn decode_compressed_instruction(halfword: u16) -> RiscvInstruction {
         (0, 1) => decode_compressed_addi(halfword),
         (2, 1) => decode_compressed_li(halfword),
         (3, 1) => decode_compressed_lui_or_addi16sp(halfword),
+        (5, 1) => decode_compressed_jump(halfword),
+        (6, 1) => decode_compressed_branch(RiscvBranchKind::Beq, halfword),
+        (7, 1) => decode_compressed_branch(RiscvBranchKind::Bne, halfword),
         (3, 2) => decode_compressed_ldsp(halfword),
         (4, 2) => decode_compressed_register_control(halfword),
         (7, 2) => decode_compressed_sdsp(halfword),
@@ -405,6 +408,22 @@ fn decode_compressed_lui_or_addi16sp(halfword: u16) -> RiscvInstruction {
     RiscvInstruction::Lui {
         rd,
         immediate: compressed_lui_immediate(halfword),
+    }
+}
+
+fn decode_compressed_jump(halfword: u16) -> RiscvInstruction {
+    RiscvInstruction::Jal {
+        rd: 0,
+        offset: compressed_jump_offset(halfword),
+    }
+}
+
+fn decode_compressed_branch(kind: RiscvBranchKind, halfword: u16) -> RiscvInstruction {
+    RiscvInstruction::Branch {
+        kind,
+        rs1: compressed_register(halfword >> 7),
+        rs2: 0,
+        offset: compressed_branch_offset(halfword),
     }
 }
 
@@ -504,6 +523,36 @@ fn compressed_sdsp_offset(halfword: u16) -> i64 {
     let bits_5_3 = (halfword >> 10) & 0x7;
     let bits_8_6 = (halfword >> 7) & 0x7;
     i64::from((bits_5_3 << 3) | (bits_8_6 << 6))
+}
+
+fn compressed_jump_offset(halfword: u16) -> i64 {
+    let bit_11 = (halfword >> 12) & 1;
+    let bit_4 = (halfword >> 11) & 1;
+    let bits_9_8 = (halfword >> 9) & 0x3;
+    let bit_10 = (halfword >> 8) & 1;
+    let bit_6 = (halfword >> 7) & 1;
+    let bit_7 = (halfword >> 6) & 1;
+    let bits_3_1 = (halfword >> 3) & 0x7;
+    let bit_5 = (halfword >> 2) & 1;
+    let value = (bits_3_1 << 1)
+        | (bit_4 << 4)
+        | (bit_5 << 5)
+        | (bit_6 << 6)
+        | (bit_7 << 7)
+        | (bits_9_8 << 8)
+        | (bit_10 << 10)
+        | (bit_11 << 11);
+    sign_extend(u64::from(value), 12)
+}
+
+fn compressed_branch_offset(halfword: u16) -> i64 {
+    let bit_8 = (halfword >> 12) & 1;
+    let bits_4_3 = (halfword >> 10) & 0x3;
+    let bits_7_6 = (halfword >> 5) & 0x3;
+    let bits_2_1 = (halfword >> 3) & 0x3;
+    let bit_5 = (halfword >> 2) & 1;
+    let value = (bits_2_1 << 1) | (bits_4_3 << 3) | (bit_5 << 5) | (bits_7_6 << 6) | (bit_8 << 8);
+    sign_extend(u64::from(value), 9)
 }
 
 fn decode_fence(word: u32) -> RiscvInstruction {

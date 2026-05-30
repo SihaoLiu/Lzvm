@@ -207,6 +207,45 @@ fn compressed_ebreak() -> u16 {
     0x9002
 }
 
+fn compressed_jump(offset: i16) -> u16 {
+    assert!((-2048..=2046).contains(&offset));
+    assert_eq!(offset & 1, 0);
+    let offset = offset as u16;
+    (0b101 << 13)
+        | 0b01
+        | (((offset >> 11) & 1) << 12)
+        | (((offset >> 4) & 1) << 11)
+        | (((offset >> 8) & 0x3) << 9)
+        | (((offset >> 10) & 1) << 8)
+        | (((offset >> 6) & 1) << 7)
+        | (((offset >> 7) & 1) << 6)
+        | (((offset >> 1) & 0x7) << 3)
+        | (((offset >> 5) & 1) << 2)
+}
+
+fn compressed_beqz(rs1: u8, offset: i16) -> u16 {
+    compressed_branch(0b110, rs1, offset)
+}
+
+fn compressed_bnez(rs1: u8, offset: i16) -> u16 {
+    compressed_branch(0b111, rs1, offset)
+}
+
+fn compressed_branch(funct3: u16, rs1: u8, offset: i16) -> u16 {
+    assert!((8..=15).contains(&rs1));
+    assert!((-256..=254).contains(&offset));
+    assert_eq!(offset & 1, 0);
+    let offset = offset as u16;
+    (funct3 << 13)
+        | 0b01
+        | (((offset >> 8) & 1) << 12)
+        | (((offset >> 3) & 0x3) << 10)
+        | (u16::from(rs1 - 8) << 7)
+        | (((offset >> 6) & 0x3) << 5)
+        | (((offset >> 1) & 0x3) << 3)
+        | (((offset >> 5) & 1) << 2)
+}
+
 fn push_halfword(code: &mut Vec<u8>, halfword: u16) {
     code.extend_from_slice(&halfword.to_le_bytes());
 }
@@ -349,6 +388,33 @@ fn runs_compressed_register_control_instructions_until_ecall() {
     assert_eq!(state.pc(), ENTRY + 8);
     assert_eq!(state.register(1), Some(ENTRY + 6));
     assert_eq!(state.register(6), Some(21));
+}
+
+#[test]
+fn runs_compressed_jump_and_branch_instructions_until_ecall() {
+    let mut code = Vec::new();
+    push_halfword(&mut code, compressed_beqz(8, 4));
+    push_halfword(&mut code, compressed_addi(6, 1));
+    push_halfword(&mut code, compressed_bnez(15, 4));
+    push_halfword(&mut code, compressed_addi(6, 2));
+    push_halfword(&mut code, compressed_jump(4));
+    push_halfword(&mut code, compressed_addi(6, 4));
+    push_word(&mut code, 0x0000_0073);
+    let mut memory = guest_machine_memory_with_bytes(&code);
+    let mut state = GuestMachineState::new(memory.entry_address());
+    state.set_register(15, 1).expect("register should set");
+
+    let report = run_guest_machine(&mut memory, &mut state, 8).expect("guest should halt");
+
+    assert_eq!(report.executed_instructions, 3);
+    assert_eq!(
+        report.halt,
+        GuestMachineHalt::Ecall {
+            address: ENTRY + 12
+        }
+    );
+    assert_eq!(state.pc(), ENTRY + 12);
+    assert_eq!(state.register(6), Some(0));
 }
 
 #[test]
