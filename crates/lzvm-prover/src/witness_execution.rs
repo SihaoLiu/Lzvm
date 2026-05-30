@@ -29,9 +29,10 @@ use crate::witness_layout::{
     derive_witness_trace_layout, WitnessTraceLayout, WitnessTraceLayoutError,
 };
 use crate::witness_loader::{
-    load_witness_library, TraceBytesBackend, WitnessBackend, WitnessLoadError,
+    load_witness_library, TraceBytesBackend, WitnessBackend, WitnessComputeContext,
+    WitnessLoadError,
 };
-use crate::witness_runner::{run_witness_trace, WitnessTraceRunError};
+use crate::witness_runner::{run_witness_trace_with_context, WitnessTraceRunError};
 use crate::witness_trace::WitnessTraceBuffer;
 use crate::{ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassRequest};
 
@@ -528,7 +529,14 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
     let input = read_witness_input(&plan.run_plan.pass)?;
     let input_byte_count = input.len();
     let layout = derive_witness_trace_layout(unit)?;
-    let trace = run_witness_trace(backend, layout.request(input))?;
+    let trace = run_witness_trace_with_context(
+        backend,
+        WitnessComputeContext {
+            guest_image: Some(&plan.inputs.guest_image),
+            guest_image_info: Some(&plan.guest_image_info),
+        },
+        layout.request(input),
+    )?;
     let execution_unit =
         plan.units
             .get(unit_index)

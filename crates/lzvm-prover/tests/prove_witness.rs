@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -79,7 +80,10 @@ use lzvm_prover::pcs_transcript::{
 };
 use lzvm_prover::witness_commitment::commit_witness_trace_stages;
 use lzvm_prover::witness_layout::derive_witness_trace_layout;
-use lzvm_prover::witness_loader::{load_witness_library, TraceBytesBackend};
+use lzvm_prover::witness_loader::{
+    load_witness_library, TraceBytesBackend, WitnessBackend, WitnessCallError,
+    WitnessComputeContext, WitnessTraceBuffers, WitnessTraceOutput,
+};
 use lzvm_prover::witness_runner::run_witness_trace;
 use lzvm_prover::{
     build_pcs_evaluation_segment, build_pcs_fri_opening_segment,
@@ -860,6 +864,54 @@ int lzvm_witness_compute(const LzvmWitnessCall *call, LzvmWitnessResult *result)
 "#
 }
 
+#[derive(Default)]
+struct ContextRecordingBackend {
+    observed: RefCell<Option<ObservedWitnessContext>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ObservedWitnessContext {
+    guest_image: PathBuf,
+    guest_image_byte_len: u64,
+    guest_image_machine: u16,
+    guest_image_entry: u64,
+    input: Vec<u8>,
+}
+
+impl WitnessBackend for ContextRecordingBackend {
+    fn compute(
+        &self,
+        buffers: &mut WitnessTraceBuffers,
+    ) -> Result<WitnessTraceOutput, WitnessCallError> {
+        self.compute_with_context(WitnessComputeContext::empty(), buffers)
+    }
+
+    fn compute_with_context(
+        &self,
+        context: WitnessComputeContext<'_>,
+        buffers: &mut WitnessTraceBuffers,
+    ) -> Result<WitnessTraceOutput, WitnessCallError> {
+        let guest_image = context
+            .guest_image
+            .expect("guest image path should be available");
+        let guest_image_info = context
+            .guest_image_info
+            .expect("guest image metadata should be available");
+        self.observed.replace(Some(ObservedWitnessContext {
+            guest_image: guest_image.to_path_buf(),
+            guest_image_byte_len: guest_image_info.byte_len,
+            guest_image_machine: guest_image_info.machine,
+            guest_image_entry: guest_image_info.entry,
+            input: buffers.input().to_vec(),
+        }));
+
+        let trace_bytes = sample_trace_bytes(buffers.input().first().copied().unwrap_or(0).into());
+        let produced_len = trace_bytes.len();
+        buffers.output_mut()[..produced_len].copy_from_slice(&trace_bytes);
+        Ok(WitnessTraceOutput { produced_len })
+    }
+}
+
 #[test]
 fn runs_witness_and_commits_stages_from_execution_plan() {
     let dir = temp_dir("commitments");
@@ -908,6 +960,58 @@ fn runs_witness_and_commits_stages_from_execution_plan() {
     assert_eq!(output.trace_row_count(), 16);
     assert_eq!(output.trace_column_count(), 5);
     assert_eq!(output.stage_commitments(), &expected);
+}
+
+#[test]
+fn witness_backend_receives_guest_image_context_from_execution_plan() {
+    let dir = temp_dir("backend-context");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let guest_image_bytes = sample_guest_image();
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let catalog = sample_catalog(sample_unit());
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image: guest_image.clone(),
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let backend = ContextRecordingBackend::default();
+
+    let output = run_prove_witness_commitments_with_trace_backend(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        &backend,
+    )
+    .expect("witness commitments should run")
+    .into_commitments();
+    let observed = backend
+        .observed
+        .borrow()
+        .clone()
+        .expect("backend should be called");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(output.input_byte_count(), 1);
+    assert_eq!(
+        observed,
+        ObservedWitnessContext {
+            guest_image,
+            guest_image_byte_len: guest_image_bytes.len() as u64,
+            guest_image_machine: 243,
+            guest_image_entry: 0x8000_0000,
+            input: vec![7],
+        }
+    );
 }
 
 #[test]

@@ -3,6 +3,7 @@ use std::os::raw::c_int;
 use std::path::{Path, PathBuf};
 
 use libloading::Library;
+use lzvm_artifacts::guest_image::GuestImageInfo;
 
 pub const WITNESS_ABI_VERSION: u32 = 1;
 pub const WITNESS_STATUS_OK: c_int = 0;
@@ -70,11 +71,40 @@ pub struct WitnessTraceOutput {
     pub produced_len: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WitnessComputeContext<'a> {
+    pub guest_image: Option<&'a Path>,
+    pub guest_image_info: Option<&'a GuestImageInfo>,
+}
+
+impl WitnessComputeContext<'_> {
+    pub fn empty() -> Self {
+        Self {
+            guest_image: None,
+            guest_image_info: None,
+        }
+    }
+}
+
+impl Default for WitnessComputeContext<'_> {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
 pub trait WitnessBackend {
     fn compute(
         &self,
         buffers: &mut WitnessTraceBuffers,
     ) -> Result<WitnessTraceOutput, WitnessCallError>;
+
+    fn compute_with_context(
+        &self,
+        _context: WitnessComputeContext<'_>,
+        buffers: &mut WitnessTraceBuffers,
+    ) -> Result<WitnessTraceOutput, WitnessCallError> {
+        self.compute(buffers)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

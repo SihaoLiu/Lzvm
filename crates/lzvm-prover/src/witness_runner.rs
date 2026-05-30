@@ -1,6 +1,8 @@
 use std::fmt;
 
-use crate::witness_loader::{WitnessBackend, WitnessCallError, WitnessTraceBuffers};
+use crate::witness_loader::{
+    WitnessBackend, WitnessCallError, WitnessComputeContext, WitnessTraceBuffers,
+};
 use crate::witness_trace::{parse_witness_trace, WitnessTraceBuffer, WitnessTraceError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,9 +55,17 @@ pub fn run_witness_trace(
     backend: &(impl WitnessBackend + ?Sized),
     request: WitnessTraceRequest,
 ) -> Result<WitnessTraceBuffer, WitnessTraceRunError> {
+    run_witness_trace_with_context(backend, WitnessComputeContext::empty(), request)
+}
+
+pub fn run_witness_trace_with_context(
+    backend: &(impl WitnessBackend + ?Sized),
+    context: WitnessComputeContext<'_>,
+    request: WitnessTraceRequest,
+) -> Result<WitnessTraceBuffer, WitnessTraceRunError> {
     let output_len = trace_output_byte_len(request.rows, request.columns)?;
     let mut buffers = WitnessTraceBuffers::new(request.input, output_len)?;
-    let output = backend.compute(&mut buffers)?;
+    let output = backend.compute_with_context(context, &mut buffers)?;
     Ok(parse_witness_trace(
         &buffers.output()[..output.produced_len],
         request.rows,
