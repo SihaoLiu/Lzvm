@@ -1,21 +1,11 @@
 use std::io::Write;
 use std::path::PathBuf;
 
-use lzvm_artifacts::eth_block_input::{
-    eth_block_input_bytes_digest, eth_block_input_extra_field_counts,
-    eth_block_input_receipt_kind_counts, eth_block_input_transaction_kind_counts,
-    eth_block_input_withdrawal_count, parse_eth_block_input,
-};
-use lzvm_artifacts::eth_block_input_segment::{
-    encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
-};
-use lzvm_artifacts::eth_block_public_values::validate_eth_block_public_values;
 use lzvm_artifacts::program_image::read_program_image_commitment_cache_file;
 use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, PROGRAM_IMAGE_CACHE_SEGMENT_ID,
 };
 use lzvm_artifacts::proof::read_proof_artifact_file;
-use lzvm_artifacts::public_values::read_public_values_file;
 use lzvm_prover::contribution::{
     derive_global_challenge_from_embedded_contribution_proofs, derive_global_challenge_from_files,
     ContributionChallengeReport,
@@ -24,6 +14,9 @@ use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
 use lzvm_prover::setup_preflight::validate_setup_preflight_from_files;
 
 use crate::{eth_block_output, program_image_cache, prove_plan};
+
+mod eth_block_input;
+use eth_block_input::{verify_eth_block_input_binding, verify_eth_public_input_binding};
 
 pub(super) fn verify_preflight(
     proof_bin: &str,
@@ -273,6 +266,7 @@ pub(super) fn verify_setup_preflight(
             proof_bin,
             public_values_path,
             eth_block_input: None,
+            eth_public_input: None,
             program_image_cache: None,
         },
         stdout,
@@ -285,6 +279,7 @@ struct ParsedVerifyProofArgs<'a> {
     proof_bin: &'a str,
     public_values_path: &'a str,
     eth_block_input: Option<&'a str>,
+    eth_public_input: Option<&'a str>,
     program_image_cache: Option<&'a str>,
 }
 
@@ -292,6 +287,7 @@ fn parse_verify_proof_args<'a>(
     args: &'a [&'a str],
 ) -> Result<ParsedVerifyProofArgs<'a>, VerifyProofArgError> {
     let mut eth_block_input = None;
+    let mut eth_public_input = None;
     let mut program_image_cache = None;
     let mut positionals = Vec::with_capacity(args.len());
     let mut index = 0;
@@ -329,6 +325,22 @@ fn parse_verify_proof_args<'a>(
                     ));
                 }
             }
+            "--eth-public-input" => {
+                index += 1;
+                let value = args.get(index).ok_or_else(|| {
+                    VerifyProofArgError::Invalid("missing --eth-public-input value".to_owned())
+                })?;
+                if value.starts_with("--") {
+                    return Err(VerifyProofArgError::Invalid(
+                        "missing --eth-public-input value".to_owned(),
+                    ));
+                }
+                if eth_public_input.replace(*value).is_some() {
+                    return Err(VerifyProofArgError::Invalid(
+                        "duplicate --eth-public-input option".to_owned(),
+                    ));
+                }
+            }
             value if value.starts_with("--") => {
                 return Err(VerifyProofArgError::Invalid(format!(
                     "unknown option {value}"
@@ -341,15 +353,22 @@ fn parse_verify_proof_args<'a>(
     if positionals.len() != 3 {
         return Err(VerifyProofArgError::Usage);
     }
+    if eth_block_input.is_some() && eth_public_input.is_some() {
+        return Err(VerifyProofArgError::Invalid(
+            "cannot combine --eth-block-input and --eth-public-input".to_owned(),
+        ));
+    }
     Ok(ParsedVerifyProofArgs {
         setup_dir: positionals[0],
         proof_bin: positionals[1],
         public_values_path: positionals[2],
         eth_block_input,
+        eth_public_input,
         program_image_cache,
     })
 }
 
+#[derive(Debug)]
 enum VerifyProofArgError {
     Usage,
     Invalid(String),
@@ -371,6 +390,7 @@ pub(super) fn verify_proof(args: &[&str], stdout: &mut dyn Write, stderr: &mut d
             proof_bin: parsed.proof_bin,
             public_values_path: parsed.public_values_path,
             eth_block_input: parsed.eth_block_input,
+            eth_public_input: parsed.eth_public_input,
             program_image_cache: parsed.program_image_cache,
         },
         stdout,
@@ -473,42 +493,8 @@ struct VerifySetupValidationCommand<'a> {
     proof_bin: &'a str,
     public_values_path: &'a str,
     eth_block_input: Option<&'a str>,
+    eth_public_input: Option<&'a str>,
     program_image_cache: Option<&'a str>,
-}
-
-struct EthBlockInputBinding {
-    hash: [u8; 32],
-    bytes: usize,
-    block_rlp_bytes: usize,
-    extra_header_field_count: usize,
-    extra_body_field_count: usize,
-    block_hash: [u8; 32],
-    parent_hash: [u8; 32],
-    ommers_hash: [u8; 32],
-    beneficiary: [u8; 20],
-    state_root: [u8; 32],
-    receipts_root: [u8; 32],
-    logs_bloom: [u8; 256],
-    difficulty: [u8; 32],
-    block_number: u64,
-    timestamp: u64,
-    extra_data: Vec<u8>,
-    gas_limit: u64,
-    gas_used: u64,
-    base_fee_per_gas: Option<[u8; 32]>,
-    mix_hash: [u8; 32],
-    nonce: [u8; 8],
-    transactions_root: [u8; 32],
-    transaction_preimage_count: usize,
-    legacy_transaction_count: usize,
-    typed_transaction_count: usize,
-    receipts_rlp_bytes: Option<usize>,
-    receipt_preimage_count: Option<usize>,
-    legacy_receipt_count: Option<usize>,
-    typed_receipt_count: Option<usize>,
-    withdrawal_root: Option<[u8; 32]>,
-    withdrawal_count: Option<usize>,
-    withdrawal_preimage_count: Option<usize>,
 }
 
 fn verify_setup_validation(
@@ -516,16 +502,38 @@ fn verify_setup_validation(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    let eth_block_input_binding = if let Some(path) = command.eth_block_input {
-        match verify_eth_block_input_binding(command.proof_bin, command.public_values_path, path) {
+    let eth_block_input_binding = match (command.eth_block_input, command.eth_public_input) {
+        (Some(path), None) => match verify_eth_block_input_binding(
+            command.proof_bin,
+            command.public_values_path,
+            path,
+        ) {
             Ok(binding) => Some(binding),
             Err(message) => {
                 let _ = writeln!(stderr, "{} failed: {message}", command.role);
                 return 1;
             }
+        },
+        (None, Some(path)) => match verify_eth_public_input_binding(
+            command.proof_bin,
+            command.public_values_path,
+            path,
+        ) {
+            Ok(binding) => Some(binding),
+            Err(message) => {
+                let _ = writeln!(stderr, "{} failed: {message}", command.role);
+                return 1;
+            }
+        },
+        (None, None) => None,
+        (Some(_), Some(_)) => {
+            let _ = writeln!(
+                stderr,
+                "{} failed: cannot combine --eth-block-input and --eth-public-input",
+                command.role
+            );
+            return 1;
         }
-    } else {
-        None
     };
     let program_image_cache_matched = if let Some(path) = command.program_image_cache {
         match verify_program_image_cache_binding(command.proof_bin, path) {
@@ -957,91 +965,6 @@ fn verify_program_image_cache_binding(proof_bin: &str, cache_path: &str) -> Resu
     Ok(())
 }
 
-fn verify_eth_block_input_binding(
-    proof_bin: &str,
-    public_values_path: &str,
-    input_path: &str,
-) -> Result<EthBlockInputBinding, String> {
-    let proof = read_proof_artifact_file(proof_bin)
-        .map_err(|error| format!("read proof artifact failed: {proof_bin}: {error}"))?;
-    let input_bytes = std::fs::read(input_path)
-        .map_err(|error| format!("read ETH block input failed: {input_path}: {error}"))?;
-    let input_hash = eth_block_input_bytes_digest(&input_bytes);
-    let input = parse_eth_block_input(&input_bytes)
-        .map_err(|error| format!("ETH block input failed: {input_path}: {error}"))?;
-    let transaction_preimage_count = input.transactions.hash_preimages.len();
-    let (legacy_transaction_count, typed_transaction_count) =
-        eth_block_input_transaction_kind_counts(&input)
-            .map_err(|error| format!("ETH block input transaction count failed: {error}"))?;
-    let (extra_header_field_count, extra_body_field_count) =
-        eth_block_input_extra_field_counts(&input)
-            .map_err(|error| format!("ETH block input extra field count failed: {error}"))?;
-    let receipt_preimage_count = input
-        .receipts
-        .as_ref()
-        .map(|receipts| receipts.hash_preimages.len());
-    let receipts_rlp_bytes = input
-        .receipts_rlp
-        .as_ref()
-        .map(|receipts_rlp| receipts_rlp.len());
-    let receipt_kind_counts = eth_block_input_receipt_kind_counts(&input)
-        .map_err(|error| format!("ETH block input receipt count failed: {error}"))?;
-    let withdrawal_count = eth_block_input_withdrawal_count(&input)
-        .map_err(|error| format!("ETH block input withdrawal count failed: {error}"))?;
-    let withdrawal_root = input.withdrawals_root;
-    let withdrawal_preimage_count = input
-        .withdrawals
-        .as_ref()
-        .map(|withdrawals| withdrawals.hash_preimages.len());
-    let expected = encode_eth_block_input_segment(&input)
-        .map_err(|error| format!("encode ETH block input segment failed: {error}"))?;
-    let segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == ETH_BLOCK_INPUT_SEGMENT_ID)
-        .ok_or_else(|| "missing ETH block input proof segment".to_owned())?;
-    if segment.data != expected {
-        return Err("ETH block input proof segment mismatch".to_owned());
-    }
-    let public_values = read_public_values_file(public_values_path)
-        .map_err(|error| format!("read public-values failed: {public_values_path}: {error}"))?;
-    validate_eth_block_public_values(&input, &public_values).map_err(|error| error.to_string())?;
-    Ok(EthBlockInputBinding {
-        hash: input_hash,
-        bytes: input_bytes.len(),
-        block_rlp_bytes: input.block_rlp.len(),
-        extra_header_field_count,
-        extra_body_field_count,
-        block_hash: input.block_hash,
-        parent_hash: input.parent_hash,
-        ommers_hash: input.ommers_hash,
-        beneficiary: input.beneficiary,
-        state_root: input.state_root,
-        receipts_root: input.receipts_root,
-        logs_bloom: input.logs_bloom,
-        difficulty: input.difficulty,
-        block_number: input.block_number,
-        timestamp: input.timestamp,
-        extra_data: input.extra_data,
-        gas_limit: input.gas_limit,
-        gas_used: input.gas_used,
-        base_fee_per_gas: input.base_fee_per_gas,
-        mix_hash: input.mix_hash,
-        nonce: input.nonce,
-        transactions_root: input.transactions_root,
-        transaction_preimage_count,
-        legacy_transaction_count,
-        typed_transaction_count,
-        receipts_rlp_bytes,
-        receipt_preimage_count,
-        legacy_receipt_count: receipt_kind_counts.map(|(legacy_count, _)| legacy_count),
-        typed_receipt_count: receipt_kind_counts.map(|(_, typed_count)| typed_count),
-        withdrawal_root,
-        withdrawal_count,
-        withdrawal_preimage_count,
-    })
-}
-
 fn write_eth_transaction_preimage_summary(
     stdout: &mut dyn Write,
     transaction_preimage_count: usize,
@@ -1225,7 +1148,7 @@ pub(super) fn write_verify_setup_preflight_usage(stderr: &mut dyn Write) -> i32 
 fn write_verify_proof_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm verify proof [--eth-block-input <block-input>] [--program-image-cache <cache-bin>] <setup-dir> <proof-bin> <public-values>"
+        "usage: lzvm verify proof [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--program-image-cache <cache-bin>] <setup-dir> <proof-bin> <public-values>"
     );
     2
 }
@@ -1245,3 +1168,6 @@ pub(super) fn write_verify_contribution_set_usage(stderr: &mut dyn Write) -> i32
     );
     2
 }
+
+#[cfg(test)]
+mod tests;

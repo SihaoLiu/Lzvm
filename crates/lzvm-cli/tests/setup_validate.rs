@@ -14531,7 +14531,7 @@ fn reports_usage_for_missing_verify_proof_inputs() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm verify proof [--eth-block-input <block-input>] [--program-image-cache <cache-bin>] <setup-dir> <proof-bin> <public-values>\n"
+        "usage: lzvm verify proof [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--program-image-cache <cache-bin>] <setup-dir> <proof-bin> <public-values>\n"
     );
 }
 
@@ -14584,6 +14584,33 @@ fn verify_proof_rejects_missing_eth_block_input_value_before_next_option() {
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
         "verify proof failed: missing --eth-block-input value\n"
+    );
+}
+
+#[test]
+fn verify_proof_rejects_missing_eth_public_input_value_before_next_option() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "proof",
+            "--eth-public-input",
+            "--program-image-cache",
+            "cache.bin",
+            "setup",
+            "proof.bin",
+            "public.bin",
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify proof failed: missing --eth-public-input value\n"
     );
 }
 
