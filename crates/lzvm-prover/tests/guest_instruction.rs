@@ -78,6 +78,19 @@ fn csrrci(rd: u8, csr: u16, immediate: u8) -> u32 {
     csr_imm(rd, csr, 7, immediate)
 }
 
+fn read_only_csrs() -> [(u16, RiscvCsr); 8] {
+    [
+        (0x0c00, RiscvCsr::Cycle),
+        (0x0c01, RiscvCsr::Time),
+        (0x0c02, RiscvCsr::Instret),
+        (0x0301, RiscvCsr::Misa),
+        (0x0f11, RiscvCsr::Mvendorid),
+        (0x0f12, RiscvCsr::Marchid),
+        (0x0f13, RiscvCsr::Mimpid),
+        (0x0f14, RiscvCsr::Mhartid),
+    ]
+}
+
 #[derive(Debug, Clone, Copy)]
 struct ProgramHeaderFixture {
     kind: u32,
@@ -406,18 +419,7 @@ fn decodes_common_riscv_instruction_formats() {
 
 #[test]
 fn decodes_read_only_csr_reads() {
-    let cases = [
-        (0x0c00, RiscvCsr::Cycle),
-        (0x0c01, RiscvCsr::Time),
-        (0x0c02, RiscvCsr::Instret),
-        (0x0301, RiscvCsr::Misa),
-        (0x0f11, RiscvCsr::Mvendorid),
-        (0x0f12, RiscvCsr::Marchid),
-        (0x0f13, RiscvCsr::Mimpid),
-        (0x0f14, RiscvCsr::Mhartid),
-    ];
-
-    for (csr_number, csr) in cases {
+    for (csr_number, csr) in read_only_csrs() {
         assert_eq!(
             decode_riscv_instruction(csrrs(10, csr_number, 0)),
             RiscvInstruction::CsrRead { csr, rd: 10 }
@@ -427,18 +429,7 @@ fn decodes_read_only_csr_reads() {
 
 #[test]
 fn decodes_register_clear_csr_reads_without_write_source() {
-    let cases = [
-        (0x0c00, RiscvCsr::Cycle),
-        (0x0c01, RiscvCsr::Time),
-        (0x0c02, RiscvCsr::Instret),
-        (0x0301, RiscvCsr::Misa),
-        (0x0f11, RiscvCsr::Mvendorid),
-        (0x0f12, RiscvCsr::Marchid),
-        (0x0f13, RiscvCsr::Mimpid),
-        (0x0f14, RiscvCsr::Mhartid),
-    ];
-
-    for (csr_number, csr) in cases {
+    for (csr_number, csr) in read_only_csrs() {
         assert_eq!(
             decode_riscv_instruction(csrrc(10, csr_number, 0)),
             RiscvInstruction::CsrRead { csr, rd: 10 }
@@ -448,22 +439,17 @@ fn decodes_register_clear_csr_reads_without_write_source() {
 
 #[test]
 fn decodes_immediate_csr_reads_without_write_mask() {
-    let cases = [
-        (0x0c00, RiscvCsr::Cycle),
-        (0x0c01, RiscvCsr::Time),
-        (0x0c02, RiscvCsr::Instret),
-        (0x0301, RiscvCsr::Misa),
-        (0x0f11, RiscvCsr::Mvendorid),
-        (0x0f12, RiscvCsr::Marchid),
-        (0x0f13, RiscvCsr::Mimpid),
-        (0x0f14, RiscvCsr::Mhartid),
-    ];
-
-    for (csr_number, csr) in cases {
-        for word in [csrrsi(10, csr_number, 0), csrrci(10, csr_number, 0)] {
+    for (csr_number, csr) in read_only_csrs() {
+        for word in [
+            csrrsi(10, csr_number, 0),
+            csrrci(10, csr_number, 0),
+            csrrsi(0, csr_number, 0),
+            csrrci(0, csr_number, 0),
+        ] {
+            let rd = ((word >> 7) & 0x1f) as u8;
             assert_eq!(
                 decode_riscv_instruction(word),
-                RiscvInstruction::CsrRead { csr, rd: 10 }
+                RiscvInstruction::CsrRead { csr, rd }
             );
         }
     }
