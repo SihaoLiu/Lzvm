@@ -13353,6 +13353,85 @@ fn rejects_verify_contribution_with_unexpected_segment() {
 }
 
 #[test]
+fn rejects_verify_contribution_with_irrelevant_setup_segment() {
+    let dir = temp_dir("verify-contribution-irrelevant-setup-segment");
+    let _ = fs::remove_dir_all(&dir);
+    write_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should parse");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = sample_public_values(setup_hash);
+
+    let entries = sample_contribution_entries(
+        catalog
+            .layout
+            .global_info
+            .lattice_size
+            .expect("lattice size should exist") as usize,
+    );
+    let mut proof = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            build_contribution_segment(&entries)
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            ProofSegment {
+                id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+                data: vec![1],
+            },
+        ],
+    };
+    let public_fields =
+        public_values_as_fields(&public_values).expect("public values should flatten");
+    let expected_challenge = derive_global_challenge_from_proof_segments(
+        &catalog.layout.global_info,
+        &public_fields,
+        &[],
+        &proof.segments,
+    )
+    .expect("challenge should derive");
+    proof.segments.push(sample_challenge_values_segment(
+        expected_challenge.to_u64s(),
+    ));
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "contribution",
+            dir.to_str().expect("setup path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        format!(
+            "verify contribution failed: unexpected contribution proof segment id {PCS_MATERIAL_MANIFEST_SEGMENT_ID}\n"
+        )
+    );
+}
+
+#[test]
 fn verifies_contribution_reports_packed_proof_value_fields() {
     let dir = temp_dir("verify-contribution-proof-values");
     let _ = fs::remove_dir_all(&dir);
