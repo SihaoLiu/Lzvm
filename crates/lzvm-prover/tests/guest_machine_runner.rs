@@ -95,6 +95,17 @@ fn compressed_addi(rd: u8, immediate: i8) -> u16 {
     0b01 | (((immediate >> 5) & 1) << 12) | (u16::from(rd) << 7) | ((immediate & 0x1f) << 2)
 }
 
+fn compressed_li(rd: u8, immediate: i8) -> u16 {
+    assert!(rd < 32);
+    assert!((-32..=31).contains(&immediate));
+    let immediate = immediate as i16 as u16;
+    (0b010 << 13)
+        | 0b01
+        | (((immediate >> 5) & 1) << 12)
+        | (u16::from(rd) << 7)
+        | ((immediate & 0x1f) << 2)
+}
+
 fn push_halfword(code: &mut Vec<u8>, halfword: u16) {
     code.extend_from_slice(&halfword.to_le_bytes());
 }
@@ -139,6 +150,23 @@ fn runs_compressed_addi_instructions_until_ecall() {
     assert_eq!(report.halt, GuestMachineHalt::Ecall { address: ENTRY + 6 });
     assert_eq!(state.pc(), ENTRY + 6);
     assert_eq!(state.register(1), Some(6));
+}
+
+#[test]
+fn runs_compressed_li_instructions_until_ecall() {
+    let mut code = Vec::new();
+    push_halfword(&mut code, compressed_li(3, 7));
+    push_halfword(&mut code, compressed_li(3, -1));
+    push_word(&mut code, 0x0000_0073);
+    let mut memory = guest_machine_memory_with_bytes(&code);
+    let mut state = GuestMachineState::new(memory.entry_address());
+
+    let report = run_guest_machine(&mut memory, &mut state, 8).expect("guest should halt");
+
+    assert_eq!(report.executed_instructions, 2);
+    assert_eq!(report.halt, GuestMachineHalt::Ecall { address: ENTRY + 4 });
+    assert_eq!(state.pc(), ENTRY + 4);
+    assert_eq!(state.register(3), Some(u64::MAX));
 }
 
 #[test]

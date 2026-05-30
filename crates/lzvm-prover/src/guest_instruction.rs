@@ -330,6 +330,7 @@ fn decode_compressed_instruction(halfword: u16) -> RiscvInstruction {
     }
     match (((halfword >> 13) & 0b111) as u8, (halfword & 0b11) as u8) {
         (0, 1) => decode_compressed_addi(halfword),
+        (2, 1) => decode_compressed_li(halfword),
         _ => RiscvInstruction::CompressedUnknown {
             halfword,
             quadrant: (halfword & 0b11) as u8,
@@ -344,6 +345,15 @@ fn decode_compressed_addi(halfword: u16) -> RiscvInstruction {
         kind: RiscvOpImmKind::Addi,
         rd,
         rs1: rd,
+        immediate: compressed_addi_immediate(halfword),
+    }
+}
+
+fn decode_compressed_li(halfword: u16) -> RiscvInstruction {
+    RiscvInstruction::OpImm {
+        kind: RiscvOpImmKind::Addi,
+        rd: ((halfword >> 7) & 0x1f) as u8,
+        rs1: 0,
         immediate: compressed_addi_immediate(halfword),
     }
 }

@@ -469,6 +469,34 @@ fn decodes_compressed_addi_instructions() {
 }
 
 #[test]
+fn decodes_compressed_li_instructions() {
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x419d),
+        }),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 3,
+            rs1: 0,
+            immediate: 7,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x51fd),
+        }),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd: 3,
+            rs1: 0,
+            immediate: -1,
+        }
+    );
+}
+
+#[test]
 fn keeps_unknown_riscv_words_visible() {
     assert_eq!(
         decode_riscv_instruction(0xffff_ffff),
