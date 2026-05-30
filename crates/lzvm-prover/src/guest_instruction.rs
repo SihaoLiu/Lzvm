@@ -336,6 +336,7 @@ fn decode_compressed_instruction(halfword: u16) -> RiscvInstruction {
         (0, 1) => decode_compressed_addi(halfword),
         (2, 1) => decode_compressed_li(halfword),
         (3, 1) => decode_compressed_lui_or_addi16sp(halfword),
+        (4, 1) => decode_compressed_shift_logical(halfword),
         (5, 1) => decode_compressed_jump(halfword),
         (6, 1) => decode_compressed_branch(RiscvBranchKind::Beq, halfword),
         (7, 1) => decode_compressed_branch(RiscvBranchKind::Bne, halfword),
@@ -433,6 +434,77 @@ fn decode_compressed_lui_or_addi16sp(halfword: u16) -> RiscvInstruction {
     }
 }
 
+fn decode_compressed_shift_logical(halfword: u16) -> RiscvInstruction {
+    let rd_rs1 = compressed_register(halfword >> 7);
+    match ((halfword >> 10) & 0x3) as u8 {
+        0 => RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Srli,
+            rd: rd_rs1,
+            rs1: rd_rs1,
+            immediate: compressed_shift_immediate(halfword),
+        },
+        1 => RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Srai,
+            rd: rd_rs1,
+            rs1: rd_rs1,
+            immediate: compressed_shift_immediate(halfword),
+        },
+        2 => RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Andi,
+            rd: rd_rs1,
+            rs1: rd_rs1,
+            immediate: compressed_addi_immediate(halfword),
+        },
+        3 => decode_compressed_register_arithmetic(halfword),
+        _ => unreachable!("compressed funct2 is two bits"),
+    }
+}
+
+fn decode_compressed_register_arithmetic(halfword: u16) -> RiscvInstruction {
+    let rd_rs1 = compressed_register(halfword >> 7);
+    let rs2 = compressed_register(halfword >> 2);
+    match (((halfword >> 12) & 1) != 0, (halfword >> 5) & 0x3) {
+        (false, 0) => RiscvInstruction::Op {
+            kind: RiscvOpKind::Sub,
+            rd: rd_rs1,
+            rs1: rd_rs1,
+            rs2,
+        },
+        (false, 1) => RiscvInstruction::Op {
+            kind: RiscvOpKind::Xor,
+            rd: rd_rs1,
+            rs1: rd_rs1,
+            rs2,
+        },
+        (false, 2) => RiscvInstruction::Op {
+            kind: RiscvOpKind::Or,
+            rd: rd_rs1,
+            rs1: rd_rs1,
+            rs2,
+        },
+        (false, 3) => RiscvInstruction::Op {
+            kind: RiscvOpKind::And,
+            rd: rd_rs1,
+            rs1: rd_rs1,
+            rs2,
+        },
+        (true, 0) => RiscvInstruction::Op32 {
+            kind: RiscvOp32Kind::Subw,
+            rd: rd_rs1,
+            rs1: rd_rs1,
+            rs2,
+        },
+        (true, 1) => RiscvInstruction::Op32 {
+            kind: RiscvOp32Kind::Addw,
+            rd: rd_rs1,
+            rs1: rd_rs1,
+            rs2,
+        },
+        (true, _) => compressed_unknown(halfword),
+        _ => unreachable!("compressed arithmetic kind is two bits"),
+    }
+}
+
 fn decode_compressed_jump(halfword: u16) -> RiscvInstruction {
     RiscvInstruction::Jal {
         rd: 0,
@@ -526,6 +598,10 @@ fn decode_compressed_register_control(halfword: u16) -> RiscvInstruction {
 
 fn compressed_addi_immediate(halfword: u16) -> i64 {
     sign_extend(u64::from(compressed_ci_immediate_payload(halfword)), 6)
+}
+
+fn compressed_shift_immediate(halfword: u16) -> i64 {
+    i64::from(compressed_ci_immediate_payload(halfword))
 }
 
 fn compressed_lui_immediate(halfword: u16) -> i64 {

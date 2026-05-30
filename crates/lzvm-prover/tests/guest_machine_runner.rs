@@ -280,6 +280,87 @@ fn compressed_bnez(rs1: u8, offset: i16) -> u16 {
     compressed_branch(0b111, rs1, offset)
 }
 
+fn compressed_srli(rd: u8, shamt: u8) -> u16 {
+    compressed_shift(0b00, rd, shamt)
+}
+
+fn compressed_srai(rd: u8, shamt: u8) -> u16 {
+    compressed_shift(0b01, rd, shamt)
+}
+
+fn compressed_shift(funct2: u16, rd: u8, shamt: u8) -> u16 {
+    assert!(funct2 < 2);
+    assert!((8..=15).contains(&rd));
+    assert!(shamt < 64);
+    (0b100 << 13)
+        | 0b01
+        | ((u16::from(shamt >> 5) & 1) << 12)
+        | (funct2 << 10)
+        | (u16::from(rd - 8) << 7)
+        | ((u16::from(shamt) & 0x1f) << 2)
+}
+
+fn compressed_andi(rd: u8, immediate: i8) -> u16 {
+    assert!((8..=15).contains(&rd));
+    assert!((-32..=31).contains(&immediate));
+    let immediate = immediate as i16 as u16;
+    (0b100 << 13)
+        | 0b01
+        | (((immediate >> 5) & 1) << 12)
+        | (0b10 << 10)
+        | (u16::from(rd - 8) << 7)
+        | ((immediate & 0x1f) << 2)
+}
+
+fn compressed_sub(rd: u8, rs2: u8) -> u16 {
+    compressed_register_arithmetic(0b00, rd, rs2)
+}
+
+fn compressed_xor(rd: u8, rs2: u8) -> u16 {
+    compressed_register_arithmetic(0b01, rd, rs2)
+}
+
+fn compressed_or(rd: u8, rs2: u8) -> u16 {
+    compressed_register_arithmetic(0b10, rd, rs2)
+}
+
+fn compressed_and(rd: u8, rs2: u8) -> u16 {
+    compressed_register_arithmetic(0b11, rd, rs2)
+}
+
+fn compressed_subw(rd: u8, rs2: u8) -> u16 {
+    compressed_register_arithmetic_word(0b00, rd, rs2)
+}
+
+fn compressed_addw(rd: u8, rs2: u8) -> u16 {
+    compressed_register_arithmetic_word(0b01, rd, rs2)
+}
+
+fn compressed_register_arithmetic(kind: u16, rd: u8, rs2: u8) -> u16 {
+    assert!(kind < 4);
+    assert!((8..=15).contains(&rd));
+    assert!((8..=15).contains(&rs2));
+    (0b100 << 13)
+        | 0b01
+        | (0b11 << 10)
+        | (u16::from(rd - 8) << 7)
+        | (kind << 5)
+        | (u16::from(rs2 - 8) << 2)
+}
+
+fn compressed_register_arithmetic_word(kind: u16, rd: u8, rs2: u8) -> u16 {
+    assert!(kind < 2);
+    assert!((8..=15).contains(&rd));
+    assert!((8..=15).contains(&rs2));
+    (0b100 << 13)
+        | 0b01
+        | (1 << 12)
+        | (0b11 << 10)
+        | (u16::from(rd - 8) << 7)
+        | (kind << 5)
+        | (u16::from(rs2 - 8) << 2)
+}
+
 fn compressed_branch(funct3: u16, rs1: u8, offset: i16) -> u16 {
     assert!((8..=15).contains(&rs1));
     assert!((-256..=254).contains(&offset));
@@ -485,6 +566,77 @@ fn runs_compressed_jump_and_branch_instructions_until_ecall() {
     );
     assert_eq!(state.pc(), ENTRY + 12);
     assert_eq!(state.register(6), Some(0));
+}
+
+#[test]
+fn runs_compressed_shift_logical_instructions_until_ecall() {
+    let mut code = Vec::new();
+    push_halfword(&mut code, compressed_srli(8, 1));
+    push_halfword(&mut code, compressed_srai(9, 63));
+    push_halfword(&mut code, compressed_andi(10, -16));
+    push_halfword(&mut code, compressed_sub(11, 12));
+    push_halfword(&mut code, compressed_xor(13, 14));
+    push_halfword(&mut code, compressed_or(15, 14));
+    push_halfword(&mut code, compressed_and(12, 14));
+    push_word(&mut code, 0x0000_0073);
+    let mut memory = guest_machine_memory_with_bytes(&code);
+    let mut state = GuestMachineState::new(memory.entry_address());
+    state
+        .set_register(8, 0xffff_ffff_ffff_fffe)
+        .expect("register should set");
+    state
+        .set_register(9, 0x8000_0000_0000_0000)
+        .expect("register should set");
+    state.set_register(10, 0x1234).expect("register should set");
+    state.set_register(11, 0x20).expect("register should set");
+    state.set_register(12, 0x05).expect("register should set");
+    state.set_register(13, 0xf0).expect("register should set");
+    state.set_register(14, 0x0f).expect("register should set");
+    state.set_register(15, 0xf0).expect("register should set");
+
+    let report = run_guest_machine(&mut memory, &mut state, 10).expect("guest should halt");
+
+    assert_eq!(report.executed_instructions, 7);
+    assert_eq!(
+        report.halt,
+        GuestMachineHalt::Ecall {
+            address: ENTRY + 14
+        }
+    );
+    assert_eq!(state.pc(), ENTRY + 14);
+    assert_eq!(state.register(8), Some(0x7fff_ffff_ffff_ffff));
+    assert_eq!(state.register(9), Some(u64::MAX));
+    assert_eq!(state.register(10), Some(0x1230));
+    assert_eq!(state.register(11), Some(0x1b));
+    assert_eq!(state.register(12), Some(0x05));
+    assert_eq!(state.register(13), Some(0xff));
+    assert_eq!(state.register(15), Some(0xff));
+}
+
+#[test]
+fn runs_compressed_word_arithmetic_instructions_until_ecall() {
+    let mut code = Vec::new();
+    push_halfword(&mut code, compressed_subw(8, 9));
+    push_halfword(&mut code, compressed_addw(10, 11));
+    push_word(&mut code, 0x0000_0073);
+    let mut memory = guest_machine_memory_with_bytes(&code);
+    let mut state = GuestMachineState::new(memory.entry_address());
+    state
+        .set_register(8, 0x0000_0001_0000_0000)
+        .expect("register should set");
+    state.set_register(9, 1).expect("register should set");
+    state
+        .set_register(10, 0x0000_0000_7fff_ffff)
+        .expect("register should set");
+    state.set_register(11, 1).expect("register should set");
+
+    let report = run_guest_machine(&mut memory, &mut state, 8).expect("guest should halt");
+
+    assert_eq!(report.executed_instructions, 2);
+    assert_eq!(report.halt, GuestMachineHalt::Ecall { address: ENTRY + 4 });
+    assert_eq!(state.pc(), ENTRY + 4);
+    assert_eq!(state.register(8), Some(u64::MAX));
+    assert_eq!(state.register(10), Some(0xffff_ffff_8000_0000));
 }
 
 #[test]

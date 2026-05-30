@@ -986,6 +986,138 @@ fn decodes_compressed_jump_and_branch_instructions() {
 }
 
 #[test]
+fn decodes_compressed_shift_logical_instructions() {
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x8005),
+        }),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Srli,
+            rd: 8,
+            rs1: 8,
+            immediate: 1,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x93fd),
+        }),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Srli,
+            rd: 15,
+            rs1: 15,
+            immediate: 63,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x8405),
+        }),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Srai,
+            rd: 8,
+            rs1: 8,
+            immediate: 1,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x97fd),
+        }),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Srai,
+            rd: 15,
+            rs1: 15,
+            immediate: 63,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x987d),
+        }),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Andi,
+            rd: 8,
+            rs1: 8,
+            immediate: -1,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x8bfd),
+        }),
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Andi,
+            rd: 15,
+            rs1: 15,
+            immediate: 31,
+        }
+    );
+    for (halfword, kind) in [
+        (0x8c05, RiscvOpKind::Sub),
+        (0x8c25, RiscvOpKind::Xor),
+        (0x8c45, RiscvOpKind::Or),
+        (0x8c65, RiscvOpKind::And),
+    ] {
+        assert_eq!(
+            decode_guest_instruction(FetchedGuestInstruction {
+                address: 0x8000_0000,
+                encoded: RiscvEncodedInstruction::Compressed(halfword),
+            }),
+            RiscvInstruction::Op {
+                kind,
+                rd: 8,
+                rs1: 8,
+                rs2: 9,
+            }
+        );
+    }
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x9c05),
+        }),
+        RiscvInstruction::Op32 {
+            kind: RiscvOp32Kind::Subw,
+            rd: 8,
+            rs1: 8,
+            rs2: 9,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x9c25),
+        }),
+        RiscvInstruction::Op32 {
+            kind: RiscvOp32Kind::Addw,
+            rd: 8,
+            rs1: 8,
+            rs2: 9,
+        }
+    );
+    for halfword in [0x9c45, 0x9c65] {
+        assert_eq!(
+            decode_guest_instruction(FetchedGuestInstruction {
+                address: 0x8000_0000,
+                encoded: RiscvEncodedInstruction::Compressed(halfword),
+            }),
+            RiscvInstruction::CompressedUnknown {
+                halfword,
+                quadrant: 1,
+                funct3: 4,
+            }
+        );
+    }
+}
+
+#[test]
 fn keeps_unknown_riscv_words_visible() {
     assert_eq!(
         decode_riscv_instruction(0xffff_ffff),
