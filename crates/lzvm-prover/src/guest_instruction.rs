@@ -329,7 +329,9 @@ fn decode_compressed_instruction(halfword: u16) -> RiscvInstruction {
         return RiscvInstruction::IllegalCompressed { halfword };
     }
     match (((halfword >> 13) & 0b111) as u8, (halfword & 0b11) as u8) {
+        (2, 0) => decode_compressed_lw(halfword),
         (3, 0) => decode_compressed_ld(halfword),
+        (6, 0) => decode_compressed_sw(halfword),
         (7, 0) => decode_compressed_sd(halfword),
         (0, 1) => decode_compressed_addi(halfword),
         (2, 1) => decode_compressed_li(halfword),
@@ -337,8 +339,10 @@ fn decode_compressed_instruction(halfword: u16) -> RiscvInstruction {
         (5, 1) => decode_compressed_jump(halfword),
         (6, 1) => decode_compressed_branch(RiscvBranchKind::Beq, halfword),
         (7, 1) => decode_compressed_branch(RiscvBranchKind::Bne, halfword),
+        (2, 2) => decode_compressed_lwsp(halfword),
         (3, 2) => decode_compressed_ldsp(halfword),
         (4, 2) => decode_compressed_register_control(halfword),
+        (6, 2) => decode_compressed_swsp(halfword),
         (7, 2) => decode_compressed_sdsp(halfword),
         _ => compressed_unknown(halfword),
     }
@@ -352,12 +356,30 @@ fn compressed_unknown(halfword: u16) -> RiscvInstruction {
     }
 }
 
+fn decode_compressed_lw(halfword: u16) -> RiscvInstruction {
+    RiscvInstruction::Load {
+        kind: RiscvLoadKind::Lw,
+        rd: compressed_register(halfword >> 2),
+        rs1: compressed_register(halfword >> 7),
+        offset: compressed_lw_sw_offset(halfword),
+    }
+}
+
 fn decode_compressed_ld(halfword: u16) -> RiscvInstruction {
     RiscvInstruction::Load {
         kind: RiscvLoadKind::Ld,
         rd: compressed_register(halfword >> 2),
         rs1: compressed_register(halfword >> 7),
         offset: compressed_ld_sd_offset(halfword),
+    }
+}
+
+fn decode_compressed_sw(halfword: u16) -> RiscvInstruction {
+    RiscvInstruction::Store {
+        kind: RiscvStoreKind::Sw,
+        rs1: compressed_register(halfword >> 7),
+        rs2: compressed_register(halfword >> 2),
+        offset: compressed_lw_sw_offset(halfword),
     }
 }
 
@@ -427,6 +449,19 @@ fn decode_compressed_branch(kind: RiscvBranchKind, halfword: u16) -> RiscvInstru
     }
 }
 
+fn decode_compressed_lwsp(halfword: u16) -> RiscvInstruction {
+    let rd = ((halfword >> 7) & 0x1f) as u8;
+    if rd == 0 {
+        return compressed_unknown(halfword);
+    }
+    RiscvInstruction::Load {
+        kind: RiscvLoadKind::Lw,
+        rd,
+        rs1: 2,
+        offset: compressed_lwsp_offset(halfword),
+    }
+}
+
 fn decode_compressed_ldsp(halfword: u16) -> RiscvInstruction {
     let rd = ((halfword >> 7) & 0x1f) as u8;
     if rd == 0 {
@@ -437,6 +472,15 @@ fn decode_compressed_ldsp(halfword: u16) -> RiscvInstruction {
         rd,
         rs1: 2,
         offset: compressed_ldsp_offset(halfword),
+    }
+}
+
+fn decode_compressed_swsp(halfword: u16) -> RiscvInstruction {
+    RiscvInstruction::Store {
+        kind: RiscvStoreKind::Sw,
+        rs1: 2,
+        rs2: ((halfword >> 2) & 0x1f) as u8,
+        offset: compressed_swsp_offset(halfword),
     }
 }
 
@@ -506,10 +550,24 @@ fn compressed_register(encoded: u16) -> u8 {
     ((encoded & 0x7) as u8) + 8
 }
 
+fn compressed_lw_sw_offset(halfword: u16) -> i64 {
+    let bits_5_3 = (halfword >> 10) & 0x7;
+    let bit_2 = (halfword >> 6) & 1;
+    let bit_6 = (halfword >> 5) & 1;
+    i64::from((bit_2 << 2) | (bits_5_3 << 3) | (bit_6 << 6))
+}
+
 fn compressed_ld_sd_offset(halfword: u16) -> i64 {
     let bits_5_3 = (halfword >> 10) & 0x7;
     let bits_7_6 = (halfword >> 5) & 0x3;
     i64::from((bits_5_3 << 3) | (bits_7_6 << 6))
+}
+
+fn compressed_lwsp_offset(halfword: u16) -> i64 {
+    let bits_4_2 = (halfword >> 4) & 0x7;
+    let bit_5 = (halfword >> 12) & 1;
+    let bits_7_6 = (halfword >> 2) & 0x3;
+    i64::from((bits_4_2 << 2) | (bit_5 << 5) | (bits_7_6 << 6))
 }
 
 fn compressed_ldsp_offset(halfword: u16) -> i64 {
@@ -517,6 +575,12 @@ fn compressed_ldsp_offset(halfword: u16) -> i64 {
     let bit_5 = (halfword >> 12) & 1;
     let bits_8_6 = (halfword >> 2) & 0x7;
     i64::from((bits_4_3 << 3) | (bit_5 << 5) | (bits_8_6 << 6))
+}
+
+fn compressed_swsp_offset(halfword: u16) -> i64 {
+    let bits_5_2 = (halfword >> 9) & 0xf;
+    let bits_7_6 = (halfword >> 7) & 0x3;
+    i64::from((bits_5_2 << 2) | (bits_7_6 << 6))
 }
 
 fn compressed_sdsp_offset(halfword: u16) -> i64 {

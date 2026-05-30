@@ -606,6 +606,30 @@ fn decodes_compressed_load_and_store_instructions() {
     assert_eq!(
         decode_guest_instruction(FetchedGuestInstruction {
             address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x4080),
+        }),
+        RiscvInstruction::Load {
+            kind: RiscvLoadKind::Lw,
+            rd: 8,
+            rs1: 9,
+            offset: 0,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x5ffc),
+        }),
+        RiscvInstruction::Load {
+            kind: RiscvLoadKind::Lw,
+            rd: 15,
+            rs1: 15,
+            offset: 124,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
             encoded: RiscvEncodedInstruction::Compressed(0x6080),
         }),
         RiscvInstruction::Load {
@@ -625,6 +649,30 @@ fn decodes_compressed_load_and_store_instructions() {
             rd: 15,
             rs1: 15,
             offset: 248,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0xc080),
+        }),
+        RiscvInstruction::Store {
+            kind: RiscvStoreKind::Sw,
+            rs1: 9,
+            rs2: 8,
+            offset: 0,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0xdffc),
+        }),
+        RiscvInstruction::Store {
+            kind: RiscvStoreKind::Sw,
+            rs1: 15,
+            rs2: 15,
+            offset: 124,
         }
     );
     assert_eq!(
@@ -654,6 +702,30 @@ fn decodes_compressed_load_and_store_instructions() {
     assert_eq!(
         decode_guest_instruction(FetchedGuestInstruction {
             address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x4182),
+        }),
+        RiscvInstruction::Load {
+            kind: RiscvLoadKind::Lw,
+            rd: 3,
+            rs1: 2,
+            offset: 0,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x5ffe),
+        }),
+        RiscvInstruction::Load {
+            kind: RiscvLoadKind::Lw,
+            rd: 31,
+            rs1: 2,
+            offset: 252,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
             encoded: RiscvEncodedInstruction::Compressed(0x6182),
         }),
         RiscvInstruction::Load {
@@ -673,6 +745,30 @@ fn decodes_compressed_load_and_store_instructions() {
             rd: 31,
             rs1: 2,
             offset: 504,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0xc00e),
+        }),
+        RiscvInstruction::Store {
+            kind: RiscvStoreKind::Sw,
+            rs1: 2,
+            rs2: 3,
+            offset: 0,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0xdffe),
+        }),
+        RiscvInstruction::Store {
+            kind: RiscvStoreKind::Sw,
+            rs1: 2,
+            rs2: 31,
+            offset: 252,
         }
     );
     assert_eq!(
@@ -702,7 +798,18 @@ fn decodes_compressed_load_and_store_instructions() {
 }
 
 #[test]
-fn keeps_reserved_compressed_ldsp_forms_visible() {
+fn keeps_reserved_compressed_stack_load_forms_visible() {
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x4002),
+        }),
+        RiscvInstruction::CompressedUnknown {
+            halfword: 0x4002,
+            quadrant: 2,
+            funct3: 2,
+        }
+    );
     assert_eq!(
         decode_guest_instruction(FetchedGuestInstruction {
             address: 0x8000_0000,
