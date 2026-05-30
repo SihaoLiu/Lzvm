@@ -124,7 +124,6 @@ pub fn validate_eth_block_public_values(
     input: &EthBlockInput,
     public_values: &PublicValues,
 ) -> Result<(), EthBlockPublicValuesError> {
-    let expected = public_values_from_eth_block_input(public_values.setup_hash, input);
     let has_packed_inputs = if let Some(entry) = public_values
         .values
         .iter()
@@ -141,31 +140,26 @@ pub fn validate_eth_block_public_values(
     };
 
     if has_packed_inputs {
-        validate_present_eth_block_public_values(public_values, &expected)?;
+        validate_present_eth_block_public_values(input, public_values)?;
         return Ok(());
     }
 
     let mut matched_eth_entry = false;
     for entry in &public_values.values {
-        let Some(expected_entry) = expected
-            .values
-            .iter()
-            .find(|expected_entry| expected_entry.name == entry.name)
-        else {
+        let Some(expected_elements) = eth_block_public_value_elements(input, &entry.name)? else {
             continue;
         };
         matched_eth_entry = true;
-        if entry.elements != expected_entry.elements {
+        if entry.elements != expected_elements {
             return Err(EthBlockPublicValuesError::ValueMismatch {
                 name: entry.name.clone(),
             });
         }
     }
     if !matched_eth_entry {
-        let name = expected
-            .values
+        let name = ETH_BLOCK_PUBLIC_VALUE_NAMES
             .first()
-            .map(|entry| entry.name.clone())
+            .map(|name| (*name).to_owned())
             .unwrap_or_else(|| "eth_block_hash_u32_be".to_owned());
         return Err(EthBlockPublicValuesError::MissingEntry { name });
     }
@@ -318,18 +312,14 @@ fn validate_packed_eth_block_public_outputs(
 }
 
 fn validate_present_eth_block_public_values(
+    input: &EthBlockInput,
     public_values: &PublicValues,
-    expected: &PublicValues,
 ) -> Result<(), EthBlockPublicValuesError> {
     for entry in &public_values.values {
-        let Some(expected_entry) = expected
-            .values
-            .iter()
-            .find(|expected_entry| expected_entry.name == entry.name)
-        else {
+        let Some(expected_elements) = eth_block_public_value_elements(input, &entry.name)? else {
             continue;
         };
-        if entry.elements != expected_entry.elements {
+        if entry.elements != expected_elements {
             return Err(EthBlockPublicValuesError::ValueMismatch {
                 name: entry.name.clone(),
             });

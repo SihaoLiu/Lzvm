@@ -1,6 +1,7 @@
 use lzvm_artifacts::eth_block_input::EthBlockInput;
 use lzvm_artifacts::eth_block_public_values::{
-    public_values_from_eth_block_input_for_metadata, validate_program_image_cache_public_values,
+    public_values_from_eth_block_input_for_metadata, validate_eth_block_public_values,
+    validate_program_image_cache_public_values,
 };
 use lzvm_artifacts::eth_trie::IndexedTrieBuild;
 use lzvm_artifacts::global_info::{CurveKind, GlobalInfo, PublicValue};
@@ -119,6 +120,46 @@ fn rejects_selected_extra_data_public_metadata_overflow() {
     let error =
         public_values_from_eth_block_input_for_metadata([0x44; 32], &input, &global_info, None)
             .expect_err("selected extra data public value should validate its payload length");
+
+    assert_eq!(
+        error.to_string(),
+        "ETH block public value extra data exceeds 32 bytes, found 33"
+    );
+}
+
+#[test]
+fn validates_selected_block_public_value_without_reading_unselected_extra_data() {
+    let mut input = sample_block_input();
+    input.block_hash = [0x2a; 32];
+    input.extra_data = vec![0x99; 33];
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash: [0x44; 32],
+        values: vec![PublicValueEntry {
+            name: "eth_block_hash_u32_be".to_owned(),
+            elements: vec![0x2a2a_2a2a; 8],
+        }],
+    };
+
+    validate_eth_block_public_values(&input, &public_values)
+        .expect("selected block hash public value should validate");
+}
+
+#[test]
+fn rejects_selected_extra_data_public_value_overflow() {
+    let mut input = sample_block_input();
+    input.extra_data = vec![0x99; 33];
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash: [0x44; 32],
+        values: vec![PublicValueEntry {
+            name: "eth_extra_data_u32_be".to_owned(),
+            elements: vec![0; 8],
+        }],
+    };
+
+    let error = validate_eth_block_public_values(&input, &public_values)
+        .expect_err("selected extra data public value should validate its payload length");
 
     assert_eq!(
         error.to_string(),
