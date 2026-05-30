@@ -751,6 +751,39 @@ pub fn derive_global_challenge_from_contribution_proofs(
     public_values_path: impl AsRef<Path>,
     proof_paths: &[PathBuf],
 ) -> Result<ContributionChallengeReport, ContributionChallengeFileError> {
+    derive_global_challenge_from_contribution_proofs_with_requirement(
+        setup_dir,
+        public_values_path,
+        proof_paths,
+        ContributionChallengeValuesRequirement::Optional,
+    )
+}
+
+pub fn derive_global_challenge_from_embedded_contribution_proofs(
+    setup_dir: impl AsRef<Path>,
+    public_values_path: impl AsRef<Path>,
+    proof_paths: &[PathBuf],
+) -> Result<ContributionChallengeReport, ContributionChallengeFileError> {
+    derive_global_challenge_from_contribution_proofs_with_requirement(
+        setup_dir,
+        public_values_path,
+        proof_paths,
+        ContributionChallengeValuesRequirement::Required,
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContributionChallengeValuesRequirement {
+    Optional,
+    Required,
+}
+
+fn derive_global_challenge_from_contribution_proofs_with_requirement(
+    setup_dir: impl AsRef<Path>,
+    public_values_path: impl AsRef<Path>,
+    proof_paths: &[PathBuf],
+    challenge_values_requirement: ContributionChallengeValuesRequirement,
+) -> Result<ContributionChallengeReport, ContributionChallengeFileError> {
     if proof_paths.is_empty() {
         return Err(ContributionChallengeFileError::MissingProofs);
     }
@@ -844,8 +877,14 @@ pub fn derive_global_challenge_from_contribution_proofs(
         let mut proof_entries = load_contribution_segment_from_segments(&proof.segments)
             .map_err(ContributionChallengeError::from)?;
         entries.append(&mut proof_entries);
-        if let Some(challenge) = load_optional_contribution_challenge_values(&proof.segments)? {
-            embedded_challenges.push(challenge);
+        match load_optional_contribution_challenge_values(&proof.segments)? {
+            Some(challenge) => embedded_challenges.push(challenge),
+            None if challenge_values_requirement
+                == ContributionChallengeValuesRequirement::Required =>
+            {
+                return Err(ContributionChallengeFileError::MissingChallengeValuesSegment);
+            }
+            None => {}
         }
     }
 

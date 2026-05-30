@@ -17,7 +17,7 @@ use lzvm_artifacts::program_image_segment::{
 use lzvm_artifacts::proof::read_proof_artifact_file;
 use lzvm_artifacts::public_values::read_public_values_file;
 use lzvm_prover::contribution::{
-    derive_global_challenge_from_contribution_proofs, derive_global_challenge_from_files,
+    derive_global_challenge_from_embedded_contribution_proofs, derive_global_challenge_from_files,
     ContributionChallengeReport,
 };
 use lzvm_prover::proof_preflight::validate_proof_public_values_from_files;
@@ -428,7 +428,7 @@ pub(super) fn verify_contribution_set(
     stderr: &mut dyn Write,
 ) -> i32 {
     let proof_paths = proof_bins.iter().map(PathBuf::from).collect::<Vec<_>>();
-    let report = match derive_global_challenge_from_contribution_proofs(
+    let report = match derive_global_challenge_from_embedded_contribution_proofs(
         setup_dir,
         public_values_path,
         &proof_paths,
