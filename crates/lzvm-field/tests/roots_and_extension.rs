@@ -1,8 +1,9 @@
-use lzvm_field::{Ext3, Felt, MODULUS, SHIFT};
+use lzvm_field::{Ext3, Felt, MAX_ROOT_OF_UNITY_BITS, MODULUS, SHIFT};
 
 #[test]
 fn exposes_shift_and_known_roots() {
     assert_eq!(SHIFT.to_u64(), 7);
+    assert_eq!(MAX_ROOT_OF_UNITY_BITS, 32);
     assert_eq!(Felt::root_of_unity(0).unwrap().to_u64(), 1);
     assert_eq!(Felt::root_of_unity(1).unwrap().to_u64(), MODULUS - 1);
     assert_eq!(Felt::root_of_unity(5).unwrap().to_u64(), 64);
@@ -23,7 +24,7 @@ fn roots_have_the_expected_order() {
 
 #[test]
 fn rejects_roots_outside_the_table() {
-    assert!(Felt::root_of_unity(33).is_none());
+    assert!(Felt::root_of_unity(MAX_ROOT_OF_UNITY_BITS + 1).is_none());
 }
 
 #[test]

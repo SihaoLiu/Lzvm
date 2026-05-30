@@ -3,6 +3,7 @@ use std::ops::{Add, Mul, Neg, Sub};
 
 pub const MODULUS: u64 = 0xffff_ffff_0000_0001;
 pub const SHIFT: Felt = Felt(7);
+pub const MAX_ROOT_OF_UNITY_BITS: usize = ROOTS_OF_UNITY.len() - 1;
 
 const MODULUS_U128: u128 = MODULUS as u128;
 const GOLDILOCKS_EPSILON: u64 = 0xffff_ffff;
@@ -890,7 +891,7 @@ fn bit_reverse_permute(values: &mut [Felt]) {
 fn domain_root(bits: usize) -> Result<Felt, DomainError> {
     Felt::root_of_unity(bits).ok_or(DomainError::UnsupportedBits {
         bits,
-        max_bits: ROOTS_OF_UNITY.len() - 1,
+        max_bits: MAX_ROOT_OF_UNITY_BITS,
     })
 }
 
@@ -906,7 +907,7 @@ fn domain_len(bits: usize) -> Result<usize, DomainError> {
     if bits >= ROOTS_OF_UNITY.len() {
         return Err(DomainError::UnsupportedBits {
             bits,
-            max_bits: ROOTS_OF_UNITY.len() - 1,
+            max_bits: MAX_ROOT_OF_UNITY_BITS,
         });
     }
     1_usize
