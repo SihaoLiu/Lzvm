@@ -181,6 +181,32 @@ fn compressed_sdsp(rs2: u8, offset: u16) -> u16 {
         | (u16::from(rs2) << 2)
 }
 
+fn compressed_jr(rs1: u8) -> u16 {
+    assert!((1..32).contains(&rs1));
+    (0b1000 << 12) | (u16::from(rs1) << 7) | 0b10
+}
+
+fn compressed_jalr(rs1: u8) -> u16 {
+    assert!((1..32).contains(&rs1));
+    (0b1001 << 12) | (u16::from(rs1) << 7) | 0b10
+}
+
+fn compressed_mv(rd: u8, rs2: u8) -> u16 {
+    assert!(rd < 32);
+    assert!((1..32).contains(&rs2));
+    (0b1000 << 12) | (u16::from(rd) << 7) | (u16::from(rs2) << 2) | 0b10
+}
+
+fn compressed_add(rd: u8, rs2: u8) -> u16 {
+    assert!(rd < 32);
+    assert!((1..32).contains(&rs2));
+    (0b1001 << 12) | (u16::from(rd) << 7) | (u16::from(rs2) << 2) | 0b10
+}
+
+fn compressed_ebreak() -> u16 {
+    0x9002
+}
+
 fn push_halfword(code: &mut Vec<u8>, halfword: u16) {
     code.extend_from_slice(&halfword.to_le_bytes());
 }
@@ -299,6 +325,33 @@ fn runs_compressed_load_store_instructions_until_ecall() {
 }
 
 #[test]
+fn runs_compressed_register_control_instructions_until_ecall() {
+    let mut code = Vec::new();
+    push_halfword(&mut code, compressed_mv(6, 7));
+    push_halfword(&mut code, compressed_add(6, 7));
+    push_halfword(&mut code, compressed_jalr(5));
+    push_halfword(&mut code, compressed_addi(6, 2));
+    push_word(&mut code, 0x0000_0073);
+    code.resize(16, 0);
+    push_halfword(&mut code, compressed_addi(6, 1));
+    push_halfword(&mut code, compressed_jr(1));
+    let mut memory = guest_machine_memory_with_bytes(&code);
+    let mut state = GuestMachineState::new(memory.entry_address());
+    state
+        .set_register(5, ENTRY + 16)
+        .expect("register should set");
+    state.set_register(7, 9).expect("register should set");
+
+    let report = run_guest_machine(&mut memory, &mut state, 10).expect("guest should halt");
+
+    assert_eq!(report.executed_instructions, 6);
+    assert_eq!(report.halt, GuestMachineHalt::Ecall { address: ENTRY + 8 });
+    assert_eq!(state.pc(), ENTRY + 8);
+    assert_eq!(state.register(1), Some(ENTRY + 6));
+    assert_eq!(state.register(6), Some(21));
+}
+
+#[test]
 fn rejects_guest_runs_that_exceed_the_instruction_limit() {
     let mut memory = guest_machine_memory_with_words(&[addi(1, 0, 7), 0x0000_0073]);
     let mut state = GuestMachineState::new(memory.entry_address());
@@ -347,6 +400,25 @@ fn rejects_guest_runs_at_the_instruction_limit_before_non_halt() {
 #[test]
 fn does_not_treat_ebreak_as_guest_run_halt() {
     let mut memory = guest_machine_memory_with_words(&[0x0010_0073]);
+    let mut state = GuestMachineState::new(memory.entry_address());
+
+    assert_eq!(
+        run_guest_machine(&mut memory, &mut state, 4),
+        Err(GuestMachineRunError::Instruction(
+            GuestMachineError::UnsupportedInstruction {
+                address: ENTRY,
+                instruction: RiscvInstruction::Ebreak,
+            }
+        ))
+    );
+    assert_eq!(state.pc(), ENTRY);
+}
+
+#[test]
+fn does_not_treat_compressed_ebreak_as_guest_run_halt() {
+    let mut code = Vec::new();
+    push_halfword(&mut code, compressed_ebreak());
+    let mut memory = guest_machine_memory_with_bytes(&code);
     let mut state = GuestMachineState::new(memory.entry_address());
 
     assert_eq!(

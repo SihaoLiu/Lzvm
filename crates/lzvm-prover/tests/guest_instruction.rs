@@ -717,6 +717,102 @@ fn keeps_reserved_compressed_ldsp_forms_visible() {
 }
 
 #[test]
+fn decodes_compressed_register_control_instructions() {
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x8282),
+        }),
+        RiscvInstruction::Jalr {
+            rd: 0,
+            rs1: 5,
+            offset: 0,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x9282),
+        }),
+        RiscvInstruction::Jalr {
+            rd: 1,
+            rs1: 5,
+            offset: 0,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x831e),
+        }),
+        RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rd: 6,
+            rs1: 0,
+            rs2: 7,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x931e),
+        }),
+        RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rd: 6,
+            rs1: 6,
+            rs2: 7,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x801e),
+        }),
+        RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rd: 0,
+            rs1: 0,
+            rs2: 7,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x901e),
+        }),
+        RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rd: 0,
+            rs1: 0,
+            rs2: 7,
+        }
+    );
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x9002),
+        }),
+        RiscvInstruction::Ebreak
+    );
+}
+
+#[test]
+fn keeps_reserved_compressed_register_control_forms_visible() {
+    assert_eq!(
+        decode_guest_instruction(FetchedGuestInstruction {
+            address: 0x8000_0000,
+            encoded: RiscvEncodedInstruction::Compressed(0x8002),
+        }),
+        RiscvInstruction::CompressedUnknown {
+            halfword: 0x8002,
+            quadrant: 2,
+            funct3: 4,
+        }
+    );
+}
+
+#[test]
 fn keeps_unknown_riscv_words_visible() {
     assert_eq!(
         decode_riscv_instruction(0xffff_ffff),

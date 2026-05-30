@@ -335,6 +335,7 @@ fn decode_compressed_instruction(halfword: u16) -> RiscvInstruction {
         (2, 1) => decode_compressed_li(halfword),
         (3, 1) => decode_compressed_lui_or_addi16sp(halfword),
         (3, 2) => decode_compressed_ldsp(halfword),
+        (4, 2) => decode_compressed_register_control(halfword),
         (7, 2) => decode_compressed_sdsp(halfword),
         _ => compressed_unknown(halfword),
     }
@@ -426,6 +427,37 @@ fn decode_compressed_sdsp(halfword: u16) -> RiscvInstruction {
         rs1: 2,
         rs2: ((halfword >> 2) & 0x1f) as u8,
         offset: compressed_sdsp_offset(halfword),
+    }
+}
+
+fn decode_compressed_register_control(halfword: u16) -> RiscvInstruction {
+    let rd_rs1 = ((halfword >> 7) & 0x1f) as u8;
+    let rs2 = ((halfword >> 2) & 0x1f) as u8;
+    match (((halfword >> 12) & 1) != 0, rd_rs1, rs2) {
+        (false, 0, 0) => compressed_unknown(halfword),
+        (false, rs1, 0) => RiscvInstruction::Jalr {
+            rd: 0,
+            rs1,
+            offset: 0,
+        },
+        (false, rd, rs2) => RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rd,
+            rs1: 0,
+            rs2,
+        },
+        (true, 0, 0) => RiscvInstruction::Ebreak,
+        (true, rs1, 0) => RiscvInstruction::Jalr {
+            rd: 1,
+            rs1,
+            offset: 0,
+        },
+        (true, rd, rs2) => RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rd,
+            rs1: rd,
+            rs2,
+        },
     }
 }
 
