@@ -388,7 +388,13 @@ pub fn build_witness_proof_artifact_for_unit(
         public_values_hash,
         segments,
     };
-    if request.challenge_values_segment.is_some() && has_contribution_segment {
+    if has_contribution_segment {
+        if request.challenge_values_segment.is_none() {
+            return Err(
+                "verify contribution proof output failed: missing challenge values segment"
+                    .to_owned(),
+            );
+        }
         validate_contribution_proof_output(request.catalog, &proof, public_values)?;
     }
     if request.verify_outputs {
@@ -655,7 +661,13 @@ pub fn build_witness_proof_artifact_for_all_units(
         false
     };
     append_binding_segments(&mut proof.segments, binding_segments);
-    if request.challenge_values_segment.is_some() && has_contribution_segment {
+    if has_contribution_segment {
+        if request.challenge_values_segment.is_none() {
+            return Err(
+                "verify contribution proof output failed: missing challenge values segment"
+                    .to_owned(),
+            );
+        }
         validate_contribution_proof_output(request.catalog, &proof, public_values)?;
     }
     if request.verify_outputs {
