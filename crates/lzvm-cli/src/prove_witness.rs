@@ -317,6 +317,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         challenge_values_segment: challenge_values_segment.as_ref(),
         output: &output,
         contribution_only,
+        include_contribution_segment: false,
     };
     let proof_bytes = match build_proof_bytes(&request, plan.run_plan.options.verify_outputs) {
         Ok(proof_bytes) => proof_bytes,
@@ -827,6 +828,7 @@ struct WitnessOutputSaveRequest<'a> {
     challenge_values_segment: Option<&'a ProofSegment>,
     output: &'a ProveWitnessTraceCommitments,
     contribution_only: bool,
+    include_contribution_segment: bool,
 }
 
 fn save_witness_outputs(
@@ -951,6 +953,9 @@ fn finish_all_units_witness_run(
             .map(|summary| &summary.cache),
         eth_block_input: eth_block_input.summary.map(|summary| &summary.input),
         challenge_values_segment,
+        include_contribution_segment: !contribution_artifact_requested(plan)
+            && plan.run_plan.options.aggregate
+            && challenge_values_segment.is_some(),
     };
     let proof = if contribution_artifact_requested(plan) {
         lzvm_prover::build_witness_contribution_proof_artifact_for_all_units(&proof_request)?
@@ -990,6 +995,9 @@ fn finish_all_units_witness_run(
                 challenge_values_segment,
                 output,
                 contribution_only: contribution_artifact_requested(plan),
+                include_contribution_segment: !contribution_artifact_requested(plan)
+                    && plan.run_plan.options.aggregate
+                    && challenge_values_segment.is_some(),
             };
             save_witness_outputs(&request, &segment)?;
         }
@@ -1107,6 +1115,7 @@ fn build_proof_bytes(
                 program_image_cache: request.program_image_cache,
                 eth_block_input: request.eth_block_input,
                 challenge_values_segment: request.challenge_values_segment,
+                include_contribution_segment: false,
             },
         )?
     } else {
@@ -1122,6 +1131,7 @@ fn build_proof_bytes(
             program_image_cache: request.program_image_cache,
             eth_block_input: request.eth_block_input,
             challenge_values_segment: request.challenge_values_segment,
+            include_contribution_segment: request.include_contribution_segment,
         })?
     };
     match proof {

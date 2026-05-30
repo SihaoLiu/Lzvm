@@ -190,6 +190,7 @@ pub struct WitnessProofRequest<'a> {
     pub program_image_cache: Option<&'a ProgramImageCommitmentCache>,
     pub eth_block_input: Option<&'a EthBlockInput>,
     pub challenge_values_segment: Option<&'a ProofSegment>,
+    pub include_contribution_segment: bool,
 }
 
 pub fn build_witness_proof_artifact_for_unit(
@@ -363,7 +364,7 @@ pub fn build_witness_proof_artifact_for_unit(
     if let Some(unit_values_segment) = unit_values_segment {
         segments.push(unit_values_segment);
     }
-    if request.challenge_values_segment.is_some() {
+    let has_contribution_segment = if request.include_contribution_segment {
         let contribution_source = WitnessContributionSource {
             output: request.output,
             packed_unit_values: unit_values,
@@ -374,14 +375,22 @@ pub fn build_witness_proof_artifact_for_unit(
             std::slice::from_ref(&contribution_source),
         )? {
             segments.push(contribution_segment);
+            true
+        } else {
+            false
         }
-    }
+    } else {
+        false
+    };
     append_binding_segments(&mut segments, binding_segments);
     let proof = ProofArtifact {
         setup_hash: request.schedule.setup_hash,
         public_values_hash,
         segments,
     };
+    if request.challenge_values_segment.is_some() && has_contribution_segment {
+        validate_contribution_proof_output(request.catalog, &proof, public_values)?;
+    }
     if request.verify_outputs {
         validate_setup_preflight(request.catalog, &proof, public_values)
             .map_err(|error| format!("verify proof output failed: {error}"))?;
@@ -464,6 +473,7 @@ pub struct WitnessAllUnitsProofRequest<'a> {
     pub program_image_cache: Option<&'a ProgramImageCommitmentCache>,
     pub eth_block_input: Option<&'a EthBlockInput>,
     pub challenge_values_segment: Option<&'a ProofSegment>,
+    pub include_contribution_segment: bool,
 }
 
 pub fn build_witness_contribution_proof_artifact_for_all_units(
@@ -614,7 +624,7 @@ pub fn build_witness_proof_artifact_for_all_units(
         )?
     };
     let mut proof = proof;
-    if request.challenge_values_segment.is_some() {
+    let has_contribution_segment = if request.include_contribution_segment {
         let contribution_sources = request
             .outputs
             .iter()
@@ -637,9 +647,17 @@ pub fn build_witness_proof_artifact_for_all_units(
             &contribution_sources,
         )? {
             proof.segments.push(contribution_segment);
+            true
+        } else {
+            false
         }
-    }
+    } else {
+        false
+    };
     append_binding_segments(&mut proof.segments, binding_segments);
+    if request.challenge_values_segment.is_some() && has_contribution_segment {
+        validate_contribution_proof_output(request.catalog, &proof, public_values)?;
+    }
     if request.verify_outputs {
         validate_setup_preflight(request.catalog, &proof, public_values)
             .map_err(|error| format!("verify proof output failed: {error}"))?;

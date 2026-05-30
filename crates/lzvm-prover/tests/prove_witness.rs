@@ -1105,6 +1105,7 @@ fn builds_witness_proof_artifact_for_unit_in_prover() {
             program_image_cache: None,
             eth_block_input: None,
             challenge_values_segment: None,
+            include_contribution_segment: false,
         })
         .expect("proof artifact should build")
         .expect("proof artifact should exist");
@@ -1179,6 +1180,7 @@ fn rejects_mismatched_eth_block_public_values_in_prover_unit_request() {
             program_image_cache: None,
             eth_block_input: Some(&proof_block_input),
             challenge_values_segment: None,
+            include_contribution_segment: false,
         })
         .expect_err("mismatched block public values should reject");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -1243,6 +1245,7 @@ fn rejects_unbound_program_image_cache_public_values_in_prover_unit_request() {
             program_image_cache: None,
             eth_block_input: None,
             challenge_values_segment: None,
+            include_contribution_segment: false,
         })
         .expect_err("program image cache public values should require a bound cache");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
@@ -1250,6 +1253,92 @@ fn rejects_unbound_program_image_cache_public_values_in_prover_unit_request() {
     assert_eq!(
         error,
         "program image cache is required for public value: rom_root"
+    );
+}
+
+#[test]
+fn rejects_unit_witness_challenge_mismatch_without_output_verification() {
+    let dir = std::env::var_os("TMPDIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .join(format!(
+            "lzvm-prover-witness-{}-unit-proof-bad-challenge-no-verify",
+            std::process::id()
+        ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [19_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
+        .expect("constant tree should be written");
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.lattice_size = Some(32);
+    declare_sample_public_value_metadata(&mut catalog);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values_path = dir.join("public.bin");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: vec![PublicValueEntry {
+            name: "sample_public".to_owned(),
+            elements: vec![19],
+        }],
+    };
+    fs::write(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    )
+    .expect("public values should be written");
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: Some(public_values_path),
+        },
+    )
+    .expect("execution plan should derive");
+    let output =
+        run_prove_witness_commitments_with_trace(&plan, 0, ProveWitnessAuxiliaryInputs::default())
+            .expect("unit should run");
+    let challenge_segment = ProofSegment {
+        id: CHALLENGE_VALUES_SEGMENT_ID,
+        data: encode_challenge_values_segment(&ChallengeValuesSegment {
+            values: vec![[1, 2, 3]],
+        })
+        .expect("challenge values segment should encode"),
+    };
+
+    let error =
+        lzvm_prover::build_witness_proof_artifact_for_unit(&lzvm_prover::WitnessProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            execution_unit: &plan.units[0],
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            unit_values: None,
+            output: &output,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+            challenge_values_segment: Some(&challenge_segment),
+            include_contribution_segment: true,
+        })
+        .expect_err("mismatched challenge segment should reject during construction");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        error,
+        "verify contribution proof output failed: contribution challenge values mismatch"
     );
 }
 
@@ -1383,6 +1472,7 @@ fn builds_witness_proof_artifact_for_all_units_in_prover() {
             program_image_cache: None,
             eth_block_input: None,
             challenge_values_segment: None,
+            include_contribution_segment: false,
         },
     )
     .expect("proof artifact should build")
@@ -1547,6 +1637,7 @@ fn builds_all_units_contribution_proof_artifact_from_output_proof_values() {
             program_image_cache: None,
             eth_block_input: None,
             challenge_values_segment: None,
+            include_contribution_segment: false,
         },
     )
     .expect("proof artifact should build")
@@ -1637,6 +1728,7 @@ fn rejects_all_units_contribution_proof_artifact_with_mismatched_challenge_segme
             program_image_cache: None,
             eth_block_input: None,
             challenge_values_segment: Some(&challenge_segment),
+            include_contribution_segment: false,
         },
     )
     .expect_err("mismatched challenge segment should reject");
@@ -1722,6 +1814,99 @@ fn rejects_contribution_challenge_mismatch_without_output_verification() {
             program_image_cache: None,
             eth_block_input: None,
             challenge_values_segment: Some(&challenge_segment),
+            include_contribution_segment: false,
+        },
+    )
+    .expect_err("mismatched challenge segment should reject during construction");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        error,
+        "verify contribution proof output failed: contribution challenge values mismatch"
+    );
+}
+
+#[test]
+fn rejects_full_witness_challenge_mismatch_without_output_verification() {
+    let dir = std::env::var_os("TMPDIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .join(format!(
+            "lzvm-prover-witness-{}-full-proof-bad-challenge-no-verify",
+            std::process::id()
+        ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let witness_library = build_shared_library(&dir, "witness", witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [19_u8]).expect("input data should be written");
+
+    let mut unit = sample_unit();
+    unit.paths.constant_tree = dir.join("unit.consttree");
+    let constant_tree_bytes =
+        expected_constant_tree_byte_count(&unit.metadata.setup).expect("tree size should derive");
+    fs::write(&unit.paths.constant_tree, vec![0_u8; constant_tree_bytes])
+        .expect("constant tree should be written");
+    let mut catalog = sample_catalog(unit);
+    catalog.layout.global_info.lattice_size = Some(32);
+    declare_sample_public_value_metadata(&mut catalog);
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values_path = dir.join("public.bin");
+    let public_values = PublicValues {
+        schema_version: 1,
+        setup_hash,
+        values: vec![PublicValueEntry {
+            name: "sample_public".to_owned(),
+            elements: vec![19],
+        }],
+    };
+    fs::write(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    )
+    .expect("public values should be written");
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: Some(witness_library),
+            guest_image,
+            public_inputs: Some(public_values_path),
+        },
+    )
+    .expect("execution plan should derive");
+    let outputs = vec![run_prove_witness_commitments_with_trace(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+    )
+    .expect("unit should run")];
+    let challenge_segment = ProofSegment {
+        id: CHALLENGE_VALUES_SEGMENT_ID,
+        data: encode_challenge_values_segment(&ChallengeValuesSegment {
+            values: vec![[1, 2, 3]],
+        })
+        .expect("challenge values segment should encode"),
+    };
+
+    let error = lzvm_prover::build_witness_proof_artifact_for_all_units(
+        &lzvm_prover::WitnessAllUnitsProofRequest {
+            catalog: &catalog,
+            schedule: &plan.run_plan.schedule,
+            execution_units: &plan.units,
+            gpu_streams: plan.run_plan.gpu.max_streams,
+            public_values: Some(&public_values),
+            outputs: &outputs,
+            auxiliary_inputs: &ProveWitnessAuxiliaryInputs::default(),
+            unit_values: &[],
+            evaluation_values_segment: None,
+            verify_outputs: false,
+            program_image_cache: None,
+            eth_block_input: None,
+            challenge_values_segment: Some(&challenge_segment),
+            include_contribution_segment: true,
         },
     )
     .expect_err("mismatched challenge segment should reject during construction");
@@ -1848,6 +2033,7 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
             program_image_cache: None,
             eth_block_input: None,
             challenge_values_segment: None,
+            include_contribution_segment: false,
         },
     )
     .expect("proof artifact should build")
@@ -1890,6 +2076,7 @@ fn builds_all_units_transcript_proof_artifact_from_output_evaluation_values() {
             program_image_cache: None,
             eth_block_input: None,
             challenge_values_segment: None,
+            include_contribution_segment: false,
         },
     )
     .expect("proof artifact should build from evaluation segment")
