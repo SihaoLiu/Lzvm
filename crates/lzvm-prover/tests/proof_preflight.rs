@@ -2,7 +2,7 @@ use lzvm_artifacts::challenge_values_segment::{
     encode_challenge_values_segment, ChallengeValuesSegment, ChallengeValuesSegmentError,
     CHALLENGE_VALUES_SEGMENT_ID,
 };
-use lzvm_artifacts::eth_block_input::build_eth_block_input;
+use lzvm_artifacts::eth_block_input::{build_eth_block_input, eth_block_input_bytes_digest};
 use lzvm_artifacts::eth_block_input_segment::{
     encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
@@ -585,7 +585,7 @@ fn counts_eth_block_input_segments() {
 }
 
 #[test]
-fn rejects_noncanonical_eth_block_input_segments() {
+fn accepts_parser_valid_reordered_eth_block_input_segments() {
     let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
     let public_values = public_values_from_eth_block_input(sample_hash(0x44), &block_input);
     let mut proof = sample_proof(&public_values);
@@ -595,15 +595,46 @@ fn rejects_noncanonical_eth_block_input_segments() {
     assert_ne!(reordered_segment, canonical_segment);
     proof.segments.push(ProofSegment {
         id: ETH_BLOCK_INPUT_SEGMENT_ID,
-        data: reordered_segment,
+        data: reordered_segment.clone(),
     });
 
-    let error = validate_proof_public_values(&proof, &public_values)
-        .expect_err("ETH block input proof segment should use canonical bytes");
+    let report = validate_proof_public_values(&proof, &public_values)
+        .expect("parser-valid ETH block input proof segment should validate");
 
     assert_eq!(
-        error.to_string(),
-        "ETH block input proof segment is not canonical"
+        report.eth_block_input_hashes,
+        vec![eth_block_input_bytes_digest(&reordered_segment)]
+    );
+    assert_eq!(
+        report.eth_block_input_byte_counts,
+        vec![reordered_segment.len()]
+    );
+}
+
+#[test]
+fn accepts_parser_valid_eth_block_input_segments_without_optional_metadata_tail() {
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let public_values = public_values_from_eth_block_input(sample_hash(0x44), &block_input);
+    let mut proof = sample_proof(&public_values);
+    let canonical_segment =
+        encode_eth_block_input_segment(&block_input).expect("segment should encode");
+    let compact_segment = eth_block_input_file_without_optional_metadata_tail(&canonical_segment);
+    assert_ne!(compact_segment, canonical_segment);
+    proof.segments.push(ProofSegment {
+        id: ETH_BLOCK_INPUT_SEGMENT_ID,
+        data: compact_segment.clone(),
+    });
+
+    let report = validate_proof_public_values(&proof, &public_values)
+        .expect("parser-valid ETH block input proof segment should validate");
+
+    assert_eq!(
+        report.eth_block_input_hashes,
+        vec![eth_block_input_bytes_digest(&compact_segment)]
+    );
+    assert_eq!(
+        report.eth_block_input_byte_counts,
+        vec![compact_segment.len()]
     );
 }
 
@@ -632,6 +663,29 @@ fn reordered_eth_block_input_file(bytes: &[u8]) -> Vec<u8> {
     let first = file.sections.remove(0);
     file.sections.push(first);
     encode_sectioned_file(&file).expect("reordered ETH block input should encode")
+}
+
+fn eth_block_input_file_without_optional_metadata_tail(bytes: &[u8]) -> Vec<u8> {
+    let mut file =
+        parse_sectioned_file(bytes, *b"ethi", 1).expect("ETH block input should parse as sections");
+    let metadata = file
+        .sections
+        .iter_mut()
+        .find(|section| section.id == 1)
+        .expect("metadata section should exist");
+    let fixed_metadata_len = 32 * 4 + 20 + 8 * 4 + 32 + 8 + 32 + 32 + 4;
+    let withdrawal_flag = u32::from_le_bytes(
+        metadata.data[fixed_metadata_len - 4..fixed_metadata_len]
+            .try_into()
+            .expect("withdrawal flag should fit u32"),
+    );
+    let metadata_len = match withdrawal_flag {
+        0 => fixed_metadata_len,
+        1 => fixed_metadata_len + 32,
+        found => panic!("unexpected withdrawal flag: {found}"),
+    };
+    metadata.data.truncate(metadata_len);
+    encode_sectioned_file(&file).expect("ETH block input should encode")
 }
 
 #[test]

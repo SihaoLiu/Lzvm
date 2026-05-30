@@ -10,7 +10,7 @@ use lzvm_artifacts::eth_block_input::{
     eth_block_input_withdrawal_count, EthBlockInputError,
 };
 use lzvm_artifacts::eth_block_input_segment::{
-    encode_eth_block_input_segment, parse_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
+    parse_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::eth_block_public_values::{
     validate_eth_block_public_values, EthBlockPublicValuesError,
@@ -105,7 +105,6 @@ pub enum ProofPreflightError {
         source: FieldError,
     },
     EthBlockInput(EthBlockInputError),
-    EthBlockInputSegmentNonCanonical,
     EthBlockPublicValues(EthBlockPublicValuesError),
     MissingEthBlockInput,
     ProofArtifact(ProofArtifactError),
@@ -170,9 +169,6 @@ impl fmt::Display for ProofPreflightError {
                 "invalid challenge values segment value {value_index} word {word_index}: {source}"
             ),
             Self::EthBlockInput(error) => write!(f, "{error}"),
-            Self::EthBlockInputSegmentNonCanonical => {
-                write!(f, "ETH block input proof segment is not canonical")
-            }
             Self::EthBlockPublicValues(error) => write!(f, "{error}"),
             Self::MissingEthBlockInput => write!(f, "missing ETH block input proof segment"),
             Self::ProofArtifact(error) => write!(f, "{error}"),
@@ -216,7 +212,6 @@ impl std::error::Error for ProofPreflightError {
             | Self::MissingProgramImageCachePublicValue { .. }
             | Self::ProgramImageCachePublicValueElementCountMismatch { .. }
             | Self::ProgramImageCachePublicValueMismatch { .. }
-            | Self::EthBlockInputSegmentNonCanonical
             | Self::MissingEthBlockInput => None,
         }
     }
@@ -354,11 +349,6 @@ pub fn validate_proof_public_values(
     {
         let input = parse_eth_block_input_segment(&segment.data)
             .map_err(ProofPreflightError::EthBlockInput)?;
-        let canonical_segment =
-            encode_eth_block_input_segment(&input).map_err(ProofPreflightError::EthBlockInput)?;
-        if segment.data != canonical_segment {
-            return Err(ProofPreflightError::EthBlockInputSegmentNonCanonical);
-        }
         eth_block_input_hashes.push(eth_block_input_bytes_digest(&segment.data));
         eth_block_input_byte_counts.push(segment.data.len());
         eth_block_input_block_rlp_byte_counts.push(input.block_rlp.len());

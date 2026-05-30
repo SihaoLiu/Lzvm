@@ -4,7 +4,7 @@ use lzvm_artifacts::eth_block_input::{
     eth_block_input_withdrawal_count, parse_eth_block_input, EthBlockInput,
 };
 use lzvm_artifacts::eth_block_input_segment::{
-    encode_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
+    parse_eth_block_input_segment, ETH_BLOCK_INPUT_SEGMENT_ID,
 };
 use lzvm_artifacts::eth_block_public_values::validate_eth_block_public_values;
 use lzvm_artifacts::proof::read_proof_artifact_file;
@@ -82,6 +82,18 @@ fn verify_eth_block_input_binding_from_input(
 ) -> Result<EthBlockInputBinding, String> {
     let proof = read_proof_artifact_file(proof_bin)
         .map_err(|error| format!("read proof artifact failed: {proof_bin}: {error}"))?;
+    let segment = proof
+        .segments
+        .iter()
+        .find(|segment| segment.id == ETH_BLOCK_INPUT_SEGMENT_ID)
+        .ok_or_else(|| "missing ETH block input proof segment".to_owned())?;
+    let segment_input = parse_eth_block_input_segment(&segment.data)
+        .map_err(|error| format!("ETH block input proof segment failed: {error}"))?;
+    if segment_input != input {
+        return Err("ETH block input proof segment mismatch".to_owned());
+    }
+    let input = segment_input;
+    let input_hash = eth_block_input_bytes_digest(&segment.data);
     let transaction_preimage_count = input.transactions.hash_preimages.len();
     let (legacy_transaction_count, typed_transaction_count) =
         eth_block_input_transaction_kind_counts(&input)
@@ -106,17 +118,6 @@ fn verify_eth_block_input_binding_from_input(
         .withdrawals
         .as_ref()
         .map(|withdrawals| withdrawals.hash_preimages.len());
-    let expected = encode_eth_block_input_segment(&input)
-        .map_err(|error| format!("encode ETH block input segment failed: {error}"))?;
-    let segment = proof
-        .segments
-        .iter()
-        .find(|segment| segment.id == ETH_BLOCK_INPUT_SEGMENT_ID)
-        .ok_or_else(|| "missing ETH block input proof segment".to_owned())?;
-    if segment.data != expected {
-        return Err("ETH block input proof segment mismatch".to_owned());
-    }
-    let input_hash = eth_block_input_bytes_digest(&segment.data);
     let public_values = read_public_values_file(public_values_path)
         .map_err(|error| format!("read public-values failed: {public_values_path}: {error}"))?;
     let public_values_hash = public_values_digest(&public_values)

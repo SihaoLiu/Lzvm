@@ -204,6 +204,61 @@ fn reports_embedded_block_input_segment_hash_for_reordered_input_file() {
 }
 
 #[test]
+fn reports_embedded_block_input_segment_hash_for_reordered_proof_segment() {
+    let dir = std::env::temp_dir().join(format!(
+        "lzvm-verify-proof-eth-proof-reordered-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let input_path = dir.join("block.input");
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public-values.bin");
+    let public_input = sample_public_block_bytes_with_matching_roots();
+    let block_input = block_input_from_public_bytes(&public_input);
+    let canonical_input_bytes = encode_eth_block_input(&block_input).expect("input should encode");
+    let reordered_segment = reordered_eth_block_input_file(&canonical_input_bytes);
+    assert_ne!(reordered_segment, canonical_input_bytes);
+    std::fs::write(&input_path, &canonical_input_bytes).expect("block input should write");
+    let setup_hash = [7; 32];
+    let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
+    std::fs::write(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    )
+    .expect("public values should write");
+    let proof = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![ProofSegment {
+            id: ETH_BLOCK_INPUT_SEGMENT_ID,
+            data: reordered_segment.clone(),
+        }],
+    };
+    std::fs::write(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    )
+    .expect("proof should write");
+
+    let binding = eth_block_input::verify_eth_block_input_binding(
+        proof_path.to_str().expect("proof path should be utf-8"),
+        public_values_path
+            .to_str()
+            .expect("public values path should be utf-8"),
+        input_path.to_str().expect("input path should be utf-8"),
+    )
+    .expect("reordered proof segment should match input semantically");
+    std::fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        binding.hash,
+        eth_block_input_bytes_digest(&reordered_segment)
+    );
+    assert_eq!(binding.bytes, reordered_segment.len());
+}
+
+#[test]
 fn rejects_block_input_binding_when_proof_public_values_hash_differs() {
     let dir = std::env::temp_dir().join(format!(
         "lzvm-verify-proof-eth-block-public-hash-{}",
