@@ -334,12 +334,14 @@ fn decode_compressed_instruction(halfword: u16) -> RiscvInstruction {
         (6, 0) => decode_compressed_sw(halfword),
         (7, 0) => decode_compressed_sd(halfword),
         (0, 1) => decode_compressed_addi(halfword),
+        (1, 1) => decode_compressed_addiw(halfword),
         (2, 1) => decode_compressed_li(halfword),
         (3, 1) => decode_compressed_lui_or_addi16sp(halfword),
         (4, 1) => decode_compressed_shift_logical(halfword),
         (5, 1) => decode_compressed_jump(halfword),
         (6, 1) => decode_compressed_branch(RiscvBranchKind::Beq, halfword),
         (7, 1) => decode_compressed_branch(RiscvBranchKind::Bne, halfword),
+        (0, 2) => decode_compressed_slli(halfword),
         (2, 2) => decode_compressed_lwsp(halfword),
         (3, 2) => decode_compressed_ldsp(halfword),
         (4, 2) => decode_compressed_register_control(halfword),
@@ -397,6 +399,19 @@ fn decode_compressed_addi(halfword: u16) -> RiscvInstruction {
     let rd = ((halfword >> 7) & 0x1f) as u8;
     RiscvInstruction::OpImm {
         kind: RiscvOpImmKind::Addi,
+        rd,
+        rs1: rd,
+        immediate: compressed_addi_immediate(halfword),
+    }
+}
+
+fn decode_compressed_addiw(halfword: u16) -> RiscvInstruction {
+    let rd = ((halfword >> 7) & 0x1f) as u8;
+    if rd == 0 {
+        return compressed_unknown(halfword);
+    }
+    RiscvInstruction::OpImm32 {
+        kind: RiscvOpImm32Kind::Addiw,
         rd,
         rs1: rd,
         immediate: compressed_addi_immediate(halfword),
@@ -518,6 +533,20 @@ fn decode_compressed_branch(kind: RiscvBranchKind, halfword: u16) -> RiscvInstru
         rs1: compressed_register(halfword >> 7),
         rs2: 0,
         offset: compressed_branch_offset(halfword),
+    }
+}
+
+fn decode_compressed_slli(halfword: u16) -> RiscvInstruction {
+    let rd = ((halfword >> 7) & 0x1f) as u8;
+    let immediate = compressed_shift_immediate(halfword);
+    if rd == 0 || immediate == 0 {
+        return compressed_unknown(halfword);
+    }
+    RiscvInstruction::OpImm {
+        kind: RiscvOpImmKind::Slli,
+        rd,
+        rs1: rd,
+        immediate,
     }
 }
 
