@@ -1,7 +1,7 @@
 use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_prover::guest_instruction::{
-    RiscvBranchKind, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind,
-    RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    RiscvBranchKind, RiscvFenceKind, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind,
+    RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use lzvm_prover::guest_machine::{
     advance_guest_machine, GuestMachineError, GuestMachineMemory, GuestMachineState,
@@ -1152,6 +1152,39 @@ fn advances_signed_unsigned_branch_variants_and_negative_offsets() {
         let state =
             execute_single_word_with_registers(word, &[(FIRST_REGISTER, first), (2, second)]);
         assert_eq!(state.pc(), expected_pc);
+    }
+}
+
+#[test]
+fn advances_fence_instructions_as_noops() {
+    let mut memory = guest_machine_memory_with_words(&[0x0ff0_000f, 0x8330_000f, 0x0000_100f]);
+    let before_memory = memory.clone();
+    let mut state = GuestMachineState::new(memory.entry_address());
+    state
+        .set_register(1, 0xfeed_face_cafe_beef)
+        .expect("register write should be valid");
+    let cases = [
+        (RiscvFenceKind::Fence, 0, 0xf, 0xf, ENTRY, ENTRY + 4),
+        (RiscvFenceKind::FenceTso, 8, 3, 3, ENTRY + 4, ENTRY + 8),
+        (RiscvFenceKind::FenceI, 0, 0, 0, ENTRY + 8, ENTRY + 12),
+    ];
+
+    for (kind, mode, predecessor, successor, address, next_pc) in cases {
+        let report = advance_guest_machine(&mut memory, &mut state).expect("fence should execute");
+        assert_eq!(report.address, address);
+        assert_eq!(report.next_pc, next_pc);
+        assert_eq!(
+            report.instruction,
+            RiscvInstruction::Fence {
+                kind,
+                mode,
+                predecessor,
+                successor,
+            }
+        );
+        assert_eq!(state.pc(), next_pc);
+        assert_eq!(state.register(1), Some(0xfeed_face_cafe_beef));
+        assert_eq!(memory, before_memory);
     }
 }
 

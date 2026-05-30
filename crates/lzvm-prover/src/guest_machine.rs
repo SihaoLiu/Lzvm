@@ -392,10 +392,10 @@ fn execute_guest_instruction(
             let address = state.read_decoded_register(rs1).wrapping_add_signed(offset);
             write_guest_store(memory, kind, address, state.read_decoded_register(rs2))?;
         }
+        RiscvInstruction::Fence { .. } => {}
         RiscvInstruction::CompressedUnknown { .. }
         | RiscvInstruction::IllegalCompressed { .. }
         | RiscvInstruction::UnsupportedLong { .. }
-        | RiscvInstruction::Fence { .. }
         | RiscvInstruction::Ecall
         | RiscvInstruction::Ebreak
         | RiscvInstruction::Unknown { .. } => {
