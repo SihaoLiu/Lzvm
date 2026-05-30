@@ -31,6 +31,10 @@ pub enum EthBlockPublicValuesError {
     PublicMetadataCountOverflow {
         name: String,
     },
+    ExtraDataOverflow {
+        max_bytes: usize,
+        found: usize,
+    },
 }
 
 impl fmt::Display for EthBlockPublicValuesError {
@@ -70,6 +74,12 @@ impl fmt::Display for EthBlockPublicValuesError {
             }
             Self::PublicMetadataCountOverflow { name } => {
                 write!(f, "ETH block public metadata count overflow: {name}")
+            }
+            Self::ExtraDataOverflow { max_bytes, found } => {
+                write!(
+                    f,
+                    "ETH block public value extra data exceeds {max_bytes} bytes, found {found}"
+                )
             }
         }
     }
@@ -172,64 +182,78 @@ pub fn validate_eth_block_public_values_with_program_image_cache(
 }
 
 fn eth_block_public_value_entries(input: &EthBlockInput) -> Vec<PublicValueEntry> {
-    [
-        ("eth_block_hash_u32_be", hash_u32_be(&input.block_hash)),
-        ("eth_parent_hash_u32_be", hash_u32_be(&input.parent_hash)),
-        ("eth_beneficiary_u32_be", bytes_u32_be(&input.beneficiary)),
-        ("eth_state_root_u32_be", hash_u32_be(&input.state_root)),
-        (
-            "eth_receipts_root_u32_be",
-            hash_u32_be(&input.receipts_root),
-        ),
-        ("eth_logs_bloom_u32_be", bytes_u32_be(&input.logs_bloom)),
-        ("eth_difficulty_u32_be", hash_u32_be(&input.difficulty)),
-        ("eth_block_number_u32_le", u64_u32_le(input.block_number)),
-        ("eth_block_timestamp_u32_le", u64_u32_le(input.timestamp)),
-        ("eth_extra_data_len", vec![input.extra_data.len() as u64]),
-        (
-            "eth_extra_data_u32_be",
-            padded_32_bytes_u32_be(&input.extra_data),
-        ),
-        ("eth_gas_limit_u32_le", u64_u32_le(input.gas_limit)),
-        ("eth_gas_used_u32_le", u64_u32_le(input.gas_used)),
-        (
-            "eth_base_fee_per_gas_present",
-            vec![u64::from(input.base_fee_per_gas.is_some())],
-        ),
-        (
-            "eth_base_fee_per_gas_u32_be",
-            input
-                .base_fee_per_gas
-                .as_ref()
-                .map(hash_u32_be)
-                .unwrap_or_else(|| vec![0; 8]),
-        ),
-        ("eth_mix_hash_u32_be", hash_u32_be(&input.mix_hash)),
-        ("eth_nonce_u32_be", bytes_u32_be(&input.nonce)),
-        ("eth_ommers_hash_u32_be", hash_u32_be(&input.ommers_hash)),
-        (
-            "eth_transactions_root_u32_be",
-            hash_u32_be(&input.transactions_root),
-        ),
-        (
-            "eth_withdrawals_root_present",
-            vec![u64::from(input.withdrawals_root.is_some())],
-        ),
-        (
-            "eth_withdrawals_root_u32_be",
-            input
-                .withdrawals_root
-                .as_ref()
-                .map(hash_u32_be)
-                .unwrap_or_else(|| vec![0; 8]),
-        ),
-    ]
-    .into_iter()
-    .map(|(name, elements)| PublicValueEntry {
-        name: name.to_owned(),
-        elements,
-    })
-    .collect()
+    ETH_BLOCK_PUBLIC_VALUE_NAMES
+        .iter()
+        .map(|name| PublicValueEntry {
+            name: (*name).to_owned(),
+            elements: eth_block_public_value_elements(input, name)
+                .expect("ETH block input dynamic public value fields are checked")
+                .expect("ETH block public value name is known"),
+        })
+        .collect()
+}
+
+const ETH_BLOCK_PUBLIC_VALUE_NAMES: &[&str] = &[
+    "eth_block_hash_u32_be",
+    "eth_parent_hash_u32_be",
+    "eth_beneficiary_u32_be",
+    "eth_state_root_u32_be",
+    "eth_receipts_root_u32_be",
+    "eth_logs_bloom_u32_be",
+    "eth_difficulty_u32_be",
+    "eth_block_number_u32_le",
+    "eth_block_timestamp_u32_le",
+    "eth_extra_data_len",
+    "eth_extra_data_u32_be",
+    "eth_gas_limit_u32_le",
+    "eth_gas_used_u32_le",
+    "eth_base_fee_per_gas_present",
+    "eth_base_fee_per_gas_u32_be",
+    "eth_mix_hash_u32_be",
+    "eth_nonce_u32_be",
+    "eth_ommers_hash_u32_be",
+    "eth_transactions_root_u32_be",
+    "eth_withdrawals_root_present",
+    "eth_withdrawals_root_u32_be",
+];
+
+fn eth_block_public_value_elements(
+    input: &EthBlockInput,
+    name: &str,
+) -> Result<Option<Vec<u64>>, EthBlockPublicValuesError> {
+    let elements = match name {
+        "eth_block_hash_u32_be" => hash_u32_be(&input.block_hash),
+        "eth_parent_hash_u32_be" => hash_u32_be(&input.parent_hash),
+        "eth_beneficiary_u32_be" => bytes_u32_be(&input.beneficiary),
+        "eth_state_root_u32_be" => hash_u32_be(&input.state_root),
+        "eth_receipts_root_u32_be" => hash_u32_be(&input.receipts_root),
+        "eth_logs_bloom_u32_be" => bytes_u32_be(&input.logs_bloom),
+        "eth_difficulty_u32_be" => hash_u32_be(&input.difficulty),
+        "eth_block_number_u32_le" => u64_u32_le(input.block_number),
+        "eth_block_timestamp_u32_le" => u64_u32_le(input.timestamp),
+        "eth_extra_data_len" => vec![input.extra_data.len() as u64],
+        "eth_extra_data_u32_be" => padded_32_bytes_u32_be(&input.extra_data)?,
+        "eth_gas_limit_u32_le" => u64_u32_le(input.gas_limit),
+        "eth_gas_used_u32_le" => u64_u32_le(input.gas_used),
+        "eth_base_fee_per_gas_present" => vec![u64::from(input.base_fee_per_gas.is_some())],
+        "eth_base_fee_per_gas_u32_be" => input
+            .base_fee_per_gas
+            .as_ref()
+            .map(hash_u32_be)
+            .unwrap_or_else(|| vec![0; 8]),
+        "eth_mix_hash_u32_be" => hash_u32_be(&input.mix_hash),
+        "eth_nonce_u32_be" => bytes_u32_be(&input.nonce),
+        "eth_ommers_hash_u32_be" => hash_u32_be(&input.ommers_hash),
+        "eth_transactions_root_u32_be" => hash_u32_be(&input.transactions_root),
+        "eth_withdrawals_root_present" => vec![u64::from(input.withdrawals_root.is_some())],
+        "eth_withdrawals_root_u32_be" => input
+            .withdrawals_root
+            .as_ref()
+            .map(hash_u32_be)
+            .unwrap_or_else(|| vec![0; 8]),
+        _ => return Ok(None),
+    };
+    Ok(Some(elements))
 }
 
 fn metadata_eth_block_elements(
@@ -253,11 +277,7 @@ fn metadata_eth_block_elements(
     if metadata.name == "inputs" && count == 64 {
         return Ok(packed_block_hash_public_outputs(input, count));
     }
-    if let Some(elements) = eth_block_public_value_entries(input)
-        .into_iter()
-        .find(|entry| entry.name == metadata.name)
-        .map(|entry| entry.elements)
-    {
+    if let Some(elements) = eth_block_public_value_elements(input, &metadata.name)? {
         if elements.len() == count {
             return Ok(elements);
         }
@@ -380,10 +400,16 @@ fn bytes_u32_be(bytes: &[u8]) -> Vec<u64> {
         .collect()
 }
 
-fn padded_32_bytes_u32_be(bytes: &[u8]) -> Vec<u64> {
+fn padded_32_bytes_u32_be(bytes: &[u8]) -> Result<Vec<u64>, EthBlockPublicValuesError> {
+    if bytes.len() > 32 {
+        return Err(EthBlockPublicValuesError::ExtraDataOverflow {
+            max_bytes: 32,
+            found: bytes.len(),
+        });
+    }
     let mut padded = [0_u8; 32];
     padded[..bytes.len()].copy_from_slice(bytes);
-    bytes_u32_be(&padded)
+    Ok(bytes_u32_be(&padded))
 }
 
 fn u64_u32_le(value: u64) -> Vec<u64> {

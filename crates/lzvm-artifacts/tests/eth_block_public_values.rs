@@ -73,6 +73,59 @@ fn global_info_with_rom_root() -> GlobalInfo {
     }
 }
 
+fn global_info_with_public(name: &str, element_count: u64) -> GlobalInfo {
+    GlobalInfo {
+        name: "Test".to_owned(),
+        air_groups: vec!["Main".to_owned()],
+        airs: Vec::new(),
+        curve: CurveKind::None,
+        lattice_size: None,
+        aggregation_types: Vec::new(),
+        n_publics: element_count,
+        num_challenges: Vec::new(),
+        num_proof_values: Vec::new(),
+        proof_values_map: Vec::new(),
+        publics_map: vec![PublicValue {
+            name: name.to_owned(),
+            stage: 1,
+            lengths: vec![element_count],
+        }],
+        transcript_arity: 16,
+    }
+}
+
+#[test]
+fn derives_selected_block_public_metadata_without_reading_unselected_extra_data() {
+    let mut input = sample_block_input();
+    input.block_hash = [0x2a; 32];
+    input.extra_data = vec![0x99; 33];
+    let global_info = global_info_with_public("eth_block_hash_u32_be", 8);
+
+    let public_values =
+        public_values_from_eth_block_input_for_metadata([0x44; 32], &input, &global_info, None)
+            .expect("selected block hash public value should derive");
+
+    assert_eq!(public_values.values.len(), 1);
+    assert_eq!(public_values.values[0].name, "eth_block_hash_u32_be");
+    assert_eq!(public_values.values[0].elements, vec![0x2a2a_2a2a; 8]);
+}
+
+#[test]
+fn rejects_selected_extra_data_public_metadata_overflow() {
+    let mut input = sample_block_input();
+    input.extra_data = vec![0x99; 33];
+    let global_info = global_info_with_public("eth_extra_data_u32_be", 8);
+
+    let error =
+        public_values_from_eth_block_input_for_metadata([0x44; 32], &input, &global_info, None)
+            .expect_err("selected extra data public value should validate its payload length");
+
+    assert_eq!(
+        error.to_string(),
+        "ETH block public value extra data exceeds 32 bytes, found 33"
+    );
+}
+
 #[test]
 fn rejects_program_image_cache_public_values_with_wrong_element_count() {
     let public_values = PublicValues {
