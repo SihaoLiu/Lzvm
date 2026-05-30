@@ -559,7 +559,7 @@ fn execute_guest_instruction(
             ..
         } => {
             let address = state.read_decoded_register(rs1);
-            ensure_atomic_aligned(width, address)?;
+            validate_guest_amo_address(memory, width, address)?;
             if state.reservation_matches(address, width) {
                 write_guest_amo(memory, width, address, state.read_decoded_register(rs2))?;
                 state.write_decoded_register(rd, 0);
@@ -672,6 +672,25 @@ fn ensure_atomic_aligned(width: RiscvAmoWidth, address: u64) -> Result<(), Guest
     } else {
         Err(GuestMachineError::MisalignedAtomicAccess { address, width })
     }
+}
+
+fn validate_guest_amo_address(
+    memory: &GuestMachineMemory,
+    width: RiscvAmoWidth,
+    address: u64,
+) -> Result<(), GuestMachineError> {
+    ensure_atomic_aligned(width, address)?;
+    match width {
+        RiscvAmoWidth::Word => {
+            let mut bytes = [0_u8; 4];
+            memory.read_range_into(address, &mut bytes)?;
+        }
+        RiscvAmoWidth::Doubleword => {
+            let mut bytes = [0_u8; 8];
+            memory.read_range_into(address, &mut bytes)?;
+        }
+    }
+    Ok(())
 }
 
 fn read_guest_amo(

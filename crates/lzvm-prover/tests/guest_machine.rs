@@ -998,6 +998,32 @@ fn rejects_misaligned_atomic_accesses_without_mutating_state() {
 }
 
 #[test]
+fn rejects_store_conditional_to_unmapped_memory_without_reservation() {
+    let data_offset = 64;
+    let data_address = ENTRY + data_offset as u64;
+    let mut memory = guest_machine_memory_with_words_and_data(&[sc_w(5, 1, 2)], data_offset, &[]);
+    let mut state = GuestMachineState::new(memory.entry_address());
+    state
+        .set_register(1, data_address)
+        .expect("register write should be valid");
+    state
+        .set_register(2, 0x1122_3344)
+        .expect("register write should be valid");
+    let original_state = state.clone();
+
+    assert_eq!(
+        advance_guest_machine(&mut memory, &mut state),
+        Err(GuestMachineError::Memory(
+            GuestMemoryError::AddressNotMapped {
+                address: data_address,
+                byte_len: 4,
+            }
+        ))
+    );
+    assert_eq!(state, original_state);
+}
+
+#[test]
 fn advances_atomic_add_instructions() {
     let data_offset = 64;
     let data_address = ENTRY + data_offset as u64;
