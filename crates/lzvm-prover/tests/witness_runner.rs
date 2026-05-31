@@ -683,6 +683,151 @@ fn guest_pc_trace_backend_maps_trace_overflow_to_output_overflow() {
 }
 
 #[test]
+fn guest_pc_trace_backend_reports_layout_capacity_before_larger_instruction_limit() {
+    let dir = temp_dir("guest-pc-trace-layout-capacity");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes =
+        sample_guest_image_with_words(&[addi(1, 0, 1), bne(1, 0, -4), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_trace_columns(
+        2,
+        vec![2],
+        vec![
+            commitment_column("pc", 1, 0, 1),
+            commitment_column("next_pc", 1, 1, 1),
+        ],
+    );
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let result = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    match result {
+        Err(WitnessTraceRunError::Call(WitnessCallError::OutputOverflow {
+            produced_len: 48,
+            output_len: 32,
+        })) => {}
+        other => panic!("unexpected layout capacity result: {other:?}"),
+    }
+}
+
+#[test]
+fn guest_pc_trace_backend_preserves_raw_pc_pair_layout_compatibility() {
+    let dir = temp_dir("guest-pc-trace-raw-layout");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes =
+        sample_guest_image_with_words(&[addi(1, 0, 7), addi(2, 1, 3), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_trace_columns(2, vec![2], Vec::new());
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("legacy raw PC pair layout should run");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 2);
+    assert_eq!(trace.column_count(), 2);
+    assert_eq!(
+        trace.value(0, 0),
+        Some(Felt::from_canonical(ENTRY).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(0, 1),
+        Some(Felt::from_canonical(ENTRY + 4).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 0),
+        Some(Felt::from_canonical(ENTRY + 4).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 1),
+        Some(Felt::from_canonical(ENTRY + 8).expect("canonical"))
+    );
+}
+
+#[test]
+fn guest_pc_trace_backend_reports_layout_capacity_without_named_guest_columns() {
+    let dir = temp_dir("guest-pc-trace-raw-layout-capacity");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes =
+        sample_guest_image_with_words(&[addi(1, 0, 1), bne(1, 0, -4), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_trace_columns(2, vec![3], Vec::new());
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let result = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let error = result.expect_err("unmapped layout should be rejected");
+    assert!(error
+        .to_string()
+        .contains("does not expose guest trace columns"));
+}
+
+#[test]
+fn guest_pc_trace_backend_rejects_named_layout_without_guest_columns() {
+    let dir = temp_dir("guest-pc-trace-unmapped-named-layout");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[addi(1, 0, 7), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit =
+        sample_unit_with_trace_columns(2, vec![3], vec![commitment_column("unrelated", 1, 0, 1)]);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let result = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let error = result.expect_err("unmapped named layout should be rejected");
+    assert!(error
+        .to_string()
+        .contains("does not expose guest trace columns"));
+}
+
+#[test]
 fn guest_pc_trace_backend_writes_named_columns_from_layout() {
     let dir = temp_dir("guest-pc-trace-layout");
     let _ = fs::remove_dir_all(&dir);

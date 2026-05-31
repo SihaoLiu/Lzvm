@@ -58,6 +58,7 @@ enum GuestPcTraceBackendError {
     InvalidPcTraceLayout {
         message: String,
     },
+    UnmappedTraceLayout,
     TooManyRegisterWrites {
         row: usize,
         found: usize,
@@ -101,6 +102,10 @@ impl fmt::Display for GuestPcTraceBackendError {
             Self::InvalidPcTraceLayout { message } => {
                 write!(f, "guest PC trace backend layout is invalid: {message}")
             }
+            Self::UnmappedTraceLayout => write!(
+                f,
+                "guest PC trace backend layout does not expose guest trace columns"
+            ),
             Self::TooManyRegisterWrites { row, found } => write!(
                 f,
                 "guest PC trace backend row {row} has too many register writes: {found}"
@@ -135,6 +140,7 @@ impl std::error::Error for GuestPcTraceBackendError {
             Self::MissingGuestImage
             | Self::MissingGuestImageInfo
             | Self::InvalidPcTraceLayout { .. }
+            | Self::UnmappedTraceLayout
             | Self::TooManyRegisterWrites { .. }
             | Self::TooManyMemoryAccesses { .. }
             | Self::NonCanonicalTraceValue { .. }
@@ -165,6 +171,10 @@ fn compute_guest_pc_trace(
     context: WitnessComputeContext<'_>,
     buffers: &mut WitnessTraceBuffers<'_>,
 ) -> Result<WitnessTraceOutput, GuestPcTraceBackendError> {
+    let layout_capacity = layout_trace_capacity(context.trace_layout)?;
+    let run_instruction_limit = layout_capacity
+        .map(|capacity| instruction_limit.min(capacity.instruction_limit))
+        .unwrap_or(instruction_limit);
     let guest_image = context
         .guest_image
         .ok_or(GuestPcTraceBackendError::MissingGuestImage)?;
@@ -186,9 +196,22 @@ fn compute_guest_pc_trace(
         &mut memory,
         &mut state,
         &mut fcall_handler,
-        instruction_limit,
-    )
-    .map_err(GuestPcTraceBackendError::GuestRun)?;
+        run_instruction_limit,
+    );
+    let trace = match trace {
+        Ok(trace) => trace,
+        Err(error) => {
+            if let Some(error) = layout_capacity_error(
+                layout_capacity,
+                run_instruction_limit,
+                buffers.output().len(),
+                &error,
+            ) {
+                return Err(error);
+            }
+            return Err(GuestPcTraceBackendError::GuestRun(error));
+        }
+    };
     if let Some(layout) = context.trace_layout {
         if let Some(produced_len) =
             write_layout_pc_trace(layout, &trace.reports, buffers.output_mut())?
@@ -219,6 +242,67 @@ fn compute_guest_pc_trace(
         output[offset + 8..offset + 16].copy_from_slice(&report.next_pc.to_le_bytes());
     }
     Ok(WitnessTraceOutput { produced_len })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LayoutTraceCapacity {
+    row_count: usize,
+    row_width: usize,
+    instruction_limit: u64,
+}
+
+fn layout_trace_capacity(
+    layout: Option<&WitnessTraceLayout>,
+) -> Result<Option<LayoutTraceCapacity>, GuestPcTraceBackendError> {
+    let Some(layout) = layout else {
+        return Ok(None);
+    };
+    let row_width = match guest_trace_columns(layout)? {
+        Some(_) => layout.column_count(),
+        None if is_raw_pc_pair_layout(layout) => 2,
+        None => return Err(GuestPcTraceBackendError::UnmappedTraceLayout),
+    };
+    Ok(Some(LayoutTraceCapacity {
+        row_count: layout.row_count(),
+        row_width,
+        instruction_limit: u64::try_from(layout.row_count()).unwrap_or(u64::MAX),
+    }))
+}
+
+fn layout_capacity_error(
+    capacity: Option<LayoutTraceCapacity>,
+    run_instruction_limit: u64,
+    output_len: usize,
+    error: &GuestMachineRunError,
+) -> Option<GuestPcTraceBackendError> {
+    let capacity = capacity?;
+    match error {
+        GuestMachineRunError::InstructionLimitExceeded {
+            instruction_limit, ..
+        } if *instruction_limit == run_instruction_limit
+            && run_instruction_limit == capacity.instruction_limit =>
+        {
+            Some(GuestPcTraceBackendError::OutputOverflow {
+                produced_len: layout_trace_byte_len(
+                    capacity.row_count.saturating_add(1),
+                    capacity.row_width,
+                ),
+                output_len,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn layout_trace_byte_len(row_count: usize, column_count: usize) -> usize {
+    row_count
+        .checked_mul(column_count)
+        .and_then(|count| count.checked_mul(8))
+        .unwrap_or(usize::MAX)
+}
+
+fn is_raw_pc_pair_layout(layout: &WitnessTraceLayout) -> bool {
+    layout.column_count() == 2 && layout.columns().is_empty()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -264,13 +348,8 @@ fn write_layout_pc_trace(
         return Ok(None);
     };
     if reports.len() > layout.row_count() {
-        let produced_len = reports
-            .len()
-            .checked_mul(layout.column_count())
-            .and_then(|count| count.checked_mul(8))
-            .unwrap_or(usize::MAX);
         return Err(GuestPcTraceBackendError::OutputOverflow {
-            produced_len,
+            produced_len: layout_trace_byte_len(reports.len(), layout.column_count()),
             output_len: output.len(),
         });
     }
