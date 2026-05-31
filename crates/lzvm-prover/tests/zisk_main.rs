@@ -1,6 +1,6 @@
 use lzvm_prover::guest_instruction::{
-    RiscvBranchKind, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind,
-    RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    RiscvBranchKind, RiscvFenceKind, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind,
+    RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use lzvm_prover::guest_machine::GuestMachineReport;
 use lzvm_prover::zisk_main::{
@@ -352,6 +352,39 @@ fn lowers_pc_store_to_x0_without_register_store() {
 
     assert_eq!(instruction.store, ZiskMainStore::None);
     assert!(!instruction.store_pc);
+}
+
+#[test]
+fn lowers_fence_ops_as_noop_flag_rows() {
+    let cases = [
+        (RiscvFenceKind::Fence, 0, 0xf, 0xf),
+        (RiscvFenceKind::FenceTso, 8, 3, 3),
+        (RiscvFenceKind::FenceI, 0, 0, 0),
+    ];
+
+    for (kind, mode, predecessor, successor) in cases {
+        let instruction = lower_guest_report(&report(
+            4,
+            RiscvInstruction::Fence {
+                kind,
+                mode,
+                predecessor,
+                successor,
+            },
+        ))
+        .expect("fence should lower");
+
+        assert_eq!(instruction.a, ZiskMainSource::Immediate(0));
+        assert_eq!(instruction.b, ZiskMainSource::Immediate(0));
+        assert_eq!(instruction.op, ZiskMainOp::Flag);
+        assert_eq!(instruction.store, ZiskMainStore::None);
+        assert!(!instruction.store_pc);
+        assert!(!instruction.set_pc);
+        assert_eq!(instruction.jmp_offset1, 4);
+        assert_eq!(instruction.jmp_offset2, 4);
+        assert_eq!(instruction.ind_width, 0);
+        assert!(!instruction.m32);
+    }
 }
 
 #[test]

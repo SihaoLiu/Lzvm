@@ -172,6 +172,7 @@ pub fn lower_guest_report(
         RiscvInstruction::Auipc { rd, immediate } => {
             Ok(lower_auipc(report.address, instruction_size, rd, immediate))
         }
+        RiscvInstruction::Fence { .. } => Ok(lower_fence(report.address, instruction_size)),
         RiscvInstruction::OpImm {
             kind,
             rd,
@@ -512,6 +513,17 @@ fn lower_jalr(
     instruction.jmp_offset1 = offset;
     instruction.jmp_offset2 = instruction_size;
     Ok(instruction)
+}
+
+fn lower_fence(pc: u64, instruction_size: i64) -> ZiskMainInstruction {
+    base_instruction(
+        pc,
+        ZiskMainSource::Immediate(0),
+        ZiskMainSource::Immediate(0),
+        ZiskMainOp::Flag,
+        ZiskMainStore::None,
+        instruction_size,
+    )
 }
 
 fn lower_branch(
