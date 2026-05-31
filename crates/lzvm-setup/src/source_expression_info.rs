@@ -682,14 +682,13 @@ fn lower_source_template_statement(
     }
     if source_expression_is_constrained_assignment(statement.value_expression.as_ref()) {
         let mut call_stack = BTreeSet::new();
-        let resolved_statement = source_statement_with_resolved_expression(
+        let resolved_statement = source_statement_with_static_resolved_expression(
             context,
             statement,
             values,
             alias_scope,
             body_cache,
             &mut call_stack,
-            false,
         );
         let lowering_statement = resolved_statement.as_ref().unwrap_or(statement);
         let lowered = lower_source_template_boolean_constraint(
@@ -770,14 +769,13 @@ fn lower_source_template_statement(
         return Ok(SourceTemplateStatementFlow::Fallthrough);
     }
     let mut call_stack = BTreeSet::new();
-    let resolved_statement = source_statement_with_resolved_expression(
+    let resolved_statement = source_statement_with_static_resolved_expression(
         context,
         statement,
         values,
         alias_scope,
         body_cache,
         &mut call_stack,
-        false,
     );
     let lowering_statement = resolved_statement.as_ref().unwrap_or(statement);
     let fallback_lowered = lower_source_template_boolean_constraint(
@@ -1306,6 +1304,122 @@ fn source_statement_with_resolved_expression(
     let mut statement = statement.clone();
     statement.value_expression = Some(resolved);
     Some(statement)
+}
+
+fn source_statement_with_static_resolved_expression(
+    context: &SourceTemplateLoweringContext<'_>,
+    statement: &FunctionStatement,
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_scope: &SourceExpressionAliasScope,
+    body_cache: &mut SourceControlBodyCache,
+    call_stack: &mut BTreeSet<String>,
+) -> Option<FunctionStatement> {
+    let expression = statement.value_expression.as_ref()?;
+    if matches!(
+        &strip_source_group_expression(expression).kind,
+        ExpressionKind::Call { .. }
+    ) {
+        return None;
+    }
+    let mut alias_names = BTreeSet::new();
+    collect_source_expression_referenced_aliases(expression, alias_scope, &mut alias_names);
+    let filtered_values;
+    let values = if alias_names.is_empty() {
+        values
+    } else {
+        filtered_values = source_values_without_alias_names(values, &alias_names);
+        &filtered_values
+    };
+    source_statement_with_resolved_expression(
+        context,
+        statement,
+        values,
+        alias_scope,
+        body_cache,
+        call_stack,
+        false,
+    )
+}
+
+fn collect_source_expression_referenced_aliases(
+    expression: &Expression,
+    alias_scope: &SourceExpressionAliasScope,
+    names: &mut BTreeSet<String>,
+) {
+    match &strip_source_group_expression(expression).kind {
+        ExpressionKind::Name(name) => {
+            if alias_scope.expressions.contains_key(name.as_str())
+                || alias_scope.expression_arrays.contains_key(name.as_str())
+            {
+                names.insert(name.clone());
+            }
+            let binding_name = source_alias_binding_name(name);
+            if binding_name != name
+                && (alias_scope.expressions.contains_key(binding_name)
+                    || alias_scope.expression_arrays.contains_key(binding_name))
+            {
+                names.insert(binding_name.to_owned());
+            }
+        }
+        ExpressionKind::Group(inner) => {
+            collect_source_expression_referenced_aliases(inner, alias_scope, names);
+        }
+        ExpressionKind::Array(expressions) => {
+            for expression in expressions {
+                collect_source_expression_referenced_aliases(expression, alias_scope, names);
+            }
+        }
+        ExpressionKind::Unary { expr, .. } => {
+            collect_source_expression_referenced_aliases(expr, alias_scope, names);
+        }
+        ExpressionKind::Binary { left, right, .. } => {
+            collect_source_expression_referenced_aliases(left, alias_scope, names);
+            collect_source_expression_referenced_aliases(right, alias_scope, names);
+        }
+        ExpressionKind::Call { callee, args } => {
+            collect_source_expression_referenced_aliases(callee, alias_scope, names);
+            for arg in args {
+                collect_source_expression_referenced_aliases(&arg.value, alias_scope, names);
+            }
+        }
+        ExpressionKind::Index { target, index } => {
+            collect_source_expression_referenced_aliases(target, alias_scope, names);
+            collect_source_expression_referenced_aliases(index, alias_scope, names);
+        }
+        ExpressionKind::RowOffset { target, offset, .. } => {
+            collect_source_expression_referenced_aliases(target, alias_scope, names);
+            collect_source_expression_referenced_aliases(offset, alias_scope, names);
+        }
+        ExpressionKind::Ternary {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            collect_source_expression_referenced_aliases(condition, alias_scope, names);
+            collect_source_expression_referenced_aliases(then_expr, alias_scope, names);
+            collect_source_expression_referenced_aliases(else_expr, alias_scope, names);
+        }
+        ExpressionKind::Integer(_)
+        | ExpressionKind::HexInteger(_)
+        | ExpressionKind::StringLiteral(_)
+        | ExpressionKind::TemplateLiteral(_)
+        | ExpressionKind::PositionalParam(_) => {}
+    }
+}
+
+fn source_values_without_alias_names(
+    values: &BTreeMap<String, FixedFileTemplateValue>,
+    alias_names: &BTreeSet<String>,
+) -> BTreeMap<String, FixedFileTemplateValue> {
+    let mut filtered = values.clone();
+    for name in alias_names {
+        filtered.remove(name);
+        let binding_name = source_alias_binding_name(name);
+        if binding_name != name {
+            filtered.remove(binding_name);
+        }
+    }
+    filtered
 }
 
 fn source_function_shared_static_values(

@@ -5,8 +5,8 @@ use lzvm_artifacts::expression_info::{
 };
 use lzvm_field::{Felt, MODULUS};
 use lzvm_pil::{
-    BinaryOperator, Expression, ExpressionKind, FixedFileTemplateValue, FunctionStatement,
-    FunctionStatementKind, SourceProgram, SourceProgramModule, UnaryOperator,
+    BinaryOperator, CallArgument, Expression, ExpressionKind, FixedFileTemplateValue,
+    FunctionStatement, FunctionStatementKind, SourceProgram, SourceProgramModule, UnaryOperator,
 };
 
 use crate::{
@@ -270,7 +270,7 @@ fn lower_source_scalar_expression_in_env(
     aliases: SourceConstraintAliasEnvironment<'_>,
 ) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
     let expression = strip_group_expression(expression);
-    if let Some(value) = static_scalar_integer(expression, state)? {
+    if let Some(value) = static_scalar_integer(expression, state, aliases)? {
         return Ok(CodeOperand::number(canonical_field_value(value)?, 1));
     }
     match &expression.kind {
@@ -1138,7 +1138,7 @@ fn lower_source_static_divisor_expression(
     row_offset: i64,
     aliases: SourceConstraintAliasEnvironment<'_>,
 ) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
-    let Some(divisor) = static_scalar_integer(right, state)? else {
+    let Some(divisor) = static_scalar_integer_resolving_aliases(right, state, aliases)? else {
         return unsupported("unsupported source scalar constraint expression");
     };
     let divisor = Felt::from_u64(canonical_field_value(divisor)?);
@@ -1167,7 +1167,7 @@ fn lower_source_static_exponent_expression(
     row_offset: i64,
     aliases: SourceConstraintAliasEnvironment<'_>,
 ) -> Result<CodeOperand, SourceKeyDirectoryMetadataError> {
-    let Some(exponent) = static_scalar_integer(right, state)? else {
+    let Some(exponent) = static_scalar_integer_resolving_aliases(right, state, aliases)? else {
         return unsupported("unsupported source scalar constraint expression");
     };
     let mut exponent = u64::try_from(exponent)
@@ -1396,18 +1396,21 @@ fn eval_i128_expression(expression: &Expression) -> Result<i128, SourceKeyDirect
 fn static_scalar_integer(
     expression: &Expression,
     state: &SourceConstraintLoweringState<'_>,
+    aliases: SourceConstraintAliasEnvironment<'_>,
 ) -> Result<Option<i128>, SourceKeyDirectoryMetadataError> {
-    if let Some(value) =
-        evaluate_source_static_expression(state.program, expression, state.constant_values)
-    {
-        return Ok(static_value_integer(&value));
+    if !source_expression_references_alias(expression, aliases) {
+        if let Some(value) =
+            evaluate_source_static_expression(state.program, expression, state.constant_values)
+        {
+            return Ok(static_value_integer(&value));
+        }
     }
     match &strip_group_expression(expression).kind {
         ExpressionKind::Integer(value) | ExpressionKind::HexInteger(value) => {
             parse_i128_literal(value).map(Some)
         }
         ExpressionKind::Unary { op, expr } => {
-            let Some(value) = static_scalar_integer(expr, state)? else {
+            let Some(value) = static_scalar_integer(expr, state, aliases)? else {
                 return Ok(None);
             };
             match op {
@@ -1420,6 +1423,242 @@ fn static_scalar_integer(
             }
         }
         _ => Ok(None),
+    }
+}
+
+fn static_scalar_integer_resolving_aliases(
+    expression: &Expression,
+    state: &SourceConstraintLoweringState<'_>,
+    aliases: SourceConstraintAliasEnvironment<'_>,
+) -> Result<Option<i128>, SourceKeyDirectoryMetadataError> {
+    let mut resolving_aliases = BTreeSet::new();
+    let resolved = source_expression_with_resolved_scalar_aliases(
+        expression,
+        aliases,
+        &mut resolving_aliases,
+    )?;
+    if source_expression_references_alias(&resolved, aliases) {
+        return Ok(None);
+    }
+    Ok(
+        evaluate_source_static_expression(state.program, &resolved, state.constant_values)
+            .and_then(|value| static_value_integer(&value)),
+    )
+}
+
+fn source_expression_with_resolved_scalar_aliases(
+    expression: &Expression,
+    aliases: SourceConstraintAliasEnvironment<'_>,
+    resolving_aliases: &mut BTreeSet<String>,
+) -> Result<Expression, SourceKeyDirectoryMetadataError> {
+    match &expression.kind {
+        ExpressionKind::Name(name) => {
+            let Some(alias) = aliases.expression_aliases.get(name) else {
+                return Ok(expression.clone());
+            };
+            if !resolving_aliases.insert(name.clone()) {
+                return unsupported("source scalar constraint expression alias cycle");
+            }
+            let resolved =
+                source_expression_with_resolved_scalar_aliases(alias, aliases, resolving_aliases);
+            resolving_aliases.remove(name);
+            resolved
+        }
+        ExpressionKind::Group(inner) => {
+            source_expression_with_resolved_scalar_aliases(inner, aliases, resolving_aliases)
+        }
+        ExpressionKind::Array(expressions) => {
+            let mut resolved = Vec::with_capacity(expressions.len());
+            for expression in expressions {
+                resolved.push(source_expression_with_resolved_scalar_aliases(
+                    expression,
+                    aliases,
+                    resolving_aliases,
+                )?);
+            }
+            Ok(Expression {
+                kind: ExpressionKind::Array(resolved),
+                source_name: expression.source_name.clone(),
+                start: expression.start,
+                end: expression.end,
+            })
+        }
+        ExpressionKind::Unary { op, expr } => Ok(Expression {
+            kind: ExpressionKind::Unary {
+                op: *op,
+                expr: Box::new(source_expression_with_resolved_scalar_aliases(
+                    expr,
+                    aliases,
+                    resolving_aliases,
+                )?),
+            },
+            source_name: expression.source_name.clone(),
+            start: expression.start,
+            end: expression.end,
+        }),
+        ExpressionKind::Binary { op, left, right } => Ok(Expression {
+            kind: ExpressionKind::Binary {
+                op: *op,
+                left: Box::new(source_expression_with_resolved_scalar_aliases(
+                    left,
+                    aliases,
+                    resolving_aliases,
+                )?),
+                right: Box::new(source_expression_with_resolved_scalar_aliases(
+                    right,
+                    aliases,
+                    resolving_aliases,
+                )?),
+            },
+            source_name: expression.source_name.clone(),
+            start: expression.start,
+            end: expression.end,
+        }),
+        ExpressionKind::Call { callee, args } => {
+            let mut resolved_args = Vec::with_capacity(args.len());
+            for arg in args {
+                resolved_args.push(CallArgument {
+                    name: arg.name.clone(),
+                    value: source_expression_with_resolved_scalar_aliases(
+                        &arg.value,
+                        aliases,
+                        resolving_aliases,
+                    )?,
+                });
+            }
+            Ok(Expression {
+                kind: ExpressionKind::Call {
+                    callee: Box::new(source_expression_with_resolved_scalar_aliases(
+                        callee,
+                        aliases,
+                        resolving_aliases,
+                    )?),
+                    args: resolved_args,
+                },
+                source_name: expression.source_name.clone(),
+                start: expression.start,
+                end: expression.end,
+            })
+        }
+        ExpressionKind::Index { target, index } => Ok(Expression {
+            kind: ExpressionKind::Index {
+                target: Box::new(source_expression_with_resolved_scalar_aliases(
+                    target,
+                    aliases,
+                    resolving_aliases,
+                )?),
+                index: Box::new(source_expression_with_resolved_scalar_aliases(
+                    index,
+                    aliases,
+                    resolving_aliases,
+                )?),
+            },
+            source_name: expression.source_name.clone(),
+            start: expression.start,
+            end: expression.end,
+        }),
+        ExpressionKind::RowOffset {
+            target,
+            offset,
+            prior,
+        } => Ok(Expression {
+            kind: ExpressionKind::RowOffset {
+                target: Box::new(source_expression_with_resolved_scalar_aliases(
+                    target,
+                    aliases,
+                    resolving_aliases,
+                )?),
+                offset: Box::new(source_expression_with_resolved_scalar_aliases(
+                    offset,
+                    aliases,
+                    resolving_aliases,
+                )?),
+                prior: *prior,
+            },
+            source_name: expression.source_name.clone(),
+            start: expression.start,
+            end: expression.end,
+        }),
+        ExpressionKind::Ternary {
+            condition,
+            then_expr,
+            else_expr,
+        } => Ok(Expression {
+            kind: ExpressionKind::Ternary {
+                condition: Box::new(source_expression_with_resolved_scalar_aliases(
+                    condition,
+                    aliases,
+                    resolving_aliases,
+                )?),
+                then_expr: Box::new(source_expression_with_resolved_scalar_aliases(
+                    then_expr,
+                    aliases,
+                    resolving_aliases,
+                )?),
+                else_expr: Box::new(source_expression_with_resolved_scalar_aliases(
+                    else_expr,
+                    aliases,
+                    resolving_aliases,
+                )?),
+            },
+            source_name: expression.source_name.clone(),
+            start: expression.start,
+            end: expression.end,
+        }),
+        ExpressionKind::Integer(_)
+        | ExpressionKind::HexInteger(_)
+        | ExpressionKind::StringLiteral(_)
+        | ExpressionKind::TemplateLiteral(_)
+        | ExpressionKind::PositionalParam(_) => Ok(expression.clone()),
+    }
+}
+
+fn source_expression_references_alias(
+    expression: &Expression,
+    aliases: SourceConstraintAliasEnvironment<'_>,
+) -> bool {
+    match &strip_group_expression(expression).kind {
+        ExpressionKind::Name(name) => {
+            aliases.expression_aliases.contains_key(name)
+                || aliases.expression_array_aliases.contains_key(name)
+        }
+        ExpressionKind::Group(inner) => source_expression_references_alias(inner, aliases),
+        ExpressionKind::Array(expressions) => expressions
+            .iter()
+            .any(|expression| source_expression_references_alias(expression, aliases)),
+        ExpressionKind::Unary { expr, .. } => source_expression_references_alias(expr, aliases),
+        ExpressionKind::Binary { left, right, .. } => {
+            source_expression_references_alias(left, aliases)
+                || source_expression_references_alias(right, aliases)
+        }
+        ExpressionKind::Call { callee, args } => {
+            source_expression_references_alias(callee, aliases)
+                || args
+                    .iter()
+                    .any(|arg| source_expression_references_alias(&arg.value, aliases))
+        }
+        ExpressionKind::Index { target, index } => {
+            source_expression_references_alias(target, aliases)
+                || source_expression_references_alias(index, aliases)
+        }
+        ExpressionKind::RowOffset { target, offset, .. } => {
+            source_expression_references_alias(target, aliases)
+                || source_expression_references_alias(offset, aliases)
+        }
+        ExpressionKind::Ternary {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            source_expression_references_alias(condition, aliases)
+                || source_expression_references_alias(then_expr, aliases)
+                || source_expression_references_alias(else_expr, aliases)
+        }
+        ExpressionKind::Integer(_)
+        | ExpressionKind::HexInteger(_)
+        | ExpressionKind::StringLiteral(_)
+        | ExpressionKind::TemplateLiteral(_)
+        | ExpressionKind::PositionalParam(_) => false,
     }
 }
 
