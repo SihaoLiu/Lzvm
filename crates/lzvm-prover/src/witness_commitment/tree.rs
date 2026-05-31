@@ -1,7 +1,7 @@
 use lzvm_field::Felt;
 
 use crate::merkle_hash::{
-    linear_hash, linear_hashes_from_row_major_bytes, parent_hash, parent_hashes,
+    linear_hash, linear_hashes_from_row_major_bytes, parent_hash, parent_levels_from_digest_level,
 };
 
 use super::{
@@ -42,19 +42,15 @@ pub fn commit_witness_stage_leaves(
         append_digest(&mut out, *digest);
     }
 
-    while level.len() > 1 {
-        let extra_zeros = (arity - (level.len() % arity)) % arity;
-        for _ in 0..extra_zeros {
-            let zero = [Felt::ZERO; HASH_WORDS];
-            append_digest(&mut out, zero);
-            level.push(zero);
+    for parent_level in parent_levels_from_digest_level(&level, arity)? {
+        for _ in 0..parent_level.padding_count {
+            append_digest(&mut out, [Felt::ZERO; HASH_WORDS]);
         }
 
-        let next = parent_hashes(&level, arity)?;
-        for digest in &next {
+        for digest in &parent_level.parents {
             append_digest(&mut out, *digest);
         }
-        level = next;
+        level = parent_level.parents;
     }
 
     Ok(WitnessStageCommitment::new(

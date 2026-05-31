@@ -41,6 +41,12 @@ impl fmt::Display for MerkleHashError {
 
 impl std::error::Error for MerkleHashError {}
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MerkleParentLevel {
+    pub(crate) padding_count: usize,
+    pub(crate) parents: Vec<[Felt; HASH_WORDS]>,
+}
+
 pub(crate) fn linear_hash(
     values: &[Felt],
     arity: usize,
@@ -151,6 +157,105 @@ pub(crate) fn parent_hashes(
     }
 }
 
+pub(crate) fn parent_levels_from_digest_level(
+    level: &[[Felt; HASH_WORDS]],
+    arity: usize,
+) -> Result<Vec<MerkleParentLevel>, MerkleHashError> {
+    validate_arity(arity)?;
+    if level.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    #[cfg(feature = "cuda")]
+    {
+        parent_levels_from_digest_level_on_cuda(level, arity)
+    }
+
+    #[cfg(not(feature = "cuda"))]
+    {
+        parent_levels_from_digest_level_on_cpu(level, arity)
+    }
+}
+
+#[cfg(any(test, not(feature = "cuda")))]
+fn parent_levels_from_digest_level_on_cpu(
+    level: &[[Felt; HASH_WORDS]],
+    arity: usize,
+) -> Result<Vec<MerkleParentLevel>, MerkleHashError> {
+    let mut current = level.to_vec();
+    let mut levels = Vec::new();
+    while current.len() > 1 {
+        let padding_count = padding_count(current.len(), arity)?;
+        let padded_child_count = current
+            .len()
+            .checked_add(padding_count)
+            .ok_or(MerkleHashError::LengthOverflow)?;
+        current.resize(padded_child_count, [Felt::ZERO; HASH_WORDS]);
+
+        let parents = current
+            .chunks_exact(arity)
+            .map(|chunk| parent_hash(chunk, arity))
+            .collect::<Result<Vec<_>, _>>()?;
+        levels.push(MerkleParentLevel {
+            padding_count,
+            parents: parents.clone(),
+        });
+        current = parents;
+    }
+    Ok(levels)
+}
+
+#[cfg(feature = "cuda")]
+fn parent_levels_from_digest_level_on_cuda(
+    level: &[[Felt; HASH_WORDS]],
+    arity: usize,
+) -> Result<Vec<MerkleParentLevel>, MerkleHashError> {
+    let (width, operation): (usize, CudaPoseidon2DeviceOp) = match arity {
+        2 => (8, cuda_poseidon2_width8_merkle_parent_device),
+        4 => (16, cuda_poseidon2_width16_merkle_parent_device),
+        _ => unreachable!("arity is validated"),
+    };
+
+    let input_words = digest_level_as_state_words(level, width)?;
+    let current = CudaDeviceBuffer::from_u64_words(&input_words)
+        .map_err(|_| MerkleHashError::LengthOverflow)?;
+    parent_levels_from_device_buffer(current, level.len(), arity, width, operation)
+}
+
+#[cfg(feature = "cuda")]
+fn parent_levels_from_device_buffer(
+    mut current: CudaDeviceBuffer,
+    mut state_count: usize,
+    arity: usize,
+    width: usize,
+    operation: CudaPoseidon2DeviceOp,
+) -> Result<Vec<MerkleParentLevel>, MerkleHashError> {
+    let mut levels = Vec::new();
+    while state_count > 1 {
+        let padding_count = padding_count(state_count, arity)?;
+        let parent_count = state_count.div_ceil(arity);
+        let mut next = CudaDeviceBuffer::new(
+            parent_count
+                .checked_mul(width)
+                .and_then(|word_count| word_count.checked_mul(8))
+                .ok_or(MerkleHashError::LengthOverflow)?,
+        )
+        .map_err(|_| MerkleHashError::LengthOverflow)?;
+        operation(&current, &mut next).map_err(|_| MerkleHashError::LengthOverflow)?;
+        let parent_words = next
+            .to_u64_words()
+            .map_err(|_| MerkleHashError::LengthOverflow)?;
+        let parents = digests_from_hashed_states(&parent_words, width)?;
+        levels.push(MerkleParentLevel {
+            padding_count,
+            parents,
+        });
+        current = next;
+        state_count = parent_count;
+    }
+    Ok(levels)
+}
+
 pub(crate) fn root_from_digest_level(
     level: &[[Felt; HASH_WORDS]],
     arity: usize,
@@ -185,6 +290,14 @@ pub(crate) fn root_from_digest_level(
         }
         Ok(level[0])
     }
+}
+
+fn padding_count(count: usize, arity: usize) -> Result<usize, MerkleHashError> {
+    let extra_zeros = (arity - (count % arity)) % arity;
+    count
+        .checked_add(extra_zeros)
+        .ok_or(MerkleHashError::LengthOverflow)?;
+    Ok(extra_zeros)
 }
 
 #[cfg(feature = "cuda")]
@@ -770,6 +883,7 @@ mod tests {
     use super::{
         cuda_poseidon2_width16_device_words, cuda_poseidon2_width8_device_words, linear_hash,
         linear_hashes, linear_hashes_from_row_major_bytes, parent_hash, parent_hashes,
+        parent_levels_from_digest_level, parent_levels_from_digest_level_on_cpu,
         root_from_digest_level_on_cuda,
     };
     use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt};
@@ -932,6 +1046,34 @@ mod tests {
         let expected_arity4 =
             cpu_root_from_digest_level(&level, 4).expect("cpu arity-4 root should hash");
         assert_eq!(actual_arity4, expected_arity4);
+    }
+
+    #[test]
+    fn cuda_parent_levels_match_cpu_reference() {
+        let level = vec![
+            digest([1, 2, 3, 4]),
+            digest([5, 6, 7, 8]),
+            digest([9, 10, 11, 12]),
+            digest([13, 14, 15, 16]),
+            digest([17, 18, 19, 20]),
+            digest([21, 22, 23, 24]),
+            digest([25, 26, 27, 28]),
+            digest([29, 30, 31, 32]),
+        ];
+
+        let actual =
+            parent_levels_from_digest_level(&level, 4).expect("cuda parent levels should hash");
+        let expected = parent_levels_from_digest_level_on_cpu(&level, 4)
+            .expect("cpu parent levels should hash");
+
+        assert_eq!(actual, expected);
+        assert_eq!(
+            actual
+                .iter()
+                .map(|level| level.padding_count)
+                .collect::<Vec<_>>(),
+            vec![0, 2]
+        );
     }
 
     fn cpu_root_from_digest_level(

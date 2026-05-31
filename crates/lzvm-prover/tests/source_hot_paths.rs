@@ -146,6 +146,41 @@ fn cuda_merkle_root_folds_on_device_without_host_level_loop() {
     );
 }
 
+#[test]
+fn witness_merkle_tree_uses_device_parent_level_pipeline() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/witness_commitment/tree.rs");
+    let source = std::fs::read_to_string(&source_path).expect("witness tree source should read");
+
+    let commit_body = function_body(
+        &source,
+        "fn commit_witness_stage_leaves",
+        "fn open_witness_stage_commitment",
+    );
+
+    assert!(
+        commit_body.contains("parent_levels_from_digest_level"),
+        "witness Merkle tree construction should reuse the CUDA parent-level pipeline"
+    );
+    assert!(
+        !commit_body.contains("parent_hashes(&level"),
+        "witness Merkle tree construction should avoid re-uploading each parent level"
+    );
+
+    let merkle_source_path = crate_root.join("src/merkle_hash.rs");
+    let merkle_source =
+        std::fs::read_to_string(&merkle_source_path).expect("Merkle hash source should read");
+    let cuda_body = function_body(
+        &merkle_source,
+        "fn parent_levels_from_device_buffer",
+        "pub(crate) fn root_from_digest_level",
+    );
+    assert!(
+        !cuda_body.contains("from_u64_words"),
+        "CUDA parent-level pipeline should not upload each Merkle level"
+    );
+}
+
 fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
     let body = source
         .split_once(start)
