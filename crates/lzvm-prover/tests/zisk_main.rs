@@ -1,6 +1,6 @@
 use lzvm_prover::guest_instruction::{
-    RiscvBranchKind, RiscvCsr, RiscvFenceKind, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind,
-    RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    RiscvAmoWidth, RiscvBranchKind, RiscvCsr, RiscvFenceKind, RiscvInstruction, RiscvLoadKind,
+    RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use lzvm_prover::guest_machine::{GuestMachineReport, ZISK_ARCHITECTURE_ID};
 use lzvm_prover::zisk_main::{
@@ -570,6 +570,34 @@ fn lowers_signed_loads_as_indirect_sign_extension_to_register() {
         assert_eq!(instruction.op, op);
         assert_eq!(instruction.store, ZiskMainStore::Register(7));
         assert_eq!(instruction.ind_width, width);
+    }
+}
+
+#[test]
+fn lowers_load_reserved_rows_as_indirect_loads() {
+    let cases = [
+        (RiscvAmoWidth::Word, ZiskMainOp::SignExtendW, 4),
+        (RiscvAmoWidth::Doubleword, ZiskMainOp::CopyB, 8),
+    ];
+
+    for (width, op, ind_width) in cases {
+        let instruction = lower_guest_report(&report(
+            4,
+            RiscvInstruction::LoadReserved {
+                width,
+                rd: 7,
+                rs1: 4,
+                acquire: true,
+                release: true,
+            },
+        ))
+        .expect("load-reserved should lower");
+
+        assert_eq!(instruction.a, ZiskMainSource::Register(4));
+        assert_eq!(instruction.b, ZiskMainSource::Indirect(0));
+        assert_eq!(instruction.op, op);
+        assert_eq!(instruction.store, ZiskMainStore::Register(7));
+        assert_eq!(instruction.ind_width, ind_width);
     }
 }
 

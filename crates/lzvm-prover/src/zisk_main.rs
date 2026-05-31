@@ -1,8 +1,8 @@
 use std::fmt;
 
 use crate::guest_instruction::{
-    RiscvBranchKind, RiscvCsr, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind,
-    RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    RiscvAmoWidth, RiscvBranchKind, RiscvCsr, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind,
+    RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use crate::guest_machine::{fixed_csr_value, GuestMachineReport};
 
@@ -256,6 +256,18 @@ pub fn lower_guest_report(
                 instruction: report.instruction,
             }),
         },
+        RiscvInstruction::LoadReserved { width, rd, rs1, .. } => {
+            let (op, ind_width) = load_reserved_op_width(width);
+            Ok(lower_load(
+                report.address,
+                instruction_size,
+                rd,
+                rs1,
+                0,
+                op,
+                ind_width,
+            ))
+        }
         RiscvInstruction::Store {
             kind,
             rs1,
@@ -596,6 +608,13 @@ fn load_op_width(kind: RiscvLoadKind) -> Option<(ZiskMainOp, u64)> {
         RiscvLoadKind::Lhu => Some((ZiskMainOp::CopyB, 2)),
         RiscvLoadKind::Lwu => Some((ZiskMainOp::CopyB, 4)),
         RiscvLoadKind::Ld => Some((ZiskMainOp::CopyB, 8)),
+    }
+}
+
+fn load_reserved_op_width(width: RiscvAmoWidth) -> (ZiskMainOp, u64) {
+    match width {
+        RiscvAmoWidth::Word => (ZiskMainOp::SignExtendW, 4),
+        RiscvAmoWidth::Doubleword => (ZiskMainOp::CopyB, 8),
     }
 }
 
