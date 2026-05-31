@@ -280,6 +280,26 @@ fn sample_unit_with_register_effect_columns() -> ProveUnitSchedule {
     )
 }
 
+fn sample_unit_with_zisk_main_columns() -> ProveUnitSchedule {
+    sample_unit_with_trace_columns(
+        2,
+        vec![11],
+        vec![
+            commitment_column("a", 1, 0, 1),
+            commitment_column("b", 1, 1, 1),
+            commitment_column("c", 1, 2, 1),
+            commitment_column("flag", 1, 3, 1),
+            commitment_column("pc", 1, 4, 1),
+            commitment_column("a_src_reg", 1, 5, 1),
+            commitment_column("b_src_reg", 1, 6, 1),
+            commitment_column("store_reg", 1, 7, 1),
+            commitment_column("store_pc", 1, 8, 1),
+            commitment_column("set_pc", 1, 9, 1),
+            commitment_column("op", 1, 10, 1),
+        ],
+    )
+}
+
 fn sample_unit_with_trace_columns(
     base_domain_size: u64,
     stage_commit_widths: Vec<u32>,
@@ -1041,6 +1061,36 @@ fn guest_pc_trace_backend_rejects_partial_layout_pc_columns() {
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert!(error.to_string().contains("missing next_pc"));
+}
+
+#[test]
+fn guest_pc_trace_backend_rejects_zisk_main_layout() {
+    let dir = temp_dir("guest-pc-trace-zisk-main-layout");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes =
+        sample_guest_image_with_words(&[addi(1, 0, 7), addi(2, 1, 3), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns();
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let error = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect_err("Zisk Main layout should reject raw guest PC reports");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let message = error.to_string();
+    assert!(message.contains("Zisk Main witness rows"));
+    assert!(message.contains("raw guest PC reports"));
 }
 
 #[test]

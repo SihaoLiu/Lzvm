@@ -58,6 +58,7 @@ enum GuestPcTraceBackendError {
     InvalidPcTraceLayout {
         message: String,
     },
+    ZiskMainTraceLayout,
     UnmappedTraceLayout,
     TooManyRegisterWrites {
         row: usize,
@@ -102,6 +103,10 @@ impl fmt::Display for GuestPcTraceBackendError {
             Self::InvalidPcTraceLayout { message } => {
                 write!(f, "guest PC trace backend layout is invalid: {message}")
             }
+            Self::ZiskMainTraceLayout => write!(
+                f,
+                "guest PC trace backend cannot write Zisk Main witness rows from raw guest PC reports"
+            ),
             Self::UnmappedTraceLayout => write!(
                 f,
                 "guest PC trace backend layout does not expose guest trace columns"
@@ -140,6 +145,7 @@ impl std::error::Error for GuestPcTraceBackendError {
             Self::MissingGuestImage
             | Self::MissingGuestImageInfo
             | Self::InvalidPcTraceLayout { .. }
+            | Self::ZiskMainTraceLayout
             | Self::UnmappedTraceLayout
             | Self::TooManyRegisterWrites { .. }
             | Self::TooManyMemoryAccesses { .. }
@@ -482,6 +488,9 @@ fn write_column(
 fn guest_trace_columns(
     layout: &WitnessTraceLayout,
 ) -> Result<Option<GuestTraceColumns>, GuestPcTraceBackendError> {
+    if is_zisk_main_trace_layout(layout) {
+        return Err(GuestPcTraceBackendError::ZiskMainTraceLayout);
+    }
     let columns = GuestTraceColumns {
         pc: pc_trace_columns(layout)?,
         register_write: register_write_columns(layout)?,
@@ -507,6 +516,27 @@ fn guest_trace_columns(
     } else {
         Ok(Some(columns))
     }
+}
+
+fn is_zisk_main_trace_layout(layout: &WitnessTraceLayout) -> bool {
+    [
+        "a",
+        "b",
+        "c",
+        "pc",
+        "op",
+        "store_pc",
+        "set_pc",
+        "a_src_reg",
+        "b_src_reg",
+        "store_reg",
+    ]
+    .iter()
+    .all(|name| has_trace_column(layout, name))
+}
+
+fn has_trace_column(layout: &WitnessTraceLayout, name: &str) -> bool {
+    layout.columns().iter().any(|column| column.name() == name)
 }
 
 fn pc_trace_columns(
