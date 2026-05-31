@@ -40,9 +40,22 @@ pub enum ZiskMainOp {
     Sll,
     Srl,
     Sra,
+    Mulhu,
+    Mulhsu,
+    Mul,
+    Mulh,
+    Divu,
+    Remu,
+    Div,
+    Rem,
     SllW,
     SrlW,
     SraW,
+    MulW,
+    DivuW,
+    RemuW,
+    DivW,
+    RemW,
     SignExtendB,
     SignExtendH,
     SignExtendW,
@@ -66,9 +79,22 @@ impl ZiskMainOp {
             Self::Sll => 0x21,
             Self::Srl => 0x22,
             Self::Sra => 0x23,
+            Self::Mulhu => 0xb1,
+            Self::Mulhsu => 0xb3,
+            Self::Mul => 0xb4,
+            Self::Mulh => 0xb5,
+            Self::Divu => 0xb8,
+            Self::Remu => 0xb9,
+            Self::Div => 0xba,
+            Self::Rem => 0xbb,
             Self::SllW => 0x24,
             Self::SrlW => 0x25,
             Self::SraW => 0x26,
+            Self::MulW => 0xb6,
+            Self::DivuW => 0xbc,
+            Self::RemuW => 0xbd,
+            Self::DivW => 0xbe,
+            Self::RemW => 0xbf,
             Self::SignExtendB => 0x27,
             Self::SignExtendH => 0x28,
             Self::SignExtendW => 0x29,
@@ -211,34 +237,38 @@ pub fn lower_guest_report(
             immediate,
             op_imm_32_kind(kind),
         )),
-        RiscvInstruction::Op { kind, rd, rs1, rs2 } => match op_kind(kind) {
-            Some(op) => Ok(binary_register_op(
-                report.address,
-                instruction_size,
-                rd,
-                rs1,
-                rs2,
-                op,
-            )),
-            None if rd == 0 => Ok(lower_noop_flag(report.address, instruction_size)),
-            None => Err(ZiskMainLowerError::UnsupportedInstruction {
-                instruction: report.instruction,
-            }),
-        },
-        RiscvInstruction::Op32 { kind, rd, rs1, rs2 } => match op_32_kind(kind) {
-            Some(op) => Ok(binary_register_word_op(
-                report.address,
-                instruction_size,
-                rd,
-                rs1,
-                rs2,
-                op,
-            )),
-            None if rd == 0 => Ok(lower_noop_flag(report.address, instruction_size)),
-            None => Err(ZiskMainLowerError::UnsupportedInstruction {
-                instruction: report.instruction,
-            }),
-        },
+        RiscvInstruction::Op { kind, rd, rs1, rs2 } => {
+            let (op, is_external_op) = op_kind(kind);
+            if rd == 0 && is_external_op {
+                Ok(lower_noop_flag(report.address, instruction_size))
+            } else {
+                Ok(binary_register_op_with_external(
+                    report.address,
+                    instruction_size,
+                    rd,
+                    rs1,
+                    rs2,
+                    op,
+                    is_external_op,
+                ))
+            }
+        }
+        RiscvInstruction::Op32 { kind, rd, rs1, rs2 } => {
+            let (op, is_external_op) = op_32_kind(kind);
+            if rd == 0 && is_external_op {
+                Ok(lower_noop_flag(report.address, instruction_size))
+            } else {
+                Ok(binary_register_word_op_with_external(
+                    report.address,
+                    instruction_size,
+                    rd,
+                    rs1,
+                    rs2,
+                    op,
+                    is_external_op,
+                ))
+            }
+        }
         RiscvInstruction::Load {
             kind,
             rd,
@@ -358,22 +388,25 @@ fn lower_addi(
     )
 }
 
-fn binary_register_op(
+fn binary_register_op_with_external(
     pc: u64,
     instruction_size: i64,
     rd: u8,
     rs1: u8,
     rs2: u8,
     op: ZiskMainOp,
+    is_external_op: bool,
 ) -> ZiskMainInstruction {
-    base_instruction(
+    let mut instruction = base_instruction(
         pc,
         register_source(rs1),
         register_source(rs2),
         op,
         register_store(rd),
         instruction_size,
-    )
+    );
+    instruction.is_external_op = is_external_op;
+    instruction
 }
 
 fn binary_immediate_op(
@@ -394,15 +427,17 @@ fn binary_immediate_op(
     )
 }
 
-fn binary_register_word_op(
+fn binary_register_word_op_with_external(
     pc: u64,
     instruction_size: i64,
     rd: u8,
     rs1: u8,
     rs2: u8,
     op: ZiskMainOp,
+    is_external_op: bool,
 ) -> ZiskMainInstruction {
-    let mut instruction = binary_register_op(pc, instruction_size, rd, rs1, rs2, op);
+    let mut instruction =
+        binary_register_op_with_external(pc, instruction_size, rd, rs1, rs2, op, is_external_op);
     instruction.m32 = true;
     instruction
 }
@@ -650,41 +685,41 @@ fn op_imm_32_kind(kind: RiscvOpImm32Kind) -> ZiskMainOp {
     }
 }
 
-fn op_kind(kind: RiscvOpKind) -> Option<ZiskMainOp> {
+fn op_kind(kind: RiscvOpKind) -> (ZiskMainOp, bool) {
     match kind {
-        RiscvOpKind::Add => Some(ZiskMainOp::Add),
-        RiscvOpKind::Sub => Some(ZiskMainOp::Sub),
-        RiscvOpKind::Sll => Some(ZiskMainOp::Sll),
-        RiscvOpKind::Slt => Some(ZiskMainOp::Lt),
-        RiscvOpKind::Sltu => Some(ZiskMainOp::Ltu),
-        RiscvOpKind::Xor => Some(ZiskMainOp::Xor),
-        RiscvOpKind::Srl => Some(ZiskMainOp::Srl),
-        RiscvOpKind::Sra => Some(ZiskMainOp::Sra),
-        RiscvOpKind::Or => Some(ZiskMainOp::Or),
-        RiscvOpKind::And => Some(ZiskMainOp::And),
-        RiscvOpKind::Mul
-        | RiscvOpKind::Mulh
-        | RiscvOpKind::Mulhsu
-        | RiscvOpKind::Mulhu
-        | RiscvOpKind::Div
-        | RiscvOpKind::Divu
-        | RiscvOpKind::Rem
-        | RiscvOpKind::Remu => None,
+        RiscvOpKind::Add => (ZiskMainOp::Add, false),
+        RiscvOpKind::Sub => (ZiskMainOp::Sub, false),
+        RiscvOpKind::Sll => (ZiskMainOp::Sll, false),
+        RiscvOpKind::Slt => (ZiskMainOp::Lt, false),
+        RiscvOpKind::Sltu => (ZiskMainOp::Ltu, false),
+        RiscvOpKind::Xor => (ZiskMainOp::Xor, false),
+        RiscvOpKind::Srl => (ZiskMainOp::Srl, false),
+        RiscvOpKind::Sra => (ZiskMainOp::Sra, false),
+        RiscvOpKind::Or => (ZiskMainOp::Or, false),
+        RiscvOpKind::And => (ZiskMainOp::And, false),
+        RiscvOpKind::Mul => (ZiskMainOp::Mul, true),
+        RiscvOpKind::Mulh => (ZiskMainOp::Mulh, true),
+        RiscvOpKind::Mulhsu => (ZiskMainOp::Mulhsu, true),
+        RiscvOpKind::Mulhu => (ZiskMainOp::Mulhu, true),
+        RiscvOpKind::Div => (ZiskMainOp::Div, true),
+        RiscvOpKind::Divu => (ZiskMainOp::Divu, true),
+        RiscvOpKind::Rem => (ZiskMainOp::Rem, true),
+        RiscvOpKind::Remu => (ZiskMainOp::Remu, true),
     }
 }
 
-fn op_32_kind(kind: RiscvOp32Kind) -> Option<ZiskMainOp> {
+fn op_32_kind(kind: RiscvOp32Kind) -> (ZiskMainOp, bool) {
     match kind {
-        RiscvOp32Kind::Addw => Some(ZiskMainOp::AddW),
-        RiscvOp32Kind::Subw => Some(ZiskMainOp::SubW),
-        RiscvOp32Kind::Sllw => Some(ZiskMainOp::SllW),
-        RiscvOp32Kind::Srlw => Some(ZiskMainOp::SrlW),
-        RiscvOp32Kind::Sraw => Some(ZiskMainOp::SraW),
-        RiscvOp32Kind::Mulw
-        | RiscvOp32Kind::Divw
-        | RiscvOp32Kind::Divuw
-        | RiscvOp32Kind::Remw
-        | RiscvOp32Kind::Remuw => None,
+        RiscvOp32Kind::Addw => (ZiskMainOp::AddW, false),
+        RiscvOp32Kind::Subw => (ZiskMainOp::SubW, false),
+        RiscvOp32Kind::Sllw => (ZiskMainOp::SllW, false),
+        RiscvOp32Kind::Srlw => (ZiskMainOp::SrlW, false),
+        RiscvOp32Kind::Sraw => (ZiskMainOp::SraW, false),
+        RiscvOp32Kind::Mulw => (ZiskMainOp::MulW, true),
+        RiscvOp32Kind::Divw => (ZiskMainOp::DivW, true),
+        RiscvOp32Kind::Divuw => (ZiskMainOp::DivuW, true),
+        RiscvOp32Kind::Remw => (ZiskMainOp::RemW, true),
+        RiscvOp32Kind::Remuw => (ZiskMainOp::RemuW, true),
     }
 }
 

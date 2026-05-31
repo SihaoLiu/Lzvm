@@ -817,8 +817,24 @@ fn zisk_main_op_result(op: ZiskMainOp, a: u64, b: u64) -> (u64, bool) {
         }
         ZiskMainOp::Add => (a.wrapping_add(b), false),
         ZiskMainOp::Sub => (a.wrapping_sub(b), false),
+        ZiskMainOp::Mul => (a.wrapping_mul(b), false),
+        ZiskMainOp::Mulh => (
+            (((a as i64 as i128) * (b as i64 as i128)) >> 64) as u64,
+            false,
+        ),
+        ZiskMainOp::Mulhsu => ((((a as i64 as i128) * (b as i128)) >> 64) as u64, false),
+        ZiskMainOp::Mulhu => ((((a as u128) * (b as u128)) >> 64) as u64, false),
+        ZiskMainOp::Div => signed_divide_result(a as i64, b as i64),
+        ZiskMainOp::Divu => unsigned_divide_result(a, b),
+        ZiskMainOp::Rem => signed_remainder_result(a as i64, b as i64),
+        ZiskMainOp::Remu => unsigned_remainder_result(a, b),
         ZiskMainOp::AddW => (sign_extend_word((a as u32).wrapping_add(b as u32)), false),
         ZiskMainOp::SubW => (sign_extend_word((a as u32).wrapping_sub(b as u32)), false),
+        ZiskMainOp::MulW => (sign_extend_word((a as u32).wrapping_mul(b as u32)), false),
+        ZiskMainOp::DivW => signed_divide_word_result(a as u32 as i32, b as u32 as i32),
+        ZiskMainOp::DivuW => unsigned_divide_word_result(a as u32, b as u32),
+        ZiskMainOp::RemW => signed_remainder_word_result(a as u32 as i32, b as u32 as i32),
+        ZiskMainOp::RemuW => unsigned_remainder_word_result(a as u32, b as u32),
         ZiskMainOp::And => (a & b, false),
         ZiskMainOp::Or => (a | b, false),
         ZiskMainOp::Xor => (a ^ b, false),
@@ -845,6 +861,78 @@ fn zisk_main_op_result(op: ZiskMainOp, a: u64, b: u64) -> (u64, bool) {
 
 fn sign_extend_word(value: u32) -> u64 {
     (value as i32 as i64) as u64
+}
+
+fn unsigned_divide_result(dividend: u64, divisor: u64) -> (u64, bool) {
+    if divisor == 0 {
+        (u64::MAX, true)
+    } else {
+        (dividend / divisor, false)
+    }
+}
+
+fn unsigned_remainder_result(dividend: u64, divisor: u64) -> (u64, bool) {
+    if divisor == 0 {
+        (dividend, true)
+    } else {
+        (dividend % divisor, false)
+    }
+}
+
+fn signed_divide_result(dividend: i64, divisor: i64) -> (u64, bool) {
+    if divisor == 0 {
+        (-1_i64 as u64, true)
+    } else if dividend == i64::MIN && divisor == -1 {
+        (i64::MIN as u64, false)
+    } else {
+        ((dividend / divisor) as u64, false)
+    }
+}
+
+fn signed_remainder_result(dividend: i64, divisor: i64) -> (u64, bool) {
+    if divisor == 0 {
+        (dividend as u64, true)
+    } else if dividend == i64::MIN && divisor == -1 {
+        (0, false)
+    } else {
+        ((dividend % divisor) as u64, false)
+    }
+}
+
+fn unsigned_divide_word_result(dividend: u32, divisor: u32) -> (u64, bool) {
+    if divisor == 0 {
+        (u64::MAX, true)
+    } else {
+        (sign_extend_word(dividend / divisor), false)
+    }
+}
+
+fn unsigned_remainder_word_result(dividend: u32, divisor: u32) -> (u64, bool) {
+    if divisor == 0 {
+        (sign_extend_word(dividend), true)
+    } else {
+        (sign_extend_word(dividend % divisor), false)
+    }
+}
+
+fn signed_divide_word_result(dividend: i32, divisor: i32) -> (u64, bool) {
+    if divisor == 0 {
+        (u64::MAX, true)
+    } else if dividend == i32::MIN && divisor == -1 {
+        (sign_extend_word(dividend as u32), false)
+    } else {
+        (sign_extend_word((dividend / divisor) as u32), false)
+    }
+}
+
+fn signed_remainder_word_result(dividend: i32, divisor: i32) -> (u64, bool) {
+    if divisor == 0 {
+        (sign_extend_word(dividend as u32), true)
+    } else if dividend == i32::MIN && divisor == -1 {
+        (0, false)
+    } else {
+        (sign_extend_word((dividend % divisor) as u32), false)
+    }
 }
 
 fn validate_zisk_main_next_pc(

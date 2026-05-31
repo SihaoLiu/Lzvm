@@ -175,29 +175,67 @@ fn lowers_register_word_ops_as_m32_binary_ops() {
 }
 
 #[test]
-fn rejects_unsupported_word_m_extension_ops() {
+fn lowers_register_m_extension_ops_as_external_arith_ops() {
     let cases = [
-        RiscvOp32Kind::Mulw,
-        RiscvOp32Kind::Divw,
-        RiscvOp32Kind::Divuw,
-        RiscvOp32Kind::Remw,
-        RiscvOp32Kind::Remuw,
+        (RiscvOpKind::Mul, 0xb4),
+        (RiscvOpKind::Mulh, 0xb5),
+        (RiscvOpKind::Mulhsu, 0xb3),
+        (RiscvOpKind::Mulhu, 0xb1),
+        (RiscvOpKind::Div, 0xba),
+        (RiscvOpKind::Divu, 0xb8),
+        (RiscvOpKind::Rem, 0xbb),
+        (RiscvOpKind::Remu, 0xb9),
     ];
 
-    for kind in cases {
-        let instruction = RiscvInstruction::Op32 {
-            kind,
-            rd: 6,
-            rs1: 4,
-            rs2: 5,
-        };
-        let error = lower_guest_report(&report(4, instruction))
-            .expect_err("unsupported word M extension op should fail");
+    for (kind, op_code) in cases {
+        let instruction = lower_guest_report(&report(
+            4,
+            RiscvInstruction::Op {
+                kind,
+                rd: 6,
+                rs1: 4,
+                rs2: 5,
+            },
+        ))
+        .expect("register M extension op should lower");
 
-        assert_eq!(
-            error,
-            ZiskMainLowerError::UnsupportedInstruction { instruction }
-        );
+        assert_eq!(instruction.a, ZiskMainSource::Register(4));
+        assert_eq!(instruction.b, ZiskMainSource::Register(5));
+        assert_eq!(instruction.op.code(), op_code);
+        assert_eq!(instruction.store, ZiskMainStore::Register(6));
+        assert!(instruction.is_external_op);
+        assert!(!instruction.m32);
+    }
+}
+
+#[test]
+fn lowers_register_word_m_extension_ops_as_external_arith_ops() {
+    let cases = [
+        (RiscvOp32Kind::Mulw, 0xb6),
+        (RiscvOp32Kind::Divw, 0xbe),
+        (RiscvOp32Kind::Divuw, 0xbc),
+        (RiscvOp32Kind::Remw, 0xbf),
+        (RiscvOp32Kind::Remuw, 0xbd),
+    ];
+
+    for (kind, op_code) in cases {
+        let instruction = lower_guest_report(&report(
+            4,
+            RiscvInstruction::Op32 {
+                kind,
+                rd: 6,
+                rs1: 4,
+                rs2: 5,
+            },
+        ))
+        .expect("register word M extension op should lower");
+
+        assert_eq!(instruction.a, ZiskMainSource::Register(4));
+        assert_eq!(instruction.b, ZiskMainSource::Register(5));
+        assert_eq!(instruction.op.code(), op_code);
+        assert_eq!(instruction.store, ZiskMainStore::Register(6));
+        assert!(instruction.is_external_op);
+        assert!(instruction.m32);
     }
 }
 
@@ -277,6 +315,19 @@ fn uses_zisk_alu_op_codes() {
     assert_eq!(ZiskMainOp::Sll.code(), 0x21);
     assert_eq!(ZiskMainOp::Srl.code(), 0x22);
     assert_eq!(ZiskMainOp::Sra.code(), 0x23);
+    assert_eq!(ZiskMainOp::Mulhu.code(), 0xb1);
+    assert_eq!(ZiskMainOp::Mulhsu.code(), 0xb3);
+    assert_eq!(ZiskMainOp::Mul.code(), 0xb4);
+    assert_eq!(ZiskMainOp::Mulh.code(), 0xb5);
+    assert_eq!(ZiskMainOp::MulW.code(), 0xb6);
+    assert_eq!(ZiskMainOp::Divu.code(), 0xb8);
+    assert_eq!(ZiskMainOp::Remu.code(), 0xb9);
+    assert_eq!(ZiskMainOp::Div.code(), 0xba);
+    assert_eq!(ZiskMainOp::Rem.code(), 0xbb);
+    assert_eq!(ZiskMainOp::DivuW.code(), 0xbc);
+    assert_eq!(ZiskMainOp::RemuW.code(), 0xbd);
+    assert_eq!(ZiskMainOp::DivW.code(), 0xbe);
+    assert_eq!(ZiskMainOp::RemW.code(), 0xbf);
 }
 
 #[test]

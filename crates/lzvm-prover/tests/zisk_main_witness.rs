@@ -245,8 +245,52 @@ fn mul(rd: u8, rs1: u8, rs2: u8) -> u32 {
     encode_r(1, rs2, rs1, 0, rd)
 }
 
+fn mulh(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r(1, rs2, rs1, 1, rd)
+}
+
+fn mulhsu(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r(1, rs2, rs1, 2, rd)
+}
+
+fn mulhu(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r(1, rs2, rs1, 3, rd)
+}
+
+fn div(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r(1, rs2, rs1, 4, rd)
+}
+
+fn divu(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r(1, rs2, rs1, 5, rd)
+}
+
+fn rem(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r(1, rs2, rs1, 6, rd)
+}
+
+fn remu(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r(1, rs2, rs1, 7, rd)
+}
+
+fn mulw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_32(1, rs2, rs1, 0, rd)
+}
+
 fn divw(rd: u8, rs1: u8, rs2: u8) -> u32 {
     encode_r_32(1, rs2, rs1, 4, rd)
+}
+
+fn divuw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_32(1, rs2, rs1, 5, rd)
+}
+
+fn remw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_32(1, rs2, rs1, 6, rd)
+}
+
+fn remuw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_32(1, rs2, rs1, 7, rd)
 }
 
 fn store(funct3: u8, rs1: u8, rs2: u8, offset: i16) -> u32 {
@@ -1036,7 +1080,7 @@ fn guest_pc_trace_backend_rejects_unsupported_zisk_main_instruction() {
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("fixture directory should be created");
     let guest_image = dir.join("guest.elf");
-    let guest_image_bytes = sample_guest_image_with_words(&[encode_r(1, 0, 0, 0, 1), 0x0000_0073]);
+    let guest_image_bytes = sample_guest_image_with_words(&[csrrs(0, 0x0813, 0), 0x0000_0073]);
     fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
     let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
     let unit = sample_unit_with_zisk_main_columns();
@@ -1228,6 +1272,127 @@ fn guest_pc_trace_backend_writes_zisk_main_word_alu_rows() {
     assert_wide(&trace, 10, 4, 0xffff_ffff_c000_0000);
     assert_cell(&trace, 10, 15, 0x26);
     assert_cell(&trace, 10, 18, 1);
+}
+
+#[test]
+fn guest_pc_trace_backend_writes_zisk_main_m_extension_rows() {
+    let dir = temp_dir("m-extension");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let code_words = [
+        addi(1, 0, -7),
+        addi(2, 0, 3),
+        mul(3, 1, 2),
+        mulh(4, 1, 2),
+        mulhsu(5, 1, 2),
+        mulhu(6, 1, 2),
+        div(7, 1, 2),
+        divu(8, 1, 2),
+        rem(9, 1, 2),
+        remu(10, 1, 2),
+        addiw(11, 0, -7),
+        addiw(12, 0, 3),
+        mulw(13, 11, 12),
+        divw(14, 11, 12),
+        divuw(15, 11, 12),
+        remw(16, 11, 12),
+        remuw(17, 11, 12),
+        addi(18, 0, 0),
+        div(19, 1, 18),
+        rem(20, 1, 18),
+        divw(21, 11, 18),
+        remw(22, 11, 18),
+        addi(23, 0, 1),
+        slli(23, 23, 63),
+        addi(24, 0, -1),
+        div(25, 23, 24),
+        rem(26, 23, 24),
+        addi(29, 0, 1),
+        slli(29, 29, 31),
+        divw(27, 29, 24),
+        remw(28, 29, 24),
+        addi(30, 0, 1),
+        divuw(5, 29, 30),
+        remuw(6, 29, 24),
+        divu(30, 1, 18),
+        remu(31, 1, 18),
+        divuw(5, 11, 18),
+        remuw(6, 11, 18),
+        0x0000_0073,
+    ];
+    let guest_image_bytes = sample_guest_image_with_words(&code_words);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(38);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(42),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("Zisk Main layout should write M extension rows");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 38);
+    assert_eq!(trace.column_count(), 27);
+
+    let regular_cases = [
+        (2, 0xb4, (-21_i64) as u64, false),
+        (3, 0xb5, u64::MAX, false),
+        (4, 0xb3, u64::MAX, false),
+        (5, 0xb1, 2, false),
+        (6, 0xba, (-2_i64) as u64, false),
+        (7, 0xb8, ((-7_i64) as u64) / 3, false),
+        (8, 0xbb, u64::MAX, false),
+        (9, 0xb9, ((-7_i64) as u64) % 3, false),
+        (12, 0xb6, (-21_i64) as u64, true),
+        (13, 0xbe, (-2_i64) as u64, true),
+        (14, 0xbc, u64::from(((-7_i32) as u32) / 3), true),
+        (15, 0xbf, u64::MAX, true),
+        (16, 0xbd, u64::from(((-7_i32) as u32) % 3), true),
+        (32, 0xbc, 0xffff_ffff_8000_0000, true),
+        (33, 0xbd, 0xffff_ffff_8000_0000, true),
+    ];
+
+    for (row, op_code, value, m32) in regular_cases {
+        assert_wide(&trace, row, 4, value);
+        assert_eq!(trace.value(row, 6), Some(Felt::ZERO));
+        assert_cell(&trace, row, 12, 1);
+        assert_cell(&trace, row, 15, op_code);
+        assert_cell(&trace, row, 18, u64::from(m32));
+        assert_cell(&trace, row, 19, 1);
+        assert_eq!(trace.value(row, 20), Some(Felt::ZERO));
+    }
+
+    let exceptional_cases = [
+        (18, 0xba, u64::MAX, 1, false),
+        (19, 0xbb, (-7_i64) as u64, 1, false),
+        (20, 0xbe, u64::MAX, 1, true),
+        (21, 0xbf, (-7_i64) as u64, 1, true),
+        (25, 0xba, i64::MIN as u64, 0, false),
+        (26, 0xbb, 0, 0, false),
+        (29, 0xbe, 0xffff_ffff_8000_0000, 0, true),
+        (30, 0xbf, 0, 0, true),
+        (34, 0xb8, u64::MAX, 1, false),
+        (35, 0xb9, (-7_i64) as u64, 1, false),
+        (36, 0xbc, u64::MAX, 1, true),
+        (37, 0xbd, (-7_i64) as u64, 1, true),
+    ];
+
+    for (row, op_code, value, flag, m32) in exceptional_cases {
+        assert_wide(&trace, row, 4, value);
+        assert_cell(&trace, row, 6, flag);
+        assert_cell(&trace, row, 12, 1);
+        assert_cell(&trace, row, 15, op_code);
+        assert_cell(&trace, row, 18, u64::from(m32));
+        assert_cell(&trace, row, 19, 1);
+    }
 }
 
 #[test]
