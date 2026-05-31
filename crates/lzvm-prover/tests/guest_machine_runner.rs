@@ -1,8 +1,9 @@
 use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_prover::guest_instruction::RiscvInstruction;
 use lzvm_prover::guest_machine::{
-    run_guest_machine, run_guest_machine_with_fcalls, GuestFcallHandler, GuestFcallParam,
-    GuestFcallRequest, GuestFcallResponse, GuestMachineError, GuestMachineHalt, GuestMachineMemory,
+    run_guest_machine, run_guest_machine_trace, run_guest_machine_trace_with_fcalls,
+    run_guest_machine_with_fcalls, GuestFcallHandler, GuestFcallParam, GuestFcallRequest,
+    GuestFcallResponse, GuestMachineError, GuestMachineHalt, GuestMachineMemory,
     GuestMachineRunError, GuestMachineState, ZISK_ARCHITECTURE_ID,
 };
 use lzvm_prover::guest_memory::{load_guest_memory_image, GuestMemoryImage};
@@ -480,6 +481,32 @@ fn runs_guest_machine_until_ecall() {
     assert_eq!(state.register(3), Some(0));
 }
 
+#[test]
+fn traces_guest_machine_until_ecall() {
+    let mut memory = guest_machine_memory_with_words(&[
+        addi(1, 0, 7),
+        addi(2, 1, 3),
+        0x0000_0073,
+        addi(3, 0, 9),
+    ]);
+    let mut state = GuestMachineState::new(memory.entry_address());
+
+    let trace = run_guest_machine_trace(&mut memory, &mut state, 10).expect("guest should halt");
+
+    assert_eq!(trace.run.executed_instructions, 2);
+    assert_eq!(
+        trace.run.halt,
+        GuestMachineHalt::Ecall { address: ENTRY + 8 }
+    );
+    assert_eq!(trace.reports.len(), 2);
+    assert_eq!(trace.reports[0].address, ENTRY);
+    assert_eq!(trace.reports[0].next_pc, ENTRY + 4);
+    assert_eq!(trace.reports[1].address, ENTRY + 4);
+    assert_eq!(trace.reports[1].next_pc, ENTRY + 8);
+    assert_eq!(state.register(1), Some(7));
+    assert_eq!(state.register(2), Some(10));
+}
+
 #[derive(Default)]
 struct RecordingFcallHandler {
     requests: Vec<GuestFcallRequest>,
@@ -528,6 +555,45 @@ fn runs_guest_machine_with_zisk_free_call_handler() {
             params: vec![GuestFcallParam { port: 0, value: 17 }],
         }]
     );
+}
+
+#[test]
+fn traces_guest_machine_with_zisk_free_call_handler() {
+    let mut memory = guest_machine_memory_with_words(&[
+        addi(5, 0, 17),
+        csrs(0x08f0, 5),
+        csrwi(0x08c0, 7),
+        csrr(6, 0x0ffe),
+        0x0000_0073,
+    ]);
+    let mut state = GuestMachineState::new(memory.entry_address());
+    let mut handler = RecordingFcallHandler::default();
+
+    let trace = run_guest_machine_trace_with_fcalls(&mut memory, &mut state, &mut handler, 10)
+        .expect("guest should halt");
+
+    assert_eq!(trace.run.executed_instructions, 4);
+    assert_eq!(
+        trace.run.halt,
+        GuestMachineHalt::Ecall {
+            address: ENTRY + 16
+        }
+    );
+    assert_eq!(
+        trace
+            .reports
+            .iter()
+            .map(|report| (report.address, report.next_pc))
+            .collect::<Vec<_>>(),
+        vec![
+            (ENTRY, ENTRY + 4),
+            (ENTRY + 4, ENTRY + 8),
+            (ENTRY + 8, ENTRY + 12),
+            (ENTRY + 12, ENTRY + 16),
+        ]
+    );
+    assert_eq!(state.register(6), Some(0x2a));
+    assert_eq!(handler.requests.len(), 1);
 }
 
 #[test]

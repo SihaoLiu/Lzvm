@@ -358,6 +358,12 @@ pub struct GuestMachineRunReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GuestMachineExecutionTrace {
+    pub run: GuestMachineRunReport,
+    pub reports: Vec<GuestMachineReport>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GuestMachineHalt {
     Ecall { address: u64 },
 }
@@ -519,7 +525,7 @@ pub fn run_guest_machine(
     state: &mut GuestMachineState,
     instruction_limit: u64,
 ) -> Result<GuestMachineRunReport, GuestMachineRunError> {
-    run_guest_machine_inner(memory, state, None, instruction_limit)
+    run_guest_machine_inner(memory, state, None, instruction_limit, None)
 }
 
 pub fn run_guest_machine_with_fcalls(
@@ -528,7 +534,41 @@ pub fn run_guest_machine_with_fcalls(
     handler: &mut dyn GuestFcallHandler,
     instruction_limit: u64,
 ) -> Result<GuestMachineRunReport, GuestMachineRunError> {
-    run_guest_machine_inner(memory, state, Some(handler), instruction_limit)
+    run_guest_machine_inner(memory, state, Some(handler), instruction_limit, None)
+}
+
+pub fn run_guest_machine_trace(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    instruction_limit: u64,
+) -> Result<GuestMachineExecutionTrace, GuestMachineRunError> {
+    run_guest_machine_trace_inner(memory, state, None, instruction_limit)
+}
+
+pub fn run_guest_machine_trace_with_fcalls(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+    instruction_limit: u64,
+) -> Result<GuestMachineExecutionTrace, GuestMachineRunError> {
+    run_guest_machine_trace_inner(memory, state, Some(handler), instruction_limit)
+}
+
+fn run_guest_machine_trace_inner(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: Option<&mut dyn GuestFcallHandler>,
+    instruction_limit: u64,
+) -> Result<GuestMachineExecutionTrace, GuestMachineRunError> {
+    let mut reports = Vec::new();
+    let run = run_guest_machine_inner(
+        memory,
+        state,
+        handler,
+        instruction_limit,
+        Some(&mut reports),
+    )?;
+    Ok(GuestMachineExecutionTrace { run, reports })
 }
 
 fn run_guest_machine_inner(
@@ -536,6 +576,7 @@ fn run_guest_machine_inner(
     state: &mut GuestMachineState,
     mut handler: Option<&mut dyn GuestFcallHandler>,
     instruction_limit: u64,
+    mut reports: Option<&mut Vec<GuestMachineReport>>,
 ) -> Result<GuestMachineRunReport, GuestMachineRunError> {
     let mut executed_instructions = 0_u64;
     loop {
@@ -554,13 +595,12 @@ fn run_guest_machine_inner(
                 pc: state.pc(),
             });
         }
-        match handler.as_deref_mut() {
-            Some(handler) => {
-                advance_guest_machine_with_fcalls(memory, state, handler)?;
-            }
-            None => {
-                advance_guest_machine(memory, state)?;
-            }
+        let report = match handler.as_deref_mut() {
+            Some(handler) => advance_guest_machine_with_fcalls(memory, state, handler)?,
+            None => advance_guest_machine(memory, state)?,
+        };
+        if let Some(reports) = reports.as_deref_mut() {
+            reports.push(report);
         }
         executed_instructions += 1;
     }
