@@ -27,6 +27,9 @@ pub enum ZiskMainOp {
     Flag,
     CopyB,
     Add,
+    SignExtendB,
+    SignExtendH,
+    SignExtendW,
 }
 
 impl ZiskMainOp {
@@ -35,6 +38,9 @@ impl ZiskMainOp {
             Self::Flag => 0x00,
             Self::CopyB => 0x01,
             Self::Add => 0x0a,
+            Self::SignExtendB => 0x27,
+            Self::SignExtendH => 0x28,
+            Self::SignExtendW => 0x29,
         }
     }
 }
@@ -135,13 +141,14 @@ pub fn lower_guest_report(
             rd,
             rs1,
             offset,
-        } => match unsigned_load_width(kind) {
-            Some(width) => Ok(lower_load(
+        } => match load_op_width(kind) {
+            Some((op, width)) => Ok(lower_load(
                 report.address,
                 instruction_size,
                 rd,
                 rs1,
                 offset,
+                op,
                 width,
             )),
             None => Err(ZiskMainLowerError::UnsupportedInstruction {
@@ -260,13 +267,14 @@ fn lower_load(
     rd: u8,
     rs1: u8,
     offset: i64,
+    op: ZiskMainOp,
     width: u64,
 ) -> ZiskMainInstruction {
     let mut instruction = base_instruction(
         pc,
         register_source(rs1),
         ZiskMainSource::Indirect(offset),
-        ZiskMainOp::CopyB,
+        op,
         register_store(rd),
         instruction_size,
     );
@@ -294,13 +302,15 @@ fn lower_store(
     instruction
 }
 
-fn unsigned_load_width(kind: RiscvLoadKind) -> Option<u64> {
+fn load_op_width(kind: RiscvLoadKind) -> Option<(ZiskMainOp, u64)> {
     match kind {
-        RiscvLoadKind::Lbu => Some(1),
-        RiscvLoadKind::Lhu => Some(2),
-        RiscvLoadKind::Lwu => Some(4),
-        RiscvLoadKind::Ld => Some(8),
-        RiscvLoadKind::Lb | RiscvLoadKind::Lh | RiscvLoadKind::Lw => None,
+        RiscvLoadKind::Lb => Some((ZiskMainOp::SignExtendB, 1)),
+        RiscvLoadKind::Lh => Some((ZiskMainOp::SignExtendH, 2)),
+        RiscvLoadKind::Lw => Some((ZiskMainOp::SignExtendW, 4)),
+        RiscvLoadKind::Lbu => Some((ZiskMainOp::CopyB, 1)),
+        RiscvLoadKind::Lhu => Some((ZiskMainOp::CopyB, 2)),
+        RiscvLoadKind::Lwu => Some((ZiskMainOp::CopyB, 4)),
+        RiscvLoadKind::Ld => Some((ZiskMainOp::CopyB, 8)),
     }
 }
 

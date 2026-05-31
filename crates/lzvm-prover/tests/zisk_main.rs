@@ -118,6 +118,41 @@ fn lowers_unsigned_loads_as_indirect_copies_to_register() {
 }
 
 #[test]
+fn lowers_signed_loads_as_indirect_sign_extension_to_register() {
+    let cases = [
+        (RiscvLoadKind::Lb, ZiskMainOp::SignExtendB, 1),
+        (RiscvLoadKind::Lh, ZiskMainOp::SignExtendH, 2),
+        (RiscvLoadKind::Lw, ZiskMainOp::SignExtendW, 4),
+    ];
+
+    for (kind, op, width) in cases {
+        let instruction = lower_guest_report(&report(
+            4,
+            RiscvInstruction::Load {
+                kind,
+                rd: 7,
+                rs1: 4,
+                offset: 12,
+            },
+        ))
+        .expect("signed load should lower");
+
+        assert_eq!(instruction.a, ZiskMainSource::Register(4));
+        assert_eq!(instruction.b, ZiskMainSource::Indirect(12));
+        assert_eq!(instruction.op, op);
+        assert_eq!(instruction.store, ZiskMainStore::Register(7));
+        assert_eq!(instruction.ind_width, width);
+    }
+}
+
+#[test]
+fn uses_zisk_sign_extension_op_codes() {
+    assert_eq!(ZiskMainOp::SignExtendB.code(), 0x27);
+    assert_eq!(ZiskMainOp::SignExtendH.code(), 0x28);
+    assert_eq!(ZiskMainOp::SignExtendW.code(), 0x29);
+}
+
+#[test]
 fn lowers_narrow_stores_as_register_copy_to_indirect_store() {
     let cases = [
         (RiscvStoreKind::Sb, 1),
@@ -142,25 +177,6 @@ fn lowers_narrow_stores_as_register_copy_to_indirect_store() {
         assert_eq!(instruction.op, ZiskMainOp::CopyB);
         assert_eq!(instruction.store, ZiskMainStore::Indirect(-12));
         assert_eq!(instruction.ind_width, width);
-    }
-}
-
-#[test]
-fn rejects_signed_loads_until_sign_extension_lowering_is_available() {
-    for kind in [RiscvLoadKind::Lb, RiscvLoadKind::Lh, RiscvLoadKind::Lw] {
-        let instruction = RiscvInstruction::Load {
-            kind,
-            rd: 7,
-            rs1: 4,
-            offset: 12,
-        };
-        let error = lower_guest_report(&report(4, instruction))
-            .expect_err("signed loads need sign-extension lowering");
-
-        assert_eq!(
-            error,
-            ZiskMainLowerError::UnsupportedInstruction { instruction }
-        );
     }
 }
 

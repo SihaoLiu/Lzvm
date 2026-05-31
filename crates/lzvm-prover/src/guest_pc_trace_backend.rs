@@ -793,6 +793,9 @@ fn zisk_main_op_result(op: ZiskMainOp, a: u64, b: u64) -> (u64, bool) {
         ZiskMainOp::Flag => (0, true),
         ZiskMainOp::CopyB => (b, false),
         ZiskMainOp::Add => (a.wrapping_add(b), false),
+        ZiskMainOp::SignExtendB => ((b as i8) as u64, false),
+        ZiskMainOp::SignExtendH => ((b as i16) as u64, false),
+        ZiskMainOp::SignExtendW => ((b as i32) as u64, false),
     }
 }
 

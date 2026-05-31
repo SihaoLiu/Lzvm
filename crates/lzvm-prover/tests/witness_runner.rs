@@ -147,6 +147,18 @@ fn load(funct3: u8, rd: u8, rs1: u8, offset: i16) -> u32 {
     encode_i(offset, rs1, funct3, rd, 0x03)
 }
 
+fn lb(rd: u8, rs1: u8, offset: i16) -> u32 {
+    load(0, rd, rs1, offset)
+}
+
+fn lh(rd: u8, rs1: u8, offset: i16) -> u32 {
+    load(1, rd, rs1, offset)
+}
+
+fn lw(rd: u8, rs1: u8, offset: i16) -> u32 {
+    load(2, rd, rs1, offset)
+}
+
 fn ld(rd: u8, rs1: u8, offset: i16) -> u32 {
     load(3, rd, rs1, offset)
 }
@@ -1590,6 +1602,120 @@ fn guest_pc_trace_backend_writes_zisk_main_narrow_memory_rows() {
     assert_eq!(
         trace.value(6, 24),
         Some(Felt::from_canonical(12).expect("canonical"))
+    );
+}
+
+#[test]
+fn guest_pc_trace_backend_writes_zisk_main_signed_load_rows() {
+    let dir = temp_dir("guest-pc-trace-zisk-main-signed-loads");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let data_address = 64_u64;
+    let code_words = [
+        addi(1, 0, data_address as i16),
+        lb(2, 1, 0),
+        lh(3, 1, 1),
+        lw(4, 1, 3),
+        0x0000_0073,
+    ];
+    let mut code = Vec::with_capacity(code_words.len() * 4);
+    for word in code_words {
+        code.extend_from_slice(&word.to_le_bytes());
+    }
+    let data_offset = 176_u64 + code.len() as u64;
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x80, 0x34, 0x80, 0xef, 0xcd, 0xab, 0x89]);
+    let headers = [
+        program_header_at(176, ENTRY, code.len() as u64),
+        program_header_at(data_offset, data_address, data.len() as u64),
+    ];
+    let mut guest_image_bytes = sample_guest_image_with_program_headers(&headers);
+    guest_image_bytes.resize(176, 0);
+    guest_image_bytes.extend_from_slice(&code);
+    guest_image_bytes.resize(data_offset as usize, 0);
+    guest_image_bytes.extend_from_slice(&data);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(4);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("Zisk Main layout should write signed load rows");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 4);
+    assert_eq!(trace.column_count(), 27);
+    assert_eq!(
+        trace.value(1, 2),
+        Some(Felt::from_canonical(0x80).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 4),
+        Some(Felt::from_canonical(0xffff_ff80).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 5),
+        Some(Felt::from_canonical(0xffff_ffff).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 15),
+        Some(Felt::from_canonical(0x27).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 22),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(trace.value(1, 26), Some(Felt::ZERO));
+
+    assert_eq!(
+        trace.value(2, 4),
+        Some(Felt::from_canonical(0xffff_8034).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(2, 5),
+        Some(Felt::from_canonical(0xffff_ffff).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(2, 15),
+        Some(Felt::from_canonical(0x28).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(2, 22),
+        Some(Felt::from_canonical(2).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(2, 26),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+
+    assert_eq!(
+        trace.value(3, 4),
+        Some(Felt::from_canonical(0x89ab_cdef).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(3, 5),
+        Some(Felt::from_canonical(0xffff_ffff).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(3, 15),
+        Some(Felt::from_canonical(0x29).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(3, 22),
+        Some(Felt::from_canonical(4).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(3, 26),
+        Some(Felt::from_canonical(3).expect("canonical"))
     );
 }
 
