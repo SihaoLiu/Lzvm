@@ -218,6 +218,12 @@ fn parse_verify_setup_preflight_args<'a>(
     parse_setup_validation_args(args)
 }
 
+fn parse_verify_contribution_args<'a>(
+    args: &'a [&'a str],
+) -> Result<ParsedSetupValidationArgs<'a>, SetupValidationArgError> {
+    parse_setup_validation_args(args)
+}
+
 fn parse_setup_validation_args<'a>(
     args: &'a [&'a str],
 ) -> Result<ParsedSetupValidationArgs<'a>, SetupValidationArgError> {
@@ -370,14 +376,44 @@ pub(super) fn verify_proof(args: &[&str], stdout: &mut dyn Write, stderr: &mut d
 }
 
 pub(super) fn verify_contribution(
-    setup_dir: &str,
-    proof_bin: &str,
-    public_values_path: &str,
+    args: &[&str],
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    let report = match derive_global_challenge_from_files(setup_dir, proof_bin, public_values_path)
-    {
+    let parsed = match parse_verify_contribution_args(args) {
+        Ok(parsed) => parsed,
+        Err(SetupValidationArgError::Usage) => return write_verify_contribution_usage(stderr),
+        Err(SetupValidationArgError::Invalid(message)) => {
+            let _ = writeln!(stderr, "verify contribution failed: {message}");
+            return 1;
+        }
+    };
+    let eth_block_input_binding = match verify_requested_eth_block_binding(
+        "verify contribution",
+        parsed.proof_bin,
+        parsed.public_values_path,
+        parsed.eth_block_input,
+        parsed.eth_public_input,
+        parsed.eth_public_input_allow_trailing,
+        stderr,
+    ) {
+        Some(binding) => binding,
+        None => return 1,
+    };
+    let program_image_cache_matched = match verify_requested_program_image_cache_binding(
+        "verify contribution",
+        parsed.proof_bin,
+        parsed.program_image_cache,
+        stderr,
+    ) {
+        Some(matched) => matched,
+        None => return 1,
+    };
+    let report = match derive_global_challenge_from_files(
+        parsed.setup_dir,
+        parsed.proof_bin,
+        parsed.public_values_path,
+    ) {
         Ok(report) => report,
         Err(error) => {
             let _ = writeln!(stderr, "verify contribution failed: {error}");
@@ -398,7 +434,12 @@ pub(super) fn verify_contribution(
         "public_value_fields={}",
         report.public_value_field_count
     );
-    write_contribution_binding_summary(stdout, &report);
+    write_contribution_binding_summary(
+        stdout,
+        &report,
+        eth_block_input_binding,
+        program_image_cache_matched,
+    );
     let _ = writeln!(stdout, "proof_values={}", report.proof_value_count);
     let _ = writeln!(stdout, "contributions={}", report.contribution_count);
     let _ = writeln!(
@@ -445,7 +486,7 @@ pub(super) fn verify_contribution_set(
         "public_value_fields={}",
         report.public_value_field_count
     );
-    write_contribution_binding_summary(stdout, &report);
+    write_contribution_binding_summary(stdout, &report, None, false);
     let _ = writeln!(stdout, "proof_values={}", report.proof_value_count);
     let _ = writeln!(stdout, "contributions={}", report.contribution_count);
     let _ = writeln!(
@@ -891,7 +932,10 @@ fn write_challenge_values_summary(
 fn write_contribution_binding_summary(
     stdout: &mut dyn Write,
     report: &ContributionChallengeReport,
+    eth_block_input_binding: Option<EthBlockInputBinding>,
+    program_image_cache_matched: bool,
 ) {
+    let has_eth_block_input_binding = eth_block_input_binding.is_some();
     if report.program_image_cache_count > 0 {
         let _ = writeln!(
             stdout,
@@ -910,9 +954,25 @@ fn write_contribution_binding_summary(
     }
     if report.eth_block_input_count > 0 {
         let _ = writeln!(stdout, "eth_block_inputs={}", report.eth_block_input_count);
-        for input in &report.eth_block_inputs {
-            eth_block_output::write_contribution_eth_block_input(stdout, input);
+        if has_eth_block_input_binding {
+            for hash in &report.eth_block_input_hashes {
+                let _ = writeln!(
+                    stdout,
+                    "eth_block_input_hash={}",
+                    prove_plan::format_hash(hash)
+                );
+            }
+        } else {
+            for input in &report.eth_block_inputs {
+                eth_block_output::write_contribution_eth_block_input(stdout, input);
+            }
         }
+    }
+    if let Some(binding) = eth_block_input_binding {
+        write_eth_block_input_binding_summary(stdout, &report.eth_block_input_hashes, binding);
+    }
+    if program_image_cache_matched {
+        let _ = writeln!(stdout, "program_image_cache_match=ok");
     }
 }
 
@@ -943,7 +1003,7 @@ fn write_verify_proof_usage(stderr: &mut dyn Write) -> i32 {
 pub(super) fn write_verify_contribution_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm verify contribution <setup-dir> <proof-bin> <public-values>"
+        "usage: lzvm verify contribution [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] <setup-dir> <proof-bin> <public-values>"
     );
     2
 }

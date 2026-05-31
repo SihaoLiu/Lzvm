@@ -64,7 +64,8 @@ use lzvm_artifacts::pcs_proof_values_segment::{
 };
 use lzvm_artifacts::pcs_query_segment::{parse_pcs_query_plan_segment, PCS_QUERY_PLAN_SEGMENT_ID};
 use lzvm_artifacts::program_image::{
-    read_program_image_commitment_cache_file, ProgramImageCommitmentCache, ProgramImageGpuMode,
+    encode_program_image_commitment_cache, read_program_image_commitment_cache_file,
+    ProgramImageCommitmentCache, ProgramImageGpuMode,
 };
 use lzvm_artifacts::program_image_segment::{
     encode_program_image_cache_segment, parse_program_image_cache_segment,
@@ -14249,6 +14250,88 @@ fn rejects_verify_contribution_without_embedded_challenge_values() {
     );
 }
 
+struct MinimalContributionBindingFixture {
+    dir: PathBuf,
+    proof_path: PathBuf,
+    public_values_path: PathBuf,
+    block_input_path: PathBuf,
+    cache_path: PathBuf,
+    block_input: EthBlockInput,
+    cache: ProgramImageCommitmentCache,
+    setup_hash: [u8; 32],
+}
+
+fn sample_contribution_program_image_cache(setup_hash: [u8; 32]) -> ProgramImageCommitmentCache {
+    ProgramImageCommitmentCache {
+        program_digest: [0x11; 32],
+        source_image_digest: [0x12; 32],
+        constraint_system_digest: setup_hash,
+        tree_root: [11, 12, 13, 14],
+        trace_row_count: 1024,
+        trace_column_count: 17,
+        blowup_factor: 8,
+        merkle_tree_arity: 4,
+        gpu_mode: ProgramImageGpuMode::Cpu,
+    }
+}
+
+fn write_minimal_contribution_binding_fixture(name: &str) -> MinimalContributionBindingFixture {
+    let dir = temp_dir(name);
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let setup_hash = [0x77; 32];
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
+    let cache = sample_contribution_program_image_cache(setup_hash);
+    let proof = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            ProofSegment {
+                id: ETH_BLOCK_INPUT_SEGMENT_ID,
+                data: encode_eth_block_input_segment(&block_input)
+                    .expect("block segment should encode"),
+            },
+            ProofSegment {
+                id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+                data: encode_program_image_cache_segment(&cache)
+                    .expect("cache segment should encode"),
+            },
+        ],
+    };
+    let proof_path = dir.join("proof.bin");
+    let public_values_path = dir.join("public_values.bin");
+    let block_input_path = dir.join("block.input");
+    let cache_path = dir.join("program_image.cache");
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+    write_bytes(
+        &block_input_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+    write_bytes(
+        &cache_path,
+        encode_program_image_commitment_cache(&cache).expect("cache should encode"),
+    );
+
+    MinimalContributionBindingFixture {
+        dir,
+        proof_path,
+        public_values_path,
+        block_input_path,
+        cache_path,
+        block_input,
+        cache,
+        setup_hash,
+    }
+}
+
 #[test]
 fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
     let dir = temp_dir("verify-contribution-bound-inputs");
@@ -14266,17 +14349,7 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
             .lattice_size
             .expect("lattice size should exist") as usize,
     );
-    let cache = ProgramImageCommitmentCache {
-        program_digest: [0x11; 32],
-        source_image_digest: [0x12; 32],
-        constraint_system_digest: setup_hash,
-        tree_root: [11, 12, 13, 14],
-        trace_row_count: 1024,
-        trace_column_count: 17,
-        blowup_factor: 8,
-        merkle_tree_arity: 4,
-        gpu_mode: ProgramImageGpuMode::Cpu,
-    };
+    let cache = sample_contribution_program_image_cache(setup_hash);
     let cache_segment_data =
         encode_program_image_cache_segment(&cache).expect("cache segment should encode");
     let cache_segment_hash = program_image_cache_segment_digest(&cache_segment_data);
@@ -14315,6 +14388,8 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
     let proof_path = dir.join("proof.bin");
     let public_values_path = dir.join("public_values.bin");
     let challenge_values_path = dir.join("challenge_values.bin");
+    let block_input_path = dir.join("block.input");
+    let cache_path = dir.join("program_image.cache");
     write_bytes(
         &proof_path,
         encode_proof_artifact(&proof).expect("proof should encode"),
@@ -14323,6 +14398,14 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
         &public_values_path,
         encode_public_values(&public_values).expect("public values should encode"),
     );
+    write_bytes(
+        &block_input_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+    write_bytes(
+        &cache_path,
+        encode_program_image_commitment_cache(&cache).expect("cache should encode"),
+    );
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -14330,6 +14413,12 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
         &[
             "verify",
             "contribution",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block path should be utf-8"),
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
             dir.to_str().expect("setup path should be utf-8"),
             proof_path.to_str().expect("proof path should be utf-8"),
             public_values_path
@@ -14424,11 +14513,13 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
     assert!(stdout_text.contains("program_image_cache_blowup_factor=8\n"));
     assert!(stdout_text.contains("program_image_cache_arity=4\n"));
     assert!(stdout_text.contains("program_image_cache_gpu_mode=cpu\n"));
+    assert!(stdout_text.contains("program_image_cache_match=ok\n"));
     assert!(stdout_text.contains("eth_block_inputs=1\n"));
     assert!(stdout_text.contains(&format!(
         "eth_block_input_hash={}\n",
         format_hash(&block_segment_hash)
     )));
+    assert!(stdout_text.contains("eth_block_input_match=ok\n"));
     assert!(stdout_text.contains(&format!(
         "eth_block_input_bytes={}\n",
         proof
@@ -14486,6 +14577,156 @@ fn verifies_contribution_reports_bound_program_image_and_eth_block_input() {
         expected_challenge.c1.to_u64(),
         expected_challenge.c2.to_u64()
     )));
+}
+
+#[test]
+fn rejects_verify_contribution_with_mismatched_eth_block_input_binding() {
+    let fixture =
+        write_minimal_contribution_binding_fixture("verify-contribution-mismatched-block-input");
+    let mismatched_input =
+        build_eth_block_input(&sample_block_rlp_variant()).expect("block input should build");
+    write_bytes(
+        &fixture.block_input_path,
+        encode_eth_block_input(&mismatched_input).expect("block input should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "contribution",
+            "--eth-block-input",
+            fixture
+                .block_input_path
+                .to_str()
+                .expect("block path should be utf-8"),
+            fixture.dir.to_str().expect("setup path should be utf-8"),
+            fixture
+                .proof_path
+                .to_str()
+                .expect("proof path should be utf-8"),
+            fixture
+                .public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&fixture.dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify contribution failed: ETH block input proof segment mismatch\n"
+    );
+}
+
+#[test]
+fn rejects_verify_contribution_with_mismatched_eth_public_values() {
+    let fixture =
+        write_minimal_contribution_binding_fixture("verify-contribution-mismatched-public-values");
+    let mismatched_input =
+        build_eth_block_input(&sample_block_rlp_variant()).expect("block input should build");
+    let public_values = public_values_from_eth_block_input(fixture.setup_hash, &mismatched_input);
+    let proof = ProofArtifact {
+        setup_hash: fixture.setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![ProofSegment {
+            id: ETH_BLOCK_INPUT_SEGMENT_ID,
+            data: encode_eth_block_input_segment(&fixture.block_input)
+                .expect("block segment should encode"),
+        }],
+    };
+    write_bytes(
+        &fixture.proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+    write_bytes(
+        &fixture.public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "contribution",
+            "--eth-block-input",
+            fixture
+                .block_input_path
+                .to_str()
+                .expect("block path should be utf-8"),
+            fixture.dir.to_str().expect("setup path should be utf-8"),
+            fixture
+                .proof_path
+                .to_str()
+                .expect("proof path should be utf-8"),
+            fixture
+                .public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&fixture.dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify contribution failed: ETH block public value mismatch: eth_block_hash_u32_be\n"
+    );
+}
+
+#[test]
+fn rejects_verify_contribution_with_mismatched_program_image_cache_binding() {
+    let fixture = write_minimal_contribution_binding_fixture(
+        "verify-contribution-mismatched-program-image-cache",
+    );
+    let mut mismatched_cache = fixture.cache.clone();
+    mismatched_cache.source_image_digest = [0x13; 32];
+    write_bytes(
+        &fixture.cache_path,
+        encode_program_image_commitment_cache(&mismatched_cache).expect("cache should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "contribution",
+            "--program-image-cache",
+            fixture
+                .cache_path
+                .to_str()
+                .expect("cache path should be utf-8"),
+            fixture.dir.to_str().expect("setup path should be utf-8"),
+            fixture
+                .proof_path
+                .to_str()
+                .expect("proof path should be utf-8"),
+            fixture
+                .public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&fixture.dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify contribution failed: program image cache proof segment mismatch\n"
+    );
 }
 
 #[test]

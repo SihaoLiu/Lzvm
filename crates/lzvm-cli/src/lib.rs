@@ -97,16 +97,9 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             verify_commands::verify_setup_preflight(rest, stdout, stderr)
         }
         ["verify", "proof", rest @ ..] => verify_commands::verify_proof(rest, stdout, stderr),
-        ["verify", "contribution", setup_dir, proof_bin, public_values_path] => {
-            verify_commands::verify_contribution(
-                setup_dir,
-                proof_bin,
-                public_values_path,
-                stdout,
-                stderr,
-            )
+        ["verify", "contribution", rest @ ..] => {
+            verify_commands::verify_contribution(rest, stdout, stderr)
         }
-        ["verify", "contribution", ..] => verify_commands::write_verify_contribution_usage(stderr),
         ["verify", "contribution-set", setup_dir, public_values_path, proof_bins @ ..]
             if !proof_bins.is_empty() =>
         {

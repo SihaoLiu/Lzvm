@@ -62,6 +62,45 @@ fn parses_binding_options_for_verify_preflight_args() {
 }
 
 #[test]
+fn parses_binding_options_for_verify_contribution_args() {
+    let result = parse_verify_contribution_args(&[
+        "--eth-block-input",
+        "block.input",
+        "--program-image-cache",
+        "cache.bin",
+        "setup",
+        "proof.bin",
+        "public-values.bin",
+    ])
+    .expect("verify contribution args should parse");
+
+    assert_eq!(result.setup_dir, "setup");
+    assert_eq!(result.proof_bin, "proof.bin");
+    assert_eq!(result.public_values_path, "public-values.bin");
+    assert_eq!(result.eth_block_input, Some("block.input"));
+    assert_eq!(result.program_image_cache, Some("cache.bin"));
+}
+
+#[test]
+fn parses_eth_public_input_options_for_verify_contribution_args() {
+    let result = parse_verify_contribution_args(&[
+        "--eth-public-input",
+        "public.bin",
+        "--eth-public-input-allow-trailing",
+        "setup",
+        "proof.bin",
+        "public-values.bin",
+    ])
+    .expect("verify contribution args should parse");
+
+    assert_eq!(result.setup_dir, "setup");
+    assert_eq!(result.proof_bin, "proof.bin");
+    assert_eq!(result.public_values_path, "public-values.bin");
+    assert_eq!(result.eth_public_input, Some("public.bin"));
+    assert!(result.eth_public_input_allow_trailing);
+}
+
+#[test]
 fn rejects_eth_public_input_allow_trailing_without_eth_public_input_for_verify_proof_args() {
     let result = parse_verify_proof_args(&[
         "--eth-public-input-allow-trailing",
