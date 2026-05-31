@@ -4,27 +4,81 @@ use std::path::{Path, PathBuf};
 use lzvm_artifacts::challenge_values_segment::{
     encode_challenge_values_segment, parse_challenge_values_segment, ChallengeValuesSegment,
 };
-use lzvm_prover::contribution::{
-    derive_global_challenge_from_contribution_proofs, ContributionChallengeReport,
-};
+use lzvm_prover::contribution::derive_global_challenge_from_contribution_proofs;
 
-use crate::eth_block_output;
-use crate::program_image_cache;
 use crate::prove_plan;
 use crate::verify_commands;
 
-pub(crate) fn run(
-    setup_dir: &str,
-    public_values_path: &str,
-    output_path: &str,
-    proof_bins: &[&str],
-    stdout: &mut dyn Write,
-    stderr: &mut dyn Write,
-) -> i32 {
-    let proof_paths = proof_bins.iter().map(PathBuf::from).collect::<Vec<_>>();
+struct ParsedWriteArgs<'a> {
+    setup_dir: &'a str,
+    public_values_path: &'a str,
+    output_path: &'a str,
+    proof_bins: Vec<&'a str>,
+    eth_block_input: Option<&'a str>,
+    eth_public_input: Option<&'a str>,
+    eth_public_input_allow_trailing: bool,
+    program_image_cache: Option<&'a str>,
+}
+
+fn parse_write_args<'a>(
+    args: &'a [&'a str],
+) -> Result<ParsedWriteArgs<'a>, verify_commands::SetupValidationArgError> {
+    let parsed = verify_commands::parse_binding_args(args)?;
+    if parsed.positionals.len() < 4 {
+        return Err(verify_commands::SetupValidationArgError::Usage);
+    }
+    verify_commands::validate_binding_args(&parsed)?;
+    Ok(ParsedWriteArgs {
+        setup_dir: parsed.positionals[0],
+        public_values_path: parsed.positionals[1],
+        output_path: parsed.positionals[2],
+        proof_bins: parsed.positionals[3..].to_vec(),
+        eth_block_input: parsed.eth_block_input,
+        eth_public_input: parsed.eth_public_input,
+        eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
+        program_image_cache: parsed.program_image_cache,
+    })
+}
+
+pub(crate) fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
+    let parsed = match parse_write_args(args) {
+        Ok(parsed) => parsed,
+        Err(verify_commands::SetupValidationArgError::Usage) => return write_usage(stderr),
+        Err(verify_commands::SetupValidationArgError::Invalid(message)) => {
+            let _ = writeln!(
+                stderr,
+                "prove contribution challenges write failed: {message}"
+            );
+            return 1;
+        }
+    };
+    run_parsed(parsed, stdout, stderr)
+}
+
+fn run_parsed(parsed: ParsedWriteArgs<'_>, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
+    let bindings = match verify_commands::verify_requested_contribution_bindings(
+        verify_commands::ContributionBindingRequest {
+            role: "prove contribution challenges write",
+            proof_bins: &parsed.proof_bins,
+            public_values_path: parsed.public_values_path,
+            eth_block_input: parsed.eth_block_input,
+            eth_public_input: parsed.eth_public_input,
+            eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
+            program_image_cache: parsed.program_image_cache,
+        },
+        stderr,
+    ) {
+        Some(bindings) => bindings,
+        None => return 1,
+    };
+    let proof_paths = parsed
+        .proof_bins
+        .iter()
+        .map(PathBuf::from)
+        .collect::<Vec<_>>();
     let report = match derive_global_challenge_from_contribution_proofs(
-        setup_dir,
-        public_values_path,
+        parsed.setup_dir,
+        parsed.public_values_path,
         &proof_paths,
     ) {
         Ok(report) => report,
@@ -55,7 +109,7 @@ pub(crate) fn run(
         }
     };
 
-    let output_path = Path::new(output_path);
+    let output_path = Path::new(parsed.output_path);
     if let Some(parent) = output_path.parent() {
         if !parent.as_os_str().is_empty() {
             if let Err(error) = std::fs::create_dir_all(parent) {
@@ -91,7 +145,7 @@ pub(crate) fn run(
         "public_value_fields={}",
         report.public_value_field_count
     );
-    write_contribution_binding_summary(stdout, &report);
+    verify_commands::write_contribution_binding_summary(stdout, &report, &bindings);
     let _ = writeln!(stdout, "proof_values={}", report.proof_value_count);
     let _ = writeln!(stdout, "contributions={}", report.contribution_count);
     let _ = writeln!(stdout, "challenge_values={}", challenge_values.len());
@@ -267,38 +321,10 @@ fn verify_inner(
     0
 }
 
-fn write_contribution_binding_summary(
-    stdout: &mut dyn Write,
-    report: &ContributionChallengeReport,
-) {
-    if report.program_image_cache_count > 0 {
-        let _ = writeln!(
-            stdout,
-            "program_image_caches={}",
-            report.program_image_cache_count
-        );
-        for (cache, hash) in report
-            .program_image_caches
-            .iter()
-            .zip(&report.program_image_cache_hashes)
-        {
-            program_image_cache::write_program_image_cache_fields_with_segment_hash(
-                stdout, cache, hash,
-            );
-        }
-    }
-    if report.eth_block_input_count > 0 {
-        let _ = writeln!(stdout, "eth_block_inputs={}", report.eth_block_input_count);
-        for input in &report.eth_block_inputs {
-            eth_block_output::write_contribution_eth_block_input(stdout, input);
-        }
-    }
-}
-
 pub(crate) fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm prove write-contribution-challenges <setup-dir> <public-values> <out-challenge-values-segment> <proof-bin> [proof-bin ...]"
+        "usage: lzvm prove write-contribution-challenges [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] <setup-dir> <public-values> <out-challenge-values-segment> <proof-bin> [proof-bin ...]"
     );
     2
 }

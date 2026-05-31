@@ -73,20 +73,8 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
         ["prove", "plan", rest @ ..] => prove_plan::run(rest, stdout, stderr),
         ["prove", "schedule", setup_dir] => prove_schedule(setup_dir, stdout, stderr),
         ["prove", "schedule", ..] => write_prove_schedule_usage(stderr),
-        ["prove", "write-contribution-challenges", setup_dir, public_values_path, out_challenge_values_segment, proof_bins @ ..]
-            if !proof_bins.is_empty() =>
-        {
-            contribution_challenge::run(
-                setup_dir,
-                public_values_path,
-                out_challenge_values_segment,
-                proof_bins,
-                stdout,
-                stderr,
-            )
-        }
-        ["prove", "write-contribution-challenges", ..] => {
-            contribution_challenge::write_usage(stderr)
+        ["prove", "write-contribution-challenges", rest @ ..] => {
+            contribution_challenge::run(rest, stdout, stderr)
         }
         ["prove", "write-trace-bundle", out_bundle, unit_args @ ..] => {
             trace_bundle::run(out_bundle, unit_args, stdout, stderr)
