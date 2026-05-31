@@ -53,6 +53,15 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         );
         return 1;
     }
+    if parsed.guest_pc_trace_instruction_limit.is_some()
+        && parsed.run_args.request.options.aggregate
+    {
+        let _ = writeln!(
+            stderr,
+            "prove inputs failed: --guest-pc-trace requires a single-unit witness run"
+        );
+        return 1;
+    }
     let trace_bytes_len = match validate_trace_bytes(&parsed.trace_bytes) {
         Ok(value) => value,
         Err(message) => {
@@ -168,6 +177,12 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         let _ = writeln!(stdout, "trace_bundle_units={}", bundle.unit_count());
         let _ = writeln!(stdout, "trace_bundle_bytes={}", bundle_len);
     }
+    if let Some(instruction_limit) = parsed.guest_pc_trace_instruction_limit {
+        let _ = writeln!(
+            stdout,
+            "guest_pc_trace_instruction_limit={instruction_limit}"
+        );
+    }
     let _ = writeln!(stdout, "guest_image={}", plan.inputs.guest_image.display());
     let _ = writeln!(
         stdout,
@@ -226,6 +241,7 @@ struct ParsedInputsArgs {
     run_args: ParsedRunArgs,
     trace_bytes: Option<PathBuf>,
     trace_bundle: Option<PathBuf>,
+    guest_pc_trace_instruction_limit: Option<u64>,
     eth_block_input: Option<PathBuf>,
     eth_public_input: Option<PathBuf>,
     eth_public_input_allow_trailing: bool,
@@ -273,6 +289,7 @@ fn public_values_field_count(public_values: &PublicValues) -> usize {
 fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
     let mut trace_bytes = None;
     let mut trace_bundle = None;
+    let mut guest_pc_trace_instruction_limit = None;
     let mut eth_block_input = None;
     let mut eth_public_input = None;
     let mut eth_public_input_allow_trailing = false;
@@ -295,6 +312,15 @@ fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
                 if trace_bundle.replace(value.into()).is_some() {
                     return Err(ParseError::Invalid(
                         "duplicate --trace-bundle option".to_owned(),
+                    ));
+                }
+            }
+            "--guest-pc-trace" => {
+                index += 1;
+                let value = parse_u64(args.get(index), "--guest-pc-trace")?;
+                if guest_pc_trace_instruction_limit.replace(value).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --guest-pc-trace option".to_owned(),
                     ));
                 }
             }
@@ -340,6 +366,13 @@ fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
             "cannot combine --trace-bytes and --trace-bundle".to_owned(),
         ));
     }
+    if guest_pc_trace_instruction_limit.is_some()
+        && (trace_bytes.is_some() || trace_bundle.is_some())
+    {
+        return Err(ParseError::Invalid(
+            "cannot combine --guest-pc-trace with --trace-bytes or --trace-bundle".to_owned(),
+        ));
+    }
     if eth_block_input.is_some() && eth_public_input.is_some() {
         return Err(ParseError::Invalid(
             "cannot combine --eth-block-input and --eth-public-input".to_owned(),
@@ -350,7 +383,9 @@ fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
             "cannot use --eth-public-input-allow-trailing without --eth-public-input".to_owned(),
         ));
     }
-    let trace_mode = trace_bytes.is_some() || trace_bundle.is_some();
+    let trace_mode = trace_bytes.is_some()
+        || trace_bundle.is_some()
+        || guest_pc_trace_instruction_limit.is_some();
     let min_positionals = if trace_mode { 3 } else { 4 };
     let max_positionals = if trace_mode { 4 } else { 5 };
     let run_args = parse_run_args(&filtered, min_positionals, max_positionals)?;
@@ -359,10 +394,16 @@ fn parse_inputs_args(args: &[&str]) -> Result<ParsedInputsArgs, ParseError> {
             "--trace-bytes requires a single-unit witness run".to_owned(),
         ));
     }
+    if guest_pc_trace_instruction_limit.is_some() && run_args.request.options.aggregate {
+        return Err(ParseError::Invalid(
+            "--guest-pc-trace requires a single-unit witness run".to_owned(),
+        ));
+    }
     Ok(ParsedInputsArgs {
         run_args,
         trace_bytes,
         trace_bundle,
+        guest_pc_trace_instruction_limit,
         eth_block_input,
         eth_public_input,
         eth_public_input_allow_trailing,
@@ -400,7 +441,9 @@ fn prepare_eth_block_input(parsed: &ParsedInputsArgs) -> Result<PreparedEthBlock
 }
 
 fn parsed_inputs(parsed: &ParsedInputsArgs) -> ProveExecutionInputArtifacts {
-    let trace_mode = parsed.trace_bytes.is_some() || parsed.trace_bundle.is_some();
+    let trace_mode = parsed.trace_bytes.is_some()
+        || parsed.trace_bundle.is_some()
+        || parsed.guest_pc_trace_instruction_limit.is_some();
     let witness_library = if trace_mode {
         None
     } else {
@@ -417,6 +460,12 @@ fn parsed_inputs(parsed: &ParsedInputsArgs) -> ProveExecutionInputArtifacts {
             .get(public_inputs_index)
             .cloned(),
     }
+}
+
+fn parse_u64(value: Option<&&str>, option: &str) -> Result<u64, ParseError> {
+    required_option_value(value, option)?
+        .parse::<u64>()
+        .map_err(|_| ParseError::Invalid(format!("{option} value must be an unsigned integer")))
 }
 
 fn prepare_public_inputs(
@@ -623,7 +672,7 @@ fn expected_trace_unit_byte_len(
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --eth-block-input <block-input>\n  --eth-public-input <public-input>\n  --eth-public-input-allow-trailing\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>"
+        "usage: lzvm prove inputs [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove inputs --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove inputs --guest-pc-trace <instruction-limit> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --eth-block-input <block-input>\n  --eth-public-input <public-input>\n  --eth-public-input-allow-trailing\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>\n  --guest-pc-trace <instruction-limit>"
     );
     2
 }
@@ -651,6 +700,60 @@ mod tests {
             result,
             Err(ParseError::Invalid(message))
                 if message == "--trace-bytes requires a single-unit witness run"
+        ));
+    }
+
+    #[test]
+    fn parses_guest_pc_trace_option_for_input_args() {
+        let result = parse_inputs_args(&[
+            "--guest-pc-trace",
+            "64",
+            "setup-dir",
+            "out-dir",
+            "guest.elf",
+        ])
+        .expect("input args should parse");
+        let inputs = parsed_inputs(&result);
+
+        assert_eq!(result.guest_pc_trace_instruction_limit, Some(64));
+        assert_eq!(inputs.witness_library, None);
+        assert_eq!(inputs.guest_image, PathBuf::from("guest.elf"));
+    }
+
+    #[test]
+    fn rejects_guest_pc_trace_with_trace_bytes_during_parse() {
+        let result = parse_inputs_args(&[
+            "--guest-pc-trace",
+            "64",
+            "--trace-bytes",
+            "trace.bin",
+            "setup-dir",
+            "out-dir",
+            "guest.elf",
+        ]);
+
+        assert!(matches!(
+            result,
+            Err(ParseError::Invalid(message))
+                if message == "cannot combine --guest-pc-trace with --trace-bytes or --trace-bundle"
+        ));
+    }
+
+    #[test]
+    fn rejects_guest_pc_trace_with_aggregate_during_parse() {
+        let result = parse_inputs_args(&[
+            "--guest-pc-trace",
+            "64",
+            "--aggregate",
+            "setup-dir",
+            "out-dir",
+            "guest.elf",
+        ]);
+
+        assert!(matches!(
+            result,
+            Err(ParseError::Invalid(message))
+                if message == "--guest-pc-trace requires a single-unit witness run"
         ));
     }
 
