@@ -17,7 +17,7 @@ use crate::{
     source_expression_info::{
         source_call_expression, source_expression_array_alias,
         source_expression_array_alias_assignment, source_function_call_bindings,
-        SourceExpressionAliasScope,
+        source_function_call_stack_key, SourceExpressionAliasScope,
     },
     source_expression_return_values::{
         collect_source_expr_destructuring_aliases, source_function_returns_expr,
@@ -63,7 +63,8 @@ pub(crate) fn source_returned_expression_array_alias(
         body_cache,
         call_stack,
     )?;
-    if !call_stack.insert(function.name.clone()) {
+    let call_stack_key = source_function_call_stack_key(&function.name, expression);
+    if !call_stack.insert(call_stack_key.clone()) {
         return None;
     }
     let mut body_alias_scope = bindings.alias_scope;
@@ -75,7 +76,7 @@ pub(crate) fn source_returned_expression_array_alias(
         body_cache,
         call_stack,
     );
-    call_stack.remove(&function.name);
+    call_stack.remove(&call_stack_key);
     alias
 }
 

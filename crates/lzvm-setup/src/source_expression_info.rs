@@ -1209,7 +1209,8 @@ fn lower_source_template_function_call_expression(
         return Ok(false);
     };
 
-    if !call_stack.insert(function.name.clone()) {
+    let call_stack_key = source_function_call_stack_key(&function.name, expression);
+    if !call_stack.insert(call_stack_key.clone()) {
         return Ok(false);
     }
     let mut function_hints = Vec::new();
@@ -1244,7 +1245,7 @@ fn lower_source_template_function_call_expression(
         }
         Ok(true)
     })();
-    call_stack.remove(&function.name);
+    call_stack.remove(&call_stack_key);
     if !lowered? {
         return Ok(false);
     }
@@ -3243,6 +3244,36 @@ pub(crate) fn source_call_expression(
         return None;
     };
     Some((name.as_str(), args.as_slice()))
+}
+
+pub(crate) fn source_function_call_stack_key(name: &str, expression: &Expression) -> String {
+    format!(
+        "{}@{}:{}:{}",
+        name, expression.source_name, expression.start, expression.end
+    )
+}
+
+pub(crate) struct SourceFunctionCallFrame {
+    call_site_key: String,
+}
+
+pub(crate) fn source_function_call_frame(
+    name: &str,
+    expression: &Expression,
+) -> SourceFunctionCallFrame {
+    SourceFunctionCallFrame {
+        call_site_key: source_function_call_stack_key(name, expression),
+    }
+}
+
+pub(crate) fn source_function_call_stack_key_with_parent(
+    frame: &SourceFunctionCallFrame,
+    parent: Option<&SourceFunctionCallFrame>,
+) -> String {
+    match parent {
+        Some(parent) => format!("{}<-{}", frame.call_site_key, parent.call_site_key),
+        None => frame.call_site_key.clone(),
+    }
 }
 
 fn apply_source_static_container_statement(

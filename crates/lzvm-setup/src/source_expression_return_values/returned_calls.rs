@@ -7,7 +7,8 @@ use lzvm_pil::{
 use crate::{
     source_control_body_cache::SourceControlBodyCache,
     source_expression_info::{
-        source_call_expression, source_function_call_bindings, SourceExpressionAliasScope,
+        source_call_expression, source_function_call_bindings, source_function_call_stack_key,
+        SourceExpressionAliasScope,
     },
     source_template_context::SourceTemplateLoweringContext,
 };
@@ -317,7 +318,8 @@ pub(super) fn source_returned_expression_alias(
         body_cache,
         call_stack,
     )?;
-    if !call_stack.insert(function.name.clone()) {
+    let call_stack_key = source_function_call_stack_key(&function.name, expression);
+    if !call_stack.insert(call_stack_key.clone()) {
         return None;
     }
     let mut body_alias_scope = bindings.alias_scope;
@@ -329,7 +331,7 @@ pub(super) fn source_returned_expression_alias(
         body_cache,
         call_stack,
     );
-    call_stack.remove(&function.name);
+    call_stack.remove(&call_stack_key);
     expression
 }
 
@@ -360,7 +362,8 @@ fn source_import_returned_expression_call(
         body_cache,
         call_stack,
     )?;
-    if !call_stack.insert(function.name.clone()) {
+    let call_stack_key = source_function_call_stack_key(&function.name, expression);
+    if !call_stack.insert(call_stack_key.clone()) {
         return None;
     }
     let returned = source_import_returned_expression_body(
@@ -371,7 +374,7 @@ fn source_import_returned_expression_call(
         body_cache,
         call_stack,
     );
-    call_stack.remove(&function.name);
+    call_stack.remove(&call_stack_key);
     let returned = returned?;
     Some(source_import_expression_scope(
         expression,

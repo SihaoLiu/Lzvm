@@ -2156,6 +2156,213 @@ fn generate_key_lowers_source_function_calls_with_local_lookup_arrays() {
 }
 
 #[test]
+fn generate_key_lowers_source_function_calls_with_nested_returned_scalars() {
+    let dir = temp_dir("source-function-nested-returned-scalars");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             const int WIDTH = 8;\n\
+             const int CHUNK_SIZE = 3;\n\
+             const int TABLE_ID = 77;\n\
+             const int BASE = 2;\n\
+             col witness selector;\n\
+             col witness accs[3];\n\
+             col witness state[WIDTH];\n\
+             function add(const expr items[]): const expr {\n\
+                 const int len = length(items);\n\
+                 expr result = 0;\n\
+                 for (int i = 0; i < len; i++) {\n\
+                     result += items[i];\n\
+                 }\n\
+                 return result;\n\
+             }\n\
+             function xor(const expr left, const expr right): const expr {\n\
+                 return add([left, right]);\n\
+             }\n\
+             function xor3(const expr a, const expr b, const expr c): const expr {\n\
+                 return add([a, b, c]);\n\
+             }\n\
+             function theta(const expr input[]): const expr[] {\n\
+                 const expr result[air.WIDTH];\n\
+                 const expr c[2][2];\n\
+                 for (int x = 0; x < 2; x++) {\n\
+                     for (int z = 0; z < 2; z++) {\n\
+                         c[x][z] = xor3(input[x * 4 + z], input[x * 4 + z + 2], input[(x * 4 + z + 4) % air.WIDTH]);\n\
+                     }\n\
+                 }\n\
+                 const expr d[2][2];\n\
+                 for (int x = 0; x < 2; x++) {\n\
+                     for (int z = 0; z < 2; z++) {\n\
+                         d[x][z] = xor(c[(x + 1) % 2][z], c[x][(z + 1) % 2]);\n\
+                     }\n\
+                 }\n\
+                 for (int x = 0; x < 2; x++) {\n\
+                     for (int y = 0; y < 2; y++) {\n\
+                         for (int z = 0; z < 2; z++) {\n\
+                             const int pos = x * 4 + y * 2 + z;\n\
+                             result[pos] = xor(input[pos], d[x][z]);\n\
+                         }\n\
+                     }\n\
+                 }\n\
+                 return result;\n\
+             }\n\
+             function chi(const expr input[]): const expr[] {\n\
+                 const expr result[air.WIDTH];\n\
+                 for (int i = 0; i < air.WIDTH; i++) {\n\
+                     result[i] = xor(input[i], (1 + input[(i + 1) % air.WIDTH]) * input[(i + 2) % air.WIDTH]);\n\
+                 }\n\
+                 return result;\n\
+             }\n\
+             function final_round(const expr input[]): const expr {\n\
+                 const expr result[air.WIDTH];\n\
+                 result[0] = xor(input[0], 1);\n\
+                 for (int i = 1; i < air.WIDTH; i++) {\n\
+                     result[i] = input[i];\n\
+                 }\n\
+                 return result;\n\
+             }\n\
+             function pack_lookup_chunk(const int chunk, const int num_bits, const expr acc,\n\
+                                        const expr values[], const expr sel) {\n\
+                 const int bit_offset = chunk * air.CHUNK_SIZE;\n\
+                 expr packed = 0;\n\
+                 for (int j = 0; j < num_bits; j++) {\n\
+                     packed += values[bit_offset + j] * (air.BASE ** j);\n\
+                 }\n\
+                 acc === packed;\n\
+                 const expr lookup_values[air.CHUNK_SIZE + 1];\n\
+                 lookup_values[0] = acc;\n\
+                 for (int j = 0; j < num_bits; j++) {\n\
+                     lookup_values[j + 1] = state[bit_offset + j]';\n\
+                 }\n\
+                 for (int j = num_bits + 1; j < air.CHUNK_SIZE + 1; j++) {\n\
+                     lookup_values[j] = 0;\n\
+                 }\n\
+                 lookup_assumes(TABLE_ID, lookup_values, sel: sel);\n\
+             }\n\
+             const expr round[WIDTH] = final_round(chi(theta(state)));\n\
+             pack_lookup_chunk(chunk: 0, num_bits: CHUNK_SIZE, acc: accs[0],\n\
+                               values: round, sel: selector);\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert_eq!(
+        expressions
+            .hints
+            .iter()
+            .filter(|hint| hint.name == SOURCE_UNSUPPORTED_CALL_HINT)
+            .count(),
+        0
+    );
+    assert_eq!(expressions.hints.len(), 1);
+    assert_eq!(expressions.hints[0].name, SOURCE_LOOKUP_ASSUMES_HINT);
+    assert_eq!(expressions.constraints.len(), 1);
+    let regular = read_regular_program_file(
+        unit.expression_program()
+            .expect("regular program path should derive"),
+    )
+    .expect("regular program should parse");
+    assert_eq!(regular.hints.hints.len(), 1);
+    assert_eq!(regular.hints.hints[0].name, SOURCE_LOOKUP_ASSUMES_HINT);
+    assert_eq!(regular.constraints.entries.len(), 1);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn generate_key_records_recursive_returned_scalar_calls_as_unsupported() {
+    let dir = temp_dir("recursive-returned-scalar-call");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "airtemplate UnitA() {\n\
+             const int TABLE_ID = 77;\n\
+             col witness selector;\n\
+             col witness acc;\n\
+             col witness current;\n\
+             function recurse(const expr input): const expr {\n\
+                 return recurse(input);\n\
+             }\n\
+             function pack_lookup(const expr acc, const expr value, const expr sel) {\n\
+                 acc === recurse(value);\n\
+                 lookup_assumes(TABLE_ID, [acc, current'], sel: sel);\n\
+             }\n\
+             pack_lookup(acc: acc, value: current, sel: selector);\n\
+         }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    let layout = read_key_directory_layout(&dir).expect("layout should derive");
+    let unit = &layout.units[0];
+    let expressions = read_expression_info_binary_file(
+        unit.expression_info_binary()
+            .expect("expression metadata path should derive"),
+    )
+    .expect("expression metadata should parse");
+    assert_eq!(expressions.hints.len(), 1);
+    assert_eq!(expressions.hints[0].name, SOURCE_UNSUPPORTED_CALL_HINT);
+    assert_eq!(expressions.constraints.len(), 0);
+    let regular = read_regular_program_file(
+        unit.expression_program()
+            .expect("regular program path should derive"),
+    )
+    .expect("regular program should parse");
+    assert_eq!(regular.hints.hints.len(), 1);
+    assert_eq!(regular.hints.hints[0].name, SOURCE_UNSUPPORTED_CALL_HINT);
+    assert_eq!(regular.constraints.entries.len(), 0);
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn generate_key_lowers_source_function_calls_with_passthrough_returned_lookup_arrays() {
     let dir = temp_dir("source-function-passthrough-returned-lookup-arrays");
     let _ = fs::remove_dir_all(&dir);

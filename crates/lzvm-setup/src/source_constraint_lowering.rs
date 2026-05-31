@@ -14,7 +14,9 @@ use crate::{
         SourceConstraintFragment, SourceControlBodyCache, SourceReturnedConstraintElementKey,
     },
     source_expression_info::{
-        source_call_expression, source_function_call_bindings, SourceExpressionAliasScope,
+        source_call_expression, source_function_call_bindings, source_function_call_frame,
+        source_function_call_stack_key_with_parent, SourceExpressionAliasScope,
+        SourceFunctionCallFrame,
     },
     source_expression_return_values::{
         collect_source_expr_destructuring_aliases,
@@ -77,6 +79,7 @@ pub(crate) fn lower_source_template_boolean_constraint_with_returned_calls(
             context,
             body_cache,
             call_stack,
+            call_path: Vec::new(),
         }),
     )
 }
@@ -138,7 +141,7 @@ struct SourceConstraintLoweringState<'a> {
     operations: Vec<CodeOperation>,
     next_temporary: u32,
     frame_offsets: SourceConstraintFrameOffsets,
-    resolving_aliases: BTreeSet<String>,
+    resolving_aliases: BTreeSet<SourceConstraintAliasResolutionKey>,
     resolving_array_aliases: BTreeSet<SourceConstraintArrayResolutionKey>,
     operand_cache: BTreeMap<SourceConstraintOperandCacheKey, CodeOperand>,
     returned_call_context: Option<SourceConstraintReturnedCallContext<'a>>,
@@ -148,6 +151,7 @@ struct SourceConstraintReturnedCallContext<'a> {
     context: &'a SourceTemplateLoweringContext<'a>,
     body_cache: &'a mut SourceControlBodyCache,
     call_stack: &'a mut BTreeSet<String>,
+    call_path: Vec<SourceFunctionCallFrame>,
 }
 
 #[derive(Clone, Copy)]
@@ -182,6 +186,13 @@ enum SourceConstraintOperandCacheKey {
         expression_alias_id: usize,
         expression_array_alias_id: usize,
     },
+}
+
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+struct SourceConstraintAliasResolutionKey {
+    name: String,
+    expression_alias_id: usize,
+    expression_array_alias_id: usize,
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -285,12 +296,17 @@ fn lower_source_scalar_expression_in_env(
                 if let Some(operand) = state.operand_cache.get(&key) {
                     return Ok(operand.clone());
                 }
-                if !state.resolving_aliases.insert(name.clone()) {
+                let resolution_key = SourceConstraintAliasResolutionKey {
+                    name: name.clone(),
+                    expression_alias_id: aliases.expression_alias_id(),
+                    expression_array_alias_id: aliases.expression_array_alias_id(),
+                };
+                if !state.resolving_aliases.insert(resolution_key.clone()) {
                     return unsupported("source scalar constraint expression alias cycle");
                 }
                 let operand =
                     lower_source_scalar_expression_in_env(alias, state, row_offset, aliases);
-                state.resolving_aliases.remove(name);
+                state.resolving_aliases.remove(&resolution_key);
                 if let Ok(operand) = operand.as_ref() {
                     state.operand_cache.insert(key, operand.clone());
                 }
@@ -823,14 +839,19 @@ fn lower_source_returned_scalar_call_expression(
     }) else {
         return Ok(None);
     };
-    {
+    let call_stack_key = {
         let Some(returned) = state.returned_call_context.as_mut() else {
             return Ok(None);
         };
-        if !returned.call_stack.insert(function.name.clone()) {
+        let call_frame = source_function_call_frame(&function.name, expression);
+        let call_stack_key =
+            source_function_call_stack_key_with_parent(&call_frame, returned.call_path.last());
+        if !returned.call_stack.insert(call_stack_key.clone()) {
             return Ok(None);
         }
-    }
+        returned.call_path.push(call_frame);
+        call_stack_key
+    };
     let mut body_alias_scope = bindings.alias_scope;
     let result = lower_source_returned_scalar_body(
         context,
@@ -841,7 +862,8 @@ fn lower_source_returned_scalar_call_expression(
         row_offset,
     );
     if let Some(returned) = state.returned_call_context.as_mut() {
-        returned.call_stack.remove(&function.name);
+        returned.call_path.pop();
+        returned.call_stack.remove(&call_stack_key);
     }
     result
 }
