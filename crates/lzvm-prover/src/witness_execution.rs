@@ -107,6 +107,27 @@ pub struct ProveWitnessAuxiliaryInputs {
     pub evaluations: Vec<Ext3>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ProveWitnessAuxiliaryInputSlices<'a> {
+    pub(crate) unit_values: &'a [Felt],
+    pub(crate) proof_values: &'a [Felt],
+    pub(crate) group_values: &'a [Ext3],
+    pub(crate) challenges: &'a [Ext3],
+    pub(crate) evaluations: &'a [Ext3],
+}
+
+impl<'a> From<&'a ProveWitnessAuxiliaryInputs> for ProveWitnessAuxiliaryInputSlices<'a> {
+    fn from(inputs: &'a ProveWitnessAuxiliaryInputs) -> Self {
+        Self {
+            unit_values: &inputs.unit_values,
+            proof_values: &inputs.proof_values,
+            group_values: &inputs.group_values,
+            challenges: &inputs.challenges,
+            evaluations: &inputs.evaluations,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct WitnessSharedInputs {
     input: Vec<u8>,

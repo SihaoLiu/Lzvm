@@ -29,7 +29,10 @@ use crate::pcs_fri::{
     PcsFriTranscriptCommitmentRequest,
 };
 use crate::pcs_transcript::{derive_pcs_transcript_prefix_challenges, PcsTranscriptPrefixInputs};
-use crate::prove_fri_polynomial::build_pcs_fri_polynomial_values;
+use crate::prove_fri_polynomial::{
+    build_pcs_fri_polynomial_values, build_pcs_fri_polynomial_values_with_slices,
+};
+use crate::witness_execution::ProveWitnessAuxiliaryInputSlices;
 use crate::ProveSchedule;
 
 type MaterialSegmentParser =
@@ -247,6 +250,28 @@ pub fn build_pcs_fri_transcript_values_from_trace(
     schedule: &ProveSchedule,
     values: &[ProvePcsFriTranscriptTraceValues<'_>],
 ) -> Result<Vec<ProvePcsFriTranscriptValues>, ProvePcsFriTranscriptTraceValuesError> {
+    let refs = values
+        .iter()
+        .map(|input| ProvePcsFriTranscriptTraceValueRef {
+            unit_index: input.unit_index,
+            execution_unit: input.execution_unit,
+            trace: input.trace,
+            publics: input.publics,
+            auxiliary_inputs: ProveWitnessAuxiliaryInputSlices::from(input.auxiliary_inputs),
+            constant_root: input.constant_root,
+            witness_roots: input.witness_roots,
+            evaluation_values: input.evaluation_values,
+            xi_challenge: input.xi_challenge,
+            binding_segments: input.binding_segments,
+        })
+        .collect::<Vec<_>>();
+    build_pcs_fri_transcript_values_from_trace_refs(schedule, &refs)
+}
+
+fn build_pcs_fri_transcript_values_from_trace_refs(
+    schedule: &ProveSchedule,
+    values: &[ProvePcsFriTranscriptTraceValueRef<'_>],
+) -> Result<Vec<ProvePcsFriTranscriptValues>, ProvePcsFriTranscriptTraceValuesError> {
     let mut out = Vec::with_capacity(values.len());
     for input in values {
         let unit = schedule.units.get(input.unit_index).ok_or(
@@ -260,7 +285,7 @@ pub fn build_pcs_fri_transcript_values_from_trace(
                 unit_index: input.unit_index,
             },
         )? as usize;
-        let polynomial = build_pcs_fri_polynomial_values(
+        let polynomial = build_pcs_fri_polynomial_values_with_slices(
             input.unit_index,
             unit,
             input.execution_unit,
@@ -283,7 +308,7 @@ pub fn build_pcs_fri_transcript_values_from_trace(
                 witness_roots: input.witness_roots,
                 root_challenge_draws: &unit.transcript_root_challenge_draws,
                 unit_value_map: &unit.unit_value_map,
-                unit_values: &input.auxiliary_inputs.unit_values,
+                unit_values: input.auxiliary_inputs.unit_values,
                 evaluation_values: input.evaluation_values,
                 evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
                 polynomial: &polynomial,
@@ -306,6 +331,27 @@ pub fn build_pcs_fri_transcript_values_from_trace(
 pub fn build_pcs_fri_transcript_values_from_trace_segments(
     schedule: &ProveSchedule,
     values: &[ProvePcsFriTranscriptTraceSegmentValues<'_>],
+) -> Result<Vec<ProvePcsFriTranscriptValues>, ProvePcsFriTranscriptTraceValuesError> {
+    let refs = values
+        .iter()
+        .map(|input| ProvePcsFriTranscriptTraceSegmentValueRef {
+            unit_index: input.unit_index,
+            execution_unit: input.execution_unit,
+            trace: input.trace,
+            publics: input.publics,
+            auxiliary_inputs: ProveWitnessAuxiliaryInputSlices::from(input.auxiliary_inputs),
+            material_segment: input.material_segment,
+            witness_segment: input.witness_segment,
+            evaluation_segment: input.evaluation_segment,
+            binding_segments: input.binding_segments,
+        })
+        .collect::<Vec<_>>();
+    build_pcs_fri_transcript_values_from_trace_segment_refs(schedule, &refs)
+}
+
+pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs(
+    schedule: &ProveSchedule,
+    values: &[ProvePcsFriTranscriptTraceSegmentValueRef<'_>],
 ) -> Result<Vec<ProvePcsFriTranscriptValues>, ProvePcsFriTranscriptTraceValuesError> {
     let mut out = Vec::with_capacity(values.len());
     let mut material_cache = MaterialSegmentCache::new();
@@ -412,7 +458,7 @@ pub fn build_pcs_fri_transcript_values_from_trace_segments(
                 witness_roots: &witness_roots,
                 root_challenge_draws: &unit.transcript_root_challenge_draws,
                 unit_value_map: &unit.unit_value_map,
-                unit_values: &input.auxiliary_inputs.unit_values,
+                unit_values: input.auxiliary_inputs.unit_values,
                 evaluation_values: &evaluation_values,
                 evaluation_challenge_draws: unit.transcript_evaluation_challenge_draws,
                 binding_segments: input.binding_segments,
@@ -437,9 +483,9 @@ pub fn build_pcs_fri_transcript_values_from_trace_segments(
             },
         )?;
 
-        let mut built = build_pcs_fri_transcript_values_from_trace(
+        let mut built = build_pcs_fri_transcript_values_from_trace_refs(
             schedule,
-            &[ProvePcsFriTranscriptTraceValues {
+            &[ProvePcsFriTranscriptTraceValueRef {
                 unit_index: input.unit_index,
                 execution_unit: input.execution_unit,
                 trace: input.trace,

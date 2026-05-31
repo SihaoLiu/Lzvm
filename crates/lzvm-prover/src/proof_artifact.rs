@@ -31,11 +31,16 @@ use crate::proof_values::{
     build_pcs_proof_values_segment_from_packed_values, flatten_pcs_proof_values,
     load_pcs_proof_values_from_segments,
 };
+use crate::prove_fri_opening::{
+    build_pcs_fri_transcript_values_from_trace_segment_refs,
+    ProvePcsFriTranscriptTraceSegmentValueRef,
+};
 use crate::setup_preflight::{validate_setup_preflight, validate_setup_preflight_hashes};
 use crate::unit_values::{
     build_unit_values_segment_from_packed_values,
     build_unit_values_segment_from_packed_values_batch, ProveUnitValues,
 };
+use crate::witness_execution::ProveWitnessAuxiliaryInputSlices;
 use crate::{
     build_constant_opening_segment, build_pcs_evaluation_segment,
     build_pcs_fri_opening_segment_from_transcript_values,
@@ -969,49 +974,43 @@ fn build_witness_transcript_proof_artifact_for_all_units(
     {
         Some(segment) => (
             segment.clone(),
-            collect_evaluation_values_from_segment(segment)?,
+            TranscriptEvaluationValues::Owned(collect_evaluation_values_from_segment(segment)?),
         ),
         None => (
             build_pcs_evaluation_segment(request.schedule, proof_inputs.evaluation_values)
                 .map_err(|error| format!("build evaluation segment failed: {error}"))?,
-            proof_inputs.evaluation_values.to_vec(),
+            TranscriptEvaluationValues::Borrowed(proof_inputs.evaluation_values),
         ),
     };
-    let transcript_auxiliary_inputs = request
-        .outputs
-        .iter()
-        .map(|output| {
-            let unit_index = output.commitments().unit_index();
-            let mut auxiliary_inputs = output.auxiliary_inputs().clone();
-            if let Some(values) = proof_inputs
-                .unit_values
-                .iter()
-                .find(|values| values.unit_index == unit_index)
-            {
-                auxiliary_inputs.unit_values = values.packed_values.clone();
-            }
-            if !proof_inputs.proof_values.is_empty() {
-                auxiliary_inputs.proof_values = proof_inputs.proof_values.to_vec();
-            }
-            if !proof_inputs.group_values.is_empty() {
-                auxiliary_inputs.group_values = proof_inputs.group_values.to_vec();
-            }
-            if let Some(values) = transcript_evaluation_values
-                .iter()
-                .find(|values| values.unit_index == unit_index)
-            {
-                auxiliary_inputs.evaluations = values.values.clone();
-            }
-            auxiliary_inputs
-        })
-        .collect::<Vec<_>>();
+    let transcript_evaluation_values = transcript_evaluation_values.as_slice();
     let transcript_inputs = request
         .outputs
         .iter()
-        .zip(transcript_auxiliary_inputs.iter())
-        .map(|(output, auxiliary_inputs)| {
+        .map(|output| {
             let commitments = output.commitments();
             let unit_index = commitments.unit_index();
+            let output_auxiliary_inputs = output.auxiliary_inputs();
+            let unit_values = proof_inputs
+                .unit_values
+                .iter()
+                .find(|values| values.unit_index == unit_index)
+                .map(|values| values.packed_values.as_slice())
+                .unwrap_or_else(|| output_auxiliary_inputs.unit_values.as_slice());
+            let proof_values = if proof_inputs.proof_values.is_empty() {
+                output_auxiliary_inputs.proof_values.as_slice()
+            } else {
+                proof_inputs.proof_values
+            };
+            let group_values = if proof_inputs.group_values.is_empty() {
+                output_auxiliary_inputs.group_values.as_slice()
+            } else {
+                proof_inputs.group_values
+            };
+            let evaluations = transcript_evaluation_values
+                .iter()
+                .find(|values| values.unit_index == unit_index)
+                .map(|values| values.values.as_slice())
+                .unwrap_or_else(|| output_auxiliary_inputs.evaluations.as_slice());
             let execution_unit = request
                 .execution_units
                 .get(unit_index)
@@ -1026,12 +1025,18 @@ fn build_witness_transcript_proof_artifact_for_all_units(
                 .iter()
                 .find(|segment| segment.id == expected_segment_id)
                 .ok_or_else(|| format!("missing witness segment for unit {unit_index}"))?;
-            Ok(ProvePcsFriTranscriptTraceSegmentValues {
+            Ok(ProvePcsFriTranscriptTraceSegmentValueRef {
                 unit_index,
                 execution_unit,
                 trace: output.trace(),
                 publics: output.publics(),
-                auxiliary_inputs,
+                auxiliary_inputs: ProveWitnessAuxiliaryInputSlices {
+                    unit_values,
+                    proof_values,
+                    group_values,
+                    challenges: output_auxiliary_inputs.challenges.as_slice(),
+                    evaluations,
+                },
                 material_segment: &material_segment,
                 witness_segment,
                 evaluation_segment: &evaluation_segment,
@@ -1039,9 +1044,11 @@ fn build_witness_transcript_proof_artifact_for_all_units(
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    let transcript_values =
-        build_pcs_fri_transcript_values_from_trace_segments(request.schedule, &transcript_inputs)
-            .map_err(|error| format!("build FRI transcript values failed: {error}"))?;
+    let transcript_values = build_pcs_fri_transcript_values_from_trace_segment_refs(
+        request.schedule,
+        &transcript_inputs,
+    )
+    .map_err(|error| format!("build FRI transcript values failed: {error}"))?;
     let final_query_challenges = transcript_values
         .iter()
         .map(|value| value.commitments.final_query_challenge)
@@ -1126,6 +1133,20 @@ struct AllUnitsTranscriptProofInputs<'a> {
     group_values: &'a [Ext3],
     evaluation_values: &'a [ProvePcsEvaluationValues],
     unit_values: &'a [ProveUnitValues],
+}
+
+enum TranscriptEvaluationValues<'a> {
+    Borrowed(&'a [ProvePcsEvaluationValues]),
+    Owned(Vec<ProvePcsEvaluationValues>),
+}
+
+impl<'a> TranscriptEvaluationValues<'a> {
+    fn as_slice(&'a self) -> &'a [ProvePcsEvaluationValues] {
+        match self {
+            Self::Borrowed(values) => values,
+            Self::Owned(values) => values,
+        }
+    }
 }
 
 fn collect_evaluation_values_from_segment(

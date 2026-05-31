@@ -21,6 +21,7 @@ use crate::fri_polynomial::{
 #[cfg(feature = "cuda")]
 use crate::gpu_setup::{prepare_gpu_setup, GpuSetupError};
 use crate::witness_commitment::{extend_witness_trace_stage_values, WitnessTraceCommitmentError};
+use crate::witness_execution::ProveWitnessAuxiliaryInputSlices;
 use crate::witness_trace::WitnessTraceBuffer;
 use crate::{ProveExecutionUnitArtifacts, ProveUnitSchedule, ProveWitnessAuxiliaryInputs};
 
@@ -252,6 +253,26 @@ pub fn build_pcs_fri_polynomial_values(
     auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
     xi_challenge: Ext3,
 ) -> Result<Vec<Ext3>, ProvePcsFriPolynomialError> {
+    build_pcs_fri_polynomial_values_with_slices(
+        unit_index,
+        unit,
+        plan_unit,
+        trace,
+        publics,
+        ProveWitnessAuxiliaryInputSlices::from(auxiliary_inputs),
+        xi_challenge,
+    )
+}
+
+pub(crate) fn build_pcs_fri_polynomial_values_with_slices(
+    unit_index: usize,
+    unit: &ProveUnitSchedule,
+    plan_unit: &ProveExecutionUnitArtifacts,
+    trace: &WitnessTraceBuffer,
+    publics: &[Felt],
+    auxiliary_inputs: ProveWitnessAuxiliaryInputSlices<'_>,
+    xi_challenge: Ext3,
+) -> Result<Vec<Ext3>, ProvePcsFriPolynomialError> {
     let expression_id = plan_unit
         .fri_expression_id
         .ok_or(ProvePcsFriPolynomialError::MissingFriExpression { unit_index })?;
@@ -302,11 +323,11 @@ pub fn build_pcs_fri_polynomial_values(
             zerofier_values: zerofiers.as_matrix(),
             opening_xis: &opening_xis,
             publics,
-            unit_values: &auxiliary_inputs.unit_values,
-            proof_values: &auxiliary_inputs.proof_values,
-            group_values: &auxiliary_inputs.group_values,
-            challenges: &auxiliary_inputs.challenges,
-            evaluations: &auxiliary_inputs.evaluations,
+            unit_values: auxiliary_inputs.unit_values,
+            proof_values: auxiliary_inputs.proof_values,
+            group_values: auxiliary_inputs.group_values,
+            challenges: auxiliary_inputs.challenges,
+            evaluations: auxiliary_inputs.evaluations,
         },
     )
     .map_err(|source| fri_error(unit_index, source))

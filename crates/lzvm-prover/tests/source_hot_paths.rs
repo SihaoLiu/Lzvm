@@ -283,6 +283,68 @@ fn fri_opening_from_transcript_values_borrows_large_vectors() {
     }
 }
 
+#[test]
+fn all_units_transcript_proof_borrows_auxiliary_vectors() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/proof_artifact.rs");
+    let source = std::fs::read_to_string(&source_path).expect("proof artifact source should read");
+    let body = function_body(
+        &source,
+        "fn build_witness_transcript_proof_artifact_for_all_units",
+        "struct AllUnitsTranscriptProofInputs",
+    );
+
+    for copy_operation in [
+        "let mut auxiliary_inputs",
+        "ProveWitnessAuxiliaryInputs {",
+        "output.auxiliary_inputs().clone()",
+        "values.packed_values.clone()",
+        "values.packed_values.to_owned()",
+        "Vec::from(values.packed_values",
+        "proof_inputs.proof_values.to_vec()",
+        "proof_inputs.proof_values.to_owned()",
+        "Vec::from(proof_inputs.proof_values",
+        "proof_inputs.group_values.to_vec()",
+        "proof_inputs.group_values.to_owned()",
+        "Vec::from(proof_inputs.group_values",
+        "values.values.clone()",
+        "values.values.to_owned()",
+        "Vec::from(values.values",
+        "extend_from_slice",
+        "clone_from",
+    ] {
+        assert!(
+            !body.contains(copy_operation),
+            "all-units transcript proof should borrow auxiliary values instead of copying with {copy_operation}"
+        );
+    }
+    assert!(
+        body.contains("ProveWitnessAuxiliaryInputSlices"),
+        "all-units transcript proof should assemble borrowed auxiliary slices"
+    );
+    assert!(
+        body.contains("build_pcs_fri_transcript_values_from_trace_segment_refs"),
+        "all-units transcript proof should use the borrowed transcript builder"
+    );
+
+    let fri_source_path = crate_root.join("src/prove_fri_opening.rs");
+    let fri_source =
+        std::fs::read_to_string(&fri_source_path).expect("FRI opening source should read");
+    let helper_body = function_body(
+        &fri_source,
+        "pub(crate) fn build_pcs_fri_transcript_values_from_trace_segment_refs",
+        "pub fn build_pcs_fri_opening_segment_from_transcript_values",
+    );
+    assert!(
+        helper_body.contains("build_pcs_fri_transcript_values_from_trace_refs"),
+        "borrowed trace segment builder should keep borrowed auxiliary slices through FRI transcript construction"
+    );
+    assert!(
+        !helper_body.contains("ProveWitnessAuxiliaryInputs"),
+        "borrowed trace segment builder should not rebuild owned auxiliary inputs"
+    );
+}
+
 fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
     let body = source
         .split_once(start)
