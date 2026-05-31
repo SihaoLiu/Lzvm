@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt;
 use std::os::raw::c_int;
 use std::path::{Path, PathBuf};
@@ -28,18 +29,21 @@ pub struct WitnessResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WitnessTraceBuffers {
-    input: Vec<u8>,
+pub struct WitnessTraceBuffers<'a> {
+    input: Cow<'a, [u8]>,
     output: Vec<u8>,
 }
 
-impl WitnessTraceBuffers {
-    pub fn new(input: Vec<u8>, output_len: usize) -> Result<Self, WitnessCallError> {
+impl<'a> WitnessTraceBuffers<'a> {
+    pub fn new(
+        input: impl Into<Cow<'a, [u8]>>,
+        output_len: usize,
+    ) -> Result<Self, WitnessCallError> {
         if output_len == 0 {
             return Err(WitnessCallError::EmptyOutputBuffer);
         }
         Ok(Self {
-            input,
+            input: input.into(),
             output: vec![0; output_len],
         })
     }
@@ -58,7 +62,7 @@ impl WitnessTraceBuffers {
 
     fn as_call(&mut self) -> WitnessCall {
         WitnessCall {
-            input_ptr: self.input.as_ptr(),
+            input_ptr: self.input().as_ptr(),
             input_len: self.input.len(),
             output_ptr: self.output.as_mut_ptr(),
             output_len: self.output.len(),
@@ -95,26 +99,36 @@ impl Default for WitnessComputeContext<'_> {
 pub trait WitnessBackend {
     fn compute(
         &self,
-        buffers: &mut WitnessTraceBuffers,
+        buffers: &mut WitnessTraceBuffers<'_>,
     ) -> Result<WitnessTraceOutput, WitnessCallError>;
 
     fn compute_with_context(
         &self,
         _context: WitnessComputeContext<'_>,
-        buffers: &mut WitnessTraceBuffers,
+        buffers: &mut WitnessTraceBuffers<'_>,
     ) -> Result<WitnessTraceOutput, WitnessCallError> {
         self.compute(buffers)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TraceBytesBackend {
-    trace_bytes: Vec<u8>,
+pub struct TraceBytesBackend<'a> {
+    trace_bytes: Cow<'a, [u8]>,
 }
 
-impl TraceBytesBackend {
+impl TraceBytesBackend<'static> {
     pub fn new(trace_bytes: Vec<u8>) -> Self {
-        Self { trace_bytes }
+        Self {
+            trace_bytes: Cow::Owned(trace_bytes),
+        }
+    }
+}
+
+impl<'a> TraceBytesBackend<'a> {
+    pub fn borrowed(trace_bytes: &'a [u8]) -> Self {
+        Self {
+            trace_bytes: Cow::Borrowed(trace_bytes),
+        }
     }
 
     pub fn trace_bytes(&self) -> &[u8] {
@@ -122,10 +136,10 @@ impl TraceBytesBackend {
     }
 }
 
-impl WitnessBackend for TraceBytesBackend {
+impl WitnessBackend for TraceBytesBackend<'_> {
     fn compute(
         &self,
-        buffers: &mut WitnessTraceBuffers,
+        buffers: &mut WitnessTraceBuffers<'_>,
     ) -> Result<WitnessTraceOutput, WitnessCallError> {
         let produced_len = self.trace_bytes.len();
         let output_len = buffers.output().len();
@@ -150,7 +164,7 @@ pub struct LoadedWitnessLibrary {
 impl LoadedWitnessLibrary {
     pub fn compute(
         &self,
-        buffers: &mut WitnessTraceBuffers,
+        buffers: &mut WitnessTraceBuffers<'_>,
     ) -> Result<WitnessTraceOutput, WitnessCallError> {
         let call = buffers.as_call();
         let mut result = WitnessResult::default();
@@ -190,7 +204,7 @@ impl LoadedWitnessLibrary {
 impl WitnessBackend for LoadedWitnessLibrary {
     fn compute(
         &self,
-        buffers: &mut WitnessTraceBuffers,
+        buffers: &mut WitnessTraceBuffers<'_>,
     ) -> Result<WitnessTraceOutput, WitnessCallError> {
         LoadedWitnessLibrary::compute(self, buffers)
     }

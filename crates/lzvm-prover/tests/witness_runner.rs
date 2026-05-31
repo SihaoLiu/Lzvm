@@ -87,15 +87,8 @@ int lzvm_witness_compute(const LzvmWitnessCall *call, LzvmWitnessResult *result)
     );
     let library = load_witness_library(&library_path).expect("witness library should load");
 
-    let trace = run_witness_trace(
-        &library,
-        WitnessTraceRequest {
-            input: vec![6, 8],
-            rows: 1,
-            columns: 2,
-        },
-    )
-    .expect("witness trace should run and parse");
+    let trace = run_witness_trace(&library, WitnessTraceRequest::new(vec![6, 8], 1, 2))
+        .expect("witness trace should run and parse");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(trace.row_count(), 1);
@@ -112,15 +105,8 @@ int lzvm_witness_compute(const LzvmWitnessCall *call, LzvmWitnessResult *result)
 
 #[test]
 fn runs_witness_trace_with_native_backend() {
-    let trace = run_witness_trace(
-        &NativeBackend,
-        WitnessTraceRequest {
-            input: vec![6, 8],
-            rows: 1,
-            columns: 2,
-        },
-    )
-    .expect("witness trace should run and parse");
+    let trace = run_witness_trace(&NativeBackend, WitnessTraceRequest::new(vec![6, 8], 1, 2))
+        .expect("witness trace should run and parse");
 
     assert_eq!(trace.row_count(), 1);
     assert_eq!(trace.column_count(), 2);
@@ -172,14 +158,7 @@ int lzvm_witness_compute(const LzvmWitnessCall *call, LzvmWitnessResult *result)
     );
     let library = load_witness_library(&library_path).expect("witness library should load");
 
-    let result = run_witness_trace(
-        &library,
-        WitnessTraceRequest {
-            input: Vec::new(),
-            rows: 1,
-            columns: 1,
-        },
-    );
+    let result = run_witness_trace(&library, WitnessTraceRequest::new(Vec::new(), 1, 1));
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert!(matches!(

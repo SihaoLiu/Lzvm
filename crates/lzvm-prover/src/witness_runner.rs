@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt;
 
 use crate::witness_loader::{
@@ -6,10 +7,30 @@ use crate::witness_loader::{
 use crate::witness_trace::{parse_witness_trace, WitnessTraceBuffer, WitnessTraceError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WitnessTraceRequest {
-    pub input: Vec<u8>,
+pub struct WitnessTraceRequest<'a> {
+    pub input: Cow<'a, [u8]>,
     pub rows: usize,
     pub columns: usize,
+}
+
+impl WitnessTraceRequest<'static> {
+    pub fn new(input: Vec<u8>, rows: usize, columns: usize) -> Self {
+        Self {
+            input: Cow::Owned(input),
+            rows,
+            columns,
+        }
+    }
+}
+
+impl<'a> WitnessTraceRequest<'a> {
+    pub fn borrowed(input: &'a [u8], rows: usize, columns: usize) -> Self {
+        Self {
+            input: Cow::Borrowed(input),
+            rows,
+            columns,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,7 +74,7 @@ impl From<WitnessTraceError> for WitnessTraceRunError {
 
 pub fn run_witness_trace(
     backend: &(impl WitnessBackend + ?Sized),
-    request: WitnessTraceRequest,
+    request: WitnessTraceRequest<'_>,
 ) -> Result<WitnessTraceBuffer, WitnessTraceRunError> {
     run_witness_trace_with_context(backend, WitnessComputeContext::empty(), request)
 }
@@ -61,7 +82,7 @@ pub fn run_witness_trace(
 pub fn run_witness_trace_with_context(
     backend: &(impl WitnessBackend + ?Sized),
     context: WitnessComputeContext<'_>,
-    request: WitnessTraceRequest,
+    request: WitnessTraceRequest<'_>,
 ) -> Result<WitnessTraceBuffer, WitnessTraceRunError> {
     let output_len = trace_output_byte_len(request.rows, request.columns)?;
     let mut buffers = WitnessTraceBuffers::new(request.input, output_len)?;

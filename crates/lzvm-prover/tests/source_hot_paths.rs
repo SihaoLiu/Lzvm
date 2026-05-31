@@ -181,6 +181,64 @@ fn witness_merkle_tree_uses_device_parent_level_pipeline() {
     );
 }
 
+#[test]
+fn all_units_witness_reuses_shared_inputs_and_borrows_trace_bundle_bytes() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/witness_execution.rs");
+    let source =
+        std::fs::read_to_string(&source_path).expect("witness execution source should read");
+
+    let single_unit_inner = function_body(
+        &source,
+        "fn run_prove_witness_commitments_with_trace_backend_inner",
+        "pub fn run_prove_witness_commitments_for_all_units",
+    );
+    assert!(
+        !single_unit_inner.contains("read_witness_input"),
+        "witness execution should preload input data before entering the per-unit body"
+    );
+    assert!(
+        !single_unit_inner.contains("load_public_inputs"),
+        "witness execution should preload public inputs before entering the per-unit body"
+    );
+    assert!(
+        single_unit_inner.contains("layout.request(&shared_inputs.input[..])"),
+        "witness execution should borrow shared input bytes for each unit"
+    );
+    assert!(
+        !single_unit_inner.contains("request_borrowed"),
+        "witness trace layout should use one request constructor for owned and borrowed inputs"
+    );
+    assert!(
+        !single_unit_inner.contains("shared_inputs.input.clone()"),
+        "witness execution should avoid cloning shared input bytes for each unit"
+    );
+
+    let all_units_body = function_body(
+        &source,
+        "pub fn run_prove_witness_commitments_for_all_units",
+        "pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle",
+    );
+    assert!(
+        all_units_body.contains("load_witness_shared_inputs(plan)"),
+        "all-units witness execution should load shared inputs once"
+    );
+
+    let trace_bundle_body = function_body(
+        &source,
+        "pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle",
+        "fn validate_trace_bundle_unit_set",
+    );
+    assert!(
+        trace_bundle_body.contains("TraceBytesBackend::borrowed(trace_bytes)"),
+        "all-units trace bundle execution should borrow each unit trace"
+    );
+    assert!(
+        !trace_bundle_body.contains("trace_bytes.to_vec()"),
+        "all-units trace bundle execution should avoid cloning each unit trace"
+    );
+}
+
 fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
     let body = source
         .split_once(start)

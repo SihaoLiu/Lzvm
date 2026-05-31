@@ -107,6 +107,12 @@ pub struct ProveWitnessAuxiliaryInputs {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct WitnessSharedInputs {
+    input: Vec<u8>,
+    publics: Vec<Felt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProveWitnessCommitmentError {
     UnitIndexOutOfRange {
         unit_index: usize,
@@ -499,14 +505,22 @@ pub fn run_prove_witness_commitments_with_trace_backend<B: WitnessBackend + ?Siz
     backend: &B,
 ) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
     let mut source_lookup_balance = SourceLookupBalance::default();
+    validate_witness_unit_index(plan, unit_index)?;
+    let shared_inputs = load_witness_shared_inputs(plan)?;
     let output = run_prove_witness_commitments_with_trace_backend_inner(
         plan,
         unit_index,
+        &shared_inputs,
         auxiliary_inputs.clone(),
         backend,
         Some(&mut source_lookup_balance),
     )?;
-    accumulate_witness_global_hints(plan, &auxiliary_inputs, &mut source_lookup_balance)?;
+    accumulate_witness_global_hints(
+        plan,
+        &shared_inputs.publics,
+        &auxiliary_inputs,
+        &mut source_lookup_balance,
+    )?;
     source_lookup_balance.validate_all_units()?;
     Ok(output)
 }
@@ -514,6 +528,7 @@ pub fn run_prove_witness_commitments_with_trace_backend<B: WitnessBackend + ?Siz
 fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?Sized>(
     plan: &ProveExecutionPlan,
     unit_index: usize,
+    shared_inputs: &WitnessSharedInputs,
     auxiliary_inputs: ProveWitnessAuxiliaryInputs,
     backend: &B,
     source_lookup_balance: Option<&mut SourceLookupBalance>,
@@ -525,9 +540,7 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
             unit_count,
         },
     )?;
-    let publics = load_public_inputs(plan)?;
-    let input = read_witness_input(&plan.run_plan.pass)?;
-    let input_byte_count = input.len();
+    let input_byte_count = shared_inputs.input.len();
     let layout = derive_witness_trace_layout(unit)?;
     let trace = run_witness_trace_with_context(
         backend,
@@ -535,7 +548,7 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
             guest_image: Some(&plan.inputs.guest_image),
             guest_image_info: Some(&plan.guest_image_info),
         },
-        layout.request(input),
+        layout.request(&shared_inputs.input[..]),
     )?;
     let execution_unit =
         plan.units
@@ -549,7 +562,7 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
         unit_index,
         &layout,
         &trace,
-        &publics,
+        &shared_inputs.publics,
         &auxiliary_inputs,
     )?;
     if let Some(source_lookup_balance) = source_lookup_balance {
@@ -558,7 +571,7 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
             unit_index,
             &layout,
             &trace,
-            &publics,
+            &shared_inputs.publics,
             &auxiliary_inputs,
             source_lookup_balance,
         )?;
@@ -568,7 +581,7 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
             unit_index,
             &layout,
             &trace,
-            &publics,
+            &shared_inputs.publics,
             &auxiliary_inputs,
         )?;
     }
@@ -591,7 +604,7 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
     Ok(ProveWitnessTraceCommitments {
         commitments,
         trace,
-        publics,
+        publics: shared_inputs.publics.clone(),
         auxiliary_inputs,
     })
 }
@@ -603,10 +616,12 @@ pub fn run_prove_witness_commitments_for_all_units(
 ) -> Result<Vec<ProveWitnessTraceCommitments>, String> {
     let mut outputs = Vec::with_capacity(plan.units.len());
     let mut source_lookup_balance = SourceLookupBalance::default();
+    let shared_inputs = load_witness_shared_inputs(plan).map_err(|error| error.to_string())?;
     for unit_index in 0..plan.units.len() {
         let output = run_prove_witness_commitments_with_trace_backend_inner(
             plan,
             unit_index,
+            &shared_inputs,
             auxiliary_inputs.clone(),
             backend,
             Some(&mut source_lookup_balance),
@@ -616,8 +631,13 @@ pub fn run_prove_witness_commitments_for_all_units(
         })?;
         outputs.push(output);
     }
-    accumulate_witness_global_hints(plan, auxiliary_inputs, &mut source_lookup_balance)
-        .map_err(|error| error.to_string())?;
+    accumulate_witness_global_hints(
+        plan,
+        &shared_inputs.publics,
+        auxiliary_inputs,
+        &mut source_lookup_balance,
+    )
+    .map_err(|error| error.to_string())?;
     source_lookup_balance
         .validate_all_units()
         .map_err(|error| error.to_string())?;
@@ -632,16 +652,18 @@ pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
     validate_trace_bundle_unit_set(plan.units.len(), bundle)?;
     let mut outputs = Vec::with_capacity(plan.units.len());
     let mut source_lookup_balance = SourceLookupBalance::default();
+    let shared_inputs = load_witness_shared_inputs(plan).map_err(|error| error.to_string())?;
     for unit_index in 0..plan.units.len() {
         let unit_index_u32 = u32::try_from(unit_index)
             .map_err(|_| format!("trace bundle unit index is too large: {unit_index}"))?;
         let trace_bytes = bundle
             .trace_bytes_for_unit(unit_index_u32)
             .ok_or_else(|| format!("trace bundle is missing unit {unit_index}"))?;
-        let backend = TraceBytesBackend::new(trace_bytes.to_vec());
+        let backend = TraceBytesBackend::borrowed(trace_bytes);
         let output = run_prove_witness_commitments_with_trace_backend_inner(
             plan,
             unit_index,
+            &shared_inputs,
             auxiliary_inputs.clone(),
             &backend,
             Some(&mut source_lookup_balance),
@@ -651,8 +673,13 @@ pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
         })?;
         outputs.push(output);
     }
-    accumulate_witness_global_hints(plan, auxiliary_inputs, &mut source_lookup_balance)
-        .map_err(|error| error.to_string())?;
+    accumulate_witness_global_hints(
+        plan,
+        &shared_inputs.publics,
+        auxiliary_inputs,
+        &mut source_lookup_balance,
+    )
+    .map_err(|error| error.to_string())?;
     source_lookup_balance
         .validate_all_units()
         .map_err(|error| error.to_string())?;
@@ -672,6 +699,29 @@ fn validate_trace_bundle_unit_set(
                 unit.unit_index
             ));
         }
+    }
+    Ok(())
+}
+
+fn load_witness_shared_inputs(
+    plan: &ProveExecutionPlan,
+) -> Result<WitnessSharedInputs, ProveWitnessCommitmentError> {
+    Ok(WitnessSharedInputs {
+        input: read_witness_input(&plan.run_plan.pass)?,
+        publics: load_public_inputs(plan)?,
+    })
+}
+
+fn validate_witness_unit_index(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+) -> Result<(), ProveWitnessCommitmentError> {
+    let unit_count = plan.run_plan.schedule.units.len();
+    if unit_index >= unit_count {
+        return Err(ProveWitnessCommitmentError::UnitIndexOutOfRange {
+            unit_index,
+            unit_count,
+        });
     }
     Ok(())
 }
@@ -712,18 +762,18 @@ fn public_values_to_fields(
 
 fn accumulate_witness_global_hints(
     plan: &ProveExecutionPlan,
+    publics: &[Felt],
     auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
     source_lookup_balance: &mut SourceLookupBalance,
 ) -> Result<(), ProveWitnessCommitmentError> {
     if plan.global_hints.hints.is_empty() {
         return Ok(());
     }
-    let publics = load_public_inputs(plan)?;
     let resolved = resolve_global_hint_program(
         &plan.global_info,
         &plan.global_hints,
         GlobalConstraintInputs {
-            publics: &publics,
+            publics,
             proof_values: &auxiliary_inputs.proof_values,
             challenges: &auxiliary_inputs.challenges,
             group_values: &auxiliary_inputs.group_values,
@@ -1298,6 +1348,7 @@ mod tests {
 
         accumulate_witness_global_hints(
             &plan,
+            &[],
             &ProveWitnessAuxiliaryInputs::default(),
             &mut balance,
         )
@@ -1317,6 +1368,7 @@ mod tests {
 
         accumulate_witness_global_hints(
             &plan,
+            &[],
             &ProveWitnessAuxiliaryInputs::default(),
             &mut balance,
         )

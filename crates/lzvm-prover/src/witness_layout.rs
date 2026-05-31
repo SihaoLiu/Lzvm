@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt;
 
 use lzvm_field::Felt;
@@ -63,9 +64,9 @@ impl WitnessTraceLayout {
         &self.stages
     }
 
-    pub fn request(&self, input: Vec<u8>) -> WitnessTraceRequest {
+    pub fn request<'a>(&self, input: impl Into<Cow<'a, [u8]>>) -> WitnessTraceRequest<'a> {
         WitnessTraceRequest {
-            input,
+            input: input.into(),
             rows: self.rows,
             columns: self.columns,
         }

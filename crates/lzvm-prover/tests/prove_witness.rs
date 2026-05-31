@@ -3957,3 +3957,42 @@ fn rejects_witness_commitment_unit_indexes_outside_the_schedule() {
         })
     ));
 }
+
+#[test]
+fn rejects_witness_commitment_unit_index_before_loading_shared_inputs() {
+    let dir = temp_dir("bad-unit-before-shared-inputs");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("missing-input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+
+    let catalog = sample_catalog(sample_unit());
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let backend = TraceBytesBackend::new(sample_trace_bytes(7));
+
+    let result = run_prove_witness_commitments_with_trace_backend(
+        &plan,
+        1,
+        ProveWitnessAuxiliaryInputs::default(),
+        &backend,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        result,
+        Err(ProveWitnessCommitmentError::UnitIndexOutOfRange {
+            unit_index: 1,
+            unit_count: 1
+        })
+    ));
+}
