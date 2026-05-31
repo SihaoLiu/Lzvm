@@ -239,6 +239,50 @@ fn all_units_witness_reuses_shared_inputs_and_borrows_trace_bundle_bytes() {
     );
 }
 
+#[test]
+fn fri_opening_from_transcript_values_borrows_large_vectors() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/prove_fri_opening.rs");
+    let source = std::fs::read_to_string(&source_path).expect("FRI opening source should read");
+
+    let body = function_body(
+        &source,
+        "pub fn build_pcs_fri_opening_segment_from_transcript_values",
+        "pub fn build_pcs_fri_opening_segment_from_trace",
+    );
+
+    assert!(
+        !body.contains("challenges.clone()"),
+        "FRI opening construction should borrow transcript challenges"
+    );
+    assert!(
+        !body.contains("polynomial.clone()"),
+        "FRI opening construction should borrow transcript polynomial values"
+    );
+    assert!(
+        body.contains("build_pcs_fri_opening_segment_from_value_refs"),
+        "FRI opening construction should use the borrowed opening builder"
+    );
+
+    let helper_body = function_body(
+        &source,
+        "fn build_pcs_fri_opening_segment_from_value_refs",
+        "pub fn build_pcs_fri_transcript_values_from_trace",
+    );
+    for copy_operation in [
+        "challenges.clone()",
+        "polynomial.clone()",
+        "challenges.to_vec()",
+        "polynomial.to_vec()",
+        "clone_from",
+    ] {
+        assert!(
+            !helper_body.contains(copy_operation),
+            "borrowed FRI opening builder should not copy transcript vectors with {copy_operation}"
+        );
+    }
+}
+
 fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
     let body = source
         .split_once(start)

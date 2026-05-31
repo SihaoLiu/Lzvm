@@ -158,10 +158,35 @@ fn same_segment_data(left: &[u8], right: &[u8]) -> bool {
     (left.len() == right.len() && std::ptr::eq(left.as_ptr(), right.as_ptr())) || left == right
 }
 
+#[derive(Debug, Clone, Copy)]
+struct PcsFriOpeningValueRef<'a> {
+    unit_index: usize,
+    challenges: &'a [Ext3],
+    polynomial: &'a [Ext3],
+}
+
 pub fn build_pcs_fri_opening_segment(
     schedule: &ProveSchedule,
     query_segment: &ProofSegment,
     values: &[ProvePcsFriOpeningValues],
+) -> Result<ProofSegment, ProvePcsFriOpeningSegmentError> {
+    build_pcs_fri_opening_segment_from_value_refs(
+        schedule,
+        query_segment,
+        values.iter().map(|value| PcsFriOpeningValueRef {
+            unit_index: value.unit_index,
+            challenges: &value.challenges,
+            polynomial: &value.polynomial,
+        }),
+        values.len(),
+    )
+}
+
+fn build_pcs_fri_opening_segment_from_value_refs<'a>(
+    schedule: &ProveSchedule,
+    query_segment: &ProofSegment,
+    values: impl IntoIterator<Item = PcsFriOpeningValueRef<'a>>,
+    value_count: usize,
 ) -> Result<ProofSegment, ProvePcsFriOpeningSegmentError> {
     if query_segment.id != PCS_QUERY_PLAN_SEGMENT_ID {
         return Err(ProvePcsFriOpeningSegmentError::InvalidQuerySegmentId {
@@ -170,7 +195,7 @@ pub fn build_pcs_fri_opening_segment(
     }
     let query_plan = parse_pcs_query_plan_segment(&query_segment.data)?;
     let mut seen_units = BTreeSet::new();
-    let mut units = Vec::with_capacity(values.len());
+    let mut units = Vec::with_capacity(value_count);
     for input in values {
         if !seen_units.insert(input.unit_index) {
             return Err(ProvePcsFriOpeningSegmentError::DuplicateUnitIndex {
@@ -200,8 +225,8 @@ pub fn build_pcs_fri_opening_segment(
             PcsFriOpeningBuildRequest {
                 unit_index: unit_index_u32,
                 query_rows: &query_unit.queries,
-                challenges: &input.challenges,
-                polynomial: &input.polynomial,
+                challenges: input.challenges,
+                polynomial: input.polynomial,
             },
         )
         .map_err(|source| ProvePcsFriOpeningSegmentError::Build {
@@ -437,15 +462,16 @@ pub fn build_pcs_fri_opening_segment_from_transcript_values(
     query_segment: &ProofSegment,
     values: &[ProvePcsFriTranscriptValues],
 ) -> Result<ProofSegment, ProvePcsFriOpeningSegmentError> {
-    let opening_values = values
-        .iter()
-        .map(|value| ProvePcsFriOpeningValues {
+    build_pcs_fri_opening_segment_from_value_refs(
+        schedule,
+        query_segment,
+        values.iter().map(|value| PcsFriOpeningValueRef {
             unit_index: value.unit_index,
-            challenges: value.commitments.challenges.clone(),
-            polynomial: value.polynomial.clone(),
-        })
-        .collect::<Vec<_>>();
-    build_pcs_fri_opening_segment(schedule, query_segment, &opening_values)
+            challenges: &value.commitments.challenges,
+            polynomial: &value.polynomial,
+        }),
+        values.len(),
+    )
 }
 
 pub fn build_pcs_fri_opening_segment_from_trace(
