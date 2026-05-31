@@ -16,7 +16,7 @@ use lzvm_artifacts::proof::{encode_proof_artifact, ProofArtifact, ProofSegment};
 use lzvm_artifacts::public_values::{
     encode_public_values, public_values_digest, read_public_values_file, PublicValues,
 };
-use lzvm_artifacts::trace_bundle::read_trace_bundle_file;
+use lzvm_artifacts::trace_bundle::{parse_trace_bundle_ref, read_trace_bundle_file_bytes};
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::unit_values::ProveUnitValues;
 use lzvm_prover::witness_loader::{load_witness_library, TraceBytesBackend, WitnessBackend};
@@ -157,8 +157,18 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
-    let trace_bundle = match &parsed.trace_bundle {
-        Some(path) => match read_trace_bundle_file(path) {
+    let trace_bundle_bytes = match &parsed.trace_bundle {
+        Some(path) => match read_trace_bundle_file_bytes(path) {
+            Ok(bytes) => Some(bytes),
+            Err(error) => {
+                let _ = writeln!(stderr, "prove witness failed: {error}");
+                return 1;
+            }
+        },
+        None => None,
+    };
+    let trace_bundle = match trace_bundle_bytes.as_deref() {
+        Some(bytes) => match parse_trace_bundle_ref(bytes) {
             Ok(bundle) => Some(bundle),
             Err(error) => {
                 let _ = writeln!(stderr, "prove witness failed: {error}");

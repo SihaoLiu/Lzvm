@@ -5,7 +5,7 @@ use std::sync::Arc;
 use lzvm_artifacts::fixed::FixedColumns;
 use lzvm_artifacts::hint_program::{source_unimplemented_hint_name, HintProgram};
 use lzvm_artifacts::public_values::{read_public_values_file, PublicValues, PublicValuesError};
-use lzvm_artifacts::trace_bundle::TraceBundle;
+use lzvm_artifacts::trace_bundle::TraceBundleSource;
 use lzvm_field::{Ext3, Felt, FieldError};
 
 use crate::fixed_material::FixedColumnsMaterialError;
@@ -736,7 +736,7 @@ pub fn run_prove_witness_commitments_for_all_units(
 pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
     plan: &ProveExecutionPlan,
     auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
-    bundle: &TraceBundle,
+    bundle: &(impl TraceBundleSource + ?Sized),
 ) -> Result<Vec<ProveWitnessTraceCommitments>, String> {
     validate_trace_bundle_unit_set(plan.units.len(), bundle)?;
     let mut outputs = Vec::with_capacity(plan.units.len());
@@ -778,16 +778,13 @@ pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
 
 fn validate_trace_bundle_unit_set(
     plan_unit_count: usize,
-    bundle: &TraceBundle,
+    bundle: &(impl TraceBundleSource + ?Sized),
 ) -> Result<(), String> {
-    for unit in &bundle.units {
-        let unit_index = usize::try_from(unit.unit_index)
-            .map_err(|_| format!("trace bundle unit index is too large: {}", unit.unit_index))?;
-        if unit_index >= plan_unit_count {
-            return Err(format!(
-                "trace bundle has unexpected unit {}",
-                unit.unit_index
-            ));
+    for unit_index in bundle.unit_indices() {
+        let unit_index_usize = usize::try_from(unit_index)
+            .map_err(|_| format!("trace bundle unit index is too large: {unit_index}"))?;
+        if unit_index_usize >= plan_unit_count {
+            return Err(format!("trace bundle has unexpected unit {unit_index}"));
         }
     }
     Ok(())
@@ -1225,7 +1222,7 @@ mod tests {
     use lzvm_artifacts::setup_info::{
         CommitmentColumn, ConstantColumn, FriStep, StarkStruct, UnitSetupInfo,
     };
-    use lzvm_artifacts::trace_bundle::TraceBundleUnit;
+    use lzvm_artifacts::trace_bundle::{TraceBundle, TraceBundleUnit};
     use std::cell::Cell;
 
     #[test]

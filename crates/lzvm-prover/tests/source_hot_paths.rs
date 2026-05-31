@@ -262,6 +262,28 @@ fn cli_single_unit_trace_bundle_borrows_unit_trace_bytes() {
 }
 
 #[test]
+fn cli_prove_witness_parses_trace_bundle_without_unit_trace_copies() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("../lzvm-cli/src/prove_witness.rs");
+    let source = std::fs::read_to_string(&source_path).expect("prove witness source should read");
+
+    let trace_bundle_body = function_body(
+        &source,
+        "let trace_bundle = match",
+        "let challenge_values_segment = match",
+    );
+
+    assert!(
+        trace_bundle_body.contains("parse_trace_bundle_ref"),
+        "prove witness should parse trace bundles as borrowed section views"
+    );
+    assert!(
+        !trace_bundle_body.contains("read_trace_bundle_file"),
+        "prove witness should not clone trace bundle unit bytes while reading"
+    );
+}
+
+#[test]
 fn fri_opening_from_transcript_values_borrows_large_vectors() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/prove_fri_opening.rs");

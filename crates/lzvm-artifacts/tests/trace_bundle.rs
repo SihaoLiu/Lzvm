@@ -1,9 +1,10 @@
 use std::fs;
 use std::path::PathBuf;
 
+use lzvm_artifacts::sectioned::{encode_sectioned_file, SectionedFile, SectionedSection};
 use lzvm_artifacts::trace_bundle::{
-    encode_trace_bundle, parse_trace_bundle, read_trace_bundle_file, TraceBundle, TraceBundleError,
-    TraceBundleUnit, TRACE_BUNDLE_KIND, TRACE_BUNDLE_VERSION,
+    encode_trace_bundle, parse_trace_bundle, parse_trace_bundle_ref, read_trace_bundle_file,
+    TraceBundle, TraceBundleError, TraceBundleUnit, TRACE_BUNDLE_KIND, TRACE_BUNDLE_VERSION,
 };
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -25,6 +26,15 @@ fn sample_bundle() -> TraceBundle {
     }
 }
 
+fn sectioned_trace_bundle(version: u32, sections: Vec<SectionedSection>) -> Vec<u8> {
+    encode_sectioned_file(&SectionedFile {
+        kind: TRACE_BUNDLE_KIND,
+        version,
+        sections,
+    })
+    .expect("sectioned bundle should encode")
+}
+
 #[test]
 fn encodes_and_parses_trace_bundles() {
     let encoded = encode_trace_bundle(&sample_bundle()).expect("bundle should encode");
@@ -38,25 +48,108 @@ fn encodes_and_parses_trace_bundles() {
 }
 
 #[test]
+fn parses_trace_bundle_refs_without_copying_unit_bytes() {
+    let encoded = encode_trace_bundle(&sample_bundle()).expect("bundle should encode");
+    let parsed = parse_trace_bundle_ref(&encoded).expect("bundle should parse");
+
+    let unit_bytes = parsed
+        .trace_bytes_for_unit(2)
+        .expect("unit trace should be present");
+    let encoded_start = encoded.as_ptr() as usize;
+    let encoded_end = encoded_start + encoded.len();
+    let unit_start = unit_bytes.as_ptr() as usize;
+    let unit_end = unit_start + unit_bytes.len();
+
+    assert_eq!(parsed.unit_count(), 2);
+    assert_eq!(unit_bytes, &[5_u8, 6]);
+    assert!(unit_start >= encoded_start);
+    assert!(unit_end <= encoded_end);
+}
+
+#[test]
 fn rejects_unsupported_trace_bundle_versions() {
-    let encoded = lzvm_artifacts::sectioned::encode_sectioned_file(
-        &lzvm_artifacts::sectioned::SectionedFile {
-            kind: TRACE_BUNDLE_KIND,
-            version: TRACE_BUNDLE_VERSION - 1,
-            sections: vec![lzvm_artifacts::sectioned::SectionedSection {
-                id: 0,
-                data: vec![1],
-            }],
-        },
-    )
-    .expect("sectioned bundle should encode");
+    let encoded = sectioned_trace_bundle(
+        TRACE_BUNDLE_VERSION - 1,
+        vec![SectionedSection {
+            id: 0,
+            data: vec![1],
+        }],
+    );
+    let expected = TraceBundleError::UnsupportedVersion {
+        found: TRACE_BUNDLE_VERSION - 1,
+        expected: TRACE_BUNDLE_VERSION,
+    };
 
     assert_eq!(
         parse_trace_bundle(&encoded).expect_err("unsupported trace bundle version should reject"),
-        TraceBundleError::UnsupportedVersion {
-            found: TRACE_BUNDLE_VERSION - 1,
-            expected: TRACE_BUNDLE_VERSION,
-        }
+        expected
+    );
+    assert_eq!(
+        parse_trace_bundle_ref(&encoded)
+            .expect_err("borrowed unsupported trace bundle version should reject"),
+        expected
+    );
+}
+
+#[test]
+fn rejects_empty_trace_bundle_sections_when_parsing() {
+    let encoded = sectioned_trace_bundle(TRACE_BUNDLE_VERSION, Vec::new());
+
+    assert_eq!(
+        parse_trace_bundle(&encoded).expect_err("empty bundle should reject"),
+        TraceBundleError::EmptyUnits
+    );
+    assert_eq!(
+        parse_trace_bundle_ref(&encoded).expect_err("borrowed empty bundle should reject"),
+        TraceBundleError::EmptyUnits
+    );
+}
+
+#[test]
+fn rejects_empty_trace_bundle_units_when_parsing() {
+    let encoded = sectioned_trace_bundle(
+        TRACE_BUNDLE_VERSION,
+        vec![SectionedSection {
+            id: 3,
+            data: Vec::new(),
+        }],
+    );
+    let expected = TraceBundleError::EmptyTraceBytes { unit_index: 3 };
+
+    assert_eq!(
+        parse_trace_bundle(&encoded).expect_err("empty unit trace should reject"),
+        expected
+    );
+    assert_eq!(
+        parse_trace_bundle_ref(&encoded).expect_err("borrowed empty unit trace should reject"),
+        expected
+    );
+}
+
+#[test]
+fn rejects_duplicate_trace_bundle_units_when_parsing() {
+    let encoded = sectioned_trace_bundle(
+        TRACE_BUNDLE_VERSION,
+        vec![
+            SectionedSection {
+                id: 1,
+                data: vec![1],
+            },
+            SectionedSection {
+                id: 1,
+                data: vec![2],
+            },
+        ],
+    );
+    let expected = TraceBundleError::DuplicateUnitIndex { unit_index: 1 };
+
+    assert_eq!(
+        parse_trace_bundle(&encoded).expect_err("duplicate unit should reject"),
+        expected
+    );
+    assert_eq!(
+        parse_trace_bundle_ref(&encoded).expect_err("borrowed duplicate unit should reject"),
+        expected
     );
 }
 

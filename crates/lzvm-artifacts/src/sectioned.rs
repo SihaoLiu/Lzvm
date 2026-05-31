@@ -10,9 +10,22 @@ pub struct SectionedFile {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SectionedFileRef<'a> {
+    pub kind: [u8; 4],
+    pub version: u32,
+    pub sections: Vec<SectionedSectionRef<'a>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SectionedSection {
     pub id: u32,
     pub data: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SectionedSectionRef<'a> {
+    pub id: u32,
+    pub data: &'a [u8],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,6 +84,26 @@ pub fn parse_sectioned_file(
     expected_kind: [u8; 4],
     max_version: u32,
 ) -> Result<SectionedFile, SectionedError> {
+    let parsed = parse_sectioned_file_ref(bytes, expected_kind, max_version)?;
+    Ok(SectionedFile {
+        kind: parsed.kind,
+        version: parsed.version,
+        sections: parsed
+            .sections
+            .into_iter()
+            .map(|section| SectionedSection {
+                id: section.id,
+                data: section.data.to_vec(),
+            })
+            .collect(),
+    })
+}
+
+pub fn parse_sectioned_file_ref<'a>(
+    bytes: &'a [u8],
+    expected_kind: [u8; 4],
+    max_version: u32,
+) -> Result<SectionedFileRef<'a>, SectionedError> {
     let mut reader = Reader::new(bytes);
     let kind_bytes = reader.read_exact(4)?;
     let kind: [u8; 4] = kind_bytes.try_into().expect("slice length checked");
@@ -101,8 +134,8 @@ pub fn parse_sectioned_file(
         let id = reader.read_u32()?;
         let size = reader.read_u64()?;
         let size = usize::try_from(size).map_err(|_| SectionedError::LengthOverflow)?;
-        let data = reader.read_exact(size)?.to_vec();
-        sections.push(SectionedSection { id, data });
+        let data = reader.read_exact(size)?;
+        sections.push(SectionedSectionRef { id, data });
     }
 
     if reader.position() != bytes.len() {
@@ -111,7 +144,7 @@ pub fn parse_sectioned_file(
         });
     }
 
-    Ok(SectionedFile {
+    Ok(SectionedFileRef {
         kind,
         version,
         sections,
@@ -119,6 +152,22 @@ pub fn parse_sectioned_file(
 }
 
 pub fn encode_sectioned_file(value: &SectionedFile) -> Result<Vec<u8>, SectionedError> {
+    let sections = value
+        .sections
+        .iter()
+        .map(|section| SectionedSectionRef {
+            id: section.id,
+            data: section.data.as_slice(),
+        })
+        .collect();
+    encode_sectioned_file_ref(&SectionedFileRef {
+        kind: value.kind,
+        version: value.version,
+        sections,
+    })
+}
+
+pub fn encode_sectioned_file_ref(value: &SectionedFileRef<'_>) -> Result<Vec<u8>, SectionedError> {
     let mut out = Vec::new();
     out.extend_from_slice(&value.kind);
     write_u32(&mut out, value.version);
@@ -130,7 +179,7 @@ pub fn encode_sectioned_file(value: &SectionedFile) -> Result<Vec<u8>, Sectioned
         write_u32(&mut out, section.id);
         let size = u64::try_from(section.data.len()).map_err(|_| SectionedError::LengthOverflow)?;
         write_u64(&mut out, size);
-        out.extend_from_slice(&section.data);
+        out.extend_from_slice(section.data);
     }
 
     Ok(out)

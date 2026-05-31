@@ -4,7 +4,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::sectioned::{
-    encode_sectioned_file, parse_sectioned_file, SectionedError, SectionedFile, SectionedSection,
+    encode_sectioned_file_ref, parse_sectioned_file_ref, SectionedError, SectionedFileRef,
+    SectionedSectionRef,
 };
 
 pub const TRACE_BUNDLE_KIND: [u8; 4] = *b"trb0";
@@ -16,9 +17,26 @@ pub struct TraceBundle {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TraceBundleRef<'a> {
+    pub units: Vec<TraceBundleUnitRef<'a>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraceBundleUnit {
     pub unit_index: u32,
     pub trace_bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TraceBundleUnitRef<'a> {
+    pub unit_index: u32,
+    pub trace_bytes: &'a [u8],
+}
+
+pub trait TraceBundleSource {
+    fn unit_count(&self) -> usize;
+    fn unit_indices(&self) -> Box<dyn Iterator<Item = u32> + '_>;
+    fn trace_bytes_for_unit(&self, unit_index: u32) -> Option<&[u8]>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,14 +98,55 @@ impl From<SectionedError> for TraceBundleError {
 
 impl TraceBundle {
     pub fn unit_count(&self) -> usize {
-        self.units.len()
+        TraceBundleSource::unit_count(self)
     }
 
     pub fn trace_bytes_for_unit(&self, unit_index: u32) -> Option<&[u8]> {
+        TraceBundleSource::trace_bytes_for_unit(self, unit_index)
+    }
+}
+
+impl TraceBundleSource for TraceBundle {
+    fn unit_count(&self) -> usize {
+        self.units.len()
+    }
+
+    fn unit_indices(&self) -> Box<dyn Iterator<Item = u32> + '_> {
+        Box::new(self.units.iter().map(|unit| unit.unit_index))
+    }
+
+    fn trace_bytes_for_unit(&self, unit_index: u32) -> Option<&[u8]> {
         self.units
             .iter()
             .find(|unit| unit.unit_index == unit_index)
             .map(|unit| unit.trace_bytes.as_slice())
+    }
+}
+
+impl<'a> TraceBundleRef<'a> {
+    pub fn unit_count(&self) -> usize {
+        TraceBundleSource::unit_count(self)
+    }
+
+    pub fn trace_bytes_for_unit(&self, unit_index: u32) -> Option<&[u8]> {
+        TraceBundleSource::trace_bytes_for_unit(self, unit_index)
+    }
+}
+
+impl TraceBundleSource for TraceBundleRef<'_> {
+    fn unit_count(&self) -> usize {
+        self.units.len()
+    }
+
+    fn unit_indices(&self) -> Box<dyn Iterator<Item = u32> + '_> {
+        Box::new(self.units.iter().map(|unit| unit.unit_index))
+    }
+
+    fn trace_bytes_for_unit(&self, unit_index: u32) -> Option<&[u8]> {
+        self.units
+            .iter()
+            .find(|unit| unit.unit_index == unit_index)
+            .map(|unit| unit.trace_bytes)
     }
 }
 
@@ -111,13 +170,13 @@ pub fn encode_trace_bundle(value: &TraceBundle) -> Result<Vec<u8>, TraceBundleEr
                 unit_index: unit.unit_index,
             });
         }
-        sections.push(SectionedSection {
+        sections.push(SectionedSectionRef {
             id: unit.unit_index,
-            data: unit.trace_bytes.clone(),
+            data: unit.trace_bytes.as_slice(),
         });
     }
 
-    let encoded = encode_sectioned_file(&SectionedFile {
+    let encoded = encode_sectioned_file_ref(&SectionedFileRef {
         kind: TRACE_BUNDLE_KIND,
         version: TRACE_BUNDLE_VERSION,
         sections,
@@ -126,7 +185,21 @@ pub fn encode_trace_bundle(value: &TraceBundle) -> Result<Vec<u8>, TraceBundleEr
 }
 
 pub fn parse_trace_bundle(bytes: &[u8]) -> Result<TraceBundle, TraceBundleError> {
-    let parsed = parse_sectioned_file(bytes, TRACE_BUNDLE_KIND, TRACE_BUNDLE_VERSION)?;
+    let parsed = parse_trace_bundle_ref(bytes)?;
+    Ok(TraceBundle {
+        units: parsed
+            .units
+            .into_iter()
+            .map(|unit| TraceBundleUnit {
+                unit_index: unit.unit_index,
+                trace_bytes: unit.trace_bytes.to_vec(),
+            })
+            .collect(),
+    })
+}
+
+pub fn parse_trace_bundle_ref(bytes: &[u8]) -> Result<TraceBundleRef<'_>, TraceBundleError> {
+    let parsed = parse_sectioned_file_ref(bytes, TRACE_BUNDLE_KIND, TRACE_BUNDLE_VERSION)?;
     if parsed.version != TRACE_BUNDLE_VERSION {
         return Err(TraceBundleError::UnsupportedVersion {
             found: parsed.version,
@@ -151,20 +224,24 @@ pub fn parse_trace_bundle(bytes: &[u8]) -> Result<TraceBundle, TraceBundleError>
                 unit_index: section.id,
             });
         }
-        units.push(TraceBundleUnit {
+        units.push(TraceBundleUnitRef {
             unit_index: section.id,
             trace_bytes: section.data,
         });
     }
     units.sort_by_key(|unit| unit.unit_index);
 
-    Ok(TraceBundle { units })
+    Ok(TraceBundleRef { units })
+}
+
+pub fn read_trace_bundle_file_bytes(path: &Path) -> Result<Vec<u8>, TraceBundleError> {
+    fs::read(path).map_err(|error| TraceBundleError::ReadFailed {
+        path: path.to_path_buf(),
+        message: error.to_string(),
+    })
 }
 
 pub fn read_trace_bundle_file(path: &Path) -> Result<TraceBundle, TraceBundleError> {
-    let bytes = fs::read(path).map_err(|error| TraceBundleError::ReadFailed {
-        path: path.to_path_buf(),
-        message: error.to_string(),
-    })?;
+    let bytes = read_trace_bundle_file_bytes(path)?;
     parse_trace_bundle(&bytes)
 }
