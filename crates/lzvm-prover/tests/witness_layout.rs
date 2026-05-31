@@ -1,5 +1,6 @@
 use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
+use lzvm_artifacts::setup_info::CommitmentColumn;
 use lzvm_field::Felt;
 use lzvm_prover::witness_layout::{derive_witness_trace_layout, WitnessTraceLayoutError};
 use lzvm_prover::witness_trace::parse_witness_trace;
@@ -20,6 +21,14 @@ fn sample_unit(stage_commit_widths: Vec<u32>) -> ProveUnitSchedule {
 fn sample_unit_with_rows(
     stage_commit_widths: Vec<u32>,
     base_domain_size: u64,
+) -> ProveUnitSchedule {
+    sample_unit_with_rows_and_columns(stage_commit_widths, base_domain_size, Vec::new())
+}
+
+fn sample_unit_with_rows_and_columns(
+    stage_commit_widths: Vec<u32>,
+    base_domain_size: u64,
+    commitment_columns: Vec<CommitmentColumn>,
 ) -> ProveUnitSchedule {
     let mut transcript_root_challenge_draws = vec![1; stage_commit_widths.len()];
     if let Some(first) = transcript_root_challenge_draws.first_mut() {
@@ -49,7 +58,7 @@ fn sample_unit_with_rows(
         transcript_evaluation_challenge_draws: 2,
         constant_width: 5,
         stage_commit_widths,
-        commitment_columns: Vec::new(),
+        commitment_columns,
         unit_value_map: Vec::new(),
         group_value_map: Vec::new(),
         opening_points: vec![0, 1, -1],
@@ -73,6 +82,24 @@ fn sample_unit_with_rows(
     }
 }
 
+fn commitment_column(
+    name: &str,
+    stage: u32,
+    stage_position: u32,
+    dimension: u32,
+) -> CommitmentColumn {
+    CommitmentColumn {
+        name: name.to_owned(),
+        stage,
+        dimension,
+        pols_map_id: 0,
+        stage_id: stage.saturating_sub(1),
+        stage_position,
+        intermediate: false,
+        lengths: Vec::new(),
+    }
+}
+
 #[test]
 fn derives_witness_trace_layout_from_unit_schedule() {
     let unit = sample_unit(vec![2, 3, 1]);
@@ -91,6 +118,89 @@ fn derives_witness_trace_layout_from_unit_schedule() {
     assert_eq!(layout.stages()[2].stage_index, 3);
     assert_eq!(layout.stages()[2].start_column, 5);
     assert_eq!(layout.stages()[2].width, 1);
+}
+
+#[test]
+fn derives_witness_trace_column_positions_from_commitment_metadata() {
+    let unit = sample_unit_with_rows_and_columns(
+        vec![2, 3],
+        1024,
+        vec![
+            commitment_column("pc", 1, 1, 1),
+            commitment_column("mem_value", 2, 0, 1),
+            commitment_column("ext_value", 2, 1, 2),
+        ],
+    );
+
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    assert_eq!(layout.columns().len(), 3);
+    assert_eq!(layout.columns()[0].name(), "pc");
+    assert_eq!(layout.columns()[0].stage_index(), 1);
+    assert_eq!(layout.columns()[0].stage_position(), 1);
+    assert_eq!(layout.columns()[0].trace_column(), 1);
+    assert_eq!(layout.columns()[0].dimension(), 1);
+    let mem_value = layout
+        .column(2, "mem_value")
+        .expect("column should be indexed");
+    assert_eq!(mem_value.trace_column(), 2);
+    let ext_value = layout
+        .column(2, "ext_value")
+        .expect("column should be indexed");
+    assert_eq!(ext_value.stage_position(), 1);
+    assert_eq!(ext_value.trace_column(), 3);
+    assert_eq!(ext_value.dimension(), 2);
+}
+
+#[test]
+fn rejects_commitment_columns_outside_trace_layout() {
+    let unknown_stage =
+        sample_unit_with_rows_and_columns(vec![2], 1024, vec![commitment_column("pc", 2, 0, 1)]);
+    assert!(matches!(
+        derive_witness_trace_layout(&unknown_stage),
+        Err(WitnessTraceLayoutError::CommitmentColumnStageOutOfRange {
+            name,
+            stage_index: 2,
+            stage_count: 1,
+        }) if name == "pc"
+    ));
+
+    let zero_stage =
+        sample_unit_with_rows_and_columns(vec![2], 1024, vec![commitment_column("pc", 0, 0, 1)]);
+    assert!(matches!(
+        derive_witness_trace_layout(&zero_stage),
+        Err(WitnessTraceLayoutError::CommitmentColumnStageOutOfRange {
+            name,
+            stage_index: 0,
+            stage_count: 1,
+        }) if name == "pc"
+    ));
+
+    let zero_dimension =
+        sample_unit_with_rows_and_columns(vec![2], 1024, vec![commitment_column("empty", 1, 0, 0)]);
+    assert!(matches!(
+        derive_witness_trace_layout(&zero_dimension),
+        Err(WitnessTraceLayoutError::ZeroCommitmentColumnDimension {
+            name,
+            stage_index: 1,
+        }) if name == "empty"
+    ));
+
+    let out_of_range = sample_unit_with_rows_and_columns(
+        vec![2],
+        1024,
+        vec![commitment_column("ext_value", 1, 1, 2)],
+    );
+    assert!(matches!(
+        derive_witness_trace_layout(&out_of_range),
+        Err(WitnessTraceLayoutError::CommitmentColumnPositionOutOfRange {
+            name,
+            stage_index: 1,
+            stage_position: 1,
+            dimension: 2,
+            stage_width: 2,
+        }) if name == "ext_value"
+    ));
 }
 
 #[test]
