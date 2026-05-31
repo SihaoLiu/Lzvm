@@ -94,7 +94,10 @@ pub fn run_witness_trace_with_context(
     )?)
 }
 
-fn trace_output_byte_len(rows: usize, columns: usize) -> Result<usize, WitnessTraceRunError> {
+pub(crate) fn trace_output_byte_len(
+    rows: usize,
+    columns: usize,
+) -> Result<usize, WitnessTraceRunError> {
     if rows == 0 {
         return Err(WitnessTraceError::ZeroRows.into());
     }

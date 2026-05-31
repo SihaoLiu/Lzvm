@@ -19,12 +19,13 @@ use lzvm_artifacts::public_values::{
 use lzvm_artifacts::trace_bundle::{parse_trace_bundle_ref, read_trace_bundle_file_bytes};
 use lzvm_field::{Ext3, Felt};
 use lzvm_prover::unit_values::ProveUnitValues;
-use lzvm_prover::witness_loader::{load_witness_library, TraceBytesBackend, WitnessBackend};
+use lzvm_prover::witness_loader::load_witness_library;
 use lzvm_prover::{
     build_witness_commitment_segment, derive_prove_execution_plan_with_program_image_cache,
     run_prove_witness_commitments_for_all_units,
     run_prove_witness_commitments_for_all_units_with_trace_bundle,
-    run_prove_witness_commitments_with_trace_backend, ProveExecutionInputArtifacts,
+    run_prove_witness_commitments_with_trace_backend,
+    run_prove_witness_commitments_with_trace_bytes, ProveExecutionInputArtifacts,
     ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassKind, ProveSchedule,
     ProveWitnessAuxiliaryInputs, ProveWitnessCommitments, ProveWitnessTraceCommitments,
 };
@@ -224,20 +225,64 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 0;
         }
     }
-    let witness_backend: Box<dyn WitnessBackend + '_> = match (
-        &plan.inputs.witness_library,
-        &parsed.trace_bytes,
-        &trace_bundle,
-    ) {
-        (Some(path), _, _) => match load_witness_library(path) {
-            Ok(backend) => Box::new(backend),
+    let output = if let Some(path) = &plan.inputs.witness_library {
+        let witness_backend = match load_witness_library(path) {
+            Ok(backend) => backend,
             Err(error) => {
                 let _ = writeln!(stderr, "prove witness failed: {error}");
                 return 1;
             }
-        },
-        (None, Some(path), _) => match fs::read(path) {
-            Ok(trace_bytes) => Box::new(TraceBytesBackend::new(trace_bytes)),
+        };
+        if parsed.all_units || plan.run_plan.options.aggregate {
+            let outputs = match run_prove_witness_commitments_for_all_units(
+                &plan,
+                &auxiliary_inputs,
+                &witness_backend,
+            ) {
+                Ok(outputs) => outputs,
+                Err(error) => {
+                    let _ = writeln!(stderr, "prove witness failed: {error}");
+                    return 1;
+                }
+            };
+            if let Err(message) = finish_all_units_witness_run(
+                FinishAllUnitsWitnessRunRequest {
+                    catalog: &catalog,
+                    plan: &plan,
+                    parsed: &parsed,
+                    auxiliary_inputs: &auxiliary_inputs,
+                    outputs: &outputs,
+                    eth_block_input: FinishEthBlockInput {
+                        summary: prepared_eth_block_input.summary.as_ref(),
+                        generated_public_inputs,
+                        generated_from_public_input: prepared_eth_block_input
+                            .generated_from_public_input,
+                        public_input: parsed.eth_public_input.as_deref(),
+                    },
+                    challenge_values_segment: challenge_values_segment.as_ref(),
+                },
+                stdout,
+            ) {
+                let _ = writeln!(stderr, "prove witness failed: {message}");
+                return 1;
+            }
+            return 0;
+        }
+        match run_prove_witness_commitments_with_trace_backend(
+            &plan,
+            0,
+            auxiliary_inputs,
+            &witness_backend,
+        ) {
+            Ok(output) => output,
+            Err(error) => {
+                let _ = writeln!(stderr, "prove witness failed: {error}");
+                return 1;
+            }
+        }
+    } else if let Some(path) = &parsed.trace_bytes {
+        let trace_bytes = match fs::read(path) {
+            Ok(trace_bytes) => trace_bytes,
             Err(error) => {
                 let _ = writeln!(
                     stderr,
@@ -246,71 +291,45 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                 );
                 return 1;
             }
-        },
-        (None, None, Some(bundle)) => match bundle.trace_bytes_for_unit(0) {
-            Some(trace_bytes) => Box::new(TraceBytesBackend::borrowed(trace_bytes)),
-            None => {
-                let _ = writeln!(
-                    stderr,
-                    "prove witness failed: trace bundle is missing unit 0"
-                );
-                return 1;
-            }
-        },
-        (None, None, None) => {
-            let _ = writeln!(
-                stderr,
-                "prove witness failed: witness library, trace bytes, or trace bundle are required"
-            );
-            return 1;
-        }
-    };
-    if parsed.all_units || plan.run_plan.options.aggregate {
-        let outputs = match run_prove_witness_commitments_for_all_units(
+        };
+        match run_prove_witness_commitments_with_trace_bytes(
             &plan,
-            &auxiliary_inputs,
-            witness_backend.as_ref(),
+            0,
+            auxiliary_inputs,
+            &trace_bytes,
         ) {
-            Ok(outputs) => outputs,
+            Ok(output) => output,
             Err(error) => {
                 let _ = writeln!(stderr, "prove witness failed: {error}");
                 return 1;
             }
+        }
+    } else if let Some(bundle) = &trace_bundle {
+        let Some(trace_bytes) = bundle.trace_bytes_for_unit(0) else {
+            let _ = writeln!(
+                stderr,
+                "prove witness failed: trace bundle is missing unit 0"
+            );
+            return 1;
         };
-        if let Err(message) = finish_all_units_witness_run(
-            FinishAllUnitsWitnessRunRequest {
-                catalog: &catalog,
-                plan: &plan,
-                parsed: &parsed,
-                auxiliary_inputs: &auxiliary_inputs,
-                outputs: &outputs,
-                eth_block_input: FinishEthBlockInput {
-                    summary: prepared_eth_block_input.summary.as_ref(),
-                    generated_public_inputs,
-                    generated_from_public_input: prepared_eth_block_input
-                        .generated_from_public_input,
-                    public_input: parsed.eth_public_input.as_deref(),
-                },
-                challenge_values_segment: challenge_values_segment.as_ref(),
-            },
-            stdout,
+        match run_prove_witness_commitments_with_trace_bytes(
+            &plan,
+            0,
+            auxiliary_inputs,
+            trace_bytes,
         ) {
-            let _ = writeln!(stderr, "prove witness failed: {message}");
-            return 1;
+            Ok(output) => output,
+            Err(error) => {
+                let _ = writeln!(stderr, "prove witness failed: {error}");
+                return 1;
+            }
         }
-        return 0;
-    }
-    let output = match run_prove_witness_commitments_with_trace_backend(
-        &plan,
-        0,
-        auxiliary_inputs,
-        witness_backend.as_ref(),
-    ) {
-        Ok(output) => output,
-        Err(error) => {
-            let _ = writeln!(stderr, "prove witness failed: {error}");
-            return 1;
-        }
+    } else {
+        let _ = writeln!(
+            stderr,
+            "prove witness failed: witness library, trace bytes, or trace bundle are required"
+        );
+        return 1;
     };
     let commitments = output.commitments();
     let output_unit_index = commitments.unit_index();

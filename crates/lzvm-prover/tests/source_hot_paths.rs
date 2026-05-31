@@ -230,34 +230,34 @@ fn all_units_witness_reuses_shared_inputs_and_borrows_trace_bundle_bytes() {
         "fn validate_trace_bundle_unit_set",
     );
     assert!(
-        trace_bundle_body.contains("TraceBytesBackend::borrowed(trace_bytes)"),
-        "all-units trace bundle execution should borrow each unit trace"
+        trace_bundle_body.contains("run_prove_witness_commitments_with_trace_bytes_inner"),
+        "all-units trace bundle execution should parse precomputed trace bytes directly"
     );
     assert!(
-        !trace_bundle_body.contains("trace_bytes.to_vec()"),
-        "all-units trace bundle execution should avoid cloning each unit trace"
+        !trace_bundle_body.contains("TraceBytesBackend"),
+        "all-units trace bundle execution should avoid copying through the witness backend buffer"
     );
 }
 
 #[test]
-fn cli_single_unit_trace_bundle_borrows_unit_trace_bytes() {
+fn cli_single_unit_precomputed_trace_bytes_parse_without_backend_copy() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("../lzvm-cli/src/prove_witness.rs");
     let source = std::fs::read_to_string(&source_path).expect("prove witness source should read");
 
-    let backend_body = function_body(
+    let single_unit_body = function_body(
         &source,
-        "let witness_backend: Box<dyn WitnessBackend",
-        "if parsed.all_units || plan.run_plan.options.aggregate",
+        "let output = if let Some(path) = &plan.inputs.witness_library",
+        "let commitments = output.commitments();",
     );
 
     assert!(
-        backend_body.contains("TraceBytesBackend::borrowed(trace_bytes)"),
-        "single-unit trace bundle execution should borrow the selected unit trace"
+        single_unit_body.contains("run_prove_witness_commitments_with_trace_bytes"),
+        "single-unit precomputed trace execution should parse trace bytes directly"
     );
     assert!(
-        !backend_body.contains("trace_bytes.to_vec()"),
-        "single-unit trace bundle execution should avoid cloning the selected unit trace"
+        !single_unit_body.contains("TraceBytesBackend"),
+        "single-unit precomputed trace execution should avoid copying through the witness backend buffer"
     );
 }
 

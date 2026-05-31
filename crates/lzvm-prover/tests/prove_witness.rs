@@ -87,7 +87,7 @@ use lzvm_prover::witness_loader::{
     load_witness_library, TraceBytesBackend, WitnessBackend, WitnessCallError,
     WitnessComputeContext, WitnessTraceBuffers, WitnessTraceOutput,
 };
-use lzvm_prover::witness_runner::run_witness_trace;
+use lzvm_prover::witness_runner::{run_witness_trace, WitnessTraceRunError};
 use lzvm_prover::{
     build_pcs_evaluation_segment, build_pcs_fri_opening_segment,
     build_pcs_fri_opening_segment_from_trace, build_pcs_fri_polynomial_values,
@@ -98,7 +98,8 @@ use lzvm_prover::{
     build_witness_opening_segment, build_witness_opening_segment_batch,
     derive_prove_execution_plan, derive_prove_schedule, run_prove_witness_commitments,
     run_prove_witness_commitments_with_auxiliary_inputs, run_prove_witness_commitments_with_trace,
-    run_prove_witness_commitments_with_trace_backend, GpuRunOptions, ProveExecutionInputArtifacts,
+    run_prove_witness_commitments_with_trace_backend,
+    run_prove_witness_commitments_with_trace_bytes, GpuRunOptions, ProveExecutionInputArtifacts,
     ProvePartitionPlan, ProvePassRequest, ProvePcsEvaluationValues, ProvePcsFriOpeningTraceValues,
     ProvePcsFriOpeningValues, ProvePcsFriTranscriptTraceValues, ProvePcsQueryPlanSegmentError,
     ProveRunOptions, ProveRunRequest, ProveSchedule, ProveWitnessAuxiliaryInputs,
@@ -2631,6 +2632,50 @@ fn runs_all_units_with_cross_unit_source_lookup_balance() {
     assert_eq!(outputs.len(), 2);
     assert_eq!(outputs[0].commitments().unit_index(), 0);
     assert_eq!(outputs[1].commitments().unit_index(), 1);
+}
+
+#[test]
+fn precomputed_trace_bytes_preserve_output_overflow_error() {
+    let dir = temp_dir("precomputed-trace-bytes-overflow");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    fs::write(&guest_image, sample_guest_image()).expect("guest image should be written");
+    fs::write(&input_data, [7_u8]).expect("input data should be written");
+
+    let catalog = sample_catalog(sample_unit());
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        sample_request(dir.join("out"), Some(input_data)),
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image,
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let mut trace_bytes = sample_trace_bytes(17);
+    trace_bytes.extend_from_slice(&999_u64.to_le_bytes());
+
+    let error = run_prove_witness_commitments_with_trace_bytes(
+        &plan,
+        0,
+        ProveWitnessAuxiliaryInputs::default(),
+        &trace_bytes,
+    )
+    .expect_err("overlong precomputed trace should reject");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(matches!(
+        error,
+        ProveWitnessCommitmentError::WitnessRun(WitnessTraceRunError::Call(
+            WitnessCallError::OutputOverflow {
+                produced_len,
+                output_len
+            }
+        )) if produced_len == trace_bytes.len() && output_len == 16 * 5 * 8
+    ));
 }
 
 #[test]

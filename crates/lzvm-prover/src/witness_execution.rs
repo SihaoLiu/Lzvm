@@ -30,12 +30,13 @@ use crate::witness_layout::{
     derive_witness_trace_layout, WitnessTraceLayout, WitnessTraceLayoutError,
 };
 use crate::witness_loader::{
-    load_witness_library, TraceBytesBackend, WitnessBackend, WitnessComputeContext,
-    WitnessLoadError,
+    load_witness_library, WitnessBackend, WitnessCallError, WitnessComputeContext, WitnessLoadError,
 };
-use crate::witness_runner::{run_witness_trace_with_context, WitnessTraceRunError};
-use crate::witness_trace::WitnessTraceBuffer;
-use crate::{ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassRequest};
+use crate::witness_runner::{
+    run_witness_trace_with_context, trace_output_byte_len, WitnessTraceRunError,
+};
+use crate::witness_trace::{parse_witness_trace, WitnessTraceBuffer};
+use crate::{ProveExecutionPlan, ProveExecutionUnitArtifacts, ProvePassRequest, ProveUnitSchedule};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProveWitnessCommitments {
@@ -138,6 +139,12 @@ struct WitnessSharedInputs {
 struct WitnessProofInputs<'a> {
     publics: &'a [Felt],
     auxiliary_inputs: &'a ProveWitnessAuxiliaryInputs,
+}
+
+struct WitnessTraceCommitmentInput<'a> {
+    unit: &'a ProveUnitSchedule,
+    layout: WitnessTraceLayout,
+    trace: WitnessTraceBuffer,
 }
 
 type WitnessFixedColumnsLoadResult =
@@ -608,6 +615,34 @@ pub fn run_prove_witness_commitments_with_trace_backend<B: WitnessBackend + ?Siz
     Ok(output)
 }
 
+pub fn run_prove_witness_commitments_with_trace_bytes(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    auxiliary_inputs: ProveWitnessAuxiliaryInputs,
+    trace_bytes: &[u8],
+) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
+    let mut source_lookup_balance = SourceLookupBalance::default();
+    validate_witness_unit_index(plan, unit_index)?;
+    let shared_inputs = load_witness_shared_inputs(plan)?;
+    let auxiliary_inputs = Arc::new(auxiliary_inputs);
+    let output = run_prove_witness_commitments_with_trace_bytes_inner(
+        plan,
+        unit_index,
+        &shared_inputs,
+        Arc::clone(&auxiliary_inputs),
+        trace_bytes,
+        Some(&mut source_lookup_balance),
+    )?;
+    accumulate_witness_global_hints(
+        plan,
+        &shared_inputs.publics,
+        auxiliary_inputs.as_ref(),
+        &mut source_lookup_balance,
+    )?;
+    source_lookup_balance.validate_all_units()?;
+    Ok(output)
+}
+
 fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?Sized>(
     plan: &ProveExecutionPlan,
     unit_index: usize,
@@ -623,7 +658,6 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
             unit_count,
         },
     )?;
-    let input_byte_count = shared_inputs.input.len();
     let layout = derive_witness_trace_layout(unit)?;
     let trace = run_witness_trace_with_context(
         backend,
@@ -633,6 +667,76 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
         },
         layout.request(&shared_inputs.input[..]),
     )?;
+    run_prove_witness_commitments_from_trace_inner(
+        plan,
+        unit_index,
+        shared_inputs,
+        auxiliary_inputs,
+        WitnessTraceCommitmentInput {
+            unit,
+            layout,
+            trace,
+        },
+        source_lookup_balance,
+    )
+}
+
+fn run_prove_witness_commitments_with_trace_bytes_inner(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    shared_inputs: &WitnessSharedInputs,
+    auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+    trace_bytes: &[u8],
+    source_lookup_balance: Option<&mut SourceLookupBalance>,
+) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
+    let unit_count = plan.run_plan.schedule.units.len();
+    let unit = plan.run_plan.schedule.units.get(unit_index).ok_or(
+        ProveWitnessCommitmentError::UnitIndexOutOfRange {
+            unit_index,
+            unit_count,
+        },
+    )?;
+    let layout = derive_witness_trace_layout(unit)?;
+    let output_len = trace_output_byte_len(layout.row_count(), layout.column_count())?;
+    if trace_bytes.len() > output_len {
+        return Err(
+            WitnessTraceRunError::Call(WitnessCallError::OutputOverflow {
+                produced_len: trace_bytes.len(),
+                output_len,
+            })
+            .into(),
+        );
+    }
+    let trace = parse_witness_trace(trace_bytes, layout.row_count(), layout.column_count())
+        .map_err(WitnessTraceRunError::from)?;
+    run_prove_witness_commitments_from_trace_inner(
+        plan,
+        unit_index,
+        shared_inputs,
+        auxiliary_inputs,
+        WitnessTraceCommitmentInput {
+            unit,
+            layout,
+            trace,
+        },
+        source_lookup_balance,
+    )
+}
+
+fn run_prove_witness_commitments_from_trace_inner(
+    plan: &ProveExecutionPlan,
+    unit_index: usize,
+    shared_inputs: &WitnessSharedInputs,
+    auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
+    input: WitnessTraceCommitmentInput<'_>,
+    source_lookup_balance: Option<&mut SourceLookupBalance>,
+) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
+    let WitnessTraceCommitmentInput {
+        unit,
+        layout,
+        trace,
+    } = input;
+    let input_byte_count = shared_inputs.input.len();
     let execution_unit =
         plan.units
             .get(unit_index)
@@ -749,13 +853,12 @@ pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
         let trace_bytes = bundle
             .trace_bytes_for_unit(unit_index_u32)
             .ok_or_else(|| format!("trace bundle is missing unit {unit_index}"))?;
-        let backend = TraceBytesBackend::borrowed(trace_bytes);
-        let output = run_prove_witness_commitments_with_trace_backend_inner(
+        let output = run_prove_witness_commitments_with_trace_bytes_inner(
             plan,
             unit_index,
             &shared_inputs,
             Arc::clone(&auxiliary_inputs),
-            &backend,
+            trace_bytes,
             Some(&mut source_lookup_balance),
         )
         .map_err(|error| {
