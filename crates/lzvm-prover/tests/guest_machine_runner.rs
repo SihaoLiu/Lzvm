@@ -4,7 +4,8 @@ use lzvm_prover::guest_machine::{
     run_guest_machine, run_guest_machine_trace, run_guest_machine_trace_with_fcalls,
     run_guest_machine_with_fcalls, GuestFcallHandler, GuestFcallParam, GuestFcallRequest,
     GuestFcallResponse, GuestMachineError, GuestMachineHalt, GuestMachineMemory,
-    GuestMachineRunError, GuestMachineState, ZISK_ARCHITECTURE_ID,
+    GuestMachineRunError, GuestMachineState, GuestMemoryAccess, GuestMemoryAccessKind,
+    GuestRegisterWrite, ZISK_ARCHITECTURE_ID,
 };
 use lzvm_prover::guest_memory::{load_guest_memory_image, GuestMemoryImage};
 use lzvm_prover::zisk_fcalls::{
@@ -103,6 +104,64 @@ fn ld(rd: u8, rs1: u8, offset: i16) -> u32 {
 
 fn lbu(rd: u8, rs1: u8, offset: i16) -> u32 {
     load(4, rd, rs1, offset)
+}
+
+fn lb(rd: u8, rs1: u8, offset: i16) -> u32 {
+    load(0, rd, rs1, offset)
+}
+
+fn store(funct3: u8, rs1: u8, rs2: u8, offset: i16) -> u32 {
+    assert!((-2048..=2047).contains(&offset));
+    assert!(rs1 < 32);
+    assert!(rs2 < 32);
+    assert!(funct3 < 8);
+    let offset = offset as i32 as u32;
+    (((offset >> 5) & 0x7f) << 25)
+        | (u32::from(rs2) << 20)
+        | (u32::from(rs1) << 15)
+        | (u32::from(funct3) << 12)
+        | ((offset & 0x1f) << 7)
+        | 0x23
+}
+
+fn sd(rs1: u8, rs2: u8, offset: i16) -> u32 {
+    store(3, rs1, rs2, offset)
+}
+
+fn encode_amo(
+    funct5: u8,
+    acquire: bool,
+    release: bool,
+    rs2: u8,
+    rs1: u8,
+    funct3: u8,
+    rd: u8,
+) -> u32 {
+    assert!(funct5 < 32);
+    assert!(rs2 < 32);
+    assert!(rs1 < 32);
+    assert!(funct3 < 8);
+    assert!(rd < 32);
+    (u32::from(funct5) << 27)
+        | (u32::from(acquire) << 26)
+        | (u32::from(release) << 25)
+        | (u32::from(rs2) << 20)
+        | (u32::from(rs1) << 15)
+        | (u32::from(funct3) << 12)
+        | (u32::from(rd) << 7)
+        | 0x2f
+}
+
+fn lr_w(rd: u8, rs1: u8) -> u32 {
+    encode_amo(0x02, false, false, 0, rs1, 2, rd)
+}
+
+fn sc_w(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_amo(0x03, false, false, rs2, rs1, 2, rd)
+}
+
+fn amoadd_w(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_amo(0x00, false, false, rs2, rs1, 2, rd)
 }
 
 fn lui(rd: u8, immediate: u32) -> u32 {
@@ -505,6 +564,165 @@ fn traces_guest_machine_until_ecall() {
     assert_eq!(trace.reports[1].next_pc, ENTRY + 8);
     assert_eq!(state.register(1), Some(7));
     assert_eq!(state.register(2), Some(10));
+}
+
+#[test]
+fn traces_guest_machine_register_and_memory_effects_until_ecall() {
+    let data_offset = 64;
+    let data_address = ENTRY + data_offset as u64;
+    let mut code = Vec::new();
+    push_word(&mut code, addi(2, 0, 7));
+    push_word(&mut code, ld(3, 1, 0));
+    push_word(&mut code, sd(1, 2, 8));
+    push_word(&mut code, lb(4, 1, 16));
+    push_word(&mut code, 0x0000_0073);
+    code.resize(data_offset, 0);
+    code.extend_from_slice(&0x0123_4567_89ab_cdef_u64.to_le_bytes());
+    code.extend_from_slice(&0_u64.to_le_bytes());
+    code.push(0x80);
+    let mut memory = guest_machine_memory_with_bytes(&code);
+    let mut state = GuestMachineState::new(memory.entry_address());
+    state
+        .set_register(1, data_address)
+        .expect("address register should set");
+
+    let trace = run_guest_machine_trace(&mut memory, &mut state, 10).expect("guest should halt");
+
+    assert_eq!(trace.run.executed_instructions, 4);
+    assert_eq!(
+        trace.reports[0].register_writes,
+        vec![GuestRegisterWrite { index: 2, value: 7 }]
+    );
+    assert!(trace.reports[0].memory_accesses.is_empty());
+    assert_eq!(
+        trace.reports[1].memory_accesses,
+        vec![GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Read,
+            address: data_address,
+            byte_len: 8,
+            value: 0x0123_4567_89ab_cdef,
+        }]
+    );
+    assert_eq!(
+        trace.reports[1].register_writes,
+        vec![GuestRegisterWrite {
+            index: 3,
+            value: 0x0123_4567_89ab_cdef,
+        }]
+    );
+    assert_eq!(
+        trace.reports[2].memory_accesses,
+        vec![GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Write,
+            address: data_address + 8,
+            byte_len: 8,
+            value: 7,
+        }]
+    );
+    assert!(trace.reports[2].register_writes.is_empty());
+    assert_eq!(
+        trace.reports[3].memory_accesses,
+        vec![GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Read,
+            address: data_address + 16,
+            byte_len: 1,
+            value: 0x80,
+        }]
+    );
+    assert_eq!(
+        trace.reports[3].register_writes,
+        vec![GuestRegisterWrite {
+            index: 4,
+            value: (-128_i64) as u64,
+        }]
+    );
+}
+
+#[test]
+fn traces_guest_machine_atomic_effects_until_ecall() {
+    let data_offset = 64;
+    let data_address = ENTRY + data_offset as u64;
+    let mut code = Vec::new();
+    push_word(&mut code, lr_w(3, 1));
+    push_word(&mut code, sc_w(4, 1, 2));
+    push_word(&mut code, sc_w(5, 1, 2));
+    push_word(&mut code, amoadd_w(6, 1, 7));
+    push_word(&mut code, 0x0000_0073);
+    code.resize(data_offset, 0);
+    code.extend_from_slice(&0x8000_0001_u32.to_le_bytes());
+    let mut memory = guest_machine_memory_with_bytes(&code);
+    let mut state = GuestMachineState::new(memory.entry_address());
+    state
+        .set_register(1, data_address)
+        .expect("address register should set");
+    state
+        .set_register(2, 0x1122_3344_5566_7788)
+        .expect("value register should set");
+    state
+        .set_register(7, 0xffff_ffff_0000_0005)
+        .expect("amo operand register should set");
+
+    let trace = run_guest_machine_trace(&mut memory, &mut state, 10).expect("guest should halt");
+
+    assert_eq!(trace.run.executed_instructions, 4);
+    assert_eq!(
+        trace.reports[0].memory_accesses,
+        vec![GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Read,
+            address: data_address,
+            byte_len: 4,
+            value: 0x8000_0001,
+        }]
+    );
+    assert_eq!(
+        trace.reports[0].register_writes,
+        vec![GuestRegisterWrite {
+            index: 3,
+            value: 0xffff_ffff_8000_0001,
+        }]
+    );
+    assert_eq!(
+        trace.reports[1].memory_accesses,
+        vec![GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Write,
+            address: data_address,
+            byte_len: 4,
+            value: 0x5566_7788,
+        }]
+    );
+    assert_eq!(
+        trace.reports[1].register_writes,
+        vec![GuestRegisterWrite { index: 4, value: 0 }]
+    );
+    assert!(trace.reports[2].memory_accesses.is_empty());
+    assert_eq!(
+        trace.reports[2].register_writes,
+        vec![GuestRegisterWrite { index: 5, value: 1 }]
+    );
+    assert_eq!(
+        trace.reports[3].memory_accesses,
+        vec![
+            GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Read,
+                address: data_address,
+                byte_len: 4,
+                value: 0x5566_7788,
+            },
+            GuestMemoryAccess {
+                kind: GuestMemoryAccessKind::Write,
+                address: data_address,
+                byte_len: 4,
+                value: 0x5566_778d,
+            },
+        ]
+    );
+    assert_eq!(
+        trace.reports[3].register_writes,
+        vec![GuestRegisterWrite {
+            index: 6,
+            value: 0x5566_7788,
+        }]
+    );
 }
 
 #[derive(Default)]

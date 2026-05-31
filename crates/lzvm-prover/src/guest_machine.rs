@@ -393,11 +393,66 @@ impl GuestMachineState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GuestRegisterWrite {
+    pub index: u8,
+    pub value: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GuestMemoryAccessKind {
+    Read,
+    Write,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GuestMemoryAccess {
+    pub kind: GuestMemoryAccessKind,
+    pub address: u64,
+    pub byte_len: usize,
+    pub value: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct GuestInstructionEffects {
+    register_writes: Vec<GuestRegisterWrite>,
+    memory_accesses: Vec<GuestMemoryAccess>,
+}
+
+impl GuestInstructionEffects {
+    fn record_register_write(&mut self, index: u8, value: u64) {
+        if index != 0 {
+            self.register_writes
+                .push(GuestRegisterWrite { index, value });
+        }
+    }
+
+    fn record_memory_read(&mut self, address: u64, byte_len: usize, value: u64) {
+        self.memory_accesses.push(GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Read,
+            address,
+            byte_len,
+            value,
+        });
+    }
+
+    fn record_memory_write(&mut self, address: u64, byte_len: usize, value: u64) {
+        self.memory_accesses.push(GuestMemoryAccess {
+            kind: GuestMemoryAccessKind::Write,
+            address,
+            byte_len,
+            value,
+        });
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestMachineReport {
     pub address: u64,
     pub instruction: RiscvInstruction,
     pub next_pc: u64,
+    pub register_writes: Vec<GuestRegisterWrite>,
+    pub memory_accesses: Vec<GuestMemoryAccess>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -682,6 +737,7 @@ fn advance_guest_machine_inner(
         .ok_or(GuestMachineError::ProgramCounterOverflow { address, byte_len })?;
     let mut next_state = state.clone();
     next_state.set_pc(sequential_pc);
+    let mut effects = GuestInstructionEffects::default();
 
     execute_guest_instruction(
         memory,
@@ -689,6 +745,7 @@ fn advance_guest_machine_inner(
         sequential_pc,
         instruction,
         &mut next_state,
+        &mut effects,
         handler,
     )?;
     next_state.retire_instruction();
@@ -699,6 +756,8 @@ fn advance_guest_machine_inner(
         address,
         instruction,
         next_pc,
+        register_writes: effects.register_writes,
+        memory_accesses: effects.memory_accesses,
     })
 }
 
@@ -734,22 +793,23 @@ fn execute_guest_instruction(
     sequential_pc: u64,
     instruction: RiscvInstruction,
     state: &mut GuestMachineState,
+    effects: &mut GuestInstructionEffects,
     handler: Option<&mut dyn GuestFcallHandler>,
 ) -> Result<(), GuestMachineError> {
     match instruction {
         RiscvInstruction::Lui { rd, immediate } => {
-            state.write_decoded_register(rd, immediate as u64);
+            write_reported_register(state, effects, rd, immediate as u64);
         }
         RiscvInstruction::Auipc { rd, immediate } => {
-            state.write_decoded_register(rd, address.wrapping_add_signed(immediate));
+            write_reported_register(state, effects, rd, address.wrapping_add_signed(immediate));
         }
         RiscvInstruction::Jal { rd, offset } => {
-            state.write_decoded_register(rd, sequential_pc);
+            write_reported_register(state, effects, rd, sequential_pc);
             state.set_pc(address.wrapping_add_signed(offset));
         }
         RiscvInstruction::Jalr { rd, rs1, offset } => {
             let target = state.read_decoded_register(rs1).wrapping_add_signed(offset) & !1;
-            state.write_decoded_register(rd, sequential_pc);
+            write_reported_register(state, effects, rd, sequential_pc);
             state.set_pc(target);
         }
         RiscvInstruction::Branch {
@@ -778,7 +838,7 @@ fn execute_guest_instruction(
                     instruction,
                 },
             )?;
-            state.write_decoded_register(rd, value);
+            write_reported_register(state, effects, rd, value);
         }
         RiscvInstruction::Op { kind, rd, rs1, rs2 } => {
             let value = execute_op(
@@ -786,7 +846,7 @@ fn execute_guest_instruction(
                 state.read_decoded_register(rs1),
                 state.read_decoded_register(rs2),
             );
-            state.write_decoded_register(rd, value);
+            write_reported_register(state, effects, rd, value);
         }
         RiscvInstruction::OpImm32 {
             kind,
@@ -795,7 +855,7 @@ fn execute_guest_instruction(
             immediate,
         } => {
             let value = execute_op_imm_32(kind, state.read_decoded_register(rs1), immediate);
-            state.write_decoded_register(rd, value);
+            write_reported_register(state, effects, rd, value);
         }
         RiscvInstruction::Op32 { kind, rd, rs1, rs2 } => {
             let value = execute_op_32(
@@ -803,7 +863,7 @@ fn execute_guest_instruction(
                 state.read_decoded_register(rs1),
                 state.read_decoded_register(rs2),
             );
-            state.write_decoded_register(rd, value);
+            write_reported_register(state, effects, rd, value);
         }
         RiscvInstruction::Load {
             kind,
@@ -812,8 +872,9 @@ fn execute_guest_instruction(
             offset,
         } => {
             let address = state.read_decoded_register(rs1).wrapping_add_signed(offset);
-            let value = read_guest_load(memory, kind, address)?;
-            state.write_decoded_register(rd, value);
+            let loaded = read_guest_load(memory, kind, address)?;
+            effects.record_memory_read(address, loaded.byte_len, loaded.memory_value);
+            write_reported_register(state, effects, rd, loaded.register_value);
         }
         RiscvInstruction::Store {
             kind,
@@ -822,7 +883,10 @@ fn execute_guest_instruction(
             offset,
         } => {
             let address = state.read_decoded_register(rs1).wrapping_add_signed(offset);
-            write_guest_store(memory, kind, address, state.read_decoded_register(rs2))?;
+            let byte_len = store_byte_len(kind);
+            let value = state.read_decoded_register(rs2);
+            write_guest_store(memory, kind, address, value)?;
+            effects.record_memory_write(address, byte_len, low_bytes_value(value, byte_len));
             state.clear_reservation_if_overlaps(address, store_byte_len(kind));
         }
         RiscvInstruction::Amo {
@@ -837,13 +901,17 @@ fn execute_guest_instruction(
             let loaded = read_guest_amo(memory, width, address)?;
             let stored = execute_amo(kind, width, loaded, state.read_decoded_register(rs2));
             write_guest_amo(memory, width, address, stored)?;
+            let byte_len = amo_width_byte_len(width);
+            effects.record_memory_read(address, byte_len, loaded);
+            effects.record_memory_write(address, byte_len, low_bytes_value(stored, byte_len));
             state.clear_reservation_if_overlaps(address, amo_width_byte_len(width));
-            state.write_decoded_register(rd, amo_result(width, loaded));
+            write_reported_register(state, effects, rd, amo_result(width, loaded));
         }
         RiscvInstruction::LoadReserved { width, rd, rs1, .. } => {
             let address = state.read_decoded_register(rs1);
             let loaded = read_guest_amo(memory, width, address)?;
-            state.write_decoded_register(rd, amo_result(width, loaded));
+            effects.record_memory_read(address, amo_width_byte_len(width), loaded);
+            write_reported_register(state, effects, rd, amo_result(width, loaded));
             state.set_reservation(address, width);
         }
         RiscvInstruction::StoreConditional {
@@ -856,15 +924,23 @@ fn execute_guest_instruction(
             let address = state.read_decoded_register(rs1);
             validate_guest_amo_address(memory, width, address)?;
             if state.reservation_matches(address, width) {
-                write_guest_amo(memory, width, address, state.read_decoded_register(rs2))?;
-                state.write_decoded_register(rd, 0);
+                let value = state.read_decoded_register(rs2);
+                write_guest_amo(memory, width, address, value)?;
+                let byte_len = amo_width_byte_len(width);
+                effects.record_memory_write(address, byte_len, low_bytes_value(value, byte_len));
+                write_reported_register(state, effects, rd, 0);
             } else {
-                state.write_decoded_register(rd, 1);
+                write_reported_register(state, effects, rd, 1);
             }
             state.clear_reservation();
         }
         RiscvInstruction::CsrRead { csr, rd } => {
-            state.write_decoded_register(rd, read_csr(csr, state.retired_instructions()));
+            write_reported_register(
+                state,
+                effects,
+                rd,
+                read_csr(csr, state.retired_instructions()),
+            );
         }
         RiscvInstruction::ZiskFcallParam { port, rs1 } => {
             state.push_fcall_param(port, state.read_decoded_register(rs1));
@@ -890,7 +966,7 @@ fn execute_guest_instruction(
             let value = state
                 .pop_fcall_result()
                 .ok_or(GuestMachineError::MissingFcallResult { address })?;
-            state.write_decoded_register(rd, value);
+            write_reported_register(state, effects, rd, value);
         }
         RiscvInstruction::Fence { .. } => {}
         RiscvInstruction::CompressedUnknown { .. }
@@ -909,49 +985,81 @@ fn execute_guest_instruction(
     Ok(())
 }
 
+fn write_reported_register(
+    state: &mut GuestMachineState,
+    effects: &mut GuestInstructionEffects,
+    index: u8,
+    value: u64,
+) {
+    state.write_decoded_register(index, value);
+    effects.record_register_write(index, value);
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GuestLoadResult {
+    byte_len: usize,
+    memory_value: u64,
+    register_value: u64,
+}
+
 fn read_guest_load(
     memory: &GuestMachineMemory,
     kind: RiscvLoadKind,
     address: u64,
-) -> Result<u64, GuestMachineError> {
-    let value = match kind {
+) -> Result<GuestLoadResult, GuestMachineError> {
+    let (byte_len, memory_value, register_value) = match kind {
         RiscvLoadKind::Lb => {
             let mut bytes = [0_u8; 1];
             memory.read_range_into(address, &mut bytes)?;
-            i64::from(bytes[0] as i8) as u64
+            (1, u64::from(bytes[0]), i64::from(bytes[0] as i8) as u64)
         }
         RiscvLoadKind::Lh => {
             let mut bytes = [0_u8; 2];
             memory.read_range_into(address, &mut bytes)?;
-            i64::from(i16::from_le_bytes(bytes)) as u64
+            (
+                2,
+                u64::from(u16::from_le_bytes(bytes)),
+                i64::from(i16::from_le_bytes(bytes)) as u64,
+            )
         }
         RiscvLoadKind::Lw => {
             let mut bytes = [0_u8; 4];
             memory.read_range_into(address, &mut bytes)?;
-            i64::from(i32::from_le_bytes(bytes)) as u64
+            (
+                4,
+                u64::from(u32::from_le_bytes(bytes)),
+                i64::from(i32::from_le_bytes(bytes)) as u64,
+            )
         }
         RiscvLoadKind::Ld => {
             let mut bytes = [0_u8; 8];
             memory.read_range_into(address, &mut bytes)?;
-            u64::from_le_bytes(bytes)
+            let value = u64::from_le_bytes(bytes);
+            (8, value, value)
         }
         RiscvLoadKind::Lbu => {
             let mut bytes = [0_u8; 1];
             memory.read_range_into(address, &mut bytes)?;
-            u64::from(bytes[0])
+            (1, u64::from(bytes[0]), u64::from(bytes[0]))
         }
         RiscvLoadKind::Lhu => {
             let mut bytes = [0_u8; 2];
             memory.read_range_into(address, &mut bytes)?;
-            u64::from(u16::from_le_bytes(bytes))
+            let value = u64::from(u16::from_le_bytes(bytes));
+            (2, value, value)
         }
         RiscvLoadKind::Lwu => {
             let mut bytes = [0_u8; 4];
             memory.read_range_into(address, &mut bytes)?;
-            u64::from(u32::from_le_bytes(bytes))
+            let value = u64::from(u32::from_le_bytes(bytes));
+            (4, value, value)
         }
     };
-    Ok(value)
+    Ok(GuestLoadResult {
+        byte_len,
+        memory_value,
+        register_value,
+    })
 }
 
 fn write_guest_store(
@@ -976,6 +1084,14 @@ fn store_byte_len(kind: RiscvStoreKind) -> usize {
         RiscvStoreKind::Sh => 2,
         RiscvStoreKind::Sw => 4,
         RiscvStoreKind::Sd => 8,
+    }
+}
+
+fn low_bytes_value(value: u64, byte_len: usize) -> u64 {
+    if byte_len >= 8 {
+        value
+    } else {
+        value & ((1_u64 << (byte_len * 8)) - 1)
     }
 }
 
