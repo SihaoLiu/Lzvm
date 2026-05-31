@@ -41,6 +41,7 @@ use crate::prove_plan::{
     validate_all_unit_stored_witness_limit, write_run_plan_summary, write_source_companion_summary,
     ParseError,
 };
+use crate::trace_input_shape::validate_trace_input_shapes;
 
 mod args;
 mod value_inputs;
@@ -190,6 +191,17 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         },
         None => None,
     };
+    if let Some(bundle) = &trace_bundle {
+        if let Err(message) = validate_trace_input_shapes(
+            None,
+            Some(bundle),
+            parsed.all_units || plan.run_plan.options.aggregate,
+            &plan.run_plan.schedule,
+        ) {
+            let _ = writeln!(stderr, "prove witness failed: {message}");
+            return 1;
+        }
+    }
     let challenge_values_segment = match parsed.challenge_values_segment.as_deref() {
         Some(path) => match read_challenge_values_proof_segment_input(path) {
             Ok(segment) => Some(segment),

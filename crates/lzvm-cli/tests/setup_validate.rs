@@ -6611,6 +6611,117 @@ fn rejects_trace_bundle_missing_unit_for_aggregate_witness_runs() {
     );
 }
 
+fn assert_rejects_malformed_trace_bundle_unit_for_multi_unit_witness_run(
+    temp_name: &str,
+    mode_flag: &str,
+) {
+    let dir = temp_dir(temp_name);
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory_with_proof_group_and_unit_value(&dir);
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let bundle_path = dir.join("trace-bundle.bin");
+    let unit_values_path = dir.join("unit_values.bin");
+    let proof_values_path = dir.join("proof_values.bin");
+    let group_values_path = dir.join("group_values.bin");
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [17_u8]);
+    write_field_words(&unit_values_path, &[101, 201, 202, 203]);
+    write_field_words(&proof_values_path, &[51, 52, 53]);
+    write_field_words(&group_values_path, &[61, 62, 63]);
+    let bundle_bytes = encode_trace_bundle(&TraceBundle {
+        units: vec![
+            TraceBundleUnit {
+                unit_index: 0,
+                trace_bytes: sample_trace_bytes(17),
+            },
+            TraceBundleUnit {
+                unit_index: 1,
+                trace_bytes: sample_trace_bytes(17),
+            },
+            TraceBundleUnit {
+                unit_index: 2,
+                trace_bytes: vec![1_u8, 2, 3, 4],
+            },
+            TraceBundleUnit {
+                unit_index: 3,
+                trace_bytes: sample_trace_bytes(17),
+            },
+        ],
+    })
+    .expect("trace bundle should encode");
+    write_bytes(&bundle_path, &bundle_bytes);
+
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&sample_public_values(setup_hash))
+            .expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--trace-bundle",
+            bundle_path.to_str().expect("bundle path should be utf-8"),
+            mode_flag,
+            "--save-outputs",
+            "--unit-values",
+            unit_values_path
+                .to_str()
+                .expect("unit values path should be utf-8"),
+            "--proof-values",
+            proof_values_path
+                .to_str()
+                .expect("proof values path should be utf-8"),
+            "--group-values",
+            group_values_path
+                .to_str()
+                .expect("group values path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "prove witness failed: trace bundle unit 2 byte length mismatch: expected 32, found 4\n"
+    );
+}
+
+#[test]
+fn rejects_malformed_trace_bundle_unit_for_aggregate_witness_runs() {
+    assert_rejects_malformed_trace_bundle_unit_for_multi_unit_witness_run(
+        "prove-witness-trace-bundle-malformed-unit",
+        "--aggregate",
+    );
+}
+
+#[test]
+fn rejects_malformed_trace_bundle_unit_for_all_unit_witness_runs() {
+    assert_rejects_malformed_trace_bundle_unit_for_multi_unit_witness_run(
+        "prove-witness-trace-bundle-all-units-malformed-unit",
+        "--all-units",
+    );
+}
+
 #[test]
 fn rejects_trace_bytes_for_all_unit_witness_runs() {
     let dir = temp_dir("prove-witness-trace-bytes-all-units");

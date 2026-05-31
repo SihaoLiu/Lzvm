@@ -33,6 +33,7 @@ mod setup_fixed_source;
 mod setup_generate_key;
 mod setup_source_companions;
 mod trace_bundle;
+mod trace_input_shape;
 mod verify_commands;
 
 pub use prove_witness::{build_witness_proof_artifact, build_witness_proof_core_artifact};
