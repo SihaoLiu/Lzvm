@@ -397,15 +397,40 @@ struct ZiskMainTraceColumns {
     b_src_imm: Option<TraceColumnTarget>,
     a_src_reg: Option<TraceColumnTarget>,
     b_src_reg: Option<TraceColumnTarget>,
+    b_src_ind: Option<TraceColumnTarget>,
+    b_offset_imm0: Option<TraceColumnTarget>,
     store_reg: Option<TraceColumnTarget>,
+    store_mem: Option<TraceColumnTarget>,
+    store_ind: Option<TraceColumnTarget>,
+    store_offset: Option<TraceColumnTarget>,
     store_pc: Option<TraceColumnTarget>,
     set_pc: Option<TraceColumnTarget>,
     op: TraceColumnTarget,
     jmp_offset1: Option<TraceColumnTarget>,
     jmp_offset2: Option<TraceColumnTarget>,
+    ind_width: Option<TraceColumnTarget>,
     m32: Option<TraceColumnTarget>,
     is_external_op: Option<TraceColumnTarget>,
     is_precompiled: Option<TraceColumnTarget>,
+}
+
+impl ZiskMainTraceColumns {
+    fn has_required_memory_columns(&self) -> bool {
+        self.b_src_ind.is_some()
+            && self.b_offset_imm0.is_some()
+            && self.ind_width.is_some()
+            && self.store_ind.is_some()
+            && self.store_offset.is_some()
+            && self.store_mem.is_some()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ExpectedMemoryAccess {
+    kind: GuestMemoryAccessKind,
+    address: u64,
+    byte_len: usize,
+    value: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -477,9 +502,18 @@ fn write_zisk_main_report_columns(
 ) -> Result<(), GuestPcTraceBackendError> {
     let instruction = lower_guest_report(report)
         .map_err(|source| GuestPcTraceBackendError::ZiskMainLower { row, source })?;
-    let a = zisk_main_source_value(row, instruction.a, state)?;
-    let b = zisk_main_source_value(row, instruction.b, state)?;
+    validate_zisk_main_memory_columns(row, &instruction, columns)?;
+    let (a, a_access) = zisk_main_source_value(row, instruction.a, state, report, None, 0)?;
+    let (b, b_access) = zisk_main_source_value(
+        row,
+        instruction.b,
+        state,
+        report,
+        Some(a),
+        instruction.ind_width,
+    )?;
     let (c, flag) = zisk_main_op_result(instruction.op, a, b);
+    validate_zisk_main_memory_accesses(row, &instruction, report, a, c, a_access, b_access)?;
 
     write_wide_column(builder, row, &columns.a, a)?;
     write_wide_column(builder, row, &columns.b, b)?;
@@ -513,8 +547,38 @@ fn write_zisk_main_report_columns(
     write_optional_column(
         builder,
         row,
+        &columns.b_src_ind,
+        u64::from(matches!(instruction.b, ZiskMainSource::Indirect(_))),
+    )?;
+    write_optional_signed_column(
+        builder,
+        row,
+        &columns.b_offset_imm0,
+        zisk_main_source_offset(row, instruction.b)?,
+    )?;
+    write_optional_column(
+        builder,
+        row,
         &columns.store_reg,
         u64::from(matches!(instruction.store, ZiskMainStore::Register(_))),
+    )?;
+    write_optional_column(
+        builder,
+        row,
+        &columns.store_mem,
+        u64::from(matches!(instruction.store, ZiskMainStore::Memory(_))),
+    )?;
+    write_optional_column(
+        builder,
+        row,
+        &columns.store_ind,
+        u64::from(matches!(instruction.store, ZiskMainStore::Indirect(_))),
+    )?;
+    write_optional_signed_column(
+        builder,
+        row,
+        &columns.store_offset,
+        zisk_main_store_offset(row, &instruction.store)?,
     )?;
     write_optional_column(
         builder,
@@ -526,6 +590,7 @@ fn write_zisk_main_report_columns(
     write_column(builder, row, &columns.op, u64::from(instruction.op.code()))?;
     write_optional_signed_column(builder, row, &columns.jmp_offset1, instruction.jmp_offset1)?;
     write_optional_signed_column(builder, row, &columns.jmp_offset2, instruction.jmp_offset2)?;
+    write_optional_column(builder, row, &columns.ind_width, instruction.ind_width)?;
     write_optional_column(builder, row, &columns.m32, u64::from(instruction.m32))?;
     write_optional_column(
         builder,
@@ -543,18 +608,183 @@ fn write_zisk_main_report_columns(
     apply_zisk_main_store(row, &instruction, c, report, state)
 }
 
+fn validate_zisk_main_memory_columns(
+    row: usize,
+    instruction: &ZiskMainInstruction,
+    columns: &ZiskMainTraceColumns,
+) -> Result<(), GuestPcTraceBackendError> {
+    let uses_memory_row = matches!(
+        instruction.b,
+        ZiskMainSource::Indirect(_) | ZiskMainSource::Memory(_)
+    ) || matches!(
+        instruction.store,
+        ZiskMainStore::Indirect(_) | ZiskMainStore::Memory(_)
+    );
+    if uses_memory_row && !columns.has_required_memory_columns() {
+        return Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: format!(
+                "Zisk Main memory rows require b_src_ind, b_offset_imm0, ind_width, store_ind, store_offset, and store_mem columns at row {row}"
+            ),
+        });
+    }
+    Ok(())
+}
+
 fn zisk_main_source_value(
     row: usize,
     source: ZiskMainSource,
     state: &ZiskMainTraceState,
-) -> Result<u64, GuestPcTraceBackendError> {
+    report: &GuestMachineReport,
+    base: Option<u64>,
+    ind_width: u64,
+) -> Result<(u64, Option<ExpectedMemoryAccess>), GuestPcTraceBackendError> {
     match source {
-        ZiskMainSource::LastC => Ok(state.last_c),
-        ZiskMainSource::Immediate(value) => Ok(value),
-        ZiskMainSource::Register(index) => Ok(state.registers[usize::from(index)]),
-        ZiskMainSource::Memory(_) | ZiskMainSource::Indirect(_) => {
+        ZiskMainSource::LastC => Ok((state.last_c, None)),
+        ZiskMainSource::Immediate(value) => Ok((value, None)),
+        ZiskMainSource::Register(index) => Ok((state.registers[usize::from(index)], None)),
+        ZiskMainSource::Indirect(offset) => {
+            let Some(base) = base else {
+                return Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row });
+            };
+            let byte_len = usize::try_from(ind_width)
+                .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainSource { row })?;
+            let address = base.wrapping_add_signed(offset);
+            let access = matching_memory_access(
+                row,
+                report,
+                GuestMemoryAccessKind::Read,
+                address,
+                byte_len,
+            )?;
+            Ok((access.value, Some(access)))
+        }
+        ZiskMainSource::Memory(_) => {
             Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row })
         }
+    }
+}
+
+fn matching_memory_access(
+    row: usize,
+    report: &GuestMachineReport,
+    kind: GuestMemoryAccessKind,
+    address: u64,
+    byte_len: usize,
+) -> Result<ExpectedMemoryAccess, GuestPcTraceBackendError> {
+    let matching: Vec<_> = report
+        .memory_accesses
+        .iter()
+        .filter(|access| {
+            access.kind == kind && access.address == address && access.byte_len == byte_len
+        })
+        .collect();
+    match matching.as_slice() {
+        [access] => Ok(ExpectedMemoryAccess {
+            kind,
+            address,
+            byte_len,
+            value: access.value,
+        }),
+        [] => Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message: format!("missing {kind:?} access at {address} with byte length {byte_len}"),
+        }),
+        _ => Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message: format!("multiple {kind:?} accesses at {address} with byte length {byte_len}"),
+        }),
+    }
+}
+
+fn validate_zisk_main_memory_accesses(
+    row: usize,
+    instruction: &ZiskMainInstruction,
+    report: &GuestMachineReport,
+    a: u64,
+    c: u64,
+    a_access: Option<ExpectedMemoryAccess>,
+    b_access: Option<ExpectedMemoryAccess>,
+) -> Result<(), GuestPcTraceBackendError> {
+    let mut expected = Vec::new();
+    expected.extend(a_access);
+    expected.extend(b_access);
+    if let ZiskMainStore::Indirect(offset) = instruction.store {
+        let byte_len = usize::try_from(instruction.ind_width)
+            .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainStore { row })?;
+        expected.push(ExpectedMemoryAccess {
+            kind: GuestMemoryAccessKind::Write,
+            address: a.wrapping_add_signed(offset),
+            byte_len,
+            value: low_bytes_value(c, byte_len),
+        });
+    }
+    if report.memory_accesses.len() != expected.len() {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message: format!(
+                "expected {} memory accesses, found {}",
+                expected.len(),
+                report.memory_accesses.len()
+            ),
+        });
+    }
+    for (found, expected) in report.memory_accesses.iter().zip(expected.iter()) {
+        if found.kind != expected.kind
+            || found.address != expected.address
+            || found.byte_len != expected.byte_len
+            || found.value != expected.value
+        {
+            return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                row,
+                message: format!(
+                    "expected {:?} at {} byte length {} value {}, found {:?} at {} byte length {} value {}",
+                    expected.kind,
+                    expected.address,
+                    expected.byte_len,
+                    expected.value,
+                    found.kind,
+                    found.address,
+                    found.byte_len,
+                    found.value
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn zisk_main_store_offset(
+    row: usize,
+    store: &ZiskMainStore,
+) -> Result<i64, GuestPcTraceBackendError> {
+    match store {
+        ZiskMainStore::None => Ok(0),
+        ZiskMainStore::Register(index) => Ok(i64::from(*index)),
+        ZiskMainStore::Indirect(offset) => Ok(*offset),
+        ZiskMainStore::Memory(_) => Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row }),
+    }
+}
+
+fn zisk_main_source_offset(
+    row: usize,
+    source: ZiskMainSource,
+) -> Result<i64, GuestPcTraceBackendError> {
+    match source {
+        ZiskMainSource::LastC => Ok(0),
+        ZiskMainSource::Immediate(value) => Ok(value as i64),
+        ZiskMainSource::Register(index) => Ok(i64::from(index)),
+        ZiskMainSource::Indirect(offset) => Ok(offset),
+        ZiskMainSource::Memory(_) => {
+            Err(GuestPcTraceBackendError::UnsupportedZiskMainSource { row })
+        }
+    }
+}
+
+fn low_bytes_value(value: u64, byte_len: usize) -> u64 {
+    if byte_len >= 8 {
+        value
+    } else {
+        value & ((1_u64 << (byte_len * 8)) - 1)
     }
 }
 
@@ -573,12 +803,6 @@ fn apply_zisk_main_store(
     report: &GuestMachineReport,
     state: &mut ZiskMainTraceState,
 ) -> Result<(), GuestPcTraceBackendError> {
-    if !report.memory_accesses.is_empty() {
-        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
-            row,
-            message: "supported Main lowering rows must not carry memory accesses".to_owned(),
-        });
-    }
     match instruction.store {
         ZiskMainStore::None => {
             if !report.register_writes.is_empty() {
@@ -609,7 +833,15 @@ fn apply_zisk_main_store(
             }
             state.registers[usize::from(index)] = c;
         }
-        ZiskMainStore::Memory(_) | ZiskMainStore::Indirect(_) => {
+        ZiskMainStore::Indirect(_) => {
+            if !report.register_writes.is_empty() {
+                return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                    row,
+                    message: "store indirect row reported register writes".to_owned(),
+                });
+            }
+        }
+        ZiskMainStore::Memory(_) => {
             return Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row });
         }
     }
@@ -845,12 +1077,18 @@ fn zisk_main_trace_columns(
         b_src_imm: trace_column_target(layout, "b_src_imm")?,
         a_src_reg: trace_column_target(layout, "a_src_reg")?,
         b_src_reg: trace_column_target(layout, "b_src_reg")?,
+        b_src_ind: trace_column_target(layout, "b_src_ind")?,
+        b_offset_imm0: trace_column_target(layout, "b_offset_imm0")?,
         store_reg: trace_column_target(layout, "store_reg")?,
+        store_mem: trace_column_target(layout, "store_mem")?,
+        store_ind: trace_column_target(layout, "store_ind")?,
+        store_offset: trace_column_target(layout, "store_offset")?,
         store_pc: trace_column_target(layout, "store_pc")?,
         set_pc: trace_column_target(layout, "set_pc")?,
         op: required_trace_column_target(layout, "op")?,
         jmp_offset1: trace_column_target(layout, "jmp_offset1")?,
         jmp_offset2: trace_column_target(layout, "jmp_offset2")?,
+        ind_width: trace_column_target(layout, "ind_width")?,
         m32: trace_column_target(layout, "m32")?,
         is_external_op: trace_column_target(layout, "is_external_op")?,
         is_precompiled: trace_column_target(layout, "is_precompiled")?,

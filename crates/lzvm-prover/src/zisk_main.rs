@@ -1,6 +1,8 @@
 use std::fmt;
 
-use crate::guest_instruction::{RiscvInstruction, RiscvOpImmKind, RiscvOpKind};
+use crate::guest_instruction::{
+    RiscvInstruction, RiscvLoadKind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+};
 use crate::guest_machine::GuestMachineReport;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,6 +130,18 @@ pub fn lower_guest_report(
             rs2,
             ZiskMainOp::Add,
         )),
+        RiscvInstruction::Load {
+            kind: RiscvLoadKind::Ld,
+            rd,
+            rs1,
+            offset,
+        } => Ok(lower_ld(report.address, instruction_size, rd, rs1, offset)),
+        RiscvInstruction::Store {
+            kind: RiscvStoreKind::Sd,
+            rs1,
+            rs2,
+            offset,
+        } => Ok(lower_sd(report.address, instruction_size, rs1, rs2, offset)),
         _ => Err(ZiskMainLowerError::UnsupportedInstruction {
             instruction: report.instruction,
         }),
@@ -219,6 +233,32 @@ fn binary_register_op(
         register_store(rd),
         instruction_size,
     )
+}
+
+fn lower_ld(pc: u64, instruction_size: i64, rd: u8, rs1: u8, offset: i64) -> ZiskMainInstruction {
+    let mut instruction = base_instruction(
+        pc,
+        register_source(rs1),
+        ZiskMainSource::Indirect(offset),
+        ZiskMainOp::CopyB,
+        register_store(rd),
+        instruction_size,
+    );
+    instruction.ind_width = 8;
+    instruction
+}
+
+fn lower_sd(pc: u64, instruction_size: i64, rs1: u8, rs2: u8, offset: i64) -> ZiskMainInstruction {
+    let mut instruction = base_instruction(
+        pc,
+        register_source(rs1),
+        register_source(rs2),
+        ZiskMainOp::CopyB,
+        ZiskMainStore::Indirect(offset),
+        instruction_size,
+    );
+    instruction.ind_width = 8;
+    instruction
 }
 
 fn base_instruction(

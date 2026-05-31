@@ -1,4 +1,6 @@
-use lzvm_prover::guest_instruction::{RiscvInstruction, RiscvOpImmKind, RiscvOpKind};
+use lzvm_prover::guest_instruction::{
+    RiscvInstruction, RiscvLoadKind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+};
 use lzvm_prover::guest_machine::GuestMachineReport;
 use lzvm_prover::zisk_main::{
     lower_guest_report, ZiskMainLowerError, ZiskMainOp, ZiskMainSource, ZiskMainStore,
@@ -45,6 +47,46 @@ fn lowers_register_add_as_binary_op() {
     assert_eq!(instruction.b, ZiskMainSource::Register(5));
     assert_eq!(instruction.op, ZiskMainOp::Add);
     assert_eq!(instruction.store, ZiskMainStore::Register(6));
+}
+
+#[test]
+fn lowers_doubleword_load_as_indirect_copy_to_register() {
+    let instruction = lower_guest_report(&report(
+        4,
+        RiscvInstruction::Load {
+            kind: RiscvLoadKind::Ld,
+            rd: 7,
+            rs1: 4,
+            offset: 16,
+        },
+    ))
+    .expect("ld should lower");
+
+    assert_eq!(instruction.a, ZiskMainSource::Register(4));
+    assert_eq!(instruction.b, ZiskMainSource::Indirect(16));
+    assert_eq!(instruction.op, ZiskMainOp::CopyB);
+    assert_eq!(instruction.store, ZiskMainStore::Register(7));
+    assert_eq!(instruction.ind_width, 8);
+}
+
+#[test]
+fn lowers_doubleword_store_as_register_copy_to_indirect_store() {
+    let instruction = lower_guest_report(&report(
+        4,
+        RiscvInstruction::Store {
+            kind: RiscvStoreKind::Sd,
+            rs1: 4,
+            rs2: 7,
+            offset: -8,
+        },
+    ))
+    .expect("sd should lower");
+
+    assert_eq!(instruction.a, ZiskMainSource::Register(4));
+    assert_eq!(instruction.b, ZiskMainSource::Register(7));
+    assert_eq!(instruction.op, ZiskMainOp::CopyB);
+    assert_eq!(instruction.store, ZiskMainStore::Indirect(-8));
+    assert_eq!(instruction.ind_width, 8);
 }
 
 #[test]
