@@ -131,17 +131,36 @@ pub fn lower_guest_report(
             ZiskMainOp::Add,
         )),
         RiscvInstruction::Load {
-            kind: RiscvLoadKind::Ld,
+            kind,
             rd,
             rs1,
             offset,
-        } => Ok(lower_ld(report.address, instruction_size, rd, rs1, offset)),
+        } => match unsigned_load_width(kind) {
+            Some(width) => Ok(lower_load(
+                report.address,
+                instruction_size,
+                rd,
+                rs1,
+                offset,
+                width,
+            )),
+            None => Err(ZiskMainLowerError::UnsupportedInstruction {
+                instruction: report.instruction,
+            }),
+        },
         RiscvInstruction::Store {
-            kind: RiscvStoreKind::Sd,
+            kind,
             rs1,
             rs2,
             offset,
-        } => Ok(lower_sd(report.address, instruction_size, rs1, rs2, offset)),
+        } => Ok(lower_store(
+            report.address,
+            instruction_size,
+            rs1,
+            rs2,
+            offset,
+            store_width(kind),
+        )),
         _ => Err(ZiskMainLowerError::UnsupportedInstruction {
             instruction: report.instruction,
         }),
@@ -235,7 +254,14 @@ fn binary_register_op(
     )
 }
 
-fn lower_ld(pc: u64, instruction_size: i64, rd: u8, rs1: u8, offset: i64) -> ZiskMainInstruction {
+fn lower_load(
+    pc: u64,
+    instruction_size: i64,
+    rd: u8,
+    rs1: u8,
+    offset: i64,
+    width: u64,
+) -> ZiskMainInstruction {
     let mut instruction = base_instruction(
         pc,
         register_source(rs1),
@@ -244,11 +270,18 @@ fn lower_ld(pc: u64, instruction_size: i64, rd: u8, rs1: u8, offset: i64) -> Zis
         register_store(rd),
         instruction_size,
     );
-    instruction.ind_width = 8;
+    instruction.ind_width = width;
     instruction
 }
 
-fn lower_sd(pc: u64, instruction_size: i64, rs1: u8, rs2: u8, offset: i64) -> ZiskMainInstruction {
+fn lower_store(
+    pc: u64,
+    instruction_size: i64,
+    rs1: u8,
+    rs2: u8,
+    offset: i64,
+    width: u64,
+) -> ZiskMainInstruction {
     let mut instruction = base_instruction(
         pc,
         register_source(rs1),
@@ -257,8 +290,27 @@ fn lower_sd(pc: u64, instruction_size: i64, rs1: u8, rs2: u8, offset: i64) -> Zi
         ZiskMainStore::Indirect(offset),
         instruction_size,
     );
-    instruction.ind_width = 8;
+    instruction.ind_width = width;
     instruction
+}
+
+fn unsigned_load_width(kind: RiscvLoadKind) -> Option<u64> {
+    match kind {
+        RiscvLoadKind::Lbu => Some(1),
+        RiscvLoadKind::Lhu => Some(2),
+        RiscvLoadKind::Lwu => Some(4),
+        RiscvLoadKind::Ld => Some(8),
+        RiscvLoadKind::Lb | RiscvLoadKind::Lh | RiscvLoadKind::Lw => None,
+    }
+}
+
+fn store_width(kind: RiscvStoreKind) -> u64 {
+    match kind {
+        RiscvStoreKind::Sb => 1,
+        RiscvStoreKind::Sh => 2,
+        RiscvStoreKind::Sw => 4,
+        RiscvStoreKind::Sd => 8,
+    }
 }
 
 fn base_instruction(

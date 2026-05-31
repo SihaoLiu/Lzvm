@@ -90,6 +90,81 @@ fn lowers_doubleword_store_as_register_copy_to_indirect_store() {
 }
 
 #[test]
+fn lowers_unsigned_loads_as_indirect_copies_to_register() {
+    let cases = [
+        (RiscvLoadKind::Lbu, 1),
+        (RiscvLoadKind::Lhu, 2),
+        (RiscvLoadKind::Lwu, 4),
+    ];
+
+    for (kind, width) in cases {
+        let instruction = lower_guest_report(&report(
+            4,
+            RiscvInstruction::Load {
+                kind,
+                rd: 7,
+                rs1: 4,
+                offset: 12,
+            },
+        ))
+        .expect("unsigned load should lower");
+
+        assert_eq!(instruction.a, ZiskMainSource::Register(4));
+        assert_eq!(instruction.b, ZiskMainSource::Indirect(12));
+        assert_eq!(instruction.op, ZiskMainOp::CopyB);
+        assert_eq!(instruction.store, ZiskMainStore::Register(7));
+        assert_eq!(instruction.ind_width, width);
+    }
+}
+
+#[test]
+fn lowers_narrow_stores_as_register_copy_to_indirect_store() {
+    let cases = [
+        (RiscvStoreKind::Sb, 1),
+        (RiscvStoreKind::Sh, 2),
+        (RiscvStoreKind::Sw, 4),
+    ];
+
+    for (kind, width) in cases {
+        let instruction = lower_guest_report(&report(
+            4,
+            RiscvInstruction::Store {
+                kind,
+                rs1: 4,
+                rs2: 7,
+                offset: -12,
+            },
+        ))
+        .expect("narrow store should lower");
+
+        assert_eq!(instruction.a, ZiskMainSource::Register(4));
+        assert_eq!(instruction.b, ZiskMainSource::Register(7));
+        assert_eq!(instruction.op, ZiskMainOp::CopyB);
+        assert_eq!(instruction.store, ZiskMainStore::Indirect(-12));
+        assert_eq!(instruction.ind_width, width);
+    }
+}
+
+#[test]
+fn rejects_signed_loads_until_sign_extension_lowering_is_available() {
+    for kind in [RiscvLoadKind::Lb, RiscvLoadKind::Lh, RiscvLoadKind::Lw] {
+        let instruction = RiscvInstruction::Load {
+            kind,
+            rd: 7,
+            rs1: 4,
+            offset: 12,
+        };
+        let error = lower_guest_report(&report(4, instruction))
+            .expect_err("signed loads need sign-extension lowering");
+
+        assert_eq!(
+            error,
+            ZiskMainLowerError::UnsupportedInstruction { instruction }
+        );
+    }
+}
+
+#[test]
 fn uses_reported_instruction_size_for_jump_offsets() {
     let instruction = lower_guest_report(&report(
         2,
