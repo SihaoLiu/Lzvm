@@ -255,29 +255,35 @@ pub(super) fn verify_preflight(
 }
 
 pub(super) fn verify_setup_preflight(
-    setup_dir: &str,
-    proof_bin: &str,
-    public_values_path: &str,
+    args: &[&str],
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
+    let parsed = match parse_verify_setup_preflight_args(args) {
+        Ok(parsed) => parsed,
+        Err(SetupValidationArgError::Usage) => return write_verify_setup_preflight_usage(stderr),
+        Err(SetupValidationArgError::Invalid(message)) => {
+            let _ = writeln!(stderr, "verify setup-preflight failed: {message}");
+            return 1;
+        }
+    };
     verify_setup_validation(
         VerifySetupValidationCommand {
             role: "verify setup-preflight",
-            setup_dir,
-            proof_bin,
-            public_values_path,
-            eth_block_input: None,
-            eth_public_input: None,
-            eth_public_input_allow_trailing: false,
-            program_image_cache: None,
+            setup_dir: parsed.setup_dir,
+            proof_bin: parsed.proof_bin,
+            public_values_path: parsed.public_values_path,
+            eth_block_input: parsed.eth_block_input,
+            eth_public_input: parsed.eth_public_input,
+            eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
+            program_image_cache: parsed.program_image_cache,
         },
         stdout,
         stderr,
     )
 }
 
-struct ParsedVerifyProofArgs<'a> {
+struct ParsedSetupValidationArgs<'a> {
     setup_dir: &'a str,
     proof_bin: &'a str,
     public_values_path: &'a str,
@@ -289,7 +295,19 @@ struct ParsedVerifyProofArgs<'a> {
 
 fn parse_verify_proof_args<'a>(
     args: &'a [&'a str],
-) -> Result<ParsedVerifyProofArgs<'a>, VerifyProofArgError> {
+) -> Result<ParsedSetupValidationArgs<'a>, SetupValidationArgError> {
+    parse_setup_validation_args(args)
+}
+
+fn parse_verify_setup_preflight_args<'a>(
+    args: &'a [&'a str],
+) -> Result<ParsedSetupValidationArgs<'a>, SetupValidationArgError> {
+    parse_setup_validation_args(args)
+}
+
+fn parse_setup_validation_args<'a>(
+    args: &'a [&'a str],
+) -> Result<ParsedSetupValidationArgs<'a>, SetupValidationArgError> {
     let mut eth_block_input = None;
     let mut eth_public_input = None;
     let mut eth_public_input_allow_trailing = false;
@@ -301,15 +319,15 @@ fn parse_verify_proof_args<'a>(
             "--eth-block-input" => {
                 index += 1;
                 let value = args.get(index).ok_or_else(|| {
-                    VerifyProofArgError::Invalid("missing --eth-block-input value".to_owned())
+                    SetupValidationArgError::Invalid("missing --eth-block-input value".to_owned())
                 })?;
                 if value.starts_with("--") {
-                    return Err(VerifyProofArgError::Invalid(
+                    return Err(SetupValidationArgError::Invalid(
                         "missing --eth-block-input value".to_owned(),
                     ));
                 }
                 if eth_block_input.replace(*value).is_some() {
-                    return Err(VerifyProofArgError::Invalid(
+                    return Err(SetupValidationArgError::Invalid(
                         "duplicate --eth-block-input option".to_owned(),
                     ));
                 }
@@ -317,15 +335,17 @@ fn parse_verify_proof_args<'a>(
             "--program-image-cache" => {
                 index += 1;
                 let value = args.get(index).ok_or_else(|| {
-                    VerifyProofArgError::Invalid("missing --program-image-cache value".to_owned())
+                    SetupValidationArgError::Invalid(
+                        "missing --program-image-cache value".to_owned(),
+                    )
                 })?;
                 if value.starts_with("--") {
-                    return Err(VerifyProofArgError::Invalid(
+                    return Err(SetupValidationArgError::Invalid(
                         "missing --program-image-cache value".to_owned(),
                     ));
                 }
                 if program_image_cache.replace(*value).is_some() {
-                    return Err(VerifyProofArgError::Invalid(
+                    return Err(SetupValidationArgError::Invalid(
                         "duplicate --program-image-cache option".to_owned(),
                     ));
                 }
@@ -333,29 +353,29 @@ fn parse_verify_proof_args<'a>(
             "--eth-public-input" => {
                 index += 1;
                 let value = args.get(index).ok_or_else(|| {
-                    VerifyProofArgError::Invalid("missing --eth-public-input value".to_owned())
+                    SetupValidationArgError::Invalid("missing --eth-public-input value".to_owned())
                 })?;
                 if value.starts_with("--") {
-                    return Err(VerifyProofArgError::Invalid(
+                    return Err(SetupValidationArgError::Invalid(
                         "missing --eth-public-input value".to_owned(),
                     ));
                 }
                 if eth_public_input.replace(*value).is_some() {
-                    return Err(VerifyProofArgError::Invalid(
+                    return Err(SetupValidationArgError::Invalid(
                         "duplicate --eth-public-input option".to_owned(),
                     ));
                 }
             }
             "--eth-public-input-allow-trailing" => {
                 if eth_public_input_allow_trailing {
-                    return Err(VerifyProofArgError::Invalid(
+                    return Err(SetupValidationArgError::Invalid(
                         "duplicate --eth-public-input-allow-trailing option".to_owned(),
                     ));
                 }
                 eth_public_input_allow_trailing = true;
             }
             value if value.starts_with("--") => {
-                return Err(VerifyProofArgError::Invalid(format!(
+                return Err(SetupValidationArgError::Invalid(format!(
                     "unknown option {value}"
                 )));
             }
@@ -364,19 +384,19 @@ fn parse_verify_proof_args<'a>(
         index += 1;
     }
     if positionals.len() != 3 {
-        return Err(VerifyProofArgError::Usage);
+        return Err(SetupValidationArgError::Usage);
     }
     if eth_block_input.is_some() && eth_public_input.is_some() {
-        return Err(VerifyProofArgError::Invalid(
+        return Err(SetupValidationArgError::Invalid(
             "cannot combine --eth-block-input and --eth-public-input".to_owned(),
         ));
     }
     if eth_public_input_allow_trailing && eth_public_input.is_none() {
-        return Err(VerifyProofArgError::Invalid(
+        return Err(SetupValidationArgError::Invalid(
             "cannot use --eth-public-input-allow-trailing without --eth-public-input".to_owned(),
         ));
     }
-    Ok(ParsedVerifyProofArgs {
+    Ok(ParsedSetupValidationArgs {
         setup_dir: positionals[0],
         proof_bin: positionals[1],
         public_values_path: positionals[2],
@@ -388,7 +408,7 @@ fn parse_verify_proof_args<'a>(
 }
 
 #[derive(Debug)]
-enum VerifyProofArgError {
+enum SetupValidationArgError {
     Usage,
     Invalid(String),
 }
@@ -396,8 +416,8 @@ enum VerifyProofArgError {
 pub(super) fn verify_proof(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     let parsed = match parse_verify_proof_args(args) {
         Ok(parsed) => parsed,
-        Err(VerifyProofArgError::Usage) => return write_verify_proof_usage(stderr),
-        Err(VerifyProofArgError::Invalid(message)) => {
+        Err(SetupValidationArgError::Usage) => return write_verify_proof_usage(stderr),
+        Err(SetupValidationArgError::Invalid(message)) => {
             let _ = writeln!(stderr, "verify proof failed: {message}");
             return 1;
         }
@@ -1166,7 +1186,7 @@ pub(super) fn write_verify_preflight_usage(stderr: &mut dyn Write) -> i32 {
 pub(super) fn write_verify_setup_preflight_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm verify setup-preflight <setup-dir> <proof-bin> <public-values>"
+        "usage: lzvm verify setup-preflight [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] <setup-dir> <proof-bin> <public-values>"
     );
     2
 }

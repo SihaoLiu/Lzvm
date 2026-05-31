@@ -93,17 +93,8 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
         }
         ["prove", "witness", rest @ ..] => prove_witness::run(rest, stdout, stderr),
         ["prove", rest @ ..] => prove_witness::run(rest, stdout, stderr),
-        ["verify", "setup-preflight", setup_dir, proof_bin, public_values_path] => {
-            verify_commands::verify_setup_preflight(
-                setup_dir,
-                proof_bin,
-                public_values_path,
-                stdout,
-                stderr,
-            )
-        }
-        ["verify", "setup-preflight", ..] => {
-            verify_commands::write_verify_setup_preflight_usage(stderr)
+        ["verify", "setup-preflight", rest @ ..] => {
+            verify_commands::verify_setup_preflight(rest, stdout, stderr)
         }
         ["verify", "proof", rest @ ..] => verify_commands::verify_proof(rest, stdout, stderr),
         ["verify", "contribution", setup_dir, proof_bin, public_values_path] => {

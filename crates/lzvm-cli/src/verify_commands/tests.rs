@@ -52,7 +52,7 @@ fn rejects_eth_public_input_allow_trailing_without_eth_public_input_for_verify_p
 
     assert!(matches!(
         result,
-        Err(VerifyProofArgError::Invalid(message))
+        Err(SetupValidationArgError::Invalid(message))
             if message == "cannot use --eth-public-input-allow-trailing without --eth-public-input"
     ));
 }
@@ -71,7 +71,7 @@ fn rejects_combined_eth_block_and_public_input_options() {
 
     assert!(matches!(
         result,
-        Err(VerifyProofArgError::Invalid(message))
+        Err(SetupValidationArgError::Invalid(message))
             if message == "cannot combine --eth-block-input and --eth-public-input"
     ));
 }
@@ -89,7 +89,7 @@ fn rejects_missing_eth_public_input_value_during_parse() {
 
     assert!(matches!(
         result,
-        Err(VerifyProofArgError::Invalid(message)) if message == "missing --eth-public-input value"
+        Err(SetupValidationArgError::Invalid(message)) if message == "missing --eth-public-input value"
     ));
 }
 

@@ -8185,6 +8185,83 @@ fn proves_and_verifies_eth_public_input_directly() {
 }
 
 #[test]
+fn setup_preflight_verifies_eth_public_input_directly() {
+    let dir = temp_dir("setup-preflight-eth-public-input");
+    let _ = fs::remove_dir_all(&dir);
+    let output_dir = dir.join("proof-out");
+    let witness_library = build_shared_library(&dir, "witness", sample_witness_source());
+    let guest_image = dir.join("guest.elf");
+    let input_data = dir.join("input.bin");
+    let public_input_path = dir.join("public.bin");
+    let generated_public_values_path = output_dir.join("eth-block-public-values.bin");
+    let proof_path = output_dir.join("proof.bin");
+    let public_input = sample_public_block_bytes_with_matching_roots();
+    let public_block = parse_eth_public_block_prefix(&public_input).expect("block should parse");
+    let block_input = build_eth_block_input(&public_block.block_rlp()).expect("input should build");
+    write_execution_ready_setup_directory_with_eth_block_public_values(&dir, &block_input);
+    write_bytes(&guest_image, sample_guest_image());
+    write_bytes(&input_data, [7_u8]);
+    write_bytes(&public_input_path, &public_input);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--eth-public-input",
+            public_input_path
+                .to_str()
+                .expect("public input path should be utf-8"),
+            "--input-data",
+            input_data.to_str().expect("input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            witness_library
+                .to_str()
+                .expect("witness path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            "--eth-public-input",
+            public_input_path
+                .to_str()
+                .expect("public input path should be utf-8"),
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            generated_public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert!(verify_stderr.is_empty());
+    assert!(String::from_utf8(verify_stdout)
+        .expect("verify stdout should be utf-8")
+        .contains("eth_block_input_match=ok\n"));
+}
+
+#[test]
 fn proves_and_verifies_allowed_trailing_eth_public_input_directly() {
     let dir = temp_dir("prove-verify-eth-public-input-allow-trailing");
     let _ = fs::remove_dir_all(&dir);
@@ -15613,7 +15690,34 @@ fn reports_usage_for_missing_setup_preflight_inputs() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm verify setup-preflight <setup-dir> <proof-bin> <public-values>\n"
+        "usage: lzvm verify setup-preflight [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] <setup-dir> <proof-bin> <public-values>\n"
+    );
+}
+
+#[test]
+fn verify_setup_preflight_rejects_missing_eth_public_input_value_before_next_option() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "setup-preflight",
+            "--eth-public-input",
+            "--program-image-cache",
+            "cache.bin",
+            "setup",
+            "proof.bin",
+            "public.bin",
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify setup-preflight failed: missing --eth-public-input value\n"
     );
 }
 
