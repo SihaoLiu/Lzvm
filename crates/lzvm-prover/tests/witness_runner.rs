@@ -182,6 +182,29 @@ impl WitnessBackend for NativeBackend {
     }
 }
 
+struct ShortBackend;
+
+impl WitnessBackend for ShortBackend {
+    fn compute(
+        &self,
+        buffers: &mut WitnessTraceBuffers,
+    ) -> Result<WitnessTraceOutput, WitnessCallError> {
+        buffers.output_mut()[..8].copy_from_slice(&13_u64.to_le_bytes());
+        Ok(WitnessTraceOutput { produced_len: 8 })
+    }
+}
+
+struct OverflowBackend;
+
+impl WitnessBackend for OverflowBackend {
+    fn compute(
+        &self,
+        _buffers: &mut WitnessTraceBuffers,
+    ) -> Result<WitnessTraceOutput, WitnessCallError> {
+        Ok(WitnessTraceOutput { produced_len: 24 })
+    }
+}
+
 #[test]
 fn runs_native_witness_and_parses_trace_values() {
     let dir = temp_dir("valid");
@@ -251,6 +274,32 @@ fn runs_witness_trace_with_native_backend() {
         trace.value(0, 1),
         Some(Felt::from_canonical(9).expect("canonical"))
     );
+}
+
+#[test]
+fn rejects_short_witness_backend_output_before_trace_parse() {
+    let error = run_witness_trace(&ShortBackend, WitnessTraceRequest::new(Vec::new(), 1, 2))
+        .expect_err("short witness output should be rejected");
+
+    assert_eq!(
+        error.to_string(),
+        "witness backend produced incomplete output: produced 8, expected 16"
+    );
+}
+
+#[test]
+fn rejects_oversized_witness_backend_output_without_panicking() {
+    let result = run_witness_trace(&OverflowBackend, WitnessTraceRequest::new(Vec::new(), 1, 2));
+
+    assert!(matches!(
+        result,
+        Err(WitnessTraceRunError::Call(
+            WitnessCallError::OutputOverflow {
+                produced_len: 24,
+                output_len: 16
+            }
+        ))
+    ));
 }
 
 #[test]

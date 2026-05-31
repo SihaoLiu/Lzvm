@@ -36,6 +36,10 @@ impl<'a> WitnessTraceRequest<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WitnessTraceRunError {
     TraceByteLengthOverflow,
+    IncompleteOutput {
+        produced_len: usize,
+        output_len: usize,
+    },
     Call(WitnessCallError),
     Trace(WitnessTraceError),
 }
@@ -44,6 +48,13 @@ impl fmt::Display for WitnessTraceRunError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::TraceByteLengthOverflow => write!(f, "witness trace byte length overflow"),
+            Self::IncompleteOutput {
+                produced_len,
+                output_len,
+            } => write!(
+                f,
+                "witness backend produced incomplete output: produced {produced_len}, expected {output_len}"
+            ),
             Self::Call(error) => write!(f, "witness call failed: {error}"),
             Self::Trace(error) => write!(f, "witness trace parse failed: {error}"),
         }
@@ -55,7 +66,7 @@ impl std::error::Error for WitnessTraceRunError {
         match self {
             Self::Call(error) => Some(error),
             Self::Trace(error) => Some(error),
-            Self::TraceByteLengthOverflow => None,
+            Self::TraceByteLengthOverflow | Self::IncompleteOutput { .. } => None,
         }
     }
 }
@@ -87,6 +98,19 @@ pub fn run_witness_trace_with_context(
     let output_len = trace_output_byte_len(request.rows, request.columns)?;
     let mut buffers = WitnessTraceBuffers::new(request.input, output_len)?;
     let output = backend.compute_with_context(context, &mut buffers)?;
+    if output.produced_len > output_len {
+        return Err(WitnessCallError::OutputOverflow {
+            produced_len: output.produced_len,
+            output_len,
+        }
+        .into());
+    }
+    if output.produced_len < output_len {
+        return Err(WitnessTraceRunError::IncompleteOutput {
+            produced_len: output.produced_len,
+            output_len,
+        });
+    }
     Ok(parse_witness_trace(
         &buffers.output()[..output.produced_len],
         request.rows,
