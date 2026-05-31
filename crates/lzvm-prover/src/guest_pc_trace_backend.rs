@@ -1,7 +1,8 @@
 use std::fmt;
 
 use crate::guest_machine::{
-    run_guest_machine_trace_with_fcalls, GuestMachineMemory, GuestMachineRunError,
+    run_guest_machine_trace_with_fcalls, GuestMachineMemory, GuestMachineReport,
+    GuestMachineRunError, GuestMemoryAccess, GuestMemoryAccessKind, GuestRegisterWrite,
 };
 use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
 use crate::witness_layout::{WitnessTraceBuildError, WitnessTraceLayout};
@@ -54,6 +55,15 @@ enum GuestPcTraceBackendError {
     InvalidPcTraceLayout {
         message: String,
     },
+    TooManyRegisterWrites {
+        row: usize,
+        found: usize,
+    },
+    TooManyMemoryAccesses {
+        row: usize,
+        kind: GuestMemoryAccessKind,
+        found: usize,
+    },
     NonCanonicalTraceValue {
         row: usize,
         column: String,
@@ -88,6 +98,14 @@ impl fmt::Display for GuestPcTraceBackendError {
             Self::InvalidPcTraceLayout { message } => {
                 write!(f, "guest PC trace backend layout is invalid: {message}")
             }
+            Self::TooManyRegisterWrites { row, found } => write!(
+                f,
+                "guest PC trace backend row {row} has too many register writes: {found}"
+            ),
+            Self::TooManyMemoryAccesses { row, kind, found } => write!(
+                f,
+                "guest PC trace backend row {row} has too many {kind:?} memory accesses: {found}"
+            ),
             Self::NonCanonicalTraceValue { row, column, value } => write!(
                 f,
                 "guest PC trace backend value is non-canonical at row {row} column {column}: {value}"
@@ -114,6 +132,8 @@ impl std::error::Error for GuestPcTraceBackendError {
             Self::MissingGuestImage
             | Self::MissingGuestImageInfo
             | Self::InvalidPcTraceLayout { .. }
+            | Self::TooManyRegisterWrites { .. }
+            | Self::TooManyMemoryAccesses { .. }
             | Self::NonCanonicalTraceValue { .. }
             | Self::OutputOverflow { .. } => None,
         }
@@ -196,7 +216,7 @@ fn compute_guest_pc_trace(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct PcTraceColumnTarget {
+struct TraceColumnTarget {
     stage_index: usize,
     trace_column: usize,
     name: String,
@@ -204,8 +224,29 @@ struct PcTraceColumnTarget {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PcTraceColumns {
-    pc: PcTraceColumnTarget,
-    next_pc: PcTraceColumnTarget,
+    pc: TraceColumnTarget,
+    next_pc: TraceColumnTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RegisterWriteColumns {
+    index: TraceColumnTarget,
+    value: TraceColumnTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MemoryAccessColumns {
+    address: TraceColumnTarget,
+    value: TraceColumnTarget,
+    byte_len: TraceColumnTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GuestTraceColumns {
+    pc: Option<PcTraceColumns>,
+    register_write: Option<RegisterWriteColumns>,
+    memory_read: Option<MemoryAccessColumns>,
+    memory_write: Option<MemoryAccessColumns>,
 }
 
 fn write_layout_pc_trace(
@@ -213,11 +254,9 @@ fn write_layout_pc_trace(
     reports: &[crate::guest_machine::GuestMachineReport],
     output: &mut [u8],
 ) -> Result<Option<usize>, GuestPcTraceBackendError> {
-    let Some(columns) = pc_trace_columns(layout)? else {
+    let Some(columns) = guest_trace_columns(layout)? else {
         return Ok(None);
     };
-    let pc_column = &columns.pc;
-    let next_pc_column = &columns.next_pc;
     if reports.len() > layout.row_count() {
         let produced_len = reports
             .len()
@@ -234,19 +273,7 @@ fn write_layout_pc_trace(
         .trace_builder()
         .map_err(GuestPcTraceBackendError::TraceBuild)?;
     for (row, report) in reports.iter().enumerate() {
-        let pc = canonical_trace_value(row, &pc_column.name, report.address)?;
-        builder
-            .write_column_values(row, pc_column.stage_index, &pc_column.name, &[pc])
-            .map_err(GuestPcTraceBackendError::TraceBuild)?;
-        let next_pc = canonical_trace_value(row, &next_pc_column.name, report.next_pc)?;
-        builder
-            .write_column_values(
-                row,
-                next_pc_column.stage_index,
-                &next_pc_column.name,
-                &[next_pc],
-            )
-            .map_err(GuestPcTraceBackendError::TraceBuild)?;
+        write_report_columns(&mut builder, row, report, &columns)?;
     }
     let trace = builder.build();
     let produced_len =
@@ -271,11 +298,137 @@ fn write_layout_pc_trace(
     Ok(Some(produced_len))
 }
 
+fn write_report_columns(
+    builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
+    row: usize,
+    report: &GuestMachineReport,
+    columns: &GuestTraceColumns,
+) -> Result<(), GuestPcTraceBackendError> {
+    if let Some(pc_columns) = &columns.pc {
+        write_column(builder, row, &pc_columns.pc, report.address)?;
+        write_column(builder, row, &pc_columns.next_pc, report.next_pc)?;
+    }
+    if let Some(register_write_columns) = &columns.register_write {
+        write_register_columns(
+            builder,
+            row,
+            &report.register_writes,
+            register_write_columns,
+        )?;
+    }
+    if let Some(memory_read_columns) = &columns.memory_read {
+        write_memory_columns(
+            builder,
+            row,
+            &report.memory_accesses,
+            GuestMemoryAccessKind::Read,
+            memory_read_columns,
+        )?;
+    }
+    if let Some(memory_write_columns) = &columns.memory_write {
+        write_memory_columns(
+            builder,
+            row,
+            &report.memory_accesses,
+            GuestMemoryAccessKind::Write,
+            memory_write_columns,
+        )?;
+    }
+    Ok(())
+}
+
+fn write_register_columns(
+    builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
+    row: usize,
+    register_writes: &[GuestRegisterWrite],
+    columns: &RegisterWriteColumns,
+) -> Result<(), GuestPcTraceBackendError> {
+    match register_writes {
+        [] => Ok(()),
+        [write] => {
+            write_column(builder, row, &columns.index, u64::from(write.index))?;
+            write_column(builder, row, &columns.value, write.value)
+        }
+        writes => Err(GuestPcTraceBackendError::TooManyRegisterWrites {
+            row,
+            found: writes.len(),
+        }),
+    }
+}
+
+fn write_memory_columns(
+    builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
+    row: usize,
+    memory_accesses: &[GuestMemoryAccess],
+    kind: GuestMemoryAccessKind,
+    columns: &MemoryAccessColumns,
+) -> Result<(), GuestPcTraceBackendError> {
+    let mut matching = memory_accesses.iter().filter(|access| access.kind == kind);
+    let Some(access) = matching.next() else {
+        return Ok(());
+    };
+    if matching.next().is_some() {
+        return Err(GuestPcTraceBackendError::TooManyMemoryAccesses {
+            row,
+            kind,
+            found: memory_accesses
+                .iter()
+                .filter(|access| access.kind == kind)
+                .count(),
+        });
+    }
+    write_column(builder, row, &columns.address, access.address)?;
+    write_column(builder, row, &columns.value, access.value)?;
+    write_column(builder, row, &columns.byte_len, access.byte_len as u64)
+}
+
+fn write_column(
+    builder: &mut crate::witness_layout::WitnessTraceBuilder<'_>,
+    row: usize,
+    column: &TraceColumnTarget,
+    value: u64,
+) -> Result<(), GuestPcTraceBackendError> {
+    let value = canonical_trace_value(row, &column.name, value)?;
+    builder
+        .write_column_values(row, column.stage_index, &column.name, &[value])
+        .map_err(GuestPcTraceBackendError::TraceBuild)
+}
+
+fn guest_trace_columns(
+    layout: &WitnessTraceLayout,
+) -> Result<Option<GuestTraceColumns>, GuestPcTraceBackendError> {
+    let columns = GuestTraceColumns {
+        pc: pc_trace_columns(layout)?,
+        register_write: register_write_columns(layout)?,
+        memory_read: memory_access_columns(
+            layout,
+            "mem_read_address",
+            "mem_read_value",
+            "mem_read_byte_len",
+        )?,
+        memory_write: memory_access_columns(
+            layout,
+            "mem_write_address",
+            "mem_write_value",
+            "mem_write_byte_len",
+        )?,
+    };
+    if columns.pc.is_none()
+        && columns.register_write.is_none()
+        && columns.memory_read.is_none()
+        && columns.memory_write.is_none()
+    {
+        Ok(None)
+    } else {
+        Ok(Some(columns))
+    }
+}
+
 fn pc_trace_columns(
     layout: &WitnessTraceLayout,
 ) -> Result<Option<PcTraceColumns>, GuestPcTraceBackendError> {
-    let pc = pc_trace_column_target(layout, "pc")?;
-    let next_pc = pc_trace_column_target(layout, "next_pc")?;
+    let pc = trace_column_target(layout, "pc")?;
+    let next_pc = trace_column_target(layout, "next_pc")?;
     match (pc, next_pc) {
         (None, None) => Ok(None),
         (Some(_), None) => Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
@@ -298,10 +451,55 @@ fn pc_trace_columns(
     }
 }
 
-fn pc_trace_column_target(
+fn register_write_columns(
+    layout: &WitnessTraceLayout,
+) -> Result<Option<RegisterWriteColumns>, GuestPcTraceBackendError> {
+    let index = trace_column_target(layout, "reg_write_index")?;
+    let value = trace_column_target(layout, "reg_write_value")?;
+    match (index, value) {
+        (None, None) => Ok(None),
+        (Some(_), None) => Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "missing reg_write_value column".to_owned(),
+        }),
+        (None, Some(_)) => Err(GuestPcTraceBackendError::InvalidPcTraceLayout {
+            message: "missing reg_write_index column".to_owned(),
+        }),
+        (Some(index), Some(value)) => Ok(Some(RegisterWriteColumns { index, value })),
+    }
+}
+
+fn memory_access_columns(
+    layout: &WitnessTraceLayout,
+    address_name: &str,
+    value_name: &str,
+    byte_len_name: &str,
+) -> Result<Option<MemoryAccessColumns>, GuestPcTraceBackendError> {
+    let address = trace_column_target(layout, address_name)?;
+    let value = trace_column_target(layout, value_name)?;
+    let byte_len = trace_column_target(layout, byte_len_name)?;
+    if address.is_none() && value.is_none() && byte_len.is_none() {
+        return Ok(None);
+    }
+    let address = address.ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+        message: format!("missing {address_name} column"),
+    })?;
+    let value = value.ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+        message: format!("missing {value_name} column"),
+    })?;
+    let byte_len = byte_len.ok_or_else(|| GuestPcTraceBackendError::InvalidPcTraceLayout {
+        message: format!("missing {byte_len_name} column"),
+    })?;
+    Ok(Some(MemoryAccessColumns {
+        address,
+        value,
+        byte_len,
+    }))
+}
+
+fn trace_column_target(
     layout: &WitnessTraceLayout,
     name: &str,
-) -> Result<Option<PcTraceColumnTarget>, GuestPcTraceBackendError> {
+) -> Result<Option<TraceColumnTarget>, GuestPcTraceBackendError> {
     let mut matches = layout
         .columns()
         .iter()
@@ -322,7 +520,7 @@ fn pc_trace_column_target(
             ),
         });
     }
-    Ok(Some(PcTraceColumnTarget {
+    Ok(Some(TraceColumnTarget {
         stage_index: column.stage_index(),
         trace_column: column.trace_column(),
         name: column.name().to_owned(),

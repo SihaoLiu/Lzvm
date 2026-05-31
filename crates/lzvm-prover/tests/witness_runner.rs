@@ -113,6 +113,30 @@ fn lbu(rd: u8, rs1: u8, offset: i16) -> u32 {
     load(4, rd, rs1, offset)
 }
 
+fn store(funct3: u8, rs1: u8, rs2: u8, offset: i16) -> u32 {
+    assert!((-2048..=2047).contains(&offset));
+    assert!(rs1 < 32);
+    assert!(rs2 < 32);
+    assert!(funct3 < 8);
+    let offset = offset as i32 as u32;
+    (((offset >> 5) & 0x7f) << 25)
+        | (u32::from(rs2) << 20)
+        | (u32::from(rs1) << 15)
+        | (u32::from(funct3) << 12)
+        | ((offset & 0x1f) << 7)
+        | 0x23
+}
+
+fn sb(rs1: u8, rs2: u8, offset: i16) -> u32 {
+    store(0, rs1, rs2, offset)
+}
+
+fn auipc(rd: u8, immediate: u32) -> u32 {
+    assert!(rd < 32);
+    assert_eq!(immediate & 0x0fff, 0);
+    (immediate & 0xffff_f000) | (u32::from(rd) << 7) | 0x17
+}
+
 fn lui(rd: u8, immediate: u32) -> u32 {
     assert!(rd < 32);
     assert_eq!(immediate & 0x0fff, 0);
@@ -193,6 +217,36 @@ fn sample_unit_with_pc_columns() -> ProveUnitSchedule {
         vec![
             commitment_column("pc", 1, 1, 1),
             commitment_column("next_pc", 2, 0, 1),
+        ],
+    )
+}
+
+fn sample_unit_with_guest_effect_columns() -> ProveUnitSchedule {
+    sample_unit_with_trace_columns(
+        6,
+        vec![10],
+        vec![
+            commitment_column("pc", 1, 0, 1),
+            commitment_column("next_pc", 1, 1, 1),
+            commitment_column("reg_write_index", 1, 2, 1),
+            commitment_column("reg_write_value", 1, 3, 1),
+            commitment_column("mem_read_address", 1, 4, 1),
+            commitment_column("mem_read_value", 1, 5, 1),
+            commitment_column("mem_read_byte_len", 1, 6, 1),
+            commitment_column("mem_write_address", 1, 7, 1),
+            commitment_column("mem_write_value", 1, 8, 1),
+            commitment_column("mem_write_byte_len", 1, 9, 1),
+        ],
+    )
+}
+
+fn sample_unit_with_register_effect_columns() -> ProveUnitSchedule {
+    sample_unit_with_trace_columns(
+        2,
+        vec![2],
+        vec![
+            commitment_column("reg_write_index", 1, 0, 1),
+            commitment_column("reg_write_value", 1, 1, 1),
         ],
     )
 }
@@ -578,6 +632,143 @@ fn guest_pc_trace_backend_writes_named_columns_from_layout() {
 }
 
 #[test]
+fn guest_pc_trace_backend_writes_guest_effect_columns_from_layout() {
+    let dir = temp_dir("guest-effect-trace-layout");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let data_address = ENTRY + 24;
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        auipc(1, 0),
+        addi(1, 1, 24),
+        lbu(2, 1, 0),
+        addi(3, 0, 9),
+        sb(1, 3, 0),
+        0x0000_0073,
+        5,
+    ]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_guest_effect_columns();
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace should write effect columns");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 6);
+    assert_eq!(trace.column_count(), 10);
+    assert_eq!(
+        trace.value(0, 0),
+        Some(Felt::from_canonical(ENTRY).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(0, 1),
+        Some(Felt::from_canonical(ENTRY + 4).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(4, 0),
+        Some(Felt::from_canonical(ENTRY + 16).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(4, 1),
+        Some(Felt::from_canonical(ENTRY + 20).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(0, 2),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(0, 3),
+        Some(Felt::from_canonical(ENTRY).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 3),
+        Some(Felt::from_canonical(data_address).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(2, 2),
+        Some(Felt::from_canonical(2).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(2, 3),
+        Some(Felt::from_canonical(5).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(2, 4),
+        Some(Felt::from_canonical(data_address).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(2, 5),
+        Some(Felt::from_canonical(5).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(2, 6),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(4, 7),
+        Some(Felt::from_canonical(data_address).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(4, 8),
+        Some(Felt::from_canonical(9).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(4, 9),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(trace.value(5, 0), Some(Felt::ZERO));
+    assert_eq!(trace.value(5, 9), Some(Felt::ZERO));
+}
+
+#[test]
+fn guest_pc_trace_backend_writes_effect_only_layout_without_pc_columns() {
+    let dir = temp_dir("guest-effect-only-trace-layout");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[addi(1, 0, 7), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_register_effect_columns();
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace should write effect-only layout columns");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 2);
+    assert_eq!(trace.column_count(), 2);
+    assert_eq!(
+        trace.value(0, 0),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(0, 1),
+        Some(Felt::from_canonical(7).expect("canonical"))
+    );
+    assert_eq!(trace.value(1, 0), Some(Felt::ZERO));
+    assert_eq!(trace.value(1, 1), Some(Felt::ZERO));
+}
+
+#[test]
 fn guest_pc_trace_backend_rejects_partial_layout_pc_columns() {
     let dir = temp_dir("guest-pc-trace-partial-layout");
     let _ = fs::remove_dir_all(&dir);
@@ -640,6 +831,78 @@ fn guest_pc_trace_backend_rejects_misshaped_layout_pc_columns() {
     let message = error.to_string();
     assert!(message.contains("pc"));
     assert!(message.contains("dimension 1"));
+}
+
+#[test]
+fn guest_pc_trace_backend_rejects_partial_register_effect_columns() {
+    let dir = temp_dir("guest-reg-effect-partial-layout");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[addi(1, 0, 7), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_trace_columns(
+        1,
+        vec![3],
+        vec![
+            commitment_column("pc", 1, 0, 1),
+            commitment_column("next_pc", 1, 1, 1),
+            commitment_column("reg_write_index", 1, 2, 1),
+        ],
+    );
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let error = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect_err("partial register effect layout should be rejected");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(error.to_string().contains("missing reg_write_value"));
+}
+
+#[test]
+fn guest_pc_trace_backend_rejects_partial_memory_effect_columns() {
+    let dir = temp_dir("guest-mem-effect-partial-layout");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes =
+        sample_guest_image_with_words(&[auipc(1, 0), addi(1, 1, 16), lbu(2, 1, 0), 0x0000_0073, 5]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_trace_columns(
+        3,
+        vec![4],
+        vec![
+            commitment_column("pc", 1, 0, 1),
+            commitment_column("next_pc", 1, 1, 1),
+            commitment_column("mem_read_address", 1, 2, 1),
+            commitment_column("mem_read_byte_len", 1, 3, 1),
+        ],
+    );
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let error = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect_err("partial memory effect layout should be rejected");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(error.to_string().contains("missing mem_read_value"));
 }
 
 #[test]
