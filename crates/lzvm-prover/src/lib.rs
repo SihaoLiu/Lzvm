@@ -46,6 +46,7 @@ pub mod guest_machine;
 pub mod guest_memory;
 pub mod hint_eval;
 mod merkle_hash;
+pub mod native_guest_backend;
 pub mod pcs_challenge;
 pub mod pcs_evaluation;
 pub mod pcs_fri;
