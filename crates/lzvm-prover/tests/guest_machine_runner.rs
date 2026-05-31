@@ -6,6 +6,9 @@ use lzvm_prover::guest_machine::{
     GuestMachineRunError, GuestMachineState, ZISK_ARCHITECTURE_ID,
 };
 use lzvm_prover::guest_memory::{load_guest_memory_image, GuestMemoryImage};
+use lzvm_prover::zisk_fcalls::{
+    ZiskInputFcallHandler, ZISK_INPUT_ADDRESS, ZISK_INPUT_READY_FCALL_ID,
+};
 
 const ENTRY: u64 = 0x8000_0000;
 
@@ -87,6 +90,24 @@ fn encode_i(immediate: i16, rs1: u8, funct3: u8, rd: u8, opcode: u8) -> u32 {
 
 fn addi(rd: u8, rs1: u8, immediate: i16) -> u32 {
     encode_i(immediate, rs1, 0, rd, 0x13)
+}
+
+fn load(funct3: u8, rd: u8, rs1: u8, offset: i16) -> u32 {
+    encode_i(offset, rs1, funct3, rd, 0x03)
+}
+
+fn ld(rd: u8, rs1: u8, offset: i16) -> u32 {
+    load(3, rd, rs1, offset)
+}
+
+fn lbu(rd: u8, rs1: u8, offset: i16) -> u32 {
+    load(4, rd, rs1, offset)
+}
+
+fn lui(rd: u8, immediate: u32) -> u32 {
+    assert!(rd < 32);
+    assert_eq!(immediate & 0x0fff, 0);
+    (immediate & 0xffff_f000) | (u32::from(rd) << 7) | 0x37
 }
 
 fn encode_csr(rd: u8, csr: u16, funct3: u8, source: u8) -> u32 {
@@ -518,6 +539,102 @@ fn guest_machine_reads_zisk_architecture_id() {
 
     assert_eq!(report.executed_instructions, 1);
     assert_eq!(state.register(5), Some(ZISK_ARCHITECTURE_ID));
+}
+
+fn framed_stdin_chunk(payload: &[u8]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+    bytes.extend_from_slice(payload);
+    bytes.resize(bytes.len().next_multiple_of(8), 0);
+    bytes
+}
+
+#[test]
+fn zisk_input_ready_maps_framed_stdin_into_guest_memory() {
+    let input = framed_stdin_chunk(b"abc");
+    let mut memory = guest_machine_memory_with_words(&[
+        lui(5, ZISK_INPUT_ADDRESS as u32),
+        addi(6, 5, 15),
+        csrs(0x08f0, 6),
+        csrwi(0x08c0, ZISK_INPUT_READY_FCALL_ID as u8),
+        ld(7, 5, 8),
+        addi(6, 5, 23),
+        csrs(0x08f0, 6),
+        csrwi(0x08c0, ZISK_INPUT_READY_FCALL_ID as u8),
+        lbu(8, 5, 16),
+        lbu(9, 5, 18),
+        0x0000_0073,
+    ]);
+    let mut state = GuestMachineState::new(memory.entry_address());
+    let mut handler = ZiskInputFcallHandler::new(&input).expect("framed stdin should load");
+
+    let report = run_guest_machine_with_fcalls(&mut memory, &mut state, &mut handler, 32)
+        .expect("guest should halt");
+
+    assert_eq!(report.executed_instructions, 10);
+    assert_eq!(state.register(7), Some(3));
+    assert_eq!(state.register(8), Some(u64::from(b'a')));
+    assert_eq!(state.register(9), Some(u64::from(b'c')));
+}
+
+#[test]
+fn zisk_input_ready_rejects_required_address_before_framed_stdin() {
+    let input = framed_stdin_chunk(b"abc");
+    let mut memory = guest_machine_memory_with_words(&[0x0000_0073]);
+    let mut handler = ZiskInputFcallHandler::new(&input).expect("framed stdin should load");
+
+    let error = handler
+        .handle_fcall(
+            GuestFcallRequest {
+                function_id: ZISK_INPUT_READY_FCALL_ID,
+                params: vec![GuestFcallParam {
+                    port: 0,
+                    value: ZISK_INPUT_ADDRESS + 6,
+                }],
+            },
+            &mut memory,
+        )
+        .expect_err("prefix underrun should reject");
+
+    assert_eq!(
+        error.to_string(),
+        "guest free-call handler failed: Zisk input-ready required address 0x40000006 is before framed stdin"
+    );
+}
+
+#[test]
+fn zisk_input_ready_rejects_required_address_after_framed_stdin() {
+    let input = framed_stdin_chunk(b"abc");
+    let mut memory = guest_machine_memory_with_words(&[0x0000_0073]);
+    let mut handler = ZiskInputFcallHandler::new(&input).expect("framed stdin should load");
+
+    let error = handler
+        .handle_fcall(
+            GuestFcallRequest {
+                function_id: ZISK_INPUT_READY_FCALL_ID,
+                params: vec![GuestFcallParam {
+                    port: 0,
+                    value: ZISK_INPUT_ADDRESS + 8 + input.len() as u64,
+                }],
+            },
+            &mut memory,
+        )
+        .expect_err("input overrun should reject");
+
+    assert!(error
+        .to_string()
+        .contains("is outside available input ending at 0x40000018"));
+}
+
+#[test]
+fn zisk_input_handler_rejects_malformed_framed_stdin() {
+    let error =
+        ZiskInputFcallHandler::new(&[1, 2, 3]).expect_err("malformed framed stdin should reject");
+
+    assert_eq!(
+        error.to_string(),
+        "framed stdin is invalid: truncated chunk length at offset 0: expected 8 bytes, found 3"
+    );
 }
 
 #[test]

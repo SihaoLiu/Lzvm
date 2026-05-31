@@ -11,6 +11,7 @@ use crate::guest_memory::{
 };
 
 const GUEST_REGISTER_COUNT: usize = 32;
+const HOST_MAPPED_PROGRAM_HEADER_INDEX: u16 = u16::MAX;
 const RV64IMAC_MISA: u64 = (2_u64 << 62) | 1_u64 | (1_u64 << 2) | (1_u64 << 8) | (1_u64 << 12);
 pub const ZISK_ARCHITECTURE_ID: u64 = 0x0fff_eeee;
 
@@ -110,6 +111,47 @@ impl GuestMachineMemory {
         }
         Err(GuestMemoryError::AddressNotMapped { address, byte_len })
     }
+
+    pub fn map_initialized_range(
+        &mut self,
+        virtual_address: u64,
+        initialized_bytes: Vec<u8>,
+    ) -> Result<(), GuestMemoryError> {
+        if initialized_bytes.is_empty() {
+            return Ok(());
+        }
+        let memory_size = u64::try_from(initialized_bytes.len()).map_err(|_| {
+            GuestMemoryError::AddressRangeOverflow {
+                address: virtual_address,
+                byte_len: initialized_bytes.len(),
+            }
+        })?;
+        let mapped_segment = GuestMachineMemorySegment {
+            program_header_index: HOST_MAPPED_PROGRAM_HEADER_INDEX,
+            virtual_address,
+            memory_size,
+            initialized_bytes,
+            written_bytes: BTreeMap::new(),
+        };
+        let mapped_end = mapped_segment.end_address()?;
+        for segment in &self.segments {
+            let segment_end = segment.end_address()?;
+            if ranges_overlap(
+                virtual_address,
+                mapped_end,
+                segment.virtual_address,
+                segment_end,
+            ) {
+                return Err(GuestMemoryError::OverlappingSegments {
+                    first_program_header_index: segment.program_header_index,
+                    second_program_header_index: HOST_MAPPED_PROGRAM_HEADER_INDEX,
+                });
+            }
+        }
+        self.segments.push(mapped_segment);
+        self.segments.sort_by_key(|segment| segment.virtual_address);
+        Ok(())
+    }
 }
 
 impl GuestMemoryReader for GuestMachineMemory {
@@ -172,6 +214,10 @@ fn checked_address_end(address: u64, byte_len: usize) -> Result<u64, GuestMemory
     address
         .checked_add(byte_len_u64)
         .ok_or(GuestMemoryError::AddressRangeOverflow { address, byte_len })
+}
+
+fn ranges_overlap(first_start: u64, first_end: u64, second_start: u64, second_end: u64) -> bool {
+    first_start < second_end && second_start < first_end
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

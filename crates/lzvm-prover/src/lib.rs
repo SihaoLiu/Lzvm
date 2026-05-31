@@ -73,6 +73,7 @@ pub mod witness_loader;
 pub mod witness_opening;
 pub mod witness_runner;
 pub mod witness_trace;
+pub mod zisk_fcalls;
 
 pub use fixed_material::{
     load_fixed_columns_material, FixedColumnsMaterial, FixedColumnsMaterialError,
