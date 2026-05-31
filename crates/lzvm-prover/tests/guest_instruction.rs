@@ -66,8 +66,16 @@ fn csrrw(rd: u8, csr: u16, rs1: u8) -> u32 {
     (u32::from(csr) << 20) | (u32::from(rs1) << 15) | (1 << 12) | (u32::from(rd) << 7) | 0x73
 }
 
+fn csrs(csr: u16, rs1: u8) -> u32 {
+    csrrs(0, csr, rs1)
+}
+
 fn csrrwi(rd: u8, csr: u16, immediate: u8) -> u32 {
     csr_imm(rd, csr, 5, immediate)
+}
+
+fn csrwi(csr: u16, immediate: u8) -> u32 {
+    csrrwi(0, csr, immediate)
 }
 
 fn csrrsi(rd: u8, csr: u16, immediate: u8) -> u32 {
@@ -485,6 +493,30 @@ fn keeps_csr_write_encodings_visible() {
             );
         }
     }
+}
+
+#[test]
+fn decodes_zisk_free_call_csr_instructions() {
+    assert_eq!(
+        decode_riscv_instruction(csrs(0x08f0, 5)),
+        RiscvInstruction::ZiskFcallParam { port: 0, rs1: 5 }
+    );
+    assert_eq!(
+        decode_riscv_instruction(csrs(0x08ff, 6)),
+        RiscvInstruction::ZiskFcallParam { port: 15, rs1: 6 }
+    );
+    assert_eq!(
+        decode_riscv_instruction(csrwi(0x08c0, 7)),
+        RiscvInstruction::ZiskFcallInvoke { function_id: 7 }
+    );
+    assert_eq!(
+        decode_riscv_instruction(csrwi(0x08df, 31)),
+        RiscvInstruction::ZiskFcallInvoke { function_id: 1023 }
+    );
+    assert_eq!(
+        decode_riscv_instruction(csrrs(10, 0x0ffe, 0)),
+        RiscvInstruction::ZiskFcallResult { rd: 10 }
+    );
 }
 
 #[test]

@@ -5,6 +5,7 @@ use lzvm_prover::guest_instruction::{
 };
 use lzvm_prover::guest_machine::{
     advance_guest_machine, GuestMachineError, GuestMachineMemory, GuestMachineState,
+    ZISK_ARCHITECTURE_ID,
 };
 use lzvm_prover::guest_memory::{load_guest_memory_image, GuestMemoryError, GuestMemoryImage};
 
@@ -1667,7 +1668,7 @@ fn advances_machine_csr_reads() {
     let cases = [
         (0x0301, RiscvCsr::Misa, 10, RV64IMAC_MISA),
         (0x0f11, RiscvCsr::Mvendorid, 11, 0),
-        (0x0f12, RiscvCsr::Marchid, 12, 0),
+        (0x0f12, RiscvCsr::Marchid, 12, ZISK_ARCHITECTURE_ID),
         (0x0f13, RiscvCsr::Mimpid, 13, 0),
         (0x0f14, RiscvCsr::Mhartid, 14, 0),
     ];

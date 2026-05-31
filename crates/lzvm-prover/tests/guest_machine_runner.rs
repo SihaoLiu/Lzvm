@@ -1,8 +1,9 @@
 use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_prover::guest_instruction::RiscvInstruction;
 use lzvm_prover::guest_machine::{
-    run_guest_machine, GuestMachineError, GuestMachineHalt, GuestMachineMemory,
-    GuestMachineRunError, GuestMachineState,
+    run_guest_machine, run_guest_machine_with_fcalls, GuestFcallHandler, GuestFcallParam,
+    GuestFcallRequest, GuestFcallResponse, GuestMachineError, GuestMachineHalt, GuestMachineMemory,
+    GuestMachineRunError, GuestMachineState, ZISK_ARCHITECTURE_ID,
 };
 use lzvm_prover::guest_memory::{load_guest_memory_image, GuestMemoryImage};
 
@@ -86,6 +87,30 @@ fn encode_i(immediate: i16, rs1: u8, funct3: u8, rd: u8, opcode: u8) -> u32 {
 
 fn addi(rd: u8, rs1: u8, immediate: i16) -> u32 {
     encode_i(immediate, rs1, 0, rd, 0x13)
+}
+
+fn encode_csr(rd: u8, csr: u16, funct3: u8, source: u8) -> u32 {
+    assert!(rd < 32);
+    assert!(csr < 4096);
+    assert!(funct3 < 8);
+    assert!(source < 32);
+    (u32::from(csr) << 20)
+        | (u32::from(source) << 15)
+        | (u32::from(funct3) << 12)
+        | (u32::from(rd) << 7)
+        | 0x73
+}
+
+fn csrr(rd: u8, csr: u16) -> u32 {
+    encode_csr(rd, csr, 2, 0)
+}
+
+fn csrs(csr: u16, rs1: u8) -> u32 {
+    encode_csr(0, csr, 2, rs1)
+}
+
+fn csrwi(csr: u16, immediate: u8) -> u32 {
+    encode_csr(0, csr, 5, immediate)
 }
 
 fn compressed_addi(rd: u8, immediate: i8) -> u16 {
@@ -432,6 +457,67 @@ fn runs_guest_machine_until_ecall() {
     assert_eq!(state.register(1), Some(7));
     assert_eq!(state.register(2), Some(10));
     assert_eq!(state.register(3), Some(0));
+}
+
+#[derive(Default)]
+struct RecordingFcallHandler {
+    requests: Vec<GuestFcallRequest>,
+}
+
+impl GuestFcallHandler for RecordingFcallHandler {
+    fn handle_fcall(
+        &mut self,
+        request: GuestFcallRequest,
+        _memory: &mut GuestMachineMemory,
+    ) -> Result<GuestFcallResponse, lzvm_prover::guest_machine::GuestFcallError> {
+        self.requests.push(request);
+        Ok(GuestFcallResponse {
+            results: vec![0x2a],
+        })
+    }
+}
+
+#[test]
+fn runs_guest_machine_with_zisk_free_call_handler() {
+    let mut memory = guest_machine_memory_with_words(&[
+        addi(5, 0, 17),
+        csrs(0x08f0, 5),
+        csrwi(0x08c0, 7),
+        csrr(6, 0x0ffe),
+        0x0000_0073,
+    ]);
+    let mut state = GuestMachineState::new(memory.entry_address());
+    let mut handler = RecordingFcallHandler::default();
+
+    let report = run_guest_machine_with_fcalls(&mut memory, &mut state, &mut handler, 10)
+        .expect("guest should halt");
+
+    assert_eq!(report.executed_instructions, 4);
+    assert_eq!(
+        report.halt,
+        GuestMachineHalt::Ecall {
+            address: ENTRY + 16
+        }
+    );
+    assert_eq!(state.register(6), Some(0x2a));
+    assert_eq!(
+        handler.requests,
+        vec![GuestFcallRequest {
+            function_id: 7,
+            params: vec![GuestFcallParam { port: 0, value: 17 }],
+        }]
+    );
+}
+
+#[test]
+fn guest_machine_reads_zisk_architecture_id() {
+    let mut memory = guest_machine_memory_with_words(&[csrr(5, 0x0f12), 0x0000_0073]);
+    let mut state = GuestMachineState::new(memory.entry_address());
+
+    let report = run_guest_machine(&mut memory, &mut state, 4).expect("guest should halt");
+
+    assert_eq!(report.executed_instructions, 1);
+    assert_eq!(state.register(5), Some(ZISK_ARCHITECTURE_ID));
 }
 
 #[test]

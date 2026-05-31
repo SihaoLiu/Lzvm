@@ -168,6 +168,16 @@ pub enum RiscvInstruction {
         csr: RiscvCsr,
         rd: u8,
     },
+    ZiskFcallParam {
+        port: u8,
+        rs1: u8,
+    },
+    ZiskFcallInvoke {
+        function_id: u16,
+    },
+    ZiskFcallResult {
+        rd: u8,
+    },
     Fence {
         kind: RiscvFenceKind,
         mode: u8,
@@ -1091,7 +1101,23 @@ fn decode_system(word: u32) -> RiscvInstruction {
     if word == 0x0010_0073 {
         return RiscvInstruction::Ebreak;
     }
-    let Some(csr) = RiscvCsr::from_number(((word >> 20) & 0x0fff) as u16) else {
+    let csr_number = ((word >> 20) & 0x0fff) as u16;
+    if (0x08f0..=0x08ff).contains(&csr_number) && funct3(word) == 2 && rd(word) == 0 {
+        return RiscvInstruction::ZiskFcallParam {
+            port: (csr_number - 0x08f0) as u8,
+            rs1: rs1(word),
+        };
+    }
+    if (0x08c0..=0x08df).contains(&csr_number) && funct3(word) == 5 && rd(word) == 0 {
+        let bank = csr_number - 0x08c0;
+        return RiscvInstruction::ZiskFcallInvoke {
+            function_id: bank * 32 + u16::from(rs1(word)),
+        };
+    }
+    if csr_number == 0x0ffe && funct3(word) == 2 && rs1(word) == 0 {
+        return RiscvInstruction::ZiskFcallResult { rd: rd(word) };
+    }
+    let Some(csr) = RiscvCsr::from_number(csr_number) else {
         return unknown(word);
     };
     match funct3(word) {

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 
 use crate::guest_instruction::{
@@ -12,6 +12,47 @@ use crate::guest_memory::{
 
 const GUEST_REGISTER_COUNT: usize = 32;
 const RV64IMAC_MISA: u64 = (2_u64 << 62) | 1_u64 | (1_u64 << 2) | (1_u64 << 8) | (1_u64 << 12);
+pub const ZISK_ARCHITECTURE_ID: u64 = 0x0fff_eeee;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GuestFcallParam {
+    pub port: u8,
+    pub value: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GuestFcallRequest {
+    pub function_id: u16,
+    pub params: Vec<GuestFcallParam>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GuestFcallResponse {
+    pub results: Vec<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GuestFcallError {
+    Handler { message: String },
+}
+
+impl fmt::Display for GuestFcallError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Handler { message } => write!(f, "guest free-call handler failed: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for GuestFcallError {}
+
+pub trait GuestFcallHandler {
+    fn handle_fcall(
+        &mut self,
+        request: GuestFcallRequest,
+        memory: &mut GuestMachineMemory,
+    ) -> Result<GuestFcallResponse, GuestFcallError>;
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestMachineMemory {
@@ -138,6 +179,8 @@ pub struct GuestMachineState {
     pc: u64,
     registers: [u64; GUEST_REGISTER_COUNT],
     reservation: Option<GuestMemoryReservation>,
+    fcall_params: Vec<GuestFcallParam>,
+    fcall_results: VecDeque<u64>,
     retired_instructions: u64,
 }
 
@@ -153,6 +196,8 @@ impl GuestMachineState {
             pc: entry_address,
             registers: [0; GUEST_REGISTER_COUNT],
             reservation: None,
+            fcall_params: Vec::new(),
+            fcall_results: VecDeque::new(),
             retired_instructions: 0,
         }
     }
@@ -216,6 +261,26 @@ impl GuestMachineState {
         self.retired_instructions = self.retired_instructions.wrapping_add(1);
     }
 
+    fn push_fcall_param(&mut self, port: u8, value: u64) {
+        self.fcall_params.push(GuestFcallParam { port, value });
+    }
+
+    fn take_fcall_request(&mut self, function_id: u16) -> GuestFcallRequest {
+        let params = std::mem::take(&mut self.fcall_params);
+        GuestFcallRequest {
+            function_id,
+            params,
+        }
+    }
+
+    fn set_fcall_results(&mut self, results: Vec<u64>) {
+        self.fcall_results = results.into();
+    }
+
+    fn pop_fcall_result(&mut self) -> Option<u64> {
+        self.fcall_results.pop_front()
+    }
+
     fn reservation_matches(&self, address: u64, width: RiscvAmoWidth) -> bool {
         self.reservation
             .is_some_and(|reservation| reservation.address == address && reservation.width == width)
@@ -274,6 +339,18 @@ pub enum GuestMachineError {
         address: u64,
         instruction: RiscvInstruction,
     },
+    MissingFcallHandler {
+        address: u64,
+        function_id: u16,
+    },
+    Fcall {
+        address: u64,
+        function_id: u16,
+        source: GuestFcallError,
+    },
+    MissingFcallResult {
+        address: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -309,6 +386,25 @@ impl fmt::Display for GuestMachineError {
                 f,
                 "guest machine instruction is unsupported: address {address}, instruction {instruction:?}"
             ),
+            Self::MissingFcallHandler {
+                address,
+                function_id,
+            } => write!(
+                f,
+                "guest machine free-call handler is missing: address {address}, function id {function_id}"
+            ),
+            Self::Fcall {
+                address,
+                function_id,
+                source,
+            } => write!(
+                f,
+                "guest machine free-call failed: address {address}, function id {function_id}: {source}"
+            ),
+            Self::MissingFcallResult { address } => write!(
+                f,
+                "guest machine free-call result is missing: address {address}"
+            ),
         }
     }
 }
@@ -333,11 +429,14 @@ impl std::error::Error for GuestMachineError {
         match self {
             Self::Fetch(error) => Some(error),
             Self::Memory(error) => Some(error),
+            Self::Fcall { source, .. } => Some(source),
             Self::InvalidRegisterIndex { .. }
             | Self::ProgramCounterOverflow { .. }
             | Self::MisalignedAtomicAccess { .. }
             | Self::UnsupportedInstructionLength { .. }
-            | Self::UnsupportedInstruction { .. } => None,
+            | Self::UnsupportedInstruction { .. }
+            | Self::MissingFcallHandler { .. }
+            | Self::MissingFcallResult { .. } => None,
         }
     }
 }
@@ -374,6 +473,24 @@ pub fn run_guest_machine(
     state: &mut GuestMachineState,
     instruction_limit: u64,
 ) -> Result<GuestMachineRunReport, GuestMachineRunError> {
+    run_guest_machine_inner(memory, state, None, instruction_limit)
+}
+
+pub fn run_guest_machine_with_fcalls(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+    instruction_limit: u64,
+) -> Result<GuestMachineRunReport, GuestMachineRunError> {
+    run_guest_machine_inner(memory, state, Some(handler), instruction_limit)
+}
+
+fn run_guest_machine_inner(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    mut handler: Option<&mut dyn GuestFcallHandler>,
+    instruction_limit: u64,
+) -> Result<GuestMachineRunReport, GuestMachineRunError> {
     let mut executed_instructions = 0_u64;
     loop {
         let current = decode_current_guest_instruction(memory, state.pc())?;
@@ -391,7 +508,14 @@ pub fn run_guest_machine(
                 pc: state.pc(),
             });
         }
-        advance_guest_machine(memory, state)?;
+        match handler.as_deref_mut() {
+            Some(handler) => {
+                advance_guest_machine_with_fcalls(memory, state, handler)?;
+            }
+            None => {
+                advance_guest_machine(memory, state)?;
+            }
+        }
         executed_instructions += 1;
     }
 }
@@ -399,6 +523,22 @@ pub fn run_guest_machine(
 pub fn advance_guest_machine(
     memory: &mut GuestMachineMemory,
     state: &mut GuestMachineState,
+) -> Result<GuestMachineReport, GuestMachineError> {
+    advance_guest_machine_inner(memory, state, None)
+}
+
+pub fn advance_guest_machine_with_fcalls(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: &mut dyn GuestFcallHandler,
+) -> Result<GuestMachineReport, GuestMachineError> {
+    advance_guest_machine_inner(memory, state, Some(handler))
+}
+
+fn advance_guest_machine_inner(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    handler: Option<&mut dyn GuestFcallHandler>,
 ) -> Result<GuestMachineReport, GuestMachineError> {
     let address = state.pc();
     let (byte_len, instruction) = fetch_decode_guest_instruction(memory, address)?;
@@ -408,7 +548,14 @@ pub fn advance_guest_machine(
     let mut next_state = state.clone();
     next_state.set_pc(sequential_pc);
 
-    execute_guest_instruction(memory, address, sequential_pc, instruction, &mut next_state)?;
+    execute_guest_instruction(
+        memory,
+        address,
+        sequential_pc,
+        instruction,
+        &mut next_state,
+        handler,
+    )?;
     next_state.retire_instruction();
     let next_pc = next_state.pc();
     *state = next_state;
@@ -452,6 +599,7 @@ fn execute_guest_instruction(
     sequential_pc: u64,
     instruction: RiscvInstruction,
     state: &mut GuestMachineState,
+    handler: Option<&mut dyn GuestFcallHandler>,
 ) -> Result<(), GuestMachineError> {
     match instruction {
         RiscvInstruction::Lui { rd, immediate } => {
@@ -582,6 +730,32 @@ fn execute_guest_instruction(
         }
         RiscvInstruction::CsrRead { csr, rd } => {
             state.write_decoded_register(rd, read_csr(csr, state.retired_instructions()));
+        }
+        RiscvInstruction::ZiskFcallParam { port, rs1 } => {
+            state.push_fcall_param(port, state.read_decoded_register(rs1));
+        }
+        RiscvInstruction::ZiskFcallInvoke { function_id } => {
+            let request = state.take_fcall_request(function_id);
+            let Some(handler) = handler else {
+                return Err(GuestMachineError::MissingFcallHandler {
+                    address,
+                    function_id,
+                });
+            };
+            let response = handler.handle_fcall(request, memory).map_err(|source| {
+                GuestMachineError::Fcall {
+                    address,
+                    function_id,
+                    source,
+                }
+            })?;
+            state.set_fcall_results(response.results);
+        }
+        RiscvInstruction::ZiskFcallResult { rd } => {
+            let value = state
+                .pop_fcall_result()
+                .ok_or(GuestMachineError::MissingFcallResult { address })?;
+            state.write_decoded_register(rd, value);
         }
         RiscvInstruction::Fence { .. } => {}
         RiscvInstruction::CompressedUnknown { .. }
@@ -806,7 +980,8 @@ fn read_csr(csr: RiscvCsr, retired_instructions: u64) -> u64 {
         | RiscvCsr::Timeh
         | RiscvCsr::Instreth => retired_instructions >> 32,
         RiscvCsr::Misa => RV64IMAC_MISA,
-        RiscvCsr::Mvendorid | RiscvCsr::Marchid | RiscvCsr::Mimpid | RiscvCsr::Mhartid => 0,
+        RiscvCsr::Marchid => ZISK_ARCHITECTURE_ID,
+        RiscvCsr::Mvendorid | RiscvCsr::Mimpid | RiscvCsr::Mhartid => 0,
     }
 }
 
