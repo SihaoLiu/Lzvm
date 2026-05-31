@@ -124,3 +124,28 @@ fn rejects_program_image_cache_with_wrong_constraint_digest_length() {
 
     assert!(result.is_err());
 }
+
+#[test]
+fn program_image_cache_hashes_program_input_streaming() {
+    let source_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/program_image.rs");
+    let source = fs::read_to_string(&source_path).expect("program-image source should read");
+
+    assert!(
+        source.contains("fn hash_program_image_input_file("),
+        "program-image cache writing should hash program inputs without materializing them"
+    );
+    assert!(
+        source.contains("hash_program_image_input_file(program_path"),
+        "program input should use the streaming hash path"
+    );
+    assert!(
+        source.contains("source_image_digest: source_image_info.digest")
+            && source.contains("source_image_byte_count: source_image_info.byte_len"),
+        "guest image digest metadata should be reused instead of reading bytes again"
+    );
+    assert!(
+        !source.contains("let program_bytes = read_program_image_input_bytes(program_path")
+            && !source.contains("let source_image_bytes ="),
+        "program-image cache writing should not keep large input Vec buffers for hashing"
+    );
+}

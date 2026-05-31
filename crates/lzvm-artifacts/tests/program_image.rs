@@ -2,10 +2,11 @@ use std::fs;
 use std::path::PathBuf;
 
 use lzvm_artifacts::program_image::{
-    build_program_image_commitment_cache, encode_program_image_commitment_cache,
-    parse_program_image_commitment_cache, read_program_image_commitment_cache_file,
-    ProgramImageCommitmentCache, ProgramImageCommitmentCacheError, ProgramImageCommitmentInputs,
-    ProgramImageGpuMode,
+    build_program_image_commitment_cache, build_program_image_commitment_cache_from_digests,
+    encode_program_image_commitment_cache, parse_program_image_commitment_cache,
+    read_program_image_commitment_cache_file, ProgramImageCommitmentCache,
+    ProgramImageCommitmentCacheError, ProgramImageCommitmentDigestInputs,
+    ProgramImageCommitmentInputs, ProgramImageGpuMode,
 };
 use sha2::{Digest, Sha256};
 
@@ -59,6 +60,63 @@ fn builds_program_image_commitment_cache_from_inputs() {
     .expect("cache should build");
 
     assert_eq!(cache, sample_cache());
+}
+
+#[test]
+fn builds_program_image_commitment_cache_from_precomputed_digests() {
+    let cache =
+        build_program_image_commitment_cache_from_digests(ProgramImageCommitmentDigestInputs {
+            program_digest: hash(b"packed-program"),
+            program_byte_count: u64::try_from(b"packed-program".len()).unwrap(),
+            source_image_digest: hash(b"source-image"),
+            source_image_byte_count: u64::try_from(b"source-image".len()).unwrap(),
+            constraint_system_digest: [0x44; 32],
+            tree_root: [11, 12, 13, 14],
+            trace_row_count: 1024,
+            trace_column_count: 17,
+            blowup_factor: 8,
+            merkle_tree_arity: 4,
+            gpu_mode: ProgramImageGpuMode::Cuda,
+        })
+        .expect("cache should build");
+
+    assert_eq!(cache, sample_cache());
+}
+
+#[test]
+fn rejects_empty_program_image_digest_inputs() {
+    assert!(matches!(
+        build_program_image_commitment_cache_from_digests(ProgramImageCommitmentDigestInputs {
+            program_digest: hash(b""),
+            program_byte_count: 0,
+            source_image_digest: hash(b"source-image"),
+            source_image_byte_count: u64::try_from(b"source-image".len()).unwrap(),
+            constraint_system_digest: [0x44; 32],
+            tree_root: [11, 12, 13, 14],
+            trace_row_count: 1024,
+            trace_column_count: 17,
+            blowup_factor: 8,
+            merkle_tree_arity: 4,
+            gpu_mode: ProgramImageGpuMode::Cpu,
+        },),
+        Err(ProgramImageCommitmentCacheError::EmptyProgram)
+    ));
+    assert!(matches!(
+        build_program_image_commitment_cache_from_digests(ProgramImageCommitmentDigestInputs {
+            program_digest: hash(b"packed-program"),
+            program_byte_count: u64::try_from(b"packed-program".len()).unwrap(),
+            source_image_digest: hash(b""),
+            source_image_byte_count: 0,
+            constraint_system_digest: [0x44; 32],
+            tree_root: [11, 12, 13, 14],
+            trace_row_count: 1024,
+            trace_column_count: 17,
+            blowup_factor: 8,
+            merkle_tree_arity: 4,
+            gpu_mode: ProgramImageGpuMode::Cpu,
+        },),
+        Err(ProgramImageCommitmentCacheError::EmptySourceImage)
+    ));
 }
 
 #[test]

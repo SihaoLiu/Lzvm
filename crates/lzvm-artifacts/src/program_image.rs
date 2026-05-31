@@ -66,6 +66,21 @@ pub struct ProgramImageCommitmentInputs<'a> {
     pub gpu_mode: ProgramImageGpuMode,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ProgramImageCommitmentDigestInputs {
+    pub program_digest: [u8; 32],
+    pub program_byte_count: u64,
+    pub source_image_digest: [u8; 32],
+    pub source_image_byte_count: u64,
+    pub constraint_system_digest: [u8; 32],
+    pub tree_root: [u64; 4],
+    pub trace_row_count: u64,
+    pub trace_column_count: u32,
+    pub blowup_factor: u32,
+    pub merkle_tree_arity: u32,
+    pub gpu_mode: ProgramImageGpuMode,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProgramImageCommitmentCacheError {
     Sectioned(SectionedError),
@@ -237,16 +252,34 @@ impl From<SectionedError> for ProgramImageCommitmentCacheError {
 pub fn build_program_image_commitment_cache(
     inputs: ProgramImageCommitmentInputs<'_>,
 ) -> Result<ProgramImageCommitmentCache, ProgramImageCommitmentCacheError> {
-    if inputs.program_bytes.is_empty() {
+    build_program_image_commitment_cache_from_digests(ProgramImageCommitmentDigestInputs {
+        program_digest: Sha256::digest(inputs.program_bytes).into(),
+        program_byte_count: inputs.program_bytes.len() as u64,
+        source_image_digest: Sha256::digest(inputs.source_image_bytes).into(),
+        source_image_byte_count: inputs.source_image_bytes.len() as u64,
+        constraint_system_digest: inputs.constraint_system_digest,
+        tree_root: inputs.tree_root,
+        trace_row_count: inputs.trace_row_count,
+        trace_column_count: inputs.trace_column_count,
+        blowup_factor: inputs.blowup_factor,
+        merkle_tree_arity: inputs.merkle_tree_arity,
+        gpu_mode: inputs.gpu_mode,
+    })
+}
+
+pub fn build_program_image_commitment_cache_from_digests(
+    inputs: ProgramImageCommitmentDigestInputs,
+) -> Result<ProgramImageCommitmentCache, ProgramImageCommitmentCacheError> {
+    if inputs.program_byte_count == 0 {
         return Err(ProgramImageCommitmentCacheError::EmptyProgram);
     }
-    if inputs.source_image_bytes.is_empty() {
+    if inputs.source_image_byte_count == 0 {
         return Err(ProgramImageCommitmentCacheError::EmptySourceImage);
     }
 
     let out = ProgramImageCommitmentCache {
-        program_digest: Sha256::digest(inputs.program_bytes).into(),
-        source_image_digest: Sha256::digest(inputs.source_image_bytes).into(),
+        program_digest: inputs.program_digest,
+        source_image_digest: inputs.source_image_digest,
         constraint_system_digest: inputs.constraint_system_digest,
         tree_root: inputs.tree_root,
         trace_row_count: inputs.trace_row_count,

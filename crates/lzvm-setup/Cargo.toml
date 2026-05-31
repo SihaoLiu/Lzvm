@@ -18,3 +18,4 @@ lzvm-accel = { path = "../lzvm-accel", optional = true }
 lzvm-artifacts = { path = "../lzvm-artifacts", default-features = false }
 lzvm-field = { path = "../lzvm-field" }
 lzvm-pil = { path = "../lzvm-pil" }
+sha2 = "0.10"

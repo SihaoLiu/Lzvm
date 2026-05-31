@@ -1,4 +1,6 @@
 use std::fmt;
+use std::fs::File;
+use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use lzvm_artifacts::guest_image::{read_guest_image_file, GuestImageError};
@@ -6,13 +8,14 @@ use lzvm_artifacts::key_directory::{
     key_directory_catalog_digest, read_key_directory_catalog, KeyDirectoryError,
 };
 use lzvm_artifacts::program_image::{
-    build_program_image_commitment_cache, encode_program_image_commitment_cache,
+    build_program_image_commitment_cache_from_digests, encode_program_image_commitment_cache,
     read_program_image_commitment_cache_file, ProgramImageCommitmentCache,
-    ProgramImageCommitmentCacheError, ProgramImageCommitmentInputs, ProgramImageGpuMode,
+    ProgramImageCommitmentCacheError, ProgramImageCommitmentDigestInputs, ProgramImageGpuMode,
 };
 use lzvm_artifacts::verification_key::{
     read_verification_key_binary_file, VerificationKeyError, VerificationKeyRoot,
 };
+use sha2::{Digest, Sha256};
 
 use crate::{publish_staging_bytes, write_staging_bytes, SetupError};
 
@@ -211,33 +214,34 @@ fn write_program_image_commitment_cache_file_with_digest(
     gpu_mode: ProgramImageGpuMode,
     output_path: &Path,
 ) -> Result<ProgramImageCommitmentCacheWriteReport, ProgramImageCommitmentCacheWriteError> {
-    let program_bytes = read_program_image_input_bytes(program_path, "read program input")?;
+    let (program_digest, program_byte_count) =
+        hash_program_image_input_file(program_path, "hash program input")?;
     let source_image_info = read_guest_image_file(guest_image_path).map_err(|source| {
         ProgramImageCommitmentCacheWriteError::GuestImage {
             path: guest_image_path.to_path_buf(),
             source,
         }
     })?;
-    let source_image_bytes =
-        read_program_image_input_bytes(guest_image_path, "read source image input")?;
     let root = read_verification_key_binary_file(root_path).map_err(|source| {
         ProgramImageCommitmentCacheWriteError::VerificationKey {
             path: root_path.to_path_buf(),
             source,
         }
     })?;
-    let cache = build_program_image_commitment_cache(ProgramImageCommitmentInputs {
-        program_bytes: &program_bytes,
-        source_image_bytes: &source_image_bytes,
-        constraint_system_digest,
-        tree_root: verification_key_root_words(root),
-        trace_row_count,
-        trace_column_count,
-        blowup_factor,
-        merkle_tree_arity,
-        gpu_mode,
-    })?;
-    debug_assert_eq!(cache.source_image_digest, source_image_info.digest);
+    let cache =
+        build_program_image_commitment_cache_from_digests(ProgramImageCommitmentDigestInputs {
+            program_digest,
+            program_byte_count,
+            source_image_digest: source_image_info.digest,
+            source_image_byte_count: source_image_info.byte_len,
+            constraint_system_digest,
+            tree_root: verification_key_root_words(root),
+            trace_row_count,
+            trace_column_count,
+            blowup_factor,
+            merkle_tree_arity,
+            gpu_mode,
+        })?;
     write_program_image_commitment_cache(output_path, &cache)
 }
 
@@ -291,6 +295,42 @@ fn read_program_image_input_bytes(
         path: path.to_path_buf(),
         message: error.to_string(),
     })
+}
+
+fn hash_program_image_input_file(
+    path: &Path,
+    role: &'static str,
+) -> Result<([u8; 32], u64), ProgramImageCommitmentCacheWriteError> {
+    let file = File::open(path).map_err(|error| ProgramImageCommitmentCacheWriteError::Io {
+        role,
+        path: path.to_path_buf(),
+        message: error.to_string(),
+    })?;
+    let mut reader = BufReader::new(file);
+    let mut hasher = Sha256::new();
+    let mut byte_count = 0_u64;
+    let mut buffer = vec![0_u8; 1024 * 1024];
+    loop {
+        let read_count = reader.read(&mut buffer).map_err(|error| {
+            ProgramImageCommitmentCacheWriteError::Io {
+                role,
+                path: path.to_path_buf(),
+                message: error.to_string(),
+            }
+        })?;
+        if read_count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read_count]);
+        byte_count = byte_count.checked_add(read_count as u64).ok_or_else(|| {
+            ProgramImageCommitmentCacheWriteError::Io {
+                role,
+                path: path.to_path_buf(),
+                message: "input byte count overflow".to_string(),
+            }
+        })?;
+    }
+    Ok((hasher.finalize().into(), byte_count))
 }
 
 fn verification_key_root_words(root: VerificationKeyRoot) -> [u64; 4] {
