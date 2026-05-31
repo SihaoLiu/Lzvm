@@ -45,6 +45,7 @@ pub enum ProvePcsQueryPlanSegmentError {
         unit_index: usize,
         bits: u32,
     },
+    InvalidStreamCount,
     Challenge(PcsChallengeError),
     Transcript(PcsTranscriptError),
     LengthOverflow,
@@ -105,6 +106,9 @@ impl fmt::Display for ProvePcsQueryPlanSegmentError {
                 f,
                 "prove PCS query plan unit {unit_index} query nonce does not satisfy {bits} work bits"
             ),
+            Self::InvalidStreamCount => {
+                write!(f, "prove PCS query nonce stream count is invalid")
+            }
             Self::Challenge(error) => write!(f, "prove PCS query plan challenge failed: {error}"),
             Self::Transcript(error) => {
                 write!(f, "prove PCS query plan transcript failed: {error}")
@@ -135,6 +139,7 @@ impl std::error::Error for ProvePcsQueryPlanSegmentError {
             | Self::MissingTranscriptArity { .. }
             | Self::InvalidNonceSegmentId { .. }
             | Self::QueryNonceMismatch { .. }
+            | Self::InvalidStreamCount
             | Self::LengthOverflow => None,
         }
     }

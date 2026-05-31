@@ -97,6 +97,9 @@ pub fn build_pcs_query_nonce_segment_with_streams(
     challenge: Ext3,
     max_streams: usize,
 ) -> Result<ProofSegment, ProvePcsQueryPlanSegmentError> {
+    if max_streams == 0 {
+        return Err(ProvePcsQueryPlanSegmentError::InvalidStreamCount);
+    }
     let bits = schedule
         .units
         .iter()

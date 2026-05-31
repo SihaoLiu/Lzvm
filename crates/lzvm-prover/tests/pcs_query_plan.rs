@@ -33,7 +33,7 @@ use lzvm_artifacts::witness_segment::{
     encode_witness_commitment_segment, WitnessCommitmentSegment, WitnessCommitmentStageSegment,
     WITNESS_COMMITMENT_SEGMENT_BASE_ID,
 };
-use lzvm_field::Felt;
+use lzvm_field::{Ext3, Felt};
 use lzvm_prover::pcs_query_plan::{
     load_pcs_query_plan_from_segments, uses_transcript_pcs_query_plan_inputs,
     validate_pcs_query_plan_segments, validate_seeded_pcs_query_plan_segments,
@@ -44,7 +44,8 @@ use lzvm_prover::pcs_transcript::{
     derive_pcs_final_query_challenge_from_segments, PcsTranscriptSegmentInputs,
 };
 use lzvm_prover::{
-    build_pcs_query_nonce_segment_from_transcript_segments, build_pcs_query_plan_segment,
+    build_pcs_query_nonce_segment_from_transcript_segments,
+    build_pcs_query_nonce_segment_with_streams, build_pcs_query_plan_segment,
     build_pcs_query_plan_segment_from_challenge,
     build_pcs_query_plan_segment_from_transcript_segments, ProveSchedule, ProveUnitSchedule,
 };
@@ -66,6 +67,21 @@ fn loads_pcs_query_plan_from_segments() {
                 queries: vec![1, 3]
             }]
         }
+    );
+}
+
+#[test]
+fn rejects_zero_stream_query_nonce_builds() {
+    let error = build_pcs_query_nonce_segment_with_streams(
+        &sample_schedule(),
+        Ext3::from_u64s([7, 8, 9]),
+        0,
+    )
+    .expect_err("zero stream nonce build should be rejected");
+
+    assert_eq!(
+        error.to_string(),
+        "prove PCS query nonce stream count is invalid"
     );
 }
 
