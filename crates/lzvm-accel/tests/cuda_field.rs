@@ -9,11 +9,12 @@ use lzvm_accel::{
     cuda_goldilocks_ntt, cuda_keccak256_fixed, cuda_poseidon2_width16,
     cuda_poseidon2_width16_device, cuda_poseidon2_width16_linear_round_device,
     cuda_poseidon2_width16_linear_round_row_major_device,
-    cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width4,
-    cuda_poseidon2_width4_device, cuda_poseidon2_width4_find_nonce, cuda_poseidon2_width8,
-    cuda_poseidon2_width8_device, cuda_poseidon2_width8_linear_round_device,
+    cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width16_merkle_root_device,
+    cuda_poseidon2_width4, cuda_poseidon2_width4_device, cuda_poseidon2_width4_find_nonce,
+    cuda_poseidon2_width8, cuda_poseidon2_width8_device, cuda_poseidon2_width8_linear_round_device,
     cuda_poseidon2_width8_linear_round_row_major_device,
-    cuda_poseidon2_width8_merkle_parent_device, cuda_setup_init, CudaDeviceBuffer,
+    cuda_poseidon2_width8_merkle_parent_device, cuda_poseidon2_width8_merkle_root_device,
+    cuda_setup_init, CudaDeviceBuffer,
 };
 #[cfg(feature = "cuda")]
 use lzvm_crypto::keccak256;
@@ -699,6 +700,23 @@ fn cuda_hashes_poseidon2_width_8_parent_states_from_device_memory() {
 
 #[test]
 #[cfg(feature = "cuda")]
+fn cuda_poseidon2_width8_merkle_root_device_matches_cpu_reference() {
+    let input = vec![
+        1, 2, 3, 4, 101, 102, 103, 104, 5, 6, 7, 8, 201, 202, 203, 204, 9, 10, 11, 12, 301, 302,
+        303, 304, 13, 14, 15, 16, 401, 402, 403, 404, 17, 18, 19, 20, 501, 502, 503, 504,
+    ];
+    let expected = cpu_merkle_root_width8(&input);
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&input).expect("input device buffer should allocate");
+
+    let actual = cuda_poseidon2_width8_merkle_root_device(&input_buffer)
+        .expect("cuda device root hash should run");
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
 fn cuda_hashes_poseidon2_width_16_states() {
     let input = (0_u64..32).collect::<Vec<_>>();
     let expected = input
@@ -862,6 +880,74 @@ fn cuda_hashes_poseidon2_width_16_parent_states_from_device_memory() {
         .expect("device words should copy back to host");
 
     assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(feature = "cuda")]
+fn cuda_poseidon2_width16_merkle_root_device_matches_cpu_reference() {
+    let mut input = Vec::with_capacity(5 * 16);
+    for child in 0..5_u64 {
+        input.extend((child * 4 + 1)..=(child * 4 + 4));
+        input.extend((0..12_u64).map(|tail| 1_000 + child * 100 + tail));
+    }
+    let expected = cpu_merkle_root_width16(&input);
+    let input_buffer =
+        CudaDeviceBuffer::from_u64_words(&input).expect("input device buffer should allocate");
+
+    let actual = cuda_poseidon2_width16_merkle_root_device(&input_buffer)
+        .expect("cuda device root hash should run");
+
+    assert_eq!(actual, expected);
+}
+
+#[cfg(feature = "cuda")]
+fn cpu_merkle_root_width8(states: &[u64]) -> [u64; 4] {
+    assert!(states.len().is_multiple_of(8));
+    let mut level = states
+        .chunks_exact(8)
+        .map(|chunk| [chunk[0], chunk[1], chunk[2], chunk[3]])
+        .collect::<Vec<_>>();
+
+    while level.len() > 1 {
+        level = level
+            .chunks(2)
+            .map(|chunk| {
+                let mut state = [0_u64; 8];
+                for (slot, digest) in chunk.iter().enumerate() {
+                    state[slot * 4..slot * 4 + 4].copy_from_slice(digest);
+                }
+                let hashed = poseidon2_hash_8(state.map(Felt::from_u64)).map(Felt::to_u64);
+                [hashed[0], hashed[1], hashed[2], hashed[3]]
+            })
+            .collect();
+    }
+
+    level[0]
+}
+
+#[cfg(feature = "cuda")]
+fn cpu_merkle_root_width16(states: &[u64]) -> [u64; 4] {
+    assert!(states.len().is_multiple_of(16));
+    let mut level = states
+        .chunks_exact(16)
+        .map(|chunk| [chunk[0], chunk[1], chunk[2], chunk[3]])
+        .collect::<Vec<_>>();
+
+    while level.len() > 1 {
+        level = level
+            .chunks(4)
+            .map(|chunk| {
+                let mut state = [0_u64; 16];
+                for (slot, digest) in chunk.iter().enumerate() {
+                    state[slot * 4..slot * 4 + 4].copy_from_slice(digest);
+                }
+                let hashed = poseidon2_hash_16(state.map(Felt::from_u64)).map(Felt::to_u64);
+                [hashed[0], hashed[1], hashed[2], hashed[3]]
+            })
+            .collect();
+    }
+
+    level[0]
 }
 
 #[test]

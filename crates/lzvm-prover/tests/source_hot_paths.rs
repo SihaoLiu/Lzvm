@@ -116,6 +116,36 @@ fn cuda_fri_fixed_extension_uses_device_output_without_extended_word_vector() {
     );
 }
 
+#[test]
+fn cuda_merkle_root_folds_on_device_without_host_level_loop() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/merkle_hash.rs");
+    let source = std::fs::read_to_string(&source_path).expect("Merkle hash source should read");
+
+    let cuda_body = function_body(
+        &source,
+        "fn root_from_digest_level_on_cuda",
+        "fn digest_level_as_state_words",
+    );
+
+    assert!(
+        cuda_body.contains("cuda_poseidon2_width8_merkle_root_device"),
+        "arity-2 CUDA root folding should use the native root operation"
+    );
+    assert!(
+        cuda_body.contains("cuda_poseidon2_width16_merkle_root_device"),
+        "arity-4 CUDA root folding should use the native root operation"
+    );
+    assert!(
+        !cuda_body.contains("while state_count > 1"),
+        "CUDA root folding should not loop over Merkle levels on the host"
+    );
+    assert!(
+        !cuda_body.contains("CudaDeviceBuffer::new"),
+        "CUDA root folding should not allocate a device buffer per Merkle level"
+    );
+}
+
 fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
     let body = source
         .split_once(start)

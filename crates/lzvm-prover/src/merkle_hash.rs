@@ -6,9 +6,10 @@ use lzvm_accel::{cuda_poseidon2_width16_device, cuda_poseidon2_width8_device};
 use lzvm_accel::{
     cuda_poseidon2_width16_linear_round_device,
     cuda_poseidon2_width16_linear_round_row_major_device,
-    cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width8_linear_round_device,
-    cuda_poseidon2_width8_linear_round_row_major_device,
-    cuda_poseidon2_width8_merkle_parent_device, CudaDeviceBuffer,
+    cuda_poseidon2_width16_merkle_parent_device, cuda_poseidon2_width16_merkle_root_device,
+    cuda_poseidon2_width8_linear_round_device, cuda_poseidon2_width8_linear_round_row_major_device,
+    cuda_poseidon2_width8_merkle_parent_device, cuda_poseidon2_width8_merkle_root_device,
+    CudaDeviceBuffer,
 };
 use lzvm_field::{poseidon2_hash_16, poseidon2_hash_8, Felt, FieldError};
 
@@ -199,33 +200,22 @@ fn root_from_digest_level_on_cuda(
         return Ok(level[0]);
     }
 
-    let (width, operation): (usize, CudaPoseidon2DeviceOp) = match arity {
-        2 => (8, cuda_poseidon2_width8_merkle_parent_device),
-        4 => (16, cuda_poseidon2_width16_merkle_parent_device),
+    let width = match arity {
+        2 => 8,
+        4 => 16,
         _ => unreachable!("arity is validated"),
     };
 
     let input_words = digest_level_as_state_words(level, width)?;
-    let mut current = CudaDeviceBuffer::from_u64_words(&input_words)
+    let input_buffer = CudaDeviceBuffer::from_u64_words(&input_words)
         .map_err(|_| MerkleHashError::LengthOverflow)?;
-    let mut state_count = level.len();
-    while state_count > 1 {
-        let next_state_count = state_count.div_ceil(arity);
-        let next_byte_count = next_state_count
-            .checked_mul(width)
-            .and_then(|word_count| word_count.checked_mul(8))
-            .ok_or(MerkleHashError::LengthOverflow)?;
-        let mut next =
-            CudaDeviceBuffer::new(next_byte_count).map_err(|_| MerkleHashError::LengthOverflow)?;
-        operation(&current, &mut next).map_err(|_| MerkleHashError::LengthOverflow)?;
-        current = next;
-        state_count = next_state_count;
+    let root_words = match arity {
+        2 => cuda_poseidon2_width8_merkle_root_device(&input_buffer),
+        4 => cuda_poseidon2_width16_merkle_root_device(&input_buffer),
+        _ => unreachable!("arity is validated"),
     }
-
-    let root_state = current
-        .to_u64_words()
-        .map_err(|_| MerkleHashError::LengthOverflow)?;
-    digest_from_state_words(&root_state)
+    .map_err(|_| MerkleHashError::LengthOverflow)?;
+    digest_from_state_words(&root_words)
 }
 
 #[cfg(feature = "cuda")]

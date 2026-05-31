@@ -659,6 +659,7 @@ int run_poseidon2_width16_linear_round_on_device(
 }
 
 #include "cuda_poseidon2_merkle_parent.cuh"
+#include "cuda_poseidon2_merkle_root.cuh"
 #include "cuda_poseidon2_row_major.cuh"
 
 }  // namespace
@@ -1104,6 +1105,13 @@ extern "C" int lzvm_cuda_poseidon2_width8_merkle_parent_device(
     return run_poseidon2_width8_merkle_parent_on_device(values, out, child_state_count);
 }
 
+extern "C" int lzvm_cuda_poseidon2_width8_merkle_root_device(
+    const uint64_t* values,
+    uint64_t* out,
+    size_t child_state_count) {
+    return run_poseidon2_width8_merkle_root_on_device(values, out, child_state_count);
+}
+
 extern "C" int lzvm_cuda_poseidon2_width8_linear_round_device(
     const uint64_t* current_states,
     const uint64_t* row_values,
@@ -1151,6 +1159,13 @@ extern "C" int lzvm_cuda_poseidon2_width16_merkle_parent_device(
     uint64_t* out,
     size_t child_state_count) {
     return run_poseidon2_width16_merkle_parent_on_device(values, out, child_state_count);
+}
+
+extern "C" int lzvm_cuda_poseidon2_width16_merkle_root_device(
+    const uint64_t* values,
+    uint64_t* out,
+    size_t child_state_count) {
+    return run_poseidon2_width16_merkle_root_on_device(values, out, child_state_count);
 }
 
 extern "C" int lzvm_cuda_poseidon2_width16_linear_round_device(
