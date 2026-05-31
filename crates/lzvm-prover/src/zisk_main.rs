@@ -26,7 +26,16 @@ pub enum ZiskMainStore {
 pub enum ZiskMainOp {
     Flag,
     CopyB,
+    Ltu,
+    Lt,
     Add,
+    Sub,
+    And,
+    Or,
+    Xor,
+    Sll,
+    Srl,
+    Sra,
     SignExtendB,
     SignExtendH,
     SignExtendW,
@@ -37,7 +46,16 @@ impl ZiskMainOp {
         match self {
             Self::Flag => 0x00,
             Self::CopyB => 0x01,
+            Self::Ltu => 0x06,
+            Self::Lt => 0x07,
             Self::Add => 0x0a,
+            Self::Sub => 0x0b,
+            Self::And => 0x0e,
+            Self::Or => 0x0f,
+            Self::Xor => 0x10,
+            Self::Sll => 0x21,
+            Self::Srl => 0x22,
+            Self::Sra => 0x23,
             Self::SignExtendB => 0x27,
             Self::SignExtendH => 0x28,
             Self::SignExtendW => 0x29,
@@ -112,30 +130,40 @@ pub fn lower_guest_report(
     validate_sequential_next_pc(report)?;
     match report.instruction {
         RiscvInstruction::OpImm {
-            kind: RiscvOpImmKind::Addi,
+            kind,
             rd,
             rs1,
             immediate,
-        } => Ok(lower_addi(
-            report.address,
-            instruction_size,
-            rd,
-            rs1,
-            immediate,
-        )),
-        RiscvInstruction::Op {
-            kind: RiscvOpKind::Add,
-            rd,
-            rs1,
-            rs2,
-        } => Ok(binary_register_op(
-            report.address,
-            instruction_size,
-            rd,
-            rs1,
-            rs2,
-            ZiskMainOp::Add,
-        )),
+        } => match kind {
+            RiscvOpImmKind::Addi => Ok(lower_addi(
+                report.address,
+                instruction_size,
+                rd,
+                rs1,
+                immediate,
+            )),
+            _ => Ok(binary_immediate_op(
+                report.address,
+                instruction_size,
+                rd,
+                rs1,
+                immediate,
+                op_imm_kind(kind),
+            )),
+        },
+        RiscvInstruction::Op { kind, rd, rs1, rs2 } => match op_kind(kind) {
+            Some(op) => Ok(binary_register_op(
+                report.address,
+                instruction_size,
+                rd,
+                rs1,
+                rs2,
+                op,
+            )),
+            None => Err(ZiskMainLowerError::UnsupportedInstruction {
+                instruction: report.instruction,
+            }),
+        },
         RiscvInstruction::Load {
             kind,
             rd,
@@ -261,6 +289,24 @@ fn binary_register_op(
     )
 }
 
+fn binary_immediate_op(
+    pc: u64,
+    instruction_size: i64,
+    rd: u8,
+    rs1: u8,
+    immediate: i64,
+    op: ZiskMainOp,
+) -> ZiskMainInstruction {
+    base_instruction(
+        pc,
+        register_source(rs1),
+        ZiskMainSource::Immediate(immediate as u64),
+        op,
+        register_store(rd),
+        instruction_size,
+    )
+}
+
 fn lower_load(
     pc: u64,
     instruction_size: i64,
@@ -311,6 +357,43 @@ fn load_op_width(kind: RiscvLoadKind) -> Option<(ZiskMainOp, u64)> {
         RiscvLoadKind::Lhu => Some((ZiskMainOp::CopyB, 2)),
         RiscvLoadKind::Lwu => Some((ZiskMainOp::CopyB, 4)),
         RiscvLoadKind::Ld => Some((ZiskMainOp::CopyB, 8)),
+    }
+}
+
+fn op_imm_kind(kind: RiscvOpImmKind) -> ZiskMainOp {
+    match kind {
+        RiscvOpImmKind::Addi => ZiskMainOp::Add,
+        RiscvOpImmKind::Slti => ZiskMainOp::Lt,
+        RiscvOpImmKind::Sltiu => ZiskMainOp::Ltu,
+        RiscvOpImmKind::Xori => ZiskMainOp::Xor,
+        RiscvOpImmKind::Ori => ZiskMainOp::Or,
+        RiscvOpImmKind::Andi => ZiskMainOp::And,
+        RiscvOpImmKind::Slli => ZiskMainOp::Sll,
+        RiscvOpImmKind::Srli => ZiskMainOp::Srl,
+        RiscvOpImmKind::Srai => ZiskMainOp::Sra,
+    }
+}
+
+fn op_kind(kind: RiscvOpKind) -> Option<ZiskMainOp> {
+    match kind {
+        RiscvOpKind::Add => Some(ZiskMainOp::Add),
+        RiscvOpKind::Sub => Some(ZiskMainOp::Sub),
+        RiscvOpKind::Sll => Some(ZiskMainOp::Sll),
+        RiscvOpKind::Slt => Some(ZiskMainOp::Lt),
+        RiscvOpKind::Sltu => Some(ZiskMainOp::Ltu),
+        RiscvOpKind::Xor => Some(ZiskMainOp::Xor),
+        RiscvOpKind::Srl => Some(ZiskMainOp::Srl),
+        RiscvOpKind::Sra => Some(ZiskMainOp::Sra),
+        RiscvOpKind::Or => Some(ZiskMainOp::Or),
+        RiscvOpKind::And => Some(ZiskMainOp::And),
+        RiscvOpKind::Mul
+        | RiscvOpKind::Mulh
+        | RiscvOpKind::Mulhsu
+        | RiscvOpKind::Mulhu
+        | RiscvOpKind::Div
+        | RiscvOpKind::Divu
+        | RiscvOpKind::Rem
+        | RiscvOpKind::Remu => None,
     }
 }
 

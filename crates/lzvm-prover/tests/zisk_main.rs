@@ -50,6 +50,84 @@ fn lowers_register_add_as_binary_op() {
 }
 
 #[test]
+fn lowers_register_alu_ops_as_binary_ops() {
+    let cases = [
+        (RiscvOpKind::Sub, ZiskMainOp::Sub),
+        (RiscvOpKind::Sll, ZiskMainOp::Sll),
+        (RiscvOpKind::Slt, ZiskMainOp::Lt),
+        (RiscvOpKind::Sltu, ZiskMainOp::Ltu),
+        (RiscvOpKind::Xor, ZiskMainOp::Xor),
+        (RiscvOpKind::Srl, ZiskMainOp::Srl),
+        (RiscvOpKind::Sra, ZiskMainOp::Sra),
+        (RiscvOpKind::Or, ZiskMainOp::Or),
+        (RiscvOpKind::And, ZiskMainOp::And),
+    ];
+
+    for (kind, op) in cases {
+        let instruction = lower_guest_report(&report(
+            4,
+            RiscvInstruction::Op {
+                kind,
+                rd: 6,
+                rs1: 4,
+                rs2: 5,
+            },
+        ))
+        .expect("register ALU op should lower");
+
+        assert_eq!(instruction.a, ZiskMainSource::Register(4));
+        assert_eq!(instruction.b, ZiskMainSource::Register(5));
+        assert_eq!(instruction.op, op);
+        assert_eq!(instruction.store, ZiskMainStore::Register(6));
+    }
+}
+
+#[test]
+fn lowers_immediate_alu_ops_as_binary_ops() {
+    let cases = [
+        (RiscvOpImmKind::Slti, ZiskMainOp::Lt),
+        (RiscvOpImmKind::Sltiu, ZiskMainOp::Ltu),
+        (RiscvOpImmKind::Xori, ZiskMainOp::Xor),
+        (RiscvOpImmKind::Ori, ZiskMainOp::Or),
+        (RiscvOpImmKind::Andi, ZiskMainOp::And),
+        (RiscvOpImmKind::Slli, ZiskMainOp::Sll),
+        (RiscvOpImmKind::Srli, ZiskMainOp::Srl),
+        (RiscvOpImmKind::Srai, ZiskMainOp::Sra),
+    ];
+
+    for (kind, op) in cases {
+        let instruction = lower_guest_report(&report(
+            4,
+            RiscvInstruction::OpImm {
+                kind,
+                rd: 6,
+                rs1: 4,
+                immediate: -3,
+            },
+        ))
+        .expect("immediate ALU op should lower");
+
+        assert_eq!(instruction.a, ZiskMainSource::Register(4));
+        assert_eq!(instruction.b, ZiskMainSource::Immediate((-3_i64) as u64));
+        assert_eq!(instruction.op, op);
+        assert_eq!(instruction.store, ZiskMainStore::Register(6));
+    }
+}
+
+#[test]
+fn uses_zisk_alu_op_codes() {
+    assert_eq!(ZiskMainOp::Ltu.code(), 0x06);
+    assert_eq!(ZiskMainOp::Lt.code(), 0x07);
+    assert_eq!(ZiskMainOp::Sub.code(), 0x0b);
+    assert_eq!(ZiskMainOp::And.code(), 0x0e);
+    assert_eq!(ZiskMainOp::Or.code(), 0x0f);
+    assert_eq!(ZiskMainOp::Xor.code(), 0x10);
+    assert_eq!(ZiskMainOp::Sll.code(), 0x21);
+    assert_eq!(ZiskMainOp::Srl.code(), 0x22);
+    assert_eq!(ZiskMainOp::Sra.code(), 0x23);
+}
+
+#[test]
 fn lowers_doubleword_load_as_indirect_copy_to_register() {
     let instruction = lower_guest_report(&report(
         4,

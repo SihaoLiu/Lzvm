@@ -792,7 +792,28 @@ fn zisk_main_op_result(op: ZiskMainOp, a: u64, b: u64) -> (u64, bool) {
     match op {
         ZiskMainOp::Flag => (0, true),
         ZiskMainOp::CopyB => (b, false),
+        ZiskMainOp::Ltu => {
+            if a < b {
+                (1, true)
+            } else {
+                (0, false)
+            }
+        }
+        ZiskMainOp::Lt => {
+            if (a as i64) < (b as i64) {
+                (1, true)
+            } else {
+                (0, false)
+            }
+        }
         ZiskMainOp::Add => (a.wrapping_add(b), false),
+        ZiskMainOp::Sub => (a.wrapping_sub(b), false),
+        ZiskMainOp::And => (a & b, false),
+        ZiskMainOp::Or => (a | b, false),
+        ZiskMainOp::Xor => (a ^ b, false),
+        ZiskMainOp::Sll => (a.wrapping_shl((b as u32) & 0x3f), false),
+        ZiskMainOp::Srl => (a.wrapping_shr((b as u32) & 0x3f), false),
+        ZiskMainOp::Sra => (((a as i64) >> ((b as u32) & 0x3f)) as u64, false),
         ZiskMainOp::SignExtendB => ((b as i8) as u64, false),
         ZiskMainOp::SignExtendH => ((b as i16) as u64, false),
         ZiskMainOp::SignExtendW => ((b as i32) as u64, false),
