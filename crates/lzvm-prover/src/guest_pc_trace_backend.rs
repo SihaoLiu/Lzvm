@@ -1,11 +1,14 @@
 use std::fmt;
 
-use crate::guest_machine::{run_guest_machine_trace, GuestMachineMemory, GuestMachineRunError};
+use crate::guest_machine::{
+    run_guest_machine_trace_with_fcalls, GuestMachineMemory, GuestMachineRunError,
+};
 use crate::guest_memory::{load_guest_memory_image, GuestMemoryError};
 use crate::witness_loader::{
     WitnessBackend, WitnessCallError, WitnessComputeContext, WitnessTraceBuffers,
     WitnessTraceOutput,
 };
+use crate::zisk_fcalls::{ZiskInputFcallError, ZiskInputFcallHandler};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestPcTraceBackend {
@@ -42,6 +45,7 @@ enum GuestPcTraceBackendError {
     MissingGuestImageInfo,
     GuestImageIo(std::io::Error),
     GuestMemory(GuestMemoryError),
+    ZiskInput(ZiskInputFcallError),
     GuestRun(GuestMachineRunError),
     OutputOverflow {
         produced_len: usize,
@@ -62,6 +66,9 @@ impl fmt::Display for GuestPcTraceBackendError {
             Self::GuestMemory(error) => {
                 write!(f, "guest PC trace backend guest memory load failed: {error}")
             }
+            Self::ZiskInput(error) => {
+                write!(f, "guest PC trace backend Zisk input setup failed: {error}")
+            }
             Self::GuestRun(error) => write!(f, "guest PC trace backend guest run failed: {error}"),
             Self::OutputOverflow {
                 produced_len,
@@ -79,6 +86,7 @@ impl std::error::Error for GuestPcTraceBackendError {
         match self {
             Self::GuestImageIo(error) => Some(error),
             Self::GuestMemory(error) => Some(error),
+            Self::ZiskInput(error) => Some(error),
             Self::GuestRun(error) => Some(error),
             Self::MissingGuestImage | Self::MissingGuestImageInfo | Self::OutputOverflow { .. } => {
                 None
@@ -121,8 +129,15 @@ fn compute_guest_pc_trace(
         .map_err(GuestPcTraceBackendError::GuestMemory)?;
     let mut memory = GuestMachineMemory::from_image(&memory_image);
     let mut state = crate::guest_machine::GuestMachineState::new(memory.entry_address());
-    let trace = run_guest_machine_trace(&mut memory, &mut state, instruction_limit)
-        .map_err(GuestPcTraceBackendError::GuestRun)?;
+    let mut fcall_handler =
+        ZiskInputFcallHandler::new(buffers.input()).map_err(GuestPcTraceBackendError::ZiskInput)?;
+    let trace = run_guest_machine_trace_with_fcalls(
+        &mut memory,
+        &mut state,
+        &mut fcall_handler,
+        instruction_limit,
+    )
+    .map_err(GuestPcTraceBackendError::GuestRun)?;
     let produced_len =
         trace
             .reports

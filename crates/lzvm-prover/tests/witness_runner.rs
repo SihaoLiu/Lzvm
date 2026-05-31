@@ -13,6 +13,7 @@ use lzvm_prover::witness_runner::{
     run_witness_trace, run_witness_trace_with_context, WitnessTraceRequest, WitnessTraceRunError,
 };
 use lzvm_prover::witness_trace::WitnessTraceError;
+use lzvm_prover::zisk_fcalls::{ZISK_INPUT_ADDRESS, ZISK_INPUT_READY_FCALL_ID};
 
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("lzvm-witness-runner-{}-{name}", std::process::id()))
@@ -97,6 +98,69 @@ fn encode_i(immediate: i16, rs1: u8, funct3: u8, rd: u8, opcode: u8) -> u32 {
 
 fn addi(rd: u8, rs1: u8, immediate: i16) -> u32 {
     encode_i(immediate, rs1, 0, rd, 0x13)
+}
+
+fn load(funct3: u8, rd: u8, rs1: u8, offset: i16) -> u32 {
+    encode_i(offset, rs1, funct3, rd, 0x03)
+}
+
+fn lbu(rd: u8, rs1: u8, offset: i16) -> u32 {
+    load(4, rd, rs1, offset)
+}
+
+fn lui(rd: u8, immediate: u32) -> u32 {
+    assert!(rd < 32);
+    assert_eq!(immediate & 0x0fff, 0);
+    (immediate & 0xffff_f000) | (u32::from(rd) << 7) | 0x37
+}
+
+fn encode_csr(rd: u8, csr: u16, funct3: u8, source: u8) -> u32 {
+    assert!(rd < 32);
+    assert!(csr < 4096);
+    assert!(funct3 < 8);
+    assert!(source < 32);
+    (u32::from(csr) << 20)
+        | (u32::from(source) << 15)
+        | (u32::from(funct3) << 12)
+        | (u32::from(rd) << 7)
+        | 0x73
+}
+
+fn csrs(csr: u16, rs1: u8) -> u32 {
+    encode_csr(0, csr, 2, rs1)
+}
+
+fn csrwi(csr: u16, immediate: u8) -> u32 {
+    encode_csr(0, csr, 5, immediate)
+}
+
+fn encode_b(offset: i16, rs1: u8, rs2: u8, funct3: u8) -> u32 {
+    assert!((-4096..=4094).contains(&offset));
+    assert_eq!(offset & 1, 0);
+    assert!(rs1 < 32);
+    assert!(rs2 < 32);
+    assert!(funct3 < 8);
+    let immediate = offset as i32 as u32;
+    (((immediate >> 12) & 1) << 31)
+        | (((immediate >> 5) & 0x3f) << 25)
+        | (u32::from(rs2) << 20)
+        | (u32::from(rs1) << 15)
+        | (u32::from(funct3) << 12)
+        | (((immediate >> 1) & 0x0f) << 8)
+        | (((immediate >> 11) & 1) << 7)
+        | 0x63
+}
+
+fn bne(rs1: u8, rs2: u8, offset: i16) -> u32 {
+    encode_b(offset, rs1, rs2, 1)
+}
+
+fn framed_stdin_chunk(payload: &[u8]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+    bytes.extend_from_slice(payload);
+    bytes.resize(bytes.len().next_multiple_of(8), 0);
+    bytes
 }
 
 struct NativeBackend;
@@ -226,6 +290,56 @@ fn guest_pc_trace_backend_runs_guest_image_from_context() {
     assert_eq!(
         trace.value(1, 1),
         Some(Felt::from_canonical(ENTRY + 8).expect("canonical"))
+    );
+}
+
+#[test]
+fn guest_pc_trace_backend_uses_framed_input_for_zisk_free_calls() {
+    let dir = temp_dir("guest-pc-trace-input");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        lui(5, ZISK_INPUT_ADDRESS as u32),
+        addi(6, 5, 16),
+        csrs(0x08f0, 6),
+        csrwi(0x08c0, ZISK_INPUT_READY_FCALL_ID as u8),
+        lbu(7, 5, 16),
+        bne(7, 0, 12),
+        addi(1, 0, 1),
+        0x0000_0073,
+        addi(1, 0, 2),
+        0x0000_0073,
+    ]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+        },
+        WitnessTraceRequest::new(framed_stdin_chunk(&[7]), 7, 2),
+    )
+    .expect("guest PC trace should use witness input");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        trace.value(5, 0),
+        Some(Felt::from_canonical(ENTRY + 20).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(5, 1),
+        Some(Felt::from_canonical(ENTRY + 32).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 0),
+        Some(Felt::from_canonical(ENTRY + 32).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 1),
+        Some(Felt::from_canonical(ENTRY + 36).expect("canonical"))
     );
 }
 
