@@ -163,6 +163,136 @@ fn lowers_branch_ops_as_pc_relative_flag_offsets() {
 }
 
 #[test]
+fn lowers_lui_and_auipc_as_immediate_rows() {
+    let lui = lower_guest_report(&report(
+        4,
+        RiscvInstruction::Lui {
+            rd: 3,
+            immediate: -4096,
+        },
+    ))
+    .expect("lui should lower");
+
+    assert_eq!(lui.a, ZiskMainSource::Immediate(0));
+    assert_eq!(lui.b, ZiskMainSource::Immediate((-4096_i64) as u64));
+    assert_eq!(lui.op, ZiskMainOp::CopyB);
+    assert_eq!(lui.store, ZiskMainStore::Register(3));
+    assert!(!lui.store_pc);
+    assert!(!lui.set_pc);
+    assert_eq!(lui.jmp_offset1, 4);
+    assert_eq!(lui.jmp_offset2, 4);
+
+    let auipc = lower_guest_report(&report(
+        4,
+        RiscvInstruction::Auipc {
+            rd: 4,
+            immediate: 0x3000,
+        },
+    ))
+    .expect("auipc should lower");
+
+    assert_eq!(auipc.a, ZiskMainSource::Immediate(0));
+    assert_eq!(auipc.b, ZiskMainSource::Immediate(0));
+    assert_eq!(auipc.op, ZiskMainOp::Flag);
+    assert_eq!(auipc.store, ZiskMainStore::Register(4));
+    assert!(auipc.store_pc);
+    assert!(!auipc.set_pc);
+    assert_eq!(auipc.jmp_offset1, 4);
+    assert_eq!(auipc.jmp_offset2, 0x3000);
+
+    let auipc_x0 = lower_guest_report(&report(
+        4,
+        RiscvInstruction::Auipc {
+            rd: 0,
+            immediate: 0x2000,
+        },
+    ))
+    .expect("auipc to x0 should lower");
+
+    assert_eq!(auipc_x0.store, ZiskMainStore::None);
+    assert!(!auipc_x0.store_pc);
+    assert_eq!(auipc_x0.jmp_offset1, 4);
+    assert_eq!(auipc_x0.jmp_offset2, 0x2000);
+}
+
+#[test]
+fn lowers_jump_rows_as_pc_store_control_flow() {
+    let jal = lower_guest_report(&report_with_next_pc(
+        4,
+        PC + 12,
+        RiscvInstruction::Jal { rd: 5, offset: 12 },
+    ))
+    .expect("jal should lower");
+
+    assert_eq!(jal.a, ZiskMainSource::Immediate(0));
+    assert_eq!(jal.b, ZiskMainSource::Immediate(0));
+    assert_eq!(jal.op, ZiskMainOp::Flag);
+    assert_eq!(jal.store, ZiskMainStore::Register(5));
+    assert!(jal.store_pc);
+    assert!(!jal.set_pc);
+    assert_eq!(jal.jmp_offset1, 12);
+    assert_eq!(jal.jmp_offset2, 4);
+
+    let jalr = lower_guest_report(&report_with_next_pc(
+        4,
+        PC + 0x100,
+        RiscvInstruction::Jalr {
+            rd: 6,
+            rs1: 7,
+            offset: -8,
+        },
+    ))
+    .expect("even-offset jalr should lower");
+
+    assert_eq!(jalr.a, ZiskMainSource::Immediate(!1));
+    assert_eq!(jalr.b, ZiskMainSource::Register(7));
+    assert_eq!(jalr.op, ZiskMainOp::And);
+    assert_eq!(jalr.store, ZiskMainStore::Register(6));
+    assert!(jalr.store_pc);
+    assert!(jalr.set_pc);
+    assert_eq!(jalr.jmp_offset1, -8);
+    assert_eq!(jalr.jmp_offset2, 4);
+}
+
+#[test]
+fn lowers_pc_store_to_x0_without_register_store() {
+    let instruction = lower_guest_report(&report_with_next_pc(
+        4,
+        PC + 12,
+        RiscvInstruction::Jal { rd: 0, offset: 12 },
+    ))
+    .expect("jump to x0 should lower");
+
+    assert_eq!(instruction.store, ZiskMainStore::None);
+    assert!(!instruction.store_pc);
+}
+
+#[test]
+fn rejects_odd_offset_jalr_for_single_row_lowering() {
+    let error = lower_guest_report(&report_with_next_pc(
+        4,
+        PC + 0x100,
+        RiscvInstruction::Jalr {
+            rd: 6,
+            rs1: 7,
+            offset: 3,
+        },
+    ))
+    .expect_err("odd-offset jalr needs multi-row lowering");
+
+    assert_eq!(
+        error,
+        ZiskMainLowerError::UnsupportedInstruction {
+            instruction: RiscvInstruction::Jalr {
+                rd: 6,
+                rs1: 7,
+                offset: 3
+            }
+        }
+    );
+}
+
+#[test]
 fn lowers_doubleword_load_as_indirect_copy_to_register() {
     let instruction = lower_guest_report(&report(
         4,

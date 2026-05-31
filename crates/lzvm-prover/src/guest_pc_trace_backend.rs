@@ -709,6 +709,7 @@ fn validate_zisk_main_memory_accesses(
     let mut expected = Vec::new();
     expected.extend(a_access);
     expected.extend(b_access);
+    let store_value = zisk_main_store_value(instruction, c);
     if let ZiskMainStore::Indirect(offset) = instruction.store {
         let byte_len = usize::try_from(instruction.ind_width)
             .map_err(|_| GuestPcTraceBackendError::UnsupportedZiskMainStore { row })?;
@@ -716,7 +717,7 @@ fn validate_zisk_main_memory_accesses(
             kind: GuestMemoryAccessKind::Write,
             address: a.wrapping_add_signed(offset),
             byte_len,
-            value: low_bytes_value(c, byte_len),
+            value: low_bytes_value(store_value, byte_len),
         });
     }
     if report.memory_accesses.len() != expected.len() {
@@ -861,6 +862,7 @@ fn apply_zisk_main_store(
     report: &GuestMachineReport,
     state: &mut ZiskMainTraceState,
 ) -> Result<(), GuestPcTraceBackendError> {
+    let store_value = zisk_main_store_value(instruction, c);
     match instruction.store {
         ZiskMainStore::None => {
             if !report.register_writes.is_empty() {
@@ -880,16 +882,16 @@ fn apply_zisk_main_store(
                     ),
                 });
             };
-            if write.index != index || write.value != c {
+            if write.index != index || write.value != store_value {
                 return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
                     row,
                     message: format!(
-                        "expected x{index} = {c}, found x{} = {}",
+                        "expected x{index} = {store_value}, found x{} = {}",
                         write.index, write.value
                     ),
                 });
             }
-            state.registers[usize::from(index)] = c;
+            state.registers[usize::from(index)] = store_value;
         }
         ZiskMainStore::Indirect(_) => {
             if !report.register_writes.is_empty() {
@@ -905,6 +907,14 @@ fn apply_zisk_main_store(
     }
     state.last_c = c;
     Ok(())
+}
+
+fn zisk_main_store_value(instruction: &ZiskMainInstruction, c: u64) -> u64 {
+    if instruction.store_pc {
+        instruction.pc.wrapping_add_signed(instruction.jmp_offset2)
+    } else {
+        c
+    }
 }
 
 fn write_layout_pc_trace(

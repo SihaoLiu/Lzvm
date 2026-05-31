@@ -129,24 +129,38 @@ pub fn lower_guest_report(
     report: &GuestMachineReport,
 ) -> Result<ZiskMainInstruction, ZiskMainLowerError> {
     let instruction_size = instruction_size_offset(report.address, report.instruction_byte_len)?;
-    if let RiscvInstruction::Branch {
-        kind,
-        rs1,
-        rs2,
-        offset,
-    } = report.instruction
-    {
-        return Ok(lower_branch(
-            report.address,
-            instruction_size,
+    match report.instruction {
+        RiscvInstruction::Branch {
             kind,
             rs1,
             rs2,
             offset,
-        ));
+        } => {
+            return Ok(lower_branch(
+                report.address,
+                instruction_size,
+                kind,
+                rs1,
+                rs2,
+                offset,
+            ));
+        }
+        RiscvInstruction::Jal { rd, offset } => {
+            return Ok(lower_jal(report.address, instruction_size, rd, offset));
+        }
+        RiscvInstruction::Jalr { rd, rs1, offset } => {
+            return lower_jalr(report.address, instruction_size, rd, rs1, offset);
+        }
+        _ => {}
     }
     validate_sequential_next_pc(report)?;
     match report.instruction {
+        RiscvInstruction::Lui { rd, immediate } => {
+            Ok(lower_lui(report.address, instruction_size, rd, immediate))
+        }
+        RiscvInstruction::Auipc { rd, immediate } => {
+            Ok(lower_auipc(report.address, instruction_size, rd, immediate))
+        }
         RiscvInstruction::OpImm {
             kind,
             rd,
@@ -366,6 +380,77 @@ fn lower_store(
     instruction
 }
 
+fn lower_lui(pc: u64, instruction_size: i64, rd: u8, immediate: i64) -> ZiskMainInstruction {
+    base_instruction(
+        pc,
+        ZiskMainSource::Immediate(0),
+        ZiskMainSource::Immediate(immediate as u64),
+        ZiskMainOp::CopyB,
+        register_store(rd),
+        instruction_size,
+    )
+}
+
+fn lower_auipc(pc: u64, instruction_size: i64, rd: u8, immediate: i64) -> ZiskMainInstruction {
+    let (store, store_pc) = register_pc_store(rd);
+    let mut instruction = base_instruction(
+        pc,
+        ZiskMainSource::Immediate(0),
+        ZiskMainSource::Immediate(0),
+        ZiskMainOp::Flag,
+        store,
+        instruction_size,
+    );
+    instruction.store_pc = store_pc;
+    instruction.jmp_offset1 = instruction_size;
+    instruction.jmp_offset2 = immediate;
+    instruction
+}
+
+fn lower_jal(pc: u64, instruction_size: i64, rd: u8, offset: i64) -> ZiskMainInstruction {
+    let (store, store_pc) = register_pc_store(rd);
+    let mut instruction = base_instruction(
+        pc,
+        ZiskMainSource::Immediate(0),
+        ZiskMainSource::Immediate(0),
+        ZiskMainOp::Flag,
+        store,
+        instruction_size,
+    );
+    instruction.store_pc = store_pc;
+    instruction.jmp_offset1 = offset;
+    instruction.jmp_offset2 = instruction_size;
+    instruction
+}
+
+fn lower_jalr(
+    pc: u64,
+    instruction_size: i64,
+    rd: u8,
+    rs1: u8,
+    offset: i64,
+) -> Result<ZiskMainInstruction, ZiskMainLowerError> {
+    if offset % 2 != 0 {
+        return Err(ZiskMainLowerError::UnsupportedInstruction {
+            instruction: RiscvInstruction::Jalr { rd, rs1, offset },
+        });
+    }
+    let (store, store_pc) = register_pc_store(rd);
+    let mut instruction = base_instruction(
+        pc,
+        ZiskMainSource::Immediate(!1),
+        register_source(rs1),
+        ZiskMainOp::And,
+        store,
+        instruction_size,
+    );
+    instruction.store_pc = store_pc;
+    instruction.set_pc = true;
+    instruction.jmp_offset1 = offset;
+    instruction.jmp_offset2 = instruction_size;
+    Ok(instruction)
+}
+
 fn lower_branch(
     pc: u64,
     instruction_size: i64,
@@ -500,4 +585,10 @@ fn register_store(index: u8) -> ZiskMainStore {
     } else {
         ZiskMainStore::Register(index)
     }
+}
+
+fn register_pc_store(index: u8) -> (ZiskMainStore, bool) {
+    let store = register_store(index);
+    let store_pc = matches!(store, ZiskMainStore::Register(_));
+    (store, store_pc)
 }

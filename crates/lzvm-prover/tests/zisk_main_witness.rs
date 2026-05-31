@@ -88,6 +88,10 @@ fn addi(rd: u8, rs1: u8, immediate: i16) -> u32 {
     encode_i(immediate, rs1, 0, rd, 0x13)
 }
 
+fn jalr(rd: u8, rs1: u8, offset: i16) -> u32 {
+    encode_i(offset, rs1, 0, rd, 0x67)
+}
+
 fn op_imm(rd: u8, rs1: u8, immediate: i16, funct3: u8) -> u32 {
     encode_i(immediate, rs1, funct3, rd, 0x13)
 }
@@ -202,6 +206,33 @@ fn sw(rs1: u8, rs2: u8, offset: i16) -> u32 {
 
 fn sd(rs1: u8, rs2: u8, offset: i16) -> u32 {
     store(3, rs1, rs2, offset)
+}
+
+fn upper_immediate(rd: u8, immediate: u32, opcode: u8) -> u32 {
+    assert!(rd < 32);
+    assert_eq!(immediate & 0x0fff, 0);
+    (immediate & 0xffff_f000) | (u32::from(rd) << 7) | u32::from(opcode)
+}
+
+fn lui(rd: u8, immediate: u32) -> u32 {
+    upper_immediate(rd, immediate, 0x37)
+}
+
+fn auipc(rd: u8, immediate: u32) -> u32 {
+    upper_immediate(rd, immediate, 0x17)
+}
+
+fn jal(rd: u8, offset: i32) -> u32 {
+    assert!(rd < 32);
+    assert_eq!(offset & 1, 0);
+    assert!((-1_048_576..=1_048_574).contains(&offset));
+    let offset = offset as u32;
+    (((offset >> 20) & 1) << 31)
+        | (((offset >> 1) & 0x03ff) << 21)
+        | (((offset >> 11) & 1) << 20)
+        | (((offset >> 12) & 0xff) << 12)
+        | (u32::from(rd) << 7)
+        | 0x6f
 }
 
 fn branch(funct3: u8, rs1: u8, rs2: u8, offset: i16) -> u32 {
@@ -1034,4 +1065,124 @@ fn guest_pc_trace_backend_writes_zisk_main_branch_rows() {
     assert_cell(&trace, 9, 15, 0x09);
     assert_cell(&trace, 9, 16, 4);
     assert_signed_cell(&trace, 9, 17, -4);
+}
+
+#[test]
+fn guest_pc_trace_backend_writes_zisk_main_jump_and_pc_store_rows() {
+    let dir = temp_dir("jump-pc-store");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let code_words = [
+        lui(1, 0x1234_5000),
+        auipc(2, 0x1000),
+        jal(3, 8),
+        addi(4, 0, 111),
+        auipc(5, 0),
+        addi(5, 5, 15),
+        jalr(6, 5, 2),
+        addi(7, 0, 222),
+        addi(8, 0, 9),
+        0x0000_0073,
+    ];
+    let guest_image_bytes = sample_guest_image_with_words(&code_words);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(7);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("Zisk Main layout should write jump rows");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 7);
+    assert_eq!(trace.column_count(), 27);
+
+    assert_wide(&trace, 0, 2, 0x1234_5000);
+    assert_wide(&trace, 0, 4, 0x1234_5000);
+    assert_cell(&trace, 0, 12, 1);
+    assert_eq!(trace.value(0, 13), Some(Felt::ZERO));
+    assert_eq!(trace.value(0, 14), Some(Felt::ZERO));
+    assert_cell(&trace, 0, 15, 0x01);
+
+    assert_cell(&trace, 1, 4, 0);
+    assert_cell(&trace, 1, 6, 1);
+    assert_cell(&trace, 1, 7, ENTRY + 4);
+    assert_cell(&trace, 1, 12, 1);
+    assert_cell(&trace, 1, 13, 1);
+    assert_eq!(trace.value(1, 14), Some(Felt::ZERO));
+    assert_cell(&trace, 1, 15, 0x00);
+    assert_cell(&trace, 1, 16, 4);
+    assert_cell(&trace, 1, 17, 0x1000);
+
+    assert_cell(&trace, 2, 4, 0);
+    assert_cell(&trace, 2, 6, 1);
+    assert_cell(&trace, 2, 7, ENTRY + 8);
+    assert_cell(&trace, 2, 12, 1);
+    assert_cell(&trace, 2, 13, 1);
+    assert_eq!(trace.value(2, 14), Some(Felt::ZERO));
+    assert_cell(&trace, 2, 15, 0x00);
+    assert_cell(&trace, 2, 16, 8);
+    assert_cell(&trace, 2, 17, 4);
+
+    assert_cell(&trace, 3, 7, ENTRY + 16);
+    assert_cell(&trace, 3, 13, 1);
+    assert_cell(&trace, 3, 17, 0);
+
+    assert_wide(&trace, 4, 0, ENTRY + 16);
+    assert_cell(&trace, 4, 2, 15);
+    assert_wide(&trace, 4, 4, ENTRY + 31);
+
+    assert_wide(&trace, 5, 0, !1);
+    assert_wide(&trace, 5, 2, ENTRY + 31);
+    assert_wide(&trace, 5, 4, ENTRY + 30);
+    assert_eq!(trace.value(5, 6), Some(Felt::ZERO));
+    assert_cell(&trace, 5, 7, ENTRY + 24);
+    assert_cell(&trace, 5, 12, 1);
+    assert_cell(&trace, 5, 13, 1);
+    assert_cell(&trace, 5, 14, 1);
+    assert_cell(&trace, 5, 15, 0x0e);
+    assert_cell(&trace, 5, 16, 2);
+    assert_cell(&trace, 5, 17, 4);
+
+    assert_cell(&trace, 6, 7, ENTRY + 32);
+    assert_cell(&trace, 6, 4, 9);
+}
+
+#[test]
+fn guest_pc_trace_backend_rejects_odd_offset_jalr_zisk_main_row() {
+    let dir = temp_dir("odd-jalr");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let code_words = [auipc(5, 0), jalr(0, 5, 9), 0x0000_0073];
+    let guest_image_bytes = sample_guest_image_with_words(&code_words);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(2);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let error = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect_err("odd-offset jalr is not a single-row Zisk Main instruction");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let message = error.to_string();
+    assert!(message.contains("Zisk Main lowering failed"));
+    assert!(message.contains("Jalr"));
 }
