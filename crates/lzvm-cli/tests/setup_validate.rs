@@ -11980,7 +11980,8 @@ fn runs_setup_aware_verify_preflight_with_source_generated_key_directory() {
     let source_path = dir.join("main.pil");
     write_bytes(
         &source_path,
-        "airtemplate UnitA() { }\n\
+        "public block_number;\n\
+         airtemplate UnitA() { }\n\
          airgroup GroupA { UnitA(); }\n\
          col fixed main.left = [5, 1];\n\
          col fixed main.right = [9, 9];",

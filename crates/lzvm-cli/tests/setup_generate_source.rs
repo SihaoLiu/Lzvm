@@ -2566,6 +2566,75 @@ fn generate_key_skips_template_parameter_inactive_public_values() {
 }
 
 #[test]
+fn generate_key_refreshes_existing_source_metadata() {
+    let dir = temp_dir("refresh-source-metadata");
+    let _ = fs::remove_dir_all(&dir);
+    let source_path = dir.join("source").join("main.pil");
+    write_file(
+        &source_path,
+        "public input;\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];\n\
+         col fixed main.right = [9, 8];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+
+    write_file(
+        &source_path,
+        "public inputs[4];\n\
+         airtemplate UnitA() { }\n\
+         airgroup GroupA { UnitA(); }\n\
+         col fixed main.left = [5, 1];\n\
+         col fixed main.right = [9, 8];",
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "setup",
+            "generate-key",
+            "--source",
+            source_path.to_str().expect("source path should be utf-8"),
+            dir.to_str().expect("directory path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let global = read_global_info_binary_file(dir.join("pilout.globalInfo.bin"))
+        .expect("source global metadata should parse");
+    assert_eq!(global.n_publics, 4);
+    assert_eq!(global.publics_map.len(), 1);
+    assert_eq!(global.publics_map[0].name, "inputs");
+    assert_eq!(global.publics_map[0].lengths, [4]);
+
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+    assert!(String::from_utf8(stdout)
+        .expect("stdout should be utf-8")
+        .contains("status=ok\n"));
+}
+
+#[test]
 fn generate_key_skips_inactive_source_public_tables() {
     let dir = temp_dir("inactive-public-table-metadata");
     let _ = fs::remove_dir_all(&dir);

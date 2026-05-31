@@ -1,6 +1,8 @@
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use lzvm_artifacts::source_fixed_file_manifest::SOURCE_FIXED_FILE_MANIFEST_FILE;
+use lzvm_artifacts::source_program::SOURCE_PROGRAM_ARCHIVE_FILE;
 use lzvm_setup::{
     write_fixed_columns_from_source_directory, write_key_directory, write_source_companions,
     write_source_key_directory_metadata, FixedExtensionBackend, KeyDirectoryWriteReport,
@@ -8,6 +10,8 @@ use lzvm_setup::{
     SourceFixedColumnsDirectoryWriteReport, SourceFixedColumnsDirectoryWriteRequest,
     SourceKeyDirectoryMetadataRequest,
 };
+
+const SOURCE_GENERATION_STACK_BYTES: usize = 128 * 1024 * 1024;
 
 pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     let parsed = match parse_args(args) {
@@ -20,28 +24,11 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     };
 
     let source_report = if let Some(main_file) = parsed.source.as_ref() {
-        if !parsed.setup_dir.join("pilout.globalInfo.bin").is_file() {
-            match write_source_key_directory_metadata(&SourceKeyDirectoryMetadataRequest {
-                working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-                include_paths: parsed.include_paths.clone(),
-                include_path_first: parsed.include_path_first,
-                main_file: main_file.clone(),
-                setup_dir: parsed.setup_dir.clone(),
-            }) {
-                Ok(_) => {}
-                Err(error) => {
-                    let _ = writeln!(stderr, "setup key generation failed: {error}");
-                    return 1;
-                }
-            }
-        }
-        match write_fixed_columns_from_source_directory(&SourceFixedColumnsDirectoryWriteRequest {
-            working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-            include_paths: parsed.include_paths.clone(),
-            include_path_first: parsed.include_path_first,
-            main_file: main_file.clone(),
-            setup_dir: parsed.setup_dir.clone(),
-        }) {
+        match run_source_generation(
+            &parsed,
+            main_file.clone(),
+            should_write_source_metadata(&parsed.setup_dir),
+        ) {
             Ok(report) => Some(report),
             Err(error) => {
                 let _ = writeln!(stderr, "setup key generation failed: {error}");
@@ -85,6 +72,49 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             1
         }
     }
+}
+
+fn run_source_generation(
+    parsed: &ParsedArgs,
+    main_file: PathBuf,
+    write_source_metadata: bool,
+) -> Result<SourceFixedColumnsDirectoryWriteReport, String> {
+    let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let include_paths = parsed.include_paths.clone();
+    let include_path_first = parsed.include_path_first;
+    let setup_dir = parsed.setup_dir.clone();
+    std::thread::Builder::new()
+        .name("lzvm-source-generation".to_owned())
+        .stack_size(SOURCE_GENERATION_STACK_BYTES)
+        .spawn(move || {
+            if write_source_metadata {
+                write_source_key_directory_metadata(&SourceKeyDirectoryMetadataRequest {
+                    working_dir: working_dir.clone(),
+                    include_paths: include_paths.clone(),
+                    include_path_first,
+                    main_file: main_file.clone(),
+                    setup_dir: setup_dir.clone(),
+                })
+                .map_err(|error| error.to_string())?;
+            }
+            write_fixed_columns_from_source_directory(&SourceFixedColumnsDirectoryWriteRequest {
+                working_dir,
+                include_paths,
+                include_path_first,
+                main_file,
+                setup_dir,
+            })
+            .map_err(|error| error.to_string())
+        })
+        .map_err(|error| format!("source generation worker failed to start: {error}"))?
+        .join()
+        .map_err(|_| "source generation worker panicked".to_owned())?
+}
+
+fn should_write_source_metadata(setup_dir: &Path) -> bool {
+    !setup_dir.join("pilout.globalInfo.bin").is_file()
+        || setup_dir.join(SOURCE_PROGRAM_ARCHIVE_FILE).is_file()
+        || setup_dir.join(SOURCE_FIXED_FILE_MANIFEST_FILE).is_file()
 }
 
 struct ParsedArgs {

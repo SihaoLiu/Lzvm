@@ -261,6 +261,7 @@ pub fn write_source_key_directory_metadata(
     let verifier_bytes = encode_verifier_info(&source_verifier_info())?;
 
     let mut bytes_written = 0_u64;
+    let previous_global_info_bytes = std::fs::read(&global_info_path).ok();
     bytes_written = bytes_written.saturating_add(write_validated_bytes(
         &global_info_path,
         &global_info_bytes,
@@ -392,7 +393,16 @@ pub fn write_source_key_directory_metadata(
     let (unit_count, unit_payloads) = match payload_result {
         Ok(payload) => payload,
         Err(error) => {
-            let _ = std::fs::remove_file(&global_info_path);
+            if let Some(bytes) = previous_global_info_bytes {
+                let _ = write_validated_bytes(
+                    &global_info_path,
+                    &bytes,
+                    "restore source global metadata staging file",
+                    "restore source global metadata",
+                );
+            } else {
+                let _ = std::fs::remove_file(&global_info_path);
+            }
             return Err(error);
         }
     };
