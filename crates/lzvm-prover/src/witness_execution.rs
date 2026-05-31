@@ -112,6 +112,66 @@ struct WitnessSharedInputs {
     publics: Vec<Felt>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct WitnessProofInputs<'a> {
+    publics: &'a [Felt],
+    auxiliary_inputs: &'a ProveWitnessAuxiliaryInputs,
+}
+
+type WitnessFixedColumnsLoadResult =
+    Result<crate::FixedColumnsMaterial, ProveWitnessCommitmentError>;
+type WitnessFixedColumnsLoader =
+    fn(usize, &ProveExecutionUnitArtifacts) -> WitnessFixedColumnsLoadResult;
+
+struct WitnessFixedColumnsCache<L = WitnessFixedColumnsLoader>
+where
+    L: FnMut(usize, &ProveExecutionUnitArtifacts) -> WitnessFixedColumnsLoadResult,
+{
+    material: Option<crate::FixedColumnsMaterial>,
+    loader: L,
+}
+
+impl WitnessFixedColumnsCache<WitnessFixedColumnsLoader> {
+    fn new() -> Self {
+        Self::with_loader(load_witness_fixed_columns_material)
+    }
+}
+
+impl<L> WitnessFixedColumnsCache<L>
+where
+    L: FnMut(usize, &ProveExecutionUnitArtifacts) -> WitnessFixedColumnsLoadResult,
+{
+    fn with_loader(loader: L) -> Self {
+        Self {
+            material: None,
+            loader,
+        }
+    }
+
+    fn get_or_load(
+        &mut self,
+        unit_index: usize,
+        plan_unit: &ProveExecutionUnitArtifacts,
+        layout: &WitnessTraceLayout,
+    ) -> Result<&crate::FixedColumnsMaterial, ProveWitnessCommitmentError> {
+        if self.material.is_none() {
+            let material = (self.loader)(unit_index, plan_unit)?;
+            validate_fixed_columns_shape(
+                &material.fixed_columns,
+                plan_unit.fixed_column_count,
+                layout.row_count(),
+                unit_index,
+                &plan_unit.fixed_columns,
+            )?;
+            self.material = Some(material);
+        }
+        Ok(self
+            .material
+            .as_ref()
+            .expect("fixed columns material should be cached after load"))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProveWitnessCommitmentError {
     UnitIndexOutOfRange {
@@ -557,13 +617,18 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
                 unit_index,
                 unit_count: plan.units.len(),
             })?;
+    let mut fixed_columns = WitnessFixedColumnsCache::new();
+    let proof_inputs = WitnessProofInputs {
+        publics: &shared_inputs.publics,
+        auxiliary_inputs: &auxiliary_inputs,
+    };
     validate_witness_regular_constraints(
         execution_unit,
         unit_index,
         &layout,
         &trace,
-        &shared_inputs.publics,
-        &auxiliary_inputs,
+        &mut fixed_columns,
+        proof_inputs,
     )?;
     if let Some(source_lookup_balance) = source_lookup_balance {
         accumulate_witness_regular_hints(
@@ -571,8 +636,8 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
             unit_index,
             &layout,
             &trace,
-            &shared_inputs.publics,
-            &auxiliary_inputs,
+            &mut fixed_columns,
+            proof_inputs,
             source_lookup_balance,
         )?;
     } else {
@@ -784,26 +849,22 @@ fn accumulate_witness_global_hints(
     Ok(())
 }
 
-fn validate_witness_regular_constraints(
+fn validate_witness_regular_constraints<L>(
     plan_unit: &ProveExecutionUnitArtifacts,
     unit_index: usize,
     layout: &WitnessTraceLayout,
     trace: &WitnessTraceBuffer,
-    publics: &[Felt],
-    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
-) -> Result<(), ProveWitnessCommitmentError> {
+    fixed_columns: &mut WitnessFixedColumnsCache<L>,
+    proof_inputs: WitnessProofInputs<'_>,
+) -> Result<(), ProveWitnessCommitmentError>
+where
+    L: FnMut(usize, &ProveExecutionUnitArtifacts) -> WitnessFixedColumnsLoadResult,
+{
     if plan_unit.regular_constraints.entries.is_empty() {
         return Ok(());
     }
 
-    let material = load_witness_fixed_columns_material(unit_index, plan_unit)?;
-    validate_fixed_columns_shape(
-        &material.fixed_columns,
-        plan_unit.fixed_column_count,
-        layout.row_count(),
-        unit_index,
-        &plan_unit.fixed_columns,
-    )?;
+    let material = fixed_columns.get_or_load(unit_index, plan_unit, layout)?;
 
     let stage_traces = layout
         .stages()
@@ -854,12 +915,12 @@ fn validate_witness_regular_constraints(
                 column_count: zerofiers.column_count,
                 values: &zerofiers.values,
             },
-            publics,
-            unit_values: &auxiliary_inputs.unit_values,
-            proof_values: &auxiliary_inputs.proof_values,
-            group_values: &auxiliary_inputs.group_values,
-            challenges: &auxiliary_inputs.challenges,
-            evaluations: &auxiliary_inputs.evaluations,
+            publics: proof_inputs.publics,
+            unit_values: &proof_inputs.auxiliary_inputs.unit_values,
+            proof_values: &proof_inputs.auxiliary_inputs.proof_values,
+            group_values: &proof_inputs.auxiliary_inputs.group_values,
+            challenges: &proof_inputs.auxiliary_inputs.challenges,
+            evaluations: &proof_inputs.auxiliary_inputs.evaluations,
         },
     )
     .map_err(|error| map_regular_constraint_eval_error(unit_index, error))?;
@@ -907,28 +968,36 @@ fn validate_witness_regular_hints(
     auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
 ) -> Result<(), ProveWitnessCommitmentError> {
     let mut source_lookup_balance = SourceLookupBalance::default();
+    let mut fixed_columns = WitnessFixedColumnsCache::new();
+    let proof_inputs = WitnessProofInputs {
+        publics,
+        auxiliary_inputs,
+    };
     accumulate_witness_regular_hints(
         plan_unit,
         unit_index,
         layout,
         trace,
-        publics,
-        auxiliary_inputs,
+        &mut fixed_columns,
+        proof_inputs,
         &mut source_lookup_balance,
     )?;
     source_lookup_balance.validate(unit_index)?;
     Ok(())
 }
 
-fn accumulate_witness_regular_hints(
+fn accumulate_witness_regular_hints<L>(
     plan_unit: &ProveExecutionUnitArtifacts,
     unit_index: usize,
     layout: &WitnessTraceLayout,
     trace: &WitnessTraceBuffer,
-    publics: &[Felt],
-    auxiliary_inputs: &ProveWitnessAuxiliaryInputs,
+    fixed_columns_cache: &mut WitnessFixedColumnsCache<L>,
+    proof_inputs: WitnessProofInputs<'_>,
     source_lookup_balance: &mut SourceLookupBalance,
-) -> Result<(), ProveWitnessCommitmentError> {
+) -> Result<(), ProveWitnessCommitmentError>
+where
+    L: FnMut(usize, &ProveExecutionUnitArtifacts) -> WitnessFixedColumnsLoadResult,
+{
     if plan_unit.regular_hints.hints.is_empty() {
         return Ok(());
     }
@@ -937,15 +1006,7 @@ fn accumulate_witness_regular_hints(
     let requirements = regular_hint_input_requirements(&plan_unit.regular_hints);
 
     let fixed_material = if requirements.fixed_columns {
-        let material = load_witness_fixed_columns_material(unit_index, plan_unit)?;
-        validate_fixed_columns_shape(
-            &material.fixed_columns,
-            plan_unit.fixed_column_count,
-            layout.row_count(),
-            unit_index,
-            &plan_unit.fixed_columns,
-        )?;
-        Some(material)
+        Some(fixed_columns_cache.get_or_load(unit_index, plan_unit, layout)?)
     } else {
         None
     };
@@ -998,12 +1059,12 @@ fn accumulate_witness_regular_hints(
                 opening_point_offsets: &plan_unit.opening_point_offsets,
                 domain_points: &[],
                 zerofier_values: RegularColumnMatrix::default(),
-                publics,
-                unit_values: &auxiliary_inputs.unit_values,
-                proof_values: &auxiliary_inputs.proof_values,
-                group_values: &auxiliary_inputs.group_values,
-                challenges: &auxiliary_inputs.challenges,
-                evaluations: &auxiliary_inputs.evaluations,
+                publics: proof_inputs.publics,
+                unit_values: &proof_inputs.auxiliary_inputs.unit_values,
+                proof_values: &proof_inputs.auxiliary_inputs.proof_values,
+                group_values: &proof_inputs.auxiliary_inputs.group_values,
+                challenges: &proof_inputs.auxiliary_inputs.challenges,
+                evaluations: &proof_inputs.auxiliary_inputs.evaluations,
             },
         )
         .map_err(|error| map_regular_hint_eval_error(unit_index, error))?;
@@ -1125,6 +1186,8 @@ mod tests {
     use super::*;
     use crate::witness_layout::derive_witness_trace_layout;
     use crate::witness_trace::parse_witness_trace;
+    use lzvm_artifacts::constraint_program::{ConstraintEntry, ConstraintProgram};
+    use lzvm_artifacts::fixed::FixedColumn;
     use lzvm_artifacts::global_info::{CurveKind, GlobalInfo};
     use lzvm_artifacts::guest_image::{ElfClass, ElfEndian, GuestImageInfo};
     use lzvm_artifacts::hint_program::{
@@ -1134,8 +1197,11 @@ mod tests {
         SOURCE_UNSUPPORTED_STATEMENT_HINT,
     };
     use lzvm_artifacts::key_directory::KeyUnitKind;
-    use lzvm_artifacts::setup_info::{CommitmentColumn, FriStep, StarkStruct, UnitSetupInfo};
+    use lzvm_artifacts::setup_info::{
+        CommitmentColumn, ConstantColumn, FriStep, StarkStruct, UnitSetupInfo,
+    };
     use lzvm_artifacts::trace_bundle::TraceBundleUnit;
+    use std::cell::Cell;
 
     #[test]
     fn rejects_trace_bundles_with_unexpected_units() {
@@ -1156,6 +1222,82 @@ mod tests {
             .expect_err("trace bundle should not carry units outside the plan");
 
         assert_eq!(error, "trace bundle has unexpected unit 2");
+    }
+
+    #[test]
+    fn reuses_loaded_fixed_column_material_for_unit() {
+        let loads = Cell::new(0);
+        let plan_unit = source_lookup_plan_unit(HintProgram { hints: Vec::new() });
+        let schedule = source_lookup_schedule();
+        let layout = derive_witness_trace_layout(&schedule).expect("layout should derive");
+        let mut cache = WitnessFixedColumnsCache::with_loader(|unit_index, _| {
+            assert_eq!(unit_index, 0);
+            loads.set(loads.get() + 1);
+            Ok(empty_fixed_columns_material(
+                u64::try_from(layout.row_count()).expect("row count should fit u64"),
+            ))
+        });
+
+        assert_eq!(
+            cache
+                .get_or_load(0, &plan_unit, &layout)
+                .expect("material should load")
+                .row_major_values
+                .len(),
+            0
+        );
+        assert_eq!(
+            cache
+                .get_or_load(0, &plan_unit, &layout)
+                .expect("material should be reused")
+                .row_major_values
+                .len(),
+            0
+        );
+        assert_eq!(loads.get(), 1);
+    }
+
+    #[test]
+    fn shares_fixed_column_material_between_regular_checks() {
+        let loads = Cell::new(0);
+        let plan_unit = fixed_lookup_plan_unit();
+        let schedule = source_lookup_schedule();
+        let layout = derive_witness_trace_layout(&schedule).expect("layout should derive");
+        let trace = source_lookup_trace(&[7, 1, 8, 2]);
+        let mut cache = WitnessFixedColumnsCache::with_loader(|unit_index, _| {
+            assert_eq!(unit_index, 0);
+            loads.set(loads.get() + 1);
+            Ok(single_fixed_columns_material(&[3, 5]))
+        });
+        let auxiliary_inputs = ProveWitnessAuxiliaryInputs::default();
+        let proof_inputs = WitnessProofInputs {
+            publics: &[],
+            auxiliary_inputs: &auxiliary_inputs,
+        };
+
+        validate_witness_regular_constraints(
+            &plan_unit,
+            0,
+            &layout,
+            &trace,
+            &mut cache,
+            proof_inputs,
+        )
+        .expect("constraint check should validate");
+
+        let mut source_lookup_balance = SourceLookupBalance::default();
+        accumulate_witness_regular_hints(
+            &plan_unit,
+            0,
+            &layout,
+            &trace,
+            &mut cache,
+            proof_inputs,
+            &mut source_lookup_balance,
+        )
+        .expect("regular hints should accumulate");
+
+        assert_eq!(loads.get(), 1);
     }
 
     #[test]
@@ -1581,6 +1723,38 @@ mod tests {
         }
     }
 
+    fn source_lookup_constant_hint() -> Hint {
+        Hint {
+            name: SOURCE_LOOKUP_PROVES_HINT.to_owned(),
+            fields: vec![
+                HintField {
+                    name: "bus_id".to_owned(),
+                    values: vec![HintValue {
+                        operand: HintOperand::Number(7),
+                        positions: Vec::new(),
+                    }],
+                },
+                HintField {
+                    name: "values".to_owned(),
+                    values: vec![HintValue {
+                        operand: HintOperand::Constant {
+                            id: 0,
+                            row_offset_index: 0,
+                        },
+                        positions: Vec::new(),
+                    }],
+                },
+                HintField {
+                    name: "multiplicity".to_owned(),
+                    values: vec![HintValue {
+                        operand: HintOperand::Number(1),
+                        positions: Vec::new(),
+                    }],
+                },
+            ],
+        }
+    }
+
     fn source_lookup_global_plan(global_hints: HintProgram) -> ProveExecutionPlan {
         ProveExecutionPlan {
             run_plan: crate::ProveRunPlan {
@@ -1660,6 +1834,47 @@ mod tests {
             opening_point_offsets: vec![0],
             group_name: "group".to_owned(),
             unit_name: "unit".to_owned(),
+        }
+    }
+
+    fn fixed_lookup_plan_unit() -> ProveExecutionUnitArtifacts {
+        let mut unit = source_lookup_plan_unit(HintProgram {
+            hints: vec![source_lookup_constant_hint()],
+        });
+        unit.fixed_column_count = 1;
+        unit.regular_constraints = zero_constraint_program();
+        unit.setup.n_constants = 1;
+        unit.setup.constant_columns = vec![ConstantColumn {
+            name: "constant".to_owned(),
+            stage: 0,
+            dimension: 1,
+            pols_map_id: 0,
+            stage_id: 0,
+            lengths: Vec::new(),
+        }];
+        unit
+    }
+
+    fn zero_constraint_program() -> ConstraintProgram {
+        ConstraintProgram {
+            entries: vec![ConstraintEntry {
+                stage: 1,
+                destination_dimension: 1,
+                destination_id: 0,
+                first_row: 0,
+                last_row: 2,
+                temp1_count: 1,
+                temp3_count: 0,
+                ops_count: 0,
+                ops_offset: 0,
+                args_count: 0,
+                args_offset: 0,
+                intermediate: false,
+                source_line: "0".to_owned(),
+            }],
+            ops: Vec::new(),
+            args: Vec::new(),
+            numbers: Vec::new(),
         }
     }
 
@@ -1768,5 +1983,42 @@ mod tests {
             .flat_map(|value| value.to_le_bytes())
             .collect::<Vec<_>>();
         parse_witness_trace(&bytes, 2, 2).expect("trace should parse")
+    }
+
+    fn empty_fixed_columns_material(row_count: u64) -> crate::FixedColumnsMaterial {
+        crate::FixedColumnsMaterial {
+            fixed_columns: FixedColumns {
+                group_name: "group".to_owned(),
+                unit_name: "unit".to_owned(),
+                row_count,
+                columns: Vec::new(),
+            },
+            row_major_values: Vec::new(),
+            raw_bytes: Vec::new(),
+            #[cfg(feature = "cuda")]
+            device_buffer: None,
+        }
+    }
+
+    fn single_fixed_columns_material(values: &[u64]) -> crate::FixedColumnsMaterial {
+        crate::FixedColumnsMaterial {
+            fixed_columns: FixedColumns {
+                group_name: "group".to_owned(),
+                unit_name: "unit".to_owned(),
+                row_count: u64::try_from(values.len()).expect("row count should fit u64"),
+                columns: vec![FixedColumn {
+                    name: "constant".to_owned(),
+                    dimensions: Vec::new(),
+                    values: values.to_vec(),
+                }],
+            },
+            row_major_values: values
+                .iter()
+                .map(|value| Felt::from_canonical(*value).expect("value should be canonical"))
+                .collect(),
+            raw_bytes: Vec::new(),
+            #[cfg(feature = "cuda")]
+            device_buffer: None,
+        }
     }
 }
