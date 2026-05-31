@@ -1,6 +1,7 @@
 use lzvm_prover::guest_instruction::{
     RiscvAmoWidth, RiscvBranchKind, RiscvCsr, RiscvFenceKind, RiscvInstruction, RiscvLoadKind,
-    RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvPrecompileKind,
+    RiscvStoreKind,
 };
 use lzvm_prover::guest_machine::{GuestMachineReport, ZISK_ARCHITECTURE_ID};
 use lzvm_prover::zisk_main::{
@@ -328,6 +329,34 @@ fn uses_zisk_alu_op_codes() {
     assert_eq!(ZiskMainOp::RemuW.code(), 0xbd);
     assert_eq!(ZiskMainOp::DivW.code(), 0xbe);
     assert_eq!(ZiskMainOp::RemW.code(), 0xbf);
+}
+
+#[test]
+fn lowers_zisk_precompile_ops_as_precompiled_rows() {
+    let cases = [
+        (RiscvPrecompileKind::Add256, 0xf0, 6),
+        (RiscvPrecompileKind::Keccak, 0xf1, 0),
+        (RiscvPrecompileKind::Arith256, 0xf2, 0),
+        (RiscvPrecompileKind::Arith256Mod, 0xf3, 0),
+        (RiscvPrecompileKind::Secp256k1Add, 0xf4, 0),
+        (RiscvPrecompileKind::Secp256k1Dbl, 0xf5, 0),
+    ];
+
+    for (kind, op_code, rd) in cases {
+        let instruction = lower_guest_report(&report(
+            4,
+            RiscvInstruction::ZiskPrecompile { kind, rs1: 4, rd },
+        ))
+        .expect("precompile op should lower");
+
+        assert_eq!(instruction.a, ZiskMainSource::Immediate(0));
+        assert_eq!(instruction.b, ZiskMainSource::Register(4));
+        assert_eq!(instruction.op.code(), op_code);
+        assert_eq!(instruction.store, register_store(rd));
+        assert!(instruction.is_precompiled);
+        assert!(!instruction.is_external_op);
+        assert!(!instruction.m32);
+    }
 }
 
 #[test]
@@ -882,5 +911,14 @@ fn report_with_next_pc(
         next_pc,
         register_writes: Vec::new(),
         memory_accesses: Vec::new(),
+        precompile_result: None,
+    }
+}
+
+fn register_store(index: u8) -> ZiskMainStore {
+    if index == 0 {
+        ZiskMainStore::None
+    } else {
+        ZiskMainStore::Register(index)
     }
 }

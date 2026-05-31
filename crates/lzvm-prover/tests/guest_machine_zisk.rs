@@ -544,9 +544,10 @@ fn advances_zisk_add256_precompile() {
         .set_register(10, params_address)
         .expect("params register should set");
 
-    advance_guest_machine(&mut memory, &mut state).expect("add256 should execute");
+    let report = advance_guest_machine(&mut memory, &mut state).expect("add256 should execute");
 
     assert_eq!(read_u64_array(&memory, c_address), [0, 0, 0, 0]);
     assert_eq!(state.register(5), Some(1));
+    assert_eq!(report.precompile_result, Some(1));
     assert_eq!(state.pc(), ENTRY + 4);
 }

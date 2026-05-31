@@ -512,7 +512,7 @@ fn write_zisk_main_report_columns(
         Some(a),
         instruction.ind_width,
     )?;
-    let (c, flag) = zisk_main_op_result(instruction.op, a, b);
+    let (c, flag) = zisk_main_instruction_result(row, &instruction, a, b, report)?;
     validate_zisk_main_next_pc(row, &instruction, report, c, flag)?;
     validate_zisk_main_memory_accesses(row, &instruction, report, a, c, a_access, b_access)?;
 
@@ -856,6 +856,73 @@ fn zisk_main_op_result(op: ZiskMainOp, a: u64, b: u64) -> (u64, bool) {
         ZiskMainOp::SignExtendB => ((b as i8) as u64, false),
         ZiskMainOp::SignExtendH => ((b as i16) as u64, false),
         ZiskMainOp::SignExtendW => ((b as i32) as u64, false),
+        ZiskMainOp::Add256
+        | ZiskMainOp::Keccak
+        | ZiskMainOp::Arith256
+        | ZiskMainOp::Arith256Mod
+        | ZiskMainOp::Secp256k1Add
+        | ZiskMainOp::Secp256k1Dbl => (0, false),
+    }
+}
+
+fn zisk_main_instruction_result(
+    row: usize,
+    instruction: &ZiskMainInstruction,
+    a: u64,
+    b: u64,
+    report: &GuestMachineReport,
+) -> Result<(u64, bool), GuestPcTraceBackendError> {
+    match instruction.op {
+        ZiskMainOp::Add256 if instruction.is_precompiled => {
+            zisk_main_add256_result(row, instruction, report)
+        }
+        ZiskMainOp::Keccak
+        | ZiskMainOp::Arith256
+        | ZiskMainOp::Arith256Mod
+        | ZiskMainOp::Secp256k1Add
+        | ZiskMainOp::Secp256k1Dbl
+            if instruction.is_precompiled =>
+        {
+            Ok((0, false))
+        }
+        _ => Ok(zisk_main_op_result(instruction.op, a, b)),
+    }
+}
+
+fn zisk_main_add256_result(
+    row: usize,
+    instruction: &ZiskMainInstruction,
+    report: &GuestMachineReport,
+) -> Result<(u64, bool), GuestPcTraceBackendError> {
+    let Some(result) = report.precompile_result else {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message: "Add256 row missing precompile result".to_owned(),
+        });
+    };
+    match instruction.store {
+        ZiskMainStore::None => Ok((result, false)),
+        ZiskMainStore::Register(index) => {
+            let [write] = report.register_writes.as_slice() else {
+                return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                    row,
+                    message: format!(
+                        "Add256 row reported {} register writes",
+                        report.register_writes.len()
+                    ),
+                });
+            };
+            if write.index != index {
+                return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+                    row,
+                    message: format!("expected Add256 result in x{index}, found x{}", write.index),
+                });
+            }
+            Ok((result, false))
+        }
+        ZiskMainStore::Indirect(_) | ZiskMainStore::Memory(_) => {
+            Err(GuestPcTraceBackendError::UnsupportedZiskMainStore { row })
+        }
     }
 }
 

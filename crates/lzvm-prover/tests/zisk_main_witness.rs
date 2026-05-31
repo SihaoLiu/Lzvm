@@ -13,6 +13,8 @@ use lzvm_prover::witness_runner::run_witness_trace_with_context;
 use lzvm_prover::witness_trace::WitnessTraceBuffer;
 use lzvm_prover::ProveUnitSchedule;
 
+mod zisk_main_witness_special_rows;
+
 const ENTRY: u64 = 0x8000_0000;
 const ZISK_ARCHITECTURE_ID: u64 = 0x0fff_eeee;
 
@@ -956,78 +958,6 @@ fn guest_pc_trace_backend_writes_zisk_main_signed_load_rows() {
     assert_cell(&trace, 3, 15, 0x29);
     assert_cell(&trace, 3, 22, 4);
     assert_cell(&trace, 3, 26, 3);
-}
-
-#[test]
-fn guest_pc_trace_backend_writes_zisk_main_load_reserved_rows() {
-    let dir = temp_dir("load-reserved");
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).expect("fixture directory should be created");
-    let guest_image = dir.join("guest.elf");
-    let data_address = 64_u64;
-    let code_words = [
-        addi(1, 0, data_address as i16),
-        lr_w(2, 1),
-        addi(1, 1, 8),
-        lr_d_aqrl(3, 1),
-        0x0000_0073,
-    ];
-    let mut code = Vec::with_capacity(code_words.len() * 4);
-    for word in code_words {
-        code.extend_from_slice(&word.to_le_bytes());
-    }
-    let data_offset = 176_u64 + code.len() as u64;
-    let mut data = Vec::new();
-    data.extend_from_slice(&[0x01, 0x00, 0x00, 0x80, 0xaa, 0xbb, 0xcc, 0xdd]);
-    data.extend_from_slice(&0x0123_4567_89ab_cdef_u64.to_le_bytes());
-    let headers = [
-        program_header_at(176, ENTRY, code.len() as u64),
-        program_header_at(data_offset, data_address, data.len() as u64),
-    ];
-    let mut guest_image_bytes = sample_guest_image_with_program_headers(&headers);
-    guest_image_bytes.resize(176, 0);
-    guest_image_bytes.extend_from_slice(&code);
-    guest_image_bytes.resize(data_offset as usize, 0);
-    guest_image_bytes.extend_from_slice(&data);
-    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
-    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
-    let unit = sample_unit_with_zisk_main_columns_rows(4);
-    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
-
-    let trace = run_witness_trace_with_context(
-        &GuestPcTraceBackend::new(16),
-        WitnessComputeContext {
-            guest_image: Some(&guest_image),
-            guest_image_info: Some(&guest_image_info),
-            trace_layout: Some(&layout),
-        },
-        layout.request(Vec::new()),
-    )
-    .expect("Zisk Main layout should write load-reserved rows");
-    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
-
-    assert_eq!(trace.row_count(), 4);
-    assert_eq!(trace.column_count(), 27);
-
-    assert_wide(&trace, 1, 0, data_address);
-    assert_wide(&trace, 1, 2, 0x8000_0001);
-    assert_wide(&trace, 1, 4, 0xffff_ffff_8000_0001);
-    assert_cell(&trace, 1, 12, 1);
-    assert_cell(&trace, 1, 15, 0x29);
-    assert_cell(&trace, 1, 21, 1);
-    assert_cell(&trace, 1, 22, 4);
-    assert_cell(&trace, 1, 24, 2);
-    assert_eq!(trace.value(1, 26), Some(Felt::ZERO));
-
-    assert_wide(&trace, 3, 0, data_address + 8);
-    assert_wide(&trace, 3, 2, 0x0123_4567_89ab_cdef);
-    assert_wide(&trace, 3, 4, 0x0123_4567_89ab_cdef);
-    assert_cell(&trace, 3, 12, 1);
-    assert_cell(&trace, 3, 15, 0x01);
-    assert_cell(&trace, 3, 21, 1);
-    assert_cell(&trace, 3, 22, 8);
-    assert_cell(&trace, 3, 24, 3);
-    assert_eq!(trace.value(3, 26), Some(Felt::ZERO));
 }
 
 #[test]

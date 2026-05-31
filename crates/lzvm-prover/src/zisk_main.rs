@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::guest_instruction::{
     RiscvAmoWidth, RiscvBranchKind, RiscvCsr, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind,
-    RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvPrecompileKind, RiscvStoreKind,
 };
 use crate::guest_machine::{fixed_csr_value, GuestMachineReport};
 
@@ -59,6 +59,12 @@ pub enum ZiskMainOp {
     SignExtendB,
     SignExtendH,
     SignExtendW,
+    Add256,
+    Keccak,
+    Arith256,
+    Arith256Mod,
+    Secp256k1Add,
+    Secp256k1Dbl,
 }
 
 impl ZiskMainOp {
@@ -98,6 +104,12 @@ impl ZiskMainOp {
             Self::SignExtendB => 0x27,
             Self::SignExtendH => 0x28,
             Self::SignExtendW => 0x29,
+            Self::Add256 => 0xf0,
+            Self::Keccak => 0xf1,
+            Self::Arith256 => 0xf2,
+            Self::Arith256Mod => 0xf3,
+            Self::Secp256k1Add => 0xf4,
+            Self::Secp256k1Dbl => 0xf5,
         }
     }
 }
@@ -312,6 +324,13 @@ pub fn lower_guest_report(
             rs2,
             offset,
             store_width(kind),
+        )),
+        RiscvInstruction::ZiskPrecompile { kind, rs1, rd } => Ok(lower_precompile(
+            report.address,
+            instruction_size,
+            kind,
+            rs1,
+            rd,
         )),
         _ => Err(ZiskMainLowerError::UnsupportedInstruction {
             instruction: report.instruction,
@@ -582,6 +601,25 @@ fn lower_noop_flag(pc: u64, instruction_size: i64) -> ZiskMainInstruction {
     )
 }
 
+fn lower_precompile(
+    pc: u64,
+    instruction_size: i64,
+    kind: RiscvPrecompileKind,
+    rs1: u8,
+    rd: u8,
+) -> ZiskMainInstruction {
+    let mut instruction = base_instruction(
+        pc,
+        ZiskMainSource::Immediate(0),
+        register_source(rs1),
+        precompile_op(kind),
+        register_store(rd),
+        instruction_size,
+    );
+    instruction.is_precompiled = true;
+    instruction
+}
+
 fn lower_csr_read(
     pc: u64,
     instruction_size: i64,
@@ -729,6 +767,17 @@ fn store_width(kind: RiscvStoreKind) -> u64 {
         RiscvStoreKind::Sh => 2,
         RiscvStoreKind::Sw => 4,
         RiscvStoreKind::Sd => 8,
+    }
+}
+
+fn precompile_op(kind: RiscvPrecompileKind) -> ZiskMainOp {
+    match kind {
+        RiscvPrecompileKind::Add256 => ZiskMainOp::Add256,
+        RiscvPrecompileKind::Keccak => ZiskMainOp::Keccak,
+        RiscvPrecompileKind::Arith256 => ZiskMainOp::Arith256,
+        RiscvPrecompileKind::Arith256Mod => ZiskMainOp::Arith256Mod,
+        RiscvPrecompileKind::Secp256k1Add => ZiskMainOp::Secp256k1Add,
+        RiscvPrecompileKind::Secp256k1Dbl => ZiskMainOp::Secp256k1Dbl,
     }
 }
 
