@@ -220,6 +220,7 @@ pub fn lower_guest_report(
                 rs2,
                 op,
             )),
+            None if rd == 0 => Ok(lower_noop_flag(report.address, instruction_size)),
             None => Err(ZiskMainLowerError::UnsupportedInstruction {
                 instruction: report.instruction,
             }),
@@ -233,6 +234,7 @@ pub fn lower_guest_report(
                 rs2,
                 op,
             )),
+            None if rd == 0 => Ok(lower_noop_flag(report.address, instruction_size)),
             None => Err(ZiskMainLowerError::UnsupportedInstruction {
                 instruction: report.instruction,
             }),
@@ -531,6 +533,10 @@ fn lower_jalr(
 }
 
 fn lower_fence(pc: u64, instruction_size: i64) -> ZiskMainInstruction {
+    lower_noop_flag(pc, instruction_size)
+}
+
+fn lower_noop_flag(pc: u64, instruction_size: i64) -> ZiskMainInstruction {
     base_instruction(
         pc,
         ZiskMainSource::Immediate(0),
@@ -547,6 +553,9 @@ fn lower_csr_read(
     csr: RiscvCsr,
     rd: u8,
 ) -> Result<ZiskMainInstruction, ZiskMainLowerError> {
+    if rd == 0 {
+        return Ok(lower_noop_flag(pc, instruction_size));
+    }
     let Some(value) = fixed_csr_value(csr).filter(|value| *value <= i64::MAX as u64) else {
         return Err(ZiskMainLowerError::UnsupportedInstruction {
             instruction: RiscvInstruction::CsrRead { csr, rd },

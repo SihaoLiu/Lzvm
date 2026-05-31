@@ -202,6 +202,71 @@ fn rejects_unsupported_word_m_extension_ops() {
 }
 
 #[test]
+fn lowers_discarded_m_extension_ops_as_noop_rows() {
+    let register_cases = [
+        RiscvOpKind::Mul,
+        RiscvOpKind::Mulh,
+        RiscvOpKind::Mulhsu,
+        RiscvOpKind::Mulhu,
+        RiscvOpKind::Div,
+        RiscvOpKind::Divu,
+        RiscvOpKind::Rem,
+        RiscvOpKind::Remu,
+    ];
+
+    for kind in register_cases {
+        let instruction = lower_guest_report(&report(
+            4,
+            RiscvInstruction::Op {
+                kind,
+                rd: 0,
+                rs1: 4,
+                rs2: 5,
+            },
+        ))
+        .expect("discarded M extension op should lower");
+
+        assert_eq!(instruction.a, ZiskMainSource::Immediate(0));
+        assert_eq!(instruction.b, ZiskMainSource::Immediate(0));
+        assert_eq!(instruction.op, ZiskMainOp::Flag);
+        assert_eq!(instruction.store, ZiskMainStore::None);
+        assert!(!instruction.store_pc);
+        assert!(!instruction.set_pc);
+        assert_eq!(instruction.jmp_offset1, 4);
+        assert_eq!(instruction.jmp_offset2, 4);
+        assert!(!instruction.is_external_op);
+    }
+
+    let word_cases = [
+        RiscvOp32Kind::Mulw,
+        RiscvOp32Kind::Divw,
+        RiscvOp32Kind::Divuw,
+        RiscvOp32Kind::Remw,
+        RiscvOp32Kind::Remuw,
+    ];
+
+    for kind in word_cases {
+        let instruction = lower_guest_report(&report(
+            4,
+            RiscvInstruction::Op32 {
+                kind,
+                rd: 0,
+                rs1: 4,
+                rs2: 5,
+            },
+        ))
+        .expect("discarded word M extension op should lower");
+
+        assert_eq!(instruction.a, ZiskMainSource::Immediate(0));
+        assert_eq!(instruction.b, ZiskMainSource::Immediate(0));
+        assert_eq!(instruction.op, ZiskMainOp::Flag);
+        assert_eq!(instruction.store, ZiskMainStore::None);
+        assert!(!instruction.m32);
+        assert!(!instruction.is_external_op);
+    }
+}
+
+#[test]
 fn uses_zisk_alu_op_codes() {
     assert_eq!(ZiskMainOp::Ltu.code(), 0x06);
     assert_eq!(ZiskMainOp::Lt.code(), 0x07);
@@ -449,6 +514,39 @@ fn rejects_counter_csr_reads() {
             error,
             ZiskMainLowerError::UnsupportedInstruction { instruction }
         );
+    }
+}
+
+#[test]
+fn lowers_discarded_csr_reads_as_noop_rows() {
+    let cases = [
+        RiscvCsr::Misa,
+        RiscvCsr::Mvendorid,
+        RiscvCsr::Marchid,
+        RiscvCsr::Mimpid,
+        RiscvCsr::Mhartid,
+        RiscvCsr::Mcycle,
+        RiscvCsr::Minstret,
+        RiscvCsr::Mcycleh,
+        RiscvCsr::Minstreth,
+        RiscvCsr::Cycle,
+        RiscvCsr::Time,
+        RiscvCsr::Instret,
+        RiscvCsr::Cycleh,
+        RiscvCsr::Timeh,
+        RiscvCsr::Instreth,
+    ];
+
+    for csr in cases {
+        let instruction = lower_guest_report(&report(4, RiscvInstruction::CsrRead { csr, rd: 0 }))
+            .expect("discarded CSR read should lower");
+
+        assert_eq!(instruction.a, ZiskMainSource::Immediate(0));
+        assert_eq!(instruction.b, ZiskMainSource::Immediate(0));
+        assert_eq!(instruction.op, ZiskMainOp::Flag);
+        assert_eq!(instruction.store, ZiskMainStore::None);
+        assert_eq!(instruction.jmp_offset1, 4);
+        assert_eq!(instruction.jmp_offset2, 4);
     }
 }
 
