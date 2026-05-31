@@ -39,6 +39,60 @@ fn rejects_trace_bytes_with_aggregate_during_parse() {
 }
 
 #[test]
+fn parses_guest_pc_trace_option_for_witness_args() {
+    let result = parse_witness_args(&[
+        "--guest-pc-trace",
+        "64",
+        "setup-dir",
+        "out-dir",
+        "guest.elf",
+    ])
+    .expect("witness args should parse");
+    let inputs = parsed_inputs(&result);
+
+    assert_eq!(result.guest_pc_trace_instruction_limit, Some(64));
+    assert_eq!(inputs.witness_library, None);
+    assert_eq!(inputs.guest_image, std::path::PathBuf::from("guest.elf"));
+}
+
+#[test]
+fn rejects_guest_pc_trace_with_trace_bytes_during_parse() {
+    let result = parse_witness_args(&[
+        "--guest-pc-trace",
+        "64",
+        "--trace-bytes",
+        "trace.bin",
+        "setup-dir",
+        "out-dir",
+        "guest.elf",
+    ]);
+
+    assert!(matches!(
+        result,
+        Err(ParseError::Invalid(message))
+            if message == "cannot combine --guest-pc-trace with --trace-bytes or --trace-bundle"
+    ));
+}
+
+#[test]
+fn rejects_guest_pc_trace_with_all_units_during_parse() {
+    let result = parse_witness_args(&[
+        "--guest-pc-trace",
+        "64",
+        "--all-units",
+        "setup-dir",
+        "out-dir",
+        "guest.elf",
+    ]);
+
+    assert!(matches!(
+        result,
+        Err(ParseError::Invalid(message))
+            if message == "--guest-pc-trace requires a single-unit witness run"
+    ));
+}
+
+#[test]
 fn rejects_evaluation_values_segment_without_all_units_during_parse() {
     let result = parse_witness_args(&[
         "--evaluation-values-segment",

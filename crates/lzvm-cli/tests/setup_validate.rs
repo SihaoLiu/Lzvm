@@ -115,6 +115,7 @@ use lzvm_prover::contribution::{
     build_contribution_segment, derive_global_challenge_from_contributions,
     derive_global_challenge_from_proof_segments, ProveContributionEntry,
 };
+use lzvm_prover::guest_pc_trace_backend::GuestPcTraceBackend;
 use lzvm_prover::pcs_fri::{verify_fri_fold, verify_fri_opening_folds, PcsFriOpeningFoldRequest};
 use lzvm_prover::pcs_transcript::{
     derive_pcs_transcript_challenges_from_segments, PcsTranscriptSegmentInputs,
@@ -1057,6 +1058,53 @@ fn sample_guest_image() -> Vec<u8> {
     bytes[32..40].copy_from_slice(&64_u64.to_le_bytes());
     bytes[52..54].copy_from_slice(&64_u16.to_le_bytes());
     bytes
+}
+
+fn sample_guest_pc_trace_image() -> Vec<u8> {
+    sample_guest_image_with_words(&[riscv_addi(1, 0, 7), riscv_addi(2, 1, 3), 0x0000_0073])
+}
+
+fn sample_guest_image_with_words(words: &[u32]) -> Vec<u8> {
+    const ENTRY: u64 = 0x8000_0000;
+    const ELF_HEADER_BYTES: usize = 64;
+    const PROGRAM_HEADER_BYTES: usize = 56;
+    const CODE_OFFSET: usize = ELF_HEADER_BYTES + PROGRAM_HEADER_BYTES;
+
+    let mut bytes = vec![0_u8; CODE_OFFSET];
+    bytes[0..4].copy_from_slice(b"\x7fELF");
+    bytes[4] = 2;
+    bytes[5] = 1;
+    bytes[6] = 1;
+    bytes[16..18].copy_from_slice(&2_u16.to_le_bytes());
+    bytes[18..20].copy_from_slice(&243_u16.to_le_bytes());
+    bytes[20..24].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[24..32].copy_from_slice(&ENTRY.to_le_bytes());
+    bytes[32..40].copy_from_slice(&(ELF_HEADER_BYTES as u64).to_le_bytes());
+    bytes[52..54].copy_from_slice(&(ELF_HEADER_BYTES as u16).to_le_bytes());
+    bytes[54..56].copy_from_slice(&(PROGRAM_HEADER_BYTES as u16).to_le_bytes());
+    bytes[56..58].copy_from_slice(&1_u16.to_le_bytes());
+
+    let code_bytes = (words.len() * 4) as u64;
+    let program_header = &mut bytes[ELF_HEADER_BYTES..CODE_OFFSET];
+    program_header[0..4].copy_from_slice(&1_u32.to_le_bytes());
+    program_header[4..8].copy_from_slice(&5_u32.to_le_bytes());
+    program_header[8..16].copy_from_slice(&(CODE_OFFSET as u64).to_le_bytes());
+    program_header[16..24].copy_from_slice(&ENTRY.to_le_bytes());
+    program_header[24..32].copy_from_slice(&ENTRY.to_le_bytes());
+    program_header[32..40].copy_from_slice(&code_bytes.to_le_bytes());
+    program_header[40..48].copy_from_slice(&code_bytes.to_le_bytes());
+    program_header[48..56].copy_from_slice(&4_u64.to_le_bytes());
+
+    for word in words {
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    bytes
+}
+
+fn riscv_addi(rd: u32, rs1: u32, immediate: i32) -> u32 {
+    assert!((-2048..=2047).contains(&immediate));
+    let immediate = (immediate as u32) & 0x0fff;
+    (immediate << 20) | (rs1 << 15) | (rd << 7) | 0x13
 }
 
 fn sample_block_rlp() -> Vec<u8> {
@@ -5454,6 +5502,87 @@ fn runs_prove_witness_commitments_from_trace_bytes() {
         format!(
             "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data={}\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash}\nunit_index=0\ninput_bytes=1\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
             input_data.display(),
+            output_dir.display(),
+            expected_stages
+        )
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn runs_prove_witness_commitments_from_guest_pc_trace() {
+    let dir = temp_dir("prove-witness-guest-pc-trace");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let material_bytes = pcs_material_byte_count(&catalog);
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    write_bytes(&guest_image, sample_guest_pc_trace_image());
+
+    let request = ProveRunRequest {
+        pass: ProvePassRequest::Full(ProvePartitionPlan {
+            input_data: None,
+            partition_count: 1,
+            partition_ids: vec![0],
+            worker_index: 0,
+        }),
+        options: ProveRunOptions::default_for_output(output_dir.clone()),
+        gpu: GpuRunOptions::default(),
+    };
+    let plan = derive_prove_execution_plan(
+        &catalog,
+        request,
+        ProveExecutionInputArtifacts {
+            witness_library: None,
+            guest_image: guest_image.clone(),
+            public_inputs: None,
+        },
+    )
+    .expect("execution plan should derive");
+    let backend = GuestPcTraceBackend::new(8);
+    let output =
+        run_prove_witness_commitments_with_trace_backend(&plan, 0, Default::default(), &backend)
+            .expect("witness commitments should run");
+    let mut expected_stages = String::new();
+    for commitment in output.commitments().stage_commitments().commitments() {
+        let root = commitment
+            .root()
+            .iter()
+            .map(|value| value.to_u64().to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        expected_stages.push_str(&format!(
+            "stage_{}_root={root}\nstage_{}_tree_bytes={}\n",
+            commitment.stage_index(),
+            commitment.stage_index(),
+            commitment.tree_bytes().len()
+        ));
+    }
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--guest-pc-trace",
+            "8",
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        String::from_utf8(stdout).expect("stdout should be utf-8"),
+        format!(
+            "status=ok\npass=full\nunits=4\nfixed_bytes=128\npcs_material_units=4\npcs_material_bytes={material_bytes}\nqueries=4\nmax_extended_domain_bits=2\npartitions=1\npartition_ids=0\nworker=0\ninput_data=none\naggregate=false\nremote_aggregation=false\nfinal_wrap=false\nverify_outputs=true\nsave_outputs=false\nminimal_memory=false\noutput={}\ngpu_preallocate=false\ngpu_streams=20\nwitness_thread_pools=4\nstored_witnesses=4\npack_trace=true\nsetup_hash={setup_hash}\nunit_index=0\ninput_bytes=0\ntrace_rows=2\ntrace_columns=2\nstage_count=2\n{}",
             output_dir.display(),
             expected_stages
         )
@@ -15210,7 +15339,7 @@ fn reports_usage_for_missing_prove_witness_paths() {
     assert!(stdout.is_empty());
     assert_eq!(
         String::from_utf8(stderr).expect("stderr should be utf-8"),
-        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --eth-block-input <block-input>\n  --eth-public-input <public-input>\n  --eth-public-input-allow-trailing\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>\n"
+        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --guest-pc-trace <instruction-limit> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --eth-block-input <block-input>\n  --eth-public-input <public-input>\n  --eth-public-input-allow-trailing\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>\n  --guest-pc-trace <instruction-limit>\n"
     );
 }
 

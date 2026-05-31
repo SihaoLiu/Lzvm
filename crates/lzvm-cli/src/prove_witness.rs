@@ -18,6 +18,7 @@ use lzvm_artifacts::public_values::{
 };
 use lzvm_artifacts::trace_bundle::{parse_trace_bundle_ref, read_trace_bundle_file_bytes};
 use lzvm_field::{Ext3, Felt};
+use lzvm_prover::guest_pc_trace_backend::GuestPcTraceBackend;
 use lzvm_prover::unit_values::ProveUnitValues;
 use lzvm_prover::witness_loader::load_witness_library;
 use lzvm_prover::{
@@ -36,13 +37,15 @@ use crate::eth_block_prove_input::{
 };
 use crate::program_image_cache::write_program_image_cache_summary;
 use crate::prove_plan::{
-    parse_run_args, prepare_requested_gpu_setup, read_checked_setup_catalog, required_option_value,
-    set_default_input_data, validate_all_unit_stored_witness_limit, write_run_plan_summary,
-    write_source_companion_summary, ParseError, ParsedRunArgs,
+    prepare_requested_gpu_setup, read_checked_setup_catalog, set_default_input_data,
+    validate_all_unit_stored_witness_limit, write_run_plan_summary, write_source_companion_summary,
+    ParseError,
 };
 
+mod args;
 mod value_inputs;
 
+use args::{parse_witness_args, parsed_inputs, ParsedWitnessArgs};
 use value_inputs::{
     load_batch_unit_values_inputs, read_challenge_values_proof_segment_input,
     read_challenge_values_segment_input, read_evaluation_values_segment_input,
@@ -137,6 +140,15 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         let _ = writeln!(
             stderr,
             "prove witness failed: --trace-bytes requires a single-unit witness run"
+        );
+        return 1;
+    }
+    if parsed.guest_pc_trace_instruction_limit.is_some()
+        && (parsed.all_units || plan.run_plan.options.aggregate)
+    {
+        let _ = writeln!(
+            stderr,
+            "prove witness failed: --guest-pc-trace requires a single-unit witness run"
         );
         return 1;
     }
@@ -304,6 +316,16 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
                 return 1;
             }
         }
+    } else if let Some(instruction_limit) = parsed.guest_pc_trace_instruction_limit {
+        let backend = GuestPcTraceBackend::new(instruction_limit);
+        match run_prove_witness_commitments_with_trace_backend(&plan, 0, auxiliary_inputs, &backend)
+        {
+            Ok(output) => output,
+            Err(error) => {
+                let _ = writeln!(stderr, "prove witness failed: {error}");
+                return 1;
+            }
+        }
     } else if let Some(bundle) = &trace_bundle {
         let Some(trace_bytes) = bundle.trace_bytes_for_unit(0) else {
             let _ = writeln!(
@@ -427,26 +449,6 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
     0
 }
 
-struct ParsedWitnessArgs {
-    run_args: ParsedRunArgs,
-    all_units: bool,
-    trace_bytes: Option<std::path::PathBuf>,
-    trace_bundle: Option<std::path::PathBuf>,
-    unit_values: Option<std::path::PathBuf>,
-    unit_values_segment: Option<std::path::PathBuf>,
-    proof_values: Option<std::path::PathBuf>,
-    proof_values_segment: Option<std::path::PathBuf>,
-    group_values: Option<std::path::PathBuf>,
-    group_values_segment: Option<std::path::PathBuf>,
-    challenge_values: Option<std::path::PathBuf>,
-    challenge_values_segment: Option<std::path::PathBuf>,
-    evaluation_values: Option<std::path::PathBuf>,
-    evaluation_values_segment: Option<std::path::PathBuf>,
-    eth_block_input: Option<std::path::PathBuf>,
-    eth_public_input: Option<std::path::PathBuf>,
-    eth_public_input_allow_trailing: bool,
-}
-
 struct PreparedPublicInputs {
     inputs: ProveExecutionInputArtifacts,
     generated: bool,
@@ -491,247 +493,6 @@ fn public_values_field_count(public_values: &PublicValues) -> usize {
         .sum()
 }
 
-fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
-    let mut all_units = false;
-    let mut trace_bytes = None;
-    let mut trace_bundle = None;
-    let mut unit_values = None;
-    let mut unit_values_segment = None;
-    let mut proof_values = None;
-    let mut proof_values_segment = None;
-    let mut group_values = None;
-    let mut group_values_segment = None;
-    let mut challenge_values = None;
-    let mut challenge_values_segment = None;
-    let mut evaluation_values = None;
-    let mut evaluation_values_segment = None;
-    let mut eth_block_input = None;
-    let mut eth_public_input = None;
-    let mut eth_public_input_allow_trailing = false;
-    let mut filtered = Vec::with_capacity(args.len());
-    let mut index = 0;
-    while index < args.len() {
-        match args[index] {
-            "--all-units" => all_units = true,
-            "--trace-bytes" => {
-                index += 1;
-                let value = required_option_value(args.get(index), "--trace-bytes")?;
-                if trace_bytes.replace(value.into()).is_some() {
-                    return Err(ParseError::Invalid(
-                        "duplicate --trace-bytes option".to_owned(),
-                    ));
-                }
-            }
-            "--trace-bundle" => {
-                index += 1;
-                let value = required_option_value(args.get(index), "--trace-bundle")?;
-                if trace_bundle.replace(value.into()).is_some() {
-                    return Err(ParseError::Invalid(
-                        "duplicate --trace-bundle option".to_owned(),
-                    ));
-                }
-            }
-            "--unit-values" => {
-                index += 1;
-                let value = required_option_value(args.get(index), "--unit-values")?;
-                if unit_values.replace(value.into()).is_some() {
-                    return Err(ParseError::Invalid(
-                        "duplicate --unit-values option".to_owned(),
-                    ));
-                }
-            }
-            "--unit-values-segment" => {
-                index += 1;
-                let value = required_option_value(args.get(index), "--unit-values-segment")?;
-                if unit_values_segment.replace(value.into()).is_some() {
-                    return Err(ParseError::Invalid(
-                        "duplicate --unit-values-segment option".to_owned(),
-                    ));
-                }
-            }
-            "--proof-values" => {
-                index += 1;
-                let value = required_option_value(args.get(index), "--proof-values")?;
-                if proof_values.replace(value.into()).is_some() {
-                    return Err(ParseError::Invalid(
-                        "duplicate --proof-values option".to_owned(),
-                    ));
-                }
-            }
-            "--proof-values-segment" => {
-                index += 1;
-                let value = required_option_value(args.get(index), "--proof-values-segment")?;
-                if proof_values_segment.replace(value.into()).is_some() {
-                    return Err(ParseError::Invalid(
-                        "duplicate --proof-values-segment option".to_owned(),
-                    ));
-                }
-            }
-            "--group-values" => {
-                index += 1;
-                let value = required_option_value(args.get(index), "--group-values")?;
-                if group_values.replace(value.into()).is_some() {
-                    return Err(ParseError::Invalid(
-                        "duplicate --group-values option".to_owned(),
-                    ));
-                }
-            }
-            "--group-values-segment" => {
-                index += 1;
-                let value = required_option_value(args.get(index), "--group-values-segment")?;
-                if group_values_segment.replace(value.into()).is_some() {
-                    return Err(ParseError::Invalid(
-                        "duplicate --group-values-segment option".to_owned(),
-                    ));
-                }
-            }
-            "--challenge-values" => {
-                index += 1;
-                let value = required_option_value(args.get(index), "--challenge-values")?;
-                if challenge_values.replace(value.into()).is_some() {
-                    return Err(ParseError::Invalid(
-                        "duplicate --challenge-values option".to_owned(),
-                    ));
-                }
-            }
-            "--challenge-values-segment" => {
-                index += 1;
-                let value = required_option_value(args.get(index), "--challenge-values-segment")?;
-                if challenge_values_segment.replace(value.into()).is_some() {
-                    return Err(ParseError::Invalid(
-                        "duplicate --challenge-values-segment option".to_owned(),
-                    ));
-                }
-            }
-            "--evaluation-values" => {
-                index += 1;
-                let value = required_option_value(args.get(index), "--evaluation-values")?;
-                if evaluation_values.replace(value.into()).is_some() {
-                    return Err(ParseError::Invalid(
-                        "duplicate --evaluation-values option".to_owned(),
-                    ));
-                }
-            }
-            "--evaluation-values-segment" => {
-                index += 1;
-                let value = required_option_value(args.get(index), "--evaluation-values-segment")?;
-                if evaluation_values_segment.replace(value.into()).is_some() {
-                    return Err(ParseError::Invalid(
-                        "duplicate --evaluation-values-segment option".to_owned(),
-                    ));
-                }
-            }
-            "--eth-block-input" => {
-                index += 1;
-                let value = required_option_value(args.get(index), "--eth-block-input")?;
-                if eth_block_input.replace(value.into()).is_some() {
-                    return Err(ParseError::Invalid(
-                        "duplicate --eth-block-input option".to_owned(),
-                    ));
-                }
-            }
-            "--eth-public-input" => {
-                index += 1;
-                let value = required_option_value(args.get(index), "--eth-public-input")?;
-                if eth_public_input.replace(value.into()).is_some() {
-                    return Err(ParseError::Invalid(
-                        "duplicate --eth-public-input option".to_owned(),
-                    ));
-                }
-            }
-            "--eth-public-input-allow-trailing" => {
-                if eth_public_input_allow_trailing {
-                    return Err(ParseError::Invalid(
-                        "duplicate --eth-public-input-allow-trailing option".to_owned(),
-                    ));
-                }
-                eth_public_input_allow_trailing = true;
-            }
-            "--program-image-cache" => {
-                index += 1;
-                let value = required_option_value(args.get(index), "--program-image-cache")?;
-                filtered.push("--program-image-cache");
-                filtered.push(value);
-            }
-            _ => filtered.push(args[index]),
-        }
-        index += 1;
-    }
-    if evaluation_values.is_some() && evaluation_values_segment.is_some() {
-        return Err(ParseError::Invalid(
-            "cannot combine --evaluation-values and --evaluation-values-segment".to_owned(),
-        ));
-    }
-    if unit_values.is_some() && unit_values_segment.is_some() {
-        return Err(ParseError::Invalid(
-            "cannot combine --unit-values and --unit-values-segment".to_owned(),
-        ));
-    }
-    if proof_values.is_some() && proof_values_segment.is_some() {
-        return Err(ParseError::Invalid(
-            "cannot combine --proof-values and --proof-values-segment".to_owned(),
-        ));
-    }
-    if group_values.is_some() && group_values_segment.is_some() {
-        return Err(ParseError::Invalid(
-            "cannot combine --group-values and --group-values-segment".to_owned(),
-        ));
-    }
-    if challenge_values.is_some() && challenge_values_segment.is_some() {
-        return Err(ParseError::Invalid(
-            "cannot combine --challenge-values and --challenge-values-segment".to_owned(),
-        ));
-    }
-    if trace_bytes.is_some() && trace_bundle.is_some() {
-        return Err(ParseError::Invalid(
-            "cannot combine --trace-bytes and --trace-bundle".to_owned(),
-        ));
-    }
-    if eth_block_input.is_some() && eth_public_input.is_some() {
-        return Err(ParseError::Invalid(
-            "cannot combine --eth-block-input and --eth-public-input".to_owned(),
-        ));
-    }
-    if eth_public_input_allow_trailing && eth_public_input.is_none() {
-        return Err(ParseError::Invalid(
-            "cannot use --eth-public-input-allow-trailing without --eth-public-input".to_owned(),
-        ));
-    }
-    let trace_mode = trace_bytes.is_some() || trace_bundle.is_some();
-    let min_positionals = if trace_mode { 3 } else { 4 };
-    let max_positionals = if trace_mode { 4 } else { 5 };
-    let run_args = parse_run_args(&filtered, min_positionals, max_positionals)?;
-    if trace_bytes.is_some() && (all_units || run_args.request.options.aggregate) {
-        return Err(ParseError::Invalid(
-            "--trace-bytes requires a single-unit witness run".to_owned(),
-        ));
-    }
-    if evaluation_values_segment.is_some() && !(all_units || run_args.request.options.aggregate) {
-        return Err(ParseError::Invalid(
-            "--evaluation-values-segment requires all-units mode".to_owned(),
-        ));
-    }
-    Ok(ParsedWitnessArgs {
-        run_args,
-        all_units,
-        trace_bytes,
-        trace_bundle,
-        unit_values,
-        unit_values_segment,
-        proof_values,
-        proof_values_segment,
-        group_values,
-        group_values_segment,
-        challenge_values,
-        challenge_values_segment,
-        evaluation_values,
-        evaluation_values_segment,
-        eth_block_input,
-        eth_public_input,
-        eth_public_input_allow_trailing,
-    })
-}
-
 fn prepare_eth_block_input(parsed: &ParsedWitnessArgs) -> Result<PreparedEthBlockInput, String> {
     if let Some(path) = &parsed.eth_block_input {
         return Ok(PreparedEthBlockInput {
@@ -760,26 +521,6 @@ fn prepare_eth_block_input(parsed: &ParsedWitnessArgs) -> Result<PreparedEthBloc
         )?),
         generated_from_public_input: true,
     })
-}
-
-fn parsed_inputs(parsed: &ParsedWitnessArgs) -> ProveExecutionInputArtifacts {
-    let trace_mode = parsed.trace_bytes.is_some() || parsed.trace_bundle.is_some();
-    let witness_library = if trace_mode {
-        None
-    } else {
-        Some(parsed.run_args.positionals[2].clone())
-    };
-    let guest_image_index = if trace_mode { 2 } else { 3 };
-    let public_inputs_index = if trace_mode { 3 } else { 4 };
-    ProveExecutionInputArtifacts {
-        witness_library,
-        guest_image: parsed.run_args.positionals[guest_image_index].clone(),
-        public_inputs: parsed
-            .run_args
-            .positionals
-            .get(public_inputs_index)
-            .cloned(),
-    }
 }
 
 fn prepare_eth_block_public_inputs(
@@ -1287,7 +1028,7 @@ fn write_output_file(path: &Path, value: &[u8]) -> Result<(), String> {
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --eth-block-input <block-input>\n  --eth-public-input <public-input>\n  --eth-public-input-allow-trailing\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>"
+        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --guest-pc-trace <instruction-limit> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --eth-block-input <block-input>\n  --eth-public-input <public-input>\n  --eth-public-input-allow-trailing\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>\n  --guest-pc-trace <instruction-limit>"
     );
     2
 }
