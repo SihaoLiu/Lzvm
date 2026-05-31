@@ -15111,6 +15111,494 @@ fn verifies_contribution_challenge_from_multiple_proof_artifacts() {
 }
 
 #[test]
+fn verifies_contribution_set_with_external_program_image_and_eth_block_bindings() {
+    let dir = temp_dir("verify-contribution-set-bound-inputs");
+    let _ = fs::remove_dir_all(&dir);
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_setup_directory_with_public_values(&dir, &eth_block_public_values_metadata(&block_input));
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should parse");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
+    let entries = sample_contribution_entries(
+        catalog
+            .layout
+            .global_info
+            .lattice_size
+            .expect("lattice size should exist") as usize,
+    );
+    let cache = sample_contribution_program_image_cache(setup_hash);
+    let cache_segment = ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: encode_program_image_cache_segment(&cache).expect("cache segment should encode"),
+    };
+    let block_segment = ProofSegment {
+        id: ETH_BLOCK_INPUT_SEGMENT_ID,
+        data: encode_eth_block_input_segment(&block_input).expect("block segment should encode"),
+    };
+    let public_fields =
+        public_values_as_fields(&public_values).expect("public values should flatten");
+    let expected_challenge = derive_global_challenge_from_proof_segments(
+        &catalog.layout.global_info,
+        &public_fields,
+        &[],
+        &[
+            build_contribution_segment(&entries)
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            cache_segment.clone(),
+            block_segment.clone(),
+        ],
+    )
+    .expect("challenge should derive");
+
+    let proof_a = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            build_contribution_segment(&[entries[0].clone()])
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            cache_segment.clone(),
+            block_segment.clone(),
+            sample_challenge_values_segment(expected_challenge.to_u64s()),
+        ],
+    };
+    let proof_b = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            build_contribution_segment(&[entries[1].clone()])
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            cache_segment.clone(),
+            block_segment.clone(),
+            sample_challenge_values_segment(expected_challenge.to_u64s()),
+        ],
+    };
+    let proof_a_path = dir.join("proof-a.bin");
+    let proof_b_path = dir.join("proof-b.bin");
+    let public_values_path = dir.join("public_values.bin");
+    let block_input_path = dir.join("block.input");
+    let cache_path = dir.join("program_image.cache");
+    write_bytes(
+        &proof_a_path,
+        encode_proof_artifact(&proof_a).expect("proof should encode"),
+    );
+    write_bytes(
+        &proof_b_path,
+        encode_proof_artifact(&proof_b).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+    write_bytes(
+        &block_input_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+    write_bytes(
+        &cache_path,
+        encode_program_image_commitment_cache(&cache).expect("cache should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "contribution-set",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block path should be utf-8"),
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            dir.to_str().expect("setup path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+            proof_a_path.to_str().expect("proof path should be utf-8"),
+            proof_b_path.to_str().expect("proof path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("proofs=2\n"));
+    assert!(stdout_text.contains("eth_block_input_match=ok\n"));
+    assert!(stdout_text.contains("program_image_cache_match=ok\n"));
+    assert!(stdout_text.contains(&format!(
+        "contribution_challenge={},{},{}\n",
+        expected_challenge.c0.to_u64(),
+        expected_challenge.c1.to_u64(),
+        expected_challenge.c2.to_u64()
+    )));
+}
+
+#[test]
+fn verifies_contribution_set_with_allowed_trailing_eth_public_input_binding() {
+    let dir = temp_dir("verify-contribution-set-eth-public-input");
+    let _ = fs::remove_dir_all(&dir);
+    let public_input = sample_public_block_bytes_with_matching_roots();
+    let public_block = parse_eth_public_block_prefix(&public_input).expect("block should parse");
+    let block_input = build_eth_block_input(&public_block.block_rlp()).expect("input should build");
+    write_setup_directory_with_public_values(&dir, &eth_block_public_values_metadata(&block_input));
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should parse");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
+    let entries = sample_contribution_entries(
+        catalog
+            .layout
+            .global_info
+            .lattice_size
+            .expect("lattice size should exist") as usize,
+    );
+    let block_segment = ProofSegment {
+        id: ETH_BLOCK_INPUT_SEGMENT_ID,
+        data: encode_eth_block_input_segment(&block_input).expect("block segment should encode"),
+    };
+    let public_fields =
+        public_values_as_fields(&public_values).expect("public values should flatten");
+    let expected_challenge = derive_global_challenge_from_proof_segments(
+        &catalog.layout.global_info,
+        &public_fields,
+        &[],
+        &[
+            build_contribution_segment(&entries)
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            block_segment.clone(),
+        ],
+    )
+    .expect("challenge should derive");
+
+    let proof_a = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            build_contribution_segment(&[entries[0].clone()])
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            block_segment.clone(),
+            sample_challenge_values_segment(expected_challenge.to_u64s()),
+        ],
+    };
+    let proof_b = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            build_contribution_segment(&[entries[1].clone()])
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            block_segment,
+            sample_challenge_values_segment(expected_challenge.to_u64s()),
+        ],
+    };
+    let proof_a_path = dir.join("proof-a.bin");
+    let proof_b_path = dir.join("proof-b.bin");
+    let public_values_path = dir.join("public_values.bin");
+    let public_input_path = dir.join("public.bin");
+    write_bytes(
+        &proof_a_path,
+        encode_proof_artifact(&proof_a).expect("proof should encode"),
+    );
+    write_bytes(
+        &proof_b_path,
+        encode_proof_artifact(&proof_b).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+    let mut public_input_with_tail = public_input;
+    public_input_with_tail.extend_from_slice(b"tail");
+    write_bytes(&public_input_path, public_input_with_tail);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "contribution-set",
+            "--eth-public-input",
+            public_input_path
+                .to_str()
+                .expect("public input path should be utf-8"),
+            "--eth-public-input-allow-trailing",
+            dir.to_str().expect("setup path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+            proof_a_path.to_str().expect("proof path should be utf-8"),
+            proof_b_path.to_str().expect("proof path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("proofs=2\n"));
+    assert!(stdout_text.contains("eth_block_input_match=ok\n"));
+    assert!(stdout_text.contains(&format!(
+        "contribution_challenge={},{},{}\n",
+        expected_challenge.c0.to_u64(),
+        expected_challenge.c1.to_u64(),
+        expected_challenge.c2.to_u64()
+    )));
+}
+
+#[test]
+fn rejects_contribution_set_when_later_proof_mismatches_eth_block_binding() {
+    let dir = temp_dir("verify-contribution-set-later-block-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let mismatched_block_input =
+        build_eth_block_input(&sample_block_rlp_variant()).expect("block input should build");
+    write_setup_directory_with_public_values(&dir, &eth_block_public_values_metadata(&block_input));
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should parse");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
+    let entries = sample_contribution_entries(
+        catalog
+            .layout
+            .global_info
+            .lattice_size
+            .expect("lattice size should exist") as usize,
+    );
+    let cache = sample_contribution_program_image_cache(setup_hash);
+    let cache_segment = ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: encode_program_image_cache_segment(&cache).expect("cache segment should encode"),
+    };
+    let block_segment = ProofSegment {
+        id: ETH_BLOCK_INPUT_SEGMENT_ID,
+        data: encode_eth_block_input_segment(&block_input).expect("block segment should encode"),
+    };
+    let mismatched_block_segment = ProofSegment {
+        id: ETH_BLOCK_INPUT_SEGMENT_ID,
+        data: encode_eth_block_input_segment(&mismatched_block_input)
+            .expect("block segment should encode"),
+    };
+    let public_fields =
+        public_values_as_fields(&public_values).expect("public values should flatten");
+    let expected_challenge = derive_global_challenge_from_proof_segments(
+        &catalog.layout.global_info,
+        &public_fields,
+        &[],
+        &[
+            build_contribution_segment(&entries)
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            cache_segment.clone(),
+            block_segment.clone(),
+        ],
+    )
+    .expect("challenge should derive");
+
+    let proof_a = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            build_contribution_segment(&[entries[0].clone()])
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            cache_segment.clone(),
+            block_segment,
+            sample_challenge_values_segment(expected_challenge.to_u64s()),
+        ],
+    };
+    let proof_b = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            build_contribution_segment(&[entries[1].clone()])
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            cache_segment,
+            mismatched_block_segment,
+            sample_challenge_values_segment(expected_challenge.to_u64s()),
+        ],
+    };
+    let proof_a_path = dir.join("proof-a.bin");
+    let proof_b_path = dir.join("proof-b.bin");
+    let public_values_path = dir.join("public_values.bin");
+    let block_input_path = dir.join("block.input");
+    write_bytes(
+        &proof_a_path,
+        encode_proof_artifact(&proof_a).expect("proof should encode"),
+    );
+    write_bytes(
+        &proof_b_path,
+        encode_proof_artifact(&proof_b).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+    write_bytes(
+        &block_input_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "contribution-set",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block path should be utf-8"),
+            dir.to_str().expect("setup path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+            proof_a_path.to_str().expect("proof path should be utf-8"),
+            proof_b_path.to_str().expect("proof path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify contribution-set failed: ETH block input proof segment mismatch\n"
+    );
+}
+
+#[test]
+fn rejects_contribution_set_when_later_proof_mismatches_program_image_cache_binding() {
+    let dir = temp_dir("verify-contribution-set-later-cache-mismatch");
+    let _ = fs::remove_dir_all(&dir);
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_setup_directory_with_public_values(&dir, &eth_block_public_values_metadata(&block_input));
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should parse");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
+    let entries = sample_contribution_entries(
+        catalog
+            .layout
+            .global_info
+            .lattice_size
+            .expect("lattice size should exist") as usize,
+    );
+    let cache = sample_contribution_program_image_cache(setup_hash);
+    let mut mismatched_cache = cache.clone();
+    mismatched_cache.source_image_digest = [0x13; 32];
+    let cache_segment = ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: encode_program_image_cache_segment(&cache).expect("cache segment should encode"),
+    };
+    let mismatched_cache_segment = ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: encode_program_image_cache_segment(&mismatched_cache)
+            .expect("cache segment should encode"),
+    };
+    let block_segment = ProofSegment {
+        id: ETH_BLOCK_INPUT_SEGMENT_ID,
+        data: encode_eth_block_input_segment(&block_input).expect("block segment should encode"),
+    };
+    let public_fields =
+        public_values_as_fields(&public_values).expect("public values should flatten");
+    let expected_challenge = derive_global_challenge_from_proof_segments(
+        &catalog.layout.global_info,
+        &public_fields,
+        &[],
+        &[
+            build_contribution_segment(&entries)
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            cache_segment.clone(),
+            block_segment.clone(),
+        ],
+    )
+    .expect("challenge should derive");
+
+    let proof_a = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            build_contribution_segment(&[entries[0].clone()])
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            cache_segment,
+            block_segment.clone(),
+            sample_challenge_values_segment(expected_challenge.to_u64s()),
+        ],
+    };
+    let proof_b = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            build_contribution_segment(&[entries[1].clone()])
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            mismatched_cache_segment,
+            block_segment,
+            sample_challenge_values_segment(expected_challenge.to_u64s()),
+        ],
+    };
+    let proof_a_path = dir.join("proof-a.bin");
+    let proof_b_path = dir.join("proof-b.bin");
+    let public_values_path = dir.join("public_values.bin");
+    let cache_path = dir.join("program_image.cache");
+    write_bytes(
+        &proof_a_path,
+        encode_proof_artifact(&proof_a).expect("proof should encode"),
+    );
+    write_bytes(
+        &proof_b_path,
+        encode_proof_artifact(&proof_b).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+    write_bytes(
+        &cache_path,
+        encode_program_image_commitment_cache(&cache).expect("cache should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "contribution-set",
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            dir.to_str().expect("setup path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+            proof_a_path.to_str().expect("proof path should be utf-8"),
+            proof_b_path.to_str().expect("proof path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).expect("stderr should be utf-8"),
+        "verify contribution-set failed: program image cache proof segment mismatch\n"
+    );
+}
+
+#[test]
 fn rejects_verify_contribution_set_without_embedded_challenge_values() {
     let dir = temp_dir("verify-contribution-set-missing-challenge");
     let _ = fs::remove_dir_all(&dir);

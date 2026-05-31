@@ -180,6 +180,16 @@ struct ParsedPreflightArgs<'a> {
     program_image_cache: Option<&'a str>,
 }
 
+struct ParsedContributionSetArgs<'a> {
+    setup_dir: &'a str,
+    public_values_path: &'a str,
+    proof_bins: Vec<&'a str>,
+    eth_block_input: Option<&'a str>,
+    eth_public_input: Option<&'a str>,
+    eth_public_input_allow_trailing: bool,
+    program_image_cache: Option<&'a str>,
+}
+
 struct ParsedBindingArgs<'a> {
     positionals: Vec<&'a str>,
     eth_block_input: Option<&'a str>,
@@ -222,6 +232,25 @@ fn parse_verify_contribution_args<'a>(
     args: &'a [&'a str],
 ) -> Result<ParsedSetupValidationArgs<'a>, SetupValidationArgError> {
     parse_setup_validation_args(args)
+}
+
+fn parse_verify_contribution_set_args<'a>(
+    args: &'a [&'a str],
+) -> Result<ParsedContributionSetArgs<'a>, SetupValidationArgError> {
+    let parsed = parse_binding_args(args)?;
+    if parsed.positionals.len() < 3 {
+        return Err(SetupValidationArgError::Usage);
+    }
+    validate_binding_args(&parsed)?;
+    Ok(ParsedContributionSetArgs {
+        setup_dir: parsed.positionals[0],
+        public_values_path: parsed.positionals[1],
+        proof_bins: parsed.positionals[2..].to_vec(),
+        eth_block_input: parsed.eth_block_input,
+        eth_public_input: parsed.eth_public_input,
+        eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
+        program_image_cache: parsed.program_image_cache,
+    })
 }
 
 fn parse_setup_validation_args<'a>(
@@ -453,16 +482,47 @@ pub(super) fn verify_contribution(
 }
 
 pub(super) fn verify_contribution_set(
-    setup_dir: &str,
-    public_values_path: &str,
-    proof_bins: &[&str],
+    args: &[&str],
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    let proof_paths = proof_bins.iter().map(PathBuf::from).collect::<Vec<_>>();
+    let parsed = match parse_verify_contribution_set_args(args) {
+        Ok(parsed) => parsed,
+        Err(SetupValidationArgError::Usage) => return write_verify_contribution_set_usage(stderr),
+        Err(SetupValidationArgError::Invalid(message)) => {
+            let _ = writeln!(stderr, "verify contribution-set failed: {message}");
+            return 1;
+        }
+    };
+    let eth_block_input_binding = match verify_requested_eth_block_bindings(
+        "verify contribution-set",
+        &parsed.proof_bins,
+        parsed.public_values_path,
+        parsed.eth_block_input,
+        parsed.eth_public_input,
+        parsed.eth_public_input_allow_trailing,
+        stderr,
+    ) {
+        Some(binding) => binding,
+        None => return 1,
+    };
+    let program_image_cache_matched = match verify_requested_program_image_cache_bindings(
+        "verify contribution-set",
+        &parsed.proof_bins,
+        parsed.program_image_cache,
+        stderr,
+    ) {
+        Some(matched) => matched,
+        None => return 1,
+    };
+    let proof_paths = parsed
+        .proof_bins
+        .iter()
+        .map(PathBuf::from)
+        .collect::<Vec<_>>();
     let report = match derive_global_challenge_from_embedded_contribution_proofs(
-        setup_dir,
-        public_values_path,
+        parsed.setup_dir,
+        parsed.public_values_path,
         &proof_paths,
     ) {
         Ok(report) => report,
@@ -486,7 +546,12 @@ pub(super) fn verify_contribution_set(
         "public_value_fields={}",
         report.public_value_field_count
     );
-    write_contribution_binding_summary(stdout, &report, None, false);
+    write_contribution_binding_summary(
+        stdout,
+        &report,
+        eth_block_input_binding,
+        program_image_cache_matched,
+    );
     let _ = writeln!(stdout, "proof_values={}", report.proof_value_count);
     let _ = writeln!(stdout, "contributions={}", report.contribution_count);
     let _ = writeln!(
@@ -895,6 +960,56 @@ fn verify_requested_program_image_cache_binding(
     }
 }
 
+fn verify_requested_eth_block_bindings(
+    role: &str,
+    proof_bins: &[&str],
+    public_values_path: &str,
+    eth_block_input: Option<&str>,
+    eth_public_input: Option<&str>,
+    eth_public_input_allow_trailing: bool,
+    stderr: &mut dyn Write,
+) -> Option<Option<EthBlockInputBinding>> {
+    if eth_block_input.is_none() && eth_public_input.is_none() {
+        return Some(None);
+    }
+
+    let mut first_binding = None;
+    for proof_bin in proof_bins {
+        let binding = match verify_requested_eth_block_binding(
+            role,
+            proof_bin,
+            public_values_path,
+            eth_block_input,
+            eth_public_input,
+            eth_public_input_allow_trailing,
+            stderr,
+        ) {
+            Some(Some(binding)) => binding,
+            Some(None) => return Some(None),
+            None => return None,
+        };
+        if first_binding.is_none() {
+            first_binding = Some(binding);
+        }
+    }
+    Some(first_binding)
+}
+
+fn verify_requested_program_image_cache_bindings(
+    role: &str,
+    proof_bins: &[&str],
+    program_image_cache: Option<&str>,
+    stderr: &mut dyn Write,
+) -> Option<bool> {
+    if program_image_cache.is_none() {
+        return Some(false);
+    }
+    for proof_bin in proof_bins {
+        verify_requested_program_image_cache_binding(role, proof_bin, program_image_cache, stderr)?;
+    }
+    Some(true)
+}
+
 fn verify_program_image_cache_binding(proof_bin: &str, cache_path: &str) -> Result<(), String> {
     let proof = read_proof_artifact_file(proof_bin)
         .map_err(|error| format!("read proof artifact failed: {proof_bin}: {error}"))?;
@@ -1011,7 +1126,7 @@ pub(super) fn write_verify_contribution_usage(stderr: &mut dyn Write) -> i32 {
 pub(super) fn write_verify_contribution_set_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm verify contribution-set <setup-dir> <public-values> <proof-bin> [proof-bin ...]"
+        "usage: lzvm verify contribution-set [--eth-block-input <block-input>] [--eth-public-input <public-input>] [--eth-public-input-allow-trailing] [--program-image-cache <cache-bin>] <setup-dir> <public-values> <proof-bin> [proof-bin ...]"
     );
     2
 }

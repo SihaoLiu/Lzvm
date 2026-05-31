@@ -101,6 +101,46 @@ fn parses_eth_public_input_options_for_verify_contribution_args() {
 }
 
 #[test]
+fn parses_binding_options_for_verify_contribution_set_args() {
+    let result = parse_verify_contribution_set_args(&[
+        "--eth-block-input",
+        "block.input",
+        "--program-image-cache",
+        "cache.bin",
+        "setup",
+        "public-values.bin",
+        "proof-a.bin",
+        "proof-b.bin",
+    ])
+    .expect("verify contribution-set args should parse");
+
+    assert_eq!(result.setup_dir, "setup");
+    assert_eq!(result.public_values_path, "public-values.bin");
+    assert_eq!(result.proof_bins, vec!["proof-a.bin", "proof-b.bin"]);
+    assert_eq!(result.eth_block_input, Some("block.input"));
+    assert_eq!(result.program_image_cache, Some("cache.bin"));
+}
+
+#[test]
+fn rejects_conflicting_binding_options_for_verify_contribution_set_args() {
+    let result = parse_verify_contribution_set_args(&[
+        "--eth-block-input",
+        "block.input",
+        "--eth-public-input",
+        "public.bin",
+        "setup",
+        "public-values.bin",
+        "proof.bin",
+    ]);
+
+    assert!(matches!(
+        result,
+        Err(SetupValidationArgError::Invalid(message))
+            if message == "cannot combine --eth-block-input and --eth-public-input"
+    ));
+}
+
+#[test]
 fn rejects_eth_public_input_allow_trailing_without_eth_public_input_for_verify_proof_args() {
     let result = parse_verify_proof_args(&[
         "--eth-public-input-allow-trailing",

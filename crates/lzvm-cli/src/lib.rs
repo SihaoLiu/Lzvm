@@ -100,19 +100,8 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
         ["verify", "contribution", rest @ ..] => {
             verify_commands::verify_contribution(rest, stdout, stderr)
         }
-        ["verify", "contribution-set", setup_dir, public_values_path, proof_bins @ ..]
-            if !proof_bins.is_empty() =>
-        {
-            verify_commands::verify_contribution_set(
-                setup_dir,
-                public_values_path,
-                proof_bins,
-                stdout,
-                stderr,
-            )
-        }
-        ["verify", "contribution-set", ..] => {
-            verify_commands::write_verify_contribution_set_usage(stderr)
+        ["verify", "contribution-set", rest @ ..] => {
+            verify_commands::verify_contribution_set(rest, stdout, stderr)
         }
         ["verify", "contribution-challenge", setup_dir, public_values_path, challenge_values_segment, proof_bins @ ..]
             if !proof_bins.is_empty() =>
