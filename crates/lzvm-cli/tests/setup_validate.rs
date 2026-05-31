@@ -5636,6 +5636,84 @@ fn runs_prove_witness_commitments_from_guest_pc_trace() {
 }
 
 #[test]
+fn verifies_prove_witness_proof_from_guest_pc_trace() {
+    let dir = temp_dir("prove-witness-guest-pc-trace-proof");
+    let _ = fs::remove_dir_all(&dir);
+    write_execution_ready_setup_directory(&dir);
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should load");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("digest should compute");
+    let setup_hash_hex = key_directory_catalog_digest_hex(&catalog).expect("digest should encode");
+    let output_dir = dir.join("proof-out");
+    let guest_image = dir.join("guest.elf");
+    let public_values_path = dir.join("public_values.bin");
+    write_bytes(&guest_image, sample_guest_pc_trace_image());
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&sample_public_values(setup_hash))
+            .expect("public values should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "prove",
+            "witness",
+            "--guest-pc-trace",
+            "8",
+            dir.to_str().expect("path should be utf-8"),
+            output_dir.to_str().expect("output path should be utf-8"),
+            guest_image.to_str().expect("guest path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    let proof_path = output_dir.join("proof.bin");
+    let proof_bytes = fs::read(&proof_path).expect("proof output should read");
+    let proof = parse_proof_artifact(&proof_bytes).expect("proof output should parse");
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "proof",
+            dir.to_str().expect("path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    assert!(stdout_text.contains(&format!("setup_hash={setup_hash_hex}\n")));
+    assert!(stdout_text.contains(&format!("public_inputs={}\n", public_values_path.display())));
+    assert!(stdout_text.contains("input_bytes=0\n"));
+    assert!(stdout_text.contains("trace_rows=2\n"));
+    assert_eq!(proof.setup_hash, setup_hash);
+    assert_has_no_contribution_segment(&proof);
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert!(verify_stderr.is_empty());
+    assert!(String::from_utf8(verify_stdout)
+        .expect("verify stdout should be utf-8")
+        .contains("status=ok\n"));
+}
+
+#[test]
 fn runs_prove_witness_with_source_generated_key_directory() {
     let dir = temp_dir("prove-witness-source-generated");
     let _ = fs::remove_dir_all(&dir);
