@@ -16145,6 +16145,182 @@ fn rejects_writing_contribution_challenge_when_later_proof_mismatches_program_im
 }
 
 #[test]
+fn writes_and_verifies_contribution_challenge_with_allowed_trailing_eth_public_input_binding() {
+    let dir = temp_dir("write-verify-contribution-challenge-eth-public-input");
+    let _ = fs::remove_dir_all(&dir);
+    let public_input = sample_public_block_bytes_with_matching_roots();
+    let public_block = parse_eth_public_block_prefix(&public_input).expect("block should parse");
+    let block_input = build_eth_block_input(&public_block.block_rlp()).expect("input should build");
+    write_setup_directory_with_public_values(&dir, &eth_block_public_values_metadata(&block_input));
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should parse");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
+    let entries = sample_contribution_entries(
+        catalog
+            .layout
+            .global_info
+            .lattice_size
+            .expect("lattice size should exist") as usize,
+    );
+    let block_segment = ProofSegment {
+        id: ETH_BLOCK_INPUT_SEGMENT_ID,
+        data: encode_eth_block_input_segment(&block_input).expect("block segment should encode"),
+    };
+    let public_fields =
+        public_values_as_fields(&public_values).expect("public values should flatten");
+    let expected_challenge = derive_global_challenge_from_proof_segments(
+        &catalog.layout.global_info,
+        &public_fields,
+        &[],
+        &[
+            build_contribution_segment(&entries)
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            block_segment.clone(),
+        ],
+    )
+    .expect("challenge should derive");
+
+    let proof_a = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            build_contribution_segment(&[entries[0].clone()])
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            block_segment.clone(),
+        ],
+    };
+    let proof_b = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            build_contribution_segment(&[entries[1].clone()])
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            block_segment,
+        ],
+    };
+    let proof_a_path = dir.join("proof-a.bin");
+    let proof_b_path = dir.join("proof-b.bin");
+    let public_values_path = dir.join("public_values.bin");
+    let challenge_segment_path = dir.join("challenge_values_segment.bin");
+    let public_input_path = dir.join("public.bin");
+    write_bytes(
+        &proof_a_path,
+        encode_proof_artifact(&proof_a).expect("proof should encode"),
+    );
+    write_bytes(
+        &proof_b_path,
+        encode_proof_artifact(&proof_b).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+    let mut public_input_with_tail = public_input;
+    public_input_with_tail.extend_from_slice(b"tail");
+    write_bytes(&public_input_path, public_input_with_tail);
+
+    let mut writer_stdout = Vec::new();
+    let mut writer_stderr = Vec::new();
+    let writer_code = run_cli(
+        &[
+            "prove",
+            "write-contribution-challenges",
+            "--eth-public-input",
+            public_input_path
+                .to_str()
+                .expect("public input path should be utf-8"),
+            "--eth-public-input-allow-trailing",
+            dir.to_str().expect("setup path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+            challenge_segment_path
+                .to_str()
+                .expect("challenge path should be utf-8"),
+            proof_a_path.to_str().expect("proof path should be utf-8"),
+            proof_b_path.to_str().expect("proof path should be utf-8"),
+        ],
+        &mut writer_stdout,
+        &mut writer_stderr,
+    );
+
+    assert_eq!(
+        writer_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&writer_stderr)
+    );
+    assert!(writer_stderr.is_empty());
+    let challenge_bytes = fs::read(&challenge_segment_path).expect("challenge output should read");
+    let challenge_segment =
+        parse_challenge_values_segment(&challenge_bytes).expect("challenge output should parse");
+    assert_eq!(
+        challenge_segment.values,
+        vec![[
+            expected_challenge.c0.to_u64(),
+            expected_challenge.c1.to_u64(),
+            expected_challenge.c2.to_u64(),
+        ]]
+    );
+    let writer_stdout_text =
+        String::from_utf8(writer_stdout).expect("writer stdout should be utf-8");
+    assert!(writer_stdout_text.contains("proofs=2\n"));
+    assert!(writer_stdout_text.contains("eth_block_input_match=ok\n"));
+    assert!(writer_stdout_text.contains(&format!(
+        "contribution_challenge={},{},{}\n",
+        expected_challenge.c0.to_u64(),
+        expected_challenge.c1.to_u64(),
+        expected_challenge.c2.to_u64()
+    )));
+
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+    let verify_code = run_cli(
+        &[
+            "verify",
+            "contribution-challenge",
+            "--eth-public-input",
+            public_input_path
+                .to_str()
+                .expect("public input path should be utf-8"),
+            "--eth-public-input-allow-trailing",
+            dir.to_str().expect("setup path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+            challenge_segment_path
+                .to_str()
+                .expect("challenge path should be utf-8"),
+            proof_a_path.to_str().expect("proof path should be utf-8"),
+            proof_b_path.to_str().expect("proof path should be utf-8"),
+        ],
+        &mut verify_stdout,
+        &mut verify_stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        verify_code,
+        0,
+        "{}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert!(verify_stderr.is_empty());
+    let verify_stdout_text = String::from_utf8(verify_stdout).expect("stdout should be utf-8");
+    assert!(verify_stdout_text.contains("proofs=2\n"));
+    assert!(verify_stdout_text.contains("eth_block_input_match=ok\n"));
+    assert!(verify_stdout_text.contains(&format!(
+        "contribution_challenge={},{},{}\n",
+        expected_challenge.c0.to_u64(),
+        expected_challenge.c1.to_u64(),
+        expected_challenge.c2.to_u64()
+    )));
+}
+
+#[test]
 fn verifies_contribution_challenge_segment_from_multiple_proof_artifacts() {
     let dir = temp_dir("verify-contribution-challenge");
     let _ = fs::remove_dir_all(&dir);
