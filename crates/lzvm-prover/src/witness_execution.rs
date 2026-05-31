@@ -1,5 +1,6 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use lzvm_artifacts::fixed::FixedColumns;
 use lzvm_artifacts::hint_program::{source_unimplemented_hint_name, HintProgram};
@@ -72,7 +73,7 @@ pub struct ProveWitnessTraceCommitments {
     commitments: ProveWitnessCommitments,
     trace: WitnessTraceBuffer,
     publics: Vec<Felt>,
-    auxiliary_inputs: ProveWitnessAuxiliaryInputs,
+    auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
 }
 
 impl ProveWitnessTraceCommitments {
@@ -89,7 +90,7 @@ impl ProveWitnessTraceCommitments {
     }
 
     pub fn auxiliary_inputs(&self) -> &ProveWitnessAuxiliaryInputs {
-        &self.auxiliary_inputs
+        self.auxiliary_inputs.as_ref()
     }
 
     pub fn into_commitments(self) -> ProveWitnessCommitments {
@@ -567,18 +568,19 @@ pub fn run_prove_witness_commitments_with_trace_backend<B: WitnessBackend + ?Siz
     let mut source_lookup_balance = SourceLookupBalance::default();
     validate_witness_unit_index(plan, unit_index)?;
     let shared_inputs = load_witness_shared_inputs(plan)?;
+    let auxiliary_inputs = Arc::new(auxiliary_inputs);
     let output = run_prove_witness_commitments_with_trace_backend_inner(
         plan,
         unit_index,
         &shared_inputs,
-        auxiliary_inputs.clone(),
+        Arc::clone(&auxiliary_inputs),
         backend,
         Some(&mut source_lookup_balance),
     )?;
     accumulate_witness_global_hints(
         plan,
         &shared_inputs.publics,
-        &auxiliary_inputs,
+        auxiliary_inputs.as_ref(),
         &mut source_lookup_balance,
     )?;
     source_lookup_balance.validate_all_units()?;
@@ -589,7 +591,7 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
     plan: &ProveExecutionPlan,
     unit_index: usize,
     shared_inputs: &WitnessSharedInputs,
-    auxiliary_inputs: ProveWitnessAuxiliaryInputs,
+    auxiliary_inputs: Arc<ProveWitnessAuxiliaryInputs>,
     backend: &B,
     source_lookup_balance: Option<&mut SourceLookupBalance>,
 ) -> Result<ProveWitnessTraceCommitments, ProveWitnessCommitmentError> {
@@ -620,7 +622,7 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
     let mut fixed_columns = WitnessFixedColumnsCache::new();
     let proof_inputs = WitnessProofInputs {
         publics: &shared_inputs.publics,
-        auxiliary_inputs: &auxiliary_inputs,
+        auxiliary_inputs: auxiliary_inputs.as_ref(),
     };
     validate_witness_regular_constraints(
         execution_unit,
@@ -647,7 +649,7 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
             &layout,
             &trace,
             &shared_inputs.publics,
-            &auxiliary_inputs,
+            auxiliary_inputs.as_ref(),
         )?;
     }
     let trace_rows = trace.row_count();
@@ -682,12 +684,13 @@ pub fn run_prove_witness_commitments_for_all_units(
     let mut outputs = Vec::with_capacity(plan.units.len());
     let mut source_lookup_balance = SourceLookupBalance::default();
     let shared_inputs = load_witness_shared_inputs(plan).map_err(|error| error.to_string())?;
+    let auxiliary_inputs = Arc::new(auxiliary_inputs.clone());
     for unit_index in 0..plan.units.len() {
         let output = run_prove_witness_commitments_with_trace_backend_inner(
             plan,
             unit_index,
             &shared_inputs,
-            auxiliary_inputs.clone(),
+            Arc::clone(&auxiliary_inputs),
             backend,
             Some(&mut source_lookup_balance),
         )
@@ -699,7 +702,7 @@ pub fn run_prove_witness_commitments_for_all_units(
     accumulate_witness_global_hints(
         plan,
         &shared_inputs.publics,
-        auxiliary_inputs,
+        auxiliary_inputs.as_ref(),
         &mut source_lookup_balance,
     )
     .map_err(|error| error.to_string())?;
@@ -718,6 +721,7 @@ pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
     let mut outputs = Vec::with_capacity(plan.units.len());
     let mut source_lookup_balance = SourceLookupBalance::default();
     let shared_inputs = load_witness_shared_inputs(plan).map_err(|error| error.to_string())?;
+    let auxiliary_inputs = Arc::new(auxiliary_inputs.clone());
     for unit_index in 0..plan.units.len() {
         let unit_index_u32 = u32::try_from(unit_index)
             .map_err(|_| format!("trace bundle unit index is too large: {unit_index}"))?;
@@ -729,7 +733,7 @@ pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
             plan,
             unit_index,
             &shared_inputs,
-            auxiliary_inputs.clone(),
+            Arc::clone(&auxiliary_inputs),
             &backend,
             Some(&mut source_lookup_balance),
         )
@@ -741,7 +745,7 @@ pub fn run_prove_witness_commitments_for_all_units_with_trace_bundle(
     accumulate_witness_global_hints(
         plan,
         &shared_inputs.publics,
-        auxiliary_inputs,
+        auxiliary_inputs.as_ref(),
         &mut source_lookup_balance,
     )
     .map_err(|error| error.to_string())?;

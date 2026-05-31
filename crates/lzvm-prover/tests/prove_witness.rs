@@ -2496,7 +2496,12 @@ fn runs_witness_commitments_for_all_units_in_prover() {
         },
     )
     .expect("execution plan should derive");
-    let auxiliary_inputs = ProveWitnessAuxiliaryInputs::default();
+    let auxiliary_inputs = ProveWitnessAuxiliaryInputs {
+        proof_values: vec![Felt::from_u64(31), Felt::from_u64(32)],
+        group_values: vec![Ext3::from_u64s([41, 42, 43])],
+        evaluations: vec![Ext3::from_u64s([51, 52, 53])],
+        ..ProveWitnessAuxiliaryInputs::default()
+    };
     let trace_bundle = sample_trace_bundle(2, 17);
 
     let outputs = lzvm_prover::run_prove_witness_commitments_for_all_units_with_trace_bundle(
@@ -2521,11 +2526,28 @@ fn runs_witness_commitments_for_all_units_in_prover() {
         )
         .expect("second unit should run"),
     ];
+    let backend = TraceBytesBackend::new(sample_trace_bytes(17));
+    let backend_outputs = lzvm_prover::run_prove_witness_commitments_for_all_units(
+        &plan,
+        &auxiliary_inputs,
+        &backend,
+    )
+    .expect("all-units backend witness commitments should run");
+    assert_eq!(backend_outputs[0].auxiliary_inputs(), &auxiliary_inputs);
+    assert!(std::ptr::eq(
+        backend_outputs[0].auxiliary_inputs(),
+        backend_outputs[1].auxiliary_inputs()
+    ));
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(outputs, expected);
     assert_eq!(outputs[0].commitments().unit_index(), 0);
     assert_eq!(outputs[1].commitments().unit_index(), 1);
+    assert_eq!(outputs[0].auxiliary_inputs(), &auxiliary_inputs);
+    assert!(std::ptr::eq(
+        outputs[0].auxiliary_inputs(),
+        outputs[1].auxiliary_inputs()
+    ));
 }
 
 #[test]
