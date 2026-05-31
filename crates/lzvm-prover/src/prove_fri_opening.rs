@@ -168,6 +168,12 @@ struct PcsFriOpeningValueRef<'a> {
     polynomial: &'a [Ext3],
 }
 
+struct PcsFriOpeningTraceValue<'a> {
+    unit_index: usize,
+    challenges: &'a [Ext3],
+    polynomial: Vec<Ext3>,
+}
+
 pub fn build_pcs_fri_opening_segment(
     schedule: &ProveSchedule,
     query_segment: &ProofSegment,
@@ -546,17 +552,25 @@ pub fn build_pcs_fri_opening_segment_from_trace(
             unit_index: input.unit_index,
             source: Box::new(source),
         })?;
-        opening_values.push(ProvePcsFriOpeningValues {
+        opening_values.push(PcsFriOpeningTraceValue {
             unit_index: input.unit_index,
-            challenges: input.challenges.to_vec(),
+            challenges: input.challenges,
             polynomial,
         });
     }
 
-    build_pcs_fri_opening_segment(schedule, query_segment, &opening_values).map_err(|source| {
-        ProvePcsFriOpeningTraceSegmentError::Opening {
-            source: Box::new(source),
-        }
+    build_pcs_fri_opening_segment_from_value_refs(
+        schedule,
+        query_segment,
+        opening_values.iter().map(|value| PcsFriOpeningValueRef {
+            unit_index: value.unit_index,
+            challenges: value.challenges,
+            polynomial: &value.polynomial,
+        }),
+        opening_values.len(),
+    )
+    .map_err(|source| ProvePcsFriOpeningTraceSegmentError::Opening {
+        source: Box::new(source),
     })
 }
 

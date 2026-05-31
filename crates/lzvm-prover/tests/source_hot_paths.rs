@@ -284,6 +284,47 @@ fn fri_opening_from_transcript_values_borrows_large_vectors() {
 }
 
 #[test]
+fn fri_opening_from_trace_borrows_challenges() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("src/prove_fri_opening.rs");
+    let source = std::fs::read_to_string(&source_path).expect("FRI opening source should read");
+
+    let body = function_body(
+        &source,
+        "pub fn build_pcs_fri_opening_segment_from_trace",
+        "pub fn build_pcs_fri_opening_segment_from_trace_segments",
+    );
+
+    assert!(
+        body.contains("build_pcs_fri_opening_segment_from_value_refs"),
+        "trace FRI opening construction should use the borrowed opening builder"
+    );
+    assert!(
+        body.contains("PcsFriOpeningTraceValue"),
+        "trace FRI opening construction should keep local values in a borrowed challenge holder"
+    );
+    assert!(
+        body.contains("challenges: input.challenges"),
+        "trace FRI opening construction should store challenge slices directly"
+    );
+    for copy_operation in [
+        "challenges.clone()",
+        "challenges.to_vec()",
+        "challenges.to_owned()",
+        "Vec::from(input.challenges",
+        "Vec::from(value.challenges",
+        "input.challenges.iter().copied().collect",
+        "input.challenges.iter().cloned().collect",
+        "clone_from",
+    ] {
+        assert!(
+            !body.contains(copy_operation),
+            "trace FRI opening construction should borrow challenges instead of copying with {copy_operation}"
+        );
+    }
+}
+
+#[test]
 fn all_units_transcript_proof_borrows_auxiliary_vectors() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/proof_artifact.rs");
