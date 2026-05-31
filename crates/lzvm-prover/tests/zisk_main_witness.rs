@@ -14,6 +14,7 @@ use lzvm_prover::witness_trace::WitnessTraceBuffer;
 use lzvm_prover::ProveUnitSchedule;
 
 const ENTRY: u64 = 0x8000_0000;
+const ZISK_ARCHITECTURE_ID: u64 = 0x0fff_eeee;
 
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
@@ -351,6 +352,13 @@ fn fence_tso() -> u32 {
 
 fn fence_i() -> u32 {
     0x0000_100f
+}
+
+fn csrrs(rd: u8, csr: u16, rs1: u8) -> u32 {
+    assert!(rd < 32);
+    assert!(csr < 4096);
+    assert!(rs1 < 32);
+    (u32::from(csr) << 20) | (u32::from(rs1) << 15) | (2 << 12) | (u32::from(rd) << 7) | 0x73
 }
 
 fn commitment_column(
@@ -1286,6 +1294,72 @@ fn guest_pc_trace_backend_writes_zisk_main_fence_rows() {
     assert_cell(&trace, 4, 10, 1);
     assert_cell(&trace, 4, 12, 1);
     assert_cell(&trace, 4, 24, 2);
+}
+
+#[test]
+fn guest_pc_trace_backend_writes_zisk_main_fixed_csr_rows() {
+    let dir = temp_dir("fixed-csr");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let code_words = [
+        csrrs(1, 0x0f11, 0),
+        csrrs(2, 0x0f12, 0),
+        csrrs(3, 0x0f14, 0),
+        addi(4, 2, 1),
+        0x0000_0073,
+    ];
+    let guest_image_bytes = sample_guest_image_with_words(&code_words);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(4);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("Zisk Main layout should write fixed CSR rows");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 4);
+    assert_eq!(trace.column_count(), 27);
+
+    assert_wide(&trace, 0, 2, 0);
+    assert_wide(&trace, 0, 4, 0);
+    assert_cell(&trace, 0, 8, 1);
+    assert_cell(&trace, 0, 9, 1);
+    assert_eq!(trace.value(0, 10), Some(Felt::ZERO));
+    assert_eq!(trace.value(0, 11), Some(Felt::ZERO));
+    assert_cell(&trace, 0, 12, 1);
+    assert_cell(&trace, 0, 15, 0x01);
+    assert_cell(&trace, 0, 24, 1);
+    assert_eq!(trace.value(0, 26), Some(Felt::ZERO));
+
+    assert_wide(&trace, 1, 2, ZISK_ARCHITECTURE_ID);
+    assert_wide(&trace, 1, 4, ZISK_ARCHITECTURE_ID);
+    assert_cell(&trace, 1, 15, 0x01);
+    assert_cell(&trace, 1, 24, 2);
+    assert_cell(&trace, 1, 26, ZISK_ARCHITECTURE_ID);
+
+    assert_wide(&trace, 2, 2, 0);
+    assert_wide(&trace, 2, 4, 0);
+    assert_cell(&trace, 2, 15, 0x01);
+    assert_cell(&trace, 2, 24, 3);
+    assert_eq!(trace.value(2, 26), Some(Felt::ZERO));
+
+    assert_wide(&trace, 3, 0, ZISK_ARCHITECTURE_ID);
+    assert_wide(&trace, 3, 2, 1);
+    assert_wide(&trace, 3, 4, ZISK_ARCHITECTURE_ID + 1);
+    assert_cell(&trace, 3, 10, 1);
+    assert_cell(&trace, 3, 12, 1);
+    assert_cell(&trace, 3, 24, 4);
+    assert_cell(&trace, 3, 26, 1);
 }
 
 #[test]

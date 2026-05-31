@@ -1,8 +1,8 @@
 use lzvm_prover::guest_instruction::{
-    RiscvBranchKind, RiscvFenceKind, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind,
+    RiscvBranchKind, RiscvCsr, RiscvFenceKind, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind,
     RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
-use lzvm_prover::guest_machine::GuestMachineReport;
+use lzvm_prover::guest_machine::{GuestMachineReport, ZISK_ARCHITECTURE_ID};
 use lzvm_prover::zisk_main::{
     lower_guest_report, ZiskMainLowerError, ZiskMainOp, ZiskMainSource, ZiskMainStore,
 };
@@ -384,6 +384,71 @@ fn lowers_fence_ops_as_noop_flag_rows() {
         assert_eq!(instruction.jmp_offset2, 4);
         assert_eq!(instruction.ind_width, 0);
         assert!(!instruction.m32);
+    }
+}
+
+#[test]
+fn lowers_representable_fixed_csr_reads_as_immediate_copies() {
+    let cases = [
+        (RiscvCsr::Mvendorid, 0),
+        (RiscvCsr::Marchid, ZISK_ARCHITECTURE_ID),
+        (RiscvCsr::Mimpid, 0),
+        (RiscvCsr::Mhartid, 0),
+    ];
+
+    for (index, (csr, value)) in cases.into_iter().enumerate() {
+        let rd = u8::try_from(index + 1).expect("test register should fit");
+        let instruction = lower_guest_report(&report(4, RiscvInstruction::CsrRead { csr, rd }))
+            .expect("fixed CSR read should lower");
+
+        assert_eq!(instruction.a, ZiskMainSource::Immediate(0));
+        assert_eq!(instruction.b, ZiskMainSource::Immediate(value));
+        assert_eq!(instruction.op, ZiskMainOp::CopyB);
+        assert_eq!(instruction.store, ZiskMainStore::Register(rd));
+        assert_eq!(instruction.jmp_offset1, 4);
+        assert_eq!(instruction.jmp_offset2, 4);
+    }
+}
+
+#[test]
+fn rejects_fixed_csr_reads_that_do_not_fit_signed_immediates() {
+    let instruction = RiscvInstruction::CsrRead {
+        csr: RiscvCsr::Misa,
+        rd: 6,
+    };
+    let error = lower_guest_report(&report(4, instruction))
+        .expect_err("wide fixed CSR read should remain unsupported");
+
+    assert_eq!(
+        error,
+        ZiskMainLowerError::UnsupportedInstruction { instruction }
+    );
+}
+
+#[test]
+fn rejects_counter_csr_reads() {
+    let cases = [
+        RiscvCsr::Mcycle,
+        RiscvCsr::Minstret,
+        RiscvCsr::Mcycleh,
+        RiscvCsr::Minstreth,
+        RiscvCsr::Cycle,
+        RiscvCsr::Time,
+        RiscvCsr::Instret,
+        RiscvCsr::Cycleh,
+        RiscvCsr::Timeh,
+        RiscvCsr::Instreth,
+    ];
+
+    for csr in cases {
+        let instruction = RiscvInstruction::CsrRead { csr, rd: 6 };
+        let error = lower_guest_report(&report(4, instruction))
+            .expect_err("counter CSR read should remain unsupported");
+
+        assert_eq!(
+            error,
+            ZiskMainLowerError::UnsupportedInstruction { instruction }
+        );
     }
 }
 

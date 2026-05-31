@@ -1,10 +1,10 @@
 use std::fmt;
 
 use crate::guest_instruction::{
-    RiscvBranchKind, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind,
+    RiscvBranchKind, RiscvCsr, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind,
     RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
-use crate::guest_machine::GuestMachineReport;
+use crate::guest_machine::{fixed_csr_value, GuestMachineReport};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZiskMainSource {
@@ -173,6 +173,9 @@ pub fn lower_guest_report(
             Ok(lower_auipc(report.address, instruction_size, rd, immediate))
         }
         RiscvInstruction::Fence { .. } => Ok(lower_fence(report.address, instruction_size)),
+        RiscvInstruction::CsrRead { csr, rd } => {
+            lower_csr_read(report.address, instruction_size, csr, rd)
+        }
         RiscvInstruction::OpImm {
             kind,
             rd,
@@ -524,6 +527,27 @@ fn lower_fence(pc: u64, instruction_size: i64) -> ZiskMainInstruction {
         ZiskMainStore::None,
         instruction_size,
     )
+}
+
+fn lower_csr_read(
+    pc: u64,
+    instruction_size: i64,
+    csr: RiscvCsr,
+    rd: u8,
+) -> Result<ZiskMainInstruction, ZiskMainLowerError> {
+    let Some(value) = fixed_csr_value(csr).filter(|value| *value <= i64::MAX as u64) else {
+        return Err(ZiskMainLowerError::UnsupportedInstruction {
+            instruction: RiscvInstruction::CsrRead { csr, rd },
+        });
+    };
+    Ok(base_instruction(
+        pc,
+        ZiskMainSource::Immediate(0),
+        ZiskMainSource::Immediate(value),
+        ZiskMainOp::CopyB,
+        register_store(rd),
+        instruction_size,
+    ))
 }
 
 fn lower_branch(

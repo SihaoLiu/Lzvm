@@ -1555,21 +1555,44 @@ fn branch_is_taken(kind: RiscvBranchKind, lhs: u64, rhs: u64) -> bool {
     }
 }
 
-fn read_csr(csr: RiscvCsr, retired_instructions: u64) -> u64 {
+pub(crate) fn fixed_csr_value(csr: RiscvCsr) -> Option<u64> {
     match csr {
+        RiscvCsr::Misa => Some(RV64IMAC_MISA),
+        RiscvCsr::Marchid => Some(ZISK_ARCHITECTURE_ID),
+        RiscvCsr::Mvendorid | RiscvCsr::Mimpid | RiscvCsr::Mhartid => Some(0),
         RiscvCsr::Mcycle
         | RiscvCsr::Minstret
         | RiscvCsr::Cycle
         | RiscvCsr::Time
-        | RiscvCsr::Instret => retired_instructions,
-        RiscvCsr::Mcycleh
+        | RiscvCsr::Instret
+        | RiscvCsr::Mcycleh
         | RiscvCsr::Minstreth
         | RiscvCsr::Cycleh
         | RiscvCsr::Timeh
-        | RiscvCsr::Instreth => retired_instructions >> 32,
-        RiscvCsr::Misa => RV64IMAC_MISA,
-        RiscvCsr::Marchid => ZISK_ARCHITECTURE_ID,
-        RiscvCsr::Mvendorid | RiscvCsr::Mimpid | RiscvCsr::Mhartid => 0,
+        | RiscvCsr::Instreth => None,
+    }
+}
+
+fn read_csr(csr: RiscvCsr, retired_instructions: u64) -> u64 {
+    match fixed_csr_value(csr) {
+        Some(value) => value,
+        None => match csr {
+            RiscvCsr::Mcycle
+            | RiscvCsr::Minstret
+            | RiscvCsr::Cycle
+            | RiscvCsr::Time
+            | RiscvCsr::Instret => retired_instructions,
+            RiscvCsr::Mcycleh
+            | RiscvCsr::Minstreth
+            | RiscvCsr::Cycleh
+            | RiscvCsr::Timeh
+            | RiscvCsr::Instreth => retired_instructions >> 32,
+            RiscvCsr::Misa
+            | RiscvCsr::Mvendorid
+            | RiscvCsr::Marchid
+            | RiscvCsr::Mimpid
+            | RiscvCsr::Mhartid => unreachable!("fixed CSRs are handled above"),
+        },
     }
 }
 
