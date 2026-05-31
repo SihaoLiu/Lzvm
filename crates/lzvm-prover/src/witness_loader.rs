@@ -222,6 +222,9 @@ impl fmt::Debug for LoadedWitnessLibrary {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WitnessCallError {
     EmptyOutputBuffer,
+    Backend {
+        message: String,
+    },
     NativeReturn {
         code: c_int,
     },
@@ -238,6 +241,7 @@ impl fmt::Display for WitnessCallError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyOutputBuffer => write!(f, "witness output buffer is empty"),
+            Self::Backend { message } => write!(f, "witness backend failed: {message}"),
             Self::NativeReturn { code } => {
                 write!(f, "witness native call returned failure code: {code}")
             }

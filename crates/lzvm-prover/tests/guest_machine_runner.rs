@@ -644,6 +644,65 @@ fn zisk_input_ready_maps_framed_stdin_into_guest_memory() {
 }
 
 #[test]
+fn zisk_input_ready_writes_into_existing_guest_memory() {
+    let input = framed_stdin_chunk(b"abc");
+    let mut memory = guest_machine_memory_with_words(&[
+        lui(5, ZISK_INPUT_ADDRESS as u32),
+        addi(6, 5, 15),
+        csrs(0x08f0, 6),
+        csrwi(0x08c0, ZISK_INPUT_READY_FCALL_ID as u8),
+        ld(7, 5, 8),
+        lbu(8, 5, 16),
+        lbu(9, 5, 18),
+        0x0000_0073,
+    ]);
+    memory
+        .map_initialized_range(ZISK_INPUT_ADDRESS, vec![0; 32])
+        .expect("reserved input memory should map");
+    let mut state = GuestMachineState::new(memory.entry_address());
+    let mut handler = ZiskInputFcallHandler::new(&input).expect("framed stdin should load");
+
+    let report = run_guest_machine_with_fcalls(&mut memory, &mut state, &mut handler, 32)
+        .expect("guest should halt");
+
+    assert_eq!(report.executed_instructions, 7);
+    assert_eq!(state.register(7), Some(3));
+    assert_eq!(state.register(8), Some(u64::from(b'a')));
+    assert_eq!(state.register(9), Some(u64::from(b'c')));
+}
+
+#[test]
+fn zisk_input_ready_keeps_input_after_map_failure() {
+    let input = framed_stdin_chunk(b"abc");
+    let mut handler = ZiskInputFcallHandler::new(&input).expect("framed stdin should load");
+    let request = GuestFcallRequest {
+        function_id: ZISK_INPUT_READY_FCALL_ID,
+        params: vec![GuestFcallParam {
+            port: 0,
+            value: ZISK_INPUT_ADDRESS + 15,
+        }],
+    };
+    let mut overlapping_memory = guest_machine_memory_with_words(&[0x0000_0073]);
+    overlapping_memory
+        .map_initialized_range(ZISK_INPUT_ADDRESS, vec![0; 4])
+        .expect("overlapping input memory should map");
+    handler
+        .handle_fcall(request.clone(), &mut overlapping_memory)
+        .expect_err("short input reservation should reject");
+
+    let mut memory = guest_machine_memory_with_words(&[0x0000_0073]);
+    handler
+        .handle_fcall(request, &mut memory)
+        .expect("input-ready should retry mapping");
+    let mut length_bytes = [0_u8; 8];
+    memory
+        .read_range_into(ZISK_INPUT_ADDRESS + 8, &mut length_bytes)
+        .expect("framed stdin should map after retry");
+
+    assert_eq!(u64::from_le_bytes(length_bytes), 3);
+}
+
+#[test]
 fn zisk_input_ready_rejects_required_address_before_framed_stdin() {
     let input = framed_stdin_chunk(b"abc");
     let mut memory = guest_machine_memory_with_words(&[0x0000_0073]);

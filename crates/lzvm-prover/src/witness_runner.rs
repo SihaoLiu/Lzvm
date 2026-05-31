@@ -44,7 +44,7 @@ impl fmt::Display for WitnessTraceRunError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::TraceByteLengthOverflow => write!(f, "witness trace byte length overflow"),
-            Self::Call(error) => write!(f, "witness native call failed: {error}"),
+            Self::Call(error) => write!(f, "witness call failed: {error}"),
             Self::Trace(error) => write!(f, "witness trace parse failed: {error}"),
         }
     }

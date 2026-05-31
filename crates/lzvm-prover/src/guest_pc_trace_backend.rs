@@ -8,17 +8,17 @@ use crate::witness_loader::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NativeGuestBackend {
+pub struct GuestPcTraceBackend {
     instruction_limit: u64,
 }
 
-impl NativeGuestBackend {
+impl GuestPcTraceBackend {
     pub fn new(instruction_limit: u64) -> Self {
         Self { instruction_limit }
     }
 }
 
-impl WitnessBackend for NativeGuestBackend {
+impl WitnessBackend for GuestPcTraceBackend {
     fn compute(
         &self,
         buffers: &mut WitnessTraceBuffers<'_>,
@@ -31,13 +31,13 @@ impl WitnessBackend for NativeGuestBackend {
         context: WitnessComputeContext<'_>,
         buffers: &mut WitnessTraceBuffers<'_>,
     ) -> Result<WitnessTraceOutput, WitnessCallError> {
-        compute_native_guest_trace(self.instruction_limit, context, buffers)
-            .map_err(|_| WitnessCallError::NativeReturn { code: -1 })
+        compute_guest_pc_trace(self.instruction_limit, context, buffers)
+            .map_err(WitnessCallError::from)
     }
 }
 
 #[derive(Debug)]
-enum NativeGuestBackendError {
+enum GuestPcTraceBackendError {
     MissingGuestImage,
     MissingGuestImageInfo,
     GuestImageIo(std::io::Error),
@@ -49,30 +49,32 @@ enum NativeGuestBackendError {
     },
 }
 
-impl fmt::Display for NativeGuestBackendError {
+impl fmt::Display for GuestPcTraceBackendError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MissingGuestImage => write!(f, "native guest backend missing guest image path"),
+            Self::MissingGuestImage => write!(f, "guest PC trace backend missing guest image path"),
             Self::MissingGuestImageInfo => {
-                write!(f, "native guest backend missing guest image metadata")
+                write!(f, "guest PC trace backend missing guest image metadata")
             }
-            Self::GuestImageIo(error) => write!(f, "native guest backend guest image read failed: {error}"),
+            Self::GuestImageIo(error) => {
+                write!(f, "guest PC trace backend guest image read failed: {error}")
+            }
             Self::GuestMemory(error) => {
-                write!(f, "native guest backend guest memory load failed: {error}")
+                write!(f, "guest PC trace backend guest memory load failed: {error}")
             }
-            Self::GuestRun(error) => write!(f, "native guest backend guest run failed: {error}"),
+            Self::GuestRun(error) => write!(f, "guest PC trace backend guest run failed: {error}"),
             Self::OutputOverflow {
                 produced_len,
                 output_len,
             } => write!(
                 f,
-                "native guest backend trace exceeds output buffer: produced {produced_len}, output {output_len}"
+                "guest PC trace backend trace exceeds output buffer: produced {produced_len}, output {output_len}"
             ),
         }
     }
 }
 
-impl std::error::Error for NativeGuestBackendError {
+impl std::error::Error for GuestPcTraceBackendError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::GuestImageIo(error) => Some(error),
@@ -85,36 +87,53 @@ impl std::error::Error for NativeGuestBackendError {
     }
 }
 
-fn compute_native_guest_trace(
+impl From<GuestPcTraceBackendError> for WitnessCallError {
+    fn from(error: GuestPcTraceBackendError) -> Self {
+        match error {
+            GuestPcTraceBackendError::OutputOverflow {
+                produced_len,
+                output_len,
+            } => Self::OutputOverflow {
+                produced_len,
+                output_len,
+            },
+            other => Self::Backend {
+                message: other.to_string(),
+            },
+        }
+    }
+}
+
+fn compute_guest_pc_trace(
     instruction_limit: u64,
     context: WitnessComputeContext<'_>,
     buffers: &mut WitnessTraceBuffers<'_>,
-) -> Result<WitnessTraceOutput, NativeGuestBackendError> {
+) -> Result<WitnessTraceOutput, GuestPcTraceBackendError> {
     let guest_image = context
         .guest_image
-        .ok_or(NativeGuestBackendError::MissingGuestImage)?;
+        .ok_or(GuestPcTraceBackendError::MissingGuestImage)?;
     let guest_image_info = context
         .guest_image_info
-        .ok_or(NativeGuestBackendError::MissingGuestImageInfo)?;
+        .ok_or(GuestPcTraceBackendError::MissingGuestImageInfo)?;
     let guest_image_bytes =
-        std::fs::read(guest_image).map_err(NativeGuestBackendError::GuestImageIo)?;
+        std::fs::read(guest_image).map_err(GuestPcTraceBackendError::GuestImageIo)?;
     let memory_image = load_guest_memory_image(&guest_image_bytes, guest_image_info)
-        .map_err(NativeGuestBackendError::GuestMemory)?;
+        .map_err(GuestPcTraceBackendError::GuestMemory)?;
     let mut memory = GuestMachineMemory::from_image(&memory_image);
     let mut state = crate::guest_machine::GuestMachineState::new(memory.entry_address());
     let trace = run_guest_machine_trace(&mut memory, &mut state, instruction_limit)
-        .map_err(NativeGuestBackendError::GuestRun)?;
+        .map_err(GuestPcTraceBackendError::GuestRun)?;
     let produced_len =
         trace
             .reports
             .len()
             .checked_mul(16)
-            .ok_or(NativeGuestBackendError::OutputOverflow {
+            .ok_or(GuestPcTraceBackendError::OutputOverflow {
                 produced_len: usize::MAX,
                 output_len: buffers.output().len(),
             })?;
     if produced_len > buffers.output().len() {
-        return Err(NativeGuestBackendError::OutputOverflow {
+        return Err(GuestPcTraceBackendError::OutputOverflow {
             produced_len,
             output_len: buffers.output().len(),
         });

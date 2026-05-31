@@ -152,6 +152,55 @@ impl GuestMachineMemory {
         self.segments.sort_by_key(|segment| segment.virtual_address);
         Ok(())
     }
+
+    pub fn write_or_map_initialized_range(
+        &mut self,
+        virtual_address: u64,
+        initialized_bytes: &[u8],
+    ) -> Result<(), GuestMemoryError> {
+        if initialized_bytes.is_empty() {
+            return Ok(());
+        }
+        let end_address = checked_address_end(virtual_address, initialized_bytes.len())?;
+        for segment in &mut self.segments {
+            let segment_end = segment.end_address()?;
+            if virtual_address >= segment.virtual_address && end_address <= segment_end {
+                segment.write_range(virtual_address, initialized_bytes);
+                return Ok(());
+            }
+        }
+        let memory_size = u64::try_from(initialized_bytes.len()).map_err(|_| {
+            GuestMemoryError::AddressRangeOverflow {
+                address: virtual_address,
+                byte_len: initialized_bytes.len(),
+            }
+        })?;
+        let mapped_segment = GuestMachineMemorySegment {
+            program_header_index: HOST_MAPPED_PROGRAM_HEADER_INDEX,
+            virtual_address,
+            memory_size,
+            initialized_bytes: initialized_bytes.to_vec(),
+            written_bytes: BTreeMap::new(),
+        };
+        let mapped_end = mapped_segment.end_address()?;
+        for segment in &self.segments {
+            let segment_end = segment.end_address()?;
+            if ranges_overlap(
+                virtual_address,
+                mapped_end,
+                segment.virtual_address,
+                segment_end,
+            ) {
+                return Err(GuestMemoryError::OverlappingSegments {
+                    first_program_header_index: segment.program_header_index,
+                    second_program_header_index: HOST_MAPPED_PROGRAM_HEADER_INDEX,
+                });
+            }
+        }
+        self.segments.push(mapped_segment);
+        self.segments.sort_by_key(|segment| segment.virtual_address);
+        Ok(())
+    }
 }
 
 impl GuestMemoryReader for GuestMachineMemory {

@@ -101,12 +101,13 @@ impl ZiskInputFcallHandler {
         &mut self,
         memory: &mut GuestMachineMemory,
     ) -> Result<(), ZiskInputFcallError> {
-        let Some(input_image) = self.input_image.take() else {
+        let Some(input_image) = self.input_image.as_deref() else {
             return Ok(());
         };
         memory
-            .map_initialized_range(ZISK_INPUT_ADDRESS, input_image)
+            .write_or_map_initialized_range(ZISK_INPUT_ADDRESS, input_image)
             .map_err(ZiskInputFcallError::Memory)?;
+        self.input_image = None;
         Ok(())
     }
 

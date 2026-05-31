@@ -4,7 +4,7 @@ use std::process::Command;
 
 use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_field::{Felt, MODULUS};
-use lzvm_prover::native_guest_backend::NativeGuestBackend;
+use lzvm_prover::guest_pc_trace_backend::GuestPcTraceBackend;
 use lzvm_prover::witness_loader::{
     load_witness_library, WitnessBackend, WitnessCallError, WitnessComputeContext,
     WitnessTraceBuffers, WitnessTraceOutput,
@@ -190,8 +190,8 @@ fn runs_witness_trace_with_native_backend() {
 }
 
 #[test]
-fn native_guest_backend_runs_guest_image_from_context() {
-    let dir = temp_dir("native-guest");
+fn guest_pc_trace_backend_runs_guest_image_from_context() {
+    let dir = temp_dir("guest-pc-trace");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("fixture directory should be created");
     let guest_image = dir.join("guest.elf");
@@ -201,14 +201,14 @@ fn native_guest_backend_runs_guest_image_from_context() {
     let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
 
     let trace = run_witness_trace_with_context(
-        &NativeGuestBackend::new(16),
+        &GuestPcTraceBackend::new(16),
         WitnessComputeContext {
             guest_image: Some(&guest_image),
             guest_image_info: Some(&guest_image_info),
         },
         WitnessTraceRequest::new(Vec::new(), 2, 2),
     )
-    .expect("native guest trace should run");
+    .expect("guest PC trace should run");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     assert_eq!(
@@ -230,17 +230,46 @@ fn native_guest_backend_runs_guest_image_from_context() {
 }
 
 #[test]
-fn native_guest_backend_requires_guest_image_context() {
+fn guest_pc_trace_backend_requires_guest_image_context() {
     let error = run_witness_trace_with_context(
-        &NativeGuestBackend::new(16),
+        &GuestPcTraceBackend::new(16),
         WitnessComputeContext::empty(),
         WitnessTraceRequest::new(Vec::new(), 1, 2),
     )
     .expect_err("missing guest image context should reject");
 
+    assert!(error.to_string().contains("missing guest image path"));
+}
+
+#[test]
+fn guest_pc_trace_backend_maps_trace_overflow_to_output_overflow() {
+    let dir = temp_dir("guest-pc-trace-overflow");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes =
+        sample_guest_image_with_words(&[addi(1, 0, 7), addi(2, 1, 3), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+
+    let result = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+        },
+        WitnessTraceRequest::new(Vec::new(), 1, 2),
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
     assert!(matches!(
-        error,
-        WitnessTraceRunError::Call(WitnessCallError::NativeReturn { code: -1 })
+        result,
+        Err(WitnessTraceRunError::Call(
+            WitnessCallError::OutputOverflow {
+                produced_len: 32,
+                output_len: 16
+            }
+        ))
     ));
 }
 
