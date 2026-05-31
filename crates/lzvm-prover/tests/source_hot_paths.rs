@@ -240,6 +240,28 @@ fn all_units_witness_reuses_shared_inputs_and_borrows_trace_bundle_bytes() {
 }
 
 #[test]
+fn cli_single_unit_trace_bundle_borrows_unit_trace_bytes() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_path = crate_root.join("../lzvm-cli/src/prove_witness.rs");
+    let source = std::fs::read_to_string(&source_path).expect("prove witness source should read");
+
+    let backend_body = function_body(
+        &source,
+        "let witness_backend: Box<dyn WitnessBackend",
+        "if parsed.all_units || plan.run_plan.options.aggregate",
+    );
+
+    assert!(
+        backend_body.contains("TraceBytesBackend::borrowed(trace_bytes)"),
+        "single-unit trace bundle execution should borrow the selected unit trace"
+    );
+    assert!(
+        !backend_body.contains("trace_bytes.to_vec()"),
+        "single-unit trace bundle execution should avoid cloning the selected unit trace"
+    );
+}
+
+#[test]
 fn fri_opening_from_transcript_values_borrows_large_vectors() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = crate_root.join("src/prove_fri_opening.rs");

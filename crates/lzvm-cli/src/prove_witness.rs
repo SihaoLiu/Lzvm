@@ -214,7 +214,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 0;
         }
     }
-    let witness_backend: Box<dyn WitnessBackend> = match (
+    let witness_backend: Box<dyn WitnessBackend + '_> = match (
         &plan.inputs.witness_library,
         &parsed.trace_bytes,
         &trace_bundle,
@@ -238,7 +238,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             }
         },
         (None, None, Some(bundle)) => match bundle.trace_bytes_for_unit(0) {
-            Some(trace_bytes) => Box::new(TraceBytesBackend::new(trace_bytes.to_vec())),
+            Some(trace_bytes) => Box::new(TraceBytesBackend::borrowed(trace_bytes)),
             None => {
                 let _ = writeln!(
                     stderr,
