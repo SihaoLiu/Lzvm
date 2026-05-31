@@ -1,5 +1,6 @@
 use lzvm_prover::guest_instruction::{
-    RiscvBranchKind, RiscvInstruction, RiscvLoadKind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    RiscvBranchKind, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind,
+    RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use lzvm_prover::guest_machine::GuestMachineReport;
 use lzvm_prover::zisk_main::{
@@ -111,6 +112,92 @@ fn lowers_immediate_alu_ops_as_binary_ops() {
         assert_eq!(instruction.b, ZiskMainSource::Immediate((-3_i64) as u64));
         assert_eq!(instruction.op, op);
         assert_eq!(instruction.store, ZiskMainStore::Register(6));
+    }
+}
+
+#[test]
+fn lowers_immediate_word_ops_as_m32_binary_ops() {
+    let cases = [
+        (RiscvOpImm32Kind::Addiw, -3, 0x1a),
+        (RiscvOpImm32Kind::Slliw, 31, 0x24),
+        (RiscvOpImm32Kind::Srliw, 31, 0x25),
+        (RiscvOpImm32Kind::Sraiw, 31, 0x26),
+    ];
+
+    for (kind, immediate, op_code) in cases {
+        let instruction = lower_guest_report(&report(
+            4,
+            RiscvInstruction::OpImm32 {
+                kind,
+                rd: 6,
+                rs1: 4,
+                immediate,
+            },
+        ))
+        .expect("immediate word ALU op should lower");
+
+        assert_eq!(instruction.a, ZiskMainSource::Register(4));
+        assert_eq!(instruction.b, ZiskMainSource::Immediate(immediate as u64));
+        assert_eq!(instruction.op.code(), op_code);
+        assert_eq!(instruction.store, ZiskMainStore::Register(6));
+        assert!(instruction.m32);
+    }
+}
+
+#[test]
+fn lowers_register_word_ops_as_m32_binary_ops() {
+    let cases = [
+        (RiscvOp32Kind::Addw, 0x1a),
+        (RiscvOp32Kind::Subw, 0x1b),
+        (RiscvOp32Kind::Sllw, 0x24),
+        (RiscvOp32Kind::Srlw, 0x25),
+        (RiscvOp32Kind::Sraw, 0x26),
+    ];
+
+    for (kind, op_code) in cases {
+        let instruction = lower_guest_report(&report(
+            4,
+            RiscvInstruction::Op32 {
+                kind,
+                rd: 6,
+                rs1: 4,
+                rs2: 5,
+            },
+        ))
+        .expect("register word ALU op should lower");
+
+        assert_eq!(instruction.a, ZiskMainSource::Register(4));
+        assert_eq!(instruction.b, ZiskMainSource::Register(5));
+        assert_eq!(instruction.op.code(), op_code);
+        assert_eq!(instruction.store, ZiskMainStore::Register(6));
+        assert!(instruction.m32);
+    }
+}
+
+#[test]
+fn rejects_unsupported_word_m_extension_ops() {
+    let cases = [
+        RiscvOp32Kind::Mulw,
+        RiscvOp32Kind::Divw,
+        RiscvOp32Kind::Divuw,
+        RiscvOp32Kind::Remw,
+        RiscvOp32Kind::Remuw,
+    ];
+
+    for kind in cases {
+        let instruction = RiscvInstruction::Op32 {
+            kind,
+            rd: 6,
+            rs1: 4,
+            rs2: 5,
+        };
+        let error = lower_guest_report(&report(4, instruction))
+            .expect_err("unsupported word M extension op should fail");
+
+        assert_eq!(
+            error,
+            ZiskMainLowerError::UnsupportedInstruction { instruction }
+        );
     }
 }
 

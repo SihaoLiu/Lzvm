@@ -817,16 +817,34 @@ fn zisk_main_op_result(op: ZiskMainOp, a: u64, b: u64) -> (u64, bool) {
         }
         ZiskMainOp::Add => (a.wrapping_add(b), false),
         ZiskMainOp::Sub => (a.wrapping_sub(b), false),
+        ZiskMainOp::AddW => (sign_extend_word((a as u32).wrapping_add(b as u32)), false),
+        ZiskMainOp::SubW => (sign_extend_word((a as u32).wrapping_sub(b as u32)), false),
         ZiskMainOp::And => (a & b, false),
         ZiskMainOp::Or => (a | b, false),
         ZiskMainOp::Xor => (a ^ b, false),
         ZiskMainOp::Sll => (a.wrapping_shl((b as u32) & 0x3f), false),
         ZiskMainOp::Srl => (a.wrapping_shr((b as u32) & 0x3f), false),
         ZiskMainOp::Sra => (((a as i64) >> ((b as u32) & 0x3f)) as u64, false),
+        ZiskMainOp::SllW => (
+            sign_extend_word((a as u32).wrapping_shl((b as u32) & 0x1f)),
+            false,
+        ),
+        ZiskMainOp::SrlW => (
+            sign_extend_word((a as u32).wrapping_shr((b as u32) & 0x1f)),
+            false,
+        ),
+        ZiskMainOp::SraW => (
+            sign_extend_word(((a as u32 as i32) >> ((b as u32) & 0x1f)) as u32),
+            false,
+        ),
         ZiskMainOp::SignExtendB => ((b as i8) as u64, false),
         ZiskMainOp::SignExtendH => ((b as i16) as u64, false),
         ZiskMainOp::SignExtendW => ((b as i32) as u64, false),
     }
+}
+
+fn sign_extend_word(value: u32) -> u64 {
+    (value as i32 as i64) as u64
 }
 
 fn validate_zisk_main_next_pc(

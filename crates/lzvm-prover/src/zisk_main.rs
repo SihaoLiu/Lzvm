@@ -1,7 +1,8 @@
 use std::fmt;
 
 use crate::guest_instruction::{
-    RiscvBranchKind, RiscvInstruction, RiscvLoadKind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    RiscvBranchKind, RiscvInstruction, RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind,
+    RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use crate::guest_machine::GuestMachineReport;
 
@@ -31,12 +32,17 @@ pub enum ZiskMainOp {
     Eq,
     Add,
     Sub,
+    AddW,
+    SubW,
     And,
     Or,
     Xor,
     Sll,
     Srl,
     Sra,
+    SllW,
+    SrlW,
+    SraW,
     SignExtendB,
     SignExtendH,
     SignExtendW,
@@ -52,12 +58,17 @@ impl ZiskMainOp {
             Self::Eq => 0x09,
             Self::Add => 0x0a,
             Self::Sub => 0x0b,
+            Self::AddW => 0x1a,
+            Self::SubW => 0x1b,
             Self::And => 0x0e,
             Self::Or => 0x0f,
             Self::Xor => 0x10,
             Self::Sll => 0x21,
             Self::Srl => 0x22,
             Self::Sra => 0x23,
+            Self::SllW => 0x24,
+            Self::SrlW => 0x25,
+            Self::SraW => 0x26,
             Self::SignExtendB => 0x27,
             Self::SignExtendH => 0x28,
             Self::SignExtendW => 0x29,
@@ -183,8 +194,34 @@ pub fn lower_guest_report(
                 op_imm_kind(kind),
             )),
         },
+        RiscvInstruction::OpImm32 {
+            kind,
+            rd,
+            rs1,
+            immediate,
+        } => Ok(binary_immediate_word_op(
+            report.address,
+            instruction_size,
+            rd,
+            rs1,
+            immediate,
+            op_imm_32_kind(kind),
+        )),
         RiscvInstruction::Op { kind, rd, rs1, rs2 } => match op_kind(kind) {
             Some(op) => Ok(binary_register_op(
+                report.address,
+                instruction_size,
+                rd,
+                rs1,
+                rs2,
+                op,
+            )),
+            None => Err(ZiskMainLowerError::UnsupportedInstruction {
+                instruction: report.instruction,
+            }),
+        },
+        RiscvInstruction::Op32 { kind, rd, rs1, rs2 } => match op_32_kind(kind) {
+            Some(op) => Ok(binary_register_word_op(
                 report.address,
                 instruction_size,
                 rd,
@@ -337,6 +374,32 @@ fn binary_immediate_op(
         register_store(rd),
         instruction_size,
     )
+}
+
+fn binary_register_word_op(
+    pc: u64,
+    instruction_size: i64,
+    rd: u8,
+    rs1: u8,
+    rs2: u8,
+    op: ZiskMainOp,
+) -> ZiskMainInstruction {
+    let mut instruction = binary_register_op(pc, instruction_size, rd, rs1, rs2, op);
+    instruction.m32 = true;
+    instruction
+}
+
+fn binary_immediate_word_op(
+    pc: u64,
+    instruction_size: i64,
+    rd: u8,
+    rs1: u8,
+    immediate: i64,
+    op: ZiskMainOp,
+) -> ZiskMainInstruction {
+    let mut instruction = binary_immediate_op(pc, instruction_size, rd, rs1, immediate, op);
+    instruction.m32 = true;
+    instruction
 }
 
 fn lower_load(
@@ -514,6 +577,15 @@ fn op_imm_kind(kind: RiscvOpImmKind) -> ZiskMainOp {
     }
 }
 
+fn op_imm_32_kind(kind: RiscvOpImm32Kind) -> ZiskMainOp {
+    match kind {
+        RiscvOpImm32Kind::Addiw => ZiskMainOp::AddW,
+        RiscvOpImm32Kind::Slliw => ZiskMainOp::SllW,
+        RiscvOpImm32Kind::Srliw => ZiskMainOp::SrlW,
+        RiscvOpImm32Kind::Sraiw => ZiskMainOp::SraW,
+    }
+}
+
 fn op_kind(kind: RiscvOpKind) -> Option<ZiskMainOp> {
     match kind {
         RiscvOpKind::Add => Some(ZiskMainOp::Add),
@@ -534,6 +606,21 @@ fn op_kind(kind: RiscvOpKind) -> Option<ZiskMainOp> {
         | RiscvOpKind::Divu
         | RiscvOpKind::Rem
         | RiscvOpKind::Remu => None,
+    }
+}
+
+fn op_32_kind(kind: RiscvOp32Kind) -> Option<ZiskMainOp> {
+    match kind {
+        RiscvOp32Kind::Addw => Some(ZiskMainOp::AddW),
+        RiscvOp32Kind::Subw => Some(ZiskMainOp::SubW),
+        RiscvOp32Kind::Sllw => Some(ZiskMainOp::SllW),
+        RiscvOp32Kind::Srlw => Some(ZiskMainOp::SrlW),
+        RiscvOp32Kind::Sraw => Some(ZiskMainOp::SraW),
+        RiscvOp32Kind::Mulw
+        | RiscvOp32Kind::Divw
+        | RiscvOp32Kind::Divuw
+        | RiscvOp32Kind::Remw
+        | RiscvOp32Kind::Remuw => None,
     }
 }
 

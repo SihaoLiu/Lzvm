@@ -121,6 +121,39 @@ fn srai(rd: u8, rs1: u8, shamt: u8) -> u32 {
     op_imm_shift(rd, rs1, shamt, 5, 0x10)
 }
 
+fn op_imm_32(rd: u8, rs1: u8, immediate: i16, funct3: u8) -> u32 {
+    encode_i(immediate, rs1, funct3, rd, 0x1b)
+}
+
+fn addiw(rd: u8, rs1: u8, immediate: i16) -> u32 {
+    op_imm_32(rd, rs1, immediate, 0)
+}
+
+fn op_imm_32_shift(rd: u8, rs1: u8, shamt: u8, funct3: u8, funct7: u8) -> u32 {
+    assert!(funct7 < 128);
+    assert!(rd < 32);
+    assert!(rs1 < 32);
+    assert!(shamt < 32);
+    (u32::from(funct7) << 25)
+        | (u32::from(shamt) << 20)
+        | (u32::from(rs1) << 15)
+        | (u32::from(funct3) << 12)
+        | (u32::from(rd) << 7)
+        | 0x1b
+}
+
+fn slliw(rd: u8, rs1: u8, shamt: u8) -> u32 {
+    op_imm_32_shift(rd, rs1, shamt, 1, 0)
+}
+
+fn srliw(rd: u8, rs1: u8, shamt: u8) -> u32 {
+    op_imm_32_shift(rd, rs1, shamt, 5, 0)
+}
+
+fn sraiw(rd: u8, rs1: u8, shamt: u8) -> u32 {
+    op_imm_32_shift(rd, rs1, shamt, 5, 0x20)
+}
+
 fn load(funct3: u8, rd: u8, rs1: u8, offset: i16) -> u32 {
     encode_i(offset, rs1, funct3, rd, 0x03)
 }
@@ -176,6 +209,35 @@ fn slt(rd: u8, rs1: u8, rs2: u8) -> u32 {
 
 fn sltu(rd: u8, rs1: u8, rs2: u8) -> u32 {
     encode_r(0, rs2, rs1, 3, rd)
+}
+
+fn encode_r_32(funct7: u8, rs2: u8, rs1: u8, funct3: u8, rd: u8) -> u32 {
+    (u32::from(funct7) << 25)
+        | (u32::from(rs2) << 20)
+        | (u32::from(rs1) << 15)
+        | (u32::from(funct3) << 12)
+        | (u32::from(rd) << 7)
+        | 0x3b
+}
+
+fn addw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_32(0, rs2, rs1, 0, rd)
+}
+
+fn subw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_32(0x20, rs2, rs1, 0, rd)
+}
+
+fn sllw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_32(0, rs2, rs1, 1, rd)
+}
+
+fn srlw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_32(0, rs2, rs1, 5, rd)
+}
+
+fn sraw(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r_32(0x20, rs2, rs1, 5, rd)
 }
 
 fn store(funct3: u8, rs1: u8, rs2: u8, offset: i16) -> u32 {
@@ -949,6 +1011,88 @@ fn guest_pc_trace_backend_writes_zisk_main_alu_and_compare_rows() {
     assert_wide(&trace, 13, 4, 1);
     assert_cell(&trace, 13, 6, 1);
     assert_cell(&trace, 13, 15, 0x06);
+}
+
+#[test]
+fn guest_pc_trace_backend_writes_zisk_main_word_alu_rows() {
+    let dir = temp_dir("word-alu");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let code_words = [
+        addi(1, 0, -1),
+        addiw(2, 1, 1),
+        addi(3, 0, 1),
+        slliw(4, 3, 31),
+        srliw(5, 4, 31),
+        sraiw(6, 4, 31),
+        addw(7, 4, 3),
+        subw(8, 3, 4),
+        sllw(9, 3, 3),
+        srlw(10, 4, 3),
+        sraw(11, 4, 3),
+        0x0000_0073,
+    ];
+    let guest_image_bytes = sample_guest_image_with_words(&code_words);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(11);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("Zisk Main layout should write word ALU rows");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 11);
+    assert_eq!(trace.column_count(), 27);
+
+    assert_wide(&trace, 1, 0, u64::MAX);
+    assert_wide(&trace, 1, 4, 0);
+    assert_cell(&trace, 1, 9, 1);
+    assert_cell(&trace, 1, 15, 0x1a);
+    assert_cell(&trace, 1, 18, 1);
+
+    assert_wide(&trace, 3, 4, 0xffff_ffff_8000_0000);
+    assert_cell(&trace, 3, 9, 1);
+    assert_cell(&trace, 3, 15, 0x24);
+    assert_cell(&trace, 3, 18, 1);
+
+    assert_wide(&trace, 4, 4, 1);
+    assert_cell(&trace, 4, 15, 0x25);
+    assert_cell(&trace, 4, 18, 1);
+
+    assert_wide(&trace, 5, 4, u64::MAX);
+    assert_cell(&trace, 5, 15, 0x26);
+    assert_cell(&trace, 5, 18, 1);
+
+    assert_wide(&trace, 6, 4, 0xffff_ffff_8000_0001);
+    assert_cell(&trace, 6, 11, 1);
+    assert_cell(&trace, 6, 15, 0x1a);
+    assert_cell(&trace, 6, 18, 1);
+
+    assert_wide(&trace, 7, 4, 0xffff_ffff_8000_0001);
+    assert_cell(&trace, 7, 15, 0x1b);
+    assert_cell(&trace, 7, 18, 1);
+
+    assert_wide(&trace, 8, 4, 2);
+    assert_cell(&trace, 8, 15, 0x24);
+    assert_cell(&trace, 8, 18, 1);
+
+    assert_wide(&trace, 9, 4, 0x4000_0000);
+    assert_cell(&trace, 9, 15, 0x25);
+    assert_cell(&trace, 9, 18, 1);
+
+    assert_wide(&trace, 10, 4, 0xffff_ffff_c000_0000);
+    assert_cell(&trace, 10, 15, 0x26);
+    assert_cell(&trace, 10, 18, 1);
 }
 
 #[test]
