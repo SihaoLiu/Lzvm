@@ -103,20 +103,8 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
         ["verify", "contribution-set", rest @ ..] => {
             verify_commands::verify_contribution_set(rest, stdout, stderr)
         }
-        ["verify", "contribution-challenge", setup_dir, public_values_path, challenge_values_segment, proof_bins @ ..]
-            if !proof_bins.is_empty() =>
-        {
-            contribution_challenge::verify(
-                setup_dir,
-                public_values_path,
-                challenge_values_segment,
-                proof_bins,
-                stdout,
-                stderr,
-            )
-        }
-        ["verify", "contribution-challenge", ..] => {
-            contribution_challenge::write_verify_usage(stderr)
+        ["verify", "contribution-challenge", rest @ ..] => {
+            contribution_challenge::verify(rest, stdout, stderr)
         }
         ["verify", "preflight", rest @ ..] => {
             verify_commands::verify_preflight(rest, stdout, stderr)

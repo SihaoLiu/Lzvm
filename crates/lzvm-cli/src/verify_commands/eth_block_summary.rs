@@ -178,7 +178,7 @@ pub(super) fn write_report_eth_block_input_summary(
 pub(super) fn write_eth_block_input_binding_summary(
     stdout: &mut dyn Write,
     proof_input_hashes: &[[u8; 32]],
-    binding: EthBlockInputBinding,
+    binding: &EthBlockInputBinding,
 ) {
     if proof_input_hashes.is_empty() {
         let _ = writeln!(

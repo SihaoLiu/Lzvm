@@ -124,7 +124,7 @@ pub(super) fn verify_preflight(
         }
     }
     if let Some(binding) = eth_block_input_binding {
-        write_eth_block_input_binding_summary(stdout, &report.eth_block_input_hashes, binding);
+        write_eth_block_input_binding_summary(stdout, &report.eth_block_input_hashes, &binding);
     }
     if program_image_cache_matched {
         let _ = writeln!(stdout, "program_image_cache_match=ok");
@@ -190,12 +190,27 @@ struct ParsedContributionSetArgs<'a> {
     program_image_cache: Option<&'a str>,
 }
 
-struct ParsedBindingArgs<'a> {
-    positionals: Vec<&'a str>,
-    eth_block_input: Option<&'a str>,
-    eth_public_input: Option<&'a str>,
-    eth_public_input_allow_trailing: bool,
-    program_image_cache: Option<&'a str>,
+pub(crate) struct ParsedBindingArgs<'a> {
+    pub(crate) positionals: Vec<&'a str>,
+    pub(crate) eth_block_input: Option<&'a str>,
+    pub(crate) eth_public_input: Option<&'a str>,
+    pub(crate) eth_public_input_allow_trailing: bool,
+    pub(crate) program_image_cache: Option<&'a str>,
+}
+
+pub(crate) struct VerifiedContributionBindings {
+    eth_block_input_binding: Option<EthBlockInputBinding>,
+    program_image_cache_matched: bool,
+}
+
+pub(crate) struct ContributionBindingRequest<'a> {
+    pub(crate) role: &'a str,
+    pub(crate) proof_bins: &'a [&'a str],
+    pub(crate) public_values_path: &'a str,
+    pub(crate) eth_block_input: Option<&'a str>,
+    pub(crate) eth_public_input: Option<&'a str>,
+    pub(crate) eth_public_input_allow_trailing: bool,
+    pub(crate) program_image_cache: Option<&'a str>,
 }
 
 fn parse_verify_preflight_args<'a>(
@@ -272,7 +287,7 @@ fn parse_setup_validation_args<'a>(
     })
 }
 
-fn parse_binding_args<'a>(
+pub(crate) fn parse_binding_args<'a>(
     args: &'a [&'a str],
 ) -> Result<ParsedBindingArgs<'a>, SetupValidationArgError> {
     let mut eth_block_input = None;
@@ -359,7 +374,9 @@ fn parse_binding_args<'a>(
     })
 }
 
-fn validate_binding_args(parsed: &ParsedBindingArgs<'_>) -> Result<(), SetupValidationArgError> {
+pub(crate) fn validate_binding_args(
+    parsed: &ParsedBindingArgs<'_>,
+) -> Result<(), SetupValidationArgError> {
     if parsed.eth_block_input.is_some() && parsed.eth_public_input.is_some() {
         return Err(SetupValidationArgError::Invalid(
             "cannot combine --eth-block-input and --eth-public-input".to_owned(),
@@ -374,7 +391,7 @@ fn validate_binding_args(parsed: &ParsedBindingArgs<'_>) -> Result<(), SetupVali
 }
 
 #[derive(Debug)]
-enum SetupValidationArgError {
+pub(crate) enum SetupValidationArgError {
     Usage,
     Invalid(String),
 }
@@ -463,12 +480,11 @@ pub(super) fn verify_contribution(
         "public_value_fields={}",
         report.public_value_field_count
     );
-    write_contribution_binding_summary(
-        stdout,
-        &report,
+    let bindings = VerifiedContributionBindings {
         eth_block_input_binding,
         program_image_cache_matched,
-    );
+    };
+    write_contribution_binding_summary(stdout, &report, &bindings);
     let _ = writeln!(stdout, "proof_values={}", report.proof_value_count);
     let _ = writeln!(stdout, "contributions={}", report.contribution_count);
     let _ = writeln!(
@@ -494,25 +510,19 @@ pub(super) fn verify_contribution_set(
             return 1;
         }
     };
-    let eth_block_input_binding = match verify_requested_eth_block_bindings(
-        "verify contribution-set",
-        &parsed.proof_bins,
-        parsed.public_values_path,
-        parsed.eth_block_input,
-        parsed.eth_public_input,
-        parsed.eth_public_input_allow_trailing,
+    let bindings = match verify_requested_contribution_bindings(
+        ContributionBindingRequest {
+            role: "verify contribution-set",
+            proof_bins: &parsed.proof_bins,
+            public_values_path: parsed.public_values_path,
+            eth_block_input: parsed.eth_block_input,
+            eth_public_input: parsed.eth_public_input,
+            eth_public_input_allow_trailing: parsed.eth_public_input_allow_trailing,
+            program_image_cache: parsed.program_image_cache,
+        },
         stderr,
     ) {
-        Some(binding) => binding,
-        None => return 1,
-    };
-    let program_image_cache_matched = match verify_requested_program_image_cache_bindings(
-        "verify contribution-set",
-        &parsed.proof_bins,
-        parsed.program_image_cache,
-        stderr,
-    ) {
-        Some(matched) => matched,
+        Some(bindings) => bindings,
         None => return 1,
     };
     let proof_paths = parsed
@@ -546,12 +556,7 @@ pub(super) fn verify_contribution_set(
         "public_value_fields={}",
         report.public_value_field_count
     );
-    write_contribution_binding_summary(
-        stdout,
-        &report,
-        eth_block_input_binding,
-        program_image_cache_matched,
-    );
+    write_contribution_binding_summary(stdout, &report, &bindings);
     let _ = writeln!(stdout, "proof_values={}", report.proof_value_count);
     let _ = writeln!(stdout, "contributions={}", report.contribution_count);
     let _ = writeln!(
@@ -887,7 +892,7 @@ fn verify_setup_validation(
         write_eth_block_input_binding_summary(
             stdout,
             &public_report.eth_block_input_hashes,
-            binding,
+            &binding,
         );
     }
     if program_image_cache_matched {
@@ -958,6 +963,31 @@ fn verify_requested_program_image_cache_binding(
             None
         }
     }
+}
+
+pub(crate) fn verify_requested_contribution_bindings(
+    request: ContributionBindingRequest<'_>,
+    stderr: &mut dyn Write,
+) -> Option<VerifiedContributionBindings> {
+    let eth_block_input_binding = verify_requested_eth_block_bindings(
+        request.role,
+        request.proof_bins,
+        request.public_values_path,
+        request.eth_block_input,
+        request.eth_public_input,
+        request.eth_public_input_allow_trailing,
+        stderr,
+    )?;
+    let program_image_cache_matched = verify_requested_program_image_cache_bindings(
+        request.role,
+        request.proof_bins,
+        request.program_image_cache,
+        stderr,
+    )?;
+    Some(VerifiedContributionBindings {
+        eth_block_input_binding,
+        program_image_cache_matched,
+    })
 }
 
 fn verify_requested_eth_block_bindings(
@@ -1044,13 +1074,12 @@ fn write_challenge_values_summary(
     }
 }
 
-fn write_contribution_binding_summary(
+pub(crate) fn write_contribution_binding_summary(
     stdout: &mut dyn Write,
     report: &ContributionChallengeReport,
-    eth_block_input_binding: Option<EthBlockInputBinding>,
-    program_image_cache_matched: bool,
+    bindings: &VerifiedContributionBindings,
 ) {
-    let has_eth_block_input_binding = eth_block_input_binding.is_some();
+    let has_eth_block_input_binding = bindings.eth_block_input_binding.is_some();
     if report.program_image_cache_count > 0 {
         let _ = writeln!(
             stdout,
@@ -1083,10 +1112,10 @@ fn write_contribution_binding_summary(
             }
         }
     }
-    if let Some(binding) = eth_block_input_binding {
+    if let Some(binding) = bindings.eth_block_input_binding.as_ref() {
         write_eth_block_input_binding_summary(stdout, &report.eth_block_input_hashes, binding);
     }
-    if program_image_cache_matched {
+    if bindings.program_image_cache_matched {
         let _ = writeln!(stdout, "program_image_cache_match=ok");
     }
 }

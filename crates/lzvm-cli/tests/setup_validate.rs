@@ -15920,6 +15920,148 @@ fn verifies_contribution_challenge_segment_from_multiple_proof_artifacts() {
 }
 
 #[test]
+fn verifies_contribution_challenge_with_external_program_image_and_eth_block_bindings() {
+    let dir = temp_dir("verify-contribution-challenge-bound-inputs");
+    let _ = fs::remove_dir_all(&dir);
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    write_setup_directory_with_public_values(&dir, &eth_block_public_values_metadata(&block_input));
+    let catalog = read_key_directory_catalog(&dir).expect("catalog should parse");
+    let setup_hash = key_directory_catalog_digest(&catalog).expect("catalog digest should compute");
+    let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
+    let entries = sample_contribution_entries(
+        catalog
+            .layout
+            .global_info
+            .lattice_size
+            .expect("lattice size should exist") as usize,
+    );
+    let cache = sample_contribution_program_image_cache(setup_hash);
+    let cache_segment = ProofSegment {
+        id: PROGRAM_IMAGE_CACHE_SEGMENT_ID,
+        data: encode_program_image_cache_segment(&cache).expect("cache segment should encode"),
+    };
+    let block_segment = ProofSegment {
+        id: ETH_BLOCK_INPUT_SEGMENT_ID,
+        data: encode_eth_block_input_segment(&block_input).expect("block segment should encode"),
+    };
+    let public_fields =
+        public_values_as_fields(&public_values).expect("public values should flatten");
+    let expected_challenge = derive_global_challenge_from_proof_segments(
+        &catalog.layout.global_info,
+        &public_fields,
+        &[],
+        &[
+            build_contribution_segment(&entries)
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            cache_segment.clone(),
+            block_segment.clone(),
+        ],
+    )
+    .expect("challenge should derive");
+
+    let proof_a = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            build_contribution_segment(&[entries[0].clone()])
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            cache_segment.clone(),
+            block_segment.clone(),
+        ],
+    };
+    let proof_b = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![
+            build_contribution_segment(&[entries[1].clone()])
+                .expect("contribution segment should build")
+                .expect("contribution segment should exist"),
+            cache_segment,
+            block_segment,
+        ],
+    };
+    let proof_a_path = dir.join("proof-a.bin");
+    let proof_b_path = dir.join("proof-b.bin");
+    let public_values_path = dir.join("public_values.bin");
+    let challenge_segment_path = dir.join("challenge_values_segment.bin");
+    let block_input_path = dir.join("block.input");
+    let cache_path = dir.join("program_image.cache");
+    write_bytes(
+        &proof_a_path,
+        encode_proof_artifact(&proof_a).expect("proof should encode"),
+    );
+    write_bytes(
+        &proof_b_path,
+        encode_proof_artifact(&proof_b).expect("proof should encode"),
+    );
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+    write_bytes(
+        &challenge_segment_path,
+        encode_challenge_values_segment(&ChallengeValuesSegment {
+            values: vec![[
+                expected_challenge.c0.to_u64(),
+                expected_challenge.c1.to_u64(),
+                expected_challenge.c2.to_u64(),
+            ]],
+        })
+        .expect("challenge values segment should encode"),
+    );
+    write_bytes(
+        &block_input_path,
+        encode_eth_block_input(&block_input).expect("block input should encode"),
+    );
+    write_bytes(
+        &cache_path,
+        encode_program_image_commitment_cache(&cache).expect("cache should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "contribution-challenge",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block path should be utf-8"),
+            "--program-image-cache",
+            cache_path.to_str().expect("cache path should be utf-8"),
+            dir.to_str().expect("setup path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public path should be utf-8"),
+            challenge_segment_path
+                .to_str()
+                .expect("challenge path should be utf-8"),
+            proof_a_path.to_str().expect("proof path should be utf-8"),
+            proof_b_path.to_str().expect("proof path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("proofs=2\n"));
+    assert!(stdout_text.contains("eth_block_input_match=ok\n"));
+    assert!(stdout_text.contains("program_image_cache_match=ok\n"));
+    assert!(stdout_text.contains(&format!(
+        "contribution_challenge={},{},{}\n",
+        expected_challenge.c0.to_u64(),
+        expected_challenge.c1.to_u64(),
+        expected_challenge.c2.to_u64()
+    )));
+}
+
+#[test]
 fn rejects_contribution_challenge_verification_with_mismatched_embedded_challenge() {
     let dir = temp_dir("verify-contribution-challenge-embedded-mismatch");
     let _ = fs::remove_dir_all(&dir);
