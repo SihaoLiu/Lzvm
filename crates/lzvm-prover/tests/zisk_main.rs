@@ -1,5 +1,5 @@
 use lzvm_prover::guest_instruction::{
-    RiscvInstruction, RiscvLoadKind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    RiscvBranchKind, RiscvInstruction, RiscvLoadKind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use lzvm_prover::guest_machine::GuestMachineReport;
 use lzvm_prover::zisk_main::{
@@ -125,6 +125,41 @@ fn uses_zisk_alu_op_codes() {
     assert_eq!(ZiskMainOp::Sll.code(), 0x21);
     assert_eq!(ZiskMainOp::Srl.code(), 0x22);
     assert_eq!(ZiskMainOp::Sra.code(), 0x23);
+}
+
+#[test]
+fn lowers_branch_ops_as_pc_relative_flag_offsets() {
+    let cases = [
+        (RiscvBranchKind::Beq, 0x09, 12, 4),
+        (RiscvBranchKind::Bne, 0x09, 4, 12),
+        (RiscvBranchKind::Blt, ZiskMainOp::Lt.code(), 12, 4),
+        (RiscvBranchKind::Bge, ZiskMainOp::Lt.code(), 4, 12),
+        (RiscvBranchKind::Bltu, ZiskMainOp::Ltu.code(), 12, 4),
+        (RiscvBranchKind::Bgeu, ZiskMainOp::Ltu.code(), 4, 12),
+    ];
+
+    for (kind, op_code, jmp_offset1, jmp_offset2) in cases {
+        let instruction = lower_guest_report(&report_with_next_pc(
+            4,
+            PC + 12,
+            RiscvInstruction::Branch {
+                kind,
+                rs1: 4,
+                rs2: 5,
+                offset: 12,
+            },
+        ))
+        .expect("branch should lower");
+
+        assert_eq!(instruction.a, ZiskMainSource::Register(4));
+        assert_eq!(instruction.b, ZiskMainSource::Register(5));
+        assert_eq!(instruction.op.code(), op_code);
+        assert_eq!(instruction.store, ZiskMainStore::None);
+        assert!(!instruction.store_pc);
+        assert!(!instruction.set_pc);
+        assert_eq!(instruction.jmp_offset1, jmp_offset1);
+        assert_eq!(instruction.jmp_offset2, jmp_offset2);
+    }
 }
 
 #[test]

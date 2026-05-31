@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::guest_instruction::{
-    RiscvInstruction, RiscvLoadKind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    RiscvBranchKind, RiscvInstruction, RiscvLoadKind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use crate::guest_machine::GuestMachineReport;
 
@@ -28,6 +28,7 @@ pub enum ZiskMainOp {
     CopyB,
     Ltu,
     Lt,
+    Eq,
     Add,
     Sub,
     And,
@@ -48,6 +49,7 @@ impl ZiskMainOp {
             Self::CopyB => 0x01,
             Self::Ltu => 0x06,
             Self::Lt => 0x07,
+            Self::Eq => 0x09,
             Self::Add => 0x0a,
             Self::Sub => 0x0b,
             Self::And => 0x0e,
@@ -127,6 +129,22 @@ pub fn lower_guest_report(
     report: &GuestMachineReport,
 ) -> Result<ZiskMainInstruction, ZiskMainLowerError> {
     let instruction_size = instruction_size_offset(report.address, report.instruction_byte_len)?;
+    if let RiscvInstruction::Branch {
+        kind,
+        rs1,
+        rs2,
+        offset,
+    } = report.instruction
+    {
+        return Ok(lower_branch(
+            report.address,
+            instruction_size,
+            kind,
+            rs1,
+            rs2,
+            offset,
+        ));
+    }
     validate_sequential_next_pc(report)?;
     match report.instruction {
         RiscvInstruction::OpImm {
@@ -346,6 +364,43 @@ fn lower_store(
     );
     instruction.ind_width = width;
     instruction
+}
+
+fn lower_branch(
+    pc: u64,
+    instruction_size: i64,
+    kind: RiscvBranchKind,
+    rs1: u8,
+    rs2: u8,
+    offset: i64,
+) -> ZiskMainInstruction {
+    let (op, jmp_offset1, jmp_offset2) = branch_op_offsets(kind, instruction_size, offset);
+    let mut instruction = base_instruction(
+        pc,
+        register_source(rs1),
+        register_source(rs2),
+        op,
+        ZiskMainStore::None,
+        instruction_size,
+    );
+    instruction.jmp_offset1 = jmp_offset1;
+    instruction.jmp_offset2 = jmp_offset2;
+    instruction
+}
+
+fn branch_op_offsets(
+    kind: RiscvBranchKind,
+    instruction_size: i64,
+    offset: i64,
+) -> (ZiskMainOp, i64, i64) {
+    match kind {
+        RiscvBranchKind::Beq => (ZiskMainOp::Eq, offset, instruction_size),
+        RiscvBranchKind::Bne => (ZiskMainOp::Eq, instruction_size, offset),
+        RiscvBranchKind::Blt => (ZiskMainOp::Lt, offset, instruction_size),
+        RiscvBranchKind::Bge => (ZiskMainOp::Lt, instruction_size, offset),
+        RiscvBranchKind::Bltu => (ZiskMainOp::Ltu, offset, instruction_size),
+        RiscvBranchKind::Bgeu => (ZiskMainOp::Ltu, instruction_size, offset),
+    }
 }
 
 fn load_op_width(kind: RiscvLoadKind) -> Option<(ZiskMainOp, u64)> {

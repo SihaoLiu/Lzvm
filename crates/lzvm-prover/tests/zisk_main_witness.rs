@@ -204,6 +204,47 @@ fn sd(rs1: u8, rs2: u8, offset: i16) -> u32 {
     store(3, rs1, rs2, offset)
 }
 
+fn branch(funct3: u8, rs1: u8, rs2: u8, offset: i16) -> u32 {
+    assert!((-4096..=4094).contains(&offset));
+    assert_eq!(offset & 1, 0);
+    assert!(rs1 < 32);
+    assert!(rs2 < 32);
+    assert!(funct3 < 8);
+    let offset = offset as i32 as u32;
+    (((offset >> 12) & 1) << 31)
+        | (((offset >> 5) & 0x3f) << 25)
+        | (u32::from(rs2) << 20)
+        | (u32::from(rs1) << 15)
+        | (u32::from(funct3) << 12)
+        | (((offset >> 1) & 0x0f) << 8)
+        | (((offset >> 11) & 1) << 7)
+        | 0x63
+}
+
+fn beq(rs1: u8, rs2: u8, offset: i16) -> u32 {
+    branch(0, rs1, rs2, offset)
+}
+
+fn bne(rs1: u8, rs2: u8, offset: i16) -> u32 {
+    branch(1, rs1, rs2, offset)
+}
+
+fn blt(rs1: u8, rs2: u8, offset: i16) -> u32 {
+    branch(4, rs1, rs2, offset)
+}
+
+fn bge(rs1: u8, rs2: u8, offset: i16) -> u32 {
+    branch(5, rs1, rs2, offset)
+}
+
+fn bltu(rs1: u8, rs2: u8, offset: i16) -> u32 {
+    branch(6, rs1, rs2, offset)
+}
+
+fn bgeu(rs1: u8, rs2: u8, offset: i16) -> u32 {
+    branch(7, rs1, rs2, offset)
+}
+
 fn commitment_column(
     name: &str,
     stage: u32,
@@ -382,6 +423,15 @@ fn felt(value: u64) -> Felt {
 
 fn assert_cell(trace: &WitnessTraceBuffer, row: usize, column: usize, value: u64) {
     assert_eq!(trace.value(row, column), Some(felt(value)));
+}
+
+fn assert_signed_cell(trace: &WitnessTraceBuffer, row: usize, column: usize, value: i64) {
+    let value = if value >= 0 {
+        felt(value as u64)
+    } else {
+        -felt(value.unsigned_abs())
+    };
+    assert_eq!(trace.value(row, column), Some(value));
 }
 
 fn assert_wide(trace: &WitnessTraceBuffer, row: usize, column: usize, value: u64) {
@@ -868,4 +918,120 @@ fn guest_pc_trace_backend_writes_zisk_main_alu_and_compare_rows() {
     assert_wide(&trace, 13, 4, 1);
     assert_cell(&trace, 13, 6, 1);
     assert_cell(&trace, 13, 15, 0x06);
+}
+
+#[test]
+fn guest_pc_trace_backend_writes_zisk_main_branch_rows() {
+    let dir = temp_dir("branches");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let code_words = [
+        addi(1, 0, 5),
+        addi(2, 0, 5),
+        addi(4, 0, 7),
+        beq(1, 2, 8),
+        addi(3, 0, 111),
+        bne(1, 2, 8),
+        blt(1, 4, 8),
+        addi(5, 0, 222),
+        bge(4, 1, 8),
+        addi(6, 0, 333),
+        bltu(1, 4, 8),
+        addi(7, 0, 444),
+        bgeu(4, 1, 8),
+        addi(8, 0, 555),
+        bne(1, 2, -4),
+        0x0000_0073,
+    ];
+    let guest_image_bytes = sample_guest_image_with_words(&code_words);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns_rows(10);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("Zisk Main layout should write branch rows");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 10);
+    assert_eq!(trace.column_count(), 27);
+
+    assert_cell(&trace, 2, 7, ENTRY + 8);
+    assert_cell(&trace, 2, 4, 7);
+
+    assert_cell(&trace, 3, 0, 5);
+    assert_cell(&trace, 3, 2, 5);
+    assert_cell(&trace, 3, 4, 1);
+    assert_cell(&trace, 3, 6, 1);
+    assert_cell(&trace, 3, 7, ENTRY + 12);
+    assert_cell(&trace, 3, 10, 1);
+    assert_cell(&trace, 3, 11, 1);
+    assert_eq!(trace.value(3, 12), Some(Felt::ZERO));
+    assert_cell(&trace, 3, 15, 0x09);
+    assert_cell(&trace, 3, 16, 8);
+    assert_cell(&trace, 3, 17, 4);
+
+    assert_cell(&trace, 4, 0, 5);
+    assert_cell(&trace, 4, 2, 5);
+    assert_cell(&trace, 4, 4, 1);
+    assert_cell(&trace, 4, 6, 1);
+    assert_cell(&trace, 4, 7, ENTRY + 20);
+    assert_eq!(trace.value(4, 12), Some(Felt::ZERO));
+    assert_cell(&trace, 4, 15, 0x09);
+    assert_cell(&trace, 4, 16, 4);
+    assert_cell(&trace, 4, 17, 8);
+
+    assert_cell(&trace, 5, 0, 5);
+    assert_cell(&trace, 5, 2, 7);
+    assert_cell(&trace, 5, 4, 1);
+    assert_cell(&trace, 5, 6, 1);
+    assert_cell(&trace, 5, 7, ENTRY + 24);
+    assert_cell(&trace, 5, 15, 0x07);
+    assert_cell(&trace, 5, 16, 8);
+    assert_cell(&trace, 5, 17, 4);
+
+    assert_cell(&trace, 6, 0, 7);
+    assert_cell(&trace, 6, 2, 5);
+    assert_cell(&trace, 6, 4, 0);
+    assert_cell(&trace, 6, 6, 0);
+    assert_cell(&trace, 6, 7, ENTRY + 32);
+    assert_cell(&trace, 6, 15, 0x07);
+    assert_cell(&trace, 6, 16, 4);
+    assert_cell(&trace, 6, 17, 8);
+
+    assert_cell(&trace, 7, 0, 5);
+    assert_cell(&trace, 7, 2, 7);
+    assert_cell(&trace, 7, 4, 1);
+    assert_cell(&trace, 7, 6, 1);
+    assert_cell(&trace, 7, 7, ENTRY + 40);
+    assert_cell(&trace, 7, 15, 0x06);
+    assert_cell(&trace, 7, 16, 8);
+    assert_cell(&trace, 7, 17, 4);
+
+    assert_cell(&trace, 8, 0, 7);
+    assert_cell(&trace, 8, 2, 5);
+    assert_cell(&trace, 8, 4, 0);
+    assert_cell(&trace, 8, 6, 0);
+    assert_cell(&trace, 8, 7, ENTRY + 48);
+    assert_cell(&trace, 8, 15, 0x06);
+    assert_cell(&trace, 8, 16, 4);
+    assert_cell(&trace, 8, 17, 8);
+
+    assert_cell(&trace, 9, 0, 5);
+    assert_cell(&trace, 9, 2, 5);
+    assert_cell(&trace, 9, 4, 1);
+    assert_cell(&trace, 9, 6, 1);
+    assert_cell(&trace, 9, 7, ENTRY + 56);
+    assert_cell(&trace, 9, 15, 0x09);
+    assert_cell(&trace, 9, 16, 4);
+    assert_signed_cell(&trace, 9, 17, -4);
 }

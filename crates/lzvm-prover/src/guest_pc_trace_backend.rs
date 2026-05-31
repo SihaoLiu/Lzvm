@@ -513,6 +513,7 @@ fn write_zisk_main_report_columns(
         instruction.ind_width,
     )?;
     let (c, flag) = zisk_main_op_result(instruction.op, a, b);
+    validate_zisk_main_next_pc(row, &instruction, report, c, flag)?;
     validate_zisk_main_memory_accesses(row, &instruction, report, a, c, a_access, b_access)?;
 
     write_wide_column(builder, row, &columns.a, a)?;
@@ -806,6 +807,13 @@ fn zisk_main_op_result(op: ZiskMainOp, a: u64, b: u64) -> (u64, bool) {
                 (0, false)
             }
         }
+        ZiskMainOp::Eq => {
+            if a == b {
+                (1, true)
+            } else {
+                (0, false)
+            }
+        }
         ZiskMainOp::Add => (a.wrapping_add(b), false),
         ZiskMainOp::Sub => (a.wrapping_sub(b), false),
         ZiskMainOp::And => (a & b, false),
@@ -818,6 +826,32 @@ fn zisk_main_op_result(op: ZiskMainOp, a: u64, b: u64) -> (u64, bool) {
         ZiskMainOp::SignExtendH => ((b as i16) as u64, false),
         ZiskMainOp::SignExtendW => ((b as i32) as u64, false),
     }
+}
+
+fn validate_zisk_main_next_pc(
+    row: usize,
+    instruction: &ZiskMainInstruction,
+    report: &GuestMachineReport,
+    c: u64,
+    flag: bool,
+) -> Result<(), GuestPcTraceBackendError> {
+    let expected_next_pc = if instruction.set_pc {
+        c.wrapping_add_signed(instruction.jmp_offset1)
+    } else if flag {
+        instruction.pc.wrapping_add_signed(instruction.jmp_offset1)
+    } else {
+        instruction.pc.wrapping_add_signed(instruction.jmp_offset2)
+    };
+    if report.next_pc != expected_next_pc {
+        return Err(GuestPcTraceBackendError::ZiskMainEffectMismatch {
+            row,
+            message: format!(
+                "expected next pc {expected_next_pc}, found {}",
+                report.next_pc
+            ),
+        });
+    }
+    Ok(())
 }
 
 fn apply_zisk_main_store(
