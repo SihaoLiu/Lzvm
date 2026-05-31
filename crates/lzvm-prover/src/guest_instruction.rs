@@ -168,6 +168,15 @@ pub enum RiscvInstruction {
         csr: RiscvCsr,
         rd: u8,
     },
+    ZiskPrecompile {
+        kind: RiscvPrecompileKind,
+        rs1: u8,
+        rd: u8,
+    },
+    ZiskDmaPrepare {
+        kind: RiscvDmaKind,
+        rs1: u8,
+    },
     ZiskFcallParam {
         port: u8,
         rs1: u8,
@@ -324,6 +333,26 @@ pub enum RiscvCsr {
     Marchid,
     Mimpid,
     Mhartid,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RiscvDmaKind {
+    Memcpy,
+    Memcmp,
+    Inputcpy,
+    Memset,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RiscvPrecompileKind {
+    Keccak,
+    Arith256,
+    Arith256Mod,
+    Secp256k1Add,
+    Secp256k1Dbl,
+    Add256,
 }
 
 impl RiscvCsr {
@@ -1102,6 +1131,37 @@ fn decode_system(word: u32) -> RiscvInstruction {
         return RiscvInstruction::Ebreak;
     }
     let csr_number = ((word >> 20) & 0x0fff) as u16;
+    if funct3(word) == 2 {
+        let kind = match csr_number {
+            0x0800 if rd(word) == 0 => Some(RiscvPrecompileKind::Keccak),
+            0x0801 if rd(word) == 0 => Some(RiscvPrecompileKind::Arith256),
+            0x0802 if rd(word) == 0 => Some(RiscvPrecompileKind::Arith256Mod),
+            0x0803 if rd(word) == 0 => Some(RiscvPrecompileKind::Secp256k1Add),
+            0x0804 if rd(word) == 0 => Some(RiscvPrecompileKind::Secp256k1Dbl),
+            0x0811 => Some(RiscvPrecompileKind::Add256),
+            _ => None,
+        };
+        if let Some(kind) = kind {
+            return RiscvInstruction::ZiskPrecompile {
+                kind,
+                rs1: rs1(word),
+                rd: rd(word),
+            };
+        }
+    }
+    if (0x0813..=0x0816).contains(&csr_number) && funct3(word) == 2 && rd(word) == 0 {
+        let kind = match csr_number {
+            0x0813 => RiscvDmaKind::Memcpy,
+            0x0814 => RiscvDmaKind::Memcmp,
+            0x0815 => RiscvDmaKind::Inputcpy,
+            0x0816 => RiscvDmaKind::Memset,
+            _ => unreachable!("DMA CSR range was already checked"),
+        };
+        return RiscvInstruction::ZiskDmaPrepare {
+            kind,
+            rs1: rs1(word),
+        };
+    }
     if (0x08f0..=0x08ff).contains(&csr_number) && funct3(word) == 2 && rd(word) == 0 {
         return RiscvInstruction::ZiskFcallParam {
             port: (csr_number - 0x08f0) as u8,

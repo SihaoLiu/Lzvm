@@ -10,6 +10,7 @@ use lzvm_prover::guest_machine::{
 use lzvm_prover::guest_memory::{load_guest_memory_image, GuestMemoryImage};
 use lzvm_prover::zisk_fcalls::{
     ZiskInputFcallHandler, ZISK_INPUT_ADDRESS, ZISK_INPUT_READY_FCALL_ID,
+    ZISK_MSB_POS_256_FCALL_ID, ZISK_SECP256K1_ECDSA_VERIFY_FCALL_ID,
 };
 
 const ENTRY: u64 = 0x8000_0000;
@@ -75,6 +76,27 @@ fn guest_machine_memory_with_words(words: &[u32]) -> GuestMachineMemory {
 
 fn guest_machine_memory_with_bytes(code: &[u8]) -> GuestMachineMemory {
     GuestMachineMemory::from_image(&guest_memory_image_with_bytes(code))
+}
+
+fn guest_machine_memory_with_words_and_data(
+    words: &[u32],
+    data_offset: usize,
+    data: &[u8],
+) -> GuestMachineMemory {
+    let mut code = Vec::with_capacity(data_offset + data.len());
+    for word in words {
+        code.extend_from_slice(&word.to_le_bytes());
+    }
+    assert!(code.len() <= data_offset);
+    code.resize(data_offset, 0);
+    code.extend_from_slice(data);
+    guest_machine_memory_with_bytes(&code)
+}
+
+fn push_u64_array<const N: usize>(bytes: &mut Vec<u8>, values: &[u64; N]) {
+    for value in values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
 }
 
 fn encode_i(immediate: i16, rs1: u8, funct3: u8, rd: u8, opcode: u8) -> u32 {
@@ -168,6 +190,12 @@ fn lui(rd: u8, immediate: u32) -> u32 {
     assert!(rd < 32);
     assert_eq!(immediate & 0x0fff, 0);
     (immediate & 0xffff_f000) | (u32::from(rd) << 7) | 0x37
+}
+
+fn auipc(rd: u8, immediate: u32) -> u32 {
+    assert!(rd < 32);
+    assert_eq!(immediate & 0x0fff, 0);
+    (immediate & 0xffff_f000) | (u32::from(rd) << 7) | 0x17
 }
 
 fn encode_csr(rd: u8, csr: u16, funct3: u8, source: u8) -> u32 {
@@ -725,9 +753,24 @@ fn traces_guest_machine_atomic_effects_until_ecall() {
     );
 }
 
-#[derive(Default)]
 struct RecordingFcallHandler {
     requests: Vec<GuestFcallRequest>,
+    results: Vec<u64>,
+}
+
+impl RecordingFcallHandler {
+    fn with_results(results: Vec<u64>) -> Self {
+        Self {
+            requests: Vec::new(),
+            results,
+        }
+    }
+}
+
+impl Default for RecordingFcallHandler {
+    fn default() -> Self {
+        Self::with_results(vec![0x2a])
+    }
 }
 
 impl GuestFcallHandler for RecordingFcallHandler {
@@ -738,7 +781,7 @@ impl GuestFcallHandler for RecordingFcallHandler {
     ) -> Result<GuestFcallResponse, lzvm_prover::guest_machine::GuestFcallError> {
         self.requests.push(request);
         Ok(GuestFcallResponse {
-            results: vec![0x2a],
+            results: self.results.clone(),
         })
     }
 }
@@ -815,6 +858,58 @@ fn traces_guest_machine_with_zisk_free_call_handler() {
 }
 
 #[test]
+fn zisk_dma_inputcpy_copies_free_call_results_to_guest_memory() {
+    let data_offset = 256;
+    let data_address = ENTRY + data_offset as u64;
+    let mut memory = guest_machine_memory_with_words_and_data(
+        &[
+            auipc(10, 0),
+            addi(10, 10, data_offset as i16),
+            addi(10, 10, 3),
+            csrwi(0x08c0, 7),
+            csrs(0x0815, 10),
+            addi(11, 10, 16),
+            0x0000_0073,
+        ],
+        data_offset,
+        &[0; 24],
+    );
+    let mut state = GuestMachineState::new(memory.entry_address());
+    let mut handler =
+        RecordingFcallHandler::with_results(vec![0x1122_3344_5566_7788, 0x99aa_bbcc_ddee_ff00]);
+
+    let report = run_guest_machine_with_fcalls(&mut memory, &mut state, &mut handler, 16)
+        .expect("guest should halt");
+
+    let mut copied = [0_u8; 24];
+    memory
+        .read_range_into(data_address, &mut copied)
+        .expect("data memory should read");
+    assert_eq!(report.executed_instructions, 6);
+    assert_eq!(
+        report.halt,
+        GuestMachineHalt::Ecall {
+            address: ENTRY + 24
+        }
+    );
+    assert_eq!(state.register(11), Some(data_address + 3));
+    assert_eq!(
+        copied,
+        [
+            0x00, 0x00, 0x00, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0xff, 0xee,
+            0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ]
+    );
+    assert_eq!(
+        handler.requests,
+        vec![GuestFcallRequest {
+            function_id: 7,
+            params: vec![],
+        }]
+    );
+}
+
+#[test]
 fn guest_machine_reads_zisk_architecture_id() {
     let mut memory = guest_machine_memory_with_words(&[csrr(5, 0x0f12), 0x0000_0073]);
     let mut state = GuestMachineState::new(memory.entry_address());
@@ -887,6 +982,113 @@ fn zisk_input_ready_writes_into_existing_guest_memory() {
     assert_eq!(state.register(7), Some(3));
     assert_eq!(state.register(8), Some(u64::from(b'a')));
     assert_eq!(state.register(9), Some(u64::from(b'c')));
+}
+
+#[test]
+fn zisk_fcall_secp256k1_ecdsa_verify_returns_double_scalar_mul_point() {
+    let data_offset = 256;
+    let mut data = Vec::new();
+    push_u64_array(
+        &mut data,
+        &[
+            0x59f2_815b_16f8_1798,
+            0x029b_fcdb_2dce_28d9,
+            0x55a0_6295_ce87_0b07,
+            0x79be_667e_f9dc_bbac,
+            0x9c47_d08f_fb10_d4b8,
+            0xfd17_b448_a685_5419,
+            0x5da4_fbfc_0e11_08a8,
+            0x483a_da77_26a3_c465,
+        ],
+    );
+    push_u64_array(&mut data, &[2, 0, 0, 0]);
+    push_u64_array(&mut data, &[3, 0, 0, 0]);
+    push_u64_array(&mut data, &[1, 0, 0, 0]);
+    let mut memory = guest_machine_memory_with_words_and_data(
+        &[
+            auipc(10, 0),
+            addi(10, 10, data_offset as i16),
+            csrs(0x08f3, 10),
+            addi(10, 10, 64),
+            csrs(0x08f2, 10),
+            addi(10, 10, 32),
+            csrs(0x08f2, 10),
+            addi(10, 10, 32),
+            csrs(0x08f2, 10),
+            csrwi(0x08c0, ZISK_SECP256K1_ECDSA_VERIFY_FCALL_ID as u8),
+            csrr(5, 0x0ffe),
+            csrr(6, 0x0ffe),
+            csrr(7, 0x0ffe),
+            csrr(8, 0x0ffe),
+            csrr(9, 0x0ffe),
+            csrr(10, 0x0ffe),
+            csrr(11, 0x0ffe),
+            csrr(12, 0x0ffe),
+            0x0000_0073,
+        ],
+        data_offset,
+        &data,
+    );
+    let mut state = GuestMachineState::new(memory.entry_address());
+    let mut handler = ZiskInputFcallHandler::new(&[]).expect("empty input should load");
+
+    let report = run_guest_machine_with_fcalls(&mut memory, &mut state, &mut handler, 64)
+        .expect("guest should halt");
+
+    assert_eq!(report.executed_instructions, 18);
+    assert_eq!(state.register(5), Some(0xcba8_d569_b240_efe4));
+    assert_eq!(state.register(6), Some(0xe88b_84bd_dc61_9ab7));
+    assert_eq!(state.register(7), Some(0x55b4_a725_0a5c_5128));
+    assert_eq!(state.register(8), Some(0x2f8b_de4d_1a07_2093));
+    assert_eq!(state.register(9), Some(0xdca8_7d3a_a6ac_62d6));
+    assert_eq!(state.register(10), Some(0xf788_271b_ab0d_6840));
+    assert_eq!(state.register(11), Some(0xd4db_a9dd_a6c9_c426));
+    assert_eq!(state.register(12), Some(0xd8ac_2226_36e5_e3d6));
+}
+
+#[test]
+fn zisk_fcall_msb_pos_256_returns_highest_limb_and_bit() {
+    let data_offset = 256;
+    let data_address = ENTRY + data_offset as u64;
+    let x_address = data_address;
+    let y_address = x_address + 32;
+    let z_address = y_address + 32;
+    let mut data = Vec::new();
+    push_u64_array(&mut data, &[0, 0, 0, 0]);
+    push_u64_array(&mut data, &[0, 1 << 9, 0, 0]);
+    push_u64_array(&mut data, &[0, 0, 0x400, 0]);
+    let mut memory = guest_machine_memory_with_words_and_data(
+        &[
+            auipc(10, 0),
+            addi(10, 10, data_offset as i16),
+            addi(11, 0, 3),
+            csrs(0x08f0, 11),
+            csrs(0x08f2, 10),
+            addi(10, 10, 32),
+            csrs(0x08f2, 10),
+            addi(10, 10, 32),
+            csrs(0x08f2, 10),
+            csrwi(0x08c0, ZISK_MSB_POS_256_FCALL_ID as u8),
+            csrr(5, 0x0ffe),
+            csrr(6, 0x0ffe),
+            0x0000_0073,
+        ],
+        data_offset,
+        &data,
+    );
+    let mut state = GuestMachineState::new(memory.entry_address());
+    let mut handler = ZiskInputFcallHandler::new(&[]).expect("empty input should load");
+
+    let report = run_guest_machine_with_fcalls(&mut memory, &mut state, &mut handler, 32)
+        .expect("guest should halt");
+
+    assert_eq!(report.executed_instructions, 12);
+    assert_eq!(state.register(5), Some(2));
+    assert_eq!(state.register(6), Some(10));
+    assert_eq!(
+        (x_address, y_address, z_address),
+        (data_address, data_address + 32, data_address + 64)
+    );
 }
 
 #[test]

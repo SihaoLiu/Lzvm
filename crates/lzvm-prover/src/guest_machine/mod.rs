@@ -3,12 +3,16 @@ use std::fmt;
 
 use crate::guest_instruction::{
     decode_guest_instruction, fetch_guest_instruction, GuestInstructionError, RiscvAmoKind,
-    RiscvAmoWidth, RiscvBranchKind, RiscvCsr, RiscvEncodedInstruction, RiscvInstruction,
-    RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    RiscvAmoWidth, RiscvBranchKind, RiscvCsr, RiscvDmaKind, RiscvEncodedInstruction,
+    RiscvInstruction, RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind,
+    RiscvStoreKind,
 };
 use crate::guest_memory::{
     GuestMemoryError, GuestMemoryImage, GuestMemoryReader, GuestMemorySegment,
 };
+
+mod precompile;
+use precompile::execute_precompile;
 
 const GUEST_REGISTER_COUNT: usize = 32;
 const HOST_MAPPED_PROGRAM_HEADER_INDEX: u16 = u16::MAX;
@@ -153,6 +157,46 @@ impl GuestMachineMemory {
         Ok(())
     }
 
+    pub fn map_zeroed_gap_range(
+        &mut self,
+        virtual_address: u64,
+        memory_size: u64,
+    ) -> Result<(), GuestMemoryError> {
+        if memory_size == 0 {
+            return Ok(());
+        }
+        let range_end = checked_address_end_u64(virtual_address, memory_size)?;
+        let mut cursor = virtual_address;
+        let mut mapped_segments = Vec::new();
+        for segment in &self.segments {
+            if cursor >= range_end {
+                break;
+            }
+            let segment_start = segment.virtual_address;
+            if segment_start >= range_end {
+                break;
+            }
+            let segment_end = segment.end_address()?;
+            if segment_end <= cursor {
+                continue;
+            }
+            if segment_start > cursor {
+                let gap_end = segment_start.min(range_end);
+                mapped_segments.push(GuestMachineMemorySegment::zeroed(cursor, gap_end - cursor));
+            }
+            cursor = cursor.max(segment_end.min(range_end));
+        }
+        if cursor < range_end {
+            mapped_segments.push(GuestMachineMemorySegment::zeroed(
+                cursor,
+                range_end - cursor,
+            ));
+        }
+        self.segments.extend(mapped_segments);
+        self.segments.sort_by_key(|segment| segment.virtual_address);
+        Ok(())
+    }
+
     pub fn write_or_map_initialized_range(
         &mut self,
         virtual_address: u64,
@@ -210,6 +254,16 @@ impl GuestMemoryReader for GuestMachineMemory {
 }
 
 impl GuestMachineMemorySegment {
+    fn zeroed(virtual_address: u64, memory_size: u64) -> Self {
+        Self {
+            program_header_index: HOST_MAPPED_PROGRAM_HEADER_INDEX,
+            virtual_address,
+            memory_size,
+            initialized_bytes: Vec::new(),
+            written_bytes: BTreeMap::new(),
+        }
+    }
+
     fn from_image_segment(segment: &GuestMemorySegment) -> Self {
         Self {
             program_header_index: segment.program_header_index(),
@@ -265,6 +319,16 @@ fn checked_address_end(address: u64, byte_len: usize) -> Result<u64, GuestMemory
         .ok_or(GuestMemoryError::AddressRangeOverflow { address, byte_len })
 }
 
+fn checked_address_end_u64(address: u64, byte_len: u64) -> Result<u64, GuestMemoryError> {
+    let byte_len_usize = usize::try_from(byte_len).unwrap_or(usize::MAX);
+    address
+        .checked_add(byte_len)
+        .ok_or(GuestMemoryError::AddressRangeOverflow {
+            address,
+            byte_len: byte_len_usize,
+        })
+}
+
 fn ranges_overlap(first_start: u64, first_end: u64, second_start: u64, second_end: u64) -> bool {
     first_start < second_end && second_start < first_end
 }
@@ -274,6 +338,7 @@ pub struct GuestMachineState {
     pc: u64,
     registers: [u64; GUEST_REGISTER_COUNT],
     reservation: Option<GuestMemoryReservation>,
+    pending_dma: Option<GuestDmaPrepare>,
     fcall_params: Vec<GuestFcallParam>,
     fcall_results: VecDeque<u64>,
     retired_instructions: u64,
@@ -285,12 +350,28 @@ struct GuestMemoryReservation {
     width: RiscvAmoWidth,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GuestDmaPrepare {
+    kind: RiscvDmaKind,
+    first_arg: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GuestDmaExecute {
+    pending: GuestDmaPrepare,
+    dst: u64,
+    count: u64,
+    rd: u8,
+    fill_byte: Option<u8>,
+}
+
 impl GuestMachineState {
     pub fn new(entry_address: u64) -> Self {
         Self {
             pc: entry_address,
             registers: [0; GUEST_REGISTER_COUNT],
             reservation: None,
+            pending_dma: None,
             fcall_params: Vec::new(),
             fcall_results: VecDeque::new(),
             retired_instructions: 0,
@@ -348,6 +429,14 @@ impl GuestMachineState {
         }
     }
 
+    fn set_pending_dma(&mut self, kind: RiscvDmaKind, first_arg: u64) {
+        self.pending_dma = Some(GuestDmaPrepare { kind, first_arg });
+    }
+
+    fn take_pending_dma(&mut self) -> Option<GuestDmaPrepare> {
+        self.pending_dma.take()
+    }
+
     fn retired_instructions(&self) -> u64 {
         self.retired_instructions
     }
@@ -374,6 +463,29 @@ impl GuestMachineState {
 
     fn pop_fcall_result(&mut self) -> Option<u64> {
         self.fcall_results.pop_front()
+    }
+
+    fn pop_fcall_result_bytes(
+        &mut self,
+        address: u64,
+        byte_len: usize,
+    ) -> Result<Vec<u8>, GuestMachineError> {
+        if !byte_len.is_multiple_of(8) {
+            return Err(GuestMachineError::InvalidFcallResultByteCount { address, byte_len });
+        }
+        let word_count = byte_len / 8;
+        if self.fcall_results.len() < word_count {
+            return Err(GuestMachineError::MissingFcallResult { address });
+        }
+        let mut bytes = Vec::with_capacity(byte_len);
+        for _ in 0..word_count {
+            let word = self
+                .fcall_results
+                .pop_front()
+                .expect("fcall result count was checked");
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        Ok(bytes)
     }
 
     fn reservation_matches(&self, address: u64, width: RiscvAmoWidth) -> bool {
@@ -507,6 +619,16 @@ pub enum GuestMachineError {
     MissingFcallResult {
         address: u64,
     },
+    InvalidFcallResultByteCount {
+        address: u64,
+        byte_len: usize,
+    },
+    NonInvertibleSecp256k1Scalar {
+        address: u64,
+    },
+    ZeroArith256Modulus {
+        address: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -561,6 +683,18 @@ impl fmt::Display for GuestMachineError {
                 f,
                 "guest machine free-call result is missing: address {address}"
             ),
+            Self::InvalidFcallResultByteCount { address, byte_len } => write!(
+                f,
+                "guest machine free-call result byte count is invalid: address {address}, byte length {byte_len}"
+            ),
+            Self::NonInvertibleSecp256k1Scalar { address } => write!(
+                f,
+                "guest machine secp256k1 scalar is not invertible: address {address}"
+            ),
+            Self::ZeroArith256Modulus { address } => write!(
+                f,
+                "guest machine arith256_mod modulus is zero: address {address}"
+            ),
         }
     }
 }
@@ -592,7 +726,10 @@ impl std::error::Error for GuestMachineError {
             | Self::UnsupportedInstructionLength { .. }
             | Self::UnsupportedInstruction { .. }
             | Self::MissingFcallHandler { .. }
-            | Self::MissingFcallResult { .. } => None,
+            | Self::MissingFcallResult { .. }
+            | Self::InvalidFcallResultByteCount { .. }
+            | Self::NonInvertibleSecp256k1Scalar { .. }
+            | Self::ZeroArith256Modulus { .. } => None,
         }
     }
 }
@@ -796,6 +933,10 @@ fn execute_guest_instruction(
     effects: &mut GuestInstructionEffects,
     handler: Option<&mut dyn GuestFcallHandler>,
 ) -> Result<(), GuestMachineError> {
+    if let Some(pending_dma) = state.take_pending_dma() {
+        return execute_pending_dma(memory, address, instruction, state, effects, pending_dma);
+    }
+
     match instruction {
         RiscvInstruction::Lui { rd, immediate } => {
             write_reported_register(state, effects, rd, immediate as u64);
@@ -941,6 +1082,14 @@ fn execute_guest_instruction(
                 rd,
                 read_csr(csr, state.retired_instructions()),
             );
+        }
+        RiscvInstruction::ZiskPrecompile { kind, rs1, rd } => {
+            let operand_address = state.read_decoded_register(rs1);
+            let result = execute_precompile(memory, state, kind, address, operand_address)?;
+            write_reported_register(state, effects, rd, result);
+        }
+        RiscvInstruction::ZiskDmaPrepare { kind, rs1 } => {
+            state.set_pending_dma(kind, state.read_decoded_register(rs1));
         }
         RiscvInstruction::ZiskFcallParam { port, rs1 } => {
             state.push_fcall_param(port, state.read_decoded_register(rs1));
@@ -1205,6 +1354,192 @@ fn amo_result(width: RiscvAmoWidth, loaded: u64) -> u64 {
         RiscvAmoWidth::Word => sign_extend_word(loaded as u32),
         RiscvAmoWidth::Doubleword => loaded,
     }
+}
+
+fn execute_pending_dma(
+    memory: &mut GuestMachineMemory,
+    address: u64,
+    instruction: RiscvInstruction,
+    state: &mut GuestMachineState,
+    effects: &mut GuestInstructionEffects,
+    pending: GuestDmaPrepare,
+) -> Result<(), GuestMachineError> {
+    match instruction {
+        RiscvInstruction::Op {
+            kind: RiscvOpKind::Add,
+            rd,
+            rs1,
+            rs2,
+        } => {
+            let dst = state.read_decoded_register(rs1);
+            let count = state.read_decoded_register(rs2);
+            execute_dma(
+                memory,
+                state,
+                effects,
+                GuestDmaExecute {
+                    pending,
+                    dst,
+                    count,
+                    rd,
+                    fill_byte: None,
+                },
+            )
+        }
+        RiscvInstruction::OpImm {
+            kind: RiscvOpImmKind::Addi,
+            rd,
+            rs1,
+            immediate,
+        } => {
+            if pending.kind == RiscvDmaKind::Memset {
+                let count = state.read_decoded_register(rs1);
+                execute_dma(
+                    memory,
+                    state,
+                    effects,
+                    GuestDmaExecute {
+                        pending,
+                        dst: pending.first_arg,
+                        count,
+                        rd,
+                        fill_byte: Some(immediate as u8),
+                    },
+                )
+            } else {
+                let dst = state.read_decoded_register(rs1);
+                execute_dma(
+                    memory,
+                    state,
+                    effects,
+                    GuestDmaExecute {
+                        pending,
+                        dst,
+                        count: immediate as u64,
+                        rd,
+                        fill_byte: None,
+                    },
+                )
+            }
+        }
+        _ => Err(GuestMachineError::UnsupportedInstruction {
+            address,
+            instruction,
+        }),
+    }
+}
+
+fn execute_dma(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    effects: &mut GuestInstructionEffects,
+    request: GuestDmaExecute,
+) -> Result<(), GuestMachineError> {
+    let GuestDmaExecute {
+        pending,
+        dst,
+        count,
+        rd,
+        fill_byte,
+    } = request;
+    let result = match pending.kind {
+        RiscvDmaKind::Memcpy => {
+            dma_memcpy(memory, state, dst, pending.first_arg, count)?;
+            dst
+        }
+        RiscvDmaKind::Memcmp => dma_memcmp(memory, dst, pending.first_arg, count)?,
+        RiscvDmaKind::Memset => {
+            let fill_byte = fill_byte.unwrap_or(0);
+            dma_memset(memory, state, dst, count, fill_byte)?;
+            dst
+        }
+        RiscvDmaKind::Inputcpy => {
+            dma_inputcpy(memory, state, dst, count)?;
+            dst
+        }
+    };
+    write_reported_register(state, effects, rd, result);
+    Ok(())
+}
+
+fn dma_memcpy(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    dst: u64,
+    src: u64,
+    count: u64,
+) -> Result<(), GuestMachineError> {
+    let count = dma_count_to_usize(src, count)?;
+    if dst == src || count == 0 {
+        return Ok(());
+    }
+    let mut bytes = vec![0_u8; count];
+    memory.read_range_into(src, &mut bytes)?;
+    state.clear_reservation_if_overlaps(dst, count);
+    memory.write_range(dst, &bytes)?;
+    Ok(())
+}
+
+fn dma_memcmp(
+    memory: &GuestMachineMemory,
+    lhs: u64,
+    rhs: u64,
+    count: u64,
+) -> Result<u64, GuestMachineError> {
+    let count = dma_count_to_usize(lhs, count)?;
+    if count == 0 {
+        return Ok(0);
+    }
+    let mut lhs_bytes = vec![0_u8; count];
+    let mut rhs_bytes = vec![0_u8; count];
+    memory.read_range_into(lhs, &mut lhs_bytes)?;
+    memory.read_range_into(rhs, &mut rhs_bytes)?;
+    for (lhs_byte, rhs_byte) in lhs_bytes.into_iter().zip(rhs_bytes) {
+        if lhs_byte != rhs_byte {
+            return Ok(((lhs_byte as i64) - (rhs_byte as i64)) as u64);
+        }
+    }
+    Ok(0)
+}
+
+fn dma_memset(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    dst: u64,
+    count: u64,
+    fill_byte: u8,
+) -> Result<(), GuestMachineError> {
+    let count = dma_count_to_usize(dst, count)?;
+    if count == 0 {
+        return Ok(());
+    }
+    let bytes = vec![fill_byte; count];
+    state.clear_reservation_if_overlaps(dst, count);
+    memory.write_range(dst, &bytes)?;
+    Ok(())
+}
+
+fn dma_inputcpy(
+    memory: &mut GuestMachineMemory,
+    state: &mut GuestMachineState,
+    dst: u64,
+    count: u64,
+) -> Result<(), GuestMachineError> {
+    let count = dma_count_to_usize(dst, count)?;
+    if count == 0 {
+        return Ok(());
+    }
+    let bytes = state.pop_fcall_result_bytes(state.pc(), count)?;
+    state.clear_reservation_if_overlaps(dst, count);
+    memory.write_range(dst, &bytes)?;
+    Ok(())
+}
+
+fn dma_count_to_usize(address: u64, count: u64) -> Result<usize, GuestMemoryError> {
+    usize::try_from(count).map_err(|_| GuestMemoryError::AddressRangeOverflow {
+        address,
+        byte_len: usize::MAX,
+    })
 }
 
 fn branch_is_taken(kind: RiscvBranchKind, lhs: u64, rhs: u64) -> bool {

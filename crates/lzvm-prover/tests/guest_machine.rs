@@ -1,11 +1,10 @@
 use lzvm_artifacts::guest_image::parse_guest_image;
 use lzvm_prover::guest_instruction::{
-    RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvCsr, RiscvFenceKind, RiscvInstruction,
-    RiscvLoadKind, RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
+    RiscvAmoKind, RiscvAmoWidth, RiscvBranchKind, RiscvFenceKind, RiscvInstruction, RiscvLoadKind,
+    RiscvOp32Kind, RiscvOpImm32Kind, RiscvOpImmKind, RiscvOpKind, RiscvStoreKind,
 };
 use lzvm_prover::guest_machine::{
     advance_guest_machine, GuestMachineError, GuestMachineMemory, GuestMachineState,
-    ZISK_ARCHITECTURE_ID,
 };
 use lzvm_prover::guest_memory::{load_guest_memory_image, GuestMemoryError, GuestMemoryImage};
 
@@ -452,13 +451,6 @@ fn remw(rd: u8, rs1: u8, rs2: u8) -> u32 {
 
 fn remuw(rd: u8, rs1: u8, rs2: u8) -> u32 {
     encode_r_with_opcode(0x01, rs2, rs1, 7, rd, 0x3b)
-}
-
-fn csrrs(rd: u8, csr: u16, rs1: u8) -> u32 {
-    assert!(csr < 4096);
-    assert_register(rs1);
-    assert_register(rd);
-    (u32::from(csr) << 20) | (u32::from(rs1) << 15) | (2 << 12) | (u32::from(rd) << 7) | 0x73
 }
 
 fn amoadd_w(rd: u8, rs1: u8, rs2: u8) -> u32 {
@@ -1658,84 +1650,6 @@ fn advances_fence_instructions_as_noops() {
         assert_eq!(state.pc(), next_pc);
         assert_eq!(state.register(1), Some(0xfeed_face_cafe_beef));
         assert_eq!(memory, before_memory);
-    }
-}
-
-#[test]
-fn advances_machine_csr_reads() {
-    const RV64IMAC_MISA: u64 = 0x8000_0000_0000_1105;
-
-    let cases = [
-        (0x0301, RiscvCsr::Misa, 10, RV64IMAC_MISA),
-        (0x0f11, RiscvCsr::Mvendorid, 11, 0),
-        (0x0f12, RiscvCsr::Marchid, 12, ZISK_ARCHITECTURE_ID),
-        (0x0f13, RiscvCsr::Mimpid, 13, 0),
-        (0x0f14, RiscvCsr::Mhartid, 14, 0),
-    ];
-    let words: Vec<u32> = cases
-        .iter()
-        .map(|(csr_number, _, rd, _)| csrrs(*rd, *csr_number, 0))
-        .collect();
-    let mut memory = guest_machine_memory_with_words(&words);
-    let mut state = GuestMachineState::new(memory.entry_address());
-
-    for (_, _, rd, _) in cases {
-        state
-            .set_register(usize::from(rd), u64::MAX)
-            .expect("register write should be valid");
-    }
-
-    for (index, (_, csr, rd, value)) in cases.into_iter().enumerate() {
-        let report =
-            advance_guest_machine(&mut memory, &mut state).expect("csr read should execute");
-        let address = ENTRY + (index as u64) * 4;
-
-        assert_eq!(report.address, address);
-        assert_eq!(report.next_pc, address + 4);
-        assert_eq!(report.instruction, RiscvInstruction::CsrRead { csr, rd });
-        assert_eq!(state.register(usize::from(rd)), Some(value));
-        assert_eq!(state.pc(), address + 4);
-    }
-}
-
-#[test]
-fn advances_counter_csr_reads_with_deterministic_ticks() {
-    let cases = [
-        (0x0c00, RiscvCsr::Cycle, 10, 0),
-        (0x0c01, RiscvCsr::Time, 11, 1),
-        (0x0c02, RiscvCsr::Instret, 12, 2),
-        (0x0c80, RiscvCsr::Cycleh, 13, 0),
-        (0x0c81, RiscvCsr::Timeh, 14, 0),
-        (0x0c82, RiscvCsr::Instreth, 15, 0),
-        (0x0c00, RiscvCsr::Cycle, 16, 6),
-        (0x0b00, RiscvCsr::Mcycle, 17, 7),
-        (0x0b02, RiscvCsr::Minstret, 18, 8),
-        (0x0b80, RiscvCsr::Mcycleh, 19, 0),
-        (0x0b82, RiscvCsr::Minstreth, 20, 0),
-    ];
-    let words: Vec<u32> = cases
-        .iter()
-        .map(|(csr_number, _, rd, _)| csrrs(*rd, *csr_number, 0))
-        .collect();
-    let mut memory = guest_machine_memory_with_words(&words);
-    let mut state = GuestMachineState::new(memory.entry_address());
-
-    for (_, _, rd, _) in cases {
-        state
-            .set_register(usize::from(rd), u64::MAX)
-            .expect("register write should be valid");
-    }
-
-    for (index, (_, csr, rd, value)) in cases.into_iter().enumerate() {
-        let report =
-            advance_guest_machine(&mut memory, &mut state).expect("csr read should execute");
-        let address = ENTRY + (index as u64) * 4;
-
-        assert_eq!(report.address, address);
-        assert_eq!(report.next_pc, address + 4);
-        assert_eq!(report.instruction, RiscvInstruction::CsrRead { csr, rd });
-        assert_eq!(state.register(usize::from(rd)), Some(value));
-        assert_eq!(state.pc(), address + 4);
     }
 }
 

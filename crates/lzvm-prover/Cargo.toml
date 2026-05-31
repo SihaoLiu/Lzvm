@@ -18,4 +18,7 @@ libloading = "0.8"
 lzvm-accel = { path = "../lzvm-accel", optional = true }
 lzvm-artifacts = { path = "../lzvm-artifacts", default-features = false }
 lzvm-field = { path = "../lzvm-field" }
+num-bigint = "0.4"
+num-traits = "0.2"
 sha2 = "0.10"
+tiny-keccak = { version = "2.0", features = ["keccak"] }

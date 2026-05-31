@@ -61,6 +61,7 @@ mod prove_fri_opening;
 mod prove_fri_polynomial;
 mod prove_witness;
 pub mod regular_constraints;
+mod secp256k1_host;
 pub mod setup_preflight;
 mod source_assignment_hints;
 mod source_lookup_hints;

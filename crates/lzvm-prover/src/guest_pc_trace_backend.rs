@@ -14,6 +14,9 @@ use lzvm_field::{Felt, FieldError};
 
 use crate::zisk_fcalls::{ZiskInputFcallError, ZiskInputFcallHandler};
 
+const ZISK_RAM_ADDRESS: u64 = 0xa000_0000;
+const ZISK_RAM_SIZE: u64 = 0x2000_0000;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestPcTraceBackend {
     instruction_limit: u64,
@@ -173,6 +176,9 @@ fn compute_guest_pc_trace(
     let memory_image = load_guest_memory_image(&guest_image_bytes, guest_image_info)
         .map_err(GuestPcTraceBackendError::GuestMemory)?;
     let mut memory = GuestMachineMemory::from_image(&memory_image);
+    memory
+        .map_zeroed_gap_range(ZISK_RAM_ADDRESS, ZISK_RAM_SIZE)
+        .map_err(GuestPcTraceBackendError::GuestMemory)?;
     let mut state = crate::guest_machine::GuestMachineState::new(memory.entry_address());
     let mut fcall_handler =
         ZiskInputFcallHandler::new(buffers.input()).map_err(GuestPcTraceBackendError::ZiskInput)?;

@@ -105,8 +105,33 @@ fn addi(rd: u8, rs1: u8, immediate: i16) -> u32 {
     encode_i(immediate, rs1, 0, rd, 0x13)
 }
 
+fn op_imm_shift(funct6: u8, rd: u8, rs1: u8, shamt: u8) -> u32 {
+    assert!(funct6 < 64);
+    assert!(rd < 32);
+    assert!(rs1 < 32);
+    assert!(shamt < 64);
+    (u32::from(funct6) << 26)
+        | (u32::from(shamt) << 20)
+        | (u32::from(rs1) << 15)
+        | (1 << 12)
+        | (u32::from(rd) << 7)
+        | 0x13
+}
+
+fn slli(rd: u8, rs1: u8, shamt: u8) -> u32 {
+    op_imm_shift(0, rd, rs1, shamt)
+}
+
+fn srli(rd: u8, rs1: u8, shamt: u8) -> u32 {
+    op_imm_shift(0, rd, rs1, shamt) | (5 << 12)
+}
+
 fn load(funct3: u8, rd: u8, rs1: u8, offset: i16) -> u32 {
     encode_i(offset, rs1, funct3, rd, 0x03)
+}
+
+fn ld(rd: u8, rs1: u8, offset: i16) -> u32 {
+    load(3, rd, rs1, offset)
 }
 
 fn lbu(rd: u8, rs1: u8, offset: i16) -> u32 {
@@ -129,6 +154,10 @@ fn store(funct3: u8, rs1: u8, rs2: u8, offset: i16) -> u32 {
 
 fn sb(rs1: u8, rs2: u8, offset: i16) -> u32 {
     store(0, rs1, rs2, offset)
+}
+
+fn sd(rs1: u8, rs2: u8, offset: i16) -> u32 {
+    store(3, rs1, rs2, offset)
 }
 
 fn auipc(rd: u8, immediate: u32) -> u32 {
@@ -532,6 +561,79 @@ fn guest_pc_trace_backend_uses_framed_input_for_zisk_free_calls() {
     assert_eq!(
         trace.value(6, 1),
         Some(Felt::from_canonical(ENTRY + 36).expect("canonical"))
+    );
+}
+
+#[test]
+fn guest_pc_trace_backend_maps_zisk_ram_as_zeroed_writable_memory() {
+    let dir = temp_dir("guest-pc-trace-zisk-ram");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let zisk_ram_address = 0xa043_0820_u64;
+    let guest_image_bytes = sample_guest_image_with_words(&[
+        lui(5, 0xa043_1000),
+        slli(5, 5, 32),
+        srli(5, 5, 32),
+        addi(5, 5, -2016),
+        ld(6, 5, 0),
+        addi(7, 0, 9),
+        sd(5, 7, 0),
+        ld(8, 5, 0),
+        0x0000_0073,
+    ]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_trace_columns(
+        8,
+        vec![6],
+        vec![
+            commitment_column("mem_read_address", 1, 0, 1),
+            commitment_column("mem_read_value", 1, 1, 1),
+            commitment_column("mem_read_byte_len", 1, 2, 1),
+            commitment_column("mem_write_address", 1, 3, 1),
+            commitment_column("mem_write_value", 1, 4, 1),
+            commitment_column("mem_write_byte_len", 1, 5, 1),
+        ],
+    );
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest trace should map Zisk RAM");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(
+        trace.value(4, 0),
+        Some(Felt::from_canonical(zisk_ram_address).expect("canonical"))
+    );
+    assert_eq!(trace.value(4, 1), Some(Felt::ZERO));
+    assert_eq!(
+        trace.value(4, 2),
+        Some(Felt::from_canonical(8).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 3),
+        Some(Felt::from_canonical(zisk_ram_address).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(6, 4),
+        Some(Felt::from_canonical(9).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(7, 0),
+        Some(Felt::from_canonical(zisk_ram_address).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(7, 1),
+        Some(Felt::from_canonical(9).expect("canonical"))
     );
 }
 

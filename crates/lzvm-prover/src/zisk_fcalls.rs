@@ -7,11 +7,29 @@ use crate::guest_machine::{
     GuestMachineMemory,
 };
 use crate::guest_memory::GuestMemoryError;
+use crate::secp256k1_host::{
+    biguint_to_limbs, limbs_to_biguint, mod_inv, secp256k1_double_scalar_mul, secp256k1_order,
+    Secp256k1Error, SecpPoint,
+};
 
 pub const ZISK_INPUT_ADDRESS: u64 = 0x4000_0000;
+pub const ZISK_MSB_POS_256_FCALL_ID: u16 = 4;
+pub const ZISK_SECP256K1_ECDSA_VERIFY_FCALL_ID: u16 = 20;
 pub const ZISK_INPUT_READY_FCALL_ID: u16 = 22;
 const ZISK_INPUT_PREFIX_BYTES: usize = 8;
 const ZISK_INPUT_MIN_READY_ADDRESS: u64 = ZISK_INPUT_ADDRESS + ZISK_INPUT_PREFIX_BYTES as u64 - 1;
+const ZISK_FCALL_PARAM_WORDS: [usize; 16] =
+    [1, 2, 4, 8, 12, 16, 20, 24, 28, 32, 48, 64, 80, 96, 128, 256];
+const SECP256K1_G: [u64; 8] = [
+    0x59f2_815b_16f8_1798,
+    0x029b_fcdb_2dce_28d9,
+    0x55a0_6295_ce87_0b07,
+    0x79be_667e_f9dc_bbac,
+    0x9c47_d08f_fb10_d4b8,
+    0xfd17_b448_a685_5419,
+    0x5da4_fbfc_0e11_08a8,
+    0x483a_da77_26a3_c465,
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ZiskInputFcallError {
@@ -36,6 +54,22 @@ pub enum ZiskInputFcallError {
         required_address: u64,
         available_end: u64,
     },
+    MissingFunctionParams {
+        function_id: u16,
+        expected: usize,
+        found: usize,
+    },
+    UnexpectedFunctionParamPort {
+        function_id: u16,
+        param_index: usize,
+        expected_port: u8,
+        port: u8,
+    },
+    InvalidMsbPosInputCount {
+        count: u64,
+    },
+    ZeroMsbPosInput,
+    NonInvertibleScalar,
     UnsupportedFunction {
         function_id: u16,
     },
@@ -97,6 +131,80 @@ impl ZiskInputFcallHandler {
         })
     }
 
+    fn handle_secp256k1_ecdsa_verify(
+        &mut self,
+        request: GuestFcallRequest,
+        memory: &GuestMachineMemory,
+    ) -> Result<GuestFcallResponse, ZiskInputFcallError> {
+        let pk = read_fcall_memory_param::<8>(&request, memory, 0, 3)?;
+        let z = read_fcall_memory_param::<4>(&request, memory, 1, 2)?;
+        let r = read_fcall_memory_param::<4>(&request, memory, 2, 2)?;
+        let s = read_fcall_memory_param::<4>(&request, memory, 3, 2)?;
+        if request.params.len() != 4 {
+            return Err(ZiskInputFcallError::MissingFunctionParams {
+                function_id: request.function_id,
+                expected: 4,
+                found: request.params.len(),
+            });
+        }
+        Ok(GuestFcallResponse {
+            results: secp256k1_ecdsa_verify(&pk, &z, &r, &s)?.to_vec(),
+        })
+    }
+
+    fn handle_msb_pos_256(
+        &mut self,
+        request: GuestFcallRequest,
+        memory: &GuestMachineMemory,
+    ) -> Result<GuestFcallResponse, ZiskInputFcallError> {
+        let Some(count_param) = request.params.first() else {
+            return Err(ZiskInputFcallError::MissingFunctionParams {
+                function_id: request.function_id,
+                expected: 1,
+                found: 0,
+            });
+        };
+        if count_param.port != 0 {
+            return Err(ZiskInputFcallError::UnexpectedFunctionParamPort {
+                function_id: request.function_id,
+                param_index: 0,
+                expected_port: 0,
+                port: count_param.port,
+            });
+        }
+        let count = usize::try_from(count_param.value).map_err(|_| {
+            ZiskInputFcallError::InvalidMsbPosInputCount {
+                count: count_param.value,
+            }
+        })?;
+        if !(2..=3).contains(&count) {
+            return Err(ZiskInputFcallError::InvalidMsbPosInputCount {
+                count: count_param.value,
+            });
+        }
+        if request.params.len() != count + 1 {
+            return Err(ZiskInputFcallError::MissingFunctionParams {
+                function_id: request.function_id,
+                expected: count + 1,
+                found: request.params.len(),
+            });
+        }
+
+        let mut values = Vec::with_capacity(count * 4);
+        for param_index in 0..count {
+            values.extend_from_slice(&read_fcall_memory_param::<4>(
+                &request,
+                memory,
+                param_index + 1,
+                2,
+            )?);
+        }
+        let (limb, bit) = msb_pos_256(&values, count)?;
+        Ok(GuestFcallResponse {
+            results: vec![limb as u64, bit as u64],
+        })
+    }
+
     fn ensure_mapped(
         &mut self,
         memory: &mut GuestMachineMemory,
@@ -131,14 +239,18 @@ impl GuestFcallHandler for ZiskInputFcallHandler {
         request: GuestFcallRequest,
         memory: &mut GuestMachineMemory,
     ) -> Result<GuestFcallResponse, GuestFcallError> {
-        if request.function_id != ZISK_INPUT_READY_FCALL_ID {
-            return Err(ZiskInputFcallError::UnsupportedFunction {
-                function_id: request.function_id,
-            }
-            .into());
+        match request.function_id {
+            ZISK_MSB_POS_256_FCALL_ID => self
+                .handle_msb_pos_256(request, memory)
+                .map_err(GuestFcallError::from),
+            ZISK_INPUT_READY_FCALL_ID => self
+                .handle_input_ready(request, memory)
+                .map_err(GuestFcallError::from),
+            ZISK_SECP256K1_ECDSA_VERIFY_FCALL_ID => self
+                .handle_secp256k1_ecdsa_verify(request, memory)
+                .map_err(GuestFcallError::from),
+            function_id => Err(ZiskInputFcallError::UnsupportedFunction { function_id }.into()),
         }
-        self.handle_input_ready(request, memory)
-            .map_err(GuestFcallError::from)
     }
 }
 
@@ -146,6 +258,14 @@ impl From<ZiskInputFcallError> for GuestFcallError {
     fn from(error: ZiskInputFcallError) -> Self {
         Self::Handler {
             message: error.to_string(),
+        }
+    }
+}
+
+impl From<Secp256k1Error> for ZiskInputFcallError {
+    fn from(error: Secp256k1Error) -> Self {
+        match error {
+            Secp256k1Error::NonInvertibleScalar => Self::NonInvertibleScalar,
         }
     }
 }
@@ -183,6 +303,28 @@ impl fmt::Display for ZiskInputFcallError {
                 f,
                 "Zisk input-ready required address {required_address:#x} is outside available input ending at {available_end:#x}"
             ),
+            Self::MissingFunctionParams {
+                function_id,
+                expected,
+                found,
+            } => write!(
+                f,
+                "Zisk free-call {function_id} requires {expected} parameters, found {found}"
+            ),
+            Self::UnexpectedFunctionParamPort {
+                function_id,
+                param_index,
+                expected_port,
+                port,
+            } => write!(
+                f,
+                "Zisk free-call {function_id} parameter {param_index} port is invalid: expected {expected_port}, found {port}"
+            ),
+            Self::InvalidMsbPosInputCount { count } => {
+                write!(f, "Zisk msb-position input count is invalid: {count}")
+            }
+            Self::ZeroMsbPosInput => write!(f, "Zisk msb-position input is zero"),
+            Self::NonInvertibleScalar => write!(f, "Zisk secp256k1 scalar is not invertible"),
             Self::UnsupportedFunction { function_id } => {
                 write!(f, "Zisk free-call function id is unsupported: {function_id}")
             }
@@ -202,9 +344,87 @@ impl std::error::Error for ZiskInputFcallError {
             | Self::RequiredAddressBeforeInput { .. }
             | Self::RequiredAddressBeforeFramedStdin { .. }
             | Self::RequiredAddressBeyondInput { .. }
+            | Self::MissingFunctionParams { .. }
+            | Self::UnexpectedFunctionParamPort { .. }
+            | Self::InvalidMsbPosInputCount { .. }
+            | Self::ZeroMsbPosInput
+            | Self::NonInvertibleScalar
             | Self::UnsupportedFunction { .. } => None,
         }
     }
+}
+
+fn read_fcall_memory_param<const N: usize>(
+    request: &GuestFcallRequest,
+    memory: &GuestMachineMemory,
+    param_index: usize,
+    expected_port: u8,
+) -> Result<[u64; N], ZiskInputFcallError> {
+    let Some(param) = request.params.get(param_index) else {
+        return Err(ZiskInputFcallError::MissingFunctionParams {
+            function_id: request.function_id,
+            expected: param_index + 1,
+            found: request.params.len(),
+        });
+    };
+    if param.port != expected_port {
+        return Err(ZiskInputFcallError::UnexpectedFunctionParamPort {
+            function_id: request.function_id,
+            param_index,
+            expected_port,
+            port: param.port,
+        });
+    }
+    debug_assert_eq!(ZISK_FCALL_PARAM_WORDS[usize::from(param.port)], N);
+    read_u64_words(memory, param.value).map_err(ZiskInputFcallError::Memory)
+}
+
+fn read_u64_words<const N: usize>(
+    memory: &GuestMachineMemory,
+    address: u64,
+) -> Result<[u64; N], GuestMemoryError> {
+    let mut bytes = vec![0_u8; N * 8];
+    memory.read_range_into(address, &mut bytes)?;
+    let mut words = [0_u64; N];
+    for (word, chunk) in words.iter_mut().zip(bytes.chunks_exact(8)) {
+        *word = u64::from_le_bytes(chunk.try_into().expect("word chunk is exactly 8 bytes"));
+    }
+    Ok(words)
+}
+
+fn secp256k1_ecdsa_verify(
+    pk: &[u64; 8],
+    z: &[u64; 4],
+    r: &[u64; 4],
+    s: &[u64; 4],
+) -> Result<[u64; 8], ZiskInputFcallError> {
+    let order = secp256k1_order();
+    let s_inv =
+        mod_inv(&limbs_to_biguint(s), order).ok_or(ZiskInputFcallError::NonInvertibleScalar)?;
+    let u1 = (limbs_to_biguint(z) * &s_inv) % order;
+    let u2 = (limbs_to_biguint(r) * &s_inv) % order;
+    let point = secp256k1_double_scalar_mul(
+        &biguint_to_limbs::<4>(&u1),
+        &SecpPoint::from_limbs(&SECP256K1_G),
+        &biguint_to_limbs::<4>(&u2),
+        &SecpPoint::from_limbs(pk),
+    )
+    .map_err(ZiskInputFcallError::from)?;
+    Ok(point.to_limbs())
+}
+
+fn msb_pos_256(values: &[u64], count: usize) -> Result<(usize, usize), ZiskInputFcallError> {
+    debug_assert!(values.len() >= count * 4);
+    for limb in (0..4).rev() {
+        let mut max_word = 0_u64;
+        for value_index in 0..count {
+            max_word = max_word.max(values[value_index * 4 + limb]);
+        }
+        if max_word != 0 {
+            return Ok((limb, 63 - max_word.leading_zeros() as usize));
+        }
+    }
+    Err(ZiskInputFcallError::ZeroMsbPosInput)
 }
 
 fn required_address_param(request: &GuestFcallRequest) -> Result<u64, ZiskInputFcallError> {
