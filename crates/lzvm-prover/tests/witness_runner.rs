@@ -3,8 +3,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use lzvm_artifacts::guest_image::parse_guest_image;
+use lzvm_artifacts::key_directory::KeyUnitKind;
+use lzvm_artifacts::pcs_plan::PcsFriLayer;
+use lzvm_artifacts::setup_info::CommitmentColumn;
 use lzvm_field::{Felt, MODULUS};
 use lzvm_prover::guest_pc_trace_backend::GuestPcTraceBackend;
+use lzvm_prover::witness_layout::derive_witness_trace_layout;
 use lzvm_prover::witness_loader::{
     load_witness_library, WitnessBackend, WitnessCallError, WitnessComputeContext,
     WitnessTraceBuffers, WitnessTraceOutput,
@@ -14,6 +18,7 @@ use lzvm_prover::witness_runner::{
 };
 use lzvm_prover::witness_trace::WitnessTraceError;
 use lzvm_prover::zisk_fcalls::{ZISK_INPUT_ADDRESS, ZISK_INPUT_READY_FCALL_ID};
+use lzvm_prover::ProveUnitSchedule;
 
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("lzvm-witness-runner-{}-{name}", std::process::id()))
@@ -161,6 +166,88 @@ fn framed_stdin_chunk(payload: &[u8]) -> Vec<u8> {
     bytes.extend_from_slice(payload);
     bytes.resize(bytes.len().next_multiple_of(8), 0);
     bytes
+}
+
+fn commitment_column(
+    name: &str,
+    stage: u32,
+    stage_position: u32,
+    dimension: u32,
+) -> CommitmentColumn {
+    CommitmentColumn {
+        name: name.to_owned(),
+        stage,
+        dimension,
+        pols_map_id: 0,
+        stage_id: stage.saturating_sub(1),
+        stage_position,
+        intermediate: false,
+        lengths: Vec::new(),
+    }
+}
+
+fn sample_unit_with_pc_columns() -> ProveUnitSchedule {
+    sample_unit_with_trace_columns(
+        3,
+        vec![2, 2],
+        vec![
+            commitment_column("pc", 1, 1, 1),
+            commitment_column("next_pc", 2, 0, 1),
+        ],
+    )
+}
+
+fn sample_unit_with_trace_columns(
+    base_domain_size: u64,
+    stage_commit_widths: Vec<u32>,
+    commitment_columns: Vec<CommitmentColumn>,
+) -> ProveUnitSchedule {
+    ProveUnitSchedule {
+        kind: KeyUnitKind::Basic,
+        group_id: Some(0),
+        unit_id: Some(0),
+        group_name: Some("group-a".to_owned()),
+        unit_name: Some("unit-a".to_owned()),
+        base_domain_bits: 2,
+        extended_domain_bits: 3,
+        base_domain_size,
+        extended_domain_size: 8,
+        blowup_factor: 2,
+        query_count: 1,
+        proof_of_work_bits: 0,
+        merkle_tree_arity: 4,
+        last_level_verification: 0,
+        transcript_arity: Some(4),
+        hash_commits: true,
+        transcript_root_challenge_draws: vec![1, 1],
+        challenge_count: 1,
+        evaluation_value_count: 0,
+        evaluation_map: Vec::new(),
+        transcript_evaluation_challenge_draws: 1,
+        constant_width: 0,
+        stage_commit_widths,
+        commitment_columns,
+        unit_value_map: Vec::new(),
+        group_value_map: Vec::new(),
+        opening_points: vec![0],
+        fri_layers: vec![PcsFriLayer {
+            input_bits: 3,
+            output_bits: 1,
+            folding_factor: 4,
+        }],
+        final_layer_bits: 1,
+        fixed_bytes: 0,
+        constant_tree_root: None,
+        pcs_material_bytes: None,
+        pcs_material_plan_digest: None,
+        pcs_material_fixed_column_digest: None,
+        pcs_material_constant_tree_digest: None,
+        pcs_material_constant_tree_root: None,
+        pcs_material_fixed_byte_count: None,
+        pcs_material_constant_tree_byte_count: None,
+        pcs_material_leaf_byte_count: None,
+        pcs_material_node_byte_count: None,
+    }
 }
 
 struct NativeBackend;
@@ -318,6 +405,7 @@ fn guest_pc_trace_backend_runs_guest_image_from_context() {
         WitnessComputeContext {
             guest_image: Some(&guest_image),
             guest_image_info: Some(&guest_image_info),
+            trace_layout: None,
         },
         WitnessTraceRequest::new(Vec::new(), 2, 2),
     )
@@ -368,6 +456,7 @@ fn guest_pc_trace_backend_uses_framed_input_for_zisk_free_calls() {
         WitnessComputeContext {
             guest_image: Some(&guest_image),
             guest_image_info: Some(&guest_image_info),
+            trace_layout: None,
         },
         WitnessTraceRequest::new(framed_stdin_chunk(&[7]), 7, 2),
     )
@@ -420,6 +509,7 @@ fn guest_pc_trace_backend_maps_trace_overflow_to_output_overflow() {
         WitnessComputeContext {
             guest_image: Some(&guest_image),
             guest_image_info: Some(&guest_image_info),
+            trace_layout: None,
         },
         WitnessTraceRequest::new(Vec::new(), 1, 2),
     );
@@ -434,6 +524,122 @@ fn guest_pc_trace_backend_maps_trace_overflow_to_output_overflow() {
             }
         ))
     ));
+}
+
+#[test]
+fn guest_pc_trace_backend_writes_named_columns_from_layout() {
+    let dir = temp_dir("guest-pc-trace-layout");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes =
+        sample_guest_image_with_words(&[addi(1, 0, 7), addi(2, 1, 3), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_pc_columns();
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("guest PC trace should write layout columns");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 3);
+    assert_eq!(trace.column_count(), 4);
+    assert_eq!(trace.value(0, 0), Some(Felt::ZERO));
+    assert_eq!(
+        trace.value(0, 1),
+        Some(Felt::from_canonical(ENTRY).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(0, 2),
+        Some(Felt::from_canonical(ENTRY + 4).expect("canonical"))
+    );
+    assert_eq!(trace.value(0, 3), Some(Felt::ZERO));
+    assert_eq!(
+        trace.value(1, 1),
+        Some(Felt::from_canonical(ENTRY + 4).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 2),
+        Some(Felt::from_canonical(ENTRY + 8).expect("canonical"))
+    );
+    assert_eq!(trace.value(2, 0), Some(Felt::ZERO));
+    assert_eq!(trace.value(2, 1), Some(Felt::ZERO));
+    assert_eq!(trace.value(2, 2), Some(Felt::ZERO));
+    assert_eq!(trace.value(2, 3), Some(Felt::ZERO));
+}
+
+#[test]
+fn guest_pc_trace_backend_rejects_partial_layout_pc_columns() {
+    let dir = temp_dir("guest-pc-trace-partial-layout");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes =
+        sample_guest_image_with_words(&[addi(1, 0, 7), addi(2, 1, 3), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_trace_columns(2, vec![2], vec![commitment_column("pc", 1, 0, 1)]);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let error = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect_err("partial PC layout should be rejected");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert!(error.to_string().contains("missing next_pc"));
+}
+
+#[test]
+fn guest_pc_trace_backend_rejects_misshaped_layout_pc_columns() {
+    let dir = temp_dir("guest-pc-trace-misshaped-layout");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes =
+        sample_guest_image_with_words(&[addi(1, 0, 7), addi(2, 1, 3), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_trace_columns(
+        2,
+        vec![3],
+        vec![
+            commitment_column("pc", 1, 0, 2),
+            commitment_column("next_pc", 1, 2, 1),
+        ],
+    );
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let error = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect_err("misshaped PC layout should be rejected");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    let message = error.to_string();
+    assert!(message.contains("pc"));
+    assert!(message.contains("dimension 1"));
 }
 
 #[test]

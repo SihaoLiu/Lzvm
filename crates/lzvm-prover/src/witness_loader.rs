@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 use libloading::Library;
 use lzvm_artifacts::guest_image::GuestImageInfo;
 
+use crate::witness_layout::WitnessTraceLayout;
+
 pub const WITNESS_ABI_VERSION: u32 = 1;
 pub const WITNESS_STATUS_OK: c_int = 0;
 
@@ -79,6 +81,7 @@ pub struct WitnessTraceOutput {
 pub struct WitnessComputeContext<'a> {
     pub guest_image: Option<&'a Path>,
     pub guest_image_info: Option<&'a GuestImageInfo>,
+    pub trace_layout: Option<&'a WitnessTraceLayout>,
 }
 
 impl WitnessComputeContext<'_> {
@@ -86,6 +89,7 @@ impl WitnessComputeContext<'_> {
         Self {
             guest_image: None,
             guest_image_info: None,
+            trace_layout: None,
         }
     }
 }

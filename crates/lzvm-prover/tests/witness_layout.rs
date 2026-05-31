@@ -284,6 +284,28 @@ fn rejects_commitment_columns_outside_trace_layout() {
 }
 
 #[test]
+fn rejects_overlapping_commitment_columns() {
+    let overlapping = sample_unit_with_rows_and_columns(
+        vec![2],
+        1024,
+        vec![
+            commitment_column("pc", 1, 0, 2),
+            commitment_column("next_pc", 1, 1, 1),
+        ],
+    );
+
+    assert!(matches!(
+        derive_witness_trace_layout(&overlapping),
+        Err(WitnessTraceLayoutError::CommitmentColumnOverlap {
+            first_name,
+            second_name,
+            stage_index: 1,
+            trace_column: 1,
+        }) if first_name == "pc" && second_name == "next_pc"
+    ));
+}
+
+#[test]
 fn builds_witness_trace_request_from_layout() {
     let unit = sample_unit(vec![2, 3, 1]);
     let layout = derive_witness_trace_layout(&unit).expect("layout should derive");

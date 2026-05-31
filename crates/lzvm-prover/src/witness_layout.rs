@@ -288,6 +288,12 @@ pub enum WitnessTraceLayoutError {
         dimension: usize,
         stage_width: usize,
     },
+    CommitmentColumnOverlap {
+        first_name: String,
+        second_name: String,
+        stage_index: usize,
+        trace_column: usize,
+    },
     UnknownStage {
         stage_index: usize,
     },
@@ -333,6 +339,15 @@ impl fmt::Display for WitnessTraceLayoutError {
             } => write!(
                 f,
                 "witness trace commitment column {name} in stage {stage_index} spans position {stage_position} with dimension {dimension}, but stage width is {stage_width}"
+            ),
+            Self::CommitmentColumnOverlap {
+                first_name,
+                second_name,
+                stage_index,
+                trace_column,
+            } => write!(
+                f,
+                "witness trace commitment columns {first_name} and {second_name} overlap in stage {stage_index} at trace column {trace_column}"
             ),
             Self::UnknownStage { stage_index } => {
                 write!(f, "witness trace stage is unknown: {stage_index}")
@@ -402,10 +417,22 @@ fn derive_witness_trace_columns(
     unit: &ProveUnitSchedule,
     stages: &[WitnessTraceStageLayout],
 ) -> Result<Vec<WitnessTraceColumnLayout>, WitnessTraceLayoutError> {
-    unit.commitment_columns
-        .iter()
-        .map(|column| derive_witness_trace_column(column, stages))
-        .collect()
+    let mut columns = Vec::with_capacity(unit.commitment_columns.len());
+    for source in &unit.commitment_columns {
+        let column = derive_witness_trace_column(source, stages)?;
+        for existing in &columns {
+            if let Some(trace_column) = overlapping_trace_column(existing, &column) {
+                return Err(WitnessTraceLayoutError::CommitmentColumnOverlap {
+                    first_name: existing.name.clone(),
+                    second_name: column.name.clone(),
+                    stage_index: column.stage_index,
+                    trace_column,
+                });
+            }
+        }
+        columns.push(column);
+    }
+    Ok(columns)
 }
 
 fn derive_witness_trace_column(
@@ -460,4 +487,20 @@ fn derive_witness_trace_column(
         trace_column,
         dimension,
     })
+}
+
+fn overlapping_trace_column(
+    left: &WitnessTraceColumnLayout,
+    right: &WitnessTraceColumnLayout,
+) -> Option<usize> {
+    if left.stage_index != right.stage_index {
+        return None;
+    }
+    let left_end = left.trace_column.checked_add(left.dimension)?;
+    let right_end = right.trace_column.checked_add(right.dimension)?;
+    if left.trace_column < right_end && right.trace_column < left_end {
+        Some(left.trace_column.max(right.trace_column))
+    } else {
+        None
+    }
 }

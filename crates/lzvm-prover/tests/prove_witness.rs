@@ -879,6 +879,8 @@ struct ObservedWitnessContext {
     guest_image_byte_len: u64,
     guest_image_machine: u16,
     guest_image_entry: u64,
+    trace_rows: usize,
+    trace_columns: usize,
     input: Vec<u8>,
 }
 
@@ -901,11 +903,16 @@ impl WitnessBackend for ContextRecordingBackend {
         let guest_image_info = context
             .guest_image_info
             .expect("guest image metadata should be available");
+        let trace_layout = context
+            .trace_layout
+            .expect("trace layout should be available");
         self.observed.replace(Some(ObservedWitnessContext {
             guest_image: guest_image.to_path_buf(),
             guest_image_byte_len: guest_image_info.byte_len,
             guest_image_machine: guest_image_info.machine,
             guest_image_entry: guest_image_info.entry,
+            trace_rows: trace_layout.row_count(),
+            trace_columns: trace_layout.column_count(),
             input: buffers.input().to_vec(),
         }));
 
@@ -1013,6 +1020,8 @@ fn witness_backend_receives_guest_image_context_from_execution_plan() {
             guest_image_byte_len: guest_image_bytes.len() as u64,
             guest_image_machine: 243,
             guest_image_entry: 0x8000_0000,
+            trace_rows: 16,
+            trace_columns: 5,
             input: vec![7],
         }
     );

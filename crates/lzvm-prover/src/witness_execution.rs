@@ -664,6 +664,7 @@ fn run_prove_witness_commitments_with_trace_backend_inner<B: WitnessBackend + ?S
         WitnessComputeContext {
             guest_image: Some(&plan.inputs.guest_image),
             guest_image_info: Some(&plan.guest_image_info),
+            trace_layout: Some(&layout),
         },
         layout.request(&shared_inputs.input[..]),
     )?;
