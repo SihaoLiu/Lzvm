@@ -10,6 +10,19 @@ pub struct WitnessTraceBuffer {
 }
 
 impl WitnessTraceBuffer {
+    pub fn from_values(
+        rows: usize,
+        columns: usize,
+        values: Vec<Felt>,
+    ) -> Result<Self, WitnessTraceError> {
+        validate_trace_shape(rows, columns, values.len())?;
+        Ok(Self {
+            rows,
+            columns,
+            values,
+        })
+    }
+
     pub fn row_count(&self) -> usize {
         self.rows
     }
@@ -81,13 +94,8 @@ pub fn parse_witness_trace(
         });
     }
 
-    let expected = rows
-        .checked_mul(columns)
-        .ok_or(WitnessTraceError::ElementCountOverflow)?;
     let found = bytes.len() / 8;
-    if found != expected {
-        return Err(WitnessTraceError::ElementCountMismatch { expected, found });
-    }
+    validate_trace_shape(rows, columns, found)?;
 
     let mut values = Vec::with_capacity(found);
     for (index, chunk) in bytes.chunks_exact(8).enumerate() {
@@ -100,9 +108,25 @@ pub fn parse_witness_trace(
         values.push(value);
     }
 
-    Ok(WitnessTraceBuffer {
-        rows,
-        columns,
-        values,
-    })
+    Ok(WitnessTraceBuffer::from_values(rows, columns, values).expect("shape already validated"))
+}
+
+fn validate_trace_shape(
+    rows: usize,
+    columns: usize,
+    found: usize,
+) -> Result<(), WitnessTraceError> {
+    if rows == 0 {
+        return Err(WitnessTraceError::ZeroRows);
+    }
+    if columns == 0 {
+        return Err(WitnessTraceError::ZeroColumns);
+    }
+    let expected = rows
+        .checked_mul(columns)
+        .ok_or(WitnessTraceError::ElementCountOverflow)?;
+    if found != expected {
+        return Err(WitnessTraceError::ElementCountMismatch { expected, found });
+    }
+    Ok(())
 }

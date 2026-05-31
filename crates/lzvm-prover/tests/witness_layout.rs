@@ -2,7 +2,9 @@ use lzvm_artifacts::key_directory::KeyUnitKind;
 use lzvm_artifacts::pcs_plan::PcsFriLayer;
 use lzvm_artifacts::setup_info::CommitmentColumn;
 use lzvm_field::Felt;
-use lzvm_prover::witness_layout::{derive_witness_trace_layout, WitnessTraceLayoutError};
+use lzvm_prover::witness_layout::{
+    derive_witness_trace_layout, WitnessTraceBuildError, WitnessTraceLayoutError,
+};
 use lzvm_prover::witness_trace::parse_witness_trace;
 use lzvm_prover::ProveUnitSchedule;
 
@@ -12,6 +14,10 @@ fn encode_values(values: &[u64]) -> Vec<u8> {
         out.extend_from_slice(&value.to_le_bytes());
     }
     out
+}
+
+fn felt(value: u64) -> Felt {
+    Felt::from_canonical(value).expect("value should be canonical")
 }
 
 fn sample_unit(stage_commit_widths: Vec<u32>) -> ProveUnitSchedule {
@@ -121,6 +127,16 @@ fn derives_witness_trace_layout_from_unit_schedule() {
 }
 
 #[test]
+fn rejects_zero_row_witness_trace_layout() {
+    let unit = sample_unit_with_rows(vec![1], 0);
+
+    assert_eq!(
+        derive_witness_trace_layout(&unit),
+        Err(WitnessTraceLayoutError::ZeroRows)
+    );
+}
+
+#[test]
 fn derives_witness_trace_column_positions_from_commitment_metadata() {
     let unit = sample_unit_with_rows_and_columns(
         vec![2, 3],
@@ -150,6 +166,70 @@ fn derives_witness_trace_column_positions_from_commitment_metadata() {
     assert_eq!(ext_value.stage_position(), 1);
     assert_eq!(ext_value.trace_column(), 3);
     assert_eq!(ext_value.dimension(), 2);
+}
+
+#[test]
+fn builds_witness_trace_by_named_commitment_columns() {
+    let unit = sample_unit_with_rows_and_columns(
+        vec![2, 3],
+        2,
+        vec![
+            commitment_column("pc", 1, 1, 1),
+            commitment_column("word", 2, 1, 2),
+        ],
+    );
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let mut builder = layout.trace_builder().expect("builder should allocate");
+
+    builder
+        .write_column_values(0, 1, "pc", &[felt(7)])
+        .expect("pc should write");
+    builder
+        .write_column_values(1, 2, "word", &[felt(11), felt(13)])
+        .expect("word should write");
+    let trace = builder.build();
+
+    assert_eq!(trace.row_count(), 2);
+    assert_eq!(trace.column_count(), 5);
+    assert_eq!(trace.value(0, 0), Some(Felt::ZERO));
+    assert_eq!(trace.value(0, 1), Some(felt(7)));
+    assert_eq!(trace.value(0, 2), Some(Felt::ZERO));
+    assert_eq!(trace.value(0, 3), Some(Felt::ZERO));
+    assert_eq!(trace.value(0, 4), Some(Felt::ZERO));
+    assert_eq!(trace.value(1, 0), Some(Felt::ZERO));
+    assert_eq!(trace.value(1, 1), Some(Felt::ZERO));
+    assert_eq!(trace.value(1, 2), Some(Felt::ZERO));
+    assert_eq!(trace.value(1, 3), Some(felt(11)));
+    assert_eq!(trace.value(1, 4), Some(felt(13)));
+}
+
+#[test]
+fn rejects_invalid_named_witness_trace_writes() {
+    let unit =
+        sample_unit_with_rows_and_columns(vec![2], 1, vec![commitment_column("word", 1, 0, 2)]);
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+    let mut builder = layout.trace_builder().expect("builder should allocate");
+
+    assert_eq!(
+        builder.write_column_values(1, 1, "word", &[felt(3), felt(5)]),
+        Err(WitnessTraceBuildError::RowOutOfRange { row: 1, rows: 1 })
+    );
+    assert_eq!(
+        builder.write_column_values(0, 1, "missing", &[felt(3)]),
+        Err(WitnessTraceBuildError::UnknownColumn {
+            stage_index: 1,
+            name: "missing".to_owned(),
+        })
+    );
+    assert_eq!(
+        builder.write_column_values(0, 1, "word", &[felt(3)]),
+        Err(WitnessTraceBuildError::ColumnValueCountMismatch {
+            stage_index: 1,
+            name: "word".to_owned(),
+            expected: 2,
+            found: 1,
+        })
+    );
 }
 
 #[test]
