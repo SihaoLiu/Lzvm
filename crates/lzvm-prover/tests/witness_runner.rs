@@ -105,6 +105,19 @@ fn addi(rd: u8, rs1: u8, immediate: i16) -> u32 {
     encode_i(immediate, rs1, 0, rd, 0x13)
 }
 
+fn encode_r(funct7: u8, rs2: u8, rs1: u8, funct3: u8, rd: u8) -> u32 {
+    (u32::from(funct7) << 25)
+        | (u32::from(rs2) << 20)
+        | (u32::from(rs1) << 15)
+        | (u32::from(funct3) << 12)
+        | (u32::from(rd) << 7)
+        | 0x33
+}
+
+fn add(rd: u8, rs1: u8, rs2: u8) -> u32 {
+    encode_r(0, rs2, rs1, 0, rd)
+}
+
 fn op_imm_shift(funct6: u8, rd: u8, rs1: u8, shamt: u8) -> u32 {
     assert!(funct6 < 64);
     assert!(rd < 32);
@@ -282,20 +295,27 @@ fn sample_unit_with_register_effect_columns() -> ProveUnitSchedule {
 
 fn sample_unit_with_zisk_main_columns() -> ProveUnitSchedule {
     sample_unit_with_trace_columns(
-        2,
-        vec![11],
+        3,
+        vec![21],
         vec![
-            commitment_column("a", 1, 0, 1),
-            commitment_column("b", 1, 1, 1),
-            commitment_column("c", 1, 2, 1),
-            commitment_column("flag", 1, 3, 1),
-            commitment_column("pc", 1, 4, 1),
-            commitment_column("a_src_reg", 1, 5, 1),
-            commitment_column("b_src_reg", 1, 6, 1),
-            commitment_column("store_reg", 1, 7, 1),
-            commitment_column("store_pc", 1, 8, 1),
-            commitment_column("set_pc", 1, 9, 1),
-            commitment_column("op", 1, 10, 1),
+            commitment_column("a", 1, 0, 2),
+            commitment_column("b", 1, 2, 2),
+            commitment_column("c", 1, 4, 2),
+            commitment_column("flag", 1, 6, 1),
+            commitment_column("pc", 1, 7, 1),
+            commitment_column("a_src_imm", 1, 8, 1),
+            commitment_column("b_src_imm", 1, 9, 1),
+            commitment_column("a_src_reg", 1, 10, 1),
+            commitment_column("b_src_reg", 1, 11, 1),
+            commitment_column("store_reg", 1, 12, 1),
+            commitment_column("store_pc", 1, 13, 1),
+            commitment_column("set_pc", 1, 14, 1),
+            commitment_column("op", 1, 15, 1),
+            commitment_column("jmp_offset1", 1, 16, 1),
+            commitment_column("jmp_offset2", 1, 17, 1),
+            commitment_column("m32", 1, 18, 1),
+            commitment_column("is_external_op", 1, 19, 1),
+            commitment_column("is_precompiled", 1, 20, 1),
         ],
     )
 }
@@ -1064,13 +1084,143 @@ fn guest_pc_trace_backend_rejects_partial_layout_pc_columns() {
 }
 
 #[test]
-fn guest_pc_trace_backend_rejects_zisk_main_layout() {
+fn guest_pc_trace_backend_writes_zisk_main_layout_for_supported_ops() {
     let dir = temp_dir("guest-pc-trace-zisk-main-layout");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("fixture directory should be created");
     let guest_image = dir.join("guest.elf");
     let guest_image_bytes =
-        sample_guest_image_with_words(&[addi(1, 0, 7), addi(2, 1, 3), 0x0000_0073]);
+        sample_guest_image_with_words(&[addi(1, 0, 7), addi(2, 1, 3), add(3, 1, 2), 0x0000_0073]);
+    fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
+    let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
+    let unit = sample_unit_with_zisk_main_columns();
+    let layout = derive_witness_trace_layout(&unit).expect("layout should derive");
+
+    let trace = run_witness_trace_with_context(
+        &GuestPcTraceBackend::new(16),
+        WitnessComputeContext {
+            guest_image: Some(&guest_image),
+            guest_image_info: Some(&guest_image_info),
+            trace_layout: Some(&layout),
+        },
+        layout.request(Vec::new()),
+    )
+    .expect("Zisk Main layout should write supported rows");
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(trace.row_count(), 3);
+    assert_eq!(trace.column_count(), 21);
+    assert_eq!(trace.value(0, 0), Some(Felt::ZERO));
+    assert_eq!(trace.value(0, 1), Some(Felt::ZERO));
+    assert_eq!(
+        trace.value(0, 2),
+        Some(Felt::from_canonical(7).expect("canonical"))
+    );
+    assert_eq!(trace.value(0, 3), Some(Felt::ZERO));
+    assert_eq!(
+        trace.value(0, 4),
+        Some(Felt::from_canonical(7).expect("canonical"))
+    );
+    assert_eq!(trace.value(0, 5), Some(Felt::ZERO));
+    assert_eq!(trace.value(0, 6), Some(Felt::ZERO));
+    assert_eq!(
+        trace.value(0, 7),
+        Some(Felt::from_canonical(ENTRY).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(0, 8),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(0, 9),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(trace.value(0, 10), Some(Felt::ZERO));
+    assert_eq!(trace.value(0, 11), Some(Felt::ZERO));
+    assert_eq!(
+        trace.value(0, 12),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(0, 15),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(0, 16),
+        Some(Felt::from_canonical(4).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(0, 17),
+        Some(Felt::from_canonical(4).expect("canonical"))
+    );
+
+    assert_eq!(
+        trace.value(1, 0),
+        Some(Felt::from_canonical(7).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 2),
+        Some(Felt::from_canonical(3).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 4),
+        Some(Felt::from_canonical(10).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 7),
+        Some(Felt::from_canonical(ENTRY + 4).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 10),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(trace.value(1, 11), Some(Felt::ZERO));
+    assert_eq!(
+        trace.value(1, 12),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(1, 15),
+        Some(Felt::from_canonical(10).expect("canonical"))
+    );
+
+    assert_eq!(
+        trace.value(2, 0),
+        Some(Felt::from_canonical(7).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(2, 2),
+        Some(Felt::from_canonical(10).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(2, 4),
+        Some(Felt::from_canonical(17).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(2, 10),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(2, 11),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(2, 12),
+        Some(Felt::from_canonical(1).expect("canonical"))
+    );
+    assert_eq!(
+        trace.value(2, 15),
+        Some(Felt::from_canonical(10).expect("canonical"))
+    );
+}
+
+#[test]
+fn guest_pc_trace_backend_rejects_unsupported_zisk_main_instruction() {
+    let dir = temp_dir("guest-pc-trace-zisk-main-unsupported");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let guest_image = dir.join("guest.elf");
+    let guest_image_bytes = sample_guest_image_with_words(&[slli(1, 0, 1), 0x0000_0073]);
     fs::write(&guest_image, &guest_image_bytes).expect("guest image should be written");
     let guest_image_info = parse_guest_image(&guest_image_bytes).expect("guest image should parse");
     let unit = sample_unit_with_zisk_main_columns();
@@ -1085,12 +1235,12 @@ fn guest_pc_trace_backend_rejects_zisk_main_layout() {
         },
         layout.request(Vec::new()),
     )
-    .expect_err("Zisk Main layout should reject raw guest PC reports");
+    .expect_err("unsupported Zisk Main instruction should fail");
     fs::remove_dir_all(&dir).expect("fixture directory should be removed");
 
     let message = error.to_string();
-    assert!(message.contains("Zisk Main witness rows"));
-    assert!(message.contains("raw guest PC reports"));
+    assert!(message.contains("Zisk Main lowering failed"));
+    assert!(message.contains("does not support instruction"));
 }
 
 #[test]
