@@ -561,6 +561,7 @@ impl GuestInstructionEffects {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestMachineReport {
     pub address: u64,
+    pub instruction_byte_len: usize,
     pub instruction: RiscvInstruction,
     pub next_pc: u64,
     pub register_writes: Vec<GuestRegisterWrite>,
@@ -891,6 +892,7 @@ fn advance_guest_machine_inner(
 
     Ok(GuestMachineReport {
         address,
+        instruction_byte_len: byte_len,
         instruction,
         next_pc,
         register_writes: effects.register_writes,

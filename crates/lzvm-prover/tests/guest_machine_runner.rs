@@ -1201,6 +1201,24 @@ fn runs_compressed_addi_instructions_until_ecall() {
 }
 
 #[test]
+fn reports_instruction_byte_lengths_for_mixed_width_trace() {
+    let mut code = Vec::new();
+    push_halfword(&mut code, compressed_addi(1, 7));
+    push_word(&mut code, addi(2, 1, 3));
+    push_word(&mut code, 0x0000_0073);
+    let mut memory = guest_machine_memory_with_bytes(&code);
+    let mut state = GuestMachineState::new(memory.entry_address());
+
+    let trace = run_guest_machine_trace(&mut memory, &mut state, 8).expect("guest should halt");
+
+    assert_eq!(trace.reports.len(), 2);
+    assert_eq!(trace.reports[0].address, ENTRY);
+    assert_eq!(trace.reports[0].instruction_byte_len, 2);
+    assert_eq!(trace.reports[1].address, ENTRY + 2);
+    assert_eq!(trace.reports[1].instruction_byte_len, 4);
+}
+
+#[test]
 fn runs_compressed_addi4spn_instructions_until_ecall() {
     let mut code = Vec::new();
     push_halfword(&mut code, compressed_addi4spn(8, 4));
