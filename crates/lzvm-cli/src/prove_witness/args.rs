@@ -7,6 +7,7 @@ use crate::prove_plan::{parse_run_args, required_option_value, ParseError, Parse
 pub(super) struct ParsedWitnessArgs {
     pub(super) run_args: ParsedRunArgs,
     pub(super) all_units: bool,
+    pub(super) unit_index: Option<usize>,
     pub(super) trace_bytes: Option<PathBuf>,
     pub(super) trace_bundle: Option<PathBuf>,
     pub(super) guest_pc_trace_instruction_limit: Option<u64>,
@@ -27,6 +28,7 @@ pub(super) struct ParsedWitnessArgs {
 
 pub(super) fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, ParseError> {
     let mut all_units = false;
+    let mut unit_index = None;
     let mut trace_bytes = None;
     let mut trace_bundle = None;
     let mut guest_pc_trace_instruction_limit = None;
@@ -48,6 +50,15 @@ pub(super) fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, Par
     while index < args.len() {
         match args[index] {
             "--all-units" => all_units = true,
+            "--unit-index" => {
+                index += 1;
+                let value = parse_usize(args.get(index), "--unit-index")?;
+                if unit_index.replace(value).is_some() {
+                    return Err(ParseError::Invalid(
+                        "duplicate --unit-index option".to_owned(),
+                    ));
+                }
+            }
             "--trace-bytes" => {
                 index += 1;
                 let value = required_option_value(args.get(index), "--trace-bytes")?;
@@ -259,6 +270,11 @@ pub(super) fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, Par
             "--trace-bytes requires a single-unit witness run".to_owned(),
         ));
     }
+    if unit_index.is_some() && (all_units || run_args.request.options.aggregate) {
+        return Err(ParseError::Invalid(
+            "--unit-index requires a single-unit witness run".to_owned(),
+        ));
+    }
     if guest_pc_trace_instruction_limit.is_some()
         && (all_units || run_args.request.options.aggregate)
     {
@@ -274,6 +290,7 @@ pub(super) fn parse_witness_args(args: &[&str]) -> Result<ParsedWitnessArgs, Par
     Ok(ParsedWitnessArgs {
         run_args,
         all_units,
+        unit_index,
         trace_bytes,
         trace_bundle,
         guest_pc_trace_instruction_limit,
@@ -318,5 +335,11 @@ pub(super) fn parsed_inputs(parsed: &ParsedWitnessArgs) -> ProveExecutionInputAr
 fn parse_u64(value: Option<&&str>, option: &str) -> Result<u64, ParseError> {
     required_option_value(value, option)?
         .parse::<u64>()
+        .map_err(|_| ParseError::Invalid(format!("{option} value must be an unsigned integer")))
+}
+
+fn parse_usize(value: Option<&&str>, option: &str) -> Result<usize, ParseError> {
+    required_option_value(value, option)?
+        .parse::<usize>()
         .map_err(|_| ParseError::Invalid(format!("{option} value must be an unsigned integer")))
 }

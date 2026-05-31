@@ -56,6 +56,60 @@ fn parses_guest_pc_trace_option_for_witness_args() {
 }
 
 #[test]
+fn parses_unit_index_option_for_single_unit_witness_args() {
+    let result = parse_witness_args(&[
+        "--unit-index",
+        "24",
+        "--guest-pc-trace",
+        "64",
+        "setup-dir",
+        "out-dir",
+        "guest.elf",
+    ])
+    .expect("witness args should parse");
+
+    assert_eq!(result.unit_index, Some(24));
+}
+
+#[test]
+fn rejects_unit_index_with_all_units_during_parse() {
+    let result = parse_witness_args(&[
+        "--unit-index",
+        "24",
+        "--all-units",
+        "setup-dir",
+        "out-dir",
+        "witness.so",
+        "guest.elf",
+    ]);
+
+    assert!(matches!(
+        result,
+        Err(ParseError::Invalid(message))
+            if message == "--unit-index requires a single-unit witness run"
+    ));
+}
+
+#[test]
+fn rejects_duplicate_unit_index_during_parse() {
+    let result = parse_witness_args(&[
+        "--unit-index",
+        "24",
+        "--unit-index",
+        "25",
+        "setup-dir",
+        "out-dir",
+        "witness.so",
+        "guest.elf",
+    ]);
+
+    assert!(matches!(
+        result,
+        Err(ParseError::Invalid(message)) if message == "duplicate --unit-index option"
+    ));
+}
+
+#[test]
 fn rejects_guest_pc_trace_with_trace_bytes_during_parse() {
     let result = parse_witness_args(&[
         "--guest-pc-trace",

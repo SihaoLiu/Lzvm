@@ -89,6 +89,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         trace_bytes.map(|metadata| metadata.file_bytes),
         trace_bundle.as_ref().map(|(_, bundle, _)| bundle),
         preflight_run_plan.options.aggregate,
+        0,
         &preflight_run_plan.schedule,
     ) {
         let _ = writeln!(stderr, "prove inputs failed: {message}");

@@ -5,13 +5,14 @@ pub(crate) fn validate_trace_input_shapes<B: TraceBundleSource + ?Sized>(
     trace_bytes_len: Option<u64>,
     trace_bundle: Option<&B>,
     aggregate: bool,
+    single_unit_index: usize,
     schedule: &ProveSchedule,
 ) -> Result<(), String> {
     if let Some(byte_len) = trace_bytes_len {
-        validate_trace_unit_byte_len("trace bytes", 0, byte_len, schedule)?;
+        validate_trace_unit_byte_len("trace bytes", single_unit_index, byte_len, schedule)?;
     }
     if let Some(bundle) = trace_bundle {
-        validate_trace_bundle_shape(bundle, aggregate, schedule)?;
+        validate_trace_bundle_shape(bundle, aggregate, single_unit_index, schedule)?;
     }
     Ok(())
 }
@@ -19,15 +20,18 @@ pub(crate) fn validate_trace_input_shapes<B: TraceBundleSource + ?Sized>(
 fn validate_trace_bundle_shape<B: TraceBundleSource + ?Sized>(
     bundle: &B,
     aggregate: bool,
+    single_unit_index: usize,
     schedule: &ProveSchedule,
 ) -> Result<(), String> {
     if !aggregate {
-        let Some(trace_bytes) = bundle.trace_bytes_for_unit(0) else {
-            return Err("trace bundle is missing unit 0".to_owned());
+        let unit_index_u32 = u32::try_from(single_unit_index)
+            .map_err(|_| format!("trace bundle unit index is too large: {single_unit_index}"))?;
+        let Some(trace_bytes) = bundle.trace_bytes_for_unit(unit_index_u32) else {
+            return Err(format!("trace bundle is missing unit {single_unit_index}"));
         };
         let byte_len = u64::try_from(trace_bytes.len())
-            .map_err(|_| "trace bundle unit 0 byte length overflow".to_owned())?;
-        return validate_trace_unit_byte_len("trace bundle", 0, byte_len, schedule);
+            .map_err(|_| format!("trace bundle unit {single_unit_index} byte length overflow"))?;
+        return validate_trace_unit_byte_len("trace bundle", single_unit_index, byte_len, schedule);
     }
 
     let mut seen = vec![false; schedule.units.len()];

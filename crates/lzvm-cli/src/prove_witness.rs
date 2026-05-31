@@ -63,6 +63,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             return 1;
         }
     };
+    let single_unit_index = parsed.unit_index.unwrap_or(0);
 
     let catalog = match read_checked_setup_catalog(&parsed.run_args.positionals[0]) {
         Ok(catalog) => catalog,
@@ -196,6 +197,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             None,
             Some(bundle),
             parsed.all_units || plan.run_plan.options.aggregate,
+            single_unit_index,
             &plan.run_plan.schedule,
         ) {
             let _ = writeln!(stderr, "prove witness failed: {message}");
@@ -294,7 +296,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
         match run_prove_witness_commitments_with_trace_backend(
             &plan,
-            0,
+            single_unit_index,
             auxiliary_inputs,
             &witness_backend,
         ) {
@@ -318,7 +320,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         };
         match run_prove_witness_commitments_with_trace_bytes(
             &plan,
-            0,
+            single_unit_index,
             auxiliary_inputs,
             &trace_bytes,
         ) {
@@ -330,8 +332,12 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     } else if let Some(instruction_limit) = parsed.guest_pc_trace_instruction_limit {
         let backend = GuestPcTraceBackend::new(instruction_limit);
-        match run_prove_witness_commitments_with_trace_backend(&plan, 0, auxiliary_inputs, &backend)
-        {
+        match run_prove_witness_commitments_with_trace_backend(
+            &plan,
+            single_unit_index,
+            auxiliary_inputs,
+            &backend,
+        ) {
             Ok(output) => output,
             Err(error) => {
                 let _ = writeln!(stderr, "prove witness failed: {error}");
@@ -339,16 +345,26 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             }
         }
     } else if let Some(bundle) = &trace_bundle {
-        let Some(trace_bytes) = bundle.trace_bytes_for_unit(0) else {
+        let selected_unit_u32 = match u32::try_from(single_unit_index) {
+            Ok(value) => value,
+            Err(_) => {
+                let _ = writeln!(
+                    stderr,
+                    "prove witness failed: trace bundle unit index is too large: {single_unit_index}"
+                );
+                return 1;
+            }
+        };
+        let Some(trace_bytes) = bundle.trace_bytes_for_unit(selected_unit_u32) else {
             let _ = writeln!(
                 stderr,
-                "prove witness failed: trace bundle is missing unit 0"
+                "prove witness failed: trace bundle is missing unit {single_unit_index}"
             );
             return 1;
         };
         match run_prove_witness_commitments_with_trace_bytes(
             &plan,
-            0,
+            single_unit_index,
             auxiliary_inputs,
             trace_bytes,
         ) {
@@ -1040,7 +1056,7 @@ fn write_output_file(path: &Path, value: &[u8]) -> Result<(), String> {
 fn write_usage(stderr: &mut dyn Write) -> i32 {
     let _ = writeln!(
         stderr,
-        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --guest-pc-trace <instruction-limit> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --eth-block-input <block-input>\n  --eth-public-input <public-input>\n  --eth-public-input-allow-trailing\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>\n  --guest-pc-trace <instruction-limit>"
+        "usage: lzvm prove witness [options] <setup-dir> <output-dir> <witness-library> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bytes <trace-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --trace-bundle <bundle-bin> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n       lzvm prove witness --guest-pc-trace <instruction-limit> [options] <setup-dir> <output-dir> <guest-image> [public-inputs]\n  --eth-block-input <block-input>\n  --eth-public-input <public-input>\n  --eth-public-input-allow-trailing\n  --program-image-cache <cache-bin>\n  --trace-bytes <trace-bin>\n  --trace-bundle <bundle-bin>\n  --guest-pc-trace <instruction-limit>\n  --unit-index <index>"
     );
     2
 }
