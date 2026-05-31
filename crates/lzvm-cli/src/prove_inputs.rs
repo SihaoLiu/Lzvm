@@ -62,7 +62,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         );
         return 1;
     }
-    let trace_bytes_len = match validate_trace_bytes(&parsed.trace_bytes) {
+    let trace_bytes = match validate_trace_bytes(&parsed.trace_bytes) {
         Ok(value) => value,
         Err(message) => {
             let _ = writeln!(stderr, "prove inputs failed: {message}");
@@ -85,7 +85,7 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     };
     if let Err(message) = validate_trace_input_shapes(
-        trace_bytes_len,
+        trace_bytes.map(|metadata| metadata.file_bytes),
         trace_bundle.as_ref().map(|(_, bundle, _)| bundle),
         preflight_run_plan.options.aggregate,
         &preflight_run_plan.schedule,
@@ -165,12 +165,15 @@ pub fn run(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
         }
     }
     if let Some(path) = &parsed.trace_bytes {
+        let trace_bytes = trace_bytes.expect("trace bytes metadata should be available");
         let _ = writeln!(stdout, "trace_bytes={}", path.display());
+        let _ = writeln!(stdout, "trace_bytes_file_bytes={}", trace_bytes.file_bytes);
         let _ = writeln!(
             stdout,
-            "trace_bytes_file_bytes={}",
-            trace_bytes_len.expect("trace bytes length should be available")
+            "trace_bytes_storage_bytes={}",
+            trace_bytes.storage_bytes_text()
         );
+        let _ = writeln!(stdout, "trace_bytes_sparse={}", trace_bytes.sparse_text());
     }
     if let Some((path, bundle, bundle_len)) = &trace_bundle {
         let _ = writeln!(stdout, "trace_bundle={}", path.display());
@@ -557,7 +560,29 @@ fn read_optional_program_image_cache(
     .transpose()
 }
 
-fn validate_trace_bytes(path: &Option<PathBuf>) -> Result<Option<u64>, String> {
+#[derive(Debug, Clone, Copy)]
+struct TraceBytesMetadata {
+    file_bytes: u64,
+    storage_bytes: Option<u64>,
+}
+
+impl TraceBytesMetadata {
+    fn storage_bytes_text(self) -> String {
+        self.storage_bytes
+            .map(|bytes| bytes.to_string())
+            .unwrap_or_else(|| "unknown".to_owned())
+    }
+
+    fn sparse_text(self) -> &'static str {
+        match self.storage_bytes {
+            Some(storage_bytes) if storage_bytes < self.file_bytes => "true",
+            Some(_) => "false",
+            None => "unknown",
+        }
+    }
+}
+
+fn validate_trace_bytes(path: &Option<PathBuf>) -> Result<Option<TraceBytesMetadata>, String> {
     let Some(path) = path else {
         return Ok(None);
     };
@@ -566,7 +591,22 @@ fn validate_trace_bytes(path: &Option<PathBuf>) -> Result<Option<u64>, String> {
     if !metadata.is_file() {
         return Err(format!("trace bytes are not a file: {}", path.display()));
     }
-    Ok(Some(metadata.len()))
+    Ok(Some(TraceBytesMetadata {
+        file_bytes: metadata.len(),
+        storage_bytes: trace_storage_bytes(&metadata),
+    }))
+}
+
+#[cfg(unix)]
+fn trace_storage_bytes(metadata: &fs::Metadata) -> Option<u64> {
+    use std::os::unix::fs::MetadataExt;
+
+    Some(metadata.blocks().saturating_mul(512))
+}
+
+#[cfg(not(unix))]
+fn trace_storage_bytes(_metadata: &fs::Metadata) -> Option<u64> {
+    None
 }
 
 fn validate_trace_bundle(
