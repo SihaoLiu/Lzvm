@@ -136,10 +136,9 @@ pub fn run_cli(args: &[&str], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
         ["verify", "contribution-challenge", ..] => {
             contribution_challenge::write_verify_usage(stderr)
         }
-        ["verify", "preflight", proof_bin, public_values_path] => {
-            verify_commands::verify_preflight(proof_bin, public_values_path, stdout, stderr)
+        ["verify", "preflight", rest @ ..] => {
+            verify_commands::verify_preflight(rest, stdout, stderr)
         }
-        ["verify", "preflight", ..] => verify_commands::write_verify_preflight_usage(stderr),
         ["setup", "fingerprint", setup_dir] => {
             fingerprint_setup_directory(setup_dir, stdout, stderr)
         }

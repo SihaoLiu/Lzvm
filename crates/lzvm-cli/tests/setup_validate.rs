@@ -15722,6 +15722,64 @@ fn verify_setup_preflight_rejects_missing_eth_public_input_value_before_next_opt
 }
 
 #[test]
+fn verify_preflight_verifies_eth_block_input_binding() {
+    let dir = temp_dir("verify-preflight-eth-block-binding");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("fixture directory should be created");
+    let block_input = build_eth_block_input(&sample_block_rlp()).expect("block input should build");
+    let block_input_bytes =
+        encode_eth_block_input(&block_input).expect("block input should encode");
+    let setup_hash = [7; 32];
+    let public_values = public_values_from_eth_block_input(setup_hash, &block_input);
+    let proof = ProofArtifact {
+        setup_hash,
+        public_values_hash: public_values_digest(&public_values).expect("digest should compute"),
+        segments: vec![ProofSegment {
+            id: ETH_BLOCK_INPUT_SEGMENT_ID,
+            data: encode_eth_block_input_segment(&block_input).expect("segment should encode"),
+        }],
+    };
+    let block_input_path = dir.join("block.input");
+    let public_values_path = dir.join("public-values.bin");
+    let proof_path = dir.join("proof.bin");
+    write_bytes(&block_input_path, &block_input_bytes);
+    write_bytes(
+        &public_values_path,
+        encode_public_values(&public_values).expect("public values should encode"),
+    );
+    write_bytes(
+        &proof_path,
+        encode_proof_artifact(&proof).expect("proof should encode"),
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_cli(
+        &[
+            "verify",
+            "preflight",
+            "--eth-block-input",
+            block_input_path
+                .to_str()
+                .expect("block input path should be utf-8"),
+            proof_path.to_str().expect("proof path should be utf-8"),
+            public_values_path
+                .to_str()
+                .expect("public values path should be utf-8"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    fs::remove_dir_all(&dir).expect("fixture directory should be removed");
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    assert!(stderr.is_empty());
+    let stdout_text = String::from_utf8(stdout).expect("stdout should be utf-8");
+    assert!(stdout_text.contains("eth_block_inputs=1\n"));
+    assert!(stdout_text.contains("eth_block_input_match=ok\n"));
+}
+
+#[test]
 fn reports_usage_for_missing_verify_proof_inputs() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();

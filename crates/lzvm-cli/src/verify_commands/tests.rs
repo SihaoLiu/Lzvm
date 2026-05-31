@@ -42,6 +42,26 @@ fn parses_eth_public_input_allow_trailing_for_verify_proof_args() {
 }
 
 #[test]
+fn parses_binding_options_for_verify_preflight_args() {
+    let result = parse_verify_preflight_args(&[
+        "--eth-public-input",
+        "public.bin",
+        "--eth-public-input-allow-trailing",
+        "--program-image-cache",
+        "cache.bin",
+        "proof.bin",
+        "public-values.bin",
+    ])
+    .expect("verify preflight args should parse");
+
+    assert_eq!(result.proof_bin, "proof.bin");
+    assert_eq!(result.public_values_path, "public-values.bin");
+    assert_eq!(result.eth_public_input, Some("public.bin"));
+    assert!(result.eth_public_input_allow_trailing);
+    assert_eq!(result.program_image_cache, Some("cache.bin"));
+}
+
+#[test]
 fn rejects_eth_public_input_allow_trailing_without_eth_public_input_for_verify_proof_args() {
     let result = parse_verify_proof_args(&[
         "--eth-public-input-allow-trailing",
@@ -54,6 +74,22 @@ fn rejects_eth_public_input_allow_trailing_without_eth_public_input_for_verify_p
         result,
         Err(SetupValidationArgError::Invalid(message))
             if message == "cannot use --eth-public-input-allow-trailing without --eth-public-input"
+    ));
+}
+
+#[test]
+fn rejects_missing_eth_public_input_value_for_verify_preflight_args() {
+    let result = parse_verify_preflight_args(&[
+        "--eth-public-input",
+        "--program-image-cache",
+        "cache.bin",
+        "proof.bin",
+        "public-values.bin",
+    ]);
+
+    assert!(matches!(
+        result,
+        Err(SetupValidationArgError::Invalid(message)) if message == "missing --eth-public-input value"
     ));
 }
 
