@@ -7,13 +7,15 @@ pub use values::*;
 use std::collections::BTreeSet;
 
 use lzvm_artifacts::pcs_evaluation_segment::{
-    parse_pcs_evaluation_segment, PCS_EVALUATION_SEGMENT_ID,
+    parse_pcs_evaluation_segment, PcsEvaluationSegment, PcsEvaluationSegmentError,
+    PCS_EVALUATION_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_fri_segment::{
     encode_pcs_fri_opening_segment, PcsFriOpeningSegment, PCS_FRI_OPENING_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_material_segment::{
-    parse_pcs_material_manifest_segment, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+    parse_pcs_material_manifest_segment, PcsMaterialManifestSegment,
+    PcsMaterialManifestSegmentError, PCS_MATERIAL_MANIFEST_SEGMENT_ID,
 };
 use lzvm_artifacts::pcs_query_segment::{parse_pcs_query_plan_segment, PCS_QUERY_PLAN_SEGMENT_ID};
 use lzvm_artifacts::proof::ProofSegment;
@@ -29,6 +31,132 @@ use crate::pcs_fri::{
 use crate::pcs_transcript::{derive_pcs_transcript_prefix_challenges, PcsTranscriptPrefixInputs};
 use crate::prove_fri_polynomial::build_pcs_fri_polynomial_values;
 use crate::ProveSchedule;
+
+type MaterialSegmentParser =
+    fn(&[u8]) -> Result<PcsMaterialManifestSegment, PcsMaterialManifestSegmentError>;
+type EvaluationSegmentParser = fn(&[u8]) -> Result<PcsEvaluationSegment, PcsEvaluationSegmentError>;
+
+struct MaterialSegmentCache<'a, P = MaterialSegmentParser>
+where
+    P: FnMut(&[u8]) -> Result<PcsMaterialManifestSegment, PcsMaterialManifestSegmentError>,
+{
+    entries: Vec<CachedMaterialSegment<'a>>,
+    parser: P,
+}
+
+struct CachedMaterialSegment<'a> {
+    data: &'a [u8],
+    parsed: PcsMaterialManifestSegment,
+}
+
+impl<'a> MaterialSegmentCache<'a, MaterialSegmentParser> {
+    fn new() -> Self {
+        Self::with_parser(parse_pcs_material_manifest_segment)
+    }
+}
+
+impl<'a, P> MaterialSegmentCache<'a, P>
+where
+    P: FnMut(&[u8]) -> Result<PcsMaterialManifestSegment, PcsMaterialManifestSegmentError>,
+{
+    fn with_parser(parser: P) -> Self {
+        Self {
+            entries: Vec::new(),
+            parser,
+        }
+    }
+
+    fn get(
+        &mut self,
+        segment: &'a ProofSegment,
+    ) -> Result<&PcsMaterialManifestSegment, ProvePcsFriTranscriptTraceValuesError> {
+        if segment.id != PCS_MATERIAL_MANIFEST_SEGMENT_ID {
+            return Err(
+                ProvePcsFriTranscriptTraceValuesError::InvalidMaterialSegmentId {
+                    segment_id: segment.id,
+                },
+            );
+        }
+        if let Some(index) = self
+            .entries
+            .iter()
+            .position(|entry| same_segment_data(entry.data, &segment.data))
+        {
+            return Ok(&self.entries[index].parsed);
+        }
+        let parsed = (self.parser)(&segment.data)
+            .map_err(ProvePcsFriTranscriptTraceValuesError::MaterialSegment)?;
+        self.entries.push(CachedMaterialSegment {
+            data: segment.data.as_slice(),
+            parsed,
+        });
+        let index = self.entries.len() - 1;
+        Ok(&self.entries[index].parsed)
+    }
+}
+
+struct EvaluationSegmentCache<'a, P = EvaluationSegmentParser>
+where
+    P: FnMut(&[u8]) -> Result<PcsEvaluationSegment, PcsEvaluationSegmentError>,
+{
+    entries: Vec<CachedEvaluationSegment<'a>>,
+    parser: P,
+}
+
+struct CachedEvaluationSegment<'a> {
+    data: &'a [u8],
+    parsed: PcsEvaluationSegment,
+}
+
+impl<'a> EvaluationSegmentCache<'a, EvaluationSegmentParser> {
+    fn new() -> Self {
+        Self::with_parser(parse_pcs_evaluation_segment)
+    }
+}
+
+impl<'a, P> EvaluationSegmentCache<'a, P>
+where
+    P: FnMut(&[u8]) -> Result<PcsEvaluationSegment, PcsEvaluationSegmentError>,
+{
+    fn with_parser(parser: P) -> Self {
+        Self {
+            entries: Vec::new(),
+            parser,
+        }
+    }
+
+    fn get(
+        &mut self,
+        segment: &'a ProofSegment,
+    ) -> Result<&PcsEvaluationSegment, ProvePcsFriTranscriptTraceValuesError> {
+        if segment.id != PCS_EVALUATION_SEGMENT_ID {
+            return Err(
+                ProvePcsFriTranscriptTraceValuesError::InvalidEvaluationSegmentId {
+                    segment_id: segment.id,
+                },
+            );
+        }
+        if let Some(index) = self
+            .entries
+            .iter()
+            .position(|entry| same_segment_data(entry.data, &segment.data))
+        {
+            return Ok(&self.entries[index].parsed);
+        }
+        let parsed = (self.parser)(&segment.data)
+            .map_err(ProvePcsFriTranscriptTraceValuesError::EvaluationSegment)?;
+        self.entries.push(CachedEvaluationSegment {
+            data: segment.data.as_slice(),
+            parsed,
+        });
+        let index = self.entries.len() - 1;
+        Ok(&self.entries[index].parsed)
+    }
+}
+
+fn same_segment_data(left: &[u8], right: &[u8]) -> bool {
+    (left.len() == right.len() && std::ptr::eq(left.as_ptr(), right.as_ptr())) || left == right
+}
 
 pub fn build_pcs_fri_opening_segment(
     schedule: &ProveSchedule,
@@ -155,6 +283,8 @@ pub fn build_pcs_fri_transcript_values_from_trace_segments(
     values: &[ProvePcsFriTranscriptTraceSegmentValues<'_>],
 ) -> Result<Vec<ProvePcsFriTranscriptValues>, ProvePcsFriTranscriptTraceValuesError> {
     let mut out = Vec::with_capacity(values.len());
+    let mut material_cache = MaterialSegmentCache::new();
+    let mut evaluation_cache = EvaluationSegmentCache::new();
     for input in values {
         let unit = schedule.units.get(input.unit_index).ok_or(
             ProvePcsFriTranscriptTraceValuesError::UnitIndexOutOfRange {
@@ -172,13 +302,7 @@ pub fn build_pcs_fri_transcript_values_from_trace_segments(
                 unit_index: input.unit_index,
             },
         )? as usize;
-        if input.material_segment.id != PCS_MATERIAL_MANIFEST_SEGMENT_ID {
-            return Err(
-                ProvePcsFriTranscriptTraceValuesError::InvalidMaterialSegmentId {
-                    segment_id: input.material_segment.id,
-                },
-            );
-        }
+        validate_material_segment_id(input.material_segment)?;
         let expected_witness_id = WITNESS_COMMITMENT_SEGMENT_BASE_ID
             .checked_add(unit_index_u32)
             .ok_or(ProvePcsFriTranscriptTraceValuesError::UnitIndexOverflow {
@@ -193,18 +317,12 @@ pub fn build_pcs_fri_transcript_values_from_trace_segments(
                 },
             );
         }
-        if input.evaluation_segment.id != PCS_EVALUATION_SEGMENT_ID {
-            return Err(
-                ProvePcsFriTranscriptTraceValuesError::InvalidEvaluationSegmentId {
-                    segment_id: input.evaluation_segment.id,
-                },
-            );
-        }
+        validate_evaluation_segment_id(input.evaluation_segment)?;
 
-        let material = parse_pcs_material_manifest_segment(&input.material_segment.data)
-            .map_err(ProvePcsFriTranscriptTraceValuesError::MaterialSegment)?
+        let material = material_cache
+            .get(input.material_segment)?
             .units
-            .into_iter()
+            .iter()
             .find(|unit| unit.unit_index == unit_index_u32)
             .ok_or(ProvePcsFriTranscriptTraceValuesError::MissingMaterialUnit {
                 unit_index: input.unit_index,
@@ -225,10 +343,10 @@ pub fn build_pcs_fri_transcript_values_from_trace_segments(
                 },
             );
         }
-        let evaluations = parse_pcs_evaluation_segment(&input.evaluation_segment.data)
-            .map_err(ProvePcsFriTranscriptTraceValuesError::EvaluationSegment)?
+        let evaluations = evaluation_cache
+            .get(input.evaluation_segment)?
             .units
-            .into_iter()
+            .iter()
             .find(|unit| unit.unit_index == unit_index_u32)
             .ok_or(
                 ProvePcsFriTranscriptTraceValuesError::MissingEvaluationUnit {
@@ -391,6 +509,34 @@ pub fn build_pcs_fri_opening_segment_from_trace_segments(
     })
 }
 
+fn validate_material_segment_id(
+    segment: &ProofSegment,
+) -> Result<(), ProvePcsFriTranscriptTraceValuesError> {
+    if segment.id == PCS_MATERIAL_MANIFEST_SEGMENT_ID {
+        Ok(())
+    } else {
+        Err(
+            ProvePcsFriTranscriptTraceValuesError::InvalidMaterialSegmentId {
+                segment_id: segment.id,
+            },
+        )
+    }
+}
+
+fn validate_evaluation_segment_id(
+    segment: &ProofSegment,
+) -> Result<(), ProvePcsFriTranscriptTraceValuesError> {
+    if segment.id == PCS_EVALUATION_SEGMENT_ID {
+        Ok(())
+    } else {
+        Err(
+            ProvePcsFriTranscriptTraceValuesError::InvalidEvaluationSegmentId {
+                segment_id: segment.id,
+            },
+        )
+    }
+}
+
 fn root_from_words(words: [u64; 4]) -> Result<[Felt; 4], FieldError> {
     Ok([
         Felt::from_canonical(words[0])?,
@@ -406,4 +552,215 @@ fn extension_from_words(words: [u64; 3]) -> Result<Ext3, FieldError> {
         Felt::from_canonical(words[1])?,
         Felt::from_canonical(words[2])?,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lzvm_artifacts::pcs_evaluation_segment::{PcsEvaluationSegment, PcsEvaluationUnitSegment};
+    use lzvm_artifacts::pcs_material_segment::{
+        PcsMaterialManifestSegment, PcsMaterialManifestUnit,
+    };
+    use std::cell::Cell;
+
+    #[test]
+    fn material_segment_cache_reuses_identical_data() {
+        let parses = Cell::new(0);
+        let segment = ProofSegment {
+            id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+            data: vec![1, 2, 3],
+        };
+        let mut cache = MaterialSegmentCache::with_parser(|bytes| {
+            parses.set(parses.get() + 1);
+            assert_eq!(bytes, [1, 2, 3]);
+            Ok(PcsMaterialManifestSegment {
+                units: vec![material_unit(7)],
+            })
+        });
+
+        assert_eq!(
+            cache.get(&segment).expect("segment should parse").units[0].unit_index,
+            7
+        );
+        assert_eq!(
+            cache.get(&segment).expect("segment should be reused").units[0].unit_index,
+            7
+        );
+        assert_eq!(parses.get(), 1);
+    }
+
+    #[test]
+    fn material_segment_cache_reuses_equal_distinct_data_and_reparses_changed_data() {
+        let parses = Cell::new(0);
+        let first = ProofSegment {
+            id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+            data: vec![1, 2, 3],
+        };
+        let equal = ProofSegment {
+            id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+            data: vec![1, 2, 3],
+        };
+        let changed = ProofSegment {
+            id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+            data: vec![1, 2, 4],
+        };
+        let corrupt = ProofSegment {
+            id: PCS_MATERIAL_MANIFEST_SEGMENT_ID,
+            data: vec![9],
+        };
+        let mut cache = MaterialSegmentCache::with_parser(|bytes| {
+            parses.set(parses.get() + 1);
+            match bytes {
+                [1, 2, 3] => Ok(PcsMaterialManifestSegment {
+                    units: vec![material_unit(7)],
+                }),
+                [1, 2, 4] => Ok(PcsMaterialManifestSegment {
+                    units: vec![material_unit(8)],
+                }),
+                [9] => Err(PcsMaterialManifestSegmentError::InvalidMagic),
+                _ => panic!("unexpected segment bytes"),
+            }
+        });
+
+        assert_eq!(
+            cache.get(&first).expect("segment should parse").units[0].unit_index,
+            7
+        );
+        assert_eq!(
+            cache
+                .get(&equal)
+                .expect("equal segment should be reused")
+                .units[0]
+                .unit_index,
+            7
+        );
+        assert_eq!(parses.get(), 1);
+        assert_eq!(
+            cache
+                .get(&changed)
+                .expect("changed segment should parse")
+                .units[0]
+                .unit_index,
+            8
+        );
+        assert_eq!(parses.get(), 2);
+        assert!(matches!(
+            cache.get(&corrupt),
+            Err(ProvePcsFriTranscriptTraceValuesError::MaterialSegment(
+                PcsMaterialManifestSegmentError::InvalidMagic
+            ))
+        ));
+        assert_eq!(parses.get(), 3);
+    }
+
+    #[test]
+    fn evaluation_segment_cache_reuses_identical_data() {
+        let parses = Cell::new(0);
+        let segment = ProofSegment {
+            id: PCS_EVALUATION_SEGMENT_ID,
+            data: vec![4, 5, 6],
+        };
+        let mut cache = EvaluationSegmentCache::with_parser(|bytes| {
+            parses.set(parses.get() + 1);
+            assert_eq!(bytes, [4, 5, 6]);
+            Ok(PcsEvaluationSegment {
+                units: vec![evaluation_unit(9)],
+            })
+        });
+
+        assert_eq!(
+            cache.get(&segment).expect("segment should parse").units[0].unit_index,
+            9
+        );
+        assert_eq!(
+            cache.get(&segment).expect("segment should be reused").units[0].unit_index,
+            9
+        );
+        assert_eq!(parses.get(), 1);
+    }
+
+    #[test]
+    fn evaluation_segment_cache_reuses_equal_distinct_data_and_reparses_changed_data() {
+        let parses = Cell::new(0);
+        let first = ProofSegment {
+            id: PCS_EVALUATION_SEGMENT_ID,
+            data: vec![4, 5, 6],
+        };
+        let equal = ProofSegment {
+            id: PCS_EVALUATION_SEGMENT_ID,
+            data: vec![4, 5, 6],
+        };
+        let changed = ProofSegment {
+            id: PCS_EVALUATION_SEGMENT_ID,
+            data: vec![4, 5, 7],
+        };
+        let corrupt = ProofSegment {
+            id: PCS_EVALUATION_SEGMENT_ID,
+            data: vec![8],
+        };
+        let mut cache = EvaluationSegmentCache::with_parser(|bytes| {
+            parses.set(parses.get() + 1);
+            match bytes {
+                [4, 5, 6] => Ok(PcsEvaluationSegment {
+                    units: vec![evaluation_unit(9)],
+                }),
+                [4, 5, 7] => Ok(PcsEvaluationSegment {
+                    units: vec![evaluation_unit(10)],
+                }),
+                [8] => Err(PcsEvaluationSegmentError::InvalidMagic),
+                _ => panic!("unexpected segment bytes"),
+            }
+        });
+
+        assert_eq!(
+            cache.get(&first).expect("segment should parse").units[0].unit_index,
+            9
+        );
+        assert_eq!(
+            cache
+                .get(&equal)
+                .expect("equal segment should be reused")
+                .units[0]
+                .unit_index,
+            9
+        );
+        assert_eq!(parses.get(), 1);
+        assert_eq!(
+            cache
+                .get(&changed)
+                .expect("changed segment should parse")
+                .units[0]
+                .unit_index,
+            10
+        );
+        assert_eq!(parses.get(), 2);
+        assert!(matches!(
+            cache.get(&corrupt),
+            Err(ProvePcsFriTranscriptTraceValuesError::EvaluationSegment(
+                PcsEvaluationSegmentError::InvalidMagic
+            ))
+        ));
+        assert_eq!(parses.get(), 3);
+    }
+
+    fn material_unit(unit_index: u32) -> PcsMaterialManifestUnit {
+        PcsMaterialManifestUnit {
+            unit_index,
+            plan_digest: [0; 32],
+            fixed_column_digest: [0; 32],
+            constant_tree_digest: [0; 32],
+            constant_tree_root: [0; 4],
+            fixed_byte_count: 0,
+            constant_tree_byte_count: 0,
+            leaf_byte_count: 0,
+            node_byte_count: 0,
+        }
+    }
+
+    fn evaluation_unit(unit_index: u32) -> PcsEvaluationUnitSegment {
+        PcsEvaluationUnitSegment {
+            unit_index,
+            values: vec![[0, 0, 0]],
+        }
+    }
 }
